@@ -1,0 +1,33 @@
+name: Shotnote
+options:
+  bundleIdPrefix: com.petepetrash
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+targets:
+  Shotnote:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+      - path: web/dist
+        type: folder
+        buildPhase: resources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleName: Shotnote
+        CFBundleDisplayName: Shotnote
+        LSUIElement: true
+        NSHighResolutionCapable: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.petepetrash.shotnote
+            CFBundleURLSchemes: [shotnote]
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"
+        PRODUCT_BUNDLE_IDENTIFIER: com.petepetrash.shotnote
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        ENABLE_HARDENED_RUNTIME: false
+        ENABLE_APP_SANDBOX: false
