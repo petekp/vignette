@@ -128,6 +128,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             Log.write("[annotate] could not read image \(shot.url.path)")
             return
         }
+        loadStarted = CACurrentMediaTime()
         let payload = LoadPayload(
             key: shot.url.path,
             dataUrl: "data:image/png;base64," + data.base64EncodedString(),
@@ -161,11 +162,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// Debug: runs JavaScript in the page and logs the result. `open 'shotnote://eval?<code>'`.
+    /// When the current image's `load` was sent, for the `[annotate] loaded` line.
+    private var loadStarted: CFTimeInterval?
+
     func evalForDebug(_ code: String) {
         webView.callAsyncJavaScript(code, arguments: [:], in: nil, in: .page) { result in
             switch result {
-            case .success(let value): Log.write("[web] eval: \(String(describing: value ?? "undefined"))")
-            case .failure(let error): Log.write("[web] eval error: \(error)")
+            case .success(let value): Commands.ok("eval", String(describing: value).replacingOccurrences(of: "\n", with: " "))
+            case .failure(let error): Commands.error("eval", .evalFailed, String(describing: error).replacingOccurrences(of: "\n", with: " "))
             }
         }
     }
@@ -183,8 +187,13 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Debug: ends the session as Esc would. `open shotnote://cancel`.
-    func cancelForDebug() { cancel() }
+    /// Ends the session as Esc would. `open shotnote://cancel`. False when nothing was open.
+    @discardableResult
+    func cancelForDebug() -> Bool {
+        guard current != nil else { return false }
+        cancel()
+        return true
+    }
 
     private func cancel() {
         guard current != nil else { return }
@@ -227,6 +236,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         case .tool(let tool, let color):
             toolbar.model.tool = tool
             toolbar.model.color = color
+        case .loaded(let key):
+            let ms = loadStarted.map { Int((CACurrentMediaTime() - $0) * 1000) } ?? -1
+            loadStarted = nil
+            Log.write("[annotate] loaded \(ms)ms \((key as NSString).lastPathComponent)")
         case .done(let png):
             guard let shot = current else { return }
             onDraftPreview?(shot.url.path, png)

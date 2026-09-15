@@ -123,17 +123,21 @@ final class ThumbnailController {
         if !model.isStack { scheduleDismiss(after: ui.thumbnailSeconds) }
     }
 
+    enum StackToggle: Equatable { case shown(Int), dismissed, empty }
+
     /// The recent stack: toggles. Takes keyboard focus. Stays until Esc, the hotkey, or a click elsewhere.
-    func toggleRecent(_ shots: [Screenshot]) {
-        if visible && model.isStack { dismiss(); return }
+    @discardableResult
+    func toggleRecent(_ shots: [Screenshot]) -> StackToggle {
+        if visible && model.isStack { dismiss(); return .dismissed }
         let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
-        guard !cards.isEmpty else { return }
+        guard !cards.isEmpty else { return .empty }
         present(cards: cards, stack: true)
         installOutsideClickMonitor()
         backdrop.show(on: screen, below: panel)
         takeKeys()
         Log.write("[stack] shown in \(Int((CACurrentMediaTime() - started) * 1000))ms, \(cards.filter { $0.image == nil }.count) still decoding")
+        return .shown(cards.count)
     }
 
     /// Decodes thumbnails for `shots` in the background so the stack opens without waiting.

@@ -19,7 +19,10 @@ final class ScreenshotWatcher {
 
     private func start() {
         let fd = open(folder.path, O_EVTONLY)
-        guard fd >= 0 else { return }
+        guard fd >= 0 else {
+            Log.write("[watcher] error cannot open \(folder.path): \(String(cString: strerror(errno)))")
+            return
+        }
         let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: .write, queue: queue)
         src.setEventHandler { [weak self] in self?.scan() }
         src.setCancelHandler { close(fd) }

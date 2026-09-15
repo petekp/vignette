@@ -173,6 +173,8 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
   editor.setStyleForNextShapes(DefaultFillStyle, 'none')
   selectTool(editor, draft ? REOPEN_TOOL : DEFAULT_TOOL)
   editor.clearHistory()
+  // Two frames: fitCamera re-measures on the next frame, so the image has been laid out by then.
+  requestAnimationFrame(() => requestAnimationFrame(() => postToNative({ type: 'loaded', key: p.key })))
 }
 
 function fitCamera(editor: Editor, w: number, h: number) {

@@ -30,6 +30,8 @@ enum WebMessage {
     case ready(tools: [ToolInfo], colors: [ColorInfo])
     /// The active tool or color changed.
     case tool(tool: String?, color: String)
+    /// The image from `load` is on the canvas.
+    case loaded(key: String)
     case done(png: Data)
     case cancel
     case log(String)
@@ -55,6 +57,9 @@ enum WebMessage {
             self = .ready(tools: tools, colors: colors)
         case "tool":
             self = .tool(tool: dict["tool"] as? String, color: dict["color"] as? String ?? "")
+        case "loaded":
+            guard let key = dict["key"] as? String else { return nil }
+            self = .loaded(key: key)
         case "cancel": self = .cancel
         case "log": self = .log(dict["message"] as? String ?? "")
         case "done":

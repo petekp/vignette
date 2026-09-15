@@ -27,7 +27,12 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
 
 1. Change code.
 2. `./scripts/run.sh`
-3. Drive the app: `open shotnote://annotate` (or `copy`, `trash`, `last`, `recent`, `state`).
+3. Drive the app: `open -g shotnote://annotate` (or `copy`, `trash`, `last`, `recent`, `state`;
+   `open -g shotnote://help` logs every command). Plain `open` activates Shotnote; `-g` does not.
+   Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
+   codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
+   folder, and `eval`, `show-editor`, and `tweaks` are refused, unless settings.json has
+   `"debug": true`. `[annotate] loaded <ms>` reports when the page has the image.
 4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.
    Send keys with `osascript -e 'tell application "System Events" to key code 36 using command down'`
    (Cmd+Enter finishes annotating, key code 53 is Esc). The recent stack takes key focus, so

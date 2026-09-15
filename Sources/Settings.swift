@@ -18,6 +18,7 @@ struct SettingsData: Codable, Equatable {
     var recentCount = 30                      // cards in the recent stack
     var recentHotkey = "cmd+shift+6"         // opens the recent stack
     var hideMenuBarIcon = false              // shotnote://settings still opens the window
+    var debug = false                        // unlocks eval, show-editor, tweaks, and file= outside the watch folder
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
     var appleOriginal: AppleOriginal?        // Apple's screencapture values before Shotnote changed them
 

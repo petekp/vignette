@@ -87,45 +87,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     // MARK: Actions (see Config.actions). Lists arrive oldest first.
 
     func copyToClipboard(_ shots: [Screenshot]) {
-        guard !shots.isEmpty else { return }
+        guard !shots.isEmpty else { Commands.error("copy", .missingFile, "nothing selected"); return }
         Clipboard.copyFiles(shots.map(\.url))
-        Log.write("[copy] \(shots.map { $0.url.lastPathComponent })")
+        Commands.ok("copy", shots.map(\.url.lastPathComponent).joined(separator: ", "))
         thumbnail.showFeedback(shots.count == 1 ? "Copied to clipboard" : "Copied \(shots.count) images")
     }
 
     func copyPaths(_ shots: [Screenshot]) {
-        guard !shots.isEmpty else { return }
+        guard !shots.isEmpty else { Commands.error("paths", .missingFile, "nothing selected"); return }
         Clipboard.copyText(Clipboard.pathsText(shots.map(\.url)))
-        Log.write("[paths] \(shots.map { $0.url.lastPathComponent })")
+        Commands.ok("paths", shots.map(\.url.lastPathComponent).joined(separator: ", "))
         thumbnail.showFeedback(shots.count == 1 ? "Copied path" : "Copied \(shots.count) paths")
     }
 
     func annotate(_ shot: Screenshot) {
-        Log.write("[annotate] \(shot.url.lastPathComponent)")
+        Commands.ok("annotate", shot.url.lastPathComponent)
         thumbnail.annotate(shot)
     }
 
     func stitch(_ shots: [Screenshot]) {
-        guard shots.count >= 2, let png = Stitch.compose(shots.map(\.url)) else { return }
+        guard shots.count >= 2 else { Commands.error("stitch", .notEnoughFiles, "needs 2, got \(shots.count)"); return }
+        guard let png = Stitch.compose(shots.map(\.url)) else {
+            Commands.error("stitch", .unreadableImage, shots.map(\.url.lastPathComponent).joined(separator: ", ")); return
+        }
         let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
         let out = watchFolder.appendingPathComponent("Stitch \(stamp.string(from: Date())).png")
-        do { try png.write(to: out) } catch { Log.write("[stitch] save failed: \(error.localizedDescription)"); return }
+        do { try png.write(to: out) } catch { Commands.error("stitch", .writeFailed, "\(out.path): \(error.localizedDescription)"); return }
         Clipboard.copyFiles([out])
-        Log.write("[stitch] \(shots.count) images -> \(out.lastPathComponent) \(png.count) bytes, copied")
+        Commands.ok("stitch", "\(out.path) from \(shots.count) images, \(png.count) bytes, copied")
         thumbnail.showFeedback("Stitched \(shots.count) images, copied")
     }
 
     func moveToTrash(_ shots: [Screenshot]) {
+        var trashed: [String] = []
+        var failed: [String] = []
         for shot in shots {
             do {
                 try FileManager.default.trashItem(at: shot.url, resultingItemURL: nil)
-                Log.write("[trash] \(shot.url.lastPathComponent)")
+                trashed.append(shot.url.lastPathComponent)
             } catch {
-                Log.write("[trash] failed \(shot.url.lastPathComponent): \(error.localizedDescription)")
+                failed.append("\(shot.url.lastPathComponent): \(error.localizedDescription)")
             }
         }
         thumbnail.remove(shots)
         annotator.forgetDrafts(shots)
+        if failed.isEmpty { Commands.ok("trash", trashed.joined(separator: ", ")) }
+        else { Commands.error("trash", .writeFailed, "\(failed.joined(separator: "; ")); trashed \(trashed.count) of \(shots.count)") }
     }
 
     func copyAnnotated(_ shots: [Screenshot]) {
@@ -138,7 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 else { urls.append(shot.url) }
             }
             Clipboard.copyFiles(urls)
-            Log.write("[copy-annotated] \(urls.count) files, \(annotated) with annotations")
+            Commands.ok("copy-annotated", "\(urls.map(\.lastPathComponent).joined(separator: ", ")); \(annotated) with annotations")
             self.thumbnail.showFeedback(urls.count == 1 ? "Copied to clipboard" : "Copied \(urls.count) images")
         }
     }
@@ -165,42 +172,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
     }
 
-    // MARK: URL commands: shotnote://<command>[?file=/path&file=/other]
+    // MARK: URL commands: shotnote://<command>[?file=/path&file=/other]. See Commands.swift.
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             Log.write("[url] \(url.absoluteString)")
-            let command = url.host ?? ""
-            let files = (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [])
-                .filter { $0.name == "file" }
-                .compactMap(\.value)
-                // `open` percent-encodes once more when the caller already encoded, so decode twice.
-                .map { $0.removingPercentEncoding ?? $0 }
-                .map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
-            switch command {
-            case "last": openLast()
-            case "recent": toggleRecent()
-            case "state": dumpState()
-            case "settings": settingsWindow.show()
-            case "restore-apple-defaults": restoreAppleDefaults()
-            case "tweaks": debugPanel.toggle()
-            case "show-editor": annotator.presentEmpty()
-            case "dismiss": thumbnail.dismiss()
-            case "cancel": annotator.cancelForDebug()
-            case "eval": annotator.evalForDebug(url.query?.removingPercentEncoding ?? "")
-            default:
-                guard let action = Config.action(id: command) else {
-                    Log.write("[url] unknown command \"\(command)\"")
-                    return
+            run(Commands.parse(url))
+        }
+    }
+
+    private func run(_ request: CommandRequest) {
+        let cmd = request.name
+        guard Commands.isKnown(cmd) else {
+            Commands.error(cmd, .unknownCommand, "\"\(cmd)\"; open -g shotnote://help lists the commands"); return
+        }
+        if Commands.needsDebug(cmd) && !settings.data.debug {
+            Commands.error(cmd, .debugDisabled, "set \"debug\": true in settings.json"); return
+        }
+        switch cmd {
+        case "help":
+            for line in Commands.helpLines() { Log.write("[help] \(line)") }
+            Commands.ok("help", "\(Commands.fixed.count + Config.actions.count) commands; errors end with one of: \(CommandError.allCases.map(\.rawValue).joined(separator: " "))")
+        case "last": openLast()
+        case "recent": toggleRecent()
+        case "state": dumpState()
+        case "settings": settingsWindow.show(); Commands.ok("settings", "window opened")
+        case "restore-apple-defaults": restoreAppleDefaults()
+        case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
+        case "show-editor": annotator.presentEmpty(); Commands.ok("show-editor")
+        case "dismiss": thumbnail.dismiss(); Commands.ok("dismiss")
+        case "cancel": Commands.ok("cancel", annotator.cancelForDebug() ? "" : "nothing was open")
+        case "eval": annotator.evalForDebug(request.query ?? "")   // answers when the page does
+        default:
+            guard let action = Config.action(id: cmd) else { return }
+            var targets = request.files
+            if targets.isEmpty {
+                guard let newest = ScreenshotWatcher.newestScreenshot(in: watchFolder) else {
+                    Commands.error(cmd, .missingFile, "no file given and no screenshot in \(watchFolder.path)"); return
                 }
-                var targets = files
-                if targets.isEmpty, let newest = ScreenshotWatcher.newestScreenshot(in: watchFolder) { targets = [newest] }
-                guard targets.count >= action.minimumCount else {
-                    Log.write("[url] \(command) needs at least \(action.minimumCount) file(s)")
-                    return
-                }
-                action.run(targets.map(Screenshot.init), self)
+                targets = [newest]
             }
+            for file in targets {
+                if let code = Commands.policyError(for: file, watchFolder: watchFolder, debug: settings.data.debug) {
+                    Commands.error(cmd, code, file.path); return
+                }
+            }
+            guard targets.count >= action.minimumCount else {
+                Commands.error(cmd, .notEnoughFiles, "needs \(action.minimumCount), got \(targets.count)"); return
+            }
+            if cmd == "annotate" {
+                // Refused here, before any transition starts, so a dead file never opens an empty editor.
+                if let bad = targets.first(where: { !Commands.isReadableImage($0) }) { Commands.error(cmd, .unreadableImage, bad.path); return }
+            } else if let missing = targets.first(where: { !FileManager.default.fileExists(atPath: $0.path) }) {
+                Commands.error(cmd, .missingFile, missing.path); return
+            }
+            action.run(targets.map(Screenshot.init), self)
         }
     }
 
@@ -211,6 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Log.write("[state] annotator: \(annotator.stateDescription)")
         Log.write("[state] backdrop: \(thumbnail.backdropDescription)")
         annotator.dumpPageState()
+        Commands.ok("state", "page state follows on its own [web] line")
     }
 
     /// Accessory apps have no menu bar, but key equivalents like Cmd+W and Cmd+C in the Settings
@@ -283,11 +310,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     @objc private func restoreAppleDefaults() {
         guard let restored = settings.restoreAppleDefaults() else {
-            Log.write("[restore-apple-defaults] error no-apple-original: nothing was recorded, so nothing to restore")
+            Commands.error("restore-apple-defaults", .noAppleOriginal, "nothing was recorded, so nothing to restore")
             thumbnail.showFeedback("No Apple defaults were recorded")
             return
         }
-        Log.write("[restore-apple-defaults] ok \(restored.joined(separator: " "))")
+        Commands.ok("restore-apple-defaults", restored.joined(separator: " "))
         thumbnail.showFeedback("Apple screenshot defaults restored")
     }
 
@@ -296,13 +323,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     @objc private func openLast() {
-        guard let url = ScreenshotWatcher.newestScreenshot(in: watchFolder) else { return }
+        guard let url = ScreenshotWatcher.newestScreenshot(in: watchFolder) else {
+            Commands.error("last", .missingFile, "no screenshot in \(watchFolder.path)"); return
+        }
         thumbnail.show(Screenshot(url: url))
+        Commands.ok("last", url.lastPathComponent)
     }
 
     @objc private func toggleRecent() {
         let shots = ScreenshotWatcher.recentScreenshots(in: watchFolder, limit: settings.data.recentCount).map(Screenshot.init)
-        thumbnail.toggleRecent(shots)
+        switch thumbnail.toggleRecent(shots) {
+        case .shown(let count): Commands.ok("recent", "shown \(count) cards")
+        case .dismissed: Commands.ok("recent", "dismissed")
+        case .empty: Commands.error("recent", .missingFile, "no screenshots in \(watchFolder.path)")
+        }
     }
 
     @objc private func openLog() {

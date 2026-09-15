@@ -18,6 +18,8 @@ type NativeMessage =
   | { type: 'ready'; tools: ToolInfo[]; colors: ColorInfo[] }
   /** The active tool or color changed. */
   | { type: 'tool'; tool: string | null; color: string }
+  /** The image from `load` is on the canvas. */
+  | { type: 'loaded'; key: string }
   | { type: 'done'; png: string }
   | { type: 'cancel' }
   | { type: 'log'; message: string }
