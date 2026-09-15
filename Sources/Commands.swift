@@ -47,7 +47,7 @@ enum Commands {
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Shotnote first recorded"),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "show-editor", summary: "open the editor window without an image", needsDebug: true),
-        Fixed(name: "eval", summary: "run JavaScript in the editor page: shotnote://eval?<code>", needsDebug: true),
+        Fixed(name: "eval", summary: "run JavaScript in the editor page: \(Identity.urlScheme)://eval?<code>", needsDebug: true),
     ]
 
     /// URLComponents decodes each query value once; `open` does not encode again, so nothing else may.
@@ -104,7 +104,7 @@ enum Commands {
     static func helpLines() -> [String] {
         let commands = fixed.map { "\($0.name): \($0.summary)\($0.needsDebug ? " (needs \"debug\": true in settings.json)" : "")" }
         let actions = Config.actions.map { action -> String in
-            var line = "\(action.id): \(action.label); shotnote://\(action.id)?file=<path>&file=<path>, the newest screenshot when no file is given"
+            var line = "\(action.id): \(action.label); \(Identity.urlScheme)://\(action.id)?file=<path>&file=<path>, the newest screenshot when no file is given"
             if action.minimumCount > 1 { line += "; needs \(action.minimumCount) files" }
             return line
         }

@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var watchFolder: URL { settings.data.folderURL }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        replaceOlderInstances()
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppDelegate.makeMainMenu()
         let settingsSource = Settings.isOverridden ? " (SHOTNOTE_SETTINGS)" : ""
@@ -50,13 +51,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         registerHotKey()
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
         if let notice = settings.startupNotice { thumbnail.showFeedback(notice) }
-        else if settings.firstLaunch { thumbnail.showFeedback("Shotnote is watching \(settings.data.screenshotsFolder)") }
+        else if settings.firstLaunch { thumbnail.showFeedback("\(Identity.name) is watching \(settings.data.screenshotsFolder)") }
         // The contract for agents: after this line every command answers. The page reports `[web] ready` on its own.
         Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) port=\(annotator.port) watching=\(watchFolder.path)")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         settings.flush()
+        Log.write("[app] terminating pid=\(ProcessInfo.processInfo.processIdentifier)")
+    }
+
+    /// The newer launch wins: any running copy of this bundle id is asked to quit, and forced after
+    /// a grace period. Two copies would both watch the folder, write settings, and register the hotkey.
+    private func replaceOlderInstances() {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let older = NSRunningApplication.runningApplications(withBundleIdentifier: Identity.bundleID).filter { $0.processIdentifier != me }
+        guard !older.isEmpty else { return }
+        for app in older {
+            Log.write("[app] replacing older instance pid=\(app.processIdentifier)")
+            app.terminate()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            for app in older where !app.isTerminated {
+                Log.write("[app] older instance pid=\(app.processIdentifier) did not quit; forcing")
+                app.forceTerminate()
+            }
+        }
     }
 
     private func settingsChanged(_ old: SettingsData, _ new: SettingsData) {
@@ -186,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private func run(_ request: CommandRequest) {
         let cmd = request.name
         guard Commands.isKnown(cmd) else {
-            Commands.error(cmd, .unknownCommand, "\"\(cmd)\"; open -g shotnote://help lists the commands"); return
+            Commands.error(cmd, .unknownCommand, "\"\(cmd)\"; open -g \(Identity.urlScheme)://help lists the commands"); return
         }
         if Commands.needsDebug(cmd) && !settings.data.debug {
             Commands.error(cmd, .debugDisabled, "set \"debug\": true in settings.json"); return
@@ -286,11 +306,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard statusItem == nil else { return }
         // On a crowded menu bar macOS drops a new item into the space under the notch, where it is
         // invisible. Seed a spot near the right edge once; after that macOS remembers where the user drags it.
-        let positionKey = "NSStatusItem Preferred Position shotnote"
+        let positionKey = "NSStatusItem Preferred Position \(Identity.statusItemAutosaveName)"
         if UserDefaults.standard.object(forKey: positionKey) == nil { UserDefaults.standard.set(80, forKey: positionKey) }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.autosaveName = "shotnote"
-        item.button?.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Shotnote")
+        item.autosaveName = NSStatusItem.AutosaveName(Identity.statusItemAutosaveName)
+        item.button?.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: Identity.name)
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu

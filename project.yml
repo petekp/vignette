@@ -1,6 +1,9 @@
+# To fork: change `name`, the app target and scheme keys that repeat it, both
+# PRODUCT_BUNDLE_IDENTIFIER values, and the URL scheme below.
+# The log name, status item, Application Support folder, and hotkey registration follow the
+# bundle at runtime (Sources/Identity.swift); build.sh and run.sh read `name` for the scheme.
 name: Shotnote
 options:
-  bundleIdPrefix: com.petepetrash
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -21,15 +24,15 @@ targets:
     info:
       path: Info.plist
       properties:
-        CFBundleName: Shotnote
-        CFBundleDisplayName: Shotnote
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundleDisplayName: $(PRODUCT_NAME)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ShotnoteBuild: $(SHOTNOTE_BUILD)
         LSUIElement: true
         NSHighResolutionCapable: true
         CFBundleURLTypes:
-          - CFBundleURLName: com.petepetrash.shotnote
+          - CFBundleURLName: $(PRODUCT_BUNDLE_IDENTIFIER)
             CFBundleURLSchemes: [shotnote]
     settings:
       base:

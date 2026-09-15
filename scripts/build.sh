@@ -10,16 +10,17 @@ for arg in "$@"; do
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
+scheme=$(sed -n 's/^name: *//p' project.yml)
 (cd web && pnpm build)
 xcodegen generate >/dev/null
 # The bundle carries the git state: commit count as CFBundleVersion, describe as ShotnoteBuild.
 number=$(git rev-list --count HEAD 2>/dev/null || echo 0)
 build=$(git describe --always --dirty 2>/dev/null || echo local)
 stamp=(CURRENT_PROJECT_VERSION="$number" SHOTNOTE_BUILD="$build")
-xcodebuild -project Shotnote.xcodeproj -scheme Shotnote -configuration Debug -derivedDataPath build build -quiet "${stamp[@]}"
-echo "built: $PWD/build/Build/Products/Debug/Shotnote.app ($build)"
+xcodebuild -project "$scheme.xcodeproj" -scheme "$scheme" -configuration Debug -derivedDataPath build build -quiet "${stamp[@]}"
+echo "built: $PWD/build/Build/Products/Debug/$scheme.app ($build)"
 if $run_tests; then
   # Same stamp, or the test run rebuilds the app with the project defaults.
-  xcodebuild -project Shotnote.xcodeproj -scheme Shotnote -destination 'platform=macOS' -derivedDataPath build test -quiet "${stamp[@]}"
+  xcodebuild -project "$scheme.xcodeproj" -scheme "$scheme" -destination 'platform=macOS' -derivedDataPath build test -quiet "${stamp[@]}"
   echo "tests: passed"
 fi

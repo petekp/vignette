@@ -16,7 +16,7 @@ final class HotKey {
             Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue().action()
             return noErr
         }, 1, &spec, selfPtr, &handler)
-        let id = EventHotKeyID(signature: OSType(0x53484F54), id: 1) // "SHOT"
+        let id = EventHotKeyID(signature: Identity.hotKeySignature, id: 1)
         RegisterEventHotKey(keyCode, modifiers, id, GetApplicationEventTarget(), 0, &ref)
     }
 
