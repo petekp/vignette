@@ -70,7 +70,7 @@ final class ScreenshotWatcher {
                 return (url, date)
             }
             .sorted { $0.1 > $1.1 }
-            .prefix(limit)
+            .prefix(max(0, limit))   // prefix traps on a negative count
             .map(\.0)
     }
 

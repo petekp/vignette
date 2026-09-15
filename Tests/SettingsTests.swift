@@ -1,0 +1,156 @@
+import XCTest
+
+final class SettingsTests: XCTestCase {
+    private var dir: URL!
+    private var file: URL { dir.appendingPathComponent("settings.json") }
+
+    override func setUpWithError() throws {
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("shotnote-settings-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try FileManager.default.removeItem(at: dir)
+    }
+
+    private func write(_ text: String) throws {
+        try text.write(to: file, atomically: true, encoding: .utf8)
+    }
+
+    private func json() throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+    }
+
+    // MARK: load
+
+    func testMissingFileIsMissingNotInvalid() {
+        guard case .missing = Settings.load(file) else { return XCTFail("expected .missing") }
+    }
+
+    func testPartialFileKeepsDefaultsForMissingKeys() throws {
+        try write(#"{"recentCount": 7, "ui": {"cardMaxWidth": 300}}"#)
+        guard case .loaded(let loaded) = Settings.load(file) else { return XCTFail("expected .loaded") }
+        XCTAssertEqual(loaded.data.recentCount, 7)
+        XCTAssertEqual(loaded.data.ui.cardMaxWidth, 300)
+        XCTAssertEqual(loaded.data.ui.cardMaxHeight, UITweaks().cardMaxHeight)
+        XCTAssertEqual(loaded.data.recentHotkey, SettingsData().recentHotkey)
+    }
+
+    func testSyntaxErrorIsInvalid() throws {
+        try write(#"{"recentCount": 7"#)
+        guard case .invalid(let reason) = Settings.load(file) else { return XCTFail("expected .invalid") }
+        XCTAssertFalse(reason.isEmpty)
+    }
+
+    func testWrongTypeIsInvalid() throws {
+        try write(#"{"recentCount": "many"}"#)
+        guard case .invalid = Settings.load(file) else { return XCTFail("expected .invalid") }
+    }
+
+    // MARK: bootstrap
+
+    func testInvalidFileIsSetAsideNotOverwritten() throws {
+        let bad = #"{"recentCount": 7"#
+        try write(bad)
+        let boot = Settings.bootstrap(at: file)
+        let aside = dir.appendingPathComponent("settings.json.invalid")
+        XCTAssertEqual(try String(contentsOf: aside, encoding: .utf8), bad)
+        XCTAssertNotNil(boot.notice)
+        XCTAssertTrue(boot.log.contains { $0.hasPrefix("error settings-invalid") })
+        XCTAssertEqual((try json())["version"] as? Int, Settings.currentVersion, "a fresh file replaces the bad one")
+    }
+
+    func testMissingFileIsCreatedWithAppleOriginal() throws {
+        let boot = Settings.bootstrap(at: file)
+        XCTAssertNotNil(boot.data.appleOriginal)
+        XCTAssertTrue(boot.log.contains { $0.hasPrefix("created") })
+        XCTAssertNotNil((try json())["appleOriginal"])
+    }
+
+    func testNegativeCountIsClampedInMemoryAndLogged() throws {
+        try write(#"{"recentCount": -1, "ui": {"backdropWidth": 0, "cardShadowOpacity": 3}}"#)
+        let boot = Settings.bootstrap(at: file)
+        XCTAssertEqual(boot.data.recentCount, 0)
+        XCTAssertEqual(boot.data.ui.backdropWidth, 1)
+        XCTAssertEqual(boot.data.ui.cardShadowOpacity, 1)
+        let clamps = boot.log.filter { $0.hasPrefix("warning clamped") }
+        XCTAssertEqual(clamps.count, 3, clamps.joined(separator: "; "))
+        XCTAssertFalse(boot.readOnly)
+    }
+
+    func testMissingKeysAreFilledInOnDisk() throws {
+        try write(#"{"recentCount": 7}"#)
+        _ = Settings.bootstrap(at: file)
+        let j = try json()
+        XCTAssertEqual(j["recentCount"] as? Int, 7)
+        XCTAssertNotNil(j["ui"])
+        XCTAssertEqual(j["version"] as? Int, Settings.currentVersion)
+    }
+
+    func testFileWithoutVersionIsMigratedAndRewritten() throws {
+        try write(#"{"recentCount": 7}"#)
+        let boot = Settings.bootstrap(at: file)
+        XCTAssertTrue(boot.log.contains("migrated from version 0 to \(Settings.currentVersion)"))
+        XCTAssertEqual((try json())["version"] as? Int, Settings.currentVersion)
+    }
+
+    func testNewerVersionIsReadOnly() throws {
+        let newer = #"{"version": \#(Settings.currentVersion + 1), "recentCount": 7, "futureKey": true}"#
+        try write(newer)
+        let boot = Settings.bootstrap(at: file)
+        XCTAssertTrue(boot.readOnly)
+        XCTAssertEqual(boot.data.recentCount, 7)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), newer, "a newer file is never rewritten")
+    }
+
+    // MARK: migrate
+
+    func testMigrateStampsCurrentVersion() {
+        let out = Settings.migrate(["recentCount": 3])
+        XCTAssertEqual(out.from, 0)
+        XCTAssertEqual(out.json["version"] as? Int, Settings.currentVersion)
+        XCTAssertEqual(out.json["recentCount"] as? Int, 3)
+    }
+
+    func testMigrateLeavesNewerFilesAlone() {
+        let out = Settings.migrate(["version": 99])
+        XCTAssertEqual(out.from, 99)
+        XCTAssertEqual(out.json["version"] as? Int, 99)
+    }
+
+    // MARK: validated
+
+    func testValidatedLeavesGoodDataAlone() {
+        let (data, notes) = SettingsData().validated()
+        XCTAssertEqual(data, SettingsData())
+        XCTAssertEqual(notes, [])
+    }
+
+    func testValidatedRepairsEachKind() {
+        var d = SettingsData()
+        d.recentCount = 5000
+        d.screenshotsFolder = "  "
+        d.ui.slideInCurve = "bounce"
+        d.ui.backdropBands = 0
+        d.ui.hoverScale = .nan
+        let (fixed, notes) = d.validated()
+        XCTAssertEqual(fixed.recentCount, 1000)
+        XCTAssertEqual(fixed.screenshotsFolder, "~/Desktop")
+        XCTAssertEqual(fixed.ui.slideInCurve, "spring")
+        XCTAssertEqual(fixed.ui.backdropBands, 1)
+        XCTAssertEqual(fixed.ui.hoverScale, UITweaks().hoverScale)
+        XCTAssertEqual(notes.count, 5, notes.joined(separator: "; "))
+    }
+
+    func testEveryTweakHasABound() {
+        let encoded = try! JSONSerialization.jsonObject(with: JSONEncoder().encode(UITweaks())) as! [String: Any]
+        let doubles = Set(encoded.filter { $0.value is Double || $0.value is Int }.keys).subtracting(["backdropBands"])
+        XCTAssertEqual(Set(UITweaks.bounds.map(\.name)), Set(doubles))
+    }
+}
+
+final class ScreenshotWatcherTests: XCTestCase {
+    func testNegativeLimitYieldsNothingInsteadOfTrapping() {
+        XCTAssertEqual(ScreenshotWatcher.recentScreenshots(in: FileManager.default.temporaryDirectory, limit: -1), [])
+    }
+}

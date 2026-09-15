@@ -31,7 +31,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppDelegate.makeMainMenu()
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        Log.write("[app] launched \(version) watching \(watchFolder.path) settings \(Settings.fileURL.path)")
+        let settingsSource = Settings.isOverridden ? " (SHOTNOTE_SETTINGS)" : ""
+        Log.write("[app] launched \(version) watching \(watchFolder.path) settings \(Settings.fileURL.path)\(settingsSource)")
+        if let type = AppleScreencapture.string("type"), !ScreenshotWatcher.isCandidate("screenshot.\(type)") {
+            Log.write("[settings] warning Apple screencapture type=\(type) is a format the watcher ignores")
+        }
         updateStatusItem()
         annotator.preload()
         thumbnail.actions = self
@@ -46,6 +50,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         startWatching()
         registerHotKey()
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
+        if let notice = settings.startupNotice { thumbnail.showFeedback(notice) }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        settings.flush()
     }
 
     private func settingsChanged(_ old: SettingsData, _ new: SettingsData) {
@@ -173,6 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             case "recent": toggleRecent()
             case "state": dumpState()
             case "settings": settingsWindow.show()
+            case "restore-apple-defaults": restoreAppleDefaults()
             case "tweaks": debugPanel.toggle()
             case "show-editor": annotator.presentEmpty()
             case "dismiss": thumbnail.dismiss()
@@ -259,6 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         folderItem.isEnabled = false
         menu.addItem(folderItem)
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(withTitle: "Restore Apple Screenshot Defaults", action: #selector(restoreAppleDefaults), keyEquivalent: "")
         menu.addItem(withTitle: "Tweak UI…", action: #selector(openTweaks), keyEquivalent: "")
         menu.addItem(withTitle: "Open Log", action: #selector(openLog), keyEquivalent: "")
         menu.addItem(.separator())
@@ -268,6 +279,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     @objc private func openSettings() {
         settingsWindow.show()
+    }
+
+    @objc private func restoreAppleDefaults() {
+        guard let restored = settings.restoreAppleDefaults() else {
+            Log.write("[restore-apple-defaults] error no-apple-original: nothing was recorded, so nothing to restore")
+            thumbnail.showFeedback("No Apple defaults were recorded")
+            return
+        }
+        Log.write("[restore-apple-defaults] ok \(restored.joined(separator: " "))")
+        thumbnail.showFeedback("Apple screenshot defaults restored")
     }
 
     @objc private func openTweaks() {

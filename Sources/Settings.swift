@@ -9,6 +9,7 @@ struct Screenshot {
 /// Everything a user changes per machine. Lives in ~/.config/shotnote/settings.json.
 /// Missing keys fall back to defaults, so a partial file is fine.
 struct SettingsData: Codable, Equatable {
+    var version = Settings.currentVersion    // file format version; `Settings.migrate` brings older files up
     var screenshotsFolder = "~/Desktop"      // where Cmd+Shift+3/4/5 saves and what Shotnote watches
     var syncAppleSaveLocation = true         // write screenshotsFolder to Apple's screencapture location
     var appleThumbnail = true                // Apple's floating thumbnail; off means the file lands immediately
@@ -18,8 +19,36 @@ struct SettingsData: Codable, Equatable {
     var recentHotkey = "cmd+shift+6"         // opens the recent stack
     var hideMenuBarIcon = false              // shotnote://settings still opens the window
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
+    var appleOriginal: AppleOriginal?        // Apple's screencapture values before Shotnote changed them
 
     var folderURL: URL { URL(fileURLWithPath: (screenshotsFolder as NSString).expandingTildeInPath) }
+
+    /// Clamps values that would crash or break layout math and reports each correction.
+    /// Design limits live in the debug panel; these are only the bounds the code cannot survive.
+    func validated() -> (data: SettingsData, corrections: [String]) {
+        var d = self
+        var notes: [String] = []
+        if d.recentCount < 0 || d.recentCount > 1000 {
+            let fixed = min(max(d.recentCount, 0), 1000)
+            notes.append("recentCount \(d.recentCount) -> \(fixed)"); d.recentCount = fixed
+        }
+        if d.screenshotsFolder.trimmingCharacters(in: .whitespaces).isEmpty {
+            notes.append("screenshotsFolder \"\" -> \"~/Desktop\""); d.screenshotsFolder = "~/Desktop"
+        }
+        if !["spring", "easeOut", "easeInOut", "linear"].contains(d.ui.slideInCurve) {
+            notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"
+        }
+        if d.ui.backdropBands < 1 || d.ui.backdropBands > 64 {
+            let fixed = min(max(d.ui.backdropBands, 1), 64)
+            notes.append("ui.backdropBands \(d.ui.backdropBands) -> \(fixed)"); d.ui.backdropBands = fixed
+        }
+        for (name, path, range) in UITweaks.bounds {
+            let value = d.ui[keyPath: path]
+            let fixed = value.isFinite ? min(max(value, range.lowerBound), range.upperBound) : UITweaks()[keyPath: path]
+            if fixed != value { notes.append("ui.\(name) \(value) -> \(fixed)"); d.ui[keyPath: path] = fixed }
+        }
+        return (d, notes)
+    }
 
     /// First run: mirror what macOS is already doing so nothing changes until the user asks.
     static func fromSystem() -> SettingsData {
@@ -84,18 +113,72 @@ struct UITweaks: Codable, Equatable {
     var annotationCornerRadius = 10.0
     var annotationToolbarGap = 12.0
     var annotationScreenInset = 60.0
+
+    /// Bounds outside which a value crashes, divides by zero, or makes NaN. Not design limits.
+    static let bounds: [(name: String, path: WritableKeyPath<UITweaks, Double>, range: ClosedRange<Double>)] = [
+        ("cardMaxWidth", \.cardMaxWidth, 1...10_000), ("cardMaxHeight", \.cardMaxHeight, 1...10_000),
+        ("cardMinSide", \.cardMinSide, 1...10_000), ("cardSpacing", \.cardSpacing, 0...1000),
+        ("panelInset", \.panelInset, 0...1000), ("screenMargin", \.screenMargin, 0...10_000),
+        ("cardCornerRadius", \.cardCornerRadius, 0...1000), ("cardBorderWidth", \.cardBorderWidth, 0...100),
+        ("cardBorderOpacity", \.cardBorderOpacity, 0...1), ("cardShadowRadius", \.cardShadowRadius, 0...1000),
+        ("cardShadowOpacity", \.cardShadowOpacity, 0...1), ("cardShadowY", \.cardShadowY, -1000...1000),
+        ("hoverScale", \.hoverScale, 0.1...10), ("pressScale", \.pressScale, 0.1...10), ("hoverDim", \.hoverDim, 0...1),
+        ("buttonSize", \.buttonSize, 1...1000), ("buttonIconSize", \.buttonIconSize, 1...1000),
+        ("buttonSpacing", \.buttonSpacing, 0...1000), ("selectionCircleSize", \.selectionCircleSize, 1...1000),
+        ("selectionBarHeight", \.selectionBarHeight, 1...1000),
+        ("thumbnailSeconds", \.thumbnailSeconds, 0...3600), ("toastSeconds", \.toastSeconds, 0...3600),
+        ("slideInDuration", \.slideInDuration, 0...60), ("slideOutDuration", \.slideOutDuration, 0...60),
+        ("staggerDelay", \.staggerDelay, 0...60), ("staggerTotalMax", \.staggerTotalMax, 0...60),
+        ("relayoutDuration", \.relayoutDuration, 0...60), ("expandDuration", \.expandDuration, 0...60),
+        ("hoverRevealDuration", \.hoverRevealDuration, 0...60),
+        ("backdropWidth", \.backdropWidth, 1...10_000), ("backdropTint", \.backdropTint, 0...1),
+        ("backdropTintStart", \.backdropTintStart, 0...1), ("backdropBlurRadius", \.backdropBlurRadius, 0...1000),
+        ("backdropRampPower", \.backdropRampPower, 0.01...100), ("backdropFadeIn", \.backdropFadeIn, 0...60),
+        ("backdropFadeOut", \.backdropFadeOut, 0...60), ("dimOpacity", \.dimOpacity, 0...1), ("dimFade", \.dimFade, 0...60),
+        ("annotationMinWidth", \.annotationMinWidth, 1...100_000), ("annotationMinHeight", \.annotationMinHeight, 1...100_000),
+        ("annotationCornerRadius", \.annotationCornerRadius, 0...1000), ("annotationToolbarGap", \.annotationToolbarGap, 0...1000),
+        ("annotationScreenInset", \.annotationScreenInset, 0...10_000),
+    ]
+}
+
+/// The `com.apple.screencapture` values Shotnote found before it wrote any of its own, so
+/// `shotnote://restore-apple-defaults` can put them back. nil means the key was not set.
+struct AppleOriginal: Codable, Equatable {
+    var location: String?
+    var showThumbnail: Bool?
+    var disableShadow: Bool?
+    var type: String?
+
+    static func capture() -> AppleOriginal {
+        AppleOriginal(location: AppleScreencapture.string("location"),
+                      showThumbnail: AppleScreencapture.bool("show-thumbnail"),
+                      disableShadow: AppleScreencapture.bool("disable-shadow"),
+                      type: AppleScreencapture.string("type"))
+    }
 }
 
 /// The settings file is the source of truth. The Settings window, the debug panel, agents, and
 /// dotfiles all edit it; the app reloads it when it changes on disk and pushes the relevant keys to
-/// Apple's defaults.
+/// Apple's defaults. `SHOTNOTE_SETTINGS=<path>` in the environment points the app at another file,
+/// so a test run never touches the real one.
 final class Settings: ObservableObject {
     static let shared = Settings()
-    static let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/shotnote")
-    static let fileURL = directory.appendingPathComponent("settings.json")
+    static let currentVersion = 1
+    static let isOverridden = ProcessInfo.processInfo.environment["SHOTNOTE_SETTINGS"].map { !$0.isEmpty } ?? false
+    static let fileURL: URL = {
+        if let path = ProcessInfo.processInfo.environment["SHOTNOTE_SETTINGS"], !path.isEmpty {
+            return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/shotnote/settings.json")
+    }()
+    static var directory: URL { fileURL.deletingLastPathComponent() }
 
     @Published private(set) var data: SettingsData
     var onChange: ((SettingsData, SettingsData) -> Void)?
+    /// One sentence for a toast at launch when the file had to be set aside. nil when all was well.
+    let startupNotice: String?
+    /// True when the file was written by a newer Shotnote. Writes would drop its keys, so none happen.
+    private(set) var readOnly = false
 
     private var directorySource: DispatchSourceFileSystemObject?
     private var fileSource: DispatchSourceFileSystemObject?
@@ -104,17 +187,126 @@ final class Settings: ObservableObject {
     private var writeWork: DispatchWorkItem?
 
     private init() {
-        if let loaded = Settings.read() {
-            data = loaded
-            // Fill in any keys the file lacks so every knob is visible to whoever edits it next.
-            let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-            if let full = try? enc.encode(loaded), full != (try? Data(contentsOf: Settings.fileURL)) { writeNow(loaded) }
-        } else {
-            data = SettingsData.fromSystem()
-            writeNow(data)
-            Log.write("[settings] created \(Settings.fileURL.path)")
-        }
+        let boot = Settings.bootstrap(at: Settings.fileURL)
+        data = boot.data
+        startupNotice = boot.notice
+        readOnly = boot.readOnly
+        for line in boot.log { Log.write("[settings] \(line)") }
+        if let written = boot.written { lastWritten = written }
         watch()
+    }
+
+    /// What loading the file produced, before any of it reaches the app.
+    struct Bootstrap {
+        var data: SettingsData
+        var log: [String] = []
+        var notice: String?
+        var readOnly = false
+        var written: Data?
+    }
+
+    /// Reads, migrates, validates, and repairs the file at `url`. A missing file is created from
+    /// Apple's current values. An invalid file is set aside as `<name>.invalid`, never overwritten,
+    /// and replaced by the same first-run defaults. A file from a newer version is used read-only.
+    static func bootstrap(at url: URL) -> Bootstrap {
+        switch load(url) {
+        case .loaded(var loaded):
+            var boot = Bootstrap(data: loaded.data, log: loaded.log)
+            if loaded.fileVersion > currentVersion {
+                boot.readOnly = true
+                boot.log.append("warning file version \(loaded.fileVersion) is newer than this build's \(currentVersion); not writing to it")
+                let validated = loaded.data.validated()
+                boot.data = validated.data
+                boot.log += validated.corrections.map { "warning clamped \($0)" }
+                return boot
+            }
+            if loaded.data.appleOriginal == nil {
+                loaded.data.appleOriginal = AppleOriginal.capture()
+                boot.log.append("recorded Apple's screencapture values as appleOriginal at this launch")
+            }
+            // Fill in any keys the file lacks so every knob is visible to whoever edits it next.
+            if let full = try? encoder().encode(loaded.data), full != (try? Data(contentsOf: url)) {
+                boot.written = write(full, to: url)
+            }
+            let validated = loaded.data.validated()
+            boot.data = validated.data
+            boot.log += validated.corrections.map { "warning clamped \($0)" }
+            return boot
+        case .missing:
+            var d = SettingsData.fromSystem()
+            d.appleOriginal = AppleOriginal.capture()
+            var boot = Bootstrap(data: d)
+            boot.written = (try? encoder().encode(d)).flatMap { write($0, to: url) }
+            boot.log.append("created \(url.path)")
+            return boot
+        case .invalid(let reason):
+            let aside = url.appendingPathExtension("invalid")
+            try? FileManager.default.removeItem(at: aside)
+            let moved = (try? FileManager.default.moveItem(at: url, to: aside)) != nil
+            var d = SettingsData.fromSystem()
+            d.appleOriginal = AppleOriginal.capture()
+            var boot = Bootstrap(data: d)
+            boot.log.append("error settings-invalid \(url.path): \(reason)")
+            if moved {
+                boot.log.append("moved the invalid file to \(aside.path) and replaced it with defaults")
+                boot.written = (try? encoder().encode(d)).flatMap { write($0, to: url) }
+                boot.notice = "settings.json did not parse; kept as settings.json.invalid, defaults in use"
+            } else {
+                boot.log.append("could not move the invalid file aside; running on defaults without writing")
+                boot.readOnly = true
+                boot.notice = "settings.json did not parse; running on defaults"
+            }
+            return boot
+        }
+    }
+
+    enum Load {
+        case missing
+        case invalid(String)
+        case loaded(Loaded)
+    }
+
+    struct Loaded {
+        var data: SettingsData
+        var fileVersion: Int
+        var log: [String] = []
+    }
+
+    /// Reads the file over the defaults, so missing keys (including whole sections) keep their
+    /// defaults. Distinguishes a missing file from one that does not parse.
+    static func load(_ url: URL) -> Load {
+        guard let raw = try? Data(contentsOf: url) else { return .missing }
+        do {
+            guard let fromFile = try JSONSerialization.jsonObject(with: raw) as? [String: Any] else {
+                return .invalid("top level is not an object")
+            }
+            let migrated = migrate(fromFile)
+            let defaults = try JSONSerialization.jsonObject(with: JSONEncoder().encode(SettingsData())) as! [String: Any]
+            let merged = try JSONSerialization.data(withJSONObject: deepMerge(defaults, migrated.json))
+            var loaded = Loaded(data: try JSONDecoder().decode(SettingsData.self, from: merged), fileVersion: migrated.from)
+            if migrated.from < currentVersion { loaded.log.append("migrated from version \(migrated.from) to \(currentVersion)") }
+            return .loaded(loaded)
+        } catch {
+            return .invalid(String(describing: error).replacingOccurrences(of: "\n", with: " "))
+        }
+    }
+
+    /// Brings a file's raw JSON up to `currentVersion`. Files with no `version` are version 0.
+    /// A file from a newer version is returned unchanged. Add a case here for each version bump.
+    static func migrate(_ raw: [String: Any]) -> (json: [String: Any], from: Int) {
+        var json = raw
+        let from = (json["version"] as? Int) ?? 0
+        guard from < currentVersion else { return (json, from) }
+        var version = from
+        while version < currentVersion {
+            switch version {
+            case 0: break   // version 1 only introduced the version field
+            default: break
+            }
+            version += 1
+        }
+        json["version"] = currentVersion
+        return (json, from)
     }
 
     /// Applies immediately; the file write is coalesced so slider drags do not thrash the disk.
@@ -122,18 +314,52 @@ final class Settings: ObservableObject {
         var next = data
         change(&next)
         apply(next, source: "app")
+        scheduleWrite()
+    }
+
+    /// Puts Apple's screencapture defaults back to the recorded originals and mirrors them in the
+    /// settings so the two do not disagree. Returns what changed, or nil when nothing was recorded.
+    func restoreAppleDefaults() -> [String]? {
+        guard let original = data.appleOriginal else { return nil }
+        var restored: [String] = []
+        func put(_ key: String, _ value: Any?) {
+            if let value { AppleScreencapture.set(key, value) } else { AppleScreencapture.remove(key) }
+            restored.append("\(key)=\(value.map { "\($0)" } ?? "unset")")
+        }
+        put("location", original.location)
+        put("show-thumbnail", original.showThumbnail)
+        put("disable-shadow", original.disableShadow)
+        put("type", original.type)
+        var next = data
+        if next.syncAppleSaveLocation, let location = original.location { next.screenshotsFolder = location }
+        next.appleThumbnail = original.showThumbnail ?? true
+        next.windowShadow = !(original.disableShadow ?? false)
+        next.format = original.type ?? "png"
+        apply(next, source: "restore", pushApple: false)
+        scheduleWrite()
+        return restored
+    }
+
+    /// Writes a pending change now. Called on quit so a slider drag's last value is not lost.
+    func flush() {
+        guard let work = writeWork, !work.isCancelled else { return }
+        work.cancel()
+        writeNow(data)
+    }
+
+    private func scheduleWrite() {
         writeWork?.cancel()
         let work = DispatchWorkItem { [weak self] in guard let self else { return }; self.writeNow(self.data) }
         writeWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
-    private func apply(_ next: SettingsData, source: String) {
+    private func apply(_ next: SettingsData, source: String, pushApple: Bool = true) {
         let old = data
         guard next != old else { return }
         data = next
         if next.ui == old.ui { Log.write("[settings] changed via \(source)") }
-        pushToApple(old: old, new: next)
+        if pushApple { pushToApple(old: old, new: next) }
         onChange?(old, next)
     }
 
@@ -149,18 +375,16 @@ final class Settings: ObservableObject {
 
     // MARK: File
 
-    /// Reads the file over the defaults, so missing keys (including whole sections) keep their defaults.
-    private static func read() -> SettingsData? {
-        guard let raw = try? Data(contentsOf: fileURL) else { return nil }
-        do {
-            guard let fromFile = try JSONSerialization.jsonObject(with: raw) as? [String: Any] else { throw CocoaError(.coderInvalidValue) }
-            let defaults = try JSONSerialization.jsonObject(with: JSONEncoder().encode(SettingsData())) as! [String: Any]
-            let merged = try JSONSerialization.data(withJSONObject: deepMerge(defaults, fromFile))
-            return try JSONDecoder().decode(SettingsData.self, from: merged)
-        } catch {
-            Log.write("[settings] could not parse \(fileURL.path): \(error)")
-            return nil
-        }
+    private static func encoder() -> JSONEncoder {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return enc
+    }
+
+    @discardableResult
+    private static func write(_ raw: Data, to url: URL) -> Data? {
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        do { try raw.write(to: url, options: .atomic); return raw } catch { return nil }
     }
 
     private static func deepMerge(_ base: [String: Any], _ over: [String: Any]) -> [String: Any] {
@@ -172,12 +396,10 @@ final class Settings: ObservableObject {
     }
 
     private func writeNow(_ d: SettingsData) {
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let raw = try? enc.encode(d) else { return }
-        try? FileManager.default.createDirectory(at: Settings.directory, withIntermediateDirectories: true)
+        if readOnly { Log.write("[settings] warning not written: the file is from a newer version"); return }
+        guard let raw = try? Settings.encoder().encode(d) else { return }
         lastWritten = raw
-        try? raw.write(to: Settings.fileURL, options: .atomic)
+        Settings.write(raw, to: Settings.fileURL)
         watchFile()   // atomic write replaced the inode
     }
 
@@ -218,11 +440,21 @@ final class Settings: ObservableObject {
 
     private func reloadFromDisk() {
         guard let raw = try? Data(contentsOf: Settings.fileURL), raw != lastWritten else { return }
-        guard let parsed = Settings.read() else {
-            Log.write("[settings] file changed but does not parse; keeping current settings")
+        switch Settings.load(Settings.fileURL) {
+        case .missing:
             return
+        case .invalid(let reason):
+            Log.write("[settings] error settings-invalid file changed but does not parse; keeping current settings: \(reason)")
+        case .loaded(var loaded):
+            for line in loaded.log { Log.write("[settings] \(line)") }
+            // The app owns this record; a pasted or older file must not erase it.
+            if loaded.data.appleOriginal == nil { loaded.data.appleOriginal = data.appleOriginal }
+            let validated = loaded.data.validated()
+            for note in validated.corrections { Log.write("[settings] warning clamped \(note)") }
+            apply(validated.data, source: "file")
+            // Stamp a pre-version file once so the migration does not repeat on every reload.
+            if loaded.fileVersion < Settings.currentVersion { writeNow(loaded.data) }
         }
-        apply(parsed, source: "file")
     }
 }
 
@@ -237,6 +469,12 @@ enum AppleScreencapture {
         CFPreferencesSetAppValue(key as CFString, value as CFPropertyList, domain)
         CFPreferencesAppSynchronize(domain)
         Log.write("[settings] apple \(key)=\(value)")
+    }
+
+    static func remove(_ key: String) {
+        CFPreferencesSetAppValue(key as CFString, nil, domain)
+        CFPreferencesAppSynchronize(domain)
+        Log.write("[settings] apple \(key) unset")
     }
 }
 

@@ -9,6 +9,13 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
   Its `ui` section (`UITweaks`) is every layout, style, timing, and backdrop number; nothing visual
   is hard-coded elsewhere. `open shotnote://tweaks` edits them live.
   Editing the file is a supported way to change settings; the app reloads it within a second.
+  It is the user's real config: never test against it. `SHOTNOTE_SETTINGS=<path>` in the
+  environment (`open -g --env SHOTNOTE_SETTINGS=/tmp/x/settings.json <app>`) points a launch at
+  another file, and the launch line names it. A file that does not parse is moved to
+  `settings.json.invalid` and replaced with defaults; bad numbers are clamped in memory and each
+  one logged as `[settings] warning clamped`. `appleOriginal` in the file records Apple's
+  screencapture values before Shotnote changed them; `open -g shotnote://restore-apple-defaults`
+  puts them back.
 - `web/` React + tldraw editor page. `web/src/config.ts` holds the editor knobs.
 - `Sources/Bridge.swift` and `web/src/bridge.ts` mirror each other. They are the entire
   contract between Swift and the page. Change both or neither.
