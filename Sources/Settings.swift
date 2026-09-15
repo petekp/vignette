@@ -180,6 +180,8 @@ final class Settings: ObservableObject {
     let startupNotice: String?
     /// True when the file was written by a newer Shotnote. Writes would drop its keys, so none happen.
     private(set) var readOnly = false
+    /// True when this launch created the settings file: the app has never run on this machine.
+    let firstLaunch: Bool
 
     private var directorySource: DispatchSourceFileSystemObject?
     private var fileSource: DispatchSourceFileSystemObject?
@@ -192,6 +194,7 @@ final class Settings: ObservableObject {
         data = boot.data
         startupNotice = boot.notice
         readOnly = boot.readOnly
+        firstLaunch = boot.firstLaunch
         for line in boot.log { Log.write("[settings] \(line)") }
         if let written = boot.written { lastWritten = written }
         watch()
@@ -203,6 +206,7 @@ final class Settings: ObservableObject {
         var log: [String] = []
         var notice: String?
         var readOnly = false
+        var firstLaunch = false
         var written: Data?
     }
 
@@ -236,7 +240,7 @@ final class Settings: ObservableObject {
         case .missing:
             var d = SettingsData.fromSystem()
             d.appleOriginal = AppleOriginal.capture()
-            var boot = Bootstrap(data: d)
+            var boot = Bootstrap(data: d, firstLaunch: true)
             boot.written = (try? encoder().encode(d)).flatMap { write($0, to: url) }
             boot.log.append("created \(url.path)")
             return boot

@@ -30,9 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppDelegate.makeMainMenu()
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
         let settingsSource = Settings.isOverridden ? " (SHOTNOTE_SETTINGS)" : ""
-        Log.write("[app] launched \(version) watching \(watchFolder.path) settings \(Settings.fileURL.path)\(settingsSource)")
+        Log.write("[app] launched \(BuildInfo.current.description) watching \(watchFolder.path) settings \(Settings.fileURL.path)\(settingsSource)")
         if let type = AppleScreencapture.string("type"), !ScreenshotWatcher.isCandidate("screenshot.\(type)") {
             Log.write("[settings] warning Apple screencapture type=\(type) is a format the watcher ignores")
         }
@@ -51,6 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         registerHotKey()
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
         if let notice = settings.startupNotice { thumbnail.showFeedback(notice) }
+        else if settings.firstLaunch { thumbnail.showFeedback("Shotnote is watching \(settings.data.screenshotsFolder)") }
+        // The contract for agents: after this line every command answers. The page reports `[web] ready` on its own.
+        Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) port=\(annotator.port) watching=\(watchFolder.path)")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -188,6 +190,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         if Commands.needsDebug(cmd) && !settings.data.debug {
             Commands.error(cmd, .debugDisabled, "set \"debug\": true in settings.json"); return
+        }
+        // Only these three need the editor page. A loading page queues annotate one deep; the others wait for [web] ready.
+        switch (cmd, annotator.pageState) {
+        case ("annotate", .unavailable), ("copy-annotated", .unavailable), ("eval", .unavailable):
+            Commands.error(cmd, .pageNotReady, "the editor page is unavailable; see the [web] lines"); return
+        case ("copy-annotated", .loading), ("eval", .loading):
+            Commands.error(cmd, .pageNotReady, "the editor page is still loading; wait for [web] ready"); return
+        default: break
         }
         switch cmd {
         case "help":

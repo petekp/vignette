@@ -52,7 +52,11 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    Inside the editor page, `open 'shotnote://eval?<javascript>'` runs the code (async, `window.editor`
    is the tldraw editor) and logs the returned value.
 5. Read `~/Library/Logs/Shotnote.log`. Every action, URL command, watcher event, web message,
-   and error lands there with a `[tag]`. `open shotnote://state` dumps current state.
+   and error lands there with a `[tag]`. `open -g shotnote://state` dumps current state.
+   `[app] ready pid=… build=… port=… watching=…` marks the end of launch: after it every command
+   answers. `[web] ready` follows on its own once the editor page is up; `copy-annotated` and
+   `eval` answer `error page-not-ready` before it, `annotate` queues one deep. `build` is
+   `git describe` of the checkout, stamped by build.sh.
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
 Delete test files afterwards; the watch folder is the user's real screenshot folder.

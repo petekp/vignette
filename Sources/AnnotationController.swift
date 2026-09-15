@@ -21,7 +21,18 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private var container: NSView?
     private var current: Screenshot?
     private var pageReady = false
+    private var pageFailed = false
     private var pendingScript: String?
+
+    enum PageState { case unavailable, loading, ready }
+    /// Whether the editor page can take a call: `loading` calls are queued one deep, `unavailable`
+    /// means there is no page to wait for (bundle or server missing, or the load failed).
+    var pageState: PageState {
+        if pageReady { return .ready }
+        if webView == nil || pageFailed { return .unavailable }
+        return .loading
+    }
+    var port: UInt16 { server?.port ?? 0 }
     private var outsideClickMonitor: Any?
     private var exportCompletion: (([String: Data]) -> Void)?
 
@@ -279,10 +290,12 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        pageFailed = true
         Log.write("[web] failed to load: \(error.localizedDescription)")
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        pageFailed = true
         Log.write("[web] navigation failed: \(error.localizedDescription)")
     }
 }

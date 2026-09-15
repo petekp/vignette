@@ -23,6 +23,9 @@ targets:
       properties:
         CFBundleName: Shotnote
         CFBundleDisplayName: Shotnote
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ShotnoteBuild: $(SHOTNOTE_BUILD)
         LSUIElement: true
         NSHighResolutionCapable: true
         CFBundleURLTypes:
@@ -32,6 +35,10 @@ targets:
       base:
         SWIFT_VERSION: "5.10"
         PRODUCT_BUNDLE_IDENTIFIER: com.petepetrash.shotnote
+        # build.sh overrides these from git; the defaults are for a build straight from Xcode.
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "0"
+        SHOTNOTE_BUILD: "local"
         # A real identity keeps the signature stable across builds, so Accessibility trust survives
         # a rebuild. Ad-hoc ("-") signs each build differently and macOS drops the grant.
         CODE_SIGN_IDENTITY: "Developer ID Application"

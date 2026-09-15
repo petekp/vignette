@@ -12,9 +12,14 @@ for arg in "$@"; do
 done
 (cd web && pnpm build)
 xcodegen generate >/dev/null
-xcodebuild -project Shotnote.xcodeproj -scheme Shotnote -configuration Debug -derivedDataPath build build -quiet
-echo "built: $PWD/build/Build/Products/Debug/Shotnote.app"
+# The bundle carries the git state: commit count as CFBundleVersion, describe as ShotnoteBuild.
+number=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+build=$(git describe --always --dirty 2>/dev/null || echo local)
+stamp=(CURRENT_PROJECT_VERSION="$number" SHOTNOTE_BUILD="$build")
+xcodebuild -project Shotnote.xcodeproj -scheme Shotnote -configuration Debug -derivedDataPath build build -quiet "${stamp[@]}"
+echo "built: $PWD/build/Build/Products/Debug/Shotnote.app ($build)"
 if $run_tests; then
-  xcodebuild -project Shotnote.xcodeproj -scheme Shotnote -destination 'platform=macOS' -derivedDataPath build test -quiet
+  # Same stamp, or the test run rebuilds the app with the project defaults.
+  xcodebuild -project Shotnote.xcodeproj -scheme Shotnote -destination 'platform=macOS' -derivedDataPath build test -quiet "${stamp[@]}"
   echo "tests: passed"
 fi
