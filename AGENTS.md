@@ -13,7 +13,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
 - `Sources/Bridge.swift` and `web/src/bridge.ts` mirror each other. They are the entire
   contract between Swift and the page. Change both or neither.
 - `scripts/build.sh` builds web, regenerates the Xcode project, builds the app.
-  `scripts/run.sh` does that and relaunches.
+  `scripts/run.sh` does that and relaunches. `scripts/build.sh --test` also runs the unit tests
+  in `Tests/` (the `ShotnoteTests` target compiles `Sources/` itself; it never launches the app).
 
 ## The loop
 

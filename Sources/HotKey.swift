@@ -25,7 +25,7 @@ final class HotKey {
         if let handler { RemoveEventHandler(handler) }
     }
 
-    enum Combo {
+    enum Combo: Equatable {
         case key(keyCode: UInt32, modifiers: UInt32)
         /// A modifier key tapped twice, e.g. "double-rshift". Needs Accessibility permission.
         case doubleTap(keyCode: UInt16)

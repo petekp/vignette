@@ -39,3 +39,30 @@ targets:
         CODE_SIGN_STYLE: Manual
         ENABLE_HARDENED_RUNTIME: false
         ENABLE_APP_SANDBOX: false
+  ShotnoteTests:
+    type: bundle.unit-test
+    platform: macOS
+    # Compiles the app sources into the test bundle instead of loading the app as a test host,
+    # so a test run never launches a second Shotnote against the real settings and watch folder.
+    sources:
+      - path: Tests
+      - path: Sources
+        excludes: [AppDelegate.swift]
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"
+        PRODUCT_BUNDLE_IDENTIFIER: com.petepetrash.shotnote.tests
+        GENERATE_INFOPLIST_FILE: true
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+schemes:
+  Shotnote:
+    build:
+      targets:
+        Shotnote: all
+        ShotnoteTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [ShotnoteTests]
