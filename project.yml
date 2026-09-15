@@ -42,12 +42,15 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "0"
         SHOTNOTE_BUILD: "local"
-        # A real identity keeps the signature stable across builds, so Accessibility trust survives
-        # a rebuild. Ad-hoc ("-") signs each build differently and macOS drops the grant.
-        CODE_SIGN_IDENTITY: "Developer ID Application"
-        DEVELOPMENT_TEAM: U8GTZZSBDM
+        # Ad-hoc by default so any clone builds. build.sh overrides the identity and team from the
+        # gitignored scripts/signing.env; a real certificate keeps the signature stable across
+        # builds, which is what lets Accessibility trust survive a rebuild (see README).
+        CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
-        ENABLE_HARDENED_RUNTIME: false
+        # Hardened runtime from the start, so notarizing later is a certificate and not a redesign.
+        ENABLE_HARDENED_RUNTIME: true
+        # No sandbox: the app writes Apple's com.apple.screencapture defaults, watches a folder the
+        # user names without security-scoped bookmarks, and installs global event monitors.
         ENABLE_APP_SANDBOX: false
   ShotnoteTests:
     type: bundle.unit-test

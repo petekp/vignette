@@ -33,8 +33,28 @@ Cmd+Shift+4  ──►  ~/Dropbox/Screenshots/Screenshot ….png
 ./scripts/run.sh      # builds web, regenerates the Xcode project, builds, relaunches
 ```
 
-Requires Xcode, `xcodegen`, and `pnpm`. The app is unsigned; first launch may need
-right-click → Open.
+Requires Xcode, `xcodegen`, and `pnpm`. `web/dist` must exist before `xcodegen` runs, which is
+why `build.sh` builds the page first; `Info.plist` is generated from `project.yml`, so edit that.
+
+### Signing
+
+Without `scripts/signing.env` the build is ad-hoc signed and runs. The catch is Accessibility:
+the double-tap hotkey needs the app trusted for Accessibility, and macOS ties that grant to the
+app's code signature. An ad-hoc signature is a hash of the build, so every rebuild is a new app
+to macOS and the grant is lost. A certificate fixes that: the signature's designated requirement
+names the certificate, not the build, so trust survives rebuilds (verified with a Developer ID
+certificate). Put yours in the gitignored `scripts/signing.env`:
+
+```
+CODE_SIGN_IDENTITY="Developer ID Application"
+DEVELOPMENT_TEAM=ABCDE12345
+```
+
+A self-signed code-signing certificate made in Keychain Access (Certificate Assistant → Create a
+Certificate, type Code Signing) should work the same way, since its designated requirement also
+names the certificate, but that has not been verified here; leave `DEVELOPMENT_TEAM` empty for it.
+The hardened runtime is on so notarizing later needs no code change. The app is not sandboxed: it
+writes Apple's screencapture defaults, watches a folder you name, and installs global event monitors.
 
 ## The recent stack
 
