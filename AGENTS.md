@@ -84,6 +84,10 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
 - Preload the web view at launch; the annotator must open instantly.
+- Every animation duration goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json
+  scales them, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
+  `toastSeconds`) are not motion. `"ui": {"motion": 0}` makes the stack appear and leave at once,
+  which is what a script wants.
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15 (verified: uniform blur), and a bare CABackdropLayer renders black. Do not retry.

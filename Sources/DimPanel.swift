@@ -24,7 +24,7 @@ final class DimPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     func show(on screen: NSScreen) {
-        let ui = Settings.shared.data.ui
+        let ui = Settings.shared.motionUI
         generation += 1
         setFrame(screen.frame, display: false)
         orderFront(nil)
@@ -34,7 +34,7 @@ final class DimPanel: NSPanel {
     func hide() {
         generation += 1
         let gen = generation
-        alpha.animate(to: 0, duration: Settings.shared.data.ui.dimFade, curve: "easeInOut") { [weak self] in
+        alpha.animate(to: 0, duration: Settings.shared.motionUI.dimFade, curve: "easeInOut") { [weak self] in
             guard let self, self.generation == gen else { return }
             self.orderOut(nil)
         }

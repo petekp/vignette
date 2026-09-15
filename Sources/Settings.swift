@@ -98,6 +98,7 @@ struct UITweaks: Codable, Equatable {
     var relayoutDuration = 0.2
     var expandDuration = 0.38
     var hoverRevealDuration = 0.15
+    var motion = 1.0                 // multiplier on every animation duration, 0 to 1; Reduce Motion forces 0
     // Backdrop
     var backdropWidth = 440.0
     var backdropTint = 0.3           // darkness at the right edge, 0 to 1
@@ -128,6 +129,17 @@ struct UITweaks: Codable, Equatable {
         }
     }
 
+    /// The same tweaks with every animation duration multiplied by `scale`. Dwell times
+    /// (`thumbnailSeconds`, `toastSeconds`) are not motion and stay as they are.
+    func scaledForMotion(_ scale: Double) -> UITweaks {
+        var u = self
+        u.slideInDuration *= scale; u.slideOutDuration *= scale
+        u.staggerDelay *= scale; u.staggerTotalMax *= scale
+        u.relayoutDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
+        u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
+        return u
+    }
+
     /// Bounds outside which a value crashes, divides by zero, or makes NaN. Not design limits.
     static let bounds: [Bound] = [
         Bound("cardMaxWidth", \.cardMaxWidth, 1...10_000), Bound("cardMaxHeight", \.cardMaxHeight, 1...10_000),
@@ -144,7 +156,7 @@ struct UITweaks: Codable, Equatable {
         Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
         Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
         Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("expandDuration", \.expandDuration, 0...60),
-        Bound("hoverRevealDuration", \.hoverRevealDuration, 0...60),
+        Bound("hoverRevealDuration", \.hoverRevealDuration, 0...60), Bound("motion", \.motion, 0...1),
         Bound("backdropWidth", \.backdropWidth, 1...10_000), Bound("backdropTint", \.backdropTint, 0...1),
         Bound("backdropTintStart", \.backdropTintStart, 0...1), Bound("backdropBlurRadius", \.backdropBlurRadius, 0...1000),
         Bound("backdropRampPower", \.backdropRampPower, 0.01...100), Bound("backdropFadeIn", \.backdropFadeIn, 0...60),
@@ -190,6 +202,14 @@ final class Settings: ObservableObject {
 
     @Published private(set) var data: SettingsData
     var onChange: ((SettingsData, SettingsData) -> Void)?
+    /// The system's Reduce Motion switch, kept current by the workspace notification.
+    @Published private(set) var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    private var motionObserver: Any?
+
+    /// 0 to 1: what every animation duration is multiplied by. Reduce Motion makes it 0.
+    var motionScale: Double { Motion.scale(reduceMotion: reduceMotion, multiplier: data.ui.motion) }
+    /// The tweaks every animation reads: layout as in `data.ui`, durations scaled by `motionScale`.
+    var motionUI: UITweaks { data.ui.scaledForMotion(motionScale) }
     /// One sentence for a toast at launch when the file had to be set aside. nil when all was well.
     let startupNotice: String?
     /// True when the file was written by a newer Shotnote. Writes would drop its keys, so none happen.
@@ -212,6 +232,16 @@ final class Settings: ObservableObject {
         for line in boot.log { Log.write("[settings] \(line)") }
         if let written = boot.written { lastWritten = written }
         watch()
+        motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            // Registered with queue: .main, so the notification arrives there.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let now = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                if now != self.reduceMotion { self.reduceMotion = now; Log.write("[settings] reduce motion \(now ? "on" : "off")") }
+            }
+        }
     }
 
     /// What loading the file produced, before any of it reaches the app.
@@ -530,5 +560,12 @@ enum Anim {
             ctx.timingFunction = timing(curve)
             body()
         }, completionHandler: completion)
+    }
+}
+
+/// How much of every animation to play. One rule, so a script or a person can turn motion off.
+enum Motion {
+    static func scale(reduceMotion: Bool, multiplier: Double) -> Double {
+        reduceMotion ? 0 : min(max(multiplier.isFinite ? multiplier : 1, 0), 1)
     }
 }

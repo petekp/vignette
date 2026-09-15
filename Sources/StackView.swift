@@ -3,7 +3,7 @@ import SwiftUI
 @MainActor
 struct StackView: View {
     static func staggerStep(count: Int) -> Double {
-        let ui = Settings.shared.data.ui
+        let ui = Settings.shared.motionUI
         return min(ui.staggerDelay, ui.staggerTotalMax / Double(max(1, count - 1)))
     }
 
@@ -21,9 +21,9 @@ struct StackView: View {
                 column
             }
         }
-        .animation(.easeOut(duration: 0.2), value: model.cards.map(\.id))
-        .animation(.easeOut(duration: 0.15), value: model.inSelectionMode)
-        .animation(.easeOut(duration: 0.15), value: model.feedback)
+        .animation(.easeOut(duration: 0.2 * settings.motionScale), value: model.cards.map(\.id))
+        .animation(.easeOut(duration: 0.15 * settings.motionScale), value: model.inSelectionMode)
+        .animation(.easeOut(duration: 0.15 * settings.motionScale), value: model.feedback)
     }
 
     /// The cards, newest at the bottom, pulled down by `scroll`. What leaves the viewport fades
@@ -142,7 +142,7 @@ private struct CardView: View {
         }
     }
 
-    private var ui: UITweaks { Settings.shared.data.ui }
+    private var ui: UITweaks { Settings.shared.motionUI }
     private var ringColor: Color {
         if selected { return .accentColor }
         if focused { return .white.opacity(0.9) }

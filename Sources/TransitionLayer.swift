@@ -38,7 +38,7 @@ final class TransitionLayer {
 
     /// Moves `id` to `to`. A new flight starts at `from`; an existing one turns from where it is.
     func fly(id: UUID, image: NSImage, from: NSRect, to: NSRect, cornerFrom: CGFloat, cornerTo: CGFloat, on screen: NSScreen, completion: @escaping () -> Void) {
-        let ui = Settings.shared.data.ui
+        let ui = Settings.shared.motionUI
         self.screen = screen
         if !panel.isVisible || panel.frame != screen.frame {
             panel.setFrame(screen.frame, display: false)

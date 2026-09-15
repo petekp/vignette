@@ -122,7 +122,7 @@ final class ThumbnailController {
         if model.isStack { backdrop.refresh(on: screen) }
     }
     private var cardSizes: [NSSize] { model.cards.map(\.size) }
-    private var ui: UITweaks { Settings.shared.data.ui }
+    private var ui: UITweaks { Settings.shared.motionUI }
     private var layout: StackLayout { StackLayout(ui: ui) }
     private var showsBar: Bool { model.isStack && (model.inSelectionMode || model.feedback != nil) }
 

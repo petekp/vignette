@@ -50,7 +50,7 @@ final class BackdropPanel: NSPanel {
     func show(on screen: NSScreen, below panel: NSPanel) {
         refresh(on: screen)
         orderFront(nil)
-        alpha.animate(to: 1, duration: Settings.shared.data.ui.backdropFadeIn)
+        alpha.animate(to: 1, duration: Settings.shared.motionUI.backdropFadeIn)
     }
 
     /// Rebuilds bands, masks, radii, and tint from the current settings without animating.
@@ -83,7 +83,7 @@ final class BackdropPanel: NSPanel {
     }
 
     func hide() {
-        alpha.animate(to: 0, duration: Settings.shared.data.ui.backdropFadeOut, curve: "easeInOut") { [weak self] in
+        alpha.animate(to: 0, duration: Settings.shared.motionUI.backdropFadeOut, curve: "easeInOut") { [weak self] in
             if self?.alphaValue == 0 { self?.orderOut(nil) }
         }
     }
