@@ -27,7 +27,10 @@ targets:
       base:
         SWIFT_VERSION: "5.10"
         PRODUCT_BUNDLE_IDENTIFIER: com.petepetrash.shotnote
-        CODE_SIGN_IDENTITY: "-"
+        # A real identity keeps the signature stable across builds, so Accessibility trust survives
+        # a rebuild. Ad-hoc ("-") signs each build differently and macOS drops the grant.
+        CODE_SIGN_IDENTITY: "Developer ID Application"
+        DEVELOPMENT_TEAM: U8GTZZSBDM
         CODE_SIGN_STYLE: Manual
         ENABLE_HARDENED_RUNTIME: false
         ENABLE_APP_SANDBOX: false

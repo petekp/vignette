@@ -83,6 +83,8 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   250ms for browsers it detects as Safari, which WKWebView is not). `render()` in `App.tsx`
   draws the screenshot on a canvas and layers tldraw's SVG of the annotations alone on top.
 - Swift language mode is 5 (see `project.yml`). No sandbox: the app reads the user's folder.
+  Builds are signed with the Developer ID certificate on this Mac, not ad-hoc: Accessibility
+  trust is tied to the signature, and an ad-hoc signature changes on every build.
 - Settings changes push to Apple's `com.apple.screencapture` defaults (location, show-thumbnail,
   disable-shadow, type). Only keys that changed are written, and never on first run.
 
