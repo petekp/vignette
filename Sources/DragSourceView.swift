@@ -6,12 +6,14 @@ import SwiftUI
 struct DragSource: NSViewRepresentable {
     let urls: () -> [URL]
     let image: NSImage
+    let onPress: (Bool) -> Void
     let onClick: () -> Void
 
     func makeNSView(context: Context) -> DragSourceView { DragSourceView() }
     func updateNSView(_ view: DragSourceView, context: Context) {
         view.urls = urls
         view.image = image
+        view.onPress = onPress
         view.onClick = onClick
     }
 }
@@ -19,6 +21,7 @@ struct DragSource: NSViewRepresentable {
 final class DragSourceView: NSView, NSDraggingSource {
     var urls: () -> [URL] = { [] }
     var image: NSImage?
+    var onPress: (Bool) -> Void = { _ in }
     var onClick: () -> Void = {}
     private var downPoint: NSPoint?
     private var dragging = false
@@ -29,12 +32,14 @@ final class DragSourceView: NSView, NSDraggingSource {
     override func mouseDown(with event: NSEvent) {
         downPoint = event.locationInWindow
         dragging = false
+        onPress(true)
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let start = downPoint, !dragging else { return }
         guard hypot(event.locationInWindow.x - start.x, event.locationInWindow.y - start.y) > 5 else { return }
         dragging = true
+        onPress(false)
         let files = urls()
         guard !files.isEmpty else { return }
         let items = files.map { url -> NSDraggingItem in
@@ -46,6 +51,7 @@ final class DragSourceView: NSView, NSDraggingSource {
     }
 
     override func mouseUp(with event: NSEvent) {
+        onPress(false)
         if !dragging { onClick() }
         downPoint = nil
     }

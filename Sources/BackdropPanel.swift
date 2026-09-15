@@ -14,6 +14,7 @@ final class BackdropPanel: NSPanel {
     private let tint = NSView()
     private let tintLayer = CAGradientLayer()
     private var bands: [TunedEffectView] = []
+    private lazy var alpha = Tween(initial: 0) { [weak self] v in self?.alphaValue = v }
 
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -48,7 +49,7 @@ final class BackdropPanel: NSPanel {
     func show(on screen: NSScreen, below panel: NSPanel) {
         refresh(on: screen)
         orderFront(nil)
-        Anim.run(Settings.shared.data.ui.backdropFadeIn) { animator().alphaValue = 1 }
+        alpha.animate(to: 1, duration: Settings.shared.data.ui.backdropFadeIn)
     }
 
     /// Rebuilds bands, masks, radii, and tint from the current settings without animating.
@@ -81,11 +82,9 @@ final class BackdropPanel: NSPanel {
     }
 
     func hide() {
-        Anim.run(Settings.shared.data.ui.backdropFadeOut, curve: "easeInOut", {
-            animator().alphaValue = 0
-        }, completion: { [weak self] in
+        alpha.animate(to: 0, duration: Settings.shared.data.ui.backdropFadeOut, curve: "easeInOut") { [weak self] in
             if self?.alphaValue == 0 { self?.orderOut(nil) }
-        })
+        }
     }
 
     /// Alpha mask for one band: fades in over the previous band and out over the next, so adjacent

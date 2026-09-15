@@ -15,7 +15,7 @@ enum Config {
         ShotAction(id: "annotate", symbol: "pencil.tip.crop.circle", label: "Annotate", key: .init("\r", []),
                    placement: .card, isDefault: true) { shots, app in if let last = shots.last { app.annotate(last) } },
         ShotAction(id: "paths", symbol: "text.quote", label: "Copy Paths", key: .init("c", [.command, .option]),
-                   placement: .bar) { shots, app in app.copyPaths(shots) },
+                   placement: .shortcut) { shots, app in app.copyPaths(shots) },
         ShotAction(id: "copy-annotated", symbol: "pencil.line", label: "Copy Annotated", key: .init("c", [.command, .shift]),
                    placement: .bar) { shots, app in app.copyAnnotated(shots) },
         ShotAction(id: "stitch", symbol: "rectangle.stack", label: "Stitch", key: .init("s", [.command]),
@@ -28,7 +28,7 @@ enum Config {
 }
 
 struct ShotAction {
-    enum Placement { case card, bar, everywhere }
+    enum Placement { case card, bar, everywhere, shortcut }   // shortcut: keyboard and URL only
     struct Key: Equatable {
         let character: String
         let modifiers: NSEvent.ModifierFlags
@@ -44,8 +44,8 @@ struct ShotAction {
     var minimumCount = 1
     let run: ([Screenshot], Actions) -> Void
 
-    var showsOnCard: Bool { placement != .bar }
-    var showsInBar: Bool { placement != .card }
+    var showsOnCard: Bool { placement == .card || placement == .everywhere }
+    var showsInBar: Bool { placement == .bar || placement == .everywhere }
 }
 
 /// What an action can do. Implemented by AppDelegate.

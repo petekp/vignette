@@ -25,7 +25,9 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    (Cmd+Enter finishes annotating, key code 53 is Esc). The recent stack takes key focus, so
    `keystroke "a" using command down` after `open shotnote://recent` selects all.
    For the global hotkey, the sweep gesture, or drag-out, System Events is not enough: use
-   `scripts/input.py` (CGEvent, needs `pyobjc-framework-Quartz`). `open shotnote://state`
+   `scripts/input.py` (CGEvent, needs `pyobjc-framework-Quartz`). Never send Escape that way to
+   close the stack: if the stack is not key, the keystroke reaches the frontmost app, and in a
+   terminal running an agent that is the interrupt key. Use `open shotnote://dismiss` instead. `open shotnote://state`
    logs each card's frame so a script can aim at circles and images.
    Inspect the pasteboard with JXA: `osascript -l JavaScript -e 'ObjC.import("AppKit"); $.NSPasteboard.generalPasteboard.pasteboardItems.count'`.
    Inside the editor page, `open 'shotnote://eval?<javascript>'` runs the code (async, `window.editor`

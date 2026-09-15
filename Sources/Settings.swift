@@ -14,7 +14,7 @@ struct SettingsData: Codable, Equatable {
     var appleThumbnail = true                // Apple's floating thumbnail; off means the file lands immediately
     var windowShadow = true                  // Apple's window-capture shadow
     var format = "png"                       // png or jpg
-    var recentCount = 5                      // cards in the recent stack
+    var recentCount = 30                      // cards in the recent stack
     var recentHotkey = "cmd+shift+6"         // opens the recent stack
     var hideMenuBarIcon = false              // shotnote://settings still opens the window
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
@@ -48,13 +48,12 @@ struct UITweaks: Codable, Equatable {
     var cardShadowOpacity = 0.35
     var cardShadowY = 6.0
     var hoverScale = 1.03
+    var pressScale = 0.96
+    var hoverDim = 0.35             // darkening of a hovered card behind its buttons
     // Hover buttons and selection
     var buttonSize = 28.0
     var buttonIconSize = 12.0
     var buttonSpacing = 8.0
-    var buttonBottomPadding = 8.0
-    var buttonOpacity = 0.6
-    var buttonHoverOpacity = 0.85
     var selectionCircleSize = 22.0
     var selectionBarHeight = 36.0
     // Timings
@@ -64,6 +63,7 @@ struct UITweaks: Codable, Equatable {
     var slideInCurve = "spring"      // spring, easeOut, easeInOut, linear
     var slideOutDuration = 0.3
     var staggerDelay = 0.05
+    var staggerTotalMax = 0.3        // the last card never starts later than this
     var relayoutDuration = 0.2
     var expandDuration = 0.38
     var hoverRevealDuration = 0.15
@@ -76,6 +76,8 @@ struct UITweaks: Codable, Equatable {
     var backdropRampPower = 2.0      // 1 = linear radius growth, higher keeps the left sharper
     var backdropFadeIn = 0.35
     var backdropFadeOut = 0.3
+    var dimOpacity = 0.35            // screen darkening behind the annotator
+    var dimFade = 0.25
     // Annotator window
     var annotationMinWidth = 480.0
     var annotationMinHeight = 140.0

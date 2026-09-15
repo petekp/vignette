@@ -159,6 +159,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Debug: ends the session as Esc would. `open shotnote://cancel`.
+    func cancelForDebug() { cancel() }
+
     private func cancel() {
         guard current != nil else { return }
         Log.write("[annotate] cancelled")

@@ -82,14 +82,13 @@ struct DebugPanelView: View {
                     Tweak("Shadow opacity", \.cardShadowOpacity, 0...1, step: 0.05)
                     Tweak("Shadow y", \.cardShadowY, -20...30)
                     Tweak("Hover scale", \.hoverScale, 0.9...1.2, step: 0.01)
+                    Tweak("Press scale", \.pressScale, 0.8...1, step: 0.01)
+                    Tweak("Hover dim", \.hoverDim, 0...0.8, step: 0.05)
                 }
                 Section("Hover buttons") {
                     Tweak("Size", \.buttonSize, 16...48)
                     Tweak("Icon size", \.buttonIconSize, 8...24)
                     Tweak("Spacing", \.buttonSpacing, 0...24)
-                    Tweak("Bottom padding", \.buttonBottomPadding, 0...30)
-                    Tweak("Opacity", \.buttonOpacity, 0...1, step: 0.05)
-                    Tweak("Hover opacity", \.buttonHoverOpacity, 0...1, step: 0.05)
                     Tweak("Selection circle", \.selectionCircleSize, 12...36)
                     Tweak("Selection bar height", \.selectionBarHeight, 24...60)
                 }
@@ -102,6 +101,7 @@ struct DebugPanelView: View {
                     }
                     Tweak("Slide out", \.slideOutDuration, 0...1.5, step: 0.05, unit: "s")
                     Tweak("Stagger per card", \.staggerDelay, 0...0.3, step: 0.01, unit: "s")
+                    Tweak("Stagger total max", \.staggerTotalMax, 0...1.5, step: 0.05, unit: "s")
                     Tweak("Relayout", \.relayoutDuration, 0...1, step: 0.05, unit: "s")
                     Tweak("Expand to annotator", \.expandDuration, 0...1.5, step: 0.05, unit: "s")
                     Tweak("Hover reveal", \.hoverRevealDuration, 0...0.6, step: 0.05, unit: "s")
@@ -115,6 +115,8 @@ struct DebugPanelView: View {
                     Tweak("Tint start", \.backdropTintStart, 0...1, step: 0.05)
                     Tweak("Fade in", \.backdropFadeIn, 0...1.5, step: 0.05, unit: "s")
                     Tweak("Fade out", \.backdropFadeOut, 0...1.5, step: 0.05, unit: "s")
+                    Tweak("Dim behind annotator", \.dimOpacity, 0...0.9, step: 0.05)
+                    Tweak("Dim fade", \.dimFade, 0...1, step: 0.05, unit: "s")
                 }
                 Section("Annotator") {
                     Tweak("Min width", \.annotationMinWidth, 200...1200, step: 10)

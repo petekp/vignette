@@ -166,6 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             case "settings": settingsWindow.show()
             case "tweaks": debugPanel.toggle()
             case "show-editor": annotator.presentEmpty()
+            case "dismiss": thumbnail.dismiss()
+            case "cancel": annotator.cancelForDebug()
             case "eval": annotator.evalForDebug(url.query?.removingPercentEncoding ?? "")
             default:
                 guard let action = Config.action(id: command) else {

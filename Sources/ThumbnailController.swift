@@ -4,12 +4,12 @@ import SwiftUI
 struct Card: Identifiable {
     let id: UUID
     let shot: Screenshot
-    let image: NSImage
-    let size: NSSize
+    var image: NSImage        // thumbnail-sized, or the draft preview
+    let pointSize: NSSize     // the screenshot in points, for the annotator frame
+    let size: NSSize          // the card on screen
 
-    init(shot: Screenshot, image: NSImage, size: NSSize, id: UUID = UUID()) {
-        self.id = id; self.shot = shot; self.image = image; self.size = size
-    }
+    func with(image: NSImage) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size) }
+    func with(size: NSSize) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size) }
 }
 
 final class StackModel: ObservableObject {
@@ -19,23 +19,27 @@ final class StackModel: ObservableObject {
     @Published var outCards: Set<UUID> = []    // cards currently in the annotator; drawn as placeholders
     @Published var drafts: Set<String> = []    // file paths with annotations in progress
     @Published var feedback: String? = nil
-    @Published var hoveredCard: UUID? = nil
+    @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
+    @Published var pressedCard: UUID? = nil
     @Published var selected: Set<UUID> = []
     @Published var focused: UUID? = nil        // keyboard focus ring
     @Published var isStack = false             // selection UI only exists in the recent stack
+    @Published var scroll: CGFloat = 0         // how far the column is pulled down to show older cards
+    @Published var viewport: CGFloat = 0       // visible height of the column
 
     var inSelectionMode: Bool { !selected.isEmpty }
     var onAction: (ShotAction, [Card]) -> Void = { _, _ in }
-    var onSweep: (CGFloat) -> Void = { _ in }       // y from the panel top, during a drag from a circle
+    var onSweep: (CGFloat) -> Void = { _ in }       // y from the column top, during a drag from a circle
     var onSweepEnd: () -> Void = {}
     var onClickImage: (Card) -> Void = { _ in }
+    var onHover: (UUID?) -> Void = { _ in }
 
     /// Cards for a bulk action, oldest first.
     func selectedCards() -> [Card] { cards.filter { selected.contains($0.id) }.reversed() }
 }
 
-/// Owns the bottom-right panel: the single fresh-screenshot thumbnail, the recent stack, feedback
-/// toasts, and the transitions into and out of the annotator.
+/// Owns the bottom-right panel: fresh-screenshot thumbnails, the recent stack, feedback toasts,
+/// and the transitions into and out of the annotator.
 final class ThumbnailController {
     weak var actions: Actions?
     /// A card starts travelling to `frame`; the annotator loads the image there while hidden.
@@ -44,26 +48,37 @@ final class ThumbnailController {
     var onAnnotatorShow: (() -> Void)?
     /// A swap, return, or dismissal has started. The annotator parks its draft, hides, then calls back.
     var onAnnotatorHide: ((_ hidden: @escaping () -> Void) -> Void)?
+    /// Space the annotator needs below its window, for the toolbar.
+    var annotatorBelow: () -> CGFloat = { 0 }
 
     private let panel = ThumbnailPanel()
     private let backdrop = BackdropPanel()
-    private let expanders = [ExpandPanel(), ExpandPanel()]
+    private let dim = DimPanel()
+    private let flights = TransitionLayer()
     private let model = StackModel()
     private var hosting: NSHostingView<StackView>!
     private var dismissTimer: Timer?
     private var outsideClickMonitor: Any?
     private var visible = false
+    private var dismissGeneration = 0
+    private var shrinkGeneration = 0
     private var sweepAnchor: Int?
     private var sweepSelecting = true
+    private var sweepBefore: Set<UUID> = []
     private var annotating: Card?
     private var annotationFrame: NSRect = .zero
     /// Renderings of drafts, by file path. Cards show these instead of the file while a draft exists.
     private var previews: [String: NSImage] = [:]
+    /// Larger decodes for the flight to the annotator, by file path. Filled on hover.
+    private var flightImages: [String: NSImage] = [:]
+    private var flightOrder: [String] = []
+    private let loadQueue = DispatchQueue(label: "shotnote.thumbnails", qos: .userInitiated)
 
     init() {
         hosting = NSHostingView(rootView: StackView(model: model))
         panel.contentView = hosting
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
+        panel.onScroll = { [weak self] event in self?.scroll(event) }
         model.onAction = { [weak self] action, cards in self?.run(action, on: cards) }
         model.onClickImage = { [weak self] card in
             guard let self else { return }
@@ -73,6 +88,7 @@ final class ThumbnailController {
         }
         model.onSweep = { [weak self] y in self?.sweep(toYFromTop: y) }
         model.onSweepEnd = { [weak self] in self?.sweepAnchor = nil }
+        model.onHover = { [weak self] id in self?.prefetchFlightImage(id) }
     }
 
     private var screen: NSScreen { NSScreen.main ?? NSScreen.screens[0] }
@@ -91,16 +107,21 @@ final class ThumbnailController {
     }
 
     var stateDescription: String {
-        "visible=\(visible) stack=\(model.isStack) cards=\(model.cards.map { $0.shot.url.lastPathComponent }) selected=\(model.selectedCards().map { $0.shot.url.lastPathComponent }) focused=\(model.cards.first { $0.id == model.focused }?.shot.url.lastPathComponent ?? "nil") annotating=\(annotating?.shot.url.lastPathComponent ?? "nil") out=\(model.outCards.count) feedback=\(model.feedback ?? "nil") key=\(panel.isKeyWindow)"
+        "visible=\(visible) stack=\(model.isStack) cards=\(model.cards.map { $0.shot.url.lastPathComponent }) selected=\(model.selectedCards().map { $0.shot.url.lastPathComponent }) focused=\(model.cards.first { $0.id == model.focused }?.shot.url.lastPathComponent ?? "nil") annotating=\(annotating?.shot.url.lastPathComponent ?? "nil") out=\(model.outCards.count) feedback=\(model.feedback ?? "nil") key=\(panel.isKeyWindow) scroll=\(Int(model.scroll)) viewport=\(Int(model.viewport)) panel=\(panel.frame)"
     }
 
     // MARK: Public
 
-    /// A fresh screenshot: single card, slides in, leaves after a few seconds unless hovered.
+    /// A fresh screenshot. Joins the bottom of whatever is showing; on its own it leaves after a
+    /// few seconds unless hovered.
     func show(_ shot: Screenshot) {
         guard let card = makeCard(shot) else { return }
-        present(cards: [card], stack: false)
-        scheduleDismiss(after: ui.thumbnailSeconds)
+        if visible {
+            insert(card)
+        } else {
+            present(cards: [card], stack: false)
+        }
+        if !model.isStack { scheduleDismiss(after: ui.thumbnailSeconds) }
     }
 
     /// The recent stack: toggles. Takes keyboard focus. Stays until Esc, the hotkey, or a click elsewhere.
@@ -111,8 +132,17 @@ final class ThumbnailController {
         present(cards: cards, stack: true)
         installOutsideClickMonitor()
         backdrop.show(on: screen, below: panel)
+        takeKeys()
+    }
+
+    /// The panel can refuse key status right after resigning it (a dismissal being reversed), so try twice.
+    private func takeKeys() {
         panel.acceptsKeys = true
         panel.makeKey()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self, self.visible, self.model.isStack, self.annotating == nil, !self.panel.isKeyWindow else { return }
+            self.panel.makeKey()
+        }
     }
 
     /// Opens the annotator on `shot`, or swaps to it if the annotator is already open. Shows the
@@ -130,6 +160,7 @@ final class ThumbnailController {
     func annotationEnded() {
         guard let card = annotating else { return }
         annotating = nil
+        dim.hide()
         if visible && model.isStack { returnCard(currentCard(card)) } else { model.outCards = [] }
     }
 
@@ -138,7 +169,7 @@ final class ThumbnailController {
         // A draft that was emptied or forgotten shows the file again.
         for path in previews.keys where !paths.contains(path) {
             previews[path] = nil
-            if let card = model.cards.first(where: { $0.shot.url.path == path }), let image = NSImage(contentsOf: card.shot.url) {
+            if let card = model.cards.first(where: { $0.shot.url.path == path }), let image = thumbnail(for: card.shot.url, size: card.size, pointSize: card.pointSize) {
                 replaceImage(of: card, with: image)
             }
         }
@@ -147,16 +178,10 @@ final class ThumbnailController {
     func setPreview(_ path: String, _ png: Data) {
         guard let image = NSImage(data: png) else { return }
         previews[path] = image
-        if let card = model.cards.first(where: { $0.shot.url.path == path }) { replaceImage(of: card, with: image) }
-    }
-
-    private func replaceImage(of card: Card, with image: NSImage) {
-        model.cards = model.cards.map { $0.id == card.id ? Card(shot: $0.shot, image: image, size: $0.size, id: $0.id) : $0 }
-    }
-
-    /// The card as it is now; `annotating` may hold an image from before its draft was rendered.
-    private func currentCard(_ card: Card) -> Card {
-        model.cards.first { $0.id == card.id } ?? card
+        if let card = model.cards.first(where: { $0.shot.url.path == path }) {
+            replaceImage(of: card, with: image)
+            flights.setImage(id: card.id, image)
+        }
     }
 
     /// Drops cards whose files no longer exist.
@@ -165,8 +190,11 @@ final class ThumbnailController {
         if let card = annotating, urls.contains(card.shot.url) {
             annotating = nil
             model.outCards.remove(card.id)
+            dim.hide()
+            flights.end(id: card.id)
             onAnnotatorHide? {}
         }
+        for card in model.cards where urls.contains(card.shot.url) { flights.end(id: card.id) }
         model.cards.removeAll { urls.contains($0.shot.url) }
         model.selected = model.selected.filter { id in model.cards.contains { $0.id == id } }
         if model.cards.isEmpty { dismiss(); return }
@@ -176,12 +204,16 @@ final class ThumbnailController {
     /// Re-applies layout tweaks to whatever is on screen. Called when settings.ui changes.
     func applyTweaks() {
         guard visible else { return }
-        model.cards = model.cards.map { Card(shot: $0.shot, image: $0.image, size: StackLayout.cardSize(for: $0.image.size), id: $0.id) }
+        model.cards = model.cards.map { card in
+            let size = StackLayout.cardSize(for: card.pointSize)
+            let image = previews[card.shot.url.path] ?? thumbnail(for: card.shot.url, size: size, pointSize: card.pointSize) ?? card.image
+            return card.with(size: size).with(image: image)
+        }
         relayout()
         if model.isStack { backdrop.refresh(on: screen) }
     }
 
-    /// In the stack the toast sits under the cards; on its own it replaces the single thumbnail.
+    /// In the stack the toast sits under the cards; on its own it replaces the thumbnails.
     func showFeedback(_ text: String) {
         dismissTimer?.invalidate()
         if visible && model.isStack {
@@ -200,48 +232,47 @@ final class ThumbnailController {
         model.feedback = text
         releaseKeys()
         backdrop.hide()
-        let size = NSSize(width: 220 + StackLayout.inset * 2, height: 40 + StackLayout.inset * 2)
-        slidePanelIn(size: size)
+        present(toast: text)
         scheduleDismiss(after: ui.toastSeconds)
     }
 
     func dismiss() {
         guard visible else { return }
         visible = false
+        dismissGeneration += 1
+        let gen = dismissGeneration
         dismissTimer?.invalidate()
         removeOutsideClickMonitor()
         releaseKeys()
         backdrop.hide()
-        if annotating != nil {
+        if let card = annotating {
             annotating = nil
-            model.outCards = []
+            dim.hide()
             onAnnotatorHide? {}
-        }
-        if model.cards.isEmpty {
-            // Toast-only panel slides out as one piece.
-            let target = StackLayout.offscreenFrame(size: panel.frame.size, on: screen)
-            Anim.run(ui.slideOutDuration, curve: "easeInOut", { panel.animator().setFrame(target, display: true) }, completion: { [weak self] in
-                self?.finishDismiss()
-            })
-            return
+            // The image in the annotator leaves with the stack.
+            var slot = cardFrame(of: card)
+            slot.origin.x += StackLayout.offscreenDistance(cardWidth: slot.width)
+            flights.fly(id: card.id, image: currentCard(card).image, from: annotationFrame, to: slot, cornerFrom: ui.annotationCornerRadius, cornerTo: ui.cardCornerRadius, on: screen) { [weak self] in
+                self?.flights.end(id: card.id)
+            }
         }
         // Cards leave the way they came: staggered, top of the column first (see CardView).
         model.selected = []
         model.slidingOut = true
         model.offscreen = Set(model.cards.map(\.id))
-        let total = ui.slideOutDuration + Double(max(0, model.cards.count - 1)) * ui.staggerDelay + 0.05
-        DispatchQueue.main.asyncAfter(deadline: .now() + total) { [weak self] in self?.finishDismiss() }
-    }
-
-    private func finishDismiss() {
-        guard !visible else { return }
-        panel.orderOut(nil)
-        model.cards = []
-        model.selected = []
-        model.offscreen = []
-        model.slidingOut = false
-        model.feedback = nil
-        FocusReturn.shared.restore(reason: "stack dismissed")
+        let total = ui.slideOutDuration + Double(max(0, model.cards.count - 1)) * StackView.staggerStep(count: model.cards.count) + 0.05
+        DispatchQueue.main.asyncAfter(deadline: .now() + (model.cards.isEmpty ? ui.slideOutDuration : total)) { [weak self] in
+            guard let self, self.dismissGeneration == gen, !self.visible else { return }
+            self.panel.orderOut(nil)
+            self.model.cards = []
+            self.model.selected = []
+            self.model.offscreen = []
+            self.model.outCards = []
+            self.model.slidingOut = false
+            self.model.feedback = nil
+            self.model.scroll = 0
+            FocusReturn.shared.restore(reason: "stack dismissed")
+        }
     }
 
     // MARK: Annotation transitions
@@ -259,11 +290,12 @@ final class ThumbnailController {
         _ = model.outCards.insert(card.id)
         let target = targetFrame(for: card)
         annotationFrame = target
-        let from = cardFrame(of: card)
+        dim.show(on: screen)
         onAnnotatorPrepare?(card.shot, target)
-        expanders[0].animate(image: card.image, from: from, to: target, cornerFrom: ui.cardCornerRadius, cornerTo: ui.annotationCornerRadius) { [weak self] in
+        flights.fly(id: card.id, image: flightImage(for: card), from: cardFrame(of: card), to: target, cornerFrom: ui.cardCornerRadius, cornerTo: ui.annotationCornerRadius, on: screen) { [weak self] in
             guard let self, self.annotating?.id == card.id else { return }
             self.onAnnotatorShow?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { self.flights.end(id: card.id) }
             if !self.model.isStack {
                 // A lone fresh thumbnail has nothing to keep open behind the annotator.
                 self.visible = false
@@ -285,32 +317,62 @@ final class ThumbnailController {
         onAnnotatorHide? { [weak self] in
             guard let self, self.annotating?.id == new.id else { return }
             let old = self.currentCard(old)
-            self.expanders[0].animate(image: old.image, from: from, to: self.cardFrame(of: old), cornerFrom: self.ui.annotationCornerRadius, cornerTo: self.ui.cardCornerRadius) { [weak self] in
+            self.flights.fly(id: old.id, image: old.image, from: from, to: self.cardFrame(of: old), cornerFrom: self.ui.annotationCornerRadius, cornerTo: self.ui.cardCornerRadius, on: self.screen) { [weak self] in
                 self?.model.outCards.remove(old.id)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { self?.flights.end(id: old.id) }
             }
             self.onAnnotatorPrepare?(new.shot, target)
-            self.expanders[1].animate(image: new.image, from: self.cardFrame(of: new), to: target, cornerFrom: self.ui.cardCornerRadius, cornerTo: self.ui.annotationCornerRadius) { [weak self] in
+            self.flights.fly(id: new.id, image: self.flightImage(for: new), from: self.cardFrame(of: new), to: target, cornerFrom: self.ui.cardCornerRadius, cornerTo: self.ui.annotationCornerRadius, on: self.screen) { [weak self] in
                 guard let self, self.annotating?.id == new.id else { return }
                 self.onAnnotatorShow?()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { self.flights.end(id: new.id) }
             }
         }
     }
 
     private func returnCard(_ card: Card) {
-        expanders[0].animate(image: card.image, from: annotationFrame, to: cardFrame(of: card), cornerFrom: ui.annotationCornerRadius, cornerTo: ui.cardCornerRadius) { [weak self] in
+        flights.fly(id: card.id, image: card.image, from: annotationFrame, to: cardFrame(of: card), cornerFrom: ui.annotationCornerRadius, cornerTo: ui.cardCornerRadius, on: screen) { [weak self] in
             self?.model.outCards.remove(card.id)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { self?.flights.end(id: card.id) }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self, self.visible, self.model.isStack else { return }
-            self.panel.acceptsKeys = true
-            self.panel.makeKey()
+            self.takeKeys()
         }
     }
 
     /// Centered in the part of the screen left of the stack, so the annotator never hides the cards.
     private func targetFrame(for card: Card) -> NSRect {
         let avoid = model.isStack ? StackLayout.maxCardWidth + StackLayout.margin * 2 : 0
-        return StackLayout.annotationFrame(for: card.image.size, on: screen, avoidRight: avoid)
+        return StackLayout.annotationFrame(for: card.pointSize, on: screen, avoidRight: avoid, below: annotatorBelow())
+    }
+
+    /// The best image for the flight: the draft preview, a larger decode if hovering fetched one,
+    /// else the thumbnail, upgraded as soon as a larger decode arrives.
+    private func flightImage(for card: Card) -> NSImage {
+        let path = card.shot.url.path
+        if let preview = previews[path] { return preview }
+        if let image = flightImages[path] { return image }
+        prefetchFlightImage(card.id)
+        return card.image
+    }
+
+    private func prefetchFlightImage(_ id: UUID?) {
+        guard let id, let card = model.cards.first(where: { $0.id == id }) else { return }
+        let path = card.shot.url.path
+        guard flightImages[path] == nil, previews[path] == nil else { return }
+        let maxPixel = Int(ceil(max(screen.visibleFrame.width, screen.visibleFrame.height) * (screen.backingScaleFactor)))
+        let url = card.shot.url
+        loadQueue.async { [weak self] in
+            guard let image = Thumbnailer.image(at: url, maxPixel: maxPixel) else { return }
+            DispatchQueue.main.async {
+                guard let self, self.previews[path] == nil else { return }
+                self.flightImages[path] = image
+                self.flightOrder.append(path)
+                if self.flightOrder.count > 4 { self.flightImages[self.flightOrder.removeFirst()] = nil }
+                self.flights.setImage(id: id, image)
+            }
+        }
     }
 
     private func cardFrame(of card: Card) -> NSRect {
@@ -319,7 +381,7 @@ final class ThumbnailController {
     }
 
     private func cardFrame(_ index: Int) -> NSRect {
-        StackLayout.cardFrame(index: index, cards: cardSizes, panelFrame: panel.frame, showsBar: showsBar)
+        StackLayout.cardFrame(index: index, cards: cardSizes, panelFrame: panel.frame, showsBar: showsBar, scroll: model.scroll)
     }
 
     // MARK: Selection
@@ -330,17 +392,21 @@ final class ThumbnailController {
         relayout()
     }
 
+    /// Dragging from a circle selects (or deselects) every card between the start and the cursor.
+    /// Backing up restores cards the drag passed over.
     private func sweep(toYFromTop y: CGFloat) {
         guard let index = StackLayout.cardIndex(atYFromTop: y, cards: cardSizes) else { return }
         if sweepAnchor == nil {
             sweepAnchor = index
             sweepSelecting = !model.selected.contains(model.cards[index].id)
+            sweepBefore = model.selected
         }
-        let range = min(sweepAnchor!, index)...max(sweepAnchor!, index)
-        for i in range {
+        var next = sweepBefore
+        for i in min(sweepAnchor!, index)...max(sweepAnchor!, index) {
             let id = model.cards[i].id
-            if sweepSelecting { model.selected.insert(id) } else { model.selected.remove(id) }
+            if sweepSelecting { next.insert(id) } else { next.remove(id) }
         }
+        model.selected = next
         model.focused = model.cards[index].id
         relayout()
     }
@@ -385,6 +451,11 @@ final class ThumbnailController {
             relayout()
             return true
         }
+        if chars == "a" && mods == [.command, .shift] {
+            model.selected = []
+            relayout()
+            return true
+        }
         for action in Config.actions {
             guard let key = action.key else { continue }
             let matches = (key.character == "\u{7f}" && isDelete) || (key.character == "\r" && isReturn)
@@ -405,6 +476,7 @@ final class ThumbnailController {
         if let current { next = max(0, min(model.cards.count - 1, current + delta)) } else { next = delta < 0 ? model.cards.count - 1 : 0 }
         model.focused = model.cards[next].id
         if extend { model.selected.insert(model.cards[next].id); if let current { model.selected.insert(model.cards[current].id) }; relayout() }
+        scrollToReveal(next)
     }
 
     private func releaseKeys() {
@@ -413,61 +485,144 @@ final class ThumbnailController {
         model.focused = nil
     }
 
+    // MARK: Scrolling
+
+    private var maxScroll: CGFloat {
+        max(0, StackLayout.contentHeight(cards: cardSizes, showsBar: showsBar) - model.viewport)
+    }
+
+    private func scroll(_ event: NSEvent) {
+        guard visible, maxScroll > 0 else { return }
+        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 10
+        // Pulling the column down (fingers moving down) reveals older cards above.
+        model.scroll = min(maxScroll, max(0, model.scroll + delta))
+    }
+
+    private func scrollToReveal(_ index: Int) {
+        let span = StackLayout.cardSpan(index: index, cards: cardSizes, showsBar: showsBar)
+        var target = model.scroll
+        if span.top - model.scroll > model.viewport { target = span.top - model.viewport }
+        if span.bottom - model.scroll < 0 { target = span.bottom }
+        target = min(maxScroll, max(0, target))
+        guard target != model.scroll else { return }
+        withAnimation(.easeOut(duration: ui.relayoutDuration)) { model.scroll = target }
+    }
+
     // MARK: Internals
 
     private func card(for shot: Screenshot) -> Card? {
         model.cards.first { $0.shot.url == shot.url }
     }
 
-    private func makeCard(_ shot: Screenshot) -> Card? {
-        guard let image = previews[shot.url.path] ?? NSImage(contentsOf: shot.url) else { return nil }
-        return Card(shot: shot, image: image, size: StackLayout.cardSize(for: image.size))
+    private func currentCard(_ card: Card) -> Card {
+        model.cards.first { $0.id == card.id } ?? card
     }
 
+    private func replaceImage(of card: Card, with image: NSImage) {
+        model.cards = model.cards.map { $0.id == card.id ? $0.with(image: image) : $0 }
+    }
+
+    private func makeCard(_ shot: Screenshot) -> Card? {
+        guard let pointSize = Thumbnailer.pointSize(of: shot.url) else { return nil }
+        let size = StackLayout.cardSize(for: pointSize)
+        guard let image = previews[shot.url.path] ?? thumbnail(for: shot.url, size: size, pointSize: pointSize) else { return nil }
+        return Card(id: UUID(), shot: shot, image: image, pointSize: pointSize, size: size)
+    }
+
+    /// A decode just large enough for the card's cover fill at this screen's scale, with margin.
+    private func thumbnail(for url: URL, size: NSSize, pointSize: NSSize) -> NSImage? {
+        let cover = max(size.width / max(pointSize.width, 1), size.height / max(pointSize.height, 1))
+        let longest = max(pointSize.width, pointSize.height) * cover * screen.backingScaleFactor * 1.5
+        return Thumbnailer.image(at: url, maxPixel: Int(ceil(longest)))
+    }
+
+    /// Shows a new column. Cards start past the screen edge and arrive staggered, newest first.
     private func present(cards: [Card], stack: Bool) {
         dismissTimer?.invalidate()
-        if annotating != nil { annotating = nil; onAnnotatorHide? {} }
+        dismissGeneration += 1
+        if annotating != nil { annotating = nil; dim.hide(); onAnnotatorHide? {} }
+        flights.endAll()
         model.feedback = nil
         model.hoveredCard = nil
         model.selected = []
         model.outCards = []
         model.focused = nil
         model.isStack = stack
-        model.cards = cards
-        if !stack { releaseKeys() }
-        let size = StackLayout.panelSize(cards: cards.map(\.size), showsBar: false)
-        let resting = StackLayout.restingFrame(size: size, on: screen)
-        if visible {
-            Anim.run(ui.relayoutDuration) { panel.animator().setFrame(resting, display: true) }
-        } else {
-            visible = true
-            panel.setFrame(resting, display: true)
-            panel.orderFrontRegardless()
-        }
-        // Cards start past the screen edge and arrive staggered, bottom of the column first (see CardView).
-        // The offscreen state must be committed before it is cleared, or nothing animates.
         model.slidingOut = false
-        model.offscreen = Set(cards.map(\.id))
+        model.scroll = 0
+        if !stack { releaseKeys() }
+        // A dismissal in progress is simply reversed: the same cards turn around.
+        let reusing = visible && Set(cards.map(\.shot.url)) == Set(model.cards.map(\.shot.url))
+        if !reusing {
+            model.cards = cards
+            model.offscreen = Set(cards.map(\.id))
+        }
+        visible = true
+        layoutPanel(shrinkLater: false)
+        panel.orderFrontRegardless()
+        // The offscreen state must be committed before it is cleared, or nothing animates.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
             guard let self, self.visible else { return }
             self.model.offscreen = []
         }
     }
 
-    private func relayout() {
-        slidePanelIn(size: StackLayout.panelSize(cards: cardSizes, showsBar: showsBar))
+    /// A toast on its own, in the corner.
+    private func present(toast: String) {
+        dismissGeneration += 1
+        model.isStack = false
+        model.slidingOut = false
+        model.scroll = 0
+        visible = true
+        model.viewport = 40
+        panel.setFrame(StackLayout.panelFrame(viewport: 40, on: screen), display: false)
+        panel.orderFrontRegardless()
     }
 
-    private func slidePanelIn(size: NSSize) {
-        let resting = StackLayout.restingFrame(size: size, on: screen)
-        if visible {
-            Anim.run(ui.relayoutDuration, curve: "easeOut") { panel.animator().setFrame(resting, display: true) }
-            return
+    /// A card joins the bottom of the visible column and slides in.
+    private func insert(_ card: Card) {
+        guard !model.cards.contains(where: { $0.shot.url == card.shot.url }) else { return }
+        dismissGeneration += 1
+        if model.feedback != nil && !model.isStack { model.feedback = nil; model.cards = [] }
+        _ = model.offscreen.insert(card.id)
+        model.slidingOut = false
+        model.cards.insert(card, at: 0)
+        if model.cards.count > Settings.shared.data.recentCount, let last = model.cards.last {
+            model.cards.removeLast()
+            model.selected.remove(last.id)
         }
-        visible = true
-        panel.setFrame(StackLayout.offscreenFrame(size: size, on: screen), display: false)
-        panel.orderFrontRegardless()
-        Anim.run(ui.slideInDuration, curve: ui.slideInCurve) { panel.animator().setFrame(resting, display: true) }
+        withAnimation(.easeOut(duration: ui.relayoutDuration)) { model.scroll = 0 }
+        layoutPanel(shrinkLater: false)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            self?.model.offscreen.remove(card.id)
+        }
+    }
+
+    private func relayout() {
+        guard visible else { return }
+        layoutPanel(shrinkLater: true)
+    }
+
+    /// The panel grows at once so nothing is clipped while cards move, and shrinks once they have.
+    /// Its bottom edge never moves; the column is anchored there.
+    private func layoutPanel(shrinkLater: Bool) {
+        let content = StackLayout.contentHeight(cards: cardSizes, showsBar: showsBar)
+        let viewport = StackLayout.viewportHeight(content: content, on: screen)
+        withAnimation(.easeOut(duration: ui.relayoutDuration)) {
+            model.viewport = viewport
+            model.scroll = min(model.scroll, max(0, content - viewport))
+        }
+        let target = StackLayout.panelFrame(viewport: viewport, on: screen)
+        shrinkGeneration += 1
+        if target.height >= panel.frame.height || !panel.isVisible || !shrinkLater {
+            panel.setFrame(target, display: true)
+        } else {
+            let gen = shrinkGeneration
+            DispatchQueue.main.asyncAfter(deadline: .now() + ui.relayoutDuration + 0.1) { [weak self] in
+                guard let self, self.shrinkGeneration == gen, self.visible else { return }
+                self.panel.setFrame(target, display: true)
+            }
+        }
     }
 
     private func scheduleDismiss(after seconds: TimeInterval) {

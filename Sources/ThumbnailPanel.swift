@@ -5,6 +5,7 @@ import AppKit
 final class ThumbnailPanel: NSPanel {
     var acceptsKeys = false
     var onKey: ((NSEvent) -> Bool)?
+    var onScroll: ((NSEvent) -> Void)?
 
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
@@ -29,5 +30,10 @@ final class ThumbnailPanel: NSPanel {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if onKey?(event) == true { return true }
         return super.performKeyEquivalent(with: event)
+    }
+
+    /// Scroll events reach the window under the cursor whether or not it is key.
+    override func scrollWheel(with event: NSEvent) {
+        onScroll?(event)
     }
 }
