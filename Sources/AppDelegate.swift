@@ -63,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[hotkey] recent")
             self?.toggleRecent()
         }
-        switch HotKey.parse(settings.data.recentHotkey) {
+        switch HotKeySpec.parse(settings.data.recentHotkey) {
         case .key(let keyCode, let modifiers):
             hotKey = HotKey(keyCode: keyCode, modifiers: modifiers, action: fire)
         case .doubleTap(let keyCode):

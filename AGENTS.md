@@ -26,11 +26,17 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    (Cmd+Enter finishes annotating, key code 53 is Esc). The recent stack takes key focus, so
    `keystroke "a" using command down` after `open shotnote://recent` selects all.
    For the global hotkey, the sweep gesture, or drag-out, System Events is not enough: use
-   `scripts/input.py` (CGEvent, needs `pyobjc-framework-Quartz`). Never send Escape that way to
-   close the stack: if the stack is not key, the keystroke reaches the frontmost app, and in a
-   terminal running an agent that is the interrupt key. Use `open shotnote://dismiss` instead. `open shotnote://state`
-   logs each card's frame so a script can aim at circles and images.
-   Inspect the pasteboard with JXA: `osascript -l JavaScript -e 'ObjC.import("AppKit"); $.NSPasteboard.generalPasteboard.pasteboardItems.count'`.
+   `scripts/input.sh` (CGEvent; `hotkey double-rshift`, `hotkey cmd+shift+6`, `click X Y`,
+   `drag`, `scroll`, `tap`, `key`; run it with no arguments for the list). It compiles
+   `scripts/input.swift` with `Sources/HotKeySpec.swift` on first use, so it reads the same hotkey
+   strings as settings.json. It posts events only because the terminal it runs from is trusted for
+   Accessibility. Its coordinates are global Core Graphics points: top-left of the main display,
+   y down, so the Studio Display above it has negative y. `shotnote://state` still prints card
+   frames with a bottom-left origin and the screen height; convert with y = height - y.
+   Never send Escape that way to close the stack: if the stack is not key, the keystroke reaches
+   the frontmost app, and in a terminal running an agent that is the interrupt key. Use
+   `open shotnote://dismiss` instead. `open shotnote://state` logs each card's frame so a script
+   can aim at circles and images. `scripts/input.sh pasteboard` prints the pasteboard's item count and types.
    Inside the editor page, `open 'shotnote://eval?<javascript>'` runs the code (async, `window.editor`
    is the tldraw editor) and logs the returned value.
 5. Read `~/Library/Logs/Shotnote.log`. Every action, URL command, watcher event, web message,

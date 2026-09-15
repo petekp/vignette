@@ -70,7 +70,7 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 160)
                         .onSubmit(commitHotkey)
-                        .foregroundStyle(HotKey.parse(hotkeyText) == nil ? .red : .primary)
+                        .foregroundStyle(HotKeySpec.parse(hotkeyText) == nil ? .red : .primary)
                 }
                 Text("Modifiers cmd, shift, opt, ctrl and a key, joined with +, or double-rshift for a double tap of right Shift (asks for Accessibility permission). Press Return to apply.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -103,7 +103,7 @@ struct SettingsView: View {
     }
 
     private func commitHotkey() {
-        guard HotKey.parse(hotkeyText) != nil else { return }
+        guard HotKeySpec.parse(hotkeyText) != nil else { return }
         settings.update { $0.recentHotkey = hotkeyText }
     }
 }
