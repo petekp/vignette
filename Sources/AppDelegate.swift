@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var statusItem: NSStatusItem?
     private var watcher: ScreenshotWatcher?
     private var wakeObserver: Any?
+    private var screenObserver: Any?
     private var hotKey: HotKey?
     private var modifierTap: ModifierTap?
     private let thumbnail = ThumbnailController()
@@ -265,6 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Log.write("[state] watchFolder=\(watchFolder.path) appleThumbnail=\(settings.data.appleThumbnail) recentCount=\(settings.data.recentCount) hotkey=\(settings.data.recentHotkey)")
         Log.write("[state] thumbnail: \(thumbnail.stateDescription)")
         Log.write("[state] cardFrames(x,y,w,h bottom-left origin): \(thumbnail.cardFramesDescription) screen=\(Int(NSScreen.main?.frame.height ?? 0))")
+        Log.write("[state] \(thumbnail.screenDescription)")
         Log.write("[state] annotator: \(annotator.stateDescription)")
         Log.write("[state] backdrop: \(thumbnail.backdropDescription)")
         annotator.dumpPageState()
@@ -389,6 +391,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
             ) { [weak self] _ in self?.watcher?.rescan(reason: "wake") }
+            screenObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+            ) { [weak self] _ in self?.thumbnail.screensChanged() }
         }
     }
 

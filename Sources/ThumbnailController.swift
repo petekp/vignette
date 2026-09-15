@@ -90,7 +90,26 @@ final class ThumbnailController {
         model.onHover = { [weak self] id in self?.prefetchFlightImage(id) }
     }
 
-    private var screen: NSScreen { NSScreen.main ?? NSScreen.screens[0] }
+    /// The screen a presentation started on. `NSScreen.main` follows the active display, which is
+    /// what the user is looking at; pinning it keeps every frame of one presentation on one screen.
+    private var pinnedScreen: NSScreen?
+    private var screen: NSScreen {
+        if let pinned = pinnedScreen, NSScreen.screens.contains(pinned) { return pinned }
+        return NSScreen.main ?? NSScreen.screens[0]
+    }
+    var screenDescription: String {
+        let s = screen
+        return "screen=\"\(s.localizedName)\" screenFrame=\(Int(s.frame.minX)),\(Int(s.frame.minY)),\(Int(s.frame.width)),\(Int(s.frame.height)) pinned=\(pinnedScreen != nil)"
+    }
+
+    /// A display was added, removed, or rearranged. Whatever is showing moves to a screen that exists.
+    func screensChanged() {
+        guard visible else { return }
+        if let pinned = pinnedScreen, !NSScreen.screens.contains(pinned) { pinnedScreen = NSScreen.main ?? NSScreen.screens[0] }
+        Log.write("[screen] changed; relayout on \(screen.localizedName)")
+        relayout()
+        if model.isStack { backdrop.refresh(on: screen) }
+    }
     private var cardSizes: [NSSize] { model.cards.map(\.size) }
     private var ui: UITweaks { Settings.shared.data.ui }
     private var showsBar: Bool { model.isStack && (model.inSelectionMode || model.feedback != nil) }
@@ -285,6 +304,7 @@ final class ThumbnailController {
             self.model.slidingOut = false
             self.model.feedback = nil
             self.model.scroll = 0
+            self.pinnedScreen = nil
             FocusReturn.shared.restore(reason: "stack dismissed")
         }
     }
@@ -555,6 +575,7 @@ final class ThumbnailController {
 
     /// Shows a new column. Cards start past the screen edge and arrive staggered, newest first.
     private func present(cards: [Card], stack: Bool) {
+        if !visible { pinnedScreen = NSScreen.main ?? NSScreen.screens[0] }
         dismissTimer?.invalidate()
         dismissGeneration += 1
         if annotating != nil { annotating = nil; dim.hide(); onAnnotatorHide? {} }
@@ -586,6 +607,7 @@ final class ThumbnailController {
 
     /// A toast on its own, in the corner.
     private func present(toast: String) {
+        if !visible { pinnedScreen = NSScreen.main ?? NSScreen.screens[0] }
         dismissGeneration += 1
         model.isStack = false
         model.slidingOut = false
