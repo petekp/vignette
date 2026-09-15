@@ -101,6 +101,16 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
 - "Click outside" detection goes through `OutsideClick`. A plain global mouse monitor also
   reports clicks on this app's own floating windows (verified: a click inside the annotator
   closed it), so the topmost window under the cursor is checked first.
+- Which image is in the annotator, where it came from, and what is in flight has one owner:
+  `AnnotatorTransition` (a pure reducer) held by `ThumbnailController`. Controllers send events
+  (annotate, shown, parked, close, newShot, dismiss, remove) and run the effects it returns
+  (prepare, show, park, returnCard, hideAnnotator, join). A `prepare` is never emitted while a
+  park is in flight, which is what serializes rapid swaps; a new screenshot during a lone
+  annotation joins the panel instead of closing the editor. Every event logs one
+  `[transition] <event> -> <phase> effects=…` line. The page never hides itself: it asks through
+  `onClosed`, and the reducer decides. The flight image lifts once the annotator is visible and
+  the page has reported `loaded`. Add a sequence to `AnnotatorTransitionTests` before changing
+  the table; the random-sequence test checks the invariants.
 - The annotator window is borderless and sized exactly to the image. Its toolbar is a native
   panel (`AnnotatorToolbar.swift`) placed under the window, never inside the page: the page
   sends its tool and color list in the `ready` message, reports the active tool, and takes

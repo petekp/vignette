@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide(then: hidden) }
         annotator.onFinished = { [weak self] shot, pngData in self?.finishAnnotation(shot, pngData) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
+        annotator.onLoaded = { [weak self] key in self?.thumbnail.pageLoaded(key) }
         annotator.onDraftsChanged = { [weak self] keys in self?.thumbnail.setDrafts(keys) }
         annotator.onDraftPreview = { [weak self] path, png in self?.thumbnail.setPreview(path, png) }
         startWatching()

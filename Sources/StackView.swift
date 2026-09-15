@@ -15,7 +15,7 @@ struct StackView: View {
             Color.clear
             if !model.isStack, let text = model.feedback {
                 FeedbackToast(text: text)
-                    .padding(StackLayout.inset)
+                    .padding(StackLayout.current.inset)
                     .transition(.opacity)
             } else {
                 column
@@ -29,15 +29,15 @@ struct StackView: View {
     /// The cards, newest at the bottom, pulled down by `scroll`. What leaves the viewport fades
     /// out over the panel's inset instead of being cut.
     private var column: some View {
-        let inset = StackLayout.inset
-        return VStack(alignment: .trailing, spacing: StackLayout.spacing) {
+        let inset = StackLayout.current.inset
+        return VStack(alignment: .trailing, spacing: StackLayout.current.spacing) {
             ForEach(Array(model.cards.enumerated().reversed()), id: \.element.id) { index, card in
                 CardView(card: card, index: index, model: model)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
             if model.isStack, let text = model.feedback {
                 FeedbackToast(text: text)
-                    .frame(width: StackLayout.maxCardWidth, height: StackLayout.barHeight)
+                    .frame(width: StackLayout.current.maxCardWidth, height: StackLayout.current.barHeight)
                     .transition(.opacity)
             } else if model.isStack && model.inSelectionMode {
                 SelectionBar(model: model)
@@ -47,7 +47,7 @@ struct StackView: View {
         .coordinateSpace(name: "stack")
         .offset(y: model.scroll)
         .padding(inset)
-        .frame(width: StackLayout.maxCardWidth + inset * 2, height: model.viewport + inset * 2, alignment: .bottom)
+        .frame(width: StackLayout.current.maxCardWidth + inset * 2, height: model.viewport + inset * 2, alignment: .bottom)
         .mask(
             VStack(spacing: 0) {
                 LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: inset)
@@ -135,7 +135,7 @@ private struct CardView: View {
         .animation(.easeOut(duration: ui.hoverRevealDuration), value: hovered)
         .animation(.easeOut(duration: ui.hoverRevealDuration), value: showsButtons)
         // Past the panel's right edge, which sits just beyond the screen edge, so the card slides off screen.
-        .offset(x: offscreen ? StackLayout.offscreenDistance(cardWidth: card.size.width) : 0)
+        .offset(x: offscreen ? StackLayout.current.offscreenDistance(cardWidth: card.size.width) : 0)
         .animation(slideAnimation.delay(slideDelay), value: offscreen)
         .onHover { inside in
             model.hoveredCard = inside ? card.id : (model.hoveredCard == card.id ? nil : model.hoveredCard)
@@ -222,7 +222,7 @@ private struct SelectionBar: View {
             }
         }
         .padding(.horizontal, 4)
-        .frame(width: StackLayout.maxCardWidth, height: StackLayout.barHeight)
+        .frame(width: StackLayout.current.maxCardWidth, height: StackLayout.current.barHeight)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)

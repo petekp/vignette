@@ -8,8 +8,11 @@ import WebKit
 @MainActor
 final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     var onFinished: ((Screenshot, Data) -> Void)?
-    /// The session ended by Esc, click outside, Cmd+W, or Done.
+    /// The page asks to end the session: Esc, click outside, Cmd+W, or Done. The owner decides what
+    /// happens next and calls `hide` when it is time; nothing here hides on its own.
     var onClosed: (() -> Void)?
+    /// The page has the image for this key on its canvas.
+    var onLoaded: ((String) -> Void)?
     /// Paths of screenshots that have annotations in progress.
     var onDraftsChanged: ((Set<String>) -> Void)?
     /// A rendering of a screenshot with its draft, for the stack to show in place of the original.
@@ -20,6 +23,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private var server: LocalServer?
     private var window: AnnotationWindow?
     private var container: NSView?
+    /// The shot the page holds, from `prepare` until `hide` parks it. Not the session: see AnnotatorTransition.
     private var current: Screenshot?
     private var pageReady = false
     private var pageFailed = false
@@ -83,7 +87,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// Parks the draft, then removes the window. `then` runs once the page has sent its preview, so
-    /// a transition that starts there shows the annotations.
+    /// a transition that starts there shows the annotations. Called once per `prepare`, by the reducer.
     func hide(then completion: (() -> Void)? = nil) {
         removeOutsideClickMonitor()
         guard current != nil, pageReady else { hideWindows(); completion?(); return }
@@ -140,7 +144,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             Log.write("[annotate] could not read image \(shot.url.path)")
             return
         }
-        loadStarted = CACurrentMediaTime()
+        loadStarted[shot.url.path] = CACurrentMediaTime()
         let payload = LoadPayload(
             key: shot.url.path,
             dataUrl: "data:image/png;base64," + data.base64EncodedString(),
@@ -173,10 +177,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         return text
     }
 
-    /// Debug: runs JavaScript in the page and logs the result. `open 'shotnote://eval?<code>'`.
-    /// When the current image's `load` was sent, for the `[annotate] loaded` line.
-    private var loadStarted: CFTimeInterval?
+    /// When each image's `load` was sent, by key, for the `[annotate] loaded` line. A swap can have two in flight.
+    private var loadStarted: [String: CFTimeInterval] = [:]
 
+    /// Debug: runs JavaScript in the page and logs the result. `open 'shotnote://eval?<code>'`.
     func evalForDebug(_ code: String) {
         webView.callAsyncJavaScript(code, arguments: [:], in: nil, in: .page) { result in
             switch result {
@@ -188,7 +192,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
 
     /// Debug: shows the editor window without loading an image.
     func presentEmpty() {
-        let frame = StackLayout.annotationFrame(for: NSSize(width: 1200, height: 800), on: NSScreen.main ?? NSScreen.screens[0])
+        let frame = StackLayout.current.annotationFrame(for: NSSize(width: 1200, height: 800), visibleFrame: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame)
         let win = window ?? makeWindow()
         win.setFrame(frame, display: false)
         applyCornerRadius()
@@ -210,14 +214,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private func cancel() {
         guard current != nil else { return }
         Log.write("[annotate] cancelled")
-        close()
-    }
-
-    private func close() {
-        hide { [weak self] in
-            FocusReturn.shared.restore(reason: "annotator closed")
-            self?.onClosed?()
-        }
+        onClosed?()
     }
 
     /// A click outside this app's windows ends the session.
@@ -249,14 +246,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             toolbar.model.tool = tool
             toolbar.model.color = color
         case .loaded(let key):
-            let ms = loadStarted.map { Int((CACurrentMediaTime() - $0) * 1000) } ?? -1
-            loadStarted = nil
+            let ms = loadStarted.removeValue(forKey: key).map { Int((CACurrentMediaTime() - $0) * 1000) } ?? -1
             Log.write("[annotate] loaded \(ms)ms \((key as NSString).lastPathComponent)")
+            onLoaded?(key)
         case .done(let png):
             guard let shot = current else { return }
             onDraftPreview?(shot.url.path, png)
             onFinished?(shot, png)
-            close()
+            onClosed?()
         case .cancel:
             cancel()
         case .log(let text):
