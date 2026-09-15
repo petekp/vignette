@@ -82,6 +82,7 @@ struct UITweaks: Codable, Equatable {
     var annotationMinWidth = 480.0
     var annotationMinHeight = 140.0
     var annotationCornerRadius = 10.0
+    var annotationToolbarGap = 12.0
     var annotationScreenInset = 60.0
 }
 

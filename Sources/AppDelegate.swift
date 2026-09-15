@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.actions = self
         thumbnail.onAnnotatorPrepare = { [weak self] shot, frame in self?.annotator.prepare(shot, in: frame) }
         thumbnail.onAnnotatorShow = { [weak self] in self?.annotator.show() }
+        thumbnail.annotatorBelow = { [weak self] in self?.annotator.spaceBelow ?? 0 }
         thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide(then: hidden) }
         annotator.onFinished = { [weak self] shot, pngData in self?.finishAnnotation(shot, pngData) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }

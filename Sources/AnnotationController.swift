@@ -15,6 +15,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     var onDraftPreview: ((String, Data) -> Void)?
 
     private var webView: WKWebView!
+    private let toolbar = AnnotatorToolbar()
     private var server: LocalServer?
     private var window: AnnotationWindow?
     private var container: NSView?
@@ -24,8 +25,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private var outsideClickMonitor: Any?
     private var exportCompletion: (([String: Data]) -> Void)?
 
+    /// Room the annotator needs below its window: the toolbar and its gap.
+    var spaceBelow: CGFloat { AnnotatorToolbar.height + Settings.shared.data.ui.annotationToolbarGap }
+
     func preload() {
         _ = FocusReturn.shared
+        toolbar.onTool = { [weak self] id in self?.run("window.shotnote && window.shotnote.setTool(\(Self.jsString(id)));") }
+        toolbar.onColor = { [weak self] id in self?.run("window.shotnote && window.shotnote.setColor(\(Self.jsString(id)));") }
+        toolbar.onDone = { [weak self] in self?.run("window.shotnote && window.shotnote.finish();") }
         guard let dist = Bundle.main.url(forResource: "dist", withExtension: nil) else {
             Log.write("[web] web/dist missing from bundle")
             return
@@ -48,6 +55,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let win = window ?? makeWindow()
         win.setFrame(frame, display: false)
         applyCornerRadius()
+        toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         webView.layoutSubtreeIfNeeded()
         sendImage(shot, windowSize: frame.size)
     }
@@ -56,6 +64,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         guard let win = window, current != nil else { return }
         win.alphaValue = 1
         win.makeKeyAndOrderFront(nil)
+        if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
+        toolbar.panel.orderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         installOutsideClickMonitor()
     }
@@ -64,14 +74,25 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// a transition that starts there shows the annotations.
     func hide(then completion: (() -> Void)? = nil) {
         removeOutsideClickMonitor()
-        guard current != nil, pageReady else { window?.orderOut(nil); completion?(); return }
+        guard current != nil, pageReady else { hideWindows(); completion?(); return }
         current = nil
         webView.callAsyncJavaScript("if (window.shotnote) await window.shotnote.park();", arguments: [:], in: nil, in: .page) { [weak self] result in
             if case .failure(let error) = result { Log.write("[web] park failed: \(error)") }
-            self?.window?.orderOut(nil)
+            self?.hideWindows()
             self?.webView.evaluateJavaScript("window.shotnote && window.shotnote.reset();")
             completion?()
         }
+    }
+
+    private func hideWindows() {
+        if let win = window, toolbar.panel.parent === win { win.removeChildWindow(toolbar.panel) }
+        toolbar.panel.orderOut(nil)
+        window?.orderOut(nil)
+    }
+
+    private static func jsString(_ s: String) -> String {
+        guard let json = try? JSONSerialization.data(withJSONObject: [s]), let text = String(data: json, encoding: .utf8) else { return "\"\"" }
+        return String(text.dropFirst().dropLast())
     }
 
     private func makeWindow() -> AnnotationWindow {
@@ -155,7 +176,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let win = window ?? makeWindow()
         win.setFrame(frame, display: false)
         applyCornerRadius()
+        toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         win.makeKeyAndOrderFront(nil)
+        if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
+        toolbar.panel.orderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -194,10 +218,15 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             return
         }
         switch msg {
-        case .ready:
-            Log.write("[web] ready")
+        case .ready(let tools, let colors):
+            Log.write("[web] ready with \(tools.count) tools, \(colors.count) colors")
             pageReady = true
+            toolbar.model.tools = tools
+            toolbar.model.colors = colors
             if let s = pendingScript { run(s); pendingScript = nil }
+        case .tool(let tool, let color):
+            toolbar.model.tool = tool
+            toolbar.model.color = color
         case .done(let png):
             guard let shot = current else { return }
             onDraftPreview?(shot.url.path, png)

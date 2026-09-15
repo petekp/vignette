@@ -10,8 +10,14 @@ export interface LoadPayload {
   viewHeight: number
 }
 
+export interface ToolInfo { id: string; label: string; key: string; symbol: string }
+export interface ColorInfo { id: string; hex: string }
+
 type NativeMessage =
-  | { type: 'ready' }
+  /** The editor is mounted. Carries what the host's toolbar should offer. */
+  | { type: 'ready'; tools: ToolInfo[]; colors: ColorInfo[] }
+  /** The active tool or color changed. */
+  | { type: 'tool'; tool: string | null; color: string }
   | { type: 'done'; png: string }
   | { type: 'cancel' }
   | { type: 'log'; message: string }
@@ -34,6 +40,10 @@ declare global {
       forget(keys: string[]): void
       /** Renders each key's draft to PNG and replies with an `exported` message. */
       export(keys: string[]): void
+      setTool(id: string): void
+      setColor(id: string): void
+      /** Exports the current image and replies with `done`. */
+      finish(): void
     }
     webkit?: { messageHandlers?: { shotnote?: { postMessage(msg: NativeMessage): void } } }
   }

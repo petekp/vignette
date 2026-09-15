@@ -12,9 +12,24 @@ struct LoadPayload: Encodable {
     let viewHeight: Double
 }
 
+struct ToolInfo: Identifiable, Equatable {
+    let id: String
+    let label: String
+    let key: String
+    let symbol: String   // SF Symbol
+}
+
+struct ColorInfo: Identifiable, Equatable {
+    let id: String
+    let hex: String
+}
+
 /// Received from the page via `window.webkit.messageHandlers.shotnote.postMessage(...)`.
 enum WebMessage {
-    case ready
+    /// The editor is mounted. Carries what the toolbar should offer.
+    case ready(tools: [ToolInfo], colors: [ColorInfo])
+    /// The active tool or color changed.
+    case tool(tool: String?, color: String)
     case done(png: Data)
     case cancel
     case log(String)
@@ -28,7 +43,18 @@ enum WebMessage {
     init?(body: Any) {
         guard let dict = body as? [String: Any], let type = dict["type"] as? String else { return nil }
         switch type {
-        case "ready": self = .ready
+        case "ready":
+            let tools = (dict["tools"] as? [[String: Any]] ?? []).compactMap { t -> ToolInfo? in
+                guard let id = t["id"] as? String, let label = t["label"] as? String, let key = t["key"] as? String, let symbol = t["symbol"] as? String else { return nil }
+                return ToolInfo(id: id, label: label, key: key, symbol: symbol)
+            }
+            let colors = (dict["colors"] as? [[String: Any]] ?? []).compactMap { c -> ColorInfo? in
+                guard let id = c["id"] as? String, let hex = c["hex"] as? String else { return nil }
+                return ColorInfo(id: id, hex: hex)
+            }
+            self = .ready(tools: tools, colors: colors)
+        case "tool":
+            self = .tool(tool: dict["tool"] as? String, color: dict["color"] as? String ?? "")
         case "cancel": self = .cancel
         case "log": self = .log(dict["message"] as? String ?? "")
         case "done":

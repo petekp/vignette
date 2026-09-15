@@ -60,8 +60,12 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
 - "Click outside" detection goes through `OutsideClick`. A plain global mouse monitor also
   reports clicks on this app's own floating windows (verified: a click inside the annotator
   closed it), so the topmost window under the cursor is checked first.
-- The annotator window is borderless and sized exactly to the image; the toolbar floats over
-  the bottom edge. `ExpandPanel` carries a card between its stack slot and that frame, and the
+- The annotator window is borderless and sized exactly to the image. Its toolbar is a native
+  panel (`AnnotatorToolbar.swift`) placed under the window, never inside the page: the page
+  sends its tool and color list in the `ready` message, reports the active tool, and takes
+  `setTool`/`setColor`/`finish` calls. Keyboard shortcuts inside the editor (tool keys, undo,
+  delete, Esc, Cmd+Enter) live in `Hotkeys` in `App.tsx`, because tldraw's own shortcuts are part
+  of the UI that `hideUi` removes. `ExpandPanel` carries a card between its stack slot and that frame, and the
   annotator loads the image while hidden (`prepare`) so it can appear the moment the card lands
   (`show`). A swap runs two of these at once. The stack keeps a dashed placeholder in the slot.
 - Annotations in progress are drafts held in the page's memory, keyed by file path. A swap, Esc,
@@ -85,6 +89,7 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   `placement` decides whether it is a hover button on a card, a button in the selection bar, or
   both; `key` gives it a shortcut inside the recent stack. It is a `shotnote://<id>` URL either
   way. Actions always receive a list of screenshots, oldest first.
-- An editor tool or color: edit `web/src/config.ts`.
+- An editor tool or color: edit `web/src/config.ts`. A tool needs an SF Symbol name for the
+  native toolbar; a color needs the hex the swatch shows.
 - A new message across the bridge: add it to both bridge files, then handle it in
   `AnnotationController` and `App.tsx`.

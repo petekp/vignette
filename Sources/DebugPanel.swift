@@ -123,6 +123,7 @@ struct DebugPanelView: View {
                     Tweak("Min height", \.annotationMinHeight, 100...900, step: 10)
                     Tweak("Screen inset", \.annotationScreenInset, 0...200, step: 5)
                     Tweak("Corner radius", \.annotationCornerRadius, 0...30)
+                    Tweak("Toolbar gap", \.annotationToolbarGap, 0...40)
                 }
             }
             .formStyle(.grouped)

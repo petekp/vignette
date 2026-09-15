@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import {
   AssetRecordType,
   Box,
@@ -22,7 +21,7 @@ import {
 } from 'tldraw'
 import 'tldraw/tldraw.css'
 import { LoadPayload, postToNative } from './bridge'
-import { COLORS, DEFAULT_SIZE, DEFAULT_TOOL, TOOLS, ToolId } from './config'
+import { COLORS, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
 
@@ -93,6 +92,15 @@ export function App() {
           postToNative({ type: 'log', message: 'export failed: ' + (err instanceof Error ? err.stack ?? err.message : String(err)) })
         )
       },
+      setTool(id) {
+        if (editor && TOOLS.some((t) => t.id === id)) selectTool(editor, id as ToolId)
+      },
+      setColor(id) {
+        if (editor && COLORS.some((c) => c.id === id)) setColor(editor, id as ColorId)
+      },
+      finish() {
+        if (editor) finish(editor, scaleRef.current)
+      },
     }
     if (editor && pending.current) {
       loadImage(editor, pending.current, scaleRef)
@@ -103,7 +111,7 @@ export function App() {
   const components = useMemo<TLComponents>(
     () => ({
       ContextMenu: null,
-      InFrontOfTheCanvas: () => <Toolbar scaleRef={scaleRef} />,
+      InFrontOfTheCanvas: () => <Hotkeys scaleRef={scaleRef} />,
     }),
     []
   )
@@ -119,7 +127,11 @@ export function App() {
           ed.store.listen(() => { dirty = true }, { scope: 'document', source: 'user' })
           setEditor(ed)
           ;(window as unknown as { editor: Editor }).editor = ed // for `shotnote://eval` debugging
-          postToNative({ type: 'ready' })
+          postToNative({
+            type: 'ready',
+            tools: TOOLS.map(({ id, label, key, symbol }) => ({ id, label, key, symbol })),
+            colors: COLORS.map(({ id, hex }) => ({ id, hex })),
+          })
         }}
       />
     </div>
@@ -154,11 +166,11 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
   }
   fitCamera(editor, w, h)
 
-  editor.setStyleForNextShapes(DefaultColorStyle, COLORS[0])
+  editor.setStyleForNextShapes(DefaultColorStyle, COLORS[0].id)
   editor.setStyleForNextShapes(DefaultSizeStyle, DEFAULT_SIZE)
   editor.setStyleForNextShapes(DefaultDashStyle, 'solid')
   editor.setStyleForNextShapes(DefaultFillStyle, 'none')
-  selectTool(editor, DEFAULT_TOOL)
+  selectTool(editor, draft ? REOPEN_TOOL : DEFAULT_TOOL)
   editor.clearHistory()
 }
 
@@ -198,6 +210,17 @@ function selectTool(editor: Editor, id: ToolId) {
   const t = TOOLS.find((t) => t.id === id)!
   if ('geo' in t) editor.setStyleForNextShapes(GeoShapeGeoStyle, t.geo)
   editor.setCurrentTool(t.tool)
+}
+
+function setColor(editor: Editor, id: ColorId) {
+  editor.setStyleForNextShapes(DefaultColorStyle, id)
+  if (editor.getSelectedShapeIds().length) editor.setStyleForSelectedShapes(DefaultColorStyle, id)
+}
+
+function activeTool(editor: Editor): ToolId | null {
+  const current = editor.getCurrentToolId()
+  if (current === 'geo') return editor.getStyleForNextShape(GeoShapeGeoStyle) === 'ellipse' ? 'ellipse' : 'rectangle'
+  return TOOLS.find((t) => t.tool === current)?.id ?? null
 }
 
 async function finish(editor: Editor, scale: number) {
@@ -261,13 +284,15 @@ async function exportDrafts(editor: Editor, keys: string[], scale: number) {
   postToNative({ type: 'exported', items })
 }
 
-const Toolbar = track(function Toolbar({ scaleRef }: { scaleRef: { current: number } }) {
+/// Keyboard shortcuts (tldraw's own are part of the UI we hide) and tool state for the native toolbar.
+const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: number } }) {
   const editor = useEditor()
-  const currentTool = editor.getCurrentToolId()
-  const currentGeo = editor.getStyleForNextShape(GeoShapeGeoStyle)
-  const currentColor = editor.getStyleForNextShape(DefaultColorStyle)
-  const activeId: ToolId | null =
-    currentTool === 'geo' ? (currentGeo === 'ellipse' ? 'ellipse' : 'rectangle') : (TOOLS.find((t) => t.tool === currentTool)?.id ?? null)
+  const tool = activeTool(editor)
+  const color = editor.getStyleForNextShape(DefaultColorStyle)
+
+  useEffect(() => {
+    postToNative({ type: 'tool', tool, color })
+  }, [tool, color])
 
   // Keep the image fitted when the window is resized.
   useEffect(() => {
@@ -279,82 +304,44 @@ const Toolbar = track(function Toolbar({ scaleRef }: { scaleRef: { current: numb
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const editing = editor.getEditingShapeId() !== null
+      const mod = e.metaKey || e.ctrlKey
       if (e.key === 'Escape' && !editing) {
         e.preventDefault()
         cancel(editor, scaleRef.current)
+        return
       }
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      if (e.key === 'Enter' && mod) {
         e.preventDefault()
         if (editing) editor.setEditingShape(null)
         finish(editor, scaleRef.current)
+        return
+      }
+      if (editing) return
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) editor.redo()
+        else editor.undo()
+        return
+      }
+      if ((e.key === 'Backspace' || e.key === 'Delete') && !mod) {
+        const ids = editor.getSelectedShapeIds()
+        if (ids.length) {
+          e.preventDefault()
+          editor.deleteShapes(ids)
+        }
+        return
+      }
+      if (!mod && !e.altKey) {
+        const t = TOOLS.find((t) => t.key === e.key.toLowerCase())
+        if (t) {
+          e.preventDefault()
+          selectTool(editor, t.id)
+        }
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [editor, scaleRef])
 
-  // Portaled to the body so tldraw's canvas never swallows its pointer events.
-  return createPortal(
-    <div className="toolbar" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="group">
-        {TOOLS.map((t) => (
-          <button key={t.id} className="tool" data-active={activeId === t.id} title={`${t.label} (${t.key})`} onClick={() => selectTool(editor, t.id)}>
-            <ToolIcon id={t.id} />
-          </button>
-        ))}
-      </div>
-      <div className="group">
-        {COLORS.map((c) => (
-          <button
-            key={c}
-            className="swatch"
-            data-active={currentColor === c}
-            data-color={c}
-            title={c}
-            onClick={() => {
-              editor.setStyleForNextShapes(DefaultColorStyle, c)
-              if (editor.getSelectedShapeIds().length) editor.setStyleForSelectedShapes(DefaultColorStyle, c)
-            }}
-          />
-        ))}
-      </div>
-      <div className="group">
-        <button className="tool" title="Undo (⌘Z)" disabled={!editor.getCanUndo()} onClick={() => editor.undo()}>
-          <ToolIcon id="undo" />
-        </button>
-        <button className="tool" title="Redo (⇧⌘Z)" disabled={!editor.getCanRedo()} onClick={() => editor.redo()}>
-          <ToolIcon id="redo" />
-        </button>
-      </div>
-      <div className="group actions">
-        <button className="text" onClick={() => cancel(editor, scaleRef.current)}>
-          Cancel
-        </button>
-        <button className="primary" title="Done (⌘↩)" onClick={() => finish(editor, scaleRef.current)}>
-          Copy &amp; Done
-        </button>
-      </div>
-    </div>,
-    document.body
-  )
+  return null
 })
-
-function ToolIcon({ id }: { id: ToolId | 'undo' | 'redo' }) {
-  const p = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
-  switch (id) {
-    case 'select':
-      return <svg width="18" height="18" viewBox="0 0 18 18"><path {...p} d="M4 3l10 6-4.5 1L7 15z" /></svg>
-    case 'ellipse':
-      return <svg width="18" height="18" viewBox="0 0 18 18"><ellipse {...p} cx="9" cy="9" rx="6.5" ry="5.5" /></svg>
-    case 'rectangle':
-      return <svg width="18" height="18" viewBox="0 0 18 18"><rect {...p} x="3" y="4" width="12" height="10" rx="1.5" /></svg>
-    case 'arrow':
-      return <svg width="18" height="18" viewBox="0 0 18 18"><path {...p} d="M3 15L15 3M8 3h7v7" /></svg>
-    case 'text':
-      return <svg width="18" height="18" viewBox="0 0 18 18"><path {...p} d="M4 4h10M9 4v10M7 14h4" /></svg>
-    case 'undo':
-      return <svg width="18" height="18" viewBox="0 0 18 18"><path {...p} d="M6 5L3 8l3 3M3 8h7a4 4 0 010 8H8" /></svg>
-    case 'redo':
-      return <svg width="18" height="18" viewBox="0 0 18 18"><path {...p} d="M12 5l3 3-3 3M15 8H8a4 4 0 000 8h2" /></svg>
-  }
-}
