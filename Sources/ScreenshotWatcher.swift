@@ -57,7 +57,7 @@ final class ScreenshotWatcher {
 
     static func isCandidate(_ name: String) -> Bool {
         let lower = name.lowercased()
-        guard !lower.hasPrefix("."), !lower.contains("-annotated") else { return false }
+        guard !lower.hasPrefix("."), !lower.contains(Config.annotatedSuffix) else { return false }
         return lower.hasSuffix(".png") || lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg")
     }
 

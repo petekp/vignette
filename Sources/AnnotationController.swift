@@ -2,19 +2,27 @@ import AppKit
 import WebKit
 
 /// Hosts the tldraw editor in a WKWebView. Preloaded at launch so opening feels instant.
-final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigationDelegate, NSWindowDelegate {
+/// Lifecycle: `prepare` sizes the hidden window and loads the image, `show` reveals it once the
+/// card transition has landed, `hide` removes it at once for a swap, and the page's cancel/done
+/// messages end a session through `close`.
+final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     var onFinished: ((Screenshot, Data) -> Void)?
+    /// The session ended by Esc, click outside, Cmd+W, or Done.
+    var onClosed: (() -> Void)?
 
     private var webView: WKWebView!
     private var server: LocalServer?
-    private var window: NSWindow?
+    private var window: AnnotationWindow?
+    private var container: NSView?
     private var current: Screenshot?
     private var pageReady = false
     private var pendingScript: String?
+    private var outsideClickMonitor: Any?
 
     func preload() {
+        _ = FocusReturn.shared
         guard let dist = Bundle.main.url(forResource: "dist", withExtension: nil) else {
-            Log.write("Shotnote: web/dist missing from bundle")
+            Log.write("[web] web/dist missing from bundle")
             return
         }
         let server = LocalServer(root: dist)
@@ -29,47 +37,70 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         webView.load(URLRequest(url: server.indexURL))
     }
 
-    func present(_ shot: Screenshot, from frame: NSRect) {
+    /// Sizes the hidden window to `frame` and loads the image, so the page has rendered by `show`.
+    func prepare(_ shot: Screenshot, in frame: NSRect) {
         current = shot
         let win = window ?? makeWindow()
         win.setFrame(frame, display: false)
-        win.contentView = webView
+        applyCornerRadius()
         webView.layoutSubtreeIfNeeded()
-        // Load after the view has its final size so tldraw's initial camera fit matches the window.
         sendImage(shot, windowSize: frame.size)
-        win.alphaValue = 0
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.12
-            win.animator().alphaValue = 1
-        }
     }
 
-    private func makeWindow() -> NSWindow {
-        let win = NSWindow(contentRect: .zero, styleMask: [.titled, .closable, .fullSizeContentView, .resizable], backing: .buffered, defer: false)
-        win.titlebarAppearsTransparent = true
-        win.titleVisibility = .hidden
-        win.isMovableByWindowBackground = false
+    func show() {
+        guard let win = window, current != nil else { return }
+        win.alphaValue = 1
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        installOutsideClickMonitor()
+    }
+
+    /// Removes the window without ending the session's bookkeeping in the caller. Used for swaps.
+    func hide() {
+        removeOutsideClickMonitor()
+        window?.orderOut(nil)
+        current = nil
+        webView.evaluateJavaScript("window.shotnote && window.shotnote.reset();")
+    }
+
+    private func makeWindow() -> AnnotationWindow {
+        let win = AnnotationWindow(contentRect: .zero, styleMask: [.borderless, .fullSizeContentView], backing: .buffered, defer: false)
+        win.isOpaque = false
+        win.backgroundColor = .clear
+        win.hasShadow = true
         win.level = .floating
-        win.backgroundColor = NSColor(calibratedWhite: 0.1, alpha: 1)
+        win.isMovableByWindowBackground = false
         win.isReleasedWhenClosed = false
-        win.delegate = self
+        win.animationBehavior = .none
+        win.onCloseRequest = { [weak self] in self?.cancel() }
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.masksToBounds = true
+        container.autoresizesSubviews = true
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.width, .height]
+        container.addSubview(webView)
+        win.contentView = container
+        self.container = container
         window = win
         return win
     }
 
+    private func applyCornerRadius() {
+        container?.layer?.cornerRadius = Settings.shared.data.ui.annotationCornerRadius
+        container?.layer?.cornerCurve = .continuous
+    }
+
     private func sendImage(_ shot: Screenshot, windowSize: NSSize) {
-        guard let data = try? Data(contentsOf: shot.url), let rep = NSBitmapImageRep(data: data) else { return }
-        let payload: [String: Any] = [
-            "dataUrl": "data:image/png;base64," + data.base64EncodedString(),
-            "pixelWidth": rep.pixelsWide,
-            "pixelHeight": rep.pixelsHigh,
-            "viewWidth": windowSize.width,
-            "viewHeight": windowSize.height,
-        ]
-        guard let json = try? JSONSerialization.data(withJSONObject: payload),
-              let text = String(data: json, encoding: .utf8) else { return }
+        guard let data = try? Data(contentsOf: shot.url), let rep = NSBitmapImageRep(data: data) else {
+            Log.write("[annotate] could not read image \(shot.url.path)")
+            return
+        }
+        let payload = LoadPayload(
+            dataUrl: "data:image/png;base64," + data.base64EncodedString(),
+            pixelWidth: rep.pixelsWide, pixelHeight: rep.pixelsHigh,
+            viewWidth: windowSize.width, viewHeight: windowSize.height)
+        guard let json = try? JSONEncoder().encode(payload), let text = String(data: json, encoding: .utf8) else { return }
         let script = "window.shotnote && window.shotnote.load(\(text));"
         if pageReady { run(script) } else { pendingScript = script }
     }
@@ -82,77 +113,91 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
 
     /// Debug: shows the editor window without loading an image.
     func presentEmpty() {
-        let frame = StackLayout.annotationFrame(for: NSSize(width: 1200, height: 800), on: NSScreen.main!)
+        let frame = StackLayout.annotationFrame(for: NSSize(width: 1200, height: 800), on: NSScreen.main ?? NSScreen.screens[0])
         let win = window ?? makeWindow()
         win.setFrame(frame, display: false)
-        win.contentView = webView
+        applyCornerRadius()
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    private func cancel() {
+        guard current != nil else { return }
+        Log.write("[annotate] cancelled")
+        close()
+    }
+
     private func close() {
-        guard let win = window else { return }
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.15
-            win.animator().alphaValue = 0
-        }, completionHandler: {
-            win.orderOut(nil)
-            self.webView.evaluateJavaScript("window.shotnote && window.shotnote.reset();")
-        })
-        current = nil
+        hide()
+        FocusReturn.shared.restore(reason: "annotator closed")
+        onClosed?()
+    }
+
+    /// A click outside this app's windows ends the session.
+    private func installOutsideClickMonitor() {
+        removeOutsideClickMonitor()
+        outsideClickMonitor = OutsideClick.monitor { [weak self] in self?.cancel() }
+    }
+
+    private func removeOutsideClickMonitor() {
+        if let m = outsideClickMonitor { NSEvent.removeMonitor(m) }
+        outsideClickMonitor = nil
     }
 
     // MARK: WKScriptMessageHandler
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
-        switch type {
-        case "ready":
-            Log.write("Shotnote web ready")
+        guard let msg = WebMessage(body: message.body) else {
+            Log.write("[web] unrecognized message \(message.body)")
+            return
+        }
+        switch msg {
+        case .ready:
+            Log.write("[web] ready")
             pageReady = true
             if let s = pendingScript { run(s); pendingScript = nil }
-        case "done":
-            guard let shot = current, let b64 = body["png"] as? String else { return }
-            let clean = b64.replacingOccurrences(of: "data:image/png;base64,", with: "")
-            if let data = Data(base64Encoded: clean) { onFinished?(shot, data) }
+        case .done(let png):
+            guard let shot = current else { return }
+            onFinished?(shot, png)
             close()
-        case "cancel":
-            close()
-        case "log":
-            Log.write("Shotnote web: \(body["message"] ?? "")")
-        default:
-            break
+        case .cancel:
+            cancel()
+        case .log(let text):
+            Log.write("[web] \(text)")
         }
     }
 
-    /// Logs what the page has rendered. Driven by shotnote://debug.
-    func dumpState() {
-        webView.evaluateJavaScript("JSON.stringify({title: document.title, root: document.getElementById('root')?.children.length, api: typeof window.shotnote, canvas: document.querySelector('.tl-canvas') != null, images: document.querySelectorAll('.tl-image').length, toolbar: document.querySelector('.toolbar') != null, inner: [innerWidth, innerHeight], container: document.querySelector('.tl-container') != null, html: document.getElementById('root').innerHTML.slice(0, 500), url: location.href})") { result, error in
-            Log.write("Shotnote page state: \(result ?? "nil") error: \(error?.localizedDescription ?? "none")")
+    var stateDescription: String {
+        "current=\(current?.url.lastPathComponent ?? "nil") windowVisible=\(window?.isVisible ?? false) frame=\(window?.frame ?? .zero) pageReady=\(pageReady)"
+    }
+
+    /// Logs what the page has rendered. Driven by shotnote://state.
+    func dumpPageState() {
+        webView.evaluateJavaScript("JSON.stringify({title: document.title, root: document.getElementById('root')?.children.length, api: typeof window.shotnote, canvas: document.querySelector('.tl-canvas') != null, images: document.querySelectorAll('.tl-image').length, toolbar: document.querySelector('.toolbar') != null, inner: [innerWidth, innerHeight], url: location.href})") { result, error in
+            Log.write("[web] page state: \(result ?? "nil") error: \(error?.localizedDescription ?? "none")")
         }
-        Log.write("webView frame=\(webView.frame) hidden=\(webView.isHidden) inWindow=\(webView.window != nil) windowVisible=\(window?.isVisible ?? false) windowFrame=\(window?.frame ?? .zero) contentView=\(String(describing: window?.contentView === webView))")
-        if false {
-        }
+        Log.write("[web] view frame=\(webView.frame) inWindow=\(webView.window != nil) windowVisible=\(window?.isVisible ?? false) windowFrame=\(window?.frame ?? .zero)")
     }
 
     // MARK: WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        Log.write("Shotnote web loaded: \(webView.url?.absoluteString ?? "?")")
+        Log.write("[web] loaded \(webView.url?.absoluteString ?? "?")")
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        Log.write("Shotnote web failed to load: \(error.localizedDescription)")
+        Log.write("[web] failed to load: \(error.localizedDescription)")
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        Log.write("Shotnote web navigation failed: \(error.localizedDescription)")
+        Log.write("[web] navigation failed: \(error.localizedDescription)")
     }
+}
 
-    // MARK: NSWindowDelegate
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        close()
-        return false
-    }
+/// Borderless windows refuse key status by default; the editor needs it for typing and shortcuts.
+final class AnnotationWindow: NSWindow {
+    var onCloseRequest: (() -> Void)?
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+    override func performClose(_ sender: Any?) { onCloseRequest?() }
 }

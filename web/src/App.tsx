@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   AssetRecordType,
   Box,
@@ -8,7 +9,6 @@ import {
   DefaultSizeStyle,
   Editor,
   GeoShapeGeoStyle,
-  SVGContainer,
   TLComponents,
   TLShapeId,
   Tldraw,
@@ -18,18 +18,9 @@ import {
 } from 'tldraw'
 import 'tldraw/tldraw.css'
 import { LoadPayload, postToNative } from './bridge'
+import { COLORS, DEFAULT_SIZE, DEFAULT_TOOL, TOOLS, ToolId } from './config'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
-const TOOLS = [
-  { id: 'select', label: 'Select', key: 'V', tool: 'select' },
-  { id: 'ellipse', label: 'Circle', key: 'O', tool: 'geo', geo: 'ellipse' },
-  { id: 'rectangle', label: 'Rectangle', key: 'R', tool: 'geo', geo: 'rectangle' },
-  { id: 'arrow', label: 'Arrow', key: 'A', tool: 'arrow' },
-  { id: 'text', label: 'Text', key: 'T', tool: 'text' },
-] as const
-type ToolId = (typeof TOOLS)[number]['id']
-const COLORS = ['red', 'yellow', 'light-blue'] as const
-const DEFAULT_TOOL: ToolId = 'ellipse'
 
 export function App() {
   const [editor, setEditor] = useState<Editor | null>(null)
@@ -60,12 +51,7 @@ export function App() {
   const components = useMemo<TLComponents>(
     () => ({
       ContextMenu: null,
-      InFrontOfTheCanvas: () => (
-        <>
-          <ImageMask />
-          <Toolbar scaleRef={scaleRef} />
-        </>
-      ),
+      InFrontOfTheCanvas: () => <Toolbar scaleRef={scaleRef} />,
     }),
     []
   )
@@ -106,6 +92,7 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
   ])
   editor.createShape({ id: IMAGE_ID, type: 'image', x: 0, y: 0, isLocked: true, props: { w, h, assetId } })
 
+  // The host sizes the window to the image's aspect, so 'fit' makes the image flush with the window.
   editor.setCameraOptions({
     constraints: {
       initialZoom: 'fit-max',
@@ -116,10 +103,16 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
       behavior: 'contain',
     },
   })
+  // The host resizes the view right before loading; re-measure so the fit uses the final size.
+  editor.updateViewportScreenBounds(editor.getContainer())
   editor.setCamera(editor.getCamera(), { reset: true })
+  requestAnimationFrame(() => {
+    editor.updateViewportScreenBounds(editor.getContainer())
+    editor.setCamera(editor.getCamera(), { reset: true })
+  })
 
-  editor.setStyleForNextShapes(DefaultColorStyle, 'red')
-  editor.setStyleForNextShapes(DefaultSizeStyle, 'm')
+  editor.setStyleForNextShapes(DefaultColorStyle, COLORS[0])
+  editor.setStyleForNextShapes(DefaultSizeStyle, DEFAULT_SIZE)
   editor.setStyleForNextShapes(DefaultDashStyle, 'solid')
   editor.setStyleForNextShapes(DefaultFillStyle, 'none')
   selectTool(editor, DEFAULT_TOOL)
@@ -167,25 +160,6 @@ function blobToDataUrl(blob: Blob) {
   })
 }
 
-/// Dims everything outside the image so the export bounds are obvious.
-const ImageMask = track(function ImageMask() {
-  const editor = useEditor()
-  const b = editor.getShapePageBounds(IMAGE_ID)
-  if (!b) return null
-  const vp = editor.getViewportScreenBounds()
-  const tl = editor.pageToViewport({ x: b.minX, y: b.minY })
-  const br = editor.pageToViewport({ x: b.maxX, y: b.maxY })
-  const d = [
-    `M -10 -10 L ${vp.maxX + 10} -10 L ${vp.maxX + 10} ${vp.maxY + 10} L -10 ${vp.maxY + 10} Z`,
-    `M ${tl.x} ${tl.y} L ${br.x} ${tl.y} L ${br.x} ${br.y} L ${tl.x} ${br.y} Z`,
-  ].join(' ')
-  return (
-    <SVGContainer className="mask">
-      <path d={d} fillRule="evenodd" />
-    </SVGContainer>
-  )
-})
-
 const Toolbar = track(function Toolbar({ scaleRef }: { scaleRef: { current: number } }) {
   const editor = useEditor()
   const currentTool = editor.getCurrentToolId()
@@ -218,7 +192,8 @@ const Toolbar = track(function Toolbar({ scaleRef }: { scaleRef: { current: numb
     return () => window.removeEventListener('keydown', onKey, true)
   }, [editor, scaleRef])
 
-  return (
+  // Portaled to the body so tldraw's canvas never swallows its pointer events.
+  return createPortal(
     <div className="toolbar" onPointerDown={(e) => e.stopPropagation()}>
       <div className="group">
         {TOOLS.map((t) => (
@@ -258,7 +233,8 @@ const Toolbar = track(function Toolbar({ scaleRef }: { scaleRef: { current: numb
           Copy &amp; Done
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 })
 

@@ -1,10 +1,9 @@
 html, body, #root { margin: 0; height: 100%; background: #1a1a1a; overflow: hidden; }
 .editor { position: fixed; inset: 0; }
 .editor .tl-background { background: #1a1a1a !important; }
-.mask path { fill: rgba(0, 0, 0, 0.55); pointer-events: none; }
 
 .toolbar {
-  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); white-space: nowrap;
   display: flex; align-items: center; gap: 6px; padding: 6px;
   background: rgba(30, 30, 30, 0.86); backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px;

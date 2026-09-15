@@ -22,12 +22,12 @@ final class LocalServer {
         let ready = DispatchSemaphore(value: 0)
         listener.stateUpdateHandler = { [weak self] state in
             if case .ready = state { self?.port = listener.port?.rawValue ?? 0; ready.signal() }
-            if case .failed(let err) = state { Log.write("LocalServer failed: \(err)"); ready.signal() }
+            if case .failed(let err) = state { Log.write("[server] failed: \(err)"); ready.signal() }
         }
         listener.start(queue: queue)
         _ = ready.wait(timeout: .now() + 2)
         self.listener = listener
-        Log.write("LocalServer on port \(port)")
+        Log.write("[server] port \(port)")
     }
 
     private func handle(_ conn: NWConnection) {
