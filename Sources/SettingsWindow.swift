@@ -57,7 +57,7 @@ struct SettingsView: View {
                 }
             }
             Section("Recent stack") {
-                Stepper("Show \(settings.data.recentCount) recent screenshots", value: binding(\.recentCount), in: 1...20)
+                Stepper("Keep \(settings.data.recentCount) recent screenshots in the stack", value: binding(\.recentCount), in: 1...100)
                 LabeledContent("Thumbnail stays for") {
                     HStack {
                         Slider(value: binding(\.ui.thumbnailSeconds), in: 2...15, step: 1)
@@ -72,7 +72,7 @@ struct SettingsView: View {
                         .onSubmit(commitHotkey)
                         .foregroundStyle(HotKey.parse(hotkeyText) == nil ? .red : .primary)
                 }
-                Text("Modifiers cmd, shift, opt, ctrl and a key, joined with +. Press Return to apply.")
+                Text("Modifiers cmd, shift, opt, ctrl and a key, joined with +, or double-rshift for a double tap of right Shift (asks for Accessibility permission). Press Return to apply.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Advanced") {

@@ -44,6 +44,9 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   That is why `LocalServer.swift` serves `web/dist` on 127.0.0.1. Do not switch to file:// or
   a custom scheme.
 - The "Made with tldraw" badge stays. Hiding it breaks the free license.
+- The recent-stack shortcut is either a Carbon hotkey (`HotKey.swift`, no permission needed)
+  or a modifier double tap (`ModifierTap.swift`, `"double-rshift"`), which needs the app trusted
+  for Accessibility because it watches key events with NSEvent monitors.
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
 - Preload the web view at launch; the annotator must open instantly.

@@ -25,8 +25,19 @@ final class HotKey {
         if let handler { RemoveEventHandler(handler) }
     }
 
-    /// Parses "cmd+shift+6", "ctrl+opt+s", "cmd+f5". Returns nil for anything it cannot map.
-    static func parse(_ text: String) -> (keyCode: UInt32, modifiers: UInt32)? {
+    enum Combo {
+        case key(keyCode: UInt32, modifiers: UInt32)
+        /// A modifier key tapped twice, e.g. "double-rshift". Needs Accessibility permission.
+        case doubleTap(keyCode: UInt16)
+    }
+
+    /// Parses "cmd+shift+6", "ctrl+opt+s", "cmd+f5", or "double-rshift" (also lshift, rcmd, lcmd,
+    /// ropt, lopt, rctrl, lctrl). Returns nil for anything it cannot map.
+    static func parse(_ text: String) -> Combo? {
+        let trimmed = text.lowercased().trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("double-"), let code = modifierCodes[String(trimmed.dropFirst("double-".count))] {
+            return .doubleTap(keyCode: code)
+        }
         var mods: UInt32 = 0
         var key: String?
         for raw in text.lowercased().split(separator: "+") {
@@ -40,8 +51,12 @@ final class HotKey {
             }
         }
         guard let key, let code = keyCodes[key] else { return nil }
-        return (code, mods)
+        return .key(keyCode: code, modifiers: mods)
     }
+
+    private static let modifierCodes: [String: UInt16] = [
+        "lshift": 56, "rshift": 60, "lcmd": 55, "rcmd": 54, "lopt": 58, "ropt": 61, "lctrl": 59, "rctrl": 62,
+    ]
 
     private static let keyCodes: [String: UInt32] = [
         "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12, "w": 13,

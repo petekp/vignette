@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var statusItem: NSStatusItem?
     private var watcher: ScreenshotWatcher?
     private var hotKey: HotKey?
+    private var modifierTap: ModifierTap?
     private let thumbnail = ThumbnailController()
     private let annotator = AnnotationController()
     private let settingsWindow = SettingsWindowController()
@@ -56,13 +57,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     private func registerHotKey() {
         hotKey = nil
-        guard let combo = HotKey.parse(settings.data.recentHotkey) else {
-            Log.write("[hotkey] cannot parse \"\(settings.data.recentHotkey)\"; no hotkey registered")
-            return
-        }
-        hotKey = HotKey(keyCode: combo.keyCode, modifiers: combo.modifiers) { [weak self] in
+        modifierTap = nil
+        let fire = { [weak self] in
             Log.write("[hotkey] recent")
             self?.toggleRecent()
+        }
+        switch HotKey.parse(settings.data.recentHotkey) {
+        case .key(let keyCode, let modifiers):
+            hotKey = HotKey(keyCode: keyCode, modifiers: modifiers, action: fire)
+        case .doubleTap(let keyCode):
+            modifierTap = ModifierTap(keyCode: keyCode, action: fire)
+        case nil:
+            Log.write("[hotkey] cannot parse \"\(settings.data.recentHotkey)\"; no hotkey registered")
+            return
         }
         Log.write("[hotkey] registered \(settings.data.recentHotkey)")
     }
