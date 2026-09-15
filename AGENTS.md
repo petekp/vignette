@@ -40,10 +40,16 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
 
 ## Rules that are not obvious from the code
 
-- tldraw hides its editor five seconds after mount on any non-http origin without a license.
-  That is why `LocalServer.swift` serves `web/dist` on 127.0.0.1. Do not switch to file:// or
-  a custom scheme.
-- The "Made with tldraw" badge stays. Hiding it breaks the free license.
+- tldraw is licensed, not open source. Without a license key the SDK treats any `http:` origin
+  as a development environment and shows the editor with a "Get a license for production"
+  watermark; on `file://` or a custom scheme it hides the editor five seconds after mount.
+  `LocalServer.swift` serves `web/dist` on 127.0.0.1 to give the page that http origin. Do not
+  switch to file:// or a custom scheme. The license reserves development environments for
+  internal use, so the app ships only with a key: `App.tsx` passes `VITE_TLDRAW_LICENSE_KEY`
+  from the build environment as the `licenseKey` prop, and the Hobby key waits until the repo
+  is public (docs/foundation-review-2026-09-15.md, step 1).
+- The tldraw watermark stays, whatever it says. The license forbids interfering with license
+  key enforcement, and `LICENSE-tldraw.md` must ship verbatim in the bundle (project.yml).
 - The recent-stack shortcut is either a Carbon hotkey (`HotKey.swift`, no permission needed)
   or a modifier double tap (`ModifierTap.swift`, `"double-rshift"`), which needs the app trusted
   for Accessibility because it watches key events with NSEvent monitors.

@@ -13,6 +13,11 @@ targets:
       - path: web/dist
         type: folder
         buildPhase: resources
+      # tldraw's license requires a verbatim copy in any distribution; ship both licenses in the bundle.
+      - path: LICENSE
+        buildPhase: resources
+      - path: LICENSE-tldraw.md
+        buildPhase: resources
     info:
       path: Info.plist
       properties:

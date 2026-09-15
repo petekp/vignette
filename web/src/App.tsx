@@ -120,6 +120,7 @@ export function App() {
     <div className="editor">
       <Tldraw
         hideUi
+        licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}
         components={components}
         onMount={(ed) => {
           ed.user.updateUserPreferences({ colorScheme: 'dark' })
