@@ -17,6 +17,7 @@ final class StackModel: ObservableObject {
     @Published var offscreen: Set<UUID> = []   // cards parked past the right screen edge
     var slidingOut = false                     // picks the exit stagger order and curve for `offscreen`
     @Published var outCards: Set<UUID> = []    // cards currently in the annotator; drawn as placeholders
+    @Published var drafts: Set<String> = []    // file paths with annotations in progress
     @Published var feedback: String? = nil
     @Published var hoveredCard: UUID? = nil
     @Published var selected: Set<UUID> = []
@@ -41,8 +42,8 @@ final class ThumbnailController {
     var onAnnotatorPrepare: ((Screenshot, NSRect) -> Void)?
     /// The card has arrived; the annotator becomes visible in its place.
     var onAnnotatorShow: (() -> Void)?
-    /// A swap, return, or dismissal has started; the annotator hides at once.
-    var onAnnotatorHide: (() -> Void)?
+    /// A swap, return, or dismissal has started. The annotator parks its draft, hides, then calls back.
+    var onAnnotatorHide: ((_ hidden: @escaping () -> Void) -> Void)?
 
     private let panel = ThumbnailPanel()
     private let backdrop = BackdropPanel()
@@ -56,6 +57,8 @@ final class ThumbnailController {
     private var sweepSelecting = true
     private var annotating: Card?
     private var annotationFrame: NSRect = .zero
+    /// Renderings of drafts, by file path. Cards show these instead of the file while a draft exists.
+    private var previews: [String: NSImage] = [:]
 
     init() {
         hosting = NSHostingView(rootView: StackView(model: model))
@@ -127,7 +130,33 @@ final class ThumbnailController {
     func annotationEnded() {
         guard let card = annotating else { return }
         annotating = nil
-        if visible && model.isStack { returnCard(card) } else { model.outCards = [] }
+        if visible && model.isStack { returnCard(currentCard(card)) } else { model.outCards = [] }
+    }
+
+    func setDrafts(_ paths: Set<String>) {
+        model.drafts = paths
+        // A draft that was emptied or forgotten shows the file again.
+        for path in previews.keys where !paths.contains(path) {
+            previews[path] = nil
+            if let card = model.cards.first(where: { $0.shot.url.path == path }), let image = NSImage(contentsOf: card.shot.url) {
+                replaceImage(of: card, with: image)
+            }
+        }
+    }
+
+    func setPreview(_ path: String, _ png: Data) {
+        guard let image = NSImage(data: png) else { return }
+        previews[path] = image
+        if let card = model.cards.first(where: { $0.shot.url.path == path }) { replaceImage(of: card, with: image) }
+    }
+
+    private func replaceImage(of card: Card, with image: NSImage) {
+        model.cards = model.cards.map { $0.id == card.id ? Card(shot: $0.shot, image: image, size: $0.size, id: $0.id) : $0 }
+    }
+
+    /// The card as it is now; `annotating` may hold an image from before its draft was rendered.
+    private func currentCard(_ card: Card) -> Card {
+        model.cards.first { $0.id == card.id } ?? card
     }
 
     /// Drops cards whose files no longer exist.
@@ -136,7 +165,7 @@ final class ThumbnailController {
         if let card = annotating, urls.contains(card.shot.url) {
             annotating = nil
             model.outCards.remove(card.id)
-            onAnnotatorHide?()
+            onAnnotatorHide? {}
         }
         model.cards.removeAll { urls.contains($0.shot.url) }
         model.selected = model.selected.filter { id in model.cards.contains { $0.id == id } }
@@ -186,7 +215,7 @@ final class ThumbnailController {
         if annotating != nil {
             annotating = nil
             model.outCards = []
-            onAnnotatorHide?()
+            onAnnotatorHide? {}
         }
         if model.cards.isEmpty {
             // Toast-only panel slides out as one piece.
@@ -246,19 +275,24 @@ final class ThumbnailController {
     }
 
     /// The current image returns to its slot while the new one travels out, at the same time.
+    /// Both wait for the annotator to park its draft so the returning image carries the drawing.
     private func swap(from old: Card, to new: Card) {
         annotating = new
-        onAnnotatorHide?()
         _ = model.outCards.insert(new.id)
+        let from = annotationFrame
         let target = targetFrame(for: new)
-        expanders[0].animate(image: old.image, from: annotationFrame, to: cardFrame(of: old), cornerFrom: ui.annotationCornerRadius, cornerTo: ui.cardCornerRadius) { [weak self] in
-            self?.model.outCards.remove(old.id)
-        }
         annotationFrame = target
-        onAnnotatorPrepare?(new.shot, target)
-        expanders[1].animate(image: new.image, from: cardFrame(of: new), to: target, cornerFrom: ui.cardCornerRadius, cornerTo: ui.annotationCornerRadius) { [weak self] in
+        onAnnotatorHide? { [weak self] in
             guard let self, self.annotating?.id == new.id else { return }
-            self.onAnnotatorShow?()
+            let old = self.currentCard(old)
+            self.expanders[0].animate(image: old.image, from: from, to: self.cardFrame(of: old), cornerFrom: self.ui.annotationCornerRadius, cornerTo: self.ui.cardCornerRadius) { [weak self] in
+                self?.model.outCards.remove(old.id)
+            }
+            self.onAnnotatorPrepare?(new.shot, target)
+            self.expanders[1].animate(image: new.image, from: self.cardFrame(of: new), to: target, cornerFrom: self.ui.cardCornerRadius, cornerTo: self.ui.annotationCornerRadius) { [weak self] in
+                guard let self, self.annotating?.id == new.id else { return }
+                self.onAnnotatorShow?()
+            }
         }
     }
 
@@ -326,7 +360,8 @@ final class ThumbnailController {
     private func handleKey(_ event: NSEvent) -> Bool {
         guard model.isStack else { return false }
         let mods = event.modifierFlags.intersection([.command, .option, .shift, .control])
-        let chars = event.charactersIgnoringModifiers ?? ""
+        // Shift shortcuts arrive uppercase; action keys are declared lowercase.
+        let chars = (event.charactersIgnoringModifiers ?? "").lowercased()
         // Virtual key codes: 53 esc, 126 up, 125 down, 36 return, 76 enter, 51 delete, 117 fwd delete.
         let code = event.keyCode
         let isReturn = code == 36 || code == 76
@@ -385,13 +420,13 @@ final class ThumbnailController {
     }
 
     private func makeCard(_ shot: Screenshot) -> Card? {
-        guard let image = NSImage(contentsOf: shot.url) else { return nil }
+        guard let image = previews[shot.url.path] ?? NSImage(contentsOf: shot.url) else { return nil }
         return Card(shot: shot, image: image, size: StackLayout.cardSize(for: image.size))
     }
 
     private func present(cards: [Card], stack: Bool) {
         dismissTimer?.invalidate()
-        if annotating != nil { annotating = nil; onAnnotatorHide?() }
+        if annotating != nil { annotating = nil; onAnnotatorHide? {} }
         model.feedback = nil
         model.hoveredCard = nil
         model.selected = []

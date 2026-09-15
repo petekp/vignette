@@ -16,6 +16,8 @@ enum Config {
                    placement: .card, isDefault: true) { shots, app in if let last = shots.last { app.annotate(last) } },
         ShotAction(id: "paths", symbol: "text.quote", label: "Copy Paths", key: .init("c", [.command, .option]),
                    placement: .bar) { shots, app in app.copyPaths(shots) },
+        ShotAction(id: "copy-annotated", symbol: "pencil.line", label: "Copy Annotated", key: .init("c", [.command, .shift]),
+                   placement: .bar) { shots, app in app.copyAnnotated(shots) },
         ShotAction(id: "stitch", symbol: "rectangle.stack", label: "Stitch", key: .init("s", [.command]),
                    placement: .bar, minimumCount: 2) { shots, app in app.stitch(shots) },
         ShotAction(id: "trash", symbol: "trash", label: "Delete", key: .init("\u{7f}", [.command]),
@@ -51,6 +53,8 @@ protocol Actions: AnyObject {
     func copyToClipboard(_ shots: [Screenshot])
     func copyPaths(_ shots: [Screenshot])
     func annotate(_ shot: Screenshot)
+    /// Exports each screenshot's draft (or uses the file as is when it has none) and copies the set.
+    func copyAnnotated(_ shots: [Screenshot])
     func stitch(_ shots: [Screenshot])
     func moveToTrash(_ shots: [Screenshot])
 }

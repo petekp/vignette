@@ -36,9 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.actions = self
         thumbnail.onAnnotatorPrepare = { [weak self] shot, frame in self?.annotator.prepare(shot, in: frame) }
         thumbnail.onAnnotatorShow = { [weak self] in self?.annotator.show() }
-        thumbnail.onAnnotatorHide = { [weak self] in self?.annotator.hide() }
+        thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide(then: hidden) }
         annotator.onFinished = { [weak self] shot, pngData in self?.finishAnnotation(shot, pngData) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
+        annotator.onDraftsChanged = { [weak self] keys in self?.thumbnail.setDrafts(keys) }
+        annotator.onDraftPreview = { [weak self] path, png in self?.thumbnail.setPreview(path, png) }
         startWatching()
         registerHotKey()
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
@@ -105,15 +107,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         }
         thumbnail.remove(shots)
+        annotator.forgetDrafts(shots)
     }
 
+    func copyAnnotated(_ shots: [Screenshot]) {
+        annotator.exportDrafts(shots) { [weak self] pngs in
+            guard let self else { return }
+            var urls: [URL] = []
+            var annotated = 0
+            for shot in shots {
+                if let png = pngs[shot.url.path], let out = self.writeAnnotated(shot, png) { urls.append(out); annotated += 1 }
+                else { urls.append(shot.url) }
+            }
+            Clipboard.copyFiles(urls)
+            Log.write("[copy-annotated] \(urls.count) files, \(annotated) with annotations")
+            self.thumbnail.showFeedback(urls.count == 1 ? "Copied to clipboard" : "Copied \(urls.count) images")
+        }
+    }
+
+    /// Done: the annotated file goes on the clipboard as a file, an image, and its path as text,
+    /// so a terminal pastes the path and a chat app pastes the image.
     private func finishAnnotation(_ shot: Screenshot, _ png: Data) {
+        if let out = writeAnnotated(shot, png) {
+            Clipboard.copyFiles([out])
+            Log.write("[annotate] done \(out.lastPathComponent) \(png.count) bytes, copied")
+        } else {
+            Clipboard.copyPNG(png)
+        }
+        thumbnail.showFeedback("Copied to clipboard")
+    }
+
+    /// Writes `<name>-annotated.png` next to the screenshot.
+    private func writeAnnotated(_ shot: Screenshot, _ png: Data) -> URL? {
         let base = shot.url.deletingPathExtension().lastPathComponent
         let out = shot.url.deletingLastPathComponent().appendingPathComponent("\(base)\(Config.annotatedSuffix).png")
-        do { try png.write(to: out) } catch { Log.write("[annotate] save failed: \(error.localizedDescription)") }
-        Clipboard.copyPNG(png)
-        Log.write("[annotate] done \(out.lastPathComponent) \(png.count) bytes, copied")
-        thumbnail.showFeedback("Copied to clipboard")
+        do { try png.write(to: out); return out } catch {
+            Log.write("[annotate] save failed: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     // MARK: URL commands: shotnote://<command>[?file=/path&file=/other]
@@ -135,6 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             case "settings": settingsWindow.show()
             case "tweaks": debugPanel.toggle()
             case "show-editor": annotator.presentEmpty()
+            case "eval": annotator.evalForDebug(url.query?.removingPercentEncoding ?? "")
             default:
                 guard let action = Config.action(id: command) else {
                     Log.write("[url] unknown command \"\(command)\"")

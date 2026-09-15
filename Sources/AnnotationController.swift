@@ -9,6 +9,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     var onFinished: ((Screenshot, Data) -> Void)?
     /// The session ended by Esc, click outside, Cmd+W, or Done.
     var onClosed: (() -> Void)?
+    /// Paths of screenshots that have annotations in progress.
+    var onDraftsChanged: ((Set<String>) -> Void)?
+    /// A rendering of a screenshot with its draft, for the stack to show in place of the original.
+    var onDraftPreview: ((String, Data) -> Void)?
 
     private var webView: WKWebView!
     private var server: LocalServer?
@@ -18,6 +22,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private var pageReady = false
     private var pendingScript: String?
     private var outsideClickMonitor: Any?
+    private var exportCompletion: (([String: Data]) -> Void)?
 
     func preload() {
         _ = FocusReturn.shared
@@ -55,12 +60,18 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         installOutsideClickMonitor()
     }
 
-    /// Removes the window without ending the session's bookkeeping in the caller. Used for swaps.
-    func hide() {
+    /// Parks the draft, then removes the window. `then` runs once the page has sent its preview, so
+    /// a transition that starts there shows the annotations.
+    func hide(then completion: (() -> Void)? = nil) {
         removeOutsideClickMonitor()
-        window?.orderOut(nil)
+        guard current != nil, pageReady else { window?.orderOut(nil); completion?(); return }
         current = nil
-        webView.evaluateJavaScript("window.shotnote && window.shotnote.reset();")
+        webView.callAsyncJavaScript("if (window.shotnote) await window.shotnote.park();", arguments: [:], in: nil, in: .page) { [weak self] result in
+            if case .failure(let error) = result { Log.write("[web] park failed: \(error)") }
+            self?.window?.orderOut(nil)
+            self?.webView.evaluateJavaScript("window.shotnote && window.shotnote.reset();")
+            completion?()
+        }
     }
 
     private func makeWindow() -> AnnotationWindow {
@@ -97,6 +108,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             return
         }
         let payload = LoadPayload(
+            key: shot.url.path,
             dataUrl: "data:image/png;base64," + data.base64EncodedString(),
             pixelWidth: rep.pixelsWide, pixelHeight: rep.pixelsHigh,
             viewWidth: windowSize.width, viewHeight: windowSize.height)
@@ -108,6 +120,32 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private func run(_ script: String) {
         webView.evaluateJavaScript(script) { _, error in
             if let error { Log.write("evaluateJavaScript failed: \(error)") }
+        }
+    }
+
+    /// Renders the drafts for `shots` at original pixel size. Shots without a draft are left out.
+    func exportDrafts(_ shots: [Screenshot], completion: @escaping ([String: Data]) -> Void) {
+        guard pageReady, exportCompletion == nil else { completion([:]); return }
+        exportCompletion = completion
+        run("window.shotnote && window.shotnote.export(\(jsArray(shots.map(\.url.path))));")
+    }
+
+    func forgetDrafts(_ shots: [Screenshot]) {
+        run("window.shotnote && window.shotnote.forget(\(jsArray(shots.map(\.url.path))));")
+    }
+
+    private func jsArray(_ strings: [String]) -> String {
+        guard let json = try? JSONSerialization.data(withJSONObject: strings), let text = String(data: json, encoding: .utf8) else { return "[]" }
+        return text
+    }
+
+    /// Debug: runs JavaScript in the page and logs the result. `open 'shotnote://eval?<code>'`.
+    func evalForDebug(_ code: String) {
+        webView.callAsyncJavaScript(code, arguments: [:], in: nil, in: .page) { result in
+            switch result {
+            case .success(let value): Log.write("[web] eval: \(String(describing: value ?? "undefined"))")
+            case .failure(let error): Log.write("[web] eval error: \(error)")
+            }
         }
     }
 
@@ -128,9 +166,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     private func close() {
-        hide()
-        FocusReturn.shared.restore(reason: "annotator closed")
-        onClosed?()
+        hide { [weak self] in
+            FocusReturn.shared.restore(reason: "annotator closed")
+            self?.onClosed?()
+        }
     }
 
     /// A click outside this app's windows ends the session.
@@ -158,12 +197,21 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             if let s = pendingScript { run(s); pendingScript = nil }
         case .done(let png):
             guard let shot = current else { return }
+            onDraftPreview?(shot.url.path, png)
             onFinished?(shot, png)
             close()
         case .cancel:
             cancel()
         case .log(let text):
             Log.write("[web] \(text)")
+        case .drafts(let keys):
+            onDraftsChanged?(Set(keys))
+        case .draft(let key, let preview):
+            onDraftPreview?(key, preview)
+        case .exported(let items):
+            let done = exportCompletion
+            exportCompletion = nil
+            done?(Dictionary(items.map { ($0.key, $0.png) }, uniquingKeysWith: { a, _ in a }))
         }
     }
 

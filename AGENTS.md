@@ -28,6 +28,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `scripts/input.py` (CGEvent, needs `pyobjc-framework-Quartz`). `open shotnote://state`
    logs each card's frame so a script can aim at circles and images.
    Inspect the pasteboard with JXA: `osascript -l JavaScript -e 'ObjC.import("AppKit"); $.NSPasteboard.generalPasteboard.pasteboardItems.count'`.
+   Inside the editor page, `open 'shotnote://eval?<javascript>'` runs the code (async, `window.editor`
+   is the tldraw editor) and logs the returned value.
 5. Read `~/Library/Logs/Shotnote.log`. Every action, URL command, watcher event, web message,
    and error lands there with a `[tag]`. `open shotnote://state` dumps current state.
 
@@ -60,6 +62,17 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   the bottom edge. `ExpandPanel` carries a card between its stack slot and that frame, and the
   annotator loads the image while hidden (`prepare`) so it can appear the moment the card lands
   (`show`). A swap runs two of these at once. The stack keeps a dashed placeholder in the slot.
+- Annotations in progress are drafts held in the page's memory, keyed by file path. A swap, Esc,
+  or Done parks the current image's draft; loading that image again restores it. Parking also
+  renders a preview that the stack shows on the card and in the fly-back, so the annotator hides
+  only after the page reports the park (`AnnotationController.hide(then:)`). Drafts die with
+  the app; they are never written to disk. Trashing a file forgets its draft. "Copy Annotated"
+  renders selected drafts through the live editor (`window.shotnote.export`) and falls back to the
+  original file for cards without one.
+- Exports do not use tldraw's `toImage`. In WKWebView an SVG that embeds the screenshot
+  rasterizes blank (WebKit loads the inner raster image asynchronously; tldraw only sleeps
+  250ms for browsers it detects as Safari, which WKWebView is not). `render()` in `App.tsx`
+  draws the screenshot on a canvas and layers tldraw's SVG of the annotations alone on top.
 - Swift language mode is 5 (see `project.yml`). No sandbox: the app reads the user's folder.
 - Settings changes push to Apple's `com.apple.screencapture` defaults (location, show-thumbnail,
   disable-shadow, type). Only keys that changed are written, and never on first run.
