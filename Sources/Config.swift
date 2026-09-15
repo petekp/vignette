@@ -27,9 +27,9 @@ enum Config {
     static func action(id: String) -> ShotAction? { actions.first { $0.id == id } }
 }
 
-struct ShotAction {
+struct ShotAction: Sendable {
     enum Placement { case card, bar, everywhere, shortcut }   // shortcut: keyboard and URL only
-    struct Key: Equatable {
+    struct Key: Equatable, Sendable {
         let character: String
         let modifiers: NSEvent.ModifierFlags
         init(_ character: String, _ modifiers: NSEvent.ModifierFlags) { self.character = character; self.modifiers = modifiers }
@@ -42,13 +42,14 @@ struct ShotAction {
     var placement: Placement = .everywhere
     var isDefault = false   // runs when a card is clicked outside selection mode
     var minimumCount = 1
-    let run: ([Screenshot], Actions) -> Void
+    let run: @MainActor @Sendable ([Screenshot], Actions) -> Void
 
     var showsOnCard: Bool { placement == .card || placement == .everywhere }
     var showsInBar: Bool { placement == .bar || placement == .everywhere }
 }
 
 /// What an action can do. Implemented by AppDelegate.
+@MainActor
 protocol Actions: AnyObject {
     func copyToClipboard(_ shots: [Screenshot])
     func copyPaths(_ shots: [Screenshot])

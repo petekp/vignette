@@ -1,9 +1,10 @@
 import AppKit
-import ApplicationServices
+@preconcurrency import ApplicationServices
 
 /// Fires when one modifier key (right Shift, say) is tapped twice in quick succession with nothing
 /// else pressed in between. Modifier taps are invisible to Carbon hotkeys, so this watches key
 /// events with NSEvent monitors, which macOS only delivers to apps trusted for Accessibility.
+@MainActor
 final class ModifierTap {
     private let keyCode: UInt16
     private let flag: NSEvent.ModifierFlags
@@ -30,21 +31,24 @@ final class ModifierTap {
         }
         if ModifierTap.trusted(prompt: true) { install() } else {
             Log.write("[hotkey] modifier tap needs Accessibility permission; waiting for it")
+            // Timer.scheduledTimer runs its block on the run loop it is scheduled on: the main one, here.
             retry = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-                guard let self, ModifierTap.trusted(prompt: false) else { return }
-                self.retry?.invalidate()
-                self.install()
-                Log.write("[hotkey] Accessibility granted; modifier tap active")
+                MainActor.assumeIsolated {
+                    guard let self, ModifierTap.trusted(prompt: false) else { return }
+                    self.retry?.invalidate()
+                    self.install()
+                    Log.write("[hotkey] Accessibility granted; modifier tap active")
+                }
             }
         }
     }
 
-    deinit {
+    isolated deinit {
         retry?.invalidate()
         monitors.forEach { NSEvent.removeMonitor($0) }
     }
 
-    static func trusted(prompt: Bool) -> Bool {
+    nonisolated static func trusted(prompt: Bool) -> Bool {
         AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): prompt] as CFDictionary)
     }
 

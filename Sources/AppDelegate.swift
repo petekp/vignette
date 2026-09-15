@@ -1,6 +1,7 @@
 import AppKit
 
 @main
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     static func main() {
         let app = NSApplication.shared
@@ -388,12 +389,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         })
         warmThumbnails()
         if wakeObserver == nil {
+            // Both observers are registered with queue: .main, so the notification always arrives there.
             wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-            ) { [weak self] _ in self?.watcher?.rescan(reason: "wake") }
+            ) { [weak self] _ in MainActor.assumeIsolated { self?.watcher?.rescan(reason: "wake") } }
             screenObserver = NotificationCenter.default.addObserver(
                 forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-            ) { [weak self] _ in self?.thumbnail.screensChanged() }
+            ) { [weak self] _ in MainActor.assumeIsolated { self?.thumbnail.screensChanged() } }
         }
     }
 

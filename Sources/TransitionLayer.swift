@@ -4,6 +4,7 @@ import SwiftUI
 /// A full-screen, mouse-transparent layer that flies card images between the stack and the
 /// annotator. Flights are SwiftUI state, so a flight that is retargeted mid-way turns smoothly
 /// instead of restarting.
+@MainActor
 final class TransitionLayer {
     struct Flight: Identifiable {
         let id: UUID

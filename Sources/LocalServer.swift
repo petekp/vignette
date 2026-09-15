@@ -18,29 +18,34 @@ final class LocalServer {
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: .any)
         let listener = try NWListener(using: params)
-        listener.newConnectionHandler = { [weak self] conn in self?.handle(conn) }
+        // Captured by value so the callbacks below never need to cross back to `self`.
+        let queue = self.queue
+        let root = self.root
+        listener.newConnectionHandler = { conn in LocalServer.handle(conn, queue: queue, root: root) }
         let ready = DispatchSemaphore(value: 0)
-        listener.stateUpdateHandler = { [weak self] state in
-            if case .ready = state { self?.port = listener.port?.rawValue ?? 0; ready.signal() }
+        listener.stateUpdateHandler = { state in
+            if case .ready = state { ready.signal() }
             if case .failed(let err) = state { Log.write("[server] failed: \(err)"); ready.signal() }
         }
         listener.start(queue: queue)
         _ = ready.wait(timeout: .now() + 2)
+        // Safe to read now: `wait()` only returns after the `.ready`/`.failed` callback above signaled it.
+        self.port = listener.port?.rawValue ?? 0
         self.listener = listener
         Log.write("[server] port \(port)")
     }
 
-    private func handle(_ conn: NWConnection) {
+    private static func handle(_ conn: NWConnection, queue: DispatchQueue, root: URL) {
         conn.start(queue: queue)
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, _, _ in
-            guard let self, let data, let request = String(data: data, encoding: .utf8) else { conn.cancel(); return }
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { data, _, _, _ in
+            guard let data, let request = String(data: data, encoding: .utf8) else { conn.cancel(); return }
             let path = request.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
-            let response = self.response(for: path)
+            let response = LocalServer.response(for: path, root: root)
             conn.send(content: response, completion: .contentProcessed { _ in conn.cancel() })
         }
     }
 
-    private func response(for rawPath: String) -> Data {
+    private static func response(for rawPath: String, root: URL) -> Data {
         var path = rawPath.split(separator: "?").first.map(String.init) ?? "/"
         if path == "/" { path = "/index.html" }
         let file = root.appendingPathComponent(path).standardizedFileURL
@@ -51,7 +56,7 @@ final class LocalServer {
         return Data(head.utf8) + body
     }
 
-    private func mimeType(for ext: String) -> String {
+    private static func mimeType(for ext: String) -> String {
         switch ext.lowercased() {
         case "html": return "text/html; charset=utf-8"
         case "js", "mjs": return "text/javascript; charset=utf-8"

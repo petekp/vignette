@@ -3,6 +3,7 @@ import SwiftUI
 
 /// A floating panel of sliders bound to `settings.ui`. Every change applies to whatever is on screen
 /// immediately and lands in settings.json. Preview buttons summon each UI state to tweak against.
+@MainActor
 final class DebugPanelController: NSObject, NSWindowDelegate {
     struct Previews {
         var thumbnail: () -> Void
@@ -52,6 +53,7 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
     }
 }
 
+@MainActor
 struct DebugPanelView: View {
     let previews: DebugPanelController.Previews
     @ObservedObject private var settings = Settings.shared
@@ -143,6 +145,7 @@ struct DebugPanelView: View {
     }
 }
 
+@MainActor
 private struct Tweak: View {
     let label: String
     let path: WritableKeyPath<UITweaks, Double>
@@ -166,6 +169,7 @@ private struct Tweak: View {
     }
 }
 
+@MainActor
 private struct IntTweak: View {
     let label: String
     let path: WritableKeyPath<UITweaks, Int>

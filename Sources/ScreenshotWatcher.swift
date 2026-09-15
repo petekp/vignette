@@ -3,7 +3,9 @@ import ImageIO
 
 /// Watches a folder and reports screenshot files as they arrive and leave. A new file is reported
 /// once it is fully written; one that never settles is logged and forgotten so the next event tries again.
-final class ScreenshotWatcher {
+/// `@unchecked Sendable`: every mutable access (`known`, `source`) is confined to `queue`, and
+/// `onNew`/`onRemoved` only ever run after an explicit hop to the main queue.
+final class ScreenshotWatcher: @unchecked Sendable {
     private let folder: URL
     private let onNew: (URL) -> Void
     private let onRemoved: ([URL]) -> Void
@@ -72,7 +74,7 @@ final class ScreenshotWatcher {
 
     /// screencapture writes the file in one go, but Dropbox and other syncers stream it in. Wait
     /// until the size holds across two polls and ImageIO sees a complete image, for up to ten seconds.
-    private func waitUntilComplete(_ url: URL, attempts: Int = 100, last: Int = -1, done: @escaping (Bool) -> Void) {
+    private func waitUntilComplete(_ url: URL, attempts: Int = 100, last: Int = -1, done: @escaping @Sendable (Bool) -> Void) {
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? -1
         if size > 0 && size == last && ScreenshotWatcher.isCompleteImage(url) { done(true); return }
         guard attempts > 0 else { done(false); return }

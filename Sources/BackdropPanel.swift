@@ -10,6 +10,7 @@ import QuartzCore
 /// several NSVisualEffectViews, each masked to a feathered vertical band and tuned to a larger blur
 /// radius than the one to its left. Masks are public API; the radius is set through the backdrop
 /// layer's existing gaussianBlur filter by key path.
+@MainActor
 final class BackdropPanel: NSPanel {
     private let tint = NSView()
     private let tintLayer = CAGradientLayer()
@@ -123,6 +124,7 @@ final class BackdropPanel: NSPanel {
 /// NSVisualEffectView with a chosen blur radius and no material tint. The radius lives on the
 /// private backdrop layer's gaussianBlur filter; AppKit rebuilds those layers on some updates, so
 /// the tweak is reapplied in every hook where that happens.
+@MainActor
 final class TunedEffectView: NSVisualEffectView {
     var radius: CGFloat = 20 { didSet { retune() } }
 

@@ -37,6 +37,7 @@ targets:
     settings:
       base:
         SWIFT_VERSION: "5.10"
+        SWIFT_STRICT_CONCURRENCY: complete
         PRODUCT_BUNDLE_IDENTIFIER: com.petepetrash.shotnote
         # build.sh overrides these from git; the defaults are for a build straight from Xcode.
         MARKETING_VERSION: "0.1.0"
@@ -64,6 +65,7 @@ targets:
     settings:
       base:
         SWIFT_VERSION: "5.10"
+        SWIFT_STRICT_CONCURRENCY: complete
         PRODUCT_BUNDLE_IDENTIFIER: com.petepetrash.shotnote.tests
         GENERATE_INFOPLIST_FILE: true
         CODE_SIGN_IDENTITY: "-"

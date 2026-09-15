@@ -2,6 +2,7 @@ import AppKit
 
 /// Remembers the last app other than Shotnote that was active, so windows we open can hand focus back.
 /// Tracked continuously because opening via URL activates Shotnote before any window appears.
+@MainActor
 final class FocusReturn {
     static let shared = FocusReturn()
     private(set) var previousApp: NSRunningApplication?
@@ -14,7 +15,8 @@ final class FocusReturn {
         ) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app != NSRunningApplication.current else { return }
-            self?.previousApp = app
+            // NSWorkspace delivers notifications registered with queue: .main on the main thread.
+            MainActor.assumeIsolated { self?.previousApp = app }
         }
     }
 

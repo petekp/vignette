@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct StackView: View {
     static func staggerStep(count: Int) -> Double {
         let ui = Settings.shared.data.ui

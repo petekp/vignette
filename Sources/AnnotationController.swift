@@ -5,6 +5,7 @@ import WebKit
 /// Lifecycle: `prepare` sizes the hidden window and loads the image, `show` reveals it once the
 /// card transition has landed, `hide` removes it at once for a swap, and the page's cancel/done
 /// messages end a session through `close`.
+@MainActor
 final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     var onFinished: ((Screenshot, Data) -> Void)?
     /// The session ended by Esc, click outside, Cmd+W, or Done.
@@ -301,6 +302,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
 }
 
 /// Borderless windows refuse key status by default; the editor needs it for typing and shortcuts.
+@MainActor
 final class AnnotationWindow: NSWindow {
     var onCloseRequest: (() -> Void)?
     override var canBecomeKey: Bool { true }

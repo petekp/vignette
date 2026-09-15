@@ -1,5 +1,6 @@
 import AppKit
 
+@MainActor
 enum Clipboard {
     /// PNG and TIFF, matching what Apple's Copy does, so every paste target accepts it.
     static func copyPNG(_ png: Data) {

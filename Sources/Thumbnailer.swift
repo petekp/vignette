@@ -5,10 +5,14 @@ import ImageIO
 /// 220-point card wastes memory and Core Animation's minification shimmers; ImageIO resamples
 /// during decode instead. The cache is what makes the stack appear at once: it is warmed at
 /// launch and whenever a screenshot lands, so opening the stack rarely decodes anything.
-enum Thumbnailer {
+/// `@unchecked Sendable`: every access to the mutable `cache` below is inside `lock`/`unlock`, which
+/// is what actually makes the shared state safe across the concurrent `queue`.
+enum Thumbnailer: @unchecked Sendable {
     private struct Entry { let modified: Date; let maxPixel: Int; let image: NSImage }
-    private static var cache: [String: Entry] = [:]
     private static let lock = NSLock()
+    // Guarded by `lock`, not by an actor: reads happen inline on the caller's thread (`cached`) as
+    // well as after a background decode (`image`), and only the lock's mutual exclusion keeps that safe.
+    nonisolated(unsafe) private static var cache: [String: Entry] = [:]
     private static let queue = DispatchQueue(label: "shotnote.thumbnails", qos: .userInitiated, attributes: .concurrent)
 
     /// The screenshot's size in points, from the file header only.
@@ -45,10 +49,11 @@ enum Thumbnailer {
     }
 
     /// Decodes off the main thread and hands the image back on it.
-    static func load(at url: URL, maxPixel: Int, completion: @escaping (NSImage?) -> Void) {
+    static func load(at url: URL, maxPixel: Int, completion: @escaping @MainActor @Sendable (NSImage?) -> Void) {
         queue.async {
             let image = self.image(at: url, maxPixel: maxPixel)
-            DispatchQueue.main.async { completion(image) }
+            // Hopping back from this background queue, as documented on `completion`'s callers.
+            DispatchQueue.main.async { MainActor.assumeIsolated { completion(image) } }
         }
     }
 

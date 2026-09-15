@@ -18,6 +18,7 @@ struct DragSource: NSViewRepresentable {
     }
 }
 
+@MainActor
 final class DragSourceView: NSView, NSDraggingSource {
     var urls: () -> [URL] = { [] }
     var image: NSImage?

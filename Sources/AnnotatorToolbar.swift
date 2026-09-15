@@ -4,6 +4,7 @@ import SwiftUI
 /// The annotator's toolbar: a native panel that floats just below the image window, so it is
 /// never clipped by the image and looks like the rest of macOS. Tools and colors come from the
 /// page at load; the active state is mirrored from the page; taps are sent back to it.
+@MainActor
 final class AnnotatorToolbar {
     final class Model: ObservableObject {
         @Published var tools: [ToolInfo] = []
@@ -42,6 +43,7 @@ final class AnnotatorToolbar {
 }
 
 /// Never key: typing and shortcuts stay with the editor window this panel belongs to.
+@MainActor
 private final class ToolbarPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }

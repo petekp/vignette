@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 /// A thin editor over settings.json. Every control writes straight to the file.
+@MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
 
@@ -29,6 +30,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 }
 
+@MainActor
 struct SettingsView: View {
     @ObservedObject private var settings = Settings.shared
     @State private var hotkeyText = Settings.shared.data.recentHotkey

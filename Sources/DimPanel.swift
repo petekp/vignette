@@ -3,6 +3,7 @@ import AppKit
 /// Darkens the screen behind the annotator. Sits above other apps' windows and below the
 /// annotator, the stack, and its backdrop. Mouse-transparent, so a click on it reaches the app
 /// behind and counts as a click outside.
+@MainActor
 final class DimPanel: NSPanel {
     private lazy var alpha = Tween(initial: 0) { [weak self] v in self?.alphaValue = v }
     private var generation = 0

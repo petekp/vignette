@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
 import Combine
+@preconcurrency import CoreFoundation
 
-struct Screenshot {
+struct Screenshot: Sendable {
     let url: URL
 }
 
@@ -43,10 +44,10 @@ struct SettingsData: Codable, Equatable {
             let fixed = min(max(d.ui.backdropBands, 1), 64)
             notes.append("ui.backdropBands \(d.ui.backdropBands) -> \(fixed)"); d.ui.backdropBands = fixed
         }
-        for (name, path, range) in UITweaks.bounds {
-            let value = d.ui[keyPath: path]
-            let fixed = value.isFinite ? min(max(value, range.lowerBound), range.upperBound) : UITweaks()[keyPath: path]
-            if fixed != value { notes.append("ui.\(name) \(value) -> \(fixed)"); d.ui[keyPath: path] = fixed }
+        for bound in UITweaks.bounds {
+            let value = d.ui[keyPath: bound.path]
+            let fixed = value.isFinite ? min(max(value, bound.range.lowerBound), bound.range.upperBound) : UITweaks()[keyPath: bound.path]
+            if fixed != value { notes.append("ui.\(bound.name) \(value) -> \(fixed)"); d.ui[keyPath: bound.path] = fixed }
         }
         return (d, notes)
     }
@@ -115,30 +116,42 @@ struct UITweaks: Codable, Equatable {
     var annotationToolbarGap = 12.0
     var annotationScreenInset = 60.0
 
+    /// One entry of `bounds`. A plain struct, not a tuple, so the array can be `Sendable`.
+    /// `@unchecked`: `WritableKeyPath` isn't marked `Sendable` in the standard library, but key
+    /// paths are immutable value descriptors and safe to share across threads.
+    struct Bound: @unchecked Sendable {
+        let name: String
+        let path: WritableKeyPath<UITweaks, Double>
+        let range: ClosedRange<Double>
+        init(_ name: String, _ path: WritableKeyPath<UITweaks, Double>, _ range: ClosedRange<Double>) {
+            self.name = name; self.path = path; self.range = range
+        }
+    }
+
     /// Bounds outside which a value crashes, divides by zero, or makes NaN. Not design limits.
-    static let bounds: [(name: String, path: WritableKeyPath<UITweaks, Double>, range: ClosedRange<Double>)] = [
-        ("cardMaxWidth", \.cardMaxWidth, 1...10_000), ("cardMaxHeight", \.cardMaxHeight, 1...10_000),
-        ("cardMinSide", \.cardMinSide, 1...10_000), ("cardSpacing", \.cardSpacing, 0...1000),
-        ("panelInset", \.panelInset, 0...1000), ("screenMargin", \.screenMargin, 0...10_000),
-        ("cardCornerRadius", \.cardCornerRadius, 0...1000), ("cardBorderWidth", \.cardBorderWidth, 0...100),
-        ("cardBorderOpacity", \.cardBorderOpacity, 0...1), ("cardShadowRadius", \.cardShadowRadius, 0...1000),
-        ("cardShadowOpacity", \.cardShadowOpacity, 0...1), ("cardShadowY", \.cardShadowY, -1000...1000),
-        ("hoverScale", \.hoverScale, 0.1...10), ("pressScale", \.pressScale, 0.1...10), ("hoverDim", \.hoverDim, 0...1),
-        ("buttonSize", \.buttonSize, 1...1000), ("buttonIconSize", \.buttonIconSize, 1...1000),
-        ("buttonSpacing", \.buttonSpacing, 0...1000), ("selectionCircleSize", \.selectionCircleSize, 1...1000),
-        ("selectionBarHeight", \.selectionBarHeight, 1...1000),
-        ("thumbnailSeconds", \.thumbnailSeconds, 0...3600), ("toastSeconds", \.toastSeconds, 0...3600),
-        ("slideInDuration", \.slideInDuration, 0...60), ("slideOutDuration", \.slideOutDuration, 0...60),
-        ("staggerDelay", \.staggerDelay, 0...60), ("staggerTotalMax", \.staggerTotalMax, 0...60),
-        ("relayoutDuration", \.relayoutDuration, 0...60), ("expandDuration", \.expandDuration, 0...60),
-        ("hoverRevealDuration", \.hoverRevealDuration, 0...60),
-        ("backdropWidth", \.backdropWidth, 1...10_000), ("backdropTint", \.backdropTint, 0...1),
-        ("backdropTintStart", \.backdropTintStart, 0...1), ("backdropBlurRadius", \.backdropBlurRadius, 0...1000),
-        ("backdropRampPower", \.backdropRampPower, 0.01...100), ("backdropFadeIn", \.backdropFadeIn, 0...60),
-        ("backdropFadeOut", \.backdropFadeOut, 0...60), ("dimOpacity", \.dimOpacity, 0...1), ("dimFade", \.dimFade, 0...60),
-        ("annotationMinWidth", \.annotationMinWidth, 1...100_000), ("annotationMinHeight", \.annotationMinHeight, 1...100_000),
-        ("annotationCornerRadius", \.annotationCornerRadius, 0...1000), ("annotationToolbarGap", \.annotationToolbarGap, 0...1000),
-        ("annotationScreenInset", \.annotationScreenInset, 0...10_000),
+    static let bounds: [Bound] = [
+        Bound("cardMaxWidth", \.cardMaxWidth, 1...10_000), Bound("cardMaxHeight", \.cardMaxHeight, 1...10_000),
+        Bound("cardMinSide", \.cardMinSide, 1...10_000), Bound("cardSpacing", \.cardSpacing, 0...1000),
+        Bound("panelInset", \.panelInset, 0...1000), Bound("screenMargin", \.screenMargin, 0...10_000),
+        Bound("cardCornerRadius", \.cardCornerRadius, 0...1000), Bound("cardBorderWidth", \.cardBorderWidth, 0...100),
+        Bound("cardBorderOpacity", \.cardBorderOpacity, 0...1), Bound("cardShadowRadius", \.cardShadowRadius, 0...1000),
+        Bound("cardShadowOpacity", \.cardShadowOpacity, 0...1), Bound("cardShadowY", \.cardShadowY, -1000...1000),
+        Bound("hoverScale", \.hoverScale, 0.1...10), Bound("pressScale", \.pressScale, 0.1...10), Bound("hoverDim", \.hoverDim, 0...1),
+        Bound("buttonSize", \.buttonSize, 1...1000), Bound("buttonIconSize", \.buttonIconSize, 1...1000),
+        Bound("buttonSpacing", \.buttonSpacing, 0...1000), Bound("selectionCircleSize", \.selectionCircleSize, 1...1000),
+        Bound("selectionBarHeight", \.selectionBarHeight, 1...1000),
+        Bound("thumbnailSeconds", \.thumbnailSeconds, 0...3600), Bound("toastSeconds", \.toastSeconds, 0...3600),
+        Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
+        Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
+        Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("expandDuration", \.expandDuration, 0...60),
+        Bound("hoverRevealDuration", \.hoverRevealDuration, 0...60),
+        Bound("backdropWidth", \.backdropWidth, 1...10_000), Bound("backdropTint", \.backdropTint, 0...1),
+        Bound("backdropTintStart", \.backdropTintStart, 0...1), Bound("backdropBlurRadius", \.backdropBlurRadius, 0...1000),
+        Bound("backdropRampPower", \.backdropRampPower, 0.01...100), Bound("backdropFadeIn", \.backdropFadeIn, 0...60),
+        Bound("backdropFadeOut", \.backdropFadeOut, 0...60), Bound("dimOpacity", \.dimOpacity, 0...1), Bound("dimFade", \.dimFade, 0...60),
+        Bound("annotationMinWidth", \.annotationMinWidth, 1...100_000), Bound("annotationMinHeight", \.annotationMinHeight, 1...100_000),
+        Bound("annotationCornerRadius", \.annotationCornerRadius, 0...1000), Bound("annotationToolbarGap", \.annotationToolbarGap, 0...1000),
+        Bound("annotationScreenInset", \.annotationScreenInset, 0...10_000),
     ]
 }
 
@@ -162,9 +175,10 @@ struct AppleOriginal: Codable, Equatable {
 /// dotfiles all edit it; the app reloads it when it changes on disk and pushes the relevant keys to
 /// Apple's defaults. `SHOTNOTE_SETTINGS=<path>` in the environment points the app at another file,
 /// so a test run never touches the real one.
+@MainActor
 final class Settings: ObservableObject {
     static let shared = Settings()
-    static let currentVersion = 1
+    nonisolated static let currentVersion = 1
     static let isOverridden = ProcessInfo.processInfo.environment["SHOTNOTE_SETTINGS"].map { !$0.isEmpty } ?? false
     static let fileURL: URL = {
         if let path = ProcessInfo.processInfo.environment["SHOTNOTE_SETTINGS"], !path.isEmpty {
@@ -490,6 +504,7 @@ enum AppleScreencapture {
 }
 
 /// Animation helper honoring the tweakable curves.
+@MainActor
 enum Anim {
     static func timing(_ curve: String) -> CAMediaTimingFunction {
         switch curve {
@@ -509,7 +524,7 @@ enum Anim {
         }
     }
 
-    static func run(_ duration: Double, curve: String = "easeOut", _ body: () -> Void, completion: (() -> Void)? = nil) {
+    static func run(_ duration: Double, curve: String = "easeOut", _ body: @Sendable () -> Void, completion: (@Sendable () -> Void)? = nil) {
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = duration
             ctx.timingFunction = timing(curve)

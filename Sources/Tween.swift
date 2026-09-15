@@ -2,6 +2,7 @@ import AppKit
 
 /// Animates one value from wherever it is now, so a new target mid-flight retargets instead of
 /// jumping. Used for window alpha, which NSAnimationContext restarts from the model value.
+@MainActor
 final class Tween {
     private(set) var value: CGFloat
     private var timer: Timer?
@@ -19,7 +20,10 @@ final class Tween {
         self.completion = completion
         guard duration > 0, target != value else { set(target); completion?(); return }
         start = (CACurrentMediaTime(), value, target, duration, curve)
-        timer = Timer.scheduledTimer(withTimeInterval: 1 / 60, repeats: true) { [weak self] _ in self?.tick() }
+        // Runs on the main run loop (added to it with .common below).
+        timer = Timer.scheduledTimer(withTimeInterval: 1 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+        }
         RunLoop.main.add(timer!, forMode: .common)
     }
 

@@ -111,6 +111,7 @@ final class CommandsTests: XCTestCase {
 }
 
 final class ClipboardTests: XCTestCase {
+    @MainActor
     func testPathsTextQuotesOnlyWhatAShellNeeds() {
         let plain = URL(fileURLWithPath: "/tmp/a.png")
         let spaced = URL(fileURLWithPath: "/tmp/Screenshot 1.png")

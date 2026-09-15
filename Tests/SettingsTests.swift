@@ -23,10 +23,12 @@ final class SettingsTests: XCTestCase {
 
     // MARK: load
 
+    @MainActor
     func testMissingFileIsMissingNotInvalid() {
         guard case .missing = Settings.load(file) else { return XCTFail("expected .missing") }
     }
 
+    @MainActor
     func testPartialFileKeepsDefaultsForMissingKeys() throws {
         try write(#"{"recentCount": 7, "ui": {"cardMaxWidth": 300}}"#)
         guard case .loaded(let loaded) = Settings.load(file) else { return XCTFail("expected .loaded") }
@@ -36,12 +38,14 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(loaded.data.recentHotkey, SettingsData().recentHotkey)
     }
 
+    @MainActor
     func testSyntaxErrorIsInvalid() throws {
         try write(#"{"recentCount": 7"#)
         guard case .invalid(let reason) = Settings.load(file) else { return XCTFail("expected .invalid") }
         XCTAssertFalse(reason.isEmpty)
     }
 
+    @MainActor
     func testWrongTypeIsInvalid() throws {
         try write(#"{"recentCount": "many"}"#)
         guard case .invalid = Settings.load(file) else { return XCTFail("expected .invalid") }
@@ -49,6 +53,7 @@ final class SettingsTests: XCTestCase {
 
     // MARK: bootstrap
 
+    @MainActor
     func testInvalidFileIsSetAsideNotOverwritten() throws {
         let bad = #"{"recentCount": 7"#
         try write(bad)
@@ -60,6 +65,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual((try json())["version"] as? Int, Settings.currentVersion, "a fresh file replaces the bad one")
     }
 
+    @MainActor
     func testMissingFileIsCreatedWithAppleOriginal() throws {
         let boot = Settings.bootstrap(at: file)
         XCTAssertNotNil(boot.data.appleOriginal)
@@ -67,6 +73,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertNotNil((try json())["appleOriginal"])
     }
 
+    @MainActor
     func testNegativeCountIsClampedInMemoryAndLogged() throws {
         try write(#"{"recentCount": -1, "ui": {"backdropWidth": 0, "cardShadowOpacity": 3}}"#)
         let boot = Settings.bootstrap(at: file)
@@ -78,6 +85,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertFalse(boot.readOnly)
     }
 
+    @MainActor
     func testMissingKeysAreFilledInOnDisk() throws {
         try write(#"{"recentCount": 7}"#)
         _ = Settings.bootstrap(at: file)
@@ -87,6 +95,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(j["version"] as? Int, Settings.currentVersion)
     }
 
+    @MainActor
     func testFileWithoutVersionIsMigratedAndRewritten() throws {
         try write(#"{"recentCount": 7}"#)
         let boot = Settings.bootstrap(at: file)
@@ -94,6 +103,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual((try json())["version"] as? Int, Settings.currentVersion)
     }
 
+    @MainActor
     func testNewerVersionIsReadOnly() throws {
         let newer = #"{"version": \#(Settings.currentVersion + 1), "recentCount": 7, "futureKey": true}"#
         try write(newer)
@@ -105,6 +115,7 @@ final class SettingsTests: XCTestCase {
 
     // MARK: migrate
 
+    @MainActor
     func testMigrateStampsCurrentVersion() {
         let out = Settings.migrate(["recentCount": 3])
         XCTAssertEqual(out.from, 0)
@@ -112,12 +123,14 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(out.json["recentCount"] as? Int, 3)
     }
 
+    @MainActor
     func testMigrateReadsAnyNumericVersion() throws {
         XCTAssertEqual(Settings.migrate(["version": 1.0]).from, 1)
         try write(#"{"version": "1"}"#)
         guard case .invalid = Settings.load(file) else { return XCTFail("a non-numeric version is invalid, not version 0") }
     }
 
+    @MainActor
     func testMigrateLeavesNewerFilesAlone() {
         let out = Settings.migrate(["version": 99])
         XCTAssertEqual(out.from, 99)

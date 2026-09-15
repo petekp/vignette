@@ -12,6 +12,7 @@ struct Card: Identifiable {
     func with(size: NSSize) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size) }
 }
 
+@MainActor
 final class StackModel: ObservableObject {
     @Published var cards: [Card] = []          // index 0 is newest, drawn at the bottom
     @Published var offscreen: Set<UUID> = []   // cards parked past the right screen edge
@@ -40,6 +41,7 @@ final class StackModel: ObservableObject {
 
 /// Owns the bottom-right panel: fresh-screenshot thumbnails, the recent stack, feedback toasts,
 /// and the transitions into and out of the annotator.
+@MainActor
 final class ThumbnailController {
     weak var actions: Actions?
     /// A card starts travelling to `frame`; the annotator loads the image there while hidden.
@@ -666,10 +668,13 @@ final class ThumbnailController {
 
     private func scheduleDismiss(after seconds: TimeInterval) {
         dismissTimer?.invalidate()
+        // Fires on the main run loop, like every other Timer here.
         dismissTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            if self.model.hoveredCard != nil || self.annotating != nil { self.scheduleDismiss(after: 1.5); return }
-            self.dismiss()
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.model.hoveredCard != nil || self.annotating != nil { self.scheduleDismiss(after: 1.5); return }
+                self.dismiss()
+            }
         }
     }
 

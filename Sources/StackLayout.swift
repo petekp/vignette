@@ -2,6 +2,7 @@ import AppKit
 
 /// Geometry shared by the SwiftUI cards, the transition layer, and the sweep gesture, so all agree
 /// on where each card sits. Numbers come from `settings.ui` so the debug panel can change them live.
+@MainActor
 struct StackLayout {
     static var ui: UITweaks { Settings.shared.data.ui }
     static var maxCardWidth: CGFloat { ui.cardMaxWidth }
