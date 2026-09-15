@@ -1,11 +1,16 @@
 import Foundation
 
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
+// `protocolVersion` goes up with any change to either side; a page built for another version is
+// refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
+let bridgeProtocolVersion = 2
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
-struct LoadPayload: Encodable {
+struct LoadPayload: Encodable, Equatable {
     let key: String
-    let dataUrl: String
+    /// Same-origin URL of the image, served by LocalServer.
+    let imageUrl: String
+    let mimeType: String
     let pixelWidth: Int
     let pixelHeight: Int
     let viewWidth: Double
@@ -24,10 +29,45 @@ struct ColorInfo: Identifiable, Equatable {
     let hex: String
 }
 
+/// Every call the host makes into the page, rendered as the JavaScript that makes it.
+enum PageAPI: Equatable {
+    case load(LoadPayload)
+    case park
+    case reset
+    case forget([String])
+    case export([String])
+    case setTool(String)
+    case setColor(String)
+    case finish
+
+    /// `park` is awaited by the host; the rest are fire-and-forget. All guard on `window.shotnote`
+    /// so a call that lands before the page's script runs is a no-op rather than an exception.
+    var script: String {
+        switch self {
+        case .load(let payload): return "window.shotnote && window.shotnote.load(\(PageAPI.json(payload)));"
+        case .park: return "if (window.shotnote) await window.shotnote.park();"
+        case .reset: return "window.shotnote && window.shotnote.reset();"
+        case .forget(let keys): return "window.shotnote && window.shotnote.forget(\(PageAPI.json(keys)));"
+        case .export(let keys): return "window.shotnote && window.shotnote.export(\(PageAPI.json(keys)));"
+        case .setTool(let id): return "window.shotnote && window.shotnote.setTool(\(PageAPI.json(id)));"
+        case .setColor(let id): return "window.shotnote && window.shotnote.setColor(\(PageAPI.json(id)));"
+        case .finish: return "window.shotnote && window.shotnote.finish();"
+        }
+    }
+
+    /// JSON is valid JavaScript for objects, arrays, and strings; `withoutEscapingSlashes` keeps paths readable.
+    static func json<T: Encodable>(_ value: T) -> String {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
+        guard let data = try? enc.encode(value), let text = String(data: data, encoding: .utf8) else { return "null" }
+        return text
+    }
+}
+
 /// Received from the page via `window.webkit.messageHandlers.shotnote.postMessage(...)`.
 enum WebMessage {
-    /// The editor is mounted. Carries what the toolbar should offer.
-    case ready(tools: [ToolInfo], colors: [ColorInfo])
+    /// The editor is mounted. Carries the page's protocol version and what the toolbar should offer.
+    case ready(protocol: Int, tools: [ToolInfo], colors: [ColorInfo])
     /// The active tool or color changed.
     case tool(tool: String?, color: String)
     /// The image from `load` is on the canvas.
@@ -54,7 +94,7 @@ enum WebMessage {
                 guard let id = c["id"] as? String, let hex = c["hex"] as? String else { return nil }
                 return ColorInfo(id: id, hex: hex)
             }
-            self = .ready(tools: tools, colors: colors)
+            self = .ready(protocol: dict["protocol"] as? Int ?? 0, tools: tools, colors: colors)
         case "tool":
             self = .tool(tool: dict["tool"] as? String, color: dict["color"] as? String ?? "")
         case "loaded":
@@ -82,5 +122,11 @@ enum WebMessage {
 
     private static func pngData(_ dataUrl: String) -> Data? {
         Data(base64Encoded: dataUrl.replacingOccurrences(of: "data:image/png;base64,", with: ""))
+    }
+
+    /// For the log when a body does not decode: its type and keys, never its content, which can be megabytes.
+    static func describe(_ body: Any) -> String {
+        guard let dict = body as? [String: Any] else { return "non-object \(type(of: body))" }
+        return "type=\(dict["type"] as? String ?? "?") keys=\(dict.keys.sorted().joined(separator: ","))"
     }
 }

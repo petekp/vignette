@@ -1,9 +1,14 @@
 // Messages between the tldraw page and the Swift host.
 
+/** Goes up with any change to this contract; the host refuses a page built for another version. */
+export const PROTOCOL = 2
+
 export interface LoadPayload {
   /** Identifies the image's draft; the host uses the file path. */
   key: string
-  dataUrl: string
+  /** Same-origin URL of the image, served by the host's loopback server. */
+  imageUrl: string
+  mimeType: string
   pixelWidth: number
   pixelHeight: number
   viewWidth: number
@@ -14,8 +19,8 @@ export interface ToolInfo { id: string; label: string; key: string; symbol: stri
 export interface ColorInfo { id: string; hex: string }
 
 type NativeMessage =
-  /** The editor is mounted. Carries what the host's toolbar should offer. */
-  | { type: 'ready'; tools: ToolInfo[]; colors: ColorInfo[] }
+  /** The editor is mounted. Carries the protocol version and what the host's toolbar should offer. */
+  | { type: 'ready'; protocol: number; tools: ToolInfo[]; colors: ColorInfo[] }
   /** The active tool or color changed. */
   | { type: 'tool'; tool: string | null; color: string }
   /** The image from `load` is on the canvas. */

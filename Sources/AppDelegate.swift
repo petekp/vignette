@@ -49,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotator.onFinished = { [weak self] shot, pngData in self?.finishAnnotation(shot, pngData) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
         annotator.onLoaded = { [weak self] key in self?.thumbnail.pageLoaded(key) }
+        annotator.onProblem = { [weak self] text in self?.thumbnail.showFeedback(text) }
+        annotator.fileAccess.update(folder: watchFolder, unrestricted: settings.data.debug)
         annotator.onDraftsChanged = { [weak self] keys in self?.thumbnail.setDrafts(keys) }
         annotator.onDraftPreview = { [weak self] path, png in self?.thumbnail.setPreview(path, png) }
         startWatching()
@@ -87,6 +89,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if new.ui != old.ui { thumbnail.applyTweaks(); warmThumbnails() }
         if new.recentCount != old.recentCount { warmThumbnails() }
         if new.screenshotsFolder != old.screenshotsFolder { startWatching() }
+        if new.screenshotsFolder != old.screenshotsFolder || new.debug != old.debug {
+            annotator.fileAccess.update(folder: new.folderURL, unrestricted: new.debug)
+        }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
     }

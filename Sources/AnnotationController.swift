@@ -13,6 +13,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     var onClosed: (() -> Void)?
     /// The page has the image for this key on its canvas.
     var onLoaded: ((String) -> Void)?
+    /// Something the user should see: a stale page, a page that never came up.
+    var onProblem: ((String) -> Void)?
+    /// Which files the server may serve; the app keeps it in step with the watch folder and `debug`.
+    let fileAccess = LocalServer.FileAccess()
     /// Paths of screenshots that have annotations in progress.
     var onDraftsChanged: ((Set<String>) -> Void)?
     /// A rendering of a screenshot with its draft, for the stack to show in place of the original.
@@ -27,7 +31,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private var current: Screenshot?
     private var pageReady = false
     private var pageFailed = false
-    private var pendingScript: String?
+    private var pendingCall: PageAPI?
 
     enum PageState { case unavailable, loading, ready }
     /// Whether the editor page can take a call: `loading` calls are queued one deep, `unavailable`
@@ -46,14 +50,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
 
     func preload() {
         _ = FocusReturn.shared
-        toolbar.onTool = { [weak self] id in self?.run("window.shotnote && window.shotnote.setTool(\(Self.jsString(id)));") }
-        toolbar.onColor = { [weak self] id in self?.run("window.shotnote && window.shotnote.setColor(\(Self.jsString(id)));") }
-        toolbar.onDone = { [weak self] in self?.run("window.shotnote && window.shotnote.finish();") }
+        toolbar.onTool = { [weak self] id in self?.call(.setTool(id)) }
+        toolbar.onColor = { [weak self] id in self?.call(.setColor(id)) }
+        toolbar.onDone = { [weak self] in self?.call(.finish) }
         guard let dist = Bundle.main.url(forResource: "dist", withExtension: nil) else {
             Log.write("[web] web/dist missing from bundle")
             return
         }
-        let server = LocalServer(root: dist)
+        let server = LocalServer(root: dist, access: fileAccess)
         do { try server.start() } catch { Log.write("LocalServer start failed: \(error)"); return }
         self.server = server
         let config = WKWebViewConfiguration()
@@ -92,10 +96,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         removeOutsideClickMonitor()
         guard current != nil, pageReady else { hideWindows(); completion?(); return }
         current = nil
-        webView.callAsyncJavaScript("if (window.shotnote) await window.shotnote.park();", arguments: [:], in: nil, in: .page) { [weak self] result in
+        webView.callAsyncJavaScript(PageAPI.park.script, arguments: [:], in: nil, in: .page) { [weak self] result in
             if case .failure(let error) = result { Log.write("[web] park failed: \(error)") }
             self?.hideWindows()
-            self?.webView.evaluateJavaScript("window.shotnote && window.shotnote.reset();")
+            self?.call(.reset)
             completion?()
         }
     }
@@ -104,11 +108,6 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         if let win = window, toolbar.panel.parent === win { win.removeChildWindow(toolbar.panel) }
         toolbar.panel.orderOut(nil)
         window?.orderOut(nil)
-    }
-
-    private static func jsString(_ s: String) -> String {
-        guard let json = try? JSONSerialization.data(withJSONObject: [s]), let text = String(data: json, encoding: .utf8) else { return "\"\"" }
-        return String(text.dropFirst().dropLast())
     }
 
     private func makeWindow() -> AnnotationWindow {
@@ -140,24 +139,24 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     private func sendImage(_ shot: Screenshot, windowSize: NSSize) {
-        guard let data = try? Data(contentsOf: shot.url), let rep = NSBitmapImageRep(data: data) else {
+        guard let server, let size = Thumbnailer.pixelSize(of: shot.url) else {
             Log.write("[annotate] could not read image \(shot.url.path)")
             return
         }
         loadStarted[shot.url.path] = CACurrentMediaTime()
         let payload = LoadPayload(
             key: shot.url.path,
-            dataUrl: "data:image/png;base64," + data.base64EncodedString(),
-            pixelWidth: rep.pixelsWide, pixelHeight: rep.pixelsHigh,
+            imageUrl: server.url(for: shot.url).absoluteString,
+            mimeType: LocalServer.mimeType(for: shot.url.pathExtension),
+            pixelWidth: size.width, pixelHeight: size.height,
             viewWidth: windowSize.width, viewHeight: windowSize.height)
-        guard let json = try? JSONEncoder().encode(payload), let text = String(data: json, encoding: .utf8) else { return }
-        let script = "window.shotnote && window.shotnote.load(\(text));"
-        if pageReady { run(script) } else { pendingScript = script }
+        let load = PageAPI.load(payload)
+        if pageReady { call(load) } else { pendingCall = load }
     }
 
-    private func run(_ script: String) {
-        webView.evaluateJavaScript(script) { _, error in
-            if let error { Log.write("evaluateJavaScript failed: \(error)") }
+    private func call(_ api: PageAPI) {
+        webView.evaluateJavaScript(api.script) { _, error in
+            if let error { Log.write("[web] error call failed: \(String(describing: error).replacingOccurrences(of: "\n", with: " "))") }
         }
     }
 
@@ -165,16 +164,11 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     func exportDrafts(_ shots: [Screenshot], completion: @escaping ([String: Data]) -> Void) {
         guard pageReady, exportCompletion == nil else { completion([:]); return }
         exportCompletion = completion
-        run("window.shotnote && window.shotnote.export(\(jsArray(shots.map(\.url.path))));")
+        call(.export(shots.map(\.url.path)))
     }
 
     func forgetDrafts(_ shots: [Screenshot]) {
-        run("window.shotnote && window.shotnote.forget(\(jsArray(shots.map(\.url.path))));")
-    }
-
-    private func jsArray(_ strings: [String]) -> String {
-        guard let json = try? JSONSerialization.data(withJSONObject: strings), let text = String(data: json, encoding: .utf8) else { return "[]" }
-        return text
+        call(.forget(shots.map(\.url.path)))
     }
 
     /// When each image's `load` was sent, by key, for the `[annotate] loaded` line. A swap can have two in flight.
@@ -232,16 +226,22 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let msg = WebMessage(body: message.body) else {
-            Log.write("[web] unrecognized message \(message.body)")
+            Log.write("[web] unrecognized message \(WebMessage.describe(message.body))")
             return
         }
         switch msg {
-        case .ready(let tools, let colors):
-            Log.write("[web] ready with \(tools.count) tools, \(colors.count) colors")
+        case .ready(let version, let tools, let colors):
+            guard version == bridgeProtocolVersion else {
+                pageFailed = true
+                Log.write("[web] error protocol-mismatch page=\(version) app=\(bridgeProtocolVersion); rebuild with scripts/build.sh")
+                onProblem?("The editor page is out of date; rebuild the app")
+                return
+            }
+            Log.write("[web] ready protocol=\(version) tools=\(tools.count) colors=\(colors.count)")
             pageReady = true
             toolbar.model.tools = tools
             toolbar.model.colors = colors
-            if let s = pendingScript { run(s); pendingScript = nil }
+            if let call = pendingCall { self.call(call); pendingCall = nil }
         case .tool(let tool, let color):
             toolbar.model.tool = tool
             toolbar.model.color = color
@@ -275,7 +275,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
 
     /// Logs what the page has rendered. Driven by shotnote://state.
     func dumpPageState() {
-        webView.evaluateJavaScript("JSON.stringify({title: document.title, root: document.getElementById('root')?.children.length, api: typeof window.shotnote, canvas: document.querySelector('.tl-canvas') != null, images: document.querySelectorAll('.tl-image').length, toolbar: document.querySelector('.toolbar') != null, inner: [innerWidth, innerHeight], url: location.href})") { result, error in
+        webView.evaluateJavaScript("JSON.stringify({title: document.title, root: document.getElementById('root')?.children.length, api: typeof window.shotnote, canvas: document.querySelector('.tl-canvas') != null, images: document.querySelectorAll('.tl-image').length, toolbar: document.querySelector('.toolbar') != null, inner: [innerWidth, innerHeight], page: location.pathname.split('/').pop()})") { result, error in
             Log.write("[web] page state: \(result ?? "nil") error: \(error?.localizedDescription ?? "none")")
         }
         Log.write("[web] view frame=\(webView.frame) inWindow=\(webView.window != nil) windowVisible=\(window?.isVisible ?? false) windowFrame=\(window?.frame ?? .zero)")
@@ -284,7 +284,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     // MARK: WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        Log.write("[web] loaded \(webView.url?.absoluteString ?? "?")")
+        Log.write("[web] loaded \(webView.url.map { LocalServer.redacted($0) } ?? "?")")
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

@@ -21,6 +21,15 @@ enum Thumbnailer: @unchecked Sendable {
         return image.size
     }
 
+    /// The screenshot's size in pixels, from the file header only.
+    static func pixelSize(of url: URL) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int,
+              w > 0, h > 0 else { return nil }
+        return (w, h)
+    }
+
     /// A cached decode of at least `maxPixel` on the longest side, if the file has not changed.
     static func cached(at url: URL, maxPixel: Int) -> NSImage? {
         lock.lock(); defer { lock.unlock() }

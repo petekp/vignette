@@ -20,7 +20,7 @@ import {
   useEditor,
 } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { LoadPayload, postToNative } from './bridge'
+import { LoadPayload, PROTOCOL, postToNative } from './bridge'
 import { COLORS, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
@@ -130,6 +130,7 @@ export function App() {
           ;(window as unknown as { editor: Editor }).editor = ed // for `shotnote://eval` debugging
           postToNative({
             type: 'ready',
+            protocol: PROTOCOL,
             tools: TOOLS.map(({ id, label, key, symbol }) => ({ id, label, key, symbol })),
             colors: COLORS.map(({ id, hex }) => ({ id, hex })),
           })
@@ -160,7 +161,7 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
         typeName: 'asset',
         type: 'image',
         meta: {},
-        props: { w, h, mimeType: 'image/png', src: p.dataUrl, name: 'screenshot', isAnimated: false },
+        props: { w, h, mimeType: p.mimeType, src: p.imageUrl, name: 'screenshot', isAnimated: false },
       },
     ])
     editor.createShape({ id: IMAGE_ID, type: 'image', x: 0, y: 0, isLocked: true, props: { w, h, assetId } })

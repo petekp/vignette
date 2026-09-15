@@ -18,7 +18,11 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
   puts them back.
 - `web/` React + tldraw editor page. `web/src/config.ts` holds the editor knobs.
 - `Sources/Bridge.swift` and `web/src/bridge.ts` mirror each other. They are the entire
-  contract between Swift and the page. Change both or neither.
+  contract between Swift and the page. Change both or neither, and bump `bridgeProtocolVersion`
+  and `PROTOCOL` together: the page sends its version in `ready`, and a mismatch logs
+  `[web] error protocol-mismatch page=… app=…`, toasts, and leaves the page unavailable, so a
+  stale `web/dist` is refused rather than silently ignored. Every host->page call is a
+  `PageAPI` case rendered to JavaScript; every page->host message is a `WebMessage` case.
 - `scripts/build.sh` builds web, regenerates the Xcode project, builds the app.
   `scripts/run.sh` does that, waits for the old process to exit, and relaunches. `scripts/build.sh
   --test` also runs the unit tests in `Tests/` (the `ShotnoteTests` target compiles `Sources/`
@@ -37,7 +41,9 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
    folder, and `eval`, `show-editor`, and `tweaks` are refused, unless settings.json has
-   `"debug": true`. `[annotate] loaded <ms>` reports when the page has the image.
+   `"debug": true`. `[annotate] loaded <ms>` reports when the page has the image; it is posted
+   from a `requestAnimationFrame`, which WebKit pauses while the screen is locked or the
+   window is hidden, so the line never arrives in that state.
 4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.
    Send keys with `osascript -e 'tell application "System Events" to key code 36 using command down'`
    (Cmd+Enter finishes annotating, key code 53 is Esc). The recent stack takes key focus, so
@@ -78,6 +84,15 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   is public (docs/foundation-review-2026-09-15.md, step 1).
 - The tldraw watermark stays, whatever it says. The license forbids interfering with license
   key enforcement, and `LICENSE-tldraw.md` must ship verbatim in the bundle (project.yml).
+- The screenshot is served by the same `LocalServer`, as `load`'s `imageUrl`. It must be
+  same-origin with the page: tldraw's export draws the image on a canvas, and a cross-origin
+  image taints it so `render` throws. A custom scheme handler or a second port is therefore
+  not an option. Every server path starts with a per-launch token, so no other local process
+  can read screenshots through the port; the server answers only GET (405 otherwise), only
+  `Host: 127.0.0.1:<port>` (400 otherwise, which stops DNS rebinding), and only the bundle or
+  files inside the watch folder (`FileAccess`, lifted by `debug`). Never log the token:
+  `LocalServer.redacted` is for URLs in log lines, and the page-state dump reports only the
+  file name.
 - The recent-stack shortcut is either a Carbon hotkey (`HotKey.swift`, no permission needed)
   or a modifier double tap (`ModifierTap.swift`, `"double-rshift"`), which needs the app trusted
   for Accessibility because it watches key events with NSEvent monitors.
