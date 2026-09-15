@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     private var statusItem: NSStatusItem?
     private var watcher: ScreenshotWatcher?
+    private var wakeObserver: Any?
     private var hotKey: HotKey?
     private var modifierTap: ModifierTap?
     private let thumbnail = ThumbnailController()
@@ -375,11 +376,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     private func startWatching() {
         Log.write("[watcher] watching \(watchFolder.path)")
-        watcher = ScreenshotWatcher(folder: watchFolder) { [weak self] url in
+        watcher = ScreenshotWatcher(folder: watchFolder, onNew: { [weak self] url in
             Log.write("[watcher] new \(url.lastPathComponent)")
             self?.thumbnail.show(Screenshot(url: url))
-        }
+        }, onRemoved: { [weak self] urls in
+            Log.write("[watcher] removed \(urls.map(\.lastPathComponent).joined(separator: ", "))")
+            self?.thumbnail.remove(urls.map(Screenshot.init))
+            self?.annotator.forgetDrafts(urls.map(Screenshot.init))
+        })
         warmThumbnails()
+        if wakeObserver == nil {
+            wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+            ) { [weak self] _ in self?.watcher?.rescan(reason: "wake") }
+        }
     }
 
     /// Decodes thumbnails for the recent stack ahead of time so the hotkey shows it at once.

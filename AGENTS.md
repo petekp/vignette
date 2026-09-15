@@ -90,7 +90,11 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
 - The status item has an autosave name and a seeded preferred position. Without it, a crowded
   menu bar on a notch Mac puts the new icon under the notch and it never appears.
 - Files named `*-annotated.png` are outputs and are ignored by the watcher. `Stitch *.png`
-  outputs are not ignored on purpose: they show up as a fresh thumbnail.
+  outputs are not ignored on purpose: they show up as a fresh thumbnail. The watcher takes png,
+  jpg, jpeg, and heic (`ScreenshotWatcher.candidateExtensions`), reports removals to the stack
+  (`[watcher] removed`), waits for a new file to decode before reporting it, and gives up on one
+  that never does after ten seconds (`[watcher] error never-stable`); the next folder event or
+  stack open picks it up. Wake from sleep rescans the folder.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor.

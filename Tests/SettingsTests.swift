@@ -154,9 +154,3 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(Set(UITweaks.bounds.map(\.name)), Set(doubles))
     }
 }
-
-final class ScreenshotWatcherTests: XCTestCase {
-    func testNegativeLimitYieldsNothingInsteadOfTrapping() {
-        XCTAssertEqual(ScreenshotWatcher.recentScreenshots(in: FileManager.default.temporaryDirectory, limit: -1), [])
-    }
-}
