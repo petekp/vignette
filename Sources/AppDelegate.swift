@@ -49,7 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func settingsChanged(_ old: SettingsData, _ new: SettingsData) {
-        if new.ui != old.ui { thumbnail.applyTweaks() }
+        if new.ui != old.ui { thumbnail.applyTweaks(); warmThumbnails() }
+        if new.recentCount != old.recentCount { warmThumbnails() }
         if new.screenshotsFolder != old.screenshotsFolder { startWatching() }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
@@ -293,6 +294,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[watcher] new \(url.lastPathComponent)")
             self?.thumbnail.show(Screenshot(url: url))
         }
+        warmThumbnails()
+    }
+
+    /// Decodes thumbnails for the recent stack ahead of time so the hotkey shows it at once.
+    private func warmThumbnails() {
+        thumbnail.warm(ScreenshotWatcher.recentScreenshots(in: watchFolder, limit: settings.data.recentCount).map(Screenshot.init))
     }
 }
 

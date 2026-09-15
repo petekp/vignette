@@ -4,11 +4,11 @@ import SwiftUI
 struct Card: Identifiable {
     let id: UUID
     let shot: Screenshot
-    var image: NSImage        // thumbnail-sized, or the draft preview
+    var image: NSImage?       // thumbnail-sized, or the draft preview; nil until decoded
     let pointSize: NSSize     // the screenshot in points, for the annotator frame
     let size: NSSize          // the card on screen
 
-    func with(image: NSImage) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size) }
+    func with(image: NSImage?) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size) }
     func with(size: NSSize) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size) }
 }
 
@@ -72,7 +72,6 @@ final class ThumbnailController {
     /// Larger decodes for the flight to the annotator, by file path. Filled on hover.
     private var flightImages: [String: NSImage] = [:]
     private var flightOrder: [String] = []
-    private let loadQueue = DispatchQueue(label: "shotnote.thumbnails", qos: .userInitiated)
 
     init() {
         hosting = NSHostingView(rootView: StackView(model: model))
@@ -127,12 +126,23 @@ final class ThumbnailController {
     /// The recent stack: toggles. Takes keyboard focus. Stays until Esc, the hotkey, or a click elsewhere.
     func toggleRecent(_ shots: [Screenshot]) {
         if visible && model.isStack { dismiss(); return }
+        let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
         guard !cards.isEmpty else { return }
         present(cards: cards, stack: true)
         installOutsideClickMonitor()
         backdrop.show(on: screen, below: panel)
         takeKeys()
+        Log.write("[stack] shown in \(Int((CACurrentMediaTime() - started) * 1000))ms, \(cards.filter { $0.image == nil }.count) still decoding")
+    }
+
+    /// Decodes thumbnails for `shots` in the background so the stack opens without waiting.
+    func warm(_ shots: [Screenshot]) {
+        let items = shots.compactMap { shot -> (url: URL, maxPixel: Int)? in
+            guard let pointSize = Thumbnailer.pointSize(of: shot.url) else { return nil }
+            return (shot.url, thumbnailPixels(size: StackLayout.cardSize(for: pointSize), pointSize: pointSize))
+        }
+        Thumbnailer.warm(items)
     }
 
     /// The panel can refuse key status right after resigning it (a dismissal being reversed), so try twice.
@@ -169,8 +179,8 @@ final class ThumbnailController {
         // A draft that was emptied or forgotten shows the file again.
         for path in previews.keys where !paths.contains(path) {
             previews[path] = nil
-            if let card = model.cards.first(where: { $0.shot.url.path == path }), let image = thumbnail(for: card.shot.url, size: card.size, pointSize: card.pointSize) {
-                replaceImage(of: card, with: image)
+            if let card = model.cards.first(where: { $0.shot.url.path == path }) {
+                replaceImage(of: card, with: Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: card.size, pointSize: card.pointSize)))
             }
         }
     }
@@ -206,7 +216,7 @@ final class ThumbnailController {
         guard visible else { return }
         model.cards = model.cards.map { card in
             let size = StackLayout.cardSize(for: card.pointSize)
-            let image = previews[card.shot.url.path] ?? thumbnail(for: card.shot.url, size: size, pointSize: card.pointSize) ?? card.image
+            let image = previews[card.shot.url.path] ?? Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize)) ?? card.image
             return card.with(size: size).with(image: image)
         }
         relayout()
@@ -252,7 +262,7 @@ final class ThumbnailController {
             // The image in the annotator leaves with the stack.
             var slot = cardFrame(of: card)
             slot.origin.x += StackLayout.offscreenDistance(cardWidth: slot.width)
-            flights.fly(id: card.id, image: currentCard(card).image, from: annotationFrame, to: slot, cornerFrom: ui.annotationCornerRadius, cornerTo: ui.cardCornerRadius, on: screen) { [weak self] in
+            flights.fly(id: card.id, image: flightImage(for: currentCard(card)), from: annotationFrame, to: slot, cornerFrom: ui.annotationCornerRadius, cornerTo: ui.cardCornerRadius, on: screen) { [weak self] in
                 self?.flights.end(id: card.id)
             }
         }
@@ -317,7 +327,7 @@ final class ThumbnailController {
         onAnnotatorHide? { [weak self] in
             guard let self, self.annotating?.id == new.id else { return }
             let old = self.currentCard(old)
-            self.flights.fly(id: old.id, image: old.image, from: from, to: self.cardFrame(of: old), cornerFrom: self.ui.annotationCornerRadius, cornerTo: self.ui.cardCornerRadius, on: self.screen) { [weak self] in
+            self.flights.fly(id: old.id, image: self.flightImage(for: old), from: from, to: self.cardFrame(of: old), cornerFrom: self.ui.annotationCornerRadius, cornerTo: self.ui.cardCornerRadius, on: self.screen) { [weak self] in
                 self?.model.outCards.remove(old.id)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { self?.flights.end(id: old.id) }
             }
@@ -331,7 +341,7 @@ final class ThumbnailController {
     }
 
     private func returnCard(_ card: Card) {
-        flights.fly(id: card.id, image: card.image, from: annotationFrame, to: cardFrame(of: card), cornerFrom: ui.annotationCornerRadius, cornerTo: ui.cardCornerRadius, on: screen) { [weak self] in
+        flights.fly(id: card.id, image: flightImage(for: card), from: annotationFrame, to: cardFrame(of: card), cornerFrom: ui.annotationCornerRadius, cornerTo: ui.cardCornerRadius, on: screen) { [weak self] in
             self?.model.outCards.remove(card.id)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { self?.flights.end(id: card.id) }
         }
@@ -354,7 +364,7 @@ final class ThumbnailController {
         if let preview = previews[path] { return preview }
         if let image = flightImages[path] { return image }
         prefetchFlightImage(card.id)
-        return card.image
+        return card.image ?? NSImage(size: card.size)
     }
 
     private func prefetchFlightImage(_ id: UUID?) {
@@ -362,16 +372,12 @@ final class ThumbnailController {
         let path = card.shot.url.path
         guard flightImages[path] == nil, previews[path] == nil else { return }
         let maxPixel = Int(ceil(max(screen.visibleFrame.width, screen.visibleFrame.height) * (screen.backingScaleFactor)))
-        let url = card.shot.url
-        loadQueue.async { [weak self] in
-            guard let image = Thumbnailer.image(at: url, maxPixel: maxPixel) else { return }
-            DispatchQueue.main.async {
-                guard let self, self.previews[path] == nil else { return }
-                self.flightImages[path] = image
-                self.flightOrder.append(path)
-                if self.flightOrder.count > 4 { self.flightImages[self.flightOrder.removeFirst()] = nil }
-                self.flights.setImage(id: id, image)
-            }
+        Thumbnailer.load(at: card.shot.url, maxPixel: maxPixel) { [weak self] image in
+            guard let self, let image, self.previews[path] == nil else { return }
+            self.flightImages[path] = image
+            self.flightOrder.append(path)
+            if self.flightOrder.count > 4 { self.flightImages[self.flightOrder.removeFirst()] = nil }
+            self.flights.setImage(id: id, image)
         }
     }
 
@@ -518,22 +524,29 @@ final class ThumbnailController {
         model.cards.first { $0.id == card.id } ?? card
     }
 
-    private func replaceImage(of card: Card, with image: NSImage) {
+    private func replaceImage(of card: Card, with image: NSImage?) {
         model.cards = model.cards.map { $0.id == card.id ? $0.with(image: image) : $0 }
     }
 
+    /// A card appears at once; if its thumbnail is not cached yet it arrives a moment later.
     private func makeCard(_ shot: Screenshot) -> Card? {
         guard let pointSize = Thumbnailer.pointSize(of: shot.url) else { return nil }
         let size = StackLayout.cardSize(for: pointSize)
-        guard let image = previews[shot.url.path] ?? thumbnail(for: shot.url, size: size, pointSize: pointSize) else { return nil }
-        return Card(id: UUID(), shot: shot, image: image, pointSize: pointSize, size: size)
+        let maxPixel = thumbnailPixels(size: size, pointSize: pointSize)
+        let card = Card(id: UUID(), shot: shot, image: previews[shot.url.path] ?? Thumbnailer.cached(at: shot.url, maxPixel: maxPixel), pointSize: pointSize, size: size)
+        if card.image == nil {
+            Thumbnailer.load(at: shot.url, maxPixel: maxPixel) { [weak self] image in
+                guard let self, let image, self.previews[shot.url.path] == nil, self.model.cards.contains(where: { $0.id == card.id }) else { return }
+                self.replaceImage(of: card, with: image)
+            }
+        }
+        return card
     }
 
-    /// A decode just large enough for the card's cover fill at this screen's scale, with margin.
-    private func thumbnail(for url: URL, size: NSSize, pointSize: NSSize) -> NSImage? {
+    /// Pixels on the longest side for a decode that covers the card at this screen's scale, with margin.
+    private func thumbnailPixels(size: NSSize, pointSize: NSSize) -> Int {
         let cover = max(size.width / max(pointSize.width, 1), size.height / max(pointSize.height, 1))
-        let longest = max(pointSize.width, pointSize.height) * cover * screen.backingScaleFactor * 1.5
-        return Thumbnailer.image(at: url, maxPixel: Int(ceil(longest)))
+        return Int(ceil(max(pointSize.width, pointSize.height) * cover * screen.backingScaleFactor * 1.5))
     }
 
     /// Shows a new column. Cards start past the screen edge and arrive staggered, newest first.

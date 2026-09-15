@@ -81,10 +81,13 @@ private struct CardView: View {
                         .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                         .foregroundStyle(.white.opacity(0.35)))
             } else {
-                Image(nsImage: card.image)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fill)
+                Group {
+                    if let image = card.image {
+                        Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
+                    } else {
+                        Color(white: 0.16)   // thumbnail still decoding
+                    }
+                }
                     .frame(width: card.size.width, height: card.size.height)
                     .overlay(Color.black.opacity(showsButtons ? ui.hoverDim : 0))
                     .clipShape(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous))
@@ -92,7 +95,7 @@ private struct CardView: View {
                     .shadow(color: .black.opacity(ui.cardShadowOpacity), radius: ui.cardShadowRadius, y: ui.cardShadowY)
                     .overlay(
                         // Drag out as files; a plain click goes to the model (annotate, or toggle in selection mode).
-                        DragSource(urls: { dragURLs() }, image: card.image,
+                        DragSource(urls: { dragURLs() }, image: card.image ?? NSImage(size: card.size),
                                    onPress: { down in model.pressedCard = down ? card.id : (model.pressedCard == card.id ? nil : model.pressedCard) },
                                    onClick: { model.onClickImage(card) })
                     )
