@@ -112,6 +112,12 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(out.json["recentCount"] as? Int, 3)
     }
 
+    func testMigrateReadsAnyNumericVersion() throws {
+        XCTAssertEqual(Settings.migrate(["version": 1.0]).from, 1)
+        try write(#"{"version": "1"}"#)
+        guard case .invalid = Settings.load(file) else { return XCTFail("a non-numeric version is invalid, not version 0") }
+    }
+
     func testMigrateLeavesNewerFilesAlone() {
         let out = Settings.migrate(["version": 99])
         XCTAssertEqual(out.from, 99)

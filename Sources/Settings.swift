@@ -280,6 +280,7 @@ final class Settings: ObservableObject {
             guard let fromFile = try JSONSerialization.jsonObject(with: raw) as? [String: Any] else {
                 return .invalid("top level is not an object")
             }
+            if let version = fromFile["version"], !(version is NSNumber) { return .invalid("version is not a number") }
             let migrated = migrate(fromFile)
             let defaults = try JSONSerialization.jsonObject(with: JSONEncoder().encode(SettingsData())) as! [String: Any]
             let merged = try JSONSerialization.data(withJSONObject: deepMerge(defaults, migrated.json))
@@ -295,7 +296,7 @@ final class Settings: ObservableObject {
     /// A file from a newer version is returned unchanged. Add a case here for each version bump.
     static func migrate(_ raw: [String: Any]) -> (json: [String: Any], from: Int) {
         var json = raw
-        let from = (json["version"] as? Int) ?? 0
+        let from = (json["version"] as? NSNumber)?.intValue ?? 0
         guard from < currentVersion else { return (json, from) }
         var version = from
         while version < currentVersion {
@@ -331,7 +332,8 @@ final class Settings: ObservableObject {
         put("disable-shadow", original.disableShadow)
         put("type", original.type)
         var next = data
-        if next.syncAppleSaveLocation, let location = original.location { next.screenshotsFolder = location }
+        // An unset Apple location means the system default, which is also the app's default folder.
+        if next.syncAppleSaveLocation { next.screenshotsFolder = original.location ?? SettingsData().screenshotsFolder }
         next.appleThumbnail = original.showThumbnail ?? true
         next.windowShadow = !(original.disableShadow ?? false)
         next.format = original.type ?? "png"
@@ -447,6 +449,10 @@ final class Settings: ObservableObject {
             Log.write("[settings] error settings-invalid file changed but does not parse; keeping current settings: \(reason)")
         case .loaded(var loaded):
             for line in loaded.log { Log.write("[settings] \(line)") }
+            if loaded.fileVersion > Settings.currentVersion, !readOnly {
+                readOnly = true
+                Log.write("[settings] warning file version \(loaded.fileVersion) is newer than this build's \(Settings.currentVersion); not writing to it")
+            }
             // The app owns this record; a pasted or older file must not erase it.
             if loaded.data.appleOriginal == nil { loaded.data.appleOriginal = data.appleOriginal }
             let validated = loaded.data.validated()
