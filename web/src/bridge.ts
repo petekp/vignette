@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 3
+export const PROTOCOL = 4
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
@@ -45,6 +45,8 @@ type NativeMessage =
   | { type: 'log'; message: string }
   /** The current image's annotations changed; null means they were all removed. Sent shortly after each change. */
   | { type: 'draft'; key: string; snapshot: TLEditorSnapshot | null }
+  /** Zoom is the host's: it resizes the window. `factor` multiplies the current size; null asks for the fitted size. */
+  | { type: 'zoom'; factor: number | null }
 
 declare global {
   interface Window {

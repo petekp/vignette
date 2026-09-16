@@ -22,6 +22,11 @@ import {
 } from 'tldraw'
 import 'tldraw/tldraw.css'
 import { ExportItem, ExportResult, LoadPayload, PROTOCOL, ParkResult, postToNative } from './bridge'
+
+/** One keyboard zoom step (cmd+plus / cmd+minus). */
+const ZOOM_STEP = 1.25
+/** Wheel and pinch: window scale per wheel unit; pinch-out (negative deltaY) grows the window. */
+const WHEEL_ZOOM_RATE = 0.01
 import { COLORS, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
@@ -247,7 +252,10 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
 
 function fitCamera(editor: Editor, w: number, h: number) {
   // The host sizes the window to the image's aspect, so 'fit' makes the image flush with the window.
+  // Locked: zoom and pan gestures resize the window instead (see the wheel listener), and every
+  // camera move here passes `force` to get past the lock.
   editor.setCameraOptions({
+    isLocked: true,
     constraints: {
       initialZoom: 'fit-max',
       baseZoom: 'fit-max',
@@ -259,10 +267,10 @@ function fitCamera(editor: Editor, w: number, h: number) {
   })
   // The host resizes the view right before loading; re-measure so the fit uses the final size.
   editor.updateViewportScreenBounds(editor.getContainer())
-  editor.setCamera(editor.getCamera(), { reset: true })
+  editor.setCamera(editor.getCamera(), { reset: true, force: true })
   requestAnimationFrame(() => {
     editor.updateViewportScreenBounds(editor.getContainer())
-    editor.setCamera(editor.getCamera(), { reset: true })
+    editor.setCamera(editor.getCamera(), { reset: true, force: true })
   })
 }
 
@@ -386,10 +394,31 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
 
   // Keep the image fitted when the window is resized.
   useEffect(() => {
-    const refit = () => editor.setCamera(editor.getCamera(), { reset: true })
+    const refit = () => editor.setCamera(editor.getCamera(), { reset: true, force: true })
     window.addEventListener('resize', refit)
     return () => window.removeEventListener('resize', refit)
   }, [editor])
+
+  // A pinch arrives as a wheel event with ctrlKey; cmd+wheel zooms too. Both resize the window
+  // through the host, coalesced to one message per frame.
+  useEffect(() => {
+    let factor = 1
+    let scheduled = false
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      factor *= Math.exp(-e.deltaY * WHEEL_ZOOM_RATE)
+      if (scheduled) return
+      scheduled = true
+      requestAnimationFrame(() => {
+        scheduled = false
+        if (factor !== 1) postToNative({ type: 'zoom', factor })
+        factor = 1
+      })
+    }
+    window.addEventListener('wheel', onWheel, { capture: true, passive: false })
+    return () => window.removeEventListener('wheel', onWheel, { capture: true })
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -404,6 +433,11 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
         e.preventDefault()
         if (editing) editor.setEditingShape(null)
         finish(editor, scaleRef.current)
+        return
+      }
+      if (mod && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
+        e.preventDefault()
+        postToNative({ type: 'zoom', factor: e.key === '0' ? null : e.key === '-' ? 1 / ZOOM_STEP : ZOOM_STEP })
         return
       }
       if (editing) return

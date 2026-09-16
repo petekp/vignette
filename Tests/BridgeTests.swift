@@ -37,6 +37,11 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(dkey, "/a.png")
         XCTAssertEqual((snapshot as? [String: Any])?.keys.sorted(), ["document"])
         guard case .draft(_, nil)? = WebMessage(body: ["type": "draft", "key": "/a.png", "snapshot": NSNull()]) else { return XCTFail("null snapshot means no annotations") }
+        guard case .zoom(let factor)? = WebMessage(body: ["type": "zoom", "factor": 1.25]) else { return XCTFail() }
+        XCTAssertEqual(factor, 1.25)
+        guard case .zoom(nil)? = WebMessage(body: ["type": "zoom", "factor": NSNull()]) else { return XCTFail("null factor means the fitted size") }
+        XCTAssertNil(WebMessage(body: ["type": "zoom", "factor": 0]), "a zero or negative factor would collapse the window")
+        XCTAssertNil(WebMessage(body: ["type": "zoom"]))
     }
 
     func testParkAndExportResultsDecode() {

@@ -61,6 +61,12 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// Room the annotator needs below its window: the toolbar and its gap.
     var spaceBelow: CGFloat { AnnotatorToolbar.height + Settings.shared.data.ui.annotationToolbarGap }
 
+    /// The frame `prepare` fitted the image into; zoom scales the window from here.
+    private var fittedFrame: NSRect = .zero
+    private lazy var zoom = Tween(initial: 1) { [weak self] v in self?.applyZoom(v) }
+    /// Reset to 1 for each image, so a zoomed-in session doesn't carry into the next.
+    private(set) var zoomScale: CGFloat = 1
+
     func preload() {
         _ = FocusReturn.shared
         toolbar.onTool = { [weak self] id in self?.call(.setTool(id)) }
@@ -95,11 +101,43 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         guard let webView else { return }
         current = shot
         let win = window ?? makeWindow(webView)
+        fittedFrame = frame
+        zoom.set(1)
         win.setFrame(frame, display: false)
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         webView.layoutSubtreeIfNeeded()
         sendImage(shot, windowSize: frame.size)
+    }
+
+    /// Zoom resizes the window around its center and leaves the toolbar where it is; the page
+    /// refits the image to the new size. A gesture applies at once, a keyboard step springs.
+    func zoom(by factor: Double?, animated: Bool) {
+        guard window != nil, fittedFrame.width > 0 else { return }
+        let target = factor.map { zoomScale * CGFloat($0) } ?? 1
+        let clamped = min(maxZoom, max(minZoom, target))
+        if animated { zoom.animate(to: clamped, duration: 0.3, curve: "spring") } else { zoom.set(clamped) }
+    }
+
+    private var minZoom: CGFloat { 0.25 }
+    /// The window may grow to the whole visible screen, past the fitted inset and the toolbar's room.
+    private var maxZoom: CGFloat {
+        guard let screen = window?.screen ?? NSScreen.main else { return 1 }
+        let v = screen.visibleFrame
+        return max(1, min(v.width / fittedFrame.width, v.height / fittedFrame.height))
+    }
+
+    private func applyZoom(_ scale: CGFloat) {
+        guard let win = window, fittedFrame.width > 0 else { return }
+        zoomScale = scale
+        var f = NSRect(x: 0, y: 0, width: fittedFrame.width * scale, height: fittedFrame.height * scale)
+        f.origin = NSPoint(x: fittedFrame.midX - f.width / 2, y: fittedFrame.midY - f.height / 2)
+        if let v = win.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+            // Kept on screen: a window grown to the screen's height slides rather than clips.
+            f.origin.x = min(max(f.origin.x, v.minX), max(v.minX, v.maxX - f.width))
+            f.origin.y = min(max(f.origin.y, v.minY), max(v.minY, v.maxY - f.height))
+        }
+        win.setFrame(f.integral, display: true)
     }
 
     func show() {
@@ -317,6 +355,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             Log.write("[web] \(text)")
         case .draft(let key, let snapshot):
             onDraft?(key, snapshot)
+        case .zoom(let factor):
+            zoom(by: factor, animated: factor == nil || abs(log(factor!)) >= log(1.2))
         }
     }
 
@@ -324,6 +364,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         [
             "current": current?.url.path as Any,
             "windowVisible": window?.isVisible ?? false,
+            "zoom": zoomScale,
             "frame": window.map { StateReport.topLeft($0.frame, primaryHeight: StateReport.primaryHeight) } as Any,
             "pageState": "\(pageState)",
             "tool": toolbar.model.tool as Any, "color": toolbar.model.color,

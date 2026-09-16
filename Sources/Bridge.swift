@@ -3,7 +3,7 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 3
+let bridgeProtocolVersion = 4
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
@@ -84,6 +84,8 @@ enum WebMessage {
     case log(String)
     /// The current image's annotations changed; a nil snapshot means they were all removed.
     case draft(key: String, snapshot: Any?)
+    /// Multiply the window size by `factor`; nil asks for the fitted size.
+    case zoom(factor: Double?)
 
     init?(body: Any) {
         guard let dict = body as? [String: Any], let type = dict["type"] as? String else { return nil }
@@ -112,6 +114,11 @@ enum WebMessage {
             guard let key = dict["key"] as? String, dict.keys.contains("snapshot") else { return nil }
             let snapshot = dict["snapshot"]
             self = .draft(key: key, snapshot: snapshot is NSNull ? nil : snapshot)
+        case "zoom":
+            guard let raw = dict["factor"] else { return nil }
+            if raw is NSNull { self = .zoom(factor: nil) }
+            else if let n = raw as? NSNumber, n.doubleValue.isFinite, n.doubleValue > 0 { self = .zoom(factor: n.doubleValue) }
+            else { return nil }
         default: return nil
         }
     }
