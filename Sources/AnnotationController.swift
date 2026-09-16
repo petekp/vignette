@@ -31,7 +31,13 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private let toolbar = AnnotatorToolbar()
     private var server: LocalServer?
     private var window: AnnotationWindow?
+    /// The window spans the screen's visible frame and stays put. The visible frame is `frameView`
+    /// inside it (shadow) with `container` (clip, corner, ring, web view), so a zoom step moves the
+    /// frame and scales the page in one layer commit: a window resize and a layer change do not
+    /// land on the same display frame, and the image would drift from the frame between them.
+    private var frameView: NSView?
     private var container: NSView?
+    private var zoomScreen: NSScreen?
     /// The shot the page holds, from `prepare` until `hide` parks it. Not the session: see AnnotatorTransition.
     private var current: Screenshot?
     private var pageReady = false
@@ -123,7 +129,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         canvasZoom = 1
         settleTimer?.invalidate()
         zoom.set(1)
-        win.setFrame(frame, display: false)
+        place(win, frame: frame)
         committedScale = 1
         removeCover()
         layoutWebView()
@@ -131,6 +137,28 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         webView.layoutSubtreeIfNeeded()
         sendImage(shot, windowSize: frame.size)
+    }
+
+    private func place(_ win: NSWindow, frame: NSRect) {
+        let center = NSPoint(x: frame.midX, y: frame.midY)
+        let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main ?? NSScreen.screens[0]
+        zoomScreen = screen
+        if win.frame != screen.visibleFrame { win.setFrame(screen.visibleFrame, display: false) }
+        moveFrame(to: frame)
+    }
+
+    private func moveFrame(to frame: NSRect) {
+        guard let win = window, let frameView, let container else { return }
+        frameView.frame = NSRect(x: frame.minX - win.frame.minX, y: frame.minY - win.frame.minY, width: frame.width, height: frame.height)
+        container.frame = frameView.bounds
+        let r = Settings.shared.data.ui.annotationCornerRadius
+        frameView.layer?.shadowPath = CGPath(roundedRect: frameView.bounds, cornerWidth: r, cornerHeight: r, transform: nil)
+    }
+
+    /// The visible frame in screen coordinates.
+    var frameOnScreen: NSRect? {
+        guard let win = window, let frameView else { return nil }
+        return win.convertToScreen(frameView.frame)
     }
 
     /// Zoom in grows the window around its center until it fills the screen, then magnifies the
@@ -265,22 +293,22 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
     /// The window may grow to the whole visible screen, past the fitted inset and the toolbar's room.
     private var maxZoom: CGFloat {
-        guard let screen = window?.screen ?? NSScreen.main else { return 1 }
+        guard let screen = zoomScreen else { return 1 }
         let v = screen.visibleFrame
         return max(1, min(v.width / fittedFrame.width, v.height / fittedFrame.height))
     }
 
     private func applyZoom(_ scale: CGFloat) {
-        guard let win = window, fittedFrame.width > 0 else { return }
+        guard window != nil, fittedFrame.width > 0 else { return }
         zoomScale = scale
         var f = NSRect(x: 0, y: 0, width: fittedFrame.width * scale, height: fittedFrame.height * scale)
         f.origin = NSPoint(x: fittedFrame.midX - f.width / 2, y: fittedFrame.midY - f.height / 2)
-        if let v = win.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
-            // Kept on screen: a window grown to the screen's height slides rather than clips.
+        if let v = zoomScreen?.visibleFrame {
+            // Kept on screen: a frame grown to the screen's height slides rather than clips.
             f.origin.x = min(max(f.origin.x, v.minX), max(v.minX, v.maxX - f.width))
             f.origin.y = min(max(f.origin.y, v.minY), max(v.minY, v.maxY - f.height))
         }
-        win.setFrame(f.integral, display: true)
+        moveFrame(to: f.integral)
         scaleWebView(scale)
     }
 
@@ -331,12 +359,20 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let win = AnnotationWindow(contentRect: .zero, styleMask: [.borderless, .fullSizeContentView], backing: .buffered, defer: false)
         win.isOpaque = false
         win.backgroundColor = .clear
-        win.hasShadow = true
+        win.hasShadow = false   // the frame view carries the shadow; the window itself is invisible
         win.level = .floating
         win.isMovableByWindowBackground = false
         win.isReleasedWhenClosed = false
         win.animationBehavior = .none
         win.onCloseRequest = { [weak self] in self?.cancel() }
+        let root = NSView()
+        root.wantsLayer = true
+        let frameView = NSView()
+        frameView.wantsLayer = true
+        frameView.layer?.shadowColor = NSColor.black.cgColor
+        frameView.layer?.shadowOpacity = 0.45
+        frameView.layer?.shadowRadius = 24
+        frameView.layer?.shadowOffset = CGSize(width: 0, height: -10)
         let container = NSView()
         container.wantsLayer = true
         container.layer?.masksToBounds = true
@@ -345,7 +381,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         // Sized by hand: see `committedScale`.
         webView.autoresizingMask = []
         container.addSubview(webView)
-        win.contentView = container
+        frameView.addSubview(container)
+        root.addSubview(frameView)
+        win.contentView = root
+        self.frameView = frameView
         self.container = container
         window = win
         return win
@@ -427,7 +466,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         guard let webView else { return }
         let frame = StackLayout.current.annotationFrame(for: NSSize(width: 1200, height: 800), visibleFrame: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame)
         let win = window ?? makeWindow(webView)
-        win.setFrame(frame, display: false)
+        place(win, frame: frame)
         layoutWebView()
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
@@ -483,7 +522,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             toolbar.model.colors = colors
             if let call = pendingCall { self.call(call); pendingCall = nil }
             // After a web process restart the window is still up: put its image and stored draft back.
-            else if let shot = current, let win = window { sendImage(shot, windowSize: win.frame.size) }
+            else if let shot = current, let container { sendImage(shot, windowSize: container.bounds.size) }
         case .tool(let tool, let color):
             toolbar.model.tool = tool
             toolbar.model.color = color
@@ -513,7 +552,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             "windowVisible": window?.isVisible ?? false,
             "zoom": zoomScale,
             "canvasZoom": canvasZoom,
-            "frame": window.map { StateReport.topLeft($0.frame, primaryHeight: StateReport.primaryHeight) } as Any,
+            "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "pageState": "\(pageState)",
             "tool": toolbar.model.tool as Any, "color": toolbar.model.color,
             "port": Int(port),
