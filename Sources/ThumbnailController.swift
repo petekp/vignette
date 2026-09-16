@@ -642,6 +642,7 @@ final class ThumbnailController {
         model.selected = []
         model.outCards = []
         model.focused = nil
+        let wasStack = model.isStack
         model.isStack = stack
         model.slidingOut = false
         model.scroll = 0
@@ -650,7 +651,7 @@ final class ThumbnailController {
         let reusing = visible && Set(cards.map(\.shot.url)) == Set(model.cards.map(\.shot.url))
         if !reusing {
             // A lone thumbnail that is part of the stack stays where it is; the rest slides in above it.
-            let staying = (visible && !model.isStack && stack) ? model.cards.first { existing in cards.contains { $0.shot.url == existing.shot.url } } : nil
+            let staying = (visible && !wasStack && stack) ? model.cards.first { existing in cards.contains { $0.shot.url == existing.shot.url } } : nil
             let next = cards.map { card in card.shot.url == staying?.shot.url ? staying! : card }
             model.cards = next
             model.offscreen = Set(next.map(\.id)).subtracting(staying.map { [$0.id] } ?? [])
