@@ -104,13 +104,21 @@ private struct CardView: View {
                     )
             }
 
-            if showsButtons {
-                HStack(spacing: ui.buttonSpacing) {
-                    ForEach(Config.actions.filter(\.showsOnCard), id: \.id) { action in
-                        RoundButton(symbol: action.symbol, help: action.label, ui: ui) { model.onAction(action, [card]) }
-                    }
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+        }
+        // Copy in the bottom-left corner with its name, delete in the bottom-right as an icon; a
+        // click anywhere else on the card draws.
+        .overlay(alignment: .bottomLeading) {
+            if showsButtons, let copy = Config.action(id: "copy") {
+                PillButton(symbol: copy.symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
+                    .padding(6)
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if showsButtons, let trash = Config.action(id: "trash") {
+                RoundButton(symbol: trash.symbol, help: trash.label, ui: ui) { model.onAction(trash, [card]) }
+                    .padding(6)
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -248,7 +256,7 @@ private struct SelectionBar: View {
 
 /// Buttons that react to hover and press with a small scale, so they feel physical.
 struct TactileButtonStyle: ButtonStyle {
-    enum Shape { case circle, rounded }
+    enum Shape { case circle, rounded, capsule }
     let shape: Shape
     @State private var hovered = false
 
@@ -260,12 +268,36 @@ struct TactileButtonStyle: ButtonStyle {
                 switch shape {
                 case .circle: Circle().fill(fill)
                 case .rounded: RoundedRectangle(cornerRadius: 8, style: .continuous).fill(fill)
+                case .capsule: Capsule().fill(fill)
                 }
             }
             .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? 1.08 : 1))
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.12), value: hovered)
             .onHover { hovered = $0 }
+    }
+}
+
+private struct PillButton: View {
+    let symbol: String
+    let label: String
+    let ui: UITweaks
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: ui.buttonIconSize - 1, weight: .semibold))
+                Text(label).font(.system(size: ui.buttonIconSize - 1, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .frame(height: ui.buttonSize)
+            .background(Capsule().fill(.regularMaterial))
+            .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+        }
+        .buttonStyle(TactileButtonStyle(shape: .capsule))
     }
 }
 

@@ -15,7 +15,7 @@ enum Config {
         ShotAction(id: "copy", symbol: "doc.on.doc", label: "Copy", key: .init("c", [.command]),
                    placement: .everywhere) { shots, app in app.copyToClipboard(shots) },
         ShotAction(id: "annotate", symbol: "pencil.tip.crop.circle", label: "Annotate", key: .init("\r", []),
-                   placement: .card, isDefault: true) { shots, app in if let last = shots.last { app.annotate(last) } },
+                   placement: .shortcut, isDefault: true) { shots, app in if let last = shots.last { app.annotate(last) } },
         ShotAction(id: "paths", symbol: "text.quote", label: "Copy Paths", key: .init("c", [.command, .option]),
                    placement: .shortcut) { shots, app in app.copyPaths(shots) },
         ShotAction(id: "copy-annotated", symbol: "pencil.line", label: "Copy Annotated", key: .init("c", [.command, .shift]),
@@ -30,7 +30,7 @@ enum Config {
 }
 
 struct ShotAction: Sendable {
-    enum Placement { case card, bar, everywhere, shortcut }   // shortcut: keyboard and URL only
+    enum Placement { case bar, everywhere, shortcut }   // shortcut: keyboard and URL only; everywhere: the card's corners too
     struct Key: Equatable, Sendable {
         let character: String
         let modifiers: NSEvent.ModifierFlags
@@ -46,7 +46,6 @@ struct ShotAction: Sendable {
     var minimumCount = 1
     let run: @MainActor @Sendable ([Screenshot], Actions) -> Void
 
-    var showsOnCard: Bool { placement == .card || placement == .everywhere }
     var showsInBar: Bool { placement == .bar || placement == .everywhere }
 }
 
