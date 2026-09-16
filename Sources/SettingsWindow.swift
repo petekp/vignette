@@ -77,10 +77,15 @@ struct SettingsView: View {
                 Text("Modifiers cmd, shift, opt, ctrl and a key, joined with +, or double-rshift for a double tap of right Shift (asks for Accessibility permission). Press Return to apply. Hold the key, or the second tap, to annotate the newest screenshot.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Annotating") {
-                Toggle("Annotate new captures", isOn: binding(\.annotateOnCapture))
+            Section("New captures") {
+                Toggle("Copy to the clipboard", isOn: binding(\.copyOnCapture))
+                Text("Every new screenshot is on the clipboard as soon as it lands: the image, plus its file for apps that take one.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Open in the annotator", isOn: binding(\.annotateOnCapture))
                 Text("Every new screenshot opens in the annotator right away, instead of showing a thumbnail.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Annotating") {
                 Toggle("Quick annotate", isOn: binding(\.quickAnnotate))
                 Text("Done copies the annotated image and closes everything, instead of returning to the stack.")
                     .font(.caption).foregroundStyle(.secondary)

@@ -166,6 +166,7 @@ which is how tests and agents keep away from the real one.
   "launchAtLogin": false,
   "quickAnnotate": false,
   "annotateOnCapture": false,
+  "copyOnCapture": true,
   "debug": false,
   "ui": { "cardMaxWidth": 208, "slideInDuration": 0.75, "backdropBlurRadius": 13, "...": "the design numbers" },
   "appleOriginal": { "location": "~/Desktop", "showThumbnail": true, "disableShadow": false, "type": "png" }
@@ -178,8 +179,9 @@ them for you. On first run the file mirrors what macOS is already doing, so noth
 you edit it; `appleOriginal` records those first values, and `restore-apple-defaults` puts them
 back. `launchAtLogin` adds Shotnote to your login items. `quickAnnotate` makes Done copy the
 annotated image and close the annotator and the stack at once, instead of returning to the stack.
-`annotateOnCapture` opens every new screenshot in the annotator right away, instead of showing a
-thumbnail; the menu bar toggles it too.
+`copyOnCapture` puts every new screenshot on the clipboard as it lands (the image, plus its file
+URL and path for apps that take those), and is on by default. `annotateOnCapture` opens every new
+screenshot in the annotator right away, instead of showing a thumbnail. The menu bar toggles both.
 `debug` unlocks `eval`, `show-editor`,
 `tweaks`, and `file=` outside the watch folder. A file that does not parse is moved aside as
 `settings.json.invalid` and replaced with defaults, with a toast saying so.

@@ -464,6 +464,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.addItem(withTitle: "Open Last Screenshot", action: #selector(openLast), keyEquivalent: "")
         menu.addItem(withTitle: "Show Recent Screenshots  (\(settings.data.recentHotkey))", action: #selector(toggleRecent), keyEquivalent: "")
         menu.addItem(withTitle: "Annotate Last Screenshot  (hold \(settings.data.recentHotkey))", action: #selector(annotateLastFromMenu), keyEquivalent: "")
+        let copyItem = NSMenuItem(title: "Copy New Captures", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
+        copyItem.state = settings.data.copyOnCapture ? .on : .off
+        menu.addItem(copyItem)
         let captureItem = NSMenuItem(title: "Annotate New Captures", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
         captureItem.state = settings.data.annotateOnCapture ? .on : .off
         menu.addItem(captureItem)
@@ -499,6 +502,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     @objc private func annotateLastFromMenu() { annotateLast() }
+
+    @objc private func toggleCopyOnCapture() {
+        settings.update { $0.copyOnCapture.toggle() }
+        Log.write("[settings] copyOnCapture=\(settings.data.copyOnCapture)")
+    }
 
     @objc private func toggleAnnotateOnCapture() {
         settings.update { $0.annotateOnCapture.toggle() }
@@ -538,7 +546,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         watcher = ScreenshotWatcher(folder: watchFolder, onNew: { [weak self] url in
             Log.write("[watcher] new \(url.lastPathComponent)")
             guard let self else { return }
-            if self.settings.data.annotateOnCapture { self.annotate(Screenshot(url: url)) } else { self.thumbnail.show(Screenshot(url: url)) }
+            let shot = Screenshot(url: url)
+            if self.settings.data.copyOnCapture {
+                Clipboard.copyFiles([url])
+                Commands.ok("copy", "\(url.lastPathComponent) on capture")
+            }
+            if self.settings.data.annotateOnCapture { self.annotate(shot) } else { self.thumbnail.show(shot) }
         }, onRemoved: { [weak self] urls in
             Log.write("[watcher] removed \(urls.map(\.lastPathComponent).joined(separator: ", "))")
             self?.thumbnail.remove(urls.map(Screenshot.init))

@@ -22,6 +22,7 @@ struct SettingsData: Codable, Equatable {
     var launchAtLogin = false                // registers the app as a login item (System Settings > Login Items)
     var quickAnnotate = false                // Done copies the result and closes the annotator and the stack at once
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
+    var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
     var debug = false                        // unlocks eval, show-editor, tweaks, and file= outside the watch folder
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
     var appleOriginal: AppleOriginal?        // Apple's screencapture values before Shotnote changed them
