@@ -271,7 +271,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         } else {
             Clipboard.copyPNG(png)
         }
-        thumbnail.showFeedback("Copied to clipboard")
+        if settings.data.quickAnnotate {
+            // Quick annotate: the drawing was the point; nothing to come back to.
+            Log.write("[annotate] quick close")
+            thumbnail.dismiss()
+        } else {
+            thumbnail.showFeedback("Copied to clipboard")
+        }
     }
 
     /// Writes `<name>-annotated.png` next to the screenshot.

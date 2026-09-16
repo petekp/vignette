@@ -162,6 +162,7 @@ which is how tests and agents keep away from the real one.
   "recentHotkey": "cmd+shift+6",
   "hideMenuBarIcon": false,
   "launchAtLogin": false,
+  "quickAnnotate": false,
   "debug": false,
   "ui": { "cardMaxWidth": 208, "slideInDuration": 0.75, "backdropBlurRadius": 13, "...": "the design numbers" },
   "appleOriginal": { "location": "~/Desktop", "showThumbnail": true, "disableShadow": false, "type": "png" }
@@ -172,7 +173,9 @@ The folder is one setting for two things: where Cmd+Shift+3/4/5 saves and what S
 `appleThumbnail`, `windowShadow`, and `format` are Apple's own screenshot defaults; Shotnote writes
 them for you. On first run the file mirrors what macOS is already doing, so nothing changes until
 you edit it; `appleOriginal` records those first values, and `restore-apple-defaults` puts them
-back. `launchAtLogin` adds Shotnote to your login items. `debug` unlocks `eval`, `show-editor`,
+back. `launchAtLogin` adds Shotnote to your login items. `quickAnnotate` makes Done copy the
+annotated image and close the annotator and the stack at once, instead of returning to the stack.
+`debug` unlocks `eval`, `show-editor`,
 `tweaks`, and `file=` outside the watch folder. A file that does not parse is moved aside as
 `settings.json.invalid` and replaced with defaults, with a toast saying so.
 
