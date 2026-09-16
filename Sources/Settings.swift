@@ -112,6 +112,7 @@ struct UITweaks: Codable, Equatable {
     var backdropSlideIn = 0.5           // the strip slides in from the screen edge while it fades
     var backdropSlideOut = 0.3
     var dimOpacity = 0.5             // screen darkening behind the annotator
+    var dimBlurRadius = 12.0
     var dimFade = 0.4                // the spring settles within this
     // Annotator window
     var annotationMinWidth = 770.0
@@ -165,7 +166,7 @@ struct UITweaks: Codable, Equatable {
         Bound("backdropTintStart", \.backdropTintStart, 0...1), Bound("backdropBlurRadius", \.backdropBlurRadius, 0...1000),
         Bound("backdropRampPower", \.backdropRampPower, 0.01...100), Bound("backdropFadeIn", \.backdropFadeIn, 0...60),
         Bound("backdropSlideIn", \.backdropSlideIn, 0...60), Bound("backdropSlideOut", \.backdropSlideOut, 0...60),
-        Bound("backdropFadeOut", \.backdropFadeOut, 0...60), Bound("dimOpacity", \.dimOpacity, 0...1), Bound("dimFade", \.dimFade, 0...60),
+        Bound("backdropFadeOut", \.backdropFadeOut, 0...60), Bound("dimOpacity", \.dimOpacity, 0...1), Bound("dimBlurRadius", \.dimBlurRadius, 0...1000), Bound("dimFade", \.dimFade, 0...60),
         Bound("annotationMinWidth", \.annotationMinWidth, 1...100_000), Bound("annotationMinHeight", \.annotationMinHeight, 1...100_000),
         Bound("annotationCornerRadius", \.annotationCornerRadius, 0...1000), Bound("annotationToolbarGap", \.annotationToolbarGap, 0...1000),
         Bound("annotationScreenInset", \.annotationScreenInset, 0...10_000),

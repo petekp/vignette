@@ -120,6 +120,7 @@ struct DebugPanelView: View {
                     Tweak("Slide in", \.backdropSlideIn, 0...1.5, step: 0.05, unit: "s")
                     Tweak("Slide out", \.backdropSlideOut, 0...1.5, step: 0.05, unit: "s")
                     Tweak("Dim behind annotator", \.dimOpacity, 0...0.9, step: 0.05)
+                    Tweak("Dim blur", \.dimBlurRadius, 0...60, step: 1, unit: "pt")
                     Tweak("Dim fade", \.dimFade, 0...1, step: 0.05, unit: "s")
                 }
                 Section("Annotator") {
