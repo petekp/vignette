@@ -176,6 +176,22 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   `Config.previewMaxPixel` on the longest side: park previews are rendered at that size by the
   page, and the full-resolution Done rendering is downsampled before it reaches a card or the
   disk. Screen-size flight decodes are dropped whenever the stack hides.
+- Bumping tldraw (`web/package.json` pins the version; `LICENSE-tldraw.md` must be the matching
+  license text) is a checklist, and `Tests/RenderTests.swift` is the gate:
+  1. License: read the new version's LICENSE and its `LicenseProvider`; confirm an unlicensed
+     `http://127.0.0.1` origin still renders with the watermark rather than hiding the editor,
+     and that the `licenseKey` prop still exists. Replace `LICENSE-tldraw.md` verbatim.
+  2. Watermark: note what it says now; it stays, whatever it says.
+  3. Snapshots: stored drafts are `TLEditorSnapshot` JSON in Application Support. `loadSnapshot`
+     runs the schema migrations, so check the release notes for breaking store changes and open
+     an old draft (`[draft] parked` from a previous version) before trusting it.
+  4. Asset store: the page's `assets.resolve` turns a path `src` into a served URL. Confirm
+     `TLAssetStore.resolve` and `Editor.resolveAssetUrl` are still the hook the image shape uses.
+  5. Export: run the render test. If tldraw's own `toImage` now rasterizes an embedded raster
+     image in WKWebView, `render` in `App.tsx` can go; until then it stays.
+  6. Protocol: any change to `bridge.ts` bumps `PROTOCOL` and `bridgeProtocolVersion` together.
+  7. `editor.run(fn, { history: 'ignore' })` must still keep snapshot loads out of undo history
+     (the render test checks `getCanUndo()` after an export).
 - Exports do not use tldraw's `toImage`. In WKWebView an SVG that embeds the screenshot
   rasterizes blank (WebKit loads the inner raster image asynchronously; tldraw only sleeps
   250ms for browsers it detects as Safari, which WKWebView is not). `render()` in `App.tsx`

@@ -62,6 +62,10 @@ targets:
       - path: Tests
       - path: Sources
         excludes: [AppDelegate.swift]
+      # The render test loads the built page over the loopback server, as the app does.
+      - path: web/dist
+        type: folder
+        buildPhase: resources
     settings:
       base:
         SWIFT_VERSION: "5.10"
