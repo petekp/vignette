@@ -109,6 +109,9 @@ struct DebugPanelView: View {
                     Tweak("Selection bar height", \.selectionBarHeight, 24...60)
                 }
                 Section("Timings") {
+                    Tweak("Motion", \.motion, 0...1, step: 0.05)
+                    Text("Scales every animation; 0 makes them instant. The system's Reduce Motion forces 0.")
+                        .font(.caption).foregroundStyle(.secondary)
                     Tweak("Thumbnail stays", \.thumbnailSeconds, 1...20, step: 0.5, unit: "s")
                     Tweak("Toast stays", \.toastSeconds, 0.5...5, step: 0.1, unit: "s")
                     Tweak("Slide in", \.slideInDuration, 0...1.5, step: 0.05, unit: "s")

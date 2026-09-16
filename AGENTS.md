@@ -83,7 +83,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `[app] ready pid=… build=… port=… watching=…` marks the end of launch: after it every command
    answers. `[web] ready` follows on its own once the editor page is up; `copy-annotated` and
    `eval` answer `error page-not-ready` before it, `annotate` queues one deep. `build` is
-   `git describe` of the checkout, stamped by build.sh.
+   `git describe` of the checkout, written into the bundle by a build phase (project.yml), so a
+   build from Xcode carries it too.
    Log grammar (`Log.swift`): one event per line, `HH:mm:ss.SSS [tag] …`, details as
    `key=value` pairs, never an embedded newline (the logger flattens them); the launch line ends
    with `date=YYYY-MM-DD`; at 5 MB the file rotates to `Shotnote.log.1`, replacing the previous
@@ -240,7 +241,8 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
 - An action: add a `ShotAction` to `Config.actions` and a method on the `Actions` protocol. Its
   `placement` decides whether it is a hover button on a card, a button in the selection bar, or
   both; `key` gives it a shortcut inside the recent stack. It is a `shotnote://<id>` URL either
-  way. Actions always receive a list of screenshots, oldest first.
+  way. Actions always receive a list of screenshots, oldest first; `annotate` opens the newest of
+  them, since the annotator holds one image, and says so in its `ok` line.
 - An editor tool or color: edit `web/src/config.ts`. A tool needs an SF Symbol name for the
   native toolbar; a color needs the hex the swatch shows.
 - A new message across the bridge: add it to both bridge files, then handle it in

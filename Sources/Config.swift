@@ -15,7 +15,7 @@ enum Config {
         ShotAction(id: "copy", symbol: "doc.on.doc", label: "Copy", key: .init("c", [.command]),
                    placement: .everywhere) { shots, app in app.copyToClipboard(shots) },
         ShotAction(id: "annotate", symbol: "pencil.tip.crop.circle", label: "Annotate", key: .init("\r", []),
-                   placement: .shortcut, isDefault: true) { shots, app in if let last = shots.last { app.annotate(last) } },
+                   placement: .shortcut, isDefault: true) { shots, app in app.annotate(shots) },
         ShotAction(id: "paths", symbol: "text.quote", label: "Copy Paths", key: .init("c", [.command, .option]),
                    placement: .shortcut) { shots, app in app.copyPaths(shots) },
         ShotAction(id: "copy-annotated", symbol: "pencil.line", label: "Copy Annotated", key: .init("c", [.command, .shift]),
@@ -54,7 +54,8 @@ struct ShotAction: Sendable {
 protocol Actions: AnyObject {
     func copyToClipboard(_ shots: [Screenshot])
     func copyPaths(_ shots: [Screenshot])
-    func annotate(_ shot: Screenshot)
+    /// Opens the newest of `shots`; the annotator holds one image.
+    func annotate(_ shots: [Screenshot])
     /// Exports each screenshot's draft (or uses the file as is when it has none) and copies the set.
     func copyAnnotated(_ shots: [Screenshot])
     func stitch(_ shots: [Screenshot])

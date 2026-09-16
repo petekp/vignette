@@ -477,10 +477,15 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Ends the session as Esc would. `open shotnote://cancel`. False when nothing was open.
+    /// Ends the session as Esc would, or closes the empty editor from `show-editor`.
+    /// `open shotnote://cancel`. False when nothing was open.
     @discardableResult
     func cancelForDebug() -> Bool {
-        guard current != nil else { return false }
+        if current == nil {
+            guard let window, window.isVisible else { return false }
+            hideWindows()
+            return true
+        }
         cancel()
         return true
     }

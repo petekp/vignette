@@ -27,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         toast: { [weak self] in self?.thumbnail.showFeedback("Copied 3 images") },
         annotator: { [weak self] in
             guard let self, let url = ScreenshotWatcher.newestScreenshot(in: self.watchFolder) else { return }
-            self.annotate(Screenshot(url: url))
+            self.annotate([Screenshot(url: url)])
         }))
     private let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
@@ -123,7 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self else { return }
             Log.write("[hotkey] hold")
             if pressDismissed { _ = pressRecent() }
-            if let shot = holdTarget { annotate(shot) } else { annotateLast() }
+            if let shot = holdTarget { annotate([shot]) } else { annotateLast() }
         }
         switch HotKeySpec.parse(settings.data.recentHotkey) {
         case .key(let keyCode, let modifiers):
@@ -153,8 +153,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.showFeedback(shots.count == 1 ? "Copied path" : "Copied \(shots.count) paths")
     }
 
-    func annotate(_ shot: Screenshot) {
-        Commands.ok("annotate", shot.url.lastPathComponent)
+    func annotate(_ shots: [Screenshot]) {
+        guard let shot = shots.last else { Commands.error("annotate", .missingFile, "nothing selected"); return }
+        Commands.ok("annotate", shots.count > 1 ? "\(shot.url.lastPathComponent), the newest of \(shots.count); the annotator holds one image" : shot.url.lastPathComponent)
         thumbnail.annotate(shot)
     }
 
@@ -163,7 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard let url = ScreenshotWatcher.newestScreenshot(in: watchFolder) else {
             Commands.error("annotate", .missingFile, "no screenshot in \(watchFolder.path)"); return
         }
-        annotate(Screenshot(url: url))
+        annotate([Screenshot(url: url)])
     }
 
     func stitch(_ shots: [Screenshot]) {
@@ -547,7 +548,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Clipboard.copyFiles([url])
                 Commands.ok("copy", "\(url.lastPathComponent) on capture")
             }
-            if self.settings.data.annotateOnCapture { self.annotate(shot) } else { self.thumbnail.show(shot) }
+            if self.settings.data.annotateOnCapture { self.annotate([shot]) } else { self.thumbnail.show(shot) }
         }, onRemoved: { [weak self] urls in
             Log.write("[watcher] removed \(urls.map(\.lastPathComponent).joined(separator: ", "))")
             self?.thumbnail.remove(urls.map(Screenshot.init))
