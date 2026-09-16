@@ -370,9 +370,7 @@ private struct DrawHint: View {
         .foregroundStyle(.white)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Capsule().fill(.regularMaterial))
-        .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+        .background(Capsule().fill(.black.opacity(0.7)))   // plain, unlike the material action buttons
         .fixedSize()
         .allowsHitTesting(false)
     }
