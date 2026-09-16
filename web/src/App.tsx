@@ -292,7 +292,10 @@ function setColor(editor: Editor, id: ColorId) {
 
 function activeTool(editor: Editor): ToolId | null {
   const current = editor.getCurrentToolId()
-  if (current === 'geo') return editor.getStyleForNextShape(GeoShapeGeoStyle) === 'ellipse' ? 'ellipse' : 'rectangle'
+  if (current === 'geo') {
+    const geo = editor.getStyleForNextShape(GeoShapeGeoStyle)
+    return TOOLS.find((t) => 'geo' in t && t.geo === geo)?.id ?? null
+  }
   return TOOLS.find((t) => t.tool === current)?.id ?? null
 }
 

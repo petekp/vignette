@@ -66,56 +66,56 @@ struct SettingsData: Codable, Equatable {
 /// Layout, styling, timing, and backdrop parameters. All in points and seconds.
 struct UITweaks: Codable, Equatable {
     // Cards
-    var cardMaxWidth = 220.0
-    var cardMaxHeight = 150.0
-    var cardMinSide = 56.0
+    var cardMaxWidth = 208.0
+    var cardMaxHeight = 86.0
+    var cardMinSide = 114.0
     var cardSpacing = 10.0
-    var panelInset = 24.0            // room for shadows inside the panel
-    var screenMargin = 16.0          // distance from the screen corner
-    var cardCornerRadius = 8.0
-    var cardBorderWidth = 1.0
-    var cardBorderOpacity = 0.7
-    var cardShadowRadius = 14.0
-    var cardShadowOpacity = 0.35
+    var panelInset = 19.0            // room for shadows inside the panel
+    var screenMargin = 17.0          // distance from the screen corner
+    var cardCornerRadius = 12.0
+    var cardBorderWidth = 2.0
+    var cardBorderOpacity = 0.35
+    var cardShadowRadius = 4.0
+    var cardShadowOpacity = 0.5
     var cardShadowY = 6.0
-    var hoverScale = 1.03
+    var hoverScale = 1.06
     var pressScale = 0.96
     var hoverDim = 0.35             // darkening of a hovered card behind its buttons
     // Hover buttons and selection
-    var buttonSize = 28.0
-    var buttonIconSize = 12.0
-    var buttonSpacing = 8.0
-    var selectionCircleSize = 22.0
-    var selectionBarHeight = 36.0
+    var buttonSize = 36.0
+    var buttonIconSize = 14.0
+    var buttonSpacing = 4.0
+    var selectionCircleSize = 19.0
+    var selectionBarHeight = 44.0
     // Timings
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
-    var toastSeconds = 1.4
-    var slideInDuration = 0.4
+    var toastSeconds = 1.7
+    var slideInDuration = 0.75
     var slideInCurve = "spring"      // spring, easeOut, easeInOut, linear
     var slideOutDuration = 0.3
     var staggerDelay = 0.05
     var staggerTotalMax = 0.3        // the last card never starts later than this
     var relayoutDuration = 0.2
-    var expandDuration = 0.38
+    var expandDuration = 0.4
     var hoverRevealDuration = 0.15
     var motion = 1.0                 // multiplier on every animation duration, 0 to 1; Reduce Motion forces 0
     // Backdrop
-    var backdropWidth = 440.0
-    var backdropTint = 0.3           // darkness at the right edge, 0 to 1
+    var backdropWidth = 290.0
+    var backdropTint = 0.0           // darkness at the right edge, 0 to 1
     var backdropTintStart = 0.0      // where the tint begins, 0 = left edge, 1 = right edge
-    var backdropBlurRadius = 40.0    // at the right edge
-    var backdropBands = 6            // effect views in the blur ramp
+    var backdropBlurRadius = 13.0    // at the right edge
+    var backdropBands = 3            // effect views in the blur ramp
     var backdropRampPower = 2.0      // 1 = linear radius growth, higher keeps the left sharper
     var backdropFadeIn = 0.35
-    var backdropFadeOut = 0.3
+    var backdropFadeOut = 0.35
     var dimOpacity = 0.35            // screen darkening behind the annotator
     var dimFade = 0.25
     // Annotator window
-    var annotationMinWidth = 480.0
-    var annotationMinHeight = 140.0
+    var annotationMinWidth = 770.0
+    var annotationMinHeight = 320.0
     var annotationCornerRadius = 10.0
     var annotationToolbarGap = 12.0
-    var annotationScreenInset = 60.0
+    var annotationScreenInset = 65.0
 
     /// One entry of `bounds`. A plain struct, not a tuple, so the array can be `Sendable`.
     /// `@unchecked`: `WritableKeyPath` isn't marked `Sendable` in the standard library, but key

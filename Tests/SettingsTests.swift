@@ -161,6 +161,13 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(notes.count, 5, notes.joined(separator: "; "))
     }
 
+    func testDefaultsAreWithinTheirBounds() {
+        // A default outside its bound would be clamped on load, so a fresh install would not render the tuned UI.
+        var d = SettingsData()
+        d.ui = UITweaks()
+        XCTAssertEqual(d.validated().data.ui, UITweaks())
+    }
+
     func testEveryTweakHasABound() {
         let encoded = try! JSONSerialization.jsonObject(with: JSONEncoder().encode(UITweaks())) as! [String: Any]
         let doubles = Set(encoded.filter { $0.value is Double || $0.value is Int }.keys).subtracting(["backdropBands"])

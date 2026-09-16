@@ -322,6 +322,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             "windowVisible": window?.isVisible ?? false,
             "frame": window.map { StateReport.topLeft($0.frame, primaryHeight: StateReport.primaryHeight) } as Any,
             "pageState": "\(pageState)",
+            "tool": toolbar.model.tool as Any, "color": toolbar.model.color,
             "port": Int(port),
             "webPid": webProcessID.map { Int($0) } as Any,
         ]
