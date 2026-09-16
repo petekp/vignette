@@ -45,8 +45,10 @@ final class DimPanel: NSPanel {
         tint.frame = bounds
         tint.layer?.backgroundColor = NSColor.black.withAlphaComponent(ui.dimOpacity).cgColor
         orderFront(nil)
-        // The whole panel fades: the blur and the tint arrive together.
-        alpha.animate(to: 1, duration: ui.dimFade, curve: "spring")
+        // The whole panel fades: the blur and the tint arrive together. It stops just short of
+        // opaque: a fully opaque screen-sized window occludes the windows under it, and the
+        // window server drops their shadows and controls out of the blur when that happens.
+        alpha.animate(to: 0.995, duration: ui.dimFade, curve: "spring")
     }
 
     func hide() {
