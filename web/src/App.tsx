@@ -409,15 +409,18 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
     postToNative({ type: 'tool', tool, color })
   }, [tool, color])
 
-  // Keep the image fitted when the window is resized. The reset drops any magnification, so it
-  // goes back on afterwards; the resize and the host's zoom call can land in either order.
+  // Refit as soon as the window is laid out at a new size, before that frame paints, so the image
+  // never shows at the old fit. tldraw's own bounds update waits for the next frame. The reset
+  // drops any magnification, so it goes back on afterwards.
   useEffect(() => {
-    const refit = () => {
+    const container = editor.getContainer()
+    const observer = new ResizeObserver(() => {
+      editor.updateViewportScreenBounds(container)
       editor.setCamera(editor.getCamera(), { reset: true })
       if (canvasRatio > 1) setCanvasZoom(editor, canvasRatio)
-    }
-    window.addEventListener('resize', refit)
-    return () => window.removeEventListener('resize', refit)
+    })
+    observer.observe(container)
+    return () => observer.disconnect()
   }, [editor])
 
   // A pinch arrives as a wheel event with ctrlKey; cmd+wheel zooms too. Both go to the host,
@@ -469,6 +472,8 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
       }
       if (mod && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
         e.preventDefault()
+        // tldraw binds these too, on the document; stopping here keeps its camera zoom out of it.
+        e.stopPropagation()
         postToNative({ type: 'zoom', factor: e.key === '0' ? null : e.key === '-' ? 1 / ZOOM_STEP : ZOOM_STEP })
         return
       }

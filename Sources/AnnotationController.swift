@@ -74,6 +74,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// How much of a pull below the fitted size the window shows before springing back.
     private let overpull: CGFloat = 0.3
     private let maxCanvasZoom: CGFloat = 8
+    /// The window scale the page was last laid out at. Between rest positions the web view keeps
+    /// that layout and a layer transform scales it with the window, so image and frame move in
+    /// the same commit; a real relayout (and the page's refit) happens once, at rest.
+    private var committedScale: CGFloat = 1
+    /// A snapshot of the scaled page shown over the web view while it relays out at rest: the web
+    /// process paints the new size a frame or two later, and the old size would flash meanwhile.
+    private var cover: NSImageView?
+    private var uncoverTimer: Timer?
 
     func preload() {
         _ = FocusReturn.shared
@@ -116,6 +124,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         settleTimer?.invalidate()
         zoom.set(1)
         win.setFrame(frame, display: false)
+        committedScale = 1
+        removeCover()
+        layoutWebView()
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         webView.layoutSubtreeIfNeeded()
@@ -129,6 +140,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     func zoom(by factor: Double?, animated: Bool) {
         guard window != nil, fittedFrame.width > 0 else { return }
         settleTimer?.invalidate()
+        removeCover()
         guard let factor else {
             setCanvasZoom(1)
             windowTarget = 1
@@ -148,8 +160,78 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             windowTarget = max(0.5, windowTarget * f)
         }
         let shown = windowTarget < 1 ? 1 - (1 - windowTarget) * overpull : windowTarget
-        if animated { zoom.animate(to: shown, duration: 0.3, curve: "spring") } else { zoom.set(shown) }
-        if windowTarget < 1 { scheduleSettle() }
+        if animated {
+            zoom.animate(to: shown, duration: 0.3, curve: "spring") { [weak self] in
+                guard let self, self.windowTarget >= 1 else { return }   // a pull settles on its own
+                self.commitZoom()
+            }
+        } else {
+            zoom.set(shown)
+        }
+        if !animated || windowTarget < 1 { scheduleSettle() }
+    }
+
+    /// Lays the page out at the window's current size and drops the live transform. A snapshot of
+    /// the scaled page covers the change until the page has painted at the new size.
+    private func commitZoom() {
+        guard let webView, let container else { return }
+        let scale = zoomScale
+        guard scale != committedScale else { layoutWebView(); return }
+        let config = WKSnapshotConfiguration()
+        config.afterScreenUpdates = false
+        webView.takeSnapshot(with: config) { [weak self] image, _ in
+            guard let self, self.zoomScale == scale, self.committedScale != scale else { return }   // a new gesture settles again
+            if let image {
+                let cover = NSImageView(frame: container.bounds)
+                cover.image = image
+                cover.imageScaling = .scaleAxesIndependently
+                cover.autoresizingMask = [.width, .height]
+                container.addSubview(cover, positioned: .above, relativeTo: webView)
+                self.cover = cover
+            }
+            self.committedScale = scale
+            self.layoutWebView()
+            self.uncoverAfterPaint()
+        }
+    }
+
+    /// Three frames: the resize reaches the page in one, its refit and paint land in the next,
+    /// and the third is a margin. A timer backs it up in case the page is busy.
+    private func uncoverAfterPaint() {
+        uncoverTimer?.invalidate()
+        uncoverTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.removeCover() }
+        }
+        let frames = "await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));"
+        webView?.callAsyncJavaScript(frames, arguments: [:], in: nil, in: .page) { [weak self] _ in self?.removeCover() }
+    }
+
+    private func removeCover() {
+        uncoverTimer?.invalidate()
+        uncoverTimer = nil
+        cover?.removeFromSuperview()
+        cover = nil
+    }
+
+    private func layoutWebView() {
+        guard let webView, let container else { return }
+        webView.layer?.transform = CATransform3DIdentity
+        webView.frame = container.bounds
+    }
+
+    private func scaleWebView(_ scale: CGFloat) {
+        guard let webView, let container, let layer = webView.layer else { return }
+        let s = scale / committedScale
+        let size = NSSize(width: fittedFrame.width * committedScale, height: fittedFrame.height * committedScale)
+        let bounds = container.bounds
+        webView.frame = NSRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2, width: size.width, height: size.height)
+        // Scale about the container's center whatever the layer's anchor point is: scaling about
+        // the anchor A moves the center C to A + s(C - A), and the translation puts it back.
+        let a = layer.anchorPoint
+        let anchor = NSPoint(x: webView.frame.minX + a.x * size.width, y: webView.frame.minY + a.y * size.height)
+        let center = NSPoint(x: bounds.midX, y: bounds.midY)
+        let shift = NSPoint(x: (center.x - anchor.x) * (1 - s), y: (center.y - anchor.y) * (1 - s))
+        layer.transform = CATransform3DConcat(CATransform3DMakeScale(s, s, 1), CATransform3DMakeTranslation(shift.x, shift.y, 0))
     }
 
     /// A trackpad pinch, straight from AppKit: WebKit would otherwise turn it into gesture events
@@ -171,9 +253,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
 
     private func settleNow() {
         settleTimer?.invalidate()
-        guard windowTarget < 1 else { return }
+        guard windowTarget < 1 else { commitZoom(); return }
         windowTarget = 1
-        zoom.animate(to: 1, duration: 0.35, curve: "spring")
+        zoom.animate(to: 1, duration: 0.35, curve: "spring") { [weak self] in self?.commitZoom() }
     }
 
     private func setCanvasZoom(_ ratio: CGFloat) {
@@ -199,6 +281,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             f.origin.y = min(max(f.origin.y, v.minY), max(v.minY, v.maxY - f.height))
         }
         win.setFrame(f.integral, display: true)
+        scaleWebView(scale)
     }
 
     func show() {
@@ -238,6 +321,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     private func hideWindows() {
+        removeCover()
         if let win = window, toolbar.panel.parent === win { win.removeChildWindow(toolbar.panel) }
         toolbar.panel.orderOut(nil)
         window?.orderOut(nil)
@@ -258,7 +342,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         container.layer?.masksToBounds = true
         container.autoresizesSubviews = true
         webView.frame = container.bounds
-        webView.autoresizingMask = [.width, .height]
+        // Sized by hand: see `committedScale`.
+        webView.autoresizingMask = []
         container.addSubview(webView)
         win.contentView = container
         self.container = container
@@ -343,6 +428,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let frame = StackLayout.current.annotationFrame(for: NSSize(width: 1200, height: 800), visibleFrame: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame)
         let win = window ?? makeWindow(webView)
         win.setFrame(frame, display: false)
+        layoutWebView()
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         win.makeKeyAndOrderFront(nil)
