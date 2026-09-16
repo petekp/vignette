@@ -397,7 +397,7 @@ private struct PillButton: View {
                 Text(label).font(.system(size: ui.buttonIconSize - 1, weight: .semibold))
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 9)
             .frame(height: ui.buttonSize)
             .background(Capsule().fill(.regularMaterial))
             .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))

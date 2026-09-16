@@ -85,8 +85,8 @@ struct UITweaks: Codable, Equatable {
     var pressScale = 0.96
     var hoverDim = 0.35             // darkening of a hovered card behind its buttons
     // Hover buttons and selection
-    var buttonSize = 36.0
-    var buttonIconSize = 14.0
+    var buttonSize = 27.0
+    var buttonIconSize = 11.0
     var buttonSpacing = 4.0
     var selectionCircleSize = 19.0
     var selectionBarHeight = 44.0
