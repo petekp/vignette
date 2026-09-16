@@ -50,7 +50,7 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    window is hidden, so the line never arrives in that state.
 4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.
    Send keys with `osascript -e 'tell application "System Events" to key code 36 using command down'`
-   (Cmd+Enter finishes annotating, key code 53 is Esc). The recent stack takes key focus, so
+   (Return finishes annotating, Cmd+Return too while typing, key code 53 is Esc). The recent stack takes key focus, so
    `keystroke "a" using command down` after `open shotnote://recent` selects all.
    For the global hotkey, the sweep gesture, or drag-out, System Events is not enough: use
    `scripts/input.sh` (CGEvent; `hotkey double-rshift`, `hotkey cmd+shift+6`, `click X Y`,
@@ -152,7 +152,7 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   panel (`AnnotatorToolbar.swift`) placed under the window, never inside the page: the page
   sends its tool and color list in the `ready` message, reports the active tool, and takes
   `setTool`/`setColor`/`finish` calls. Keyboard shortcuts inside the editor (tool keys, undo,
-  delete, Esc, Cmd+Enter) live in `Hotkeys` in `App.tsx`, because tldraw's own shortcuts are part
+  delete, Esc, Return) live in `Hotkeys` in `App.tsx`, because tldraw's own shortcuts are part
   of the UI that `hideUi` removes. `TransitionLayer` flies a card between its stack slot and that
   frame, and the annotator loads the image while hidden (`prepare`) so it can appear the moment
   the card lands (`show`). A swap runs two of these at once. The stack keeps a dashed placeholder

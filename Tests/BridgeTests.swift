@@ -31,8 +31,10 @@ final class BridgeTests: XCTestCase {
         guard case .cancel? = WebMessage(body: ["type": "cancel"]) else { return XCTFail() }
         guard case .log(let text)? = WebMessage(body: ["type": "log", "message": "hi"]) else { return XCTFail() }
         XCTAssertEqual(text, "hi")
-        guard case .done(let data)? = WebMessage(body: ["type": "done", "png": png]) else { return XCTFail() }
+        guard case .done(let data?)? = WebMessage(body: ["type": "done", "png": png]) else { return XCTFail() }
         XCTAssertEqual(data.count, 4)
+        guard case .done(nil)? = WebMessage(body: ["type": "done", "png": NSNull()]) else { return XCTFail("a null png means nothing was drawn") }
+        XCTAssertNil(WebMessage(body: ["type": "done"]))
         guard case .draft(let dkey, let snapshot)? = WebMessage(body: ["type": "draft", "key": "/a.png", "snapshot": ["document": ["x": 1]]]) else { return XCTFail() }
         XCTAssertEqual(dkey, "/a.png")
         XCTAssertEqual((snapshot as? [String: Any])?.keys.sorted(), ["document"])

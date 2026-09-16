@@ -91,7 +91,7 @@ private struct ToolbarView: View {
                     .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(TactileButtonStyle(shape: .rounded))
-            .help("Copy the annotated image (⌘↩)")
+            .help("Copy the image and close (↩)")
         }
         .padding(.horizontal, 7)
         .frame(height: AnnotatorToolbar.height)

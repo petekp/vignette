@@ -7,7 +7,8 @@ import WebKit
 /// messages end a session through `close`.
 @MainActor
 final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
-    var onFinished: ((Screenshot, Data) -> Void)?
+    /// Done: the rendering, or nil when nothing was drawn.
+    var onFinished: ((Screenshot, Data?) -> Void)?
     /// The page asks to end the session: Esc, click outside, Cmd+W, or Done. The owner decides what
     /// happens next and calls `hide` when it is time; nothing here hides on its own.
     var onClosed: (() -> Void)?
@@ -532,7 +533,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             onLoaded?(key)
         case .done(let png):
             guard let shot = current else { return }
-            onDraftPreview?(shot.url.path, png)
+            if let png { onDraftPreview?(shot.url.path, png) }
             onFinished?(shot, png)
             onClosed?()
         case .cancel:

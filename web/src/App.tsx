@@ -325,6 +325,11 @@ function activeTool(editor: Editor): ToolId | null {
 }
 
 async function finish(editor: Editor, scale: number) {
+  if (!hasAnnotations(editor)) {
+    dirty = false
+    postToNative({ type: 'done', png: null })
+    return
+  }
   const png = await render(editor, scale)
   if (!png) return cancel(editor)
   dirty = false // the host has this rendering; no preview needed when the draft is parked
@@ -464,9 +469,13 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
         cancel(editor)
         return
       }
-      if (e.key === 'Enter' && mod) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+        // Return finishes; while typing it only ends the text, and Cmd+Return finishes from there.
         e.preventDefault()
-        if (editing) editor.setEditingShape(null)
+        if (editing) {
+          editor.setEditingShape(null)
+          if (!mod) return
+        }
         finish(editor, scaleRef.current)
         return
       }

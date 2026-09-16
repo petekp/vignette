@@ -264,12 +264,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// Done: the annotated file goes on the clipboard as a file, an image, and its path as text,
     /// so a terminal pastes the path and a chat app pastes the image.
-    private func finishAnnotation(_ shot: Screenshot, _ png: Data) {
-        if let out = writeAnnotated(shot, png) {
-            Clipboard.copyFiles([out])
-            Log.write("[annotate] done \(out.lastPathComponent) \(png.count) bytes, copied")
+    private func finishAnnotation(_ shot: Screenshot, _ png: Data?) {
+        if let png {
+            if let out = writeAnnotated(shot, png) {
+                Clipboard.copyFiles([out])
+                Log.write("[annotate] done \(out.lastPathComponent) \(png.count) bytes, copied")
+            } else {
+                Clipboard.copyPNG(png)
+            }
         } else {
-            Clipboard.copyPNG(png)
+            Clipboard.copyFiles([shot.url])
+            Log.write("[annotate] done \(shot.url.lastPathComponent) nothing drawn, original copied")
         }
         if settings.data.quickAnnotate {
             // Quick annotate: the drawing was the point; nothing to come back to.

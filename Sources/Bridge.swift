@@ -3,7 +3,7 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 4
+let bridgeProtocolVersion = 5
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
@@ -82,7 +82,8 @@ enum WebMessage {
     case tool(tool: String?, color: String)
     /// The image from `load` is on the canvas.
     case loaded(key: String)
-    case done(png: Data)
+    /// Finished; a nil PNG means nothing was drawn and the original is what gets copied.
+    case done(png: Data?)
     case cancel
     case log(String)
     /// The current image's annotations changed; a nil snapshot means they were all removed.
@@ -111,8 +112,10 @@ enum WebMessage {
         case "cancel": self = .cancel
         case "log": self = .log(dict["message"] as? String ?? "")
         case "done":
-            guard let text = dict["png"] as? String, let data = Self.pngData(text) else { return nil }
-            self = .done(png: data)
+            guard let raw = dict["png"] else { return nil }
+            if raw is NSNull { self = .done(png: nil) }
+            else if let text = raw as? String, let data = Self.pngData(text) { self = .done(png: data) }
+            else { return nil }
         case "draft":
             guard let key = dict["key"] as? String, dict.keys.contains("snapshot") else { return nil }
             let snapshot = dict["snapshot"]

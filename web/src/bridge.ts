@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 4
+export const PROTOCOL = 5
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
@@ -40,7 +40,8 @@ type NativeMessage =
   | { type: 'tool'; tool: string | null; color: string }
   /** The image from `load` is on the canvas. */
   | { type: 'loaded'; key: string }
-  | { type: 'done'; png: string }
+  /** Finished. `png` is the rendering, or null when nothing was drawn: the host copies the original. */
+  | { type: 'done'; png: string | null }
   | { type: 'cancel' }
   | { type: 'log'; message: string }
   /** The current image's annotations changed; null means they were all removed. Sent shortly after each change. */
