@@ -46,10 +46,11 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(layout.cardSpan(index: 1, cards: cards, showsBar: false).bottom, 110)
     }
 
-    func testAnnotationFrameKeepsAspectAndAvoidsTheStack() {
-        let frame = layout.annotationFrame(for: NSSize(width: 1600, height: 800), visibleFrame: screen, avoidRight: 232, below: 60)
+    func testAnnotationFrameKeepsAspectAndCentersOnTheScreen() {
+        let frame = layout.annotationFrame(for: NSSize(width: 1600, height: 800), visibleFrame: screen, below: 60)
         XCTAssertEqual(frame.width / frame.height, 2, accuracy: 0.01)
-        XCTAssertLessThanOrEqual(frame.maxX, 1512 - 60 - 232)
+        XCTAssertEqual(frame.midX, screen.midX, accuracy: 1, "centered on the screen, not on the space left of the stack")
+        XCTAssertLessThanOrEqual(frame.maxX, 1512 - 60)
         XCTAssertGreaterThanOrEqual(frame.minY, 60 + 60)
         let small = layout.annotationFrame(for: NSSize(width: 100, height: 100), visibleFrame: screen)
         XCTAssertEqual(small.width, 480, "a small crop scales up to the minimum width")

@@ -410,10 +410,8 @@ final class ThumbnailController {
         }
     }
 
-    /// Centered in the part of the screen left of the stack, so the annotator never hides the cards.
     private func targetFrame(for card: Card) -> NSRect {
-        let avoid = model.isStack ? layout.maxCardWidth + layout.margin * 2 : 0
-        return layout.annotationFrame(for: card.pointSize, visibleFrame: screen.visibleFrame, avoidRight: avoid, below: annotatorBelow())
+        layout.annotationFrame(for: card.pointSize, visibleFrame: screen.visibleFrame, below: annotatorBelow())
     }
 
     /// The best image for the flight: the draft preview, a larger decode if hovering fetched one,

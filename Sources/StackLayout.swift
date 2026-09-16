@@ -74,11 +74,10 @@ struct StackLayout {
     /// How far a card has to travel to the right to leave the screen.
     func offscreenDistance(cardWidth: CGFloat) -> CGFloat { cardWidth + inset + margin }
 
-    /// Where the annotator goes: the image's exact aspect, centered in the screen area left of the
-    /// stack, with room below for the toolbar. Small crops scale up until the toolbar fits.
-    func annotationFrame(for image: NSSize, visibleFrame: NSRect, avoidRight: CGFloat = 0, below: CGFloat = 0) -> NSRect {
+    /// Where the annotator goes: the image's exact aspect, centered on the screen, with room below
+    /// for the toolbar. Small crops scale up until the toolbar fits.
+    func annotationFrame(for image: NSSize, visibleFrame: NSRect, below: CGFloat = 0) -> NSRect {
         var v = visibleFrame.insetBy(dx: ui.annotationScreenInset, dy: ui.annotationScreenInset)
-        v.size.width -= avoidRight
         v.origin.y += below
         v.size.height -= below
         let w0 = max(image.width, 1), h0 = max(image.height, 1)
