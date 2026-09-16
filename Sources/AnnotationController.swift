@@ -90,8 +90,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "shotnote")
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
+        let webView = AnnotationWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
         webView.navigationDelegate = self
+        webView.onMagnify = { [weak self] magnification, phase in self?.pinch(magnification, phase: phase) }
         webView.setValue(false, forKey: "drawsBackground")
         webView.load(URLRequest(url: server.indexURL))
         self.webView = webView
@@ -151,15 +152,28 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         if windowTarget < 1 { scheduleSettle() }
     }
 
-    /// A pull below the fitted size lets go shortly after the last zoom message.
+    /// A trackpad pinch, straight from AppKit: WebKit would otherwise turn it into gesture events
+    /// the page zooms on. The pull springs back the moment the fingers lift.
+    private func pinch(_ magnification: CGFloat, phase: NSEvent.Phase) {
+        switch phase {
+        case .ended, .cancelled: settleNow()
+        default: zoom(by: Double(1 + magnification), animated: false)
+        }
+    }
+
+    /// A pull below the fitted size lets go shortly after the last zoom message, for cmd+wheel
+    /// and keyboard steps that have no end event.
     private func scheduleSettle() {
         settleTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.windowTarget < 1 else { return }
-                self.windowTarget = 1
-                self.zoom.animate(to: 1, duration: 0.35, curve: "spring")
-            }
+            MainActor.assumeIsolated { self?.settleNow() }
         }
+    }
+
+    private func settleNow() {
+        settleTimer?.invalidate()
+        guard windowTarget < 1 else { return }
+        windowTarget = 1
+        zoom.animate(to: 1, duration: 0.35, curve: "spring")
     }
 
     private func setCanvasZoom(_ ratio: CGFloat) {
@@ -470,6 +484,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
 
 /// Borderless windows refuse key status by default; the editor needs it for typing and shortcuts.
 @MainActor
+/// Takes the trackpad pinch before WebKit does, so zoom stays the app's (see `AnnotationController.zoom`).
+final class AnnotationWebView: WKWebView {
+    var onMagnify: ((CGFloat, NSEvent.Phase) -> Void)?
+    override func magnify(with event: NSEvent) {
+        onMagnify?(event.magnification, event.phase)
+    }
+}
+
 final class AnnotationWindow: NSWindow {
     var onCloseRequest: (() -> Void)?
     override var canBecomeKey: Bool { true }

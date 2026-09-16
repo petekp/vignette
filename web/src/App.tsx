@@ -257,6 +257,8 @@ function fitCamera(editor: Editor, w: number, h: number) {
   canvasRatio = 1
   // The host sizes the window to the image's aspect, so 'fit' makes the image flush with the window.
   editor.setCameraOptions({
+    // No step below the fit: nothing tldraw does on its own can zoom the image out of the window.
+    zoomSteps: [1, 2, 4, 8],
     constraints: {
       initialZoom: 'fit-max',
       baseZoom: 'fit-max',
@@ -436,8 +438,18 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
         factor = 1
       })
     }
+    // The host takes the trackpad pinch before WebKit; these are the leftovers if one gets through.
+    const swallow = (e: Event) => {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    const gestures = ['gesturestart', 'gesturechange', 'gestureend']
     window.addEventListener('wheel', onWheel, { capture: true, passive: false })
-    return () => window.removeEventListener('wheel', onWheel, { capture: true })
+    for (const g of gestures) window.addEventListener(g, swallow, { capture: true, passive: false })
+    return () => {
+      window.removeEventListener('wheel', onWheel, { capture: true })
+      for (const g of gestures) window.removeEventListener(g, swallow, { capture: true })
+    }
   }, [])
 
   useEffect(() => {
