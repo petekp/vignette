@@ -13,7 +13,11 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
   fly-back timing (`TransitionLayer.swift`), and the stitch gap, padding, and badge
   (`Stitch.swift`).
   Editing the file is a supported way to change settings; the app reloads it within a second.
-  It is the user's real config: never test against it. `SHOTNOTE_SETTINGS=<path>` in the
+  It is the user's real config: never test against it. The tweak panel writes to whichever file
+  the running instance was launched with, and a test launch replaces the user's instance, so copy
+  the real file over the scratch copy before a test round and, before relaunching the real build,
+  merge back any `ui` keys that changed in the scratch copy (`[settings] wrote ui.…` in the log
+  lists them). `SHOTNOTE_SETTINGS=<path>` in the
   environment (`open -g --env SHOTNOTE_SETTINGS=/tmp/x/settings.json <app>`) points a launch at
   another file, and the launch line names it. A file that does not parse is moved to
   `settings.json.invalid` and replaced with defaults; bad numbers are clamped in memory and each

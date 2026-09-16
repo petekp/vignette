@@ -68,6 +68,20 @@ struct DebugPanelView: View {
                 Button("Annotator", action: previews.annotator)
             }
             .padding(10)
+            // Which file the sliders write to: a test launch points at another file, and a
+            // change made there never reaches the real one.
+            if Settings.isOverridden {
+                Text("Test settings file: \(Settings.fileURL.path). Changes here do not reach your settings.json.")
+                    .font(.caption).foregroundStyle(.black)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(Color.yellow)
+            } else {
+                Text("Writes to \((Settings.fileURL.path as NSString).abbreviatingWithTildeInPath)")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).padding(.bottom, 6)
+            }
             Divider()
             Form {
                 Section("Cards") {

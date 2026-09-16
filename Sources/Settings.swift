@@ -228,6 +228,7 @@ final class Settings: ObservableObject {
     private var directorySource: DispatchSourceFileSystemObject?
     private var fileSource: DispatchSourceFileSystemObject?
     private var lastWritten: Data?
+    private var lastWrittenData: SettingsData?
     private var reloadWork: DispatchWorkItem?
     private var writeWork: DispatchWorkItem?
 
@@ -239,6 +240,7 @@ final class Settings: ObservableObject {
         firstLaunch = boot.firstLaunch
         for line in boot.log { Log.write("[settings] \(line)") }
         if let written = boot.written { lastWritten = written }
+        lastWrittenData = boot.data
         watch()
         motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
@@ -457,9 +459,28 @@ final class Settings: ObservableObject {
     private func writeNow(_ d: SettingsData) {
         if readOnly { Log.write("[settings] warning not written: the file is from a newer version"); return }
         guard let raw = try? Settings.encoder().encode(d) else { return }
+        // Tweak-panel changes are not logged as they happen (a drag is many of them); the write is.
+        if let previous = lastWrittenData {
+            let changed = Settings.uiChanges(from: previous.ui, to: d.ui)
+            if !changed.isEmpty { Log.write("[settings] wrote \(changed.joined(separator: " "))") }
+        }
         lastWritten = raw
+        lastWrittenData = d
         Settings.write(raw, to: Settings.fileURL)
         watchFile()   // atomic write replaced the inode
+    }
+
+    /// `ui.key=value` for every UI number that differs, in key order.
+    static func uiChanges(from old: UITweaks, to new: UITweaks) -> [String] {
+        func dict(_ u: UITweaks) -> [String: Any] {
+            (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(u))) as? [String: Any] ?? [:]
+        }
+        let a = dict(old), b = dict(new)
+        return b.keys.sorted().compactMap { key in
+            let value = b[key].map { "\($0)" } ?? "null"
+            let before = a[key].map { "\($0)" } ?? "null"
+            return value == before ? nil : "ui.\(key)=\(value)"
+        }
     }
 
     /// Editors save atomically (write temp, rename) which only the directory sees; scripts often write
