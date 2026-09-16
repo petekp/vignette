@@ -297,13 +297,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Clipboard.copyFiles([shot.url])
             Log.write("[annotate] done \(shot.url.lastPathComponent) nothing drawn, original copied")
         }
-        if settings.data.quickAnnotate {
-            // Quick annotate: the drawing was the point; nothing to come back to.
-            Log.write("[annotate] quick close")
-            thumbnail.dismiss()
-        } else {
-            thumbnail.showCopied([shot])
-        }
+        // Quick annotate: the drawing was the point; nothing comes back.
+        if settings.data.quickAnnotate { Log.write("[annotate] quick close") }
+        thumbnail.annotationFinished(quick: settings.data.quickAnnotate)
     }
 
     /// Writes `<name>-annotated.png` next to the screenshot.

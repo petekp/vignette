@@ -151,8 +151,11 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   closed it), so the topmost window under the cursor is checked first.
 - Which image is in the annotator, where it came from, and what is in flight has one owner:
   `AnnotatorTransition` (a pure reducer) held by `ThumbnailController`. Controllers send events
-  (annotate, shown, parked, close, newShot, dismiss, remove) and run the effects it returns
-  (prepare, show, park, returnCard, hideAnnotator, join). A `prepare` is never emitted while a
+  (annotate, shown, parked, close, finish, newShot, dismiss, remove) and run the effects it returns
+  (prepare, show, park, returnCard, markCopied, hideAnnotator, join). Done sends `finish`: the card
+  returns and takes the copied mark, and a lone thumbnail, which left the panel when the annotator
+  opened, comes back to the corner for it. Esc sends `close`: a stack card returns, a lone
+  thumbnail's annotator just hides. Quick annotate sends `dismiss`. A `prepare` is never emitted while a
   park is in flight, which is what serializes rapid swaps; a new screenshot during a lone
   annotation joins the panel instead of closing the editor. Every event logs one
   `[transition] <event> -> <phase> effects=…` line. The page never hides itself: it asks through

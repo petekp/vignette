@@ -14,7 +14,8 @@ struct AnnotatorTransition: Equatable {
     /// What to do once the page has parked the current draft.
     enum Next: Equatable {
         case annotate(String)   // the old card returns and this key flies out (a swap)
-        case close              // the session ended: the card returns to its stack slot, or the annotator just hides
+        case close              // the session was abandoned: the card returns to its stack slot, or the annotator just hides
+        case finish             // the result is on the clipboard: the card returns, to its slot or the corner, marked copied
         case dismiss            // the panel is leaving with it
         case remove             // the file is gone
     }
@@ -30,7 +31,8 @@ struct AnnotatorTransition: Equatable {
         case annotate(String, from: Origin)
         case shown               // the flight landed and the annotator became visible
         case parked              // the page finished parking
-        case close               // Esc, click outside, Cmd+W, or Done
+        case close               // Esc, click outside, or Cmd+W: nothing to show for it
+        case finish              // Done or Return: the result is on the clipboard
         case newShot(String)     // a new file arrived
         case dismiss             // the panel is going away
         case remove(String)      // a file was trashed or deleted
@@ -42,6 +44,7 @@ struct AnnotatorTransition: Equatable {
         case park(String)        // ask the page to park; answer with `.parked`
         case returnCard(String)  // fly the card back to its slot
         case hideAnnotator       // the annotator is done; nothing returns
+        case markCopied(String)  // the returned card shows the copied mark when it lands
         case join(String)        // a new shot joins the panel while the annotator stays open
     }
 
@@ -78,6 +81,9 @@ struct AnnotatorTransition: Equatable {
             case .close:
                 phase = .parking(k, then: .close)
                 return [.park(k)]
+            case .finish:
+                phase = .parking(k, then: .finish)
+                return [.park(k)]
             case .dismiss:
                 phase = .parking(k, then: .dismiss)
                 return [.park(k)]
@@ -101,14 +107,20 @@ struct AnnotatorTransition: Equatable {
                 case .close:
                     phase = .idle
                     return origin == .stack ? [.returnCard(k)] : [.hideAnnotator]
+                case .finish:
+                    // A lone thumbnail left the panel when the annotator opened; returnCard brings it back to the corner.
+                    phase = .idle
+                    return [.returnCard(k), .markCopied(k)]
                 case .dismiss, .remove:
                     phase = .idle
                     return [.hideAnnotator]
                 }
             case .annotate(let k2, _):
                 // A later request wins, unless the panel is already leaving or the card is gone.
+                // Re-requesting the key that is finishing changes nothing: it is coming back anyway.
                 switch next {
                 case .annotate, .close: phase = .parking(k, then: k2 == k ? .close : .annotate(k2))
+                case .finish: if k2 != k { phase = .parking(k, then: .annotate(k2)) }
                 case .dismiss, .remove: break
                 }
                 return []
@@ -118,13 +130,13 @@ struct AnnotatorTransition: Equatable {
             case .remove(let r):
                 switch next {
                 case .annotate(let k2) where r == k2: phase = .parking(k, then: .close)
-                case .close where r == k: phase = .parking(k, then: .remove)
+                case .close where r == k, .finish where r == k: phase = .parking(k, then: .remove)
                 default: break
                 }
                 return []
             case .newShot(let n):
                 return [.join(n)]
-            case .close, .shown:
+            case .close, .finish, .shown:
                 return []
             }
         }
@@ -150,6 +162,7 @@ extension AnnotatorTransition.Next: CustomStringConvertible {
         switch self {
         case .annotate(let k): return "annotate(\(short(k)))"
         case .close: return "close"
+        case .finish: return "finish"
         case .dismiss: return "dismiss"
         case .remove: return "remove"
         }
@@ -163,6 +176,7 @@ extension AnnotatorTransition.Event: CustomStringConvertible {
         case .shown: return "shown"
         case .parked: return "parked"
         case .close: return "close"
+        case .finish: return "finish"
         case .newShot(let k): return "newShot(\(short(k)))"
         case .dismiss: return "dismiss"
         case .remove(let k): return "remove(\(short(k)))"
@@ -178,6 +192,7 @@ extension AnnotatorTransition.Effect: CustomStringConvertible {
         case .park(let k): return "park(\(short(k)))"
         case .returnCard(let k): return "returnCard(\(short(k)))"
         case .hideAnnotator: return "hideAnnotator"
+        case .markCopied(let k): return "markCopied(\(short(k)))"
         case .join(let k): return "join(\(short(k)))"
         }
     }

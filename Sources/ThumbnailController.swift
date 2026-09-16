@@ -226,14 +226,25 @@ final class ThumbnailController {
         }
         // Not on screen: the card flies straight from its offscreen slot, so nothing waits for a slide-in.
         guard let card = makeCard(shot) else { return }
-        present(cards: [card], stack: false, keepOffscreen: true)
+        present(cards: [card], stack: false, entrance: .stayOffscreen)
         annotate(card)
     }
 
-    /// The page ended the session (Esc, click outside, Cmd+W, or Done). The reducer decides what returns.
+    /// The page abandoned the session (Esc, click outside, Cmd+W). The reducer decides what returns.
     func annotationEnded() {
         restoreFocusOnEnd = true
         send(.close)
+    }
+
+    /// Done or Return: the result is on the clipboard. The card comes back marked copied; in quick
+    /// mode everything closes instead.
+    func annotationFinished(quick: Bool) {
+        restoreFocusOnEnd = true
+        if quick {
+            if visible { dismiss() } else { send(.dismiss) }
+        } else {
+            send(.finish)
+        }
     }
 
     /// The page has the image for `key` on its canvas.
@@ -413,6 +424,8 @@ final class ThumbnailController {
             sessionCard = nil
             dim.hide()
             endSession()
+        case .markCopied(let key):
+            if let card = model.cards.first(where: { $0.shot.url.path == key }) { showCopied([card.shot]) }
         case .join:
             break   // `show(_:)` inserts the card; the reducer only confirms the annotator stays open.
         }
@@ -424,7 +437,13 @@ final class ThumbnailController {
     }
 
     private func returnCard(_ card: Card) {
-        guard visible, model.isStack, model.cards.contains(where: { $0.id == card.id }) else {
+        if !model.cards.contains(where: { $0.id == card.id }) {
+            // A lone thumbnail left the panel when the annotator opened (see `.show`); it comes back
+            // to the corner as a placeholder the flight lands on. No slide-in: the flight is the entrance.
+            if visible { insert(card, entrance: .inPlace) } else { present(cards: [card], stack: false, entrance: .inPlace) }
+            _ = model.outCards.insert(card.id)
+        }
+        guard visible, model.cards.contains(where: { $0.id == card.id }) else {
             model.outCards.remove(card.id); flights.end(id: card.id); return
         }
         flights.fly(id: card.id, image: flightImage(for: card), from: annotationFrame, to: cardFrame(of: card), cornerFrom: ui.annotationCornerRadius, cornerTo: ui.cardCornerRadius, on: screen) { [weak self] in
@@ -433,6 +452,8 @@ final class ThumbnailController {
             // The card view comes back on SwiftUI's next commit; lift the flight image after it.
             DispatchQueue.main.async { self.flights.end(id: card.id) }
             if !self.transition.isActive, self.visible, self.model.isStack { self.takeKeys() }
+            // A lone thumbnail leaves on its own; the copied mark usually sets a shorter timer first.
+            if !self.model.isStack, self.dismissTimer == nil { self.scheduleDismiss(after: self.ui.thumbnailSeconds) }
         }
     }
 
@@ -642,7 +663,11 @@ final class ThumbnailController {
 
     /// Shows a new column. Cards start past the screen edge and arrive staggered, newest first.
     /// `keepOffscreen` leaves the cards parked past the edge, for a card that is about to fly out from there.
-    private func present(cards: [Card], stack: Bool, keepOffscreen: Bool = false) {
+    /// How presented cards arrive: sliding in from the right edge, parked past it for a flight to
+    /// start from, or already in place because a flight lands on them.
+    enum Entrance { case slide, stayOffscreen, inPlace }
+
+    private func present(cards: [Card], stack: Bool, entrance: Entrance = .slide) {
         if !visible { pinnedScreen = NSScreen.main ?? NSScreen.screens[0] }
         dismissTimer?.invalidate()
         dismissGeneration += 1
@@ -665,13 +690,13 @@ final class ThumbnailController {
             let staying = (visible && !wasStack && stack) ? model.cards.first { existing in cards.contains { $0.shot.url == existing.shot.url } } : nil
             let next = cards.map { card in card.shot.url == staying?.shot.url ? staying! : card }
             model.cards = next
-            model.offscreen = Set(next.map(\.id)).subtracting(staying.map { [$0.id] } ?? [])
+            model.offscreen = entrance == .inPlace ? [] : Set(next.map(\.id)).subtracting(staying.map { [$0.id] } ?? [])
         }
         visible = true
         layoutPanel(shrinkLater: false, animated: false)
         panel.orderFrontRegardless()
         // The offscreen state must be committed before it is cleared, or nothing animates: next run loop turn.
-        if !keepOffscreen {
+        if entrance == .slide {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.visible else { return }
                 self.model.offscreen = []
@@ -693,11 +718,11 @@ final class ThumbnailController {
     }
 
     /// A card joins the bottom of the visible column and slides in.
-    private func insert(_ card: Card) {
+    private func insert(_ card: Card, entrance: Entrance = .slide) {
         guard !model.cards.contains(where: { $0.shot.url == card.shot.url }) else { return }
         dismissGeneration += 1
         if model.feedback != nil && !model.isStack { model.feedback = nil; model.cards = [] }
-        _ = model.offscreen.insert(card.id)
+        if entrance != .inPlace { _ = model.offscreen.insert(card.id) }
         model.slidingOut = false
         model.cards.insert(card, at: 0)
         if model.cards.count > Settings.shared.data.recentCount, let last = model.cards.last {

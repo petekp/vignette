@@ -65,8 +65,35 @@ final class AnnotatorTransitionTests: XCTestCase {
 
     func testStrayEventsDoNothing() {
         var t = T()
-        for e in [T.Event.shown, .parked, .close, .dismiss, .remove("x"), .newShot("y")] { XCTAssertEqual(t.reduce(e), [], "\(e)") }
+        for e in [T.Event.shown, .parked, .close, .finish, .dismiss, .remove("x"), .newShot("y")] { XCTAssertEqual(t.reduce(e), [], "\(e)") }
         XCTAssertEqual(t.phase, .idle)
+    }
+
+    func testFinishReturnsTheCardMarkedCopiedFromEitherOrigin() {
+        for origin in [T.Origin.stack, .thumbnail] {
+            var t = T()
+            _ = t.reduce(.annotate("a", from: origin)); _ = t.reduce(.shown)
+            XCTAssertEqual(t.reduce(.finish), [.park("a")], "\(origin)")
+            XCTAssertEqual(t.reduce(.parked), [.returnCard("a"), .markCopied("a")], "\(origin): Done brings the card back, even a lone thumbnail")
+            XCTAssertEqual(t.phase, .idle)
+        }
+    }
+
+    func testRemovingTheFileDuringAFinishHidesWithoutReturn() {
+        var t = T()
+        _ = t.reduce(.annotate("a", from: .thumbnail)); _ = t.reduce(.shown); _ = t.reduce(.finish)
+        XCTAssertEqual(t.reduce(.remove("a")), [])
+        XCTAssertEqual(t.reduce(.parked), [.hideAnnotator])
+    }
+
+    func testAnnotatingAnotherKeyDuringAFinishSwaps() {
+        var t = T()
+        _ = t.reduce(.annotate("a", from: .stack)); _ = t.reduce(.shown); _ = t.reduce(.finish)
+        XCTAssertEqual(t.reduce(.annotate("a", from: .stack)), [], "the finishing key is coming back anyway")
+        XCTAssertEqual(t.reduce(.parked), [.returnCard("a"), .markCopied("a")])
+        _ = t.reduce(.annotate("a", from: .stack)); _ = t.reduce(.shown); _ = t.reduce(.finish)
+        _ = t.reduce(.annotate("b", from: .stack))
+        XCTAssertEqual(t.reduce(.parked), [.returnCard("a"), .prepare("b")])
     }
 
     // MARK: Random sequences
@@ -89,7 +116,7 @@ final class AnnotatorTransitionTests: XCTestCase {
                 var events = due.map(\.event)
                 switch Int.random(in: 0..<8, using: &rng) {
                 case 0...2: events.append(.annotate(keys.randomElement(using: &rng)!, from: Bool.random(using: &rng) ? .stack : .thumbnail))
-                case 3: events.append(.close)
+                case 3: events.append(Bool.random(using: &rng) ? .close : .finish)
                 case 4: events.append(.newShot("n\(step)"))
                 case 5: events.append(.dismiss)
                 case 6: events.append(.remove(keys.randomElement(using: &rng)!))
@@ -114,7 +141,7 @@ final class AnnotatorTransitionTests: XCTestCase {
                             XCTAssertEqual(preparedKey, t.key, "a visible annotator shows the prepared image (seed \(seed))")
                         case .returnCard, .hideAnnotator:
                             preparedKey = nil
-                        case .join:
+                        case .join, .markCopied:
                             break
                         }
                     }

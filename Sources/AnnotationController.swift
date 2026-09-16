@@ -532,10 +532,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             Log.write("[annotate] loaded \(ms)ms \((key as NSString).lastPathComponent)")
             onLoaded?(key)
         case .done(let png):
+            // The host answers through the transition (finish or dismiss), which parks and hides.
             guard let shot = current else { return }
             if let png { onDraftPreview?(shot.url.path, png) }
             onFinished?(shot, png)
-            onClosed?()
         case .cancel:
             cancel()
         case .log(let text):
