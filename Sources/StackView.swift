@@ -73,7 +73,8 @@ private struct CardView: View {
     private var offscreen: Bool { model.offscreen.contains(card.id) }
     private var hasDraft: Bool { model.drafts.contains(card.shot.url.path) }
     private var showsCircle: Bool { model.isStack && !isOut && (hovered || model.inSelectionMode || focused) }
-    private var showsButtons: Bool { hovered && !isOut && !model.inSelectionMode }
+    private var copied: Bool { model.copied.contains(card.id) }
+    private var showsButtons: Bool { hovered && !isOut && !model.inSelectionMode && !copied }
     private var showsDrawHint: Bool { showsButtons && !model.overControl && !pressed }
 
     var body: some View {
@@ -145,6 +146,12 @@ private struct CardView: View {
             }
         }
         .frame(width: card.size.width, height: card.size.height)
+        .overlay {
+            if copied && !isOut {
+                CopiedOverlay(corner: ui.cardCornerRadius).transition(.opacity)
+            }
+        }
+        .animation(copied ? .easeOut(duration: 0.15) : .easeOut(duration: 0.4), value: copied)
         // "Draw" trails the mouse over the card, away from its controls: a click there annotates.
         // Positioned in the card's own coordinates, so it appears where the mouse is.
         .overlay(alignment: .topLeading) {
@@ -296,6 +303,26 @@ struct TactileButtonStyle: ButtonStyle {
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.12), value: hovered)
             .onHover { hovered = $0 }
+    }
+}
+
+/// Flush over a card after a copy: the veil fades in, the mark springs in, and both fade out.
+private struct CopiedOverlay: View {
+    let corner: CGFloat
+    @State private var landed = false
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: corner, style: .continuous).fill(.black.opacity(0.55))
+            VStack(spacing: 2) {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 22, weight: .bold)).foregroundStyle(.green)
+                Text("Copied").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+            }
+            .scaleEffect(landed ? 1 : 0.3)
+            .opacity(landed ? 1 : 0)
+        }
+        .onAppear { withAnimation(.spring(response: 0.4, dampingFraction: 0.55)) { landed = true } }
+        .allowsHitTesting(false)
     }
 }
 

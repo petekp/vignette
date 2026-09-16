@@ -130,7 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard !shots.isEmpty else { Commands.error("copy", .missingFile, "nothing selected"); return }
         Clipboard.copyFiles(shots.map(\.url))
         Commands.ok("copy", shots.map(\.url.lastPathComponent).joined(separator: ", "))
-        thumbnail.showFeedback(shots.count == 1 ? "Copied to clipboard" : "Copied \(shots.count) images")
+        thumbnail.showCopied(shots)
     }
 
     func copyPaths(_ shots: [Screenshot]) {
@@ -259,7 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         Clipboard.copyFiles(urls)
         Commands.ok("copy-annotated", "\(urls.map(\.lastPathComponent).joined(separator: ", ")); \(annotated) with annotations")
-        thumbnail.showFeedback(urls.count == 1 ? "Copied to clipboard" : "Copied \(urls.count) images")
+        thumbnail.showCopied(shots)
     }
 
     /// Done: the annotated file goes on the clipboard as a file, an image, and its path as text,
@@ -276,7 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[annotate] quick close")
             thumbnail.dismiss()
         } else {
-            thumbnail.showFeedback("Copied to clipboard")
+            thumbnail.showCopied([shot])
         }
     }
 

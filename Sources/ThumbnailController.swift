@@ -23,6 +23,7 @@ final class StackModel: ObservableObject {
     @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
     @Published var pressedCard: UUID? = nil
     @Published var overControl = false         // the mouse is on a card's button or circle, where a click does not draw
+    @Published var copied: Set<UUID> = []      // cards showing "Copied" over their image
     @Published var selected: Set<UUID> = []
     @Published var focused: UUID? = nil        // keyboard focus ring
     @Published var isStack = false             // selection UI only exists in the recent stack
@@ -275,6 +276,20 @@ final class ThumbnailController {
     }
 
     /// In the stack the toast sits under the cards; on its own it replaces the thumbnails.
+    /// "Copied" over the cards themselves; the toast only when none of them is showing.
+    func showCopied(_ shots: [Screenshot]) {
+        let ids = shots.compactMap { shot in model.cards.first { $0.shot.url == shot.url }?.id }
+        guard visible, !ids.isEmpty else {
+            showFeedback(shots.count == 1 ? "Copied to clipboard" : "Copied \(shots.count) images")
+            return
+        }
+        model.copied.formUnion(ids)
+        // A card still on its way back from the annotator shows the mark when it lands.
+        let hold = ui.toastSeconds + ui.expandDuration
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.copied.subtract(ids) }
+        if !model.isStack { scheduleDismiss(after: hold) }
+    }
+
     func showFeedback(_ text: String) {
         dismissTimer?.invalidate()
         if visible && model.isStack {
