@@ -25,6 +25,8 @@ struct CommandRequest: Equatable {
     let files: [URL]
     /// The decoded query, for `eval`, which carries JavaScript instead of files.
     let query: String?
+    /// `tag=` from the query, echoed in the `[state]` line so a script can find its own answer.
+    let tag: String?
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -56,7 +58,8 @@ enum Commands {
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let files = items.filter { $0.name == "file" }.compactMap(\.value)
             .map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
-        return CommandRequest(name: url.host ?? "", files: files, query: url.query?.removingPercentEncoding)
+        return CommandRequest(name: url.host ?? "", files: files, query: url.query?.removingPercentEncoding,
+                              tag: items.first { $0.name == "tag" }?.value)
     }
 
     static func isKnown(_ name: String) -> Bool {

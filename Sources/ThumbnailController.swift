@@ -111,11 +111,6 @@ final class ThumbnailController {
         if let pinned = pinnedScreen, NSScreen.screens.contains(pinned) { return pinned }
         return NSScreen.main ?? NSScreen.screens[0]
     }
-    var screenDescription: String {
-        let s = screen
-        return "screen=\"\(s.localizedName)\" screenFrame=\(Int(s.frame.minX)),\(Int(s.frame.minY)),\(Int(s.frame.width)),\(Int(s.frame.height)) pinned=\(pinnedScreen != nil)"
-    }
-
     /// A display was added, removed, or rearranged. Whatever is showing moves to a screen that exists.
     func screensChanged() {
         guard visible else { return }
@@ -129,18 +124,31 @@ final class ThumbnailController {
     private var layout: StackLayout { StackLayout(ui: ui) }
     private var showsBar: Bool { model.isStack && (model.inSelectionMode || model.feedback != nil) }
 
-    var backdropDescription: String { backdrop.stateDescription }
 
-    /// Card frames in screen points, newest first, for scripts that need to click on cards.
-    var cardFramesDescription: String {
-        (0..<model.cards.count).map { i in
-            let f = cardFrame(i)
-            return "\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height))"
-        }.joined(separator: " ")
-    }
-
-    var stateDescription: String {
-        "visible=\(visible) stack=\(model.isStack) cards=\(model.cards.map { $0.shot.url.lastPathComponent }) selected=\(model.selectedCards().map { $0.shot.url.lastPathComponent }) focused=\(model.cards.first { $0.id == model.focused }?.shot.url.lastPathComponent ?? "nil") annotating=\(annotating?.shot.url.lastPathComponent ?? "nil") phase=\(transition.phase) out=\(model.outCards.count) feedback=\(model.feedback ?? "nil") key=\(panel.isKeyWindow) scroll=\(Int(model.scroll)) viewport=\(Int(model.viewport)) panel=\(panel.frame)"
+    /// The stack, the transition, and the screen, for the `[state]` line. Frames in global top-left points.
+    var stateJSON: [String: Any] {
+        let h = StateReport.primaryHeight
+        let s = screen
+        return [
+            "stack": [
+                "visible": visible, "isStack": model.isStack,
+                "cards": model.cards.indices.map { i -> [String: Any] in
+                    let card = model.cards[i]
+                    return ["file": card.shot.url.path, "frame": StateReport.topLeft(cardFrame(i), primaryHeight: h),
+                            "out": model.outCards.contains(card.id), "draft": model.drafts.contains(card.shot.url.path)]
+                },
+                "selected": model.selectedCards().map(\.shot.url.path),
+                "focused": model.cards.first { $0.id == model.focused }?.shot.url.path as Any,
+                "feedback": model.feedback as Any, "key": panel.isKeyWindow,
+                "scroll": Int(model.scroll), "viewport": Int(model.viewport),
+                "panel": StateReport.topLeft(panel.frame, primaryHeight: h),
+            ] as [String: Any],
+            "transition": ["phase": "\(transition.phase)", "annotating": annotating?.shot.url.path as Any, "isActive": transition.isActive],
+            "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
+                       "visibleFrame": StateReport.topLeft(s.visibleFrame, primaryHeight: h), "scale": s.backingScaleFactor, "pinned": pinnedScreen != nil],
+            "previews": previews.keys.sorted(),
+            "backdrop": backdrop.stateJSON,
+        ]
     }
 
     // MARK: Public
@@ -159,7 +167,7 @@ final class ThumbnailController {
 
     /// The recent stack: toggles. Takes keyboard focus. Stays until Esc, the hotkey, or a click elsewhere.
     @discardableResult
-    func toggleRecent(_ shots: [Screenshot]) -> StackToggle {
+    func toggleRecent(_ shots: [Screenshot], scan: String = "") -> StackToggle {
         if visible && model.isStack { dismiss(); return .dismissed }
         if transition.isActive { send(.dismiss) }   // a lone annotation gives way to the stack
         let started = CACurrentMediaTime()
@@ -169,7 +177,7 @@ final class ThumbnailController {
         installOutsideClickMonitor()
         backdrop.show(on: screen, below: panel)
         takeKeys()
-        Log.write("[stack] shown in \(Int((CACurrentMediaTime() - started) * 1000))ms, \(cards.filter { $0.image == nil }.count) still decoding")
+        Log.write("[stack] shown cards=\(cards.count) \(scan)shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
         return .shown(cards.count)
     }
 

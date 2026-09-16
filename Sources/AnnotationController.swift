@@ -316,17 +316,32 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         }
     }
 
-    var stateDescription: String {
-        "current=\(current?.url.lastPathComponent ?? "nil") windowVisible=\(window?.isVisible ?? false) frame=\(window?.frame ?? .zero) pageReady=\(pageReady) webPid=\(webProcessID.map(String.init) ?? "unknown")"
+    var stateJSON: [String: Any] {
+        [
+            "current": current?.url.path as Any,
+            "windowVisible": window?.isVisible ?? false,
+            "frame": window.map { StateReport.topLeft($0.frame, primaryHeight: StateReport.primaryHeight) } as Any,
+            "pageState": "\(pageState)",
+            "port": Int(port),
+            "webPid": webProcessID.map { Int($0) } as Any,
+        ]
     }
 
-    /// Logs what the page has rendered. Driven by shotnote://state.
-    func dumpPageState() {
-        guard let webView else { Log.write("[web] no page"); return }
-        webView.evaluateJavaScript("JSON.stringify({title: document.title, root: document.getElementById('root')?.children.length, api: typeof window.shotnote, canvas: document.querySelector('.tl-canvas') != null, images: document.querySelectorAll('.tl-image').length, toolbar: document.querySelector('.toolbar') != null, inner: [innerWidth, innerHeight], page: location.pathname.split('/').pop()})") { result, error in
-            Log.write("[web] page state: \(result ?? "nil") error: \(error?.localizedDescription ?? "none")")
+    /// What the page has rendered, or nil when it does not answer in time (no page, a page that is
+    /// loading, or a dead web process). Driven by shotnote://state.
+    func queryPage(timeout: TimeInterval, completion: @escaping (Any?) -> Void) {
+        guard let webView, pageReady else { completion(nil); return }
+        var answered = false
+        let finish: (Any?) -> Void = { value in
+            guard !answered else { return }
+            answered = true
+            completion(value)
         }
-        Log.write("[web] view frame=\(webView.frame) inWindow=\(webView.window != nil) windowVisible=\(window?.isVisible ?? false) windowFrame=\(window?.frame ?? .zero)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish(nil) }
+        let script = "return {title: document.title, root: document.getElementById('root')?.children.length, api: typeof window.shotnote, canvas: document.querySelector('.tl-canvas') != null, images: document.querySelectorAll('.tl-image').length, shapes: window.editor ? window.editor.getCurrentPageShapeIds().size : null, canUndo: window.editor ? window.editor.getCanUndo() : null, inner: [innerWidth, innerHeight], hidden: document.hidden, page: location.pathname.split('/').pop()};"
+        webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { result in
+            if case .success(let value) = result { finish(value) } else { finish(nil) }
+        }
     }
 
     // MARK: WKNavigationDelegate

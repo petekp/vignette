@@ -105,8 +105,16 @@ final class ScreenshotWatcher: @unchecked Sendable {
     }
 
     static func recentScreenshots(in folder: URL, limit: Int) -> [URL] {
+        recentScan(in: folder, limit: limit).recent
+    }
+
+    /// The newest `limit` screenshots plus how many candidates the folder holds and how long the
+    /// scan took, for the `[stack] shown` line.
+    static func recentScan(in folder: URL, limit: Int) -> (recent: [URL], files: Int, ms: Int) {
+        let started = Date.timeIntervalSinceReferenceDate
         let fm = FileManager.default
-        return candidateNames(in: folder)
+        let names = candidateNames(in: folder)
+        let recent = names
             .map { folder.appendingPathComponent($0) }
             .compactMap { url -> (URL, Date)? in
                 guard let date = try? fm.attributesOfItem(atPath: url.path)[.modificationDate] as? Date else { return nil }
@@ -115,6 +123,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
             .sorted { $0.1 > $1.1 }
             .prefix(max(0, limit))   // prefix traps on a negative count
             .map(\.0)
+        return (recent, names.count, Int((Date.timeIntervalSinceReferenceDate - started) * 1000))
     }
 
     static func newestScreenshot(in folder: URL) -> URL? {

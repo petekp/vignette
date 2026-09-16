@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppDelegate.makeMainMenu()
         let settingsSource = Settings.isOverridden ? " (SHOTNOTE_SETTINGS)" : ""
-        Log.write("[app] launched \(BuildInfo.current.description) watching \(watchFolder.path) settings \(Settings.fileURL.path)\(settingsSource)")
+        Log.writeLaunch("[app] launched \(BuildInfo.current.description) watching \(watchFolder.path) settings \(Settings.fileURL.path)\(settingsSource)")
         if let type = AppleScreencapture.string("type"), !ScreenshotWatcher.isCandidate("screenshot.\(type)") {
             Log.write("[settings] warning Apple screencapture type=\(type) is a format the watcher ignores")
         }
@@ -55,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotator.draftSnapshot = { [weak self] key in self?.drafts.snapshot(for: key) }
         annotator.onDraft = { [weak self] key, snapshot in self?.storeDraft(key, snapshot: snapshot) }
         annotator.onParked = { [weak self] key, parked in
-            self?.storeDraft(key, snapshot: parked.snapshot)
+            self?.storeDraft(key, snapshot: parked.snapshot, reason: "parked")
             if let png = parked.preview { self?.storePreview(key, png) }
         }
         loadDrafts()
@@ -164,24 +164,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Drops drafts whose screenshot is gone, then shows the rest on their cards.
     private func loadDrafts() {
         let swept = drafts.sweep { FileManager.default.fileExists(atPath: $0) }
-        if !swept.isEmpty { Log.write("[drafts] swept \(swept.count) without a file") }
+        for key in swept { Log.write("[draft] swept \((key as NSString).lastPathComponent)") }
         thumbnail.setDrafts(drafts.keys)
         for key in drafts.keys { if let png = drafts.preview(for: key) { thumbnail.setPreview(key, png) } }
-        Log.write("[drafts] loaded \(drafts.keys.count) from \(drafts.directory.path)")
+        Log.write("[drafts] \(drafts.keys.count) dir=\(drafts.directory.path)")
     }
 
     /// A nil snapshot means the annotations were all removed. A draft for a file that no longer
     /// exists is dropped: the page can report one after the file was trashed.
-    private func storeDraft(_ key: String, snapshot: Any?) {
+    private func storeDraft(_ key: String, snapshot: Any?, reason: String = "saved") {
         let name = (key as NSString).lastPathComponent
         if let snapshot, FileManager.default.fileExists(atPath: key) {
-            do { try drafts.save(key: key, snapshot: snapshot); Log.write("[drafts] saved \(name)") }
-            catch { Log.write("[drafts] error write-failed \(key): \(error.localizedDescription)") }
+            do { try drafts.save(key: key, snapshot: snapshot); Log.write("[draft] \(reason) \(name)") }
+            catch { Log.write("[draft] error write-failed \(key): \(error.localizedDescription)") }
         } else if drafts.keys.contains(key) {
             drafts.forget([key])
-            Log.write("[drafts] forgot \(name)")
+            Log.write("[draft] forgot \(name)")
         }
+        draftsChanged()
+    }
+
+    /// Pushes the draft set to the cards and logs its size, after every change.
+    private func draftsChanged() {
         thumbnail.setDrafts(drafts.keys)
+        Log.write("[drafts] \(drafts.keys.count)")
     }
 
     /// The Done rendering is full resolution; the card keeps a copy no larger than a park preview.
@@ -189,7 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         DispatchQueue.global(qos: .userInitiated).async {
             let small = Thumbnailer.downsampled(png: png, maxPixel: Config.previewMaxPixel)
             DispatchQueue.main.async { MainActor.assumeIsolated {
-                guard let small else { Log.write("[drafts] error preview downsample failed \((key as NSString).lastPathComponent)"); return }
+                guard let small else { Log.write("[draft] error preview downsample failed \((key as NSString).lastPathComponent)"); return }
                 self.storePreview(key, small)
             } }
         }
@@ -197,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     private func storePreview(_ key: String, _ png: Data) {
         guard drafts.keys.contains(key) else { return }
-        do { try drafts.savePreview(key: key, png: png) } catch { Log.write("[drafts] error write-failed preview \(key): \(error.localizedDescription)") }
+        do { try drafts.savePreview(key: key, png: png) } catch { Log.write("[draft] error write-failed preview \(key): \(error.localizedDescription)") }
         thumbnail.setPreview(key, png)
     }
 
@@ -205,8 +211,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let had = shots.filter { drafts.keys.contains($0.url.path) }
         guard !had.isEmpty else { return }
         drafts.forget(had.map(\.url.path))
-        Log.write("[drafts] forgot \(had.map(\.url.lastPathComponent).joined(separator: ", "))")
-        thumbnail.setDrafts(drafts.keys)
+        Log.write("[draft] forgot \(had.map(\.url.lastPathComponent).joined(separator: ", "))")
+        draftsChanged()
     }
 
     func moveToTrash(_ shots: [Screenshot]) {
@@ -306,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Commands.ok("help", "\(Commands.fixed.count + Config.actions.count) commands; errors end with one of: \(CommandError.allCases.map(\.rawValue).joined(separator: " "))")
         case "last": openLast()
         case "recent": toggleRecent()
-        case "state": dumpState()
+        case "state": dumpState(tag: request.tag)
         case "settings": settingsWindow.show(); Commands.ok("settings", "window opened")
         case "restore-apple-defaults": restoreAppleDefaults()
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
@@ -350,16 +356,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         return result == KERN_SUCCESS ? Int(info.resident_size) : 0
     }
 
-    private func dumpState() {
-        Log.write("[state] watchFolder=\(watchFolder.path) appleThumbnail=\(settings.data.appleThumbnail) recentCount=\(settings.data.recentCount) hotkey=\(settings.data.recentHotkey)")
-        Log.write("[state] thumbnail: \(thumbnail.stateDescription)")
-        Log.write("[state] cardFrames(x,y,w,h bottom-left origin): \(thumbnail.cardFramesDescription) screen=\(Int(NSScreen.main?.frame.height ?? 0))")
-        Log.write("[state] \(thumbnail.screenDescription)")
-        Log.write("[state] annotator: \(annotator.stateDescription)")
-        Log.write("[state] memory rss=\(residentBytes() >> 20)MB thumbnails=\(Thumbnailer.cacheBytes >> 20)MB webPid=\(annotator.webProcessID.map(String.init) ?? "unknown")")
-        Log.write("[state] backdrop: \(thumbnail.backdropDescription)")
-        annotator.dumpPageState()
-        Commands.ok("state", "page state follows on its own [web] line")
+    /// One `[state] {json}` line, written once the page has answered or after a second without it.
+    private func dumpState(tag: String?) {
+        var report = StateReport()
+        report.sections = thumbnail.stateJSON
+        report.sections["tag"] = tag as Any
+        report.sections["app"] = [
+            "pid": Int(ProcessInfo.processInfo.processIdentifier), "build": BuildInfo.current.build, "version": BuildInfo.current.version,
+            "isActive": NSApp.isActive, "accessibility": ModifierTap.trusted(prompt: false),
+            "watchFolder": watchFolder.path, "settingsFile": Settings.fileURL.path, "readOnly": settings.readOnly,
+            "appleThumbnail": settings.data.appleThumbnail, "recentCount": settings.data.recentCount, "hotkey": settings.data.recentHotkey, "debug": settings.data.debug,
+        ] as [String: Any]
+        report.sections["annotator"] = annotator.stateJSON
+        report.sections["drafts"] = drafts.keys.sorted()
+        report.sections["memory"] = ["rss": residentBytes(), "thumbnails": Thumbnailer.cacheBytes]
+        annotator.queryPage(timeout: 1) { page in
+            report.sections["page"] = page ?? "unavailable"
+            Log.write("[state] \(report.rendered())")
+        }
     }
 
     /// Accessory apps have no menu bar, but key equivalents like Cmd+W and Cmd+C in the Settings
@@ -453,8 +467,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     @objc private func toggleRecent() {
-        let shots = ScreenshotWatcher.recentScreenshots(in: watchFolder, limit: settings.data.recentCount).map(Screenshot.init)
-        switch thumbnail.toggleRecent(shots) {
+        let scan = ScreenshotWatcher.recentScan(in: watchFolder, limit: settings.data.recentCount)
+        switch thumbnail.toggleRecent(scan.recent.map(Screenshot.init), scan: "files=\(scan.files) scan=\(scan.ms)ms ") {
         case .shown(let count): Commands.ok("recent", "shown \(count) cards")
         case .dismissed: Commands.ok("recent", "dismissed")
         case .empty: Commands.error("recent", .missingFile, "no screenshots in \(watchFolder.path)")

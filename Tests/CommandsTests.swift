@@ -33,6 +33,11 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(r.files, [])
     }
 
+    func testTagIsReadFromTheQuery() {
+        XCTAssertEqual(Commands.parse(URL(string: "shotnote://state?tag=t%201")!).tag, "t 1")
+        XCTAssertNil(Commands.parse(URL(string: "shotnote://state")!).tag)
+    }
+
     func testKnowsFixedCommandsAndActions() {
         XCTAssertTrue(Commands.isKnown("help"))
         XCTAssertTrue(Commands.isKnown("copy"))

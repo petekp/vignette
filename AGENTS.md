@@ -53,23 +53,35 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `drag`, `scroll`, `tap`, `key`; run it with no arguments for the list). It compiles
    `scripts/input.swift` with `Sources/HotKeySpec.swift` on first use, so it reads the same hotkey
    strings as settings.json. It posts events only because the terminal it runs from is trusted for
-   Accessibility. Its coordinates are global Core Graphics points: top-left of the main display,
-   y down, so the Studio Display above it has negative y. `shotnote://state` still prints card
-   frames with a bottom-left origin and the screen height; convert with y = height - y.
+   Accessibility. Its coordinates are global Core Graphics points: top-left of the primary
+   display, y down, so the Studio Display above it has negative y. Every frame in the `[state]`
+   line uses the same convention, so a card or annotator frame from there can be clicked as is.
    Never send Escape that way to close the stack: if the stack is not key, the keystroke reaches
    the frontmost app, and in a terminal running an agent that is the interrupt key. Use
-   `open shotnote://dismiss` instead. `open shotnote://state` logs each card's frame so a script
-   can aim at circles and images. `scripts/input.sh pasteboard` prints the pasteboard's item count and types.
+   `open -g shotnote://dismiss` for the stack and `open -g shotnote://cancel` for the annotator.
+   `scripts/input.sh pasteboard` prints the pasteboard's item count and types.
    Inside the editor page, `open 'shotnote://eval?<javascript>'` runs the code (async, `window.editor`
    is the tldraw editor) and logs the returned value.
 5. Read `~/Library/Logs/Shotnote.log`. Every action, URL command, watcher event, web message,
-   and error lands there with a `[tag]`. `open -g shotnote://state` dumps current state.
+   and error lands there with a `[tag]`. `open -g "shotnote://state?tag=<id>"` writes one
+   `[state] {json}` line with the tag echoed, so a script waits for its own line:
+   `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
+   `stack` (cards with `file`, `frame`, `out`, `draft`; selection, focus, feedback, panel),
+   `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
+   `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
+   `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
+   page does not answer within a second. Frames are `[x, y, w, h]` in global top-left points.
+   `webPid` is the web content process, for `kill -9` tests; its size is `ps -o rss= -p <pid>`.
    `[app] ready pid=… build=… port=… watching=…` marks the end of launch: after it every command
    answers. `[web] ready` follows on its own once the editor page is up; `copy-annotated` and
    `eval` answer `error page-not-ready` before it, `annotate` queues one deep. `build` is
-   `git describe` of the checkout, stamped by build.sh. The `[state] annotator` line carries
-   `webPid`, the web content process, for `kill -9` tests; `[state] memory` gives the app's
-   resident size and the thumbnail cache. The web process's size is `ps -o rss= -p <webPid>`.
+   `git describe` of the checkout, stamped by build.sh.
+   Log grammar (`Log.swift`): one event per line, `HH:mm:ss.SSS [tag] …`, details as
+   `key=value` pairs, never an embedded newline (the logger flattens them); the launch line ends
+   with `date=YYYY-MM-DD`; at 5 MB the file rotates to `Shotnote.log.1`, replacing the previous
+   one. Draft events: `[draft] saved|parked|forgot|swept <file>` and `[drafts] <n>` after every
+   change to the set. `[stack] shown cards=… files=… scan=…ms shown=…ms decoding=…` counts the
+   watch folder and times the scan.
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
 Delete test files afterwards; the watch folder is the user's real screenshot folder.

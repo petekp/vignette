@@ -43,8 +43,8 @@ final class BackdropPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    var stateDescription: String {
-        "visible=\(isVisible) alpha=\(alphaValue) frame=\(frame) bands=\(bands.map { $0.radius })"
+    var stateJSON: [String: Any] {
+        ["visible": isVisible, "alpha": alphaValue, "frame": StateReport.topLeft(frame, primaryHeight: StateReport.primaryHeight), "bands": bands.map { $0.radius }]
     }
 
     func show(on screen: NSScreen, below panel: NSPanel) {

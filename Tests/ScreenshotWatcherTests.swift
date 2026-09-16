@@ -22,6 +22,15 @@ final class ScreenshotWatcherTests: XCTestCase {
         return url
     }
 
+    func testRecentScanCountsEveryCandidate() throws {
+        _ = try png("Screenshot a.png"); _ = try png("Screenshot b.png"); _ = try png("Screenshot c.png")
+        try Data("x".utf8).write(to: dir.appendingPathComponent("notes.txt"))
+        let scan = ScreenshotWatcher.recentScan(in: dir, limit: 2)
+        XCTAssertEqual(scan.recent.count, 2)
+        XCTAssertEqual(scan.files, 3)
+        XCTAssertGreaterThanOrEqual(scan.ms, 0)
+    }
+
     func testCandidatesAreScreenshotFormatsAndNotOutputs() {
         for name in ["Screenshot 1.png", "x.PNG", "x.jpg", "x.jpeg", "x.heic"] { XCTAssertTrue(ScreenshotWatcher.isCandidate(name), name) }
         for name in [".hidden.png", "x-annotated.png", "x.pdf", "x.tiff", "x.gif", "png", "x.png.part"] { XCTAssertFalse(ScreenshotWatcher.isCandidate(name), name) }
