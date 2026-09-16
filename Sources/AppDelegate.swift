@@ -51,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotator.onLoaded = { [weak self] key in self?.thumbnail.pageLoaded(key) }
         annotator.onProblem = { [weak self] text in self?.thumbnail.showFeedback(text) }
         annotator.fileAccess.update(folder: watchFolder, unrestricted: settings.data.debug)
-        annotator.onDraftPreview = { [weak self] path, png in self?.thumbnail.setPreview(path, png) }
+        annotator.onDraftPreview = { [weak self] path, png in self?.storeDonePreview(path, png) }
         annotator.draftSnapshot = { [weak self] key in self?.drafts.snapshot(for: key) }
         annotator.onDraft = { [weak self] key, snapshot in self?.storeDraft(key, snapshot: snapshot) }
         annotator.onParked = { [weak self] key, parked in
@@ -182,6 +182,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[drafts] forgot \(name)")
         }
         thumbnail.setDrafts(drafts.keys)
+    }
+
+    /// The Done rendering is full resolution; the card keeps a copy no larger than a park preview.
+    private func storeDonePreview(_ key: String, _ png: Data) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let small = Thumbnailer.downsampled(png: png, maxPixel: Config.previewMaxPixel)
+            DispatchQueue.main.async { MainActor.assumeIsolated {
+                guard let small else { Log.write("[drafts] error preview downsample failed \((key as NSString).lastPathComponent)"); return }
+                self.storePreview(key, small)
+            } }
+        }
     }
 
     private func storePreview(_ key: String, _ png: Data) {
@@ -330,12 +341,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
     }
 
+    private func residentBytes() -> Int {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count) }
+        }
+        return result == KERN_SUCCESS ? Int(info.resident_size) : 0
+    }
+
     private func dumpState() {
         Log.write("[state] watchFolder=\(watchFolder.path) appleThumbnail=\(settings.data.appleThumbnail) recentCount=\(settings.data.recentCount) hotkey=\(settings.data.recentHotkey)")
         Log.write("[state] thumbnail: \(thumbnail.stateDescription)")
         Log.write("[state] cardFrames(x,y,w,h bottom-left origin): \(thumbnail.cardFramesDescription) screen=\(Int(NSScreen.main?.frame.height ?? 0))")
         Log.write("[state] \(thumbnail.screenDescription)")
         Log.write("[state] annotator: \(annotator.stateDescription)")
+        Log.write("[state] memory rss=\(residentBytes() >> 20)MB thumbnails=\(Thumbnailer.cacheBytes >> 20)MB webPid=\(annotator.webProcessID.map(String.init) ?? "unknown")")
         Log.write("[state] backdrop: \(thumbnail.backdropDescription)")
         annotator.dumpPageState()
         Commands.ok("state", "page state follows on its own [web] line")

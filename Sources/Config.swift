@@ -5,6 +5,8 @@ import AppKit
 enum Config {
     /// Appended to the original file name when an annotated copy is saved next to it.
     static let annotatedSuffix = "-annotated"
+    /// Longest side of a card preview, in pixels. Matches PREVIEW_MAX in App.tsx for park previews.
+    static let previewMaxPixel = 1600
 
     /// Everything you can do to screenshots. Each action is a hover button on a card, an entry in the
     /// selection bar, a keyboard shortcut inside the recent stack, and a `shotnote://<id>` URL, according

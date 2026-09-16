@@ -68,7 +68,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    answers. `[web] ready` follows on its own once the editor page is up; `copy-annotated` and
    `eval` answer `error page-not-ready` before it, `annotate` queues one deep. `build` is
    `git describe` of the checkout, stamped by build.sh. The `[state] annotator` line carries
-   `webPid`, the web content process, for `kill -9` tests and memory checks.
+   `webPid`, the web content process, for `kill -9` tests; `[state] memory` gives the app's
+   resident size and the thumbnail cache. The web process's size is `ps -o rss= -p <webPid>`.
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
 Delete test files afterwards; the watch folder is the user's real screenshot folder.
@@ -154,6 +155,11 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   "Copy Annotated" hands the stored snapshots to the live editor (`window.shotnote.export`),
   which restores the canvas afterwards; it falls back to the original file for cards without a
   draft, and answers `error export-failed` or `export-timeout` (15 s) instead of hanging.
+- Memory is bounded in three places. `Thumbnailer` keeps decoded images under `budgetBytes`
+  (96 MB of RGBA), least recently used out first. Card previews never exceed
+  `Config.previewMaxPixel` on the longest side: park previews are rendered at that size by the
+  page, and the full-resolution Done rendering is downsampled before it reaches a card or the
+  disk. Screen-size flight decodes are dropped whenever the stack hides.
 - Exports do not use tldraw's `toImage`. In WKWebView an SVG that embeds the screenshot
   rasterizes blank (WebKit loads the inner raster image asynchronously; tldraw only sleeps
   250ms for browsers it detects as Safari, which WKWebView is not). `render()` in `App.tsx`

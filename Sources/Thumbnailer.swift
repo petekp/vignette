@@ -4,21 +4,42 @@ import ImageIO
 /// Downsampled copies of screenshots, cached by file and size. Decoding a 3000-pixel PNG for a
 /// 220-point card wastes memory and Core Animation's minification shimmers; ImageIO resamples
 /// during decode instead. The cache is what makes the stack appear at once: it is warmed at
-/// launch and whenever a screenshot lands, so opening the stack rarely decodes anything.
-/// `@unchecked Sendable`: every access to the mutable `cache` below is inside `lock`/`unlock`, which
-/// is what actually makes the shared state safe across the concurrent `queue`.
+/// launch and whenever a screenshot lands, so opening the stack rarely decodes anything. The cache
+/// is bounded by `budgetBytes`, least recently used first, so a long session stays flat.
+/// `@unchecked Sendable`: every access to the mutable state below is inside `lock`/`unlock`, which
+/// is what actually makes it safe across the concurrent `queue`.
 enum Thumbnailer: @unchecked Sendable {
-    private struct Entry { let modified: Date; let maxPixel: Int; let image: NSImage }
+    private struct Entry { let modified: Date; let maxPixel: Int; let image: NSImage; let bytes: Int }
     private static let lock = NSLock()
     // Guarded by `lock`, not by an actor: reads happen inline on the caller's thread (`cached`) as
     // well as after a background decode (`image`), and only the lock's mutual exclusion keeps that safe.
     nonisolated(unsafe) private static var cache: [String: Entry] = [:]
+    /// Keys from least to most recently used.
+    nonisolated(unsafe) private static var order: [String] = []
+    nonisolated(unsafe) private static var bytes = 0
+    /// Decoded pixels the cache may hold, as RGBA bytes. About 30 cards at Retina card size plus a few
+    /// screen-size flight decodes fit; beyond that the oldest go.
+    nonisolated(unsafe) private static var budget = 96 << 20
     private static let queue = DispatchQueue(label: "shotnote.thumbnails", qos: .userInitiated, attributes: .concurrent)
 
-    /// The screenshot's size in points, from the file header only.
+    static var budgetBytes: Int {
+        get { lock.lock(); defer { lock.unlock() }; return budget }
+        set { lock.lock(); budget = newValue; evict(); lock.unlock() }
+    }
+
+    /// Decoded bytes held right now.
+    static var cacheBytes: Int { lock.lock(); defer { lock.unlock() }; return bytes }
+
+    /// The screenshot's size in points, from the file header only: pixels scaled by the file's DPI,
+    /// which is what `NSImage.size` reports for a Retina capture.
     static func pointSize(of url: URL) -> NSSize? {
-        guard let image = NSImage(contentsOf: url), image.size.width > 0 else { return nil }
-        return image.size
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? Double, let h = props[kCGImagePropertyPixelHeight] as? Double,
+              w > 0, h > 0 else { return nil }
+        let dpiX = props[kCGImagePropertyDPIWidth] as? Double ?? 72
+        let dpiY = props[kCGImagePropertyDPIHeight] as? Double ?? 72
+        return NSSize(width: w * 72 / (dpiX > 0 ? dpiX : 72), height: h * 72 / (dpiY > 0 ? dpiY : 72))
     }
 
     /// The screenshot's size in pixels, from the file header only.
@@ -34,7 +55,24 @@ enum Thumbnailer: @unchecked Sendable {
     static func cached(at url: URL, maxPixel: Int) -> NSImage? {
         lock.lock(); defer { lock.unlock() }
         guard let entry = cache[url.path], entry.maxPixel >= maxPixel, entry.modified == modified(url) else { return nil }
+        touch(url.path)
         return entry.image
+    }
+
+    /// PNG bytes of the image in `png`, downscaled so its longest side is at most `maxPixel`. Used for
+    /// the Done rendering, so a card preview never holds a full-resolution decode.
+    static func downsampled(png: Data, maxPixel: Int) -> Data? {
+        guard let source = CGImageSourceCreateWithData(png as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, cg, nil)
+        return CGImageDestinationFinalize(dest) ? out as Data : nil
     }
 
     /// A decoded copy whose longest side is at most `maxPixel` pixels. Cached.
@@ -51,10 +89,34 @@ enum Thumbnailer: @unchecked Sendable {
         let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
         if let modified = modified(url) {
             lock.lock()
-            cache[url.path] = Entry(modified: modified, maxPixel: maxPixel, image: image)
+            insert(url.path, Entry(modified: modified, maxPixel: maxPixel, image: image, bytes: cg.width * cg.height * 4))
             lock.unlock()
         }
         return image
+    }
+
+    // MARK: Cache bookkeeping, all under `lock`
+
+    private static func insert(_ key: String, _ entry: Entry) {
+        if let old = cache[key] { bytes -= old.bytes }
+        cache[key] = entry
+        bytes += entry.bytes
+        touch(key)
+        evict()
+    }
+
+    private static func touch(_ key: String) {
+        if let i = order.firstIndex(of: key) { order.remove(at: i) }
+        order.append(key)
+    }
+
+    /// Drops least recently used entries until the cache fits the budget. The newest entry stays
+    /// even if it alone exceeds the budget, so a request is never answered from nothing.
+    private static func evict() {
+        while bytes > budget, order.count > 1, let key = order.first {
+            order.removeFirst()
+            if let entry = cache.removeValue(forKey: key) { bytes -= entry.bytes }
+        }
     }
 
     /// Decodes off the main thread and hands the image back on it.

@@ -61,7 +61,10 @@ final class ThumbnailController {
     private var hosting: NSHostingView<StackView>!
     private var dismissTimer: Timer?
     private var outsideClickMonitor: Any?
-    private var visible = false
+    private var visible = false {
+        // Flight decodes are screen-sized; they are only worth keeping while the stack is up.
+        didSet { if !visible { flightImages.removeAll(); flightOrder.removeAll() } }
+    }
     private var dismissGeneration = 0
     private var shrinkGeneration = 0
     private var sweepAnchor: Int?
@@ -413,7 +416,8 @@ final class ThumbnailController {
         guard flightImages[path] == nil, previews[path] == nil else { return }
         let maxPixel = Int(ceil(max(screen.visibleFrame.width, screen.visibleFrame.height) * (screen.backingScaleFactor)))
         Thumbnailer.load(at: card.shot.url, maxPixel: maxPixel) { [weak self] image in
-            guard let self, let image, self.previews[path] == nil else { return }
+            // `visible`: a decode that lands after the stack hid must not refill the cache it cleared.
+            guard let self, let image, self.visible, self.previews[path] == nil else { return }
             self.flightImages[path] = image
             self.flightOrder.append(path)
             if self.flightOrder.count > 4 { self.flightImages[self.flightOrder.removeFirst()] = nil }
