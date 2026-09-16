@@ -173,7 +173,7 @@ private struct CardView: View {
         .overlay(alignment: .topLeading) {
             if showsDrawHint, let p = pointer {
                 DrawHintFollower(point: p)
-                    .transition(.asymmetric(insertion: .scale(scale: 0.6, anchor: .bottomTrailing).combined(with: .opacity), removal: .opacity))
+                    .transition(.asymmetric(insertion: .scale(scale: 0.6, anchor: .bottom).combined(with: .opacity), removal: .opacity))
             }
         }
         .animation(showsDrawHint ? .spring(response: 0.3, dampingFraction: 0.68) : Anim.spring(0.1), value: showsDrawHint)
@@ -347,13 +347,21 @@ private struct CopiedOverlay: View {
 private struct DrawHintFollower: View {
     let point: CGPoint
     @State private var shown: CGPoint? = nil
+    @State private var width: CGFloat = 0
 
     var body: some View {
         let p = shown ?? point
-        // Its bottom-right corner sits just up and left of the pointer: a frame from the card's
-        // top-left corner to that spot, with the hint aligned to its far corner.
+        // Centered just above the pointer: a frame from the card's top-left corner to a spot half
+        // the hint's width right of the pointer, with the hint aligned to its far corner. Its width
+        // is measured, so the hint stays hidden until the first measurement lands.
         DrawHint()
-            .frame(width: max(0, p.x - 6), height: max(0, p.y - 6), alignment: .bottomTrailing)
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { width = g.size.width }
+                    .onChange(of: g.size.width) { _, new in width = new }
+            })
+            .opacity(width > 0 ? 1 : 0)
+            .frame(width: max(0, p.x + width / 2), height: max(0, p.y - 8), alignment: .bottomTrailing)
             .onAppear { shown = point }
             .onChange(of: point) { _, new in
                 withAnimation(.interactiveSpring(response: 0.18, dampingFraction: 0.86)) { shown = new }
