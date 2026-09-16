@@ -32,13 +32,14 @@ if $run_tests; then
     # xcodebuild's own output names compile errors; the result bundle names the failed tests.
     result=$(ls -td build/Logs/Test/*.xcresult 2>/dev/null | head -1)
     if [[ -n "$result" ]]; then
-      xcrun xcresulttool get test-results summary --path "$result" 2>/dev/null | python3 -c '
+      summary=$(xcrun xcresulttool get test-results summary --path "$result" 2>/dev/null)
+      python3 - "$summary" <<'PY' >&2
 import json, sys
-d = json.load(sys.stdin)
-print(f"tests: failed ({d.get(\"failedTests\", \"?\")} of {d.get(\"totalTestCount\", \"?\")})")
+d = json.loads(sys.argv[1])
+print(f"tests: failed ({d.get('failedTests', '?')} of {d.get('totalTestCount', '?')})")
 for f in d.get("testFailures", []):
-    print(f"  {f.get(\"targetName\", \"\")}/{f.get(\"testName\", \"?\")}: {f.get(\"failureText\", \"\")}")
-' >&2
+    print(f"  {f.get('targetName', '')}/{f.get('testName', '?')}: {f.get('failureText', '')}")
+PY
     fi
     exit 1
   fi
