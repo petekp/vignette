@@ -38,6 +38,8 @@ enum PageAPI: Equatable {
     case export([(key: String, snapshot: Data)])
     case setTool(String)
     case setColor(String)
+    /// Magnification inside the window; 1 fits the image.
+    case setCanvasZoom(Double)
     case finish
 
     /// `park` and `export` are async and return a value, so they run through `callAsyncJavaScript`;
@@ -56,6 +58,7 @@ enum PageAPI: Equatable {
             return "return window.shotnote ? await window.shotnote.export([\(list.joined(separator: ","))]) : null;"
         case .setTool(let id): return "window.shotnote && window.shotnote.setTool(\(PageAPI.json(id)));"
         case .setColor(let id): return "window.shotnote && window.shotnote.setColor(\(PageAPI.json(id)));"
+        case .setCanvasZoom(let ratio): return "window.shotnote && window.shotnote.setCanvasZoom(\(PageAPI.json(ratio)));"
         case .finish: return "window.shotnote && window.shotnote.finish();"
         }
     }

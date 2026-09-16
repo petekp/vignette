@@ -60,6 +60,8 @@ declare global {
       export(items: ExportItem[]): Promise<ExportResult>
       setTool(id: string): void
       setColor(id: string): void
+      /** Magnifies the image inside the window once the window cannot grow; 1 fits the image. */
+      setCanvasZoom(ratio: number): void
       /** Exports the current image and replies with `done`. */
       finish(): void
     }

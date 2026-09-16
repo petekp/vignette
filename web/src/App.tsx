@@ -141,6 +141,9 @@ export function App() {
       setColor(id) {
         if (editor && COLORS.some((c) => c.id === id)) setColor(editor, id as ColorId)
       },
+      setCanvasZoom(ratio) {
+        if (editor && Number.isFinite(ratio) && ratio >= 1) setCanvasZoom(editor, ratio)
+      },
       finish() {
         if (editor) finish(editor, scaleRef.current)
       },
@@ -251,11 +254,9 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
 }
 
 function fitCamera(editor: Editor, w: number, h: number) {
+  canvasRatio = 1
   // The host sizes the window to the image's aspect, so 'fit' makes the image flush with the window.
-  // Locked: zoom and pan gestures resize the window instead (see the wheel listener), and every
-  // camera move here passes `force` to get past the lock.
   editor.setCameraOptions({
-    isLocked: true,
     constraints: {
       initialZoom: 'fit-max',
       baseZoom: 'fit-max',
@@ -267,11 +268,25 @@ function fitCamera(editor: Editor, w: number, h: number) {
   })
   // The host resizes the view right before loading; re-measure so the fit uses the final size.
   editor.updateViewportScreenBounds(editor.getContainer())
-  editor.setCamera(editor.getCamera(), { reset: true, force: true })
+  editor.setCamera(editor.getCamera(), { reset: true })
   requestAnimationFrame(() => {
     editor.updateViewportScreenBounds(editor.getContainer())
-    editor.setCamera(editor.getCamera(), { reset: true, force: true })
+    editor.setCamera(editor.getCamera(), { reset: true })
   })
+}
+
+/** The host's last in-window magnification; a window resize refits and then puts it back. */
+let canvasRatio = 1
+
+/** Magnification inside the window about its center: 1 fits the image, larger zooms in. */
+function setCanvasZoom(editor: Editor, ratio: number) {
+  canvasRatio = ratio
+  const { x: cx, y: cy, z: cz } = editor.getCamera()
+  const z = editor.getBaseZoom() * ratio
+  const { w, h } = editor.getViewportScreenBounds()
+  const sx = w / 2
+  const sy = h / 2
+  editor.setCamera({ x: cx + sx / z - sx / cz, y: cy + sy / z - sy / cz, z })
 }
 
 function clearCanvas(editor: Editor) {
@@ -392,21 +407,26 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
     postToNative({ type: 'tool', tool, color })
   }, [tool, color])
 
-  // Keep the image fitted when the window is resized.
+  // Keep the image fitted when the window is resized. The reset drops any magnification, so it
+  // goes back on afterwards; the resize and the host's zoom call can land in either order.
   useEffect(() => {
-    const refit = () => editor.setCamera(editor.getCamera(), { reset: true, force: true })
+    const refit = () => {
+      editor.setCamera(editor.getCamera(), { reset: true })
+      if (canvasRatio > 1) setCanvasZoom(editor, canvasRatio)
+    }
     window.addEventListener('resize', refit)
     return () => window.removeEventListener('resize', refit)
   }, [editor])
 
-  // A pinch arrives as a wheel event with ctrlKey; cmd+wheel zooms too. Both resize the window
-  // through the host, coalesced to one message per frame.
+  // A pinch arrives as a wheel event with ctrlKey; cmd+wheel zooms too. Both go to the host,
+  // coalesced to one message per frame, and never reach tldraw's own zoom. Plain wheel still pans.
   useEffect(() => {
     let factor = 1
     let scheduled = false
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
+      e.stopPropagation()
       factor *= Math.exp(-e.deltaY * WHEEL_ZOOM_RATE)
       if (scheduled) return
       scheduled = true

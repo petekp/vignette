@@ -169,11 +169,13 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   and a launch-time sweep removes the rest. The snapshot's asset `src` is the file path; the
   page's asset store resolves it to the served URL, so a stored draft never contains a token.
   Loading a snapshot inside `editor.run(fn, { history: 'ignore' })` keeps it out of undo history.
-- Zoom belongs to the app, not the page. tldraw's camera is locked (`isLocked`, every camera
-  move passes `force`) and the image always fills the window; a pinch, cmd+wheel, or
-  cmd+plus/minus/0 sends a `zoom` message and `AnnotationController.zoom(by:animated:)` resizes
-  the window around its center, between a quarter of the fitted size and the visible screen.
-  The toolbar stays where `prepare` placed it and sits above the window as a child.
+- Zoom belongs to the app, not the page. A pinch, cmd+wheel, or cmd+plus/minus/0 sends a
+  `zoom` message (tldraw never sees those wheels; a plain wheel still pans a magnified image)
+  and `AnnotationController.zoom(by:animated:)` grows the window around its center up to the
+  visible screen, then magnifies the image inside it through `setCanvasZoom`. Zooming out
+  reverses that and stops at the fitted size with a short pull that springs back. The toolbar
+  stays where `prepare` placed it and sits above the window as a child. The state report's
+  `page.zoom` is the in-window magnification as tldraw sees it (1 = the image fills the window).
   "Copy Annotated" hands the stored snapshots to the live editor (`window.shotnote.export`),
   which restores the canvas afterwards; it falls back to the original file for cards without a
   draft, and answers `error export-failed` or `export-timeout` (15 s) instead of hanging.

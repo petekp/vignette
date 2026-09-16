@@ -64,8 +64,16 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// The frame `prepare` fitted the image into; zoom scales the window from here.
     private var fittedFrame: NSRect = .zero
     private lazy var zoom = Tween(initial: 1) { [weak self] v in self?.applyZoom(v) }
-    /// Reset to 1 for each image, so a zoomed-in session doesn't carry into the next.
+    /// The window's scale on screen. Reset to 1 for each image.
     private(set) var zoomScale: CGFloat = 1
+    /// Where zooming has pushed the window scale; below 1 only while a gesture pulls against the fitted size.
+    private var windowTarget: CGFloat = 1
+    /// Magnification inside a window that can grow no further; 1 fits the image.
+    private(set) var canvasZoom: CGFloat = 1
+    private var settleTimer: Timer?
+    /// How much of a pull below the fitted size the window shows before springing back.
+    private let overpull: CGFloat = 0.3
+    private let maxCanvasZoom: CGFloat = 8
 
     func preload() {
         _ = FocusReturn.shared
@@ -102,6 +110,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         current = shot
         let win = window ?? makeWindow(webView)
         fittedFrame = frame
+        windowTarget = 1
+        canvasZoom = 1
+        settleTimer?.invalidate()
         zoom.set(1)
         win.setFrame(frame, display: false)
         applyCornerRadius()
@@ -110,16 +121,52 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         sendImage(shot, windowSize: frame.size)
     }
 
-    /// Zoom resizes the window around its center and leaves the toolbar where it is; the page
-    /// refits the image to the new size. A gesture applies at once, a keyboard step springs.
+    /// Zoom in grows the window around its center until it fills the screen, then magnifies the
+    /// image inside it. Zoom out reverses that and stops at the fitted size: pulling further
+    /// shrinks the window a little and it springs back once the gesture ends. The toolbar stays
+    /// where it is. A gesture tracks directly, a keyboard step springs.
     func zoom(by factor: Double?, animated: Bool) {
         guard window != nil, fittedFrame.width > 0 else { return }
-        let target = factor.map { zoomScale * CGFloat($0) } ?? 1
-        let clamped = min(maxZoom, max(minZoom, target))
-        if animated { zoom.animate(to: clamped, duration: 0.3, curve: "spring") } else { zoom.set(clamped) }
+        settleTimer?.invalidate()
+        guard let factor else {
+            setCanvasZoom(1)
+            windowTarget = 1
+            zoom.animate(to: 1, duration: 0.3, curve: "spring")
+            return
+        }
+        var f = CGFloat(factor)
+        if f > 1 {
+            let grown = min(maxZoom, max(1, windowTarget) * f)
+            f *= max(1, windowTarget) / grown   // the part the window could not take
+            windowTarget = grown
+            if f > 1 { setCanvasZoom(min(maxCanvasZoom, canvasZoom * f)) }
+        } else {
+            let shrunk = max(1, canvasZoom * f)
+            f *= canvasZoom / shrunk
+            setCanvasZoom(shrunk)
+            windowTarget = max(0.5, windowTarget * f)
+        }
+        let shown = windowTarget < 1 ? 1 - (1 - windowTarget) * overpull : windowTarget
+        if animated { zoom.animate(to: shown, duration: 0.3, curve: "spring") } else { zoom.set(shown) }
+        if windowTarget < 1 { scheduleSettle() }
     }
 
-    private var minZoom: CGFloat { 0.25 }
+    /// A pull below the fitted size lets go shortly after the last zoom message.
+    private func scheduleSettle() {
+        settleTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.windowTarget < 1 else { return }
+                self.windowTarget = 1
+                self.zoom.animate(to: 1, duration: 0.35, curve: "spring")
+            }
+        }
+    }
+
+    private func setCanvasZoom(_ ratio: CGFloat) {
+        guard ratio != canvasZoom else { return }
+        canvasZoom = ratio
+        call(.setCanvasZoom(Double(ratio)))
+    }
     /// The window may grow to the whole visible screen, past the fitted inset and the toolbar's room.
     private var maxZoom: CGFloat {
         guard let screen = window?.screen ?? NSScreen.main else { return 1 }
@@ -365,6 +412,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             "current": current?.url.path as Any,
             "windowVisible": window?.isVisible ?? false,
             "zoom": zoomScale,
+            "canvasZoom": canvasZoom,
             "frame": window.map { StateReport.topLeft($0.frame, primaryHeight: StateReport.primaryHeight) } as Any,
             "pageState": "\(pageState)",
             "tool": toolbar.model.tool as Any, "color": toolbar.model.color,
@@ -384,7 +432,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             completion(value)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish(nil) }
-        let script = "return {title: document.title, root: document.getElementById('root')?.children.length, api: typeof window.shotnote, canvas: document.querySelector('.tl-canvas') != null, images: document.querySelectorAll('.tl-image').length, shapes: window.editor ? window.editor.getCurrentPageShapeIds().size : null, canUndo: window.editor ? window.editor.getCanUndo() : null, inner: [innerWidth, innerHeight], hidden: document.hidden, page: location.pathname.split('/').pop()};"
+        let script = "return {title: document.title, root: document.getElementById('root')?.children.length, api: typeof window.shotnote, canvas: document.querySelector('.tl-canvas') != null, images: document.querySelectorAll('.tl-image').length, shapes: window.editor ? window.editor.getCurrentPageShapeIds().size : null, canUndo: window.editor ? window.editor.getCanUndo() : null, zoom: window.editor ? window.editor.getZoomLevel() / window.editor.getBaseZoom() : null, inner: [innerWidth, innerHeight], hidden: document.hidden, page: location.pathname.split('/').pop()};"
         webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { result in
             if case .success(let value) = result { finish(value) } else { finish(nil) }
         }
