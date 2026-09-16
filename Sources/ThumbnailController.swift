@@ -653,7 +653,7 @@ final class ThumbnailController {
             model.offscreen = Set(cards.map(\.id))
         }
         visible = true
-        layoutPanel(shrinkLater: false)
+        layoutPanel(shrinkLater: false, animated: false)
         panel.orderFrontRegardless()
         // The offscreen state must be committed before it is cleared, or nothing animates: next run loop turn.
         if !keepOffscreen {
@@ -690,21 +690,25 @@ final class ThumbnailController {
             model.selected.remove(last.id)
         }
         withAnimation(.easeOut(duration: ui.relayoutDuration)) { model.scroll = 0 }
-        layoutPanel(shrinkLater: false)
+        layoutPanel(shrinkLater: false, animated: true)
         DispatchQueue.main.async { [weak self] in self?.model.offscreen.remove(card.id) }
     }
 
     private func relayout() {
         guard visible else { return }
-        layoutPanel(shrinkLater: true)
+        layoutPanel(shrinkLater: true, animated: true)
     }
 
     /// The panel grows at once so nothing is clipped while cards move, and shrinks once they have.
-    /// Its bottom edge never moves; the column is anchored there.
-    private func layoutPanel(shrinkLater: Bool) {
+    /// Its bottom edge never moves; the column is anchored there. A fresh presentation applies
+    /// the viewport at once: animated, its change overlaps the cards' entrance and bends their
+    /// path, since the column frame's height and the slide land in the same transaction.
+    private func layoutPanel(shrinkLater: Bool, animated: Bool) {
         let content = layout.contentHeight(cards: cardSizes, showsBar: showsBar)
         let viewport = layout.viewportHeight(content: content, visibleFrame: screen.visibleFrame)
-        withAnimation(.easeOut(duration: ui.relayoutDuration)) {
+        var transaction = Transaction(animation: animated ? .easeOut(duration: ui.relayoutDuration) : nil)
+        transaction.disablesAnimations = !animated
+        withTransaction(transaction) {
             model.viewport = viewport
             model.scroll = min(model.scroll, max(0, content - viewport))
         }
