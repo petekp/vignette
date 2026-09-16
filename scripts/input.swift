@@ -16,6 +16,7 @@ struct InputTool {
       key <keycode> [cmd] [shift] [opt] [ctrl]   press and release a key
       hotkey <spec>                              press a settings.json hotkey: cmd+shift+6, double-rshift
       tap <modifier keycode> [count]             tap a modifier key (60 is right shift), twice by default
+      holdtap <modifier keycode> [seconds]       tap a modifier key once, then hold a second press (0.7 s)
       move X Y                                   move the mouse
       click X Y                                  click the left button
       drag X1 Y1 X2 Y2                           drag with the left button
@@ -44,6 +45,10 @@ struct InputTool {
         case "tap":
             guard let code = rest.first.flatMap({ UInt16($0) }) else { fail(usage) }
             tap(code, count: rest.dropFirst().first.flatMap { Int($0) } ?? 2)
+        case "holdtap":
+            guard let code = rest.first.flatMap({ UInt16($0) }) else { fail(usage) }
+            tap(code, count: 1)
+            tap(code, count: 1, hold: rest.dropFirst().first.flatMap { Double($0) } ?? 0.7)
         case "move":
             let p = points(rest, 2); move(p[0].0, p[0].1)
         case "click":
@@ -72,7 +77,7 @@ struct InputTool {
     }
 
     /// A modifier key pressed and released; the down event carries the modifier's flag like a real press.
-    static func tap(_ code: UInt16, count: Int) {
+    static func tap(_ code: UInt16, count: Int, hold: Double = 0.05) {
         let flag: CGEventFlags
         switch code {
         case 56, 60: flag = .maskShift
@@ -84,7 +89,7 @@ struct InputTool {
         for _ in 0..<count {
             let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true)
             down?.flags = flag
-            post(down); pause(0.05)
+            post(down); pause(hold)
             let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
             up?.flags = []
             post(up); pause(0.12)

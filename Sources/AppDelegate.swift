@@ -112,11 +112,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[hotkey] recent")
             self?.toggleRecent()
         }
+        // The stack is already open from the press; holding on lifts the newest capture out of it.
+        let hold = { [weak self] in
+            Log.write("[hotkey] hold")
+            self?.annotateLast()
+        }
         switch HotKeySpec.parse(settings.data.recentHotkey) {
         case .key(let keyCode, let modifiers):
-            hotKey = HotKey(keyCode: keyCode, modifiers: modifiers, action: fire)
+            hotKey = HotKey(keyCode: keyCode, modifiers: modifiers, action: fire, hold: hold)
         case .doubleTap(let keyCode):
-            modifierTap = ModifierTap(keyCode: keyCode, action: fire)
+            modifierTap = ModifierTap(keyCode: keyCode, action: fire, hold: hold)
         case nil:
             Log.write("[hotkey] cannot parse \"\(settings.data.recentHotkey)\"; no hotkey registered")
             return
@@ -143,6 +148,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     func annotate(_ shot: Screenshot) {
         Commands.ok("annotate", shot.url.lastPathComponent)
         thumbnail.annotate(shot)
+    }
+
+    /// The newest screenshot in the watch folder goes into the annotator, on screen or not.
+    private func annotateLast() {
+        guard let url = ScreenshotWatcher.newestScreenshot(in: watchFolder) else {
+            Commands.error("annotate", .missingFile, "no screenshot in \(watchFolder.path)"); return
+        }
+        annotate(Screenshot(url: url))
     }
 
     func stitch(_ shots: [Screenshot]) {
@@ -442,6 +455,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.removeAllItems()
         menu.addItem(withTitle: "Open Last Screenshot", action: #selector(openLast), keyEquivalent: "")
         menu.addItem(withTitle: "Show Recent Screenshots  (\(settings.data.recentHotkey))", action: #selector(toggleRecent), keyEquivalent: "")
+        menu.addItem(withTitle: "Annotate Last Screenshot  (hold \(settings.data.recentHotkey))", action: #selector(annotateLastFromMenu), keyEquivalent: "")
+        let captureItem = NSMenuItem(title: "Annotate New Captures", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
+        captureItem.state = settings.data.annotateOnCapture ? .on : .off
+        menu.addItem(captureItem)
         menu.addItem(.separator())
         let folderItem = NSMenuItem(title: "Watching: \(settings.data.screenshotsFolder)", action: nil, keyEquivalent: "")
         folderItem.isEnabled = false
@@ -473,6 +490,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         debugPanel.toggle()
     }
 
+    @objc private func annotateLastFromMenu() { annotateLast() }
+
+    @objc private func toggleAnnotateOnCapture() {
+        settings.update { $0.annotateOnCapture.toggle() }
+        Log.write("[settings] annotateOnCapture=\(settings.data.annotateOnCapture)")
+    }
+
     @objc private func openLast() {
         guard let url = ScreenshotWatcher.newestScreenshot(in: watchFolder) else {
             Commands.error("last", .missingFile, "no screenshot in \(watchFolder.path)"); return
@@ -498,7 +522,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Log.write("[watcher] watching \(watchFolder.path)")
         watcher = ScreenshotWatcher(folder: watchFolder, onNew: { [weak self] url in
             Log.write("[watcher] new \(url.lastPathComponent)")
-            self?.thumbnail.show(Screenshot(url: url))
+            guard let self else { return }
+            if self.settings.data.annotateOnCapture { self.annotate(Screenshot(url: url)) } else { self.thumbnail.show(Screenshot(url: url)) }
         }, onRemoved: { [weak self] urls in
             Log.write("[watcher] removed \(urls.map(\.lastPathComponent).joined(separator: ", "))")
             self?.thumbnail.remove(urls.map(Screenshot.init))

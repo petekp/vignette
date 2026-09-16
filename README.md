@@ -96,7 +96,9 @@ and closing it hands focus back to the app you came from.
 
 The hotkey is either a key combination (no permission needed) or `double-rshift`, a double tap
 of right Shift, which needs Shotnote trusted for Accessibility (System Settings → Privacy &
-Security → Accessibility); the app asks the first time.
+Security → Accessibility); the app asks the first time. Hold the key, or the second tap, and the
+newest screenshot lifts out of the stack into the annotator: capture, tap-tap-hold, draw. The
+menu bar has the same command.
 
 ## Make it yours
 
@@ -163,6 +165,7 @@ which is how tests and agents keep away from the real one.
   "hideMenuBarIcon": false,
   "launchAtLogin": false,
   "quickAnnotate": false,
+  "annotateOnCapture": false,
   "debug": false,
   "ui": { "cardMaxWidth": 208, "slideInDuration": 0.75, "backdropBlurRadius": 13, "...": "the design numbers" },
   "appleOriginal": { "location": "~/Desktop", "showThumbnail": true, "disableShadow": false, "type": "png" }
@@ -175,6 +178,8 @@ them for you. On first run the file mirrors what macOS is already doing, so noth
 you edit it; `appleOriginal` records those first values, and `restore-apple-defaults` puts them
 back. `launchAtLogin` adds Shotnote to your login items. `quickAnnotate` makes Done copy the
 annotated image and close the annotator and the stack at once, instead of returning to the stack.
+`annotateOnCapture` opens every new screenshot in the annotator right away, instead of showing a
+thumbnail; the menu bar toggles it too.
 `debug` unlocks `eval`, `show-editor`,
 `tweaks`, and `file=` outside the watch folder. A file that does not parse is moved aside as
 `settings.json.invalid` and replaced with defaults, with a toast saying so.

@@ -113,7 +113,10 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   file name.
 - The recent-stack shortcut is either a Carbon hotkey (`HotKey.swift`, no permission needed)
   or a modifier double tap (`ModifierTap.swift`, `"double-rshift"`), which needs the app trusted
-  for Accessibility because it watches key events with NSEvent monitors.
+  for Accessibility because it watches key events with NSEvent monitors. Both fire the stack on
+  the press and `hold` (annotate the newest screenshot) when the key stays down 0.4 s, so a held
+  tap opens the stack and then lifts the newest card out of it. `annotateOnCapture` sends a new
+  capture straight to `annotate` instead of `show`.
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
 - Preload the web view at launch; the annotator must open instantly.

@@ -4,6 +4,7 @@ import AppKit
 /// Fires when one modifier key (right Shift, say) is tapped twice in quick succession with nothing
 /// else pressed in between. Modifier taps are invisible to Carbon hotkeys, so this watches key
 /// events with NSEvent monitors, which macOS only delivers to apps trusted for Accessibility.
+/// `hold` fires as well when the last tap is kept down for `holdSeconds`.
 @MainActor
 final class ModifierTap {
     private let keyCode: UInt16
@@ -11,18 +12,24 @@ final class ModifierTap {
     private let taps: Int
     private let window: TimeInterval
     private let action: () -> Void
+    private let hold: (() -> Void)?
+    private let holdSeconds: TimeInterval
     private var monitors: [Any] = []
     private var count = 0
     private var last: TimeInterval = 0
     private var retry: Timer?
+    private var holdTimer: Timer?
 
     /// Key codes: 56 left shift, 60 right shift, 55 left cmd, 54 right cmd, 58 left opt,
     /// 61 right opt, 59 left ctrl, 62 right ctrl.
-    init(keyCode: UInt16, taps: Int = 2, window: TimeInterval = 0.4, action: @escaping () -> Void) {
+    init(keyCode: UInt16, taps: Int = 2, window: TimeInterval = 0.4, holdSeconds: TimeInterval = 0.4,
+         action: @escaping () -> Void, hold: (() -> Void)? = nil) {
         self.keyCode = keyCode
         self.taps = taps
         self.window = window
+        self.holdSeconds = holdSeconds
         self.action = action
+        self.hold = hold
         switch keyCode {
         case 56, 60: flag = .shift
         case 55, 54: flag = .command
@@ -45,6 +52,7 @@ final class ModifierTap {
 
     isolated deinit {
         retry?.invalidate()
+        holdTimer?.invalidate()
         monitors.forEach { NSEvent.removeMonitor($0) }
     }
 
@@ -54,7 +62,7 @@ final class ModifierTap {
 
     private func install() {
         let flags: (NSEvent) -> Void = { [weak self] e in self?.flagsChanged(e) }
-        let reset: (NSEvent) -> Void = { [weak self] _ in self?.count = 0 }
+        let reset: (NSEvent) -> Void = { [weak self] _ in self?.count = 0; self?.holdTimer?.invalidate() }
         monitors = [
             NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: flags),
             NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { flags($0); return $0 },
@@ -66,13 +74,19 @@ final class ModifierTap {
     private func flagsChanged(_ event: NSEvent) {
         guard event.keyCode == keyCode else { count = 0; return }
         let mods = event.modifierFlags.intersection([.shift, .command, .option, .control])
-        guard mods == flag else { return }   // a release, or another modifier is held
+        if !mods.contains(flag) { holdTimer?.invalidate(); return }   // released before the hold
+        guard mods == flag else { return }   // another modifier is held
         let now = event.timestamp
         count = now - last < window ? count + 1 : 1
         last = now
         if count >= taps {
             count = 0
             action()
+            guard let hold else { return }
+            holdTimer?.invalidate()
+            holdTimer = Timer.scheduledTimer(withTimeInterval: holdSeconds, repeats: false) { _ in
+                MainActor.assumeIsolated { hold() }
+            }
         }
     }
 }

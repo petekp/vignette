@@ -213,7 +213,12 @@ final class ThumbnailController {
     /// Opens the annotator on `shot`, or swaps to it if the annotator is already open. Shows the
     /// card first if it is not on screen.
     func annotate(_ shot: Screenshot) {
-        if visible, let card = card(for: shot) { annotate(card); return }
+        if visible {
+            // A shot the panel does not have yet joins it; the flight starts from its offscreen slot.
+            if card(for: shot) == nil, let card = makeCard(shot) { insert(card) }
+            if let card = card(for: shot) { annotate(card) }
+            return
+        }
         // Not on screen: the card flies straight from its offscreen slot, so nothing waits for a slide-in.
         guard let card = makeCard(shot) else { return }
         present(cards: [card], stack: false, keepOffscreen: true)
