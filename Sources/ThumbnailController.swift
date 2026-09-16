@@ -649,8 +649,11 @@ final class ThumbnailController {
         // A dismissal in progress is simply reversed: the same cards turn around.
         let reusing = visible && Set(cards.map(\.shot.url)) == Set(model.cards.map(\.shot.url))
         if !reusing {
-            model.cards = cards
-            model.offscreen = Set(cards.map(\.id))
+            // A lone thumbnail that is part of the stack stays where it is; the rest slides in above it.
+            let staying = (visible && !model.isStack && stack) ? model.cards.first { existing in cards.contains { $0.shot.url == existing.shot.url } } : nil
+            let next = cards.map { card in card.shot.url == staying?.shot.url ? staying! : card }
+            model.cards = next
+            model.offscreen = Set(next.map(\.id)).subtracting(staying.map { [$0.id] } ?? [])
         }
         visible = true
         layoutPanel(shrinkLater: false, animated: false)
