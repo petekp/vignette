@@ -102,8 +102,8 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   is public (docs/foundation-review-2026-09-15.md, step 1).
 - The tldraw watermark stays, whatever it says. The license forbids interfering with license
   key enforcement, and `LICENSE-tldraw.md` must ship verbatim in the bundle (project.yml).
-- The screenshot is served by the same `LocalServer`, as `load`'s `imageUrl`. It must be
-  same-origin with the page: tldraw's export draws the image on a canvas, and a cross-origin
+- The screenshot is served by the same `LocalServer`: the page turns the file path in `load`
+  into `/<token>/file?p=<path>` under its own origin. It must be same-origin with the page: tldraw's export draws the image on a canvas, and a cross-origin
   image taints it so `render` throws. A custom scheme handler or a second port is therefore
   not an option. Every server path starts with a per-launch token, so no other local process
   can read screenshots through the port; the server answers only GET (405 otherwise), only
@@ -153,9 +153,10 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   sends its tool and color list in the `ready` message, reports the active tool, and takes
   `setTool`/`setColor`/`finish` calls. Keyboard shortcuts inside the editor (tool keys, undo,
   delete, Esc, Cmd+Enter) live in `Hotkeys` in `App.tsx`, because tldraw's own shortcuts are part
-  of the UI that `hideUi` removes. `ExpandPanel` carries a card between its stack slot and that frame, and the
-  annotator loads the image while hidden (`prepare`) so it can appear the moment the card lands
-  (`show`). A swap runs two of these at once. The stack keeps a dashed placeholder in the slot.
+  of the UI that `hideUi` removes. `TransitionLayer` flies a card between its stack slot and that
+  frame, and the annotator loads the image while hidden (`prepare`) so it can appear the moment
+  the card lands (`show`). A swap runs two of these at once. The stack keeps a dashed placeholder
+  in the slot.
 - Annotations in progress are drafts owned by the app (`DraftStore`), one JSON snapshot per
   screenshot under `~/Library/Application Support/<bundle id>/drafts/` keyed by the file path
   the app uses everywhere (`shot.url.path`), with a preview PNG under `~/Library/Caches/<bundle

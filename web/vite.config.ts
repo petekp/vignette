@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Relative base so the built page loads from a file:// URL inside the app bundle.
+// Relative base: the app serves the built page from a tokened path on its loopback server.
 export default defineConfig({
   plugins: [react()],
   base: './',

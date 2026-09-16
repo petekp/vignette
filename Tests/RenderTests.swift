@@ -45,11 +45,12 @@ final class RenderTests: XCTestCase {
 
     private var fixture: URL { dir.appendingPathComponent("Screenshot fixture.png") }
 
+    @MainActor
     private final class Handler: NSObject, WKScriptMessageHandler {
         weak var owner: RenderTests?
         init(owner: RenderTests) { self.owner = owner }
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            MainActor.assumeIsolated { owner?.received(message.body) }
+            owner?.received(message.body)
         }
     }
 
