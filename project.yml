@@ -50,6 +50,9 @@ targets:
         CODE_SIGN_STYLE: Manual
         # Hardened runtime from the start, so notarizing later is a certificate and not a redesign.
         ENABLE_HARDENED_RUNTIME: true
+        # Xcode's Debug builds otherwise put the app in Shotnote.debug.dylib for previews, which the
+        # hardened runtime refuses to load when the signer has no team ID (a self-signed certificate).
+        ENABLE_DEBUG_DYLIB: false
         # No sandbox: the app writes Apple's com.apple.screencapture defaults, watches a folder the
         # user names without security-scoped bookmarks, and installs global event monitors.
         ENABLE_APP_SANDBOX: false

@@ -58,8 +58,13 @@ DEVELOPMENT_TEAM=ABCDE12345
 ```
 
 A self-signed code-signing certificate made in Keychain Access (Certificate Assistant → Create a
-Certificate, type Code Signing) should work the same way, since its designated requirement also
-names the certificate, but that has not been verified here; leave `DEVELOPMENT_TEAM` empty for it.
+Certificate, type Code Signing) works the same way, verified: its designated requirement names the
+certificate, and a build rebuilt from changed source kept its Accessibility grant. Leave
+`DEVELOPMENT_TEAM` empty for it. Two things to know for that route: `project.yml` turns off
+Xcode's debug dylib (`ENABLE_DEBUG_DYLIB`), because the hardened runtime refuses to load it when
+the signer has no team ID and the app dies at launch; and macOS keys the Accessibility list by
+bundle id, so a second build of the same bundle id with a different signer shows the existing row
+as enabled while staying untrusted. Give a fork its own bundle id (see Forking).
 The hardened runtime is on so notarizing later needs no code change. The app is not sandboxed: it
 writes Apple's screencapture defaults, watches a folder you name, and installs global event monitors.
 
