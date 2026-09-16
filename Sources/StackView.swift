@@ -91,7 +91,9 @@ private struct CardView: View {
     private var showsCircle: Bool { model.isStack && !isOut && (hovered || model.inSelectionMode || focused) }
     private var copied: Bool { model.copied.contains(card.id) }
     private var showsButtons: Bool { hovered && !isOut && !model.inSelectionMode && !copied }
-    private var showsDrawHint: Bool { showsButtons && !model.overControl && !pressed }
+    private var showsDrawHint: Bool { showsButtons && !model.overControl && !pressed && !inButtonRow }
+    /// The strip along the bottom that holds the buttons, gaps included: a click there is not a draw.
+    private var inButtonRow: Bool { pointer.map { $0.y >= card.size.height - 6 - ui.buttonSize } ?? true }
 
     var body: some View {
         ZStack {
