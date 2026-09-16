@@ -28,13 +28,13 @@ final class DimPanel: NSPanel {
         generation += 1
         setFrame(screen.frame, display: false)
         orderFront(nil)
-        alpha.animate(to: ui.dimOpacity, duration: ui.dimFade)
+        alpha.animate(to: ui.dimOpacity, duration: ui.dimFade, curve: "spring")
     }
 
     func hide() {
         generation += 1
         let gen = generation
-        alpha.animate(to: 0, duration: Settings.shared.motionUI.dimFade, curve: "easeInOut") { [weak self] in
+        alpha.animate(to: 0, duration: Settings.shared.motionUI.dimFade, curve: "spring") { [weak self] in
             guard let self, self.generation == gen else { return }
             self.orderOut(nil)
         }

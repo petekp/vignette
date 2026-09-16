@@ -111,8 +111,8 @@ struct UITweaks: Codable, Equatable {
     var backdropFadeOut = 0.35
     var backdropSlideIn = 0.5           // the strip slides in from the screen edge while it fades
     var backdropSlideOut = 0.3
-    var dimOpacity = 0.35            // screen darkening behind the annotator
-    var dimFade = 0.25
+    var dimOpacity = 0.5             // screen darkening behind the annotator
+    var dimFade = 0.4                // the spring settles within this
     // Annotator window
     var annotationMinWidth = 770.0
     var annotationMinHeight = 320.0
