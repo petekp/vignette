@@ -11,6 +11,7 @@ final class AnnotatorToolbar {
         @Published var colors: [ColorInfo] = []
         @Published var tool: String? = nil
         @Published var color: String = ""
+        @Published var shown = false     // drives the entrance and exit
     }
 
     let panel: NSPanel
@@ -21,12 +22,15 @@ final class AnnotatorToolbar {
     private var hosting: NSHostingView<ToolbarView>!
 
     static let height: CGFloat = 44
+    /// Room around the bar inside its panel for the shadow and the entrance motion.
+    static let padding: CGFloat = 28
+    private var hideGeneration = 0
 
     init() {
         panel = ToolbarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false   // the bar draws its own; a window shadow cannot follow the animated content
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.animationBehavior = .none
@@ -37,8 +41,27 @@ final class AnnotatorToolbar {
 
     /// Centers the toolbar under `frame`, `gap` points below it.
     func place(below frame: NSRect, gap: CGFloat) {
-        let size = hosting.fittingSize
-        panel.setFrame(NSRect(x: (frame.midX - size.width / 2).rounded(), y: frame.minY - gap - size.height, width: size.width, height: size.height), display: true)
+        let size = hosting.fittingSize   // includes `padding` on every side
+        panel.setFrame(NSRect(x: (frame.midX - size.width / 2).rounded(), y: frame.minY - gap - size.height + Self.padding, width: size.width, height: size.height), display: true)
+    }
+
+    /// Orders the panel in hidden and lets the bar rise into place a turn later, so the
+    /// entrance animates from the hidden state instead of appearing already in place.
+    func show() {
+        hideGeneration += 1
+        panel.orderFront(nil)
+        DispatchQueue.main.async { [weak self] in self?.model.shown = true }
+    }
+
+    /// Fades the bar out, then orders the panel out.
+    func hide() {
+        hideGeneration += 1
+        let gen = hideGeneration
+        model.shown = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2 * Settings.shared.motionScale) { [weak self] in
+            guard let self, self.hideGeneration == gen else { return }
+            self.panel.orderOut(nil)
+        }
     }
 }
 
@@ -97,7 +120,20 @@ private struct ToolbarView: View {
         .frame(height: AnnotatorToolbar.height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
         .fixedSize()
+        .padding(AnnotatorToolbar.padding)
+        // In: rises a little and settles on a spring. Out: a short fade while it sinks back.
+        .opacity(model.shown ? 1 : 0)
+        .scaleEffect(model.shown ? 1 : 0.94, anchor: .top)
+        .offset(y: model.shown ? 0 : 8)
+        .animation(entrance, value: model.shown)
+    }
+
+    private var entrance: Animation {
+        let scale = Settings.shared.motionScale
+        guard scale > 0 else { return .linear(duration: 0) }
+        return model.shown ? .spring(response: 0.45 * scale, dampingFraction: 0.72) : .easeOut(duration: 0.18 * scale)
     }
 }
 

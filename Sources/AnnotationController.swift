@@ -318,7 +318,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         win.alphaValue = 1
         win.makeKeyAndOrderFront(nil)
         if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
-        toolbar.panel.orderFront(nil)
+        toolbar.show()
         NSApp.activate(ignoringOtherApps: true)
         installOutsideClickMonitor()
     }
@@ -352,7 +352,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private func hideWindows() {
         removeCover()
         if let win = window, toolbar.panel.parent === win { win.removeChildWindow(toolbar.panel) }
-        toolbar.panel.orderOut(nil)
+        toolbar.hide()
         window?.orderOut(nil)
     }
 
@@ -473,7 +473,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         win.makeKeyAndOrderFront(nil)
         if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
-        toolbar.panel.orderFront(nil)
+        toolbar.show()
         NSApp.activate(ignoringOtherApps: true)
     }
 
