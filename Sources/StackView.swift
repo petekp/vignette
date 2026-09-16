@@ -23,9 +23,20 @@ struct StackView: View {
                 column
             }
         }
-        .animation(.easeOut(duration: 0.2 * settings.motionScale), value: model.cards.map(\.id))
-        .animation(.easeOut(duration: 0.15 * settings.motionScale), value: model.inSelectionMode)
-        .animation(.easeOut(duration: 0.15 * settings.motionScale), value: model.feedback)
+        .animation(layoutAnimation(0.2), value: model.cards.map(\.id))
+        .animation(layoutAnimation(0.15), value: model.inSelectionMode)
+        .animation(layoutAnimation(0.15), value: model.feedback)
+    }
+
+    /// Layout changes animate only while the cards are on screen. While they are offscreen, in
+    /// or out, a toast or bar leaving the column would otherwise shift them as they slide in.
+    private func layoutAnimation(_ duration: Double) -> Animation? {
+        model.offscreen.isEmpty ? .easeOut(duration: duration * settings.motionScale) : nil
+    }
+
+    /// The toast and the selection bar leave with the bottom card instead of vanishing under it.
+    private var barSlide: CGFloat {
+        model.slidingOut ? StackLayout.current.offscreenDistance(cardWidth: StackLayout.current.maxCardWidth) : 0
     }
 
     /// The cards, newest at the bottom, pulled down by `scroll`. What leaves the viewport fades
@@ -41,9 +52,13 @@ struct StackView: View {
                 FeedbackToast(text: text)
                     .frame(width: StackLayout.current.maxCardWidth, height: StackLayout.current.barHeight)
                     .transition(.opacity)
+                    .offset(x: barSlide)
+                    .animation(.easeInOut(duration: settings.motionUI.slideOutDuration), value: model.slidingOut)
             } else if model.isStack && model.inSelectionMode {
                 SelectionBar(model: model)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .offset(x: barSlide)
+                    .animation(.easeInOut(duration: settings.motionUI.slideOutDuration), value: model.slidingOut)
             }
         }
         .coordinateSpace(name: "stack")

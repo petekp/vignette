@@ -330,8 +330,8 @@ final class ThumbnailController {
             }
         }
         if transition.isActive { send(.dismiss) }
-        // Cards leave the way they came: staggered, top of the column first (see CardView).
-        model.selected = []
+        // Cards leave the way they came, newest first (see CardView). The selection and any toast
+        // stay in the layout and slide out with them; the block below clears them once gone.
         model.slidingOut = true
         model.offscreen = Set(model.cards.map(\.id))
         let total = ui.slideOutDuration + Double(max(0, model.cards.count - 1)) * StackView.staggerStep(count: model.cards.count) + 0.05
