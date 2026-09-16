@@ -77,6 +77,10 @@ struct SettingsView: View {
                 Text("Modifiers cmd, shift, opt, ctrl and a key, joined with +, or double-rshift for a double tap of right Shift (asks for Accessibility permission). Press Return to apply.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section("Startup") {
+                Toggle("Launch at login", isOn: binding(\.launchAtLogin))
+                Text("Adds Shotnote to System Settings > General > Login Items.").font(.caption).foregroundStyle(.secondary)
+            }
             Section("Advanced") {
                 Toggle("Hide menu bar icon", isOn: binding(\.hideMenuBarIcon))
                 Text("Reopen settings with: open shotnote://settings").font(.caption).foregroundStyle(.secondary)

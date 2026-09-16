@@ -161,6 +161,18 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(notes.count, 5, notes.joined(separator: "; "))
     }
 
+    @MainActor
+    func testLaunchAtLoginIsOffUnlessTheFileSaysSo() throws {
+        try write(#"{"recentCount": 7}"#)
+        guard case .loaded(let off) = Settings.load(file) else { return XCTFail("expected .loaded") }
+        XCTAssertFalse(off.data.launchAtLogin, "a file from before the setting existed must not register a login item")
+        try write(#"{"launchAtLogin": true}"#)
+        guard case .loaded(let on) = Settings.load(file) else { return XCTFail("expected .loaded") }
+        XCTAssertTrue(on.data.launchAtLogin)
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(on.data)) as? [String: Any]
+        XCTAssertEqual(encoded?["launchAtLogin"] as? Bool, true, "the file key is the contract")
+    }
+
     func testDefaultsAreWithinTheirBounds() {
         // A default outside its bound would be clamped on load, so a fresh install would not render the tuned UI.
         var d = SettingsData()

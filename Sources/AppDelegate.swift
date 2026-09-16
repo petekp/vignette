@@ -63,7 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         registerHotKey()
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
         if let notice = settings.startupNotice { thumbnail.showFeedback(notice) }
-        else if settings.firstLaunch { thumbnail.showFeedback("\(Identity.name) is watching \(settings.data.screenshotsFolder)") }
+        else if settings.firstLaunch { thumbnail.showFeedback("\(Identity.name) is watching \(settings.data.screenshotsFolder). Launch at login is off; turn it on in Settings.") }
+        // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
+        LoginItem.apply(settings.data.launchAtLogin)
         // The contract for agents: after this line every command answers. The page reports `[web] ready` on its own.
         Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) port=\(annotator.port) watching=\(watchFolder.path)")
     }
@@ -100,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
+        if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
     }
 
     private func registerHotKey() {
@@ -366,6 +369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             "isActive": NSApp.isActive, "accessibility": ModifierTap.trusted(prompt: false),
             "watchFolder": watchFolder.path, "settingsFile": Settings.fileURL.path, "readOnly": settings.readOnly,
             "appleThumbnail": settings.data.appleThumbnail, "recentCount": settings.data.recentCount, "hotkey": settings.data.recentHotkey, "debug": settings.data.debug,
+            "launchAtLogin": settings.data.launchAtLogin, "loginItem": LoginItem.status,
         ] as [String: Any]
         report.sections["annotator"] = annotator.stateJSON
         report.sections["drafts"] = drafts.keys.sorted()
