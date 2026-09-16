@@ -28,6 +28,11 @@ struct StackView: View {
         .animation(.easeOut(duration: 0.15 * settings.motionScale), value: model.feedback)
     }
 
+    private var showsDrawHint: Bool {
+        guard let id = model.hoveredCard, !model.outCards.contains(id) else { return false }
+        return !model.inSelectionMode && !model.overControl && model.pressedCard == nil
+    }
+
     /// The cards, newest at the bottom, pulled down by `scroll`. What leaves the viewport fades
     /// out over the panel's inset instead of being cut.
     private var column: some View {
@@ -46,6 +51,16 @@ struct StackView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        .overlay(alignment: .topLeading) {
+            // "Draw" trails the mouse over a card, away from its controls: a click there annotates.
+            if showsDrawHint, let p = model.pointer {
+                DrawHint()
+                    .offset(x: p.x + 16, y: p.y + 18)
+                    .animation(.interactiveSpring(response: 0.18, dampingFraction: 0.86), value: p)
+                    .transition(.scale(scale: 0.6, anchor: .topLeading).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.68), value: showsDrawHint)
         .coordinateSpace(name: "stack")
         .offset(y: model.scroll)
         .padding(inset)
@@ -110,6 +125,7 @@ private struct CardView: View {
         .overlay(alignment: .bottomLeading) {
             if showsButtons, let copy = Config.action(id: "copy") {
                 PillButton(symbol: copy.symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
+                    .onHover { model.overControl = $0 }
                     .padding(6)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
@@ -117,6 +133,7 @@ private struct CardView: View {
         .overlay(alignment: .bottomTrailing) {
             if showsButtons, let trash = Config.action(id: "trash") {
                 RoundButton(symbol: trash.symbol, help: trash.label, ui: ui) { model.onAction(trash, [card]) }
+                    .onHover { model.overControl = $0 }
                     .padding(6)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
@@ -129,6 +146,7 @@ private struct CardView: View {
         .overlay(alignment: .topLeading) {
             if showsCircle {
                 SelectionCircle(selected: selected, size: ui.selectionCircleSize)
+                    .onHover { model.overControl = $0 }
                     .padding(6)
                     .transition(.opacity)
                     // A press toggles; dragging from here sweeps selection down or up the column.
@@ -149,6 +167,12 @@ private struct CardView: View {
         .animation(slideAnimation.delay(slideDelay), value: offscreen)
         .onHover { inside in
             model.hoveredCard = inside ? card.id : (model.hoveredCard == card.id ? nil : model.hoveredCard)
+        }
+        .onContinuousHover(coordinateSpace: .named("stack")) { phase in
+            switch phase {
+            case .active(let p): model.pointer = p
+            case .ended: if model.hoveredCard == nil || model.hoveredCard == card.id { model.pointer = nil }
+            }
         }
     }
 
@@ -275,6 +299,23 @@ struct TactileButtonStyle: ButtonStyle {
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.12), value: hovered)
             .onHover { hovered = $0 }
+    }
+}
+
+private struct DrawHint: View {
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "scribble.variable").font(.system(size: 11, weight: .semibold))
+            Text("Draw").font(.system(size: 12, weight: .semibold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(.regularMaterial))
+        .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+        .fixedSize()
+        .allowsHitTesting(false)
     }
 }
 
