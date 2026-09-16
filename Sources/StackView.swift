@@ -28,11 +28,6 @@ struct StackView: View {
         .animation(.easeOut(duration: 0.15 * settings.motionScale), value: model.feedback)
     }
 
-    private var showsDrawHint: Bool {
-        guard let id = model.hoveredCard, !model.outCards.contains(id) else { return false }
-        return !model.inSelectionMode && !model.overControl && model.pressedCard == nil
-    }
-
     /// The cards, newest at the bottom, pulled down by `scroll`. What leaves the viewport fades
     /// out over the panel's inset instead of being cut.
     private var column: some View {
@@ -51,16 +46,6 @@ struct StackView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
-        .overlay(alignment: .topLeading) {
-            // "Draw" trails the mouse over a card, away from its controls: a click there annotates.
-            if showsDrawHint, let p = model.pointer {
-                DrawHint()
-                    .offset(x: p.x + 16, y: p.y + 18)
-                    .animation(.interactiveSpring(response: 0.18, dampingFraction: 0.86), value: p)
-                    .transition(.scale(scale: 0.6, anchor: .topLeading).combined(with: .opacity))
-            }
-        }
-        .animation(.spring(response: 0.3, dampingFraction: 0.68), value: showsDrawHint)
         .coordinateSpace(name: "stack")
         .offset(y: model.scroll)
         .padding(inset)
@@ -79,6 +64,7 @@ private struct CardView: View {
     let card: Card
     let index: Int      // 0 = newest, at the bottom
     @ObservedObject var model: StackModel
+    @State private var pointer: CGPoint? = nil   // the mouse over this card, in its own coordinates
     private var hovered: Bool { model.hoveredCard == card.id }
     private var pressed: Bool { model.pressedCard == card.id }
     private var selected: Bool { model.selected.contains(card.id) }
@@ -88,6 +74,7 @@ private struct CardView: View {
     private var hasDraft: Bool { model.drafts.contains(card.shot.url.path) }
     private var showsCircle: Bool { model.isStack && !isOut && (hovered || model.inSelectionMode || focused) }
     private var showsButtons: Bool { hovered && !isOut && !model.inSelectionMode }
+    private var showsDrawHint: Bool { showsButtons && !model.overControl && !pressed }
 
     var body: some View {
         ZStack {
@@ -158,6 +145,16 @@ private struct CardView: View {
             }
         }
         .frame(width: card.size.width, height: card.size.height)
+        // "Draw" trails the mouse over the card, away from its controls: a click there annotates.
+        // Positioned in the card's own coordinates, so it appears where the mouse is.
+        .overlay(alignment: .topLeading) {
+            if showsDrawHint, let p = pointer {
+                DrawHintFollower(point: p)
+                    .transition(.asymmetric(insertion: .scale(scale: 0.6, anchor: .topLeading).combined(with: .opacity), removal: .opacity))
+            }
+        }
+        .animation(showsDrawHint ? .spring(response: 0.3, dampingFraction: 0.68) : .easeOut(duration: 0.1), value: showsDrawHint)
+        .zIndex(hovered ? 1 : 0)   // the hint may hang over the card below
         .scaleEffect(pressed ? ui.pressScale : (hovered && !isOut ? ui.hoverScale : 1))
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: pressed)
         .animation(.easeOut(duration: ui.hoverRevealDuration), value: hovered)
@@ -168,10 +165,10 @@ private struct CardView: View {
         .onHover { inside in
             model.hoveredCard = inside ? card.id : (model.hoveredCard == card.id ? nil : model.hoveredCard)
         }
-        .onContinuousHover(coordinateSpace: .named("stack")) { phase in
+        .onContinuousHover(coordinateSpace: .local) { phase in
             switch phase {
-            case .active(let p): model.pointer = p
-            case .ended: if model.hoveredCard == nil || model.hoveredCard == card.id { model.pointer = nil }
+            case .active(let p): pointer = p
+            case .ended: pointer = nil
             }
         }
     }
@@ -299,6 +296,23 @@ struct TactileButtonStyle: ButtonStyle {
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.12), value: hovered)
             .onHover { hovered = $0 }
+    }
+}
+
+/// Appears at the pointer and then eases after it; the first position is never animated, or the
+/// hint would slide in from wherever the view's initial offset was.
+private struct DrawHintFollower: View {
+    let point: CGPoint
+    @State private var shown: CGPoint? = nil
+
+    var body: some View {
+        let p = shown ?? point
+        DrawHint()
+            .offset(x: p.x + 16, y: p.y + 18)
+            .onAppear { shown = point }
+            .onChange(of: point) { _, new in
+                withAnimation(.interactiveSpring(response: 0.18, dampingFraction: 0.86)) { shown = new }
+            }
     }
 }
 

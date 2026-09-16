@@ -22,7 +22,6 @@ final class StackModel: ObservableObject {
     @Published var feedback: String? = nil
     @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
     @Published var pressedCard: UUID? = nil
-    @Published var pointer: CGPoint? = nil     // the mouse over a card, in the column's coordinate space
     @Published var overControl = false         // the mouse is on a card's button or circle, where a click does not draw
     @Published var selected: Set<UUID> = []
     @Published var focused: UUID? = nil        // keyboard focus ring
