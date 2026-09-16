@@ -175,6 +175,11 @@ final class ThumbnailController {
 
     enum StackToggle: Equatable { case shown(Int), dismissed, empty }
 
+    var stackShowing: Bool { visible && model.isStack }
+
+    /// The card with the keyboard focus ring, while the stack is up.
+    var focusedShot: Screenshot? { model.cards.first { $0.id == model.focused }?.shot }
+
     /// The recent stack: toggles. Takes keyboard focus. Stays until Esc, the hotkey, or a click elsewhere.
     @discardableResult
     func toggleRecent(_ shots: [Screenshot], scan: String = "") -> StackToggle {
@@ -652,8 +657,9 @@ final class ThumbnailController {
         model.slidingOut = false
         model.scroll = 0
         if !stack { releaseKeys() }
-        // A dismissal in progress is simply reversed: the same cards turn around.
-        let reusing = visible && Set(cards.map(\.shot.url)) == Set(model.cards.map(\.shot.url))
+        // A dismissal in progress is simply reversed: the same cards turn around. `visible` is
+        // already false then; the panel stays up until the slide-out ends.
+        let reusing = panel.isVisible && !model.cards.isEmpty && Set(cards.map(\.shot.url)) == Set(model.cards.map(\.shot.url))
         if !reusing {
             // A lone thumbnail that is part of the stack stays where it is; the rest slides in above it.
             let staying = (visible && !wasStack && stack) ? model.cards.first { existing in cards.contains { $0.shot.url == existing.shot.url } } : nil

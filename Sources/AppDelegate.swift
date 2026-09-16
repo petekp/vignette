@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var wakeObserver: Any?
     private var screenObserver: Any?
     private var hotKey: HotKey?
+    private var pressDismissed = false      // the last hotkey press closed the stack
+    private var holdTarget: Screenshot?     // the card focused at that press
     private var modifierTap: ModifierTap?
     private let thumbnail = ThumbnailController()
     private let annotator = AnnotationController()
@@ -108,14 +110,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private func registerHotKey() {
         hotKey = nil
         modifierTap = nil
+        // The press toggles the stack. Holding on lifts a card out of it: the newest, or, when the
+        // press closed an open stack, the focused one; the stack comes back first so it can leave from its slot.
         let fire = { [weak self] in
+            guard let self else { return }
             Log.write("[hotkey] recent")
-            self?.toggleRecent()
+            let focused = thumbnail.focusedShot
+            pressDismissed = pressRecent() == .dismissed
+            holdTarget = pressDismissed ? focused : nil
         }
-        // The stack is already open from the press; holding on lifts the newest capture out of it.
         let hold = { [weak self] in
+            guard let self else { return }
             Log.write("[hotkey] hold")
-            self?.annotateLast()
+            if pressDismissed { _ = pressRecent() }
+            if let shot = holdTarget { annotate(shot) } else { annotateLast() }
         }
         switch HotKeySpec.parse(settings.data.recentHotkey) {
         case .key(let keyCode, let modifiers):
@@ -505,13 +513,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Commands.ok("last", url.lastPathComponent)
     }
 
-    @objc private func toggleRecent() {
+    @objc private func toggleRecent() { _ = pressRecent() }
+
+    @discardableResult
+    private func pressRecent() -> ThumbnailController.StackToggle {
+        // Closing must not wait for the folder scan (over 100 ms on a big folder).
+        if thumbnail.stackShowing { thumbnail.dismiss(); Commands.ok("recent", "dismissed"); return .dismissed }
         let scan = ScreenshotWatcher.recentScan(in: watchFolder, limit: settings.data.recentCount)
-        switch thumbnail.toggleRecent(scan.recent.map(Screenshot.init), scan: "files=\(scan.files) scan=\(scan.ms)ms ") {
+        let result = thumbnail.toggleRecent(scan.recent.map(Screenshot.init), scan: "files=\(scan.files) scan=\(scan.ms)ms ")
+        switch result {
         case .shown(let count): Commands.ok("recent", "shown \(count) cards")
         case .dismissed: Commands.ok("recent", "dismissed")
         case .empty: Commands.error("recent", .missingFile, "no screenshots in \(watchFolder.path)")
         }
+        return result
     }
 
     @objc private func openLog() {
