@@ -157,7 +157,7 @@ private struct CardView: View {
         .overlay(alignment: .topLeading) {
             if showsDrawHint, let p = pointer {
                 DrawHintFollower(point: p)
-                    .transition(.asymmetric(insertion: .scale(scale: 0.6, anchor: .topLeading).combined(with: .opacity), removal: .opacity))
+                    .transition(.asymmetric(insertion: .scale(scale: 0.6, anchor: .bottomTrailing).combined(with: .opacity), removal: .opacity))
             }
         }
         .animation(showsDrawHint ? .spring(response: 0.3, dampingFraction: 0.68) : .easeOut(duration: 0.1), value: showsDrawHint)
@@ -334,8 +334,10 @@ private struct DrawHintFollower: View {
 
     var body: some View {
         let p = shown ?? point
+        // Its bottom-right corner sits just up and left of the pointer: a frame from the card's
+        // top-left corner to that spot, with the hint aligned to its far corner.
         DrawHint()
-            .offset(x: p.x + 16, y: p.y + 18)
+            .frame(width: max(0, p.x - 6), height: max(0, p.y - 6), alignment: .bottomTrailing)
             .onAppear { shown = point }
             .onChange(of: point) { _, new in
                 withAnimation(.interactiveSpring(response: 0.18, dampingFraction: 0.86)) { shown = new }
