@@ -12,7 +12,9 @@ struct StackView: View {
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            Color.clear
+            // Fully transparent pixels let events fall through to the window below, so the stack
+            // would only scroll over a card; a hair of alpha makes the whole panel catch them.
+            Color.black.opacity(model.isStack ? 0.01 : 0)
             if !model.isStack, let text = model.feedback {
                 FeedbackToast(text: text)
                     .padding(StackLayout.current.inset)
@@ -130,7 +132,7 @@ private struct CardView: View {
             }
         }
         .frame(width: card.size.width, height: card.size.height)
-        .scaleEffect(pressed ? ui.pressScale : (hovered && !model.inSelectionMode && !isOut ? ui.hoverScale : 1))
+        .scaleEffect(pressed ? ui.pressScale : (hovered && !isOut ? ui.hoverScale : 1))
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: pressed)
         .animation(.easeOut(duration: ui.hoverRevealDuration), value: hovered)
         .animation(.easeOut(duration: ui.hoverRevealDuration), value: showsButtons)
@@ -150,11 +152,11 @@ private struct CardView: View {
     }
     private var ringWidth: CGFloat { selected || focused ? max(2, ui.cardBorderWidth) : ui.cardBorderWidth }
 
-    /// Entrance: newest (bottom) card first. Exit: oldest (top) card first. The per-card delay
-    /// shrinks for tall stacks so the whole column is never slower than `staggerTotalMax`.
+    /// Newest (bottom) card first, in and out: the cards nearest the cursor move at once, so a
+    /// dismissal feels immediate even when the top of the column is still leaving. The per-card
+    /// delay shrinks for tall stacks so the whole column is never slower than `staggerTotalMax`.
     private var slideDelay: Double {
-        let order = model.slidingOut ? (model.cards.count - 1 - index) : index
-        return Double(max(0, order)) * StackView.staggerStep(count: model.cards.count)
+        Double(max(0, index)) * StackView.staggerStep(count: model.cards.count)
     }
 
     private var slideAnimation: Animation {

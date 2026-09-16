@@ -109,6 +109,8 @@ struct UITweaks: Codable, Equatable {
     var backdropRampPower = 2.0      // 1 = linear radius growth, higher keeps the left sharper
     var backdropFadeIn = 0.35
     var backdropFadeOut = 0.35
+    var backdropSlideIn = 0.5           // the strip slides in from the screen edge while it fades
+    var backdropSlideOut = 0.3
     var dimOpacity = 0.35            // screen darkening behind the annotator
     var dimFade = 0.25
     // Annotator window
@@ -138,6 +140,7 @@ struct UITweaks: Codable, Equatable {
         u.staggerDelay *= scale; u.staggerTotalMax *= scale
         u.relayoutDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
+        u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
         return u
     }
 
@@ -161,6 +164,7 @@ struct UITweaks: Codable, Equatable {
         Bound("backdropWidth", \.backdropWidth, 1...10_000), Bound("backdropTint", \.backdropTint, 0...1),
         Bound("backdropTintStart", \.backdropTintStart, 0...1), Bound("backdropBlurRadius", \.backdropBlurRadius, 0...1000),
         Bound("backdropRampPower", \.backdropRampPower, 0.01...100), Bound("backdropFadeIn", \.backdropFadeIn, 0...60),
+        Bound("backdropSlideIn", \.backdropSlideIn, 0...60), Bound("backdropSlideOut", \.backdropSlideOut, 0...60),
         Bound("backdropFadeOut", \.backdropFadeOut, 0...60), Bound("dimOpacity", \.dimOpacity, 0...1), Bound("dimFade", \.dimFade, 0...60),
         Bound("annotationMinWidth", \.annotationMinWidth, 1...100_000), Bound("annotationMinHeight", \.annotationMinHeight, 1...100_000),
         Bound("annotationCornerRadius", \.annotationCornerRadius, 0...1000), Bound("annotationToolbarGap", \.annotationToolbarGap, 0...1000),

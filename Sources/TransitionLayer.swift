@@ -56,11 +56,15 @@ final class TransitionLayer {
         // The starting state has to be committed before the animated change, or it starts at `to`.
         DispatchQueue.main.async { [weak self] in
             guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
-            withAnimation(Anim.swiftUI("easeInOut", duration: ui.expandDuration)) {
+            // A spring, so a flight retargeted mid-way (a swap) blends into the new path instead
+            // of restarting; SwiftUI springs are additive by default.
+            withAnimation(.spring(duration: ui.expandDuration, bounce: 0.15)) {
                 self.model.flights[i].frame = self.local(to)
                 self.model.flights[i].corner = cornerTo
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + ui.expandDuration) { [weak self] in
+            // The spring settles a little after its nominal duration; wait for that before the
+            // annotator window replaces the image, or the last of the motion shows as a snap.
+            DispatchQueue.main.asyncAfter(deadline: .now() + ui.expandDuration * 1.15) { [weak self] in
                 guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
                 completion()
             }
@@ -91,7 +95,8 @@ final class TransitionLayer {
 private struct FlightsView: View {
     @ObservedObject var model: TransitionLayer.Model
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        let ui = Settings.shared.data.ui
+        return ZStack(alignment: .topLeading) {
             Color.clear
             ForEach(model.flights) { f in
                 Image(nsImage: f.image)
@@ -100,6 +105,8 @@ private struct FlightsView: View {
                     .scaledToFill()
                     .frame(width: f.frame.width, height: f.frame.height)
                     .clipShape(RoundedRectangle(cornerRadius: f.corner, style: .continuous))
+                    // The card's ring travels with the image, and the annotator window carries it on.
+                    .overlay(RoundedRectangle(cornerRadius: f.corner, style: .continuous).stroke(.white.opacity(ui.cardBorderOpacity), lineWidth: ui.cardBorderWidth))
                     .shadow(color: .black.opacity(0.4), radius: 24, y: 10)
                     .position(x: f.frame.midX, y: f.frame.midY)
             }

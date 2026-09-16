@@ -16,6 +16,10 @@ final class BackdropPanel: NSPanel {
     private let tintLayer = CAGradientLayer()
     private var bands: [TunedEffectView] = []
     private lazy var alpha = Tween(initial: 0) { [weak self] v in self?.alphaValue = v }
+    /// 0 is parked past the screen edge, 1 is in place. Separate from the fade so each has its own timing.
+    private lazy var slide = Tween(initial: 1) { [weak self] v in self?.applySlide(v) }
+    /// Where the strip sits when fully in.
+    private var strip: NSRect = .zero
 
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -48,9 +52,17 @@ final class BackdropPanel: NSPanel {
     }
 
     func show(on screen: NSScreen, below panel: NSPanel) {
+        let ui = Settings.shared.motionUI
         refresh(on: screen)
+        if !isVisible { slide.set(0) }
         orderFront(nil)
-        alpha.animate(to: 1, duration: Settings.shared.motionUI.backdropFadeIn)
+        alpha.animate(to: 1, duration: ui.backdropFadeIn)
+        slide.animate(to: 1, duration: ui.backdropSlideIn)
+    }
+
+    private func applySlide(_ v: CGFloat) {
+        guard strip.width > 0 else { return }
+        setFrameOrigin(NSPoint(x: strip.minX + strip.width * (1 - v), y: strip.minY))
     }
 
     /// Rebuilds bands, masks, radii, and tint from the current settings without animating.
@@ -58,7 +70,9 @@ final class BackdropPanel: NSPanel {
         let ui = Settings.shared.data.ui
         let full = screen.frame
         let width = CGFloat(ui.backdropWidth)
-        setFrame(NSRect(x: full.maxX - width, y: full.minY, width: width, height: full.height), display: false)
+        strip = NSRect(x: full.maxX - width, y: full.minY, width: width, height: full.height)
+        setFrame(strip, display: false)
+        applySlide(slide.value)
         let bounds = contentView!.bounds
         let n = max(1, ui.backdropBands)
         while bands.count > n { bands.removeLast().removeFromSuperview() }
@@ -83,7 +97,9 @@ final class BackdropPanel: NSPanel {
     }
 
     func hide() {
-        alpha.animate(to: 0, duration: Settings.shared.motionUI.backdropFadeOut, curve: "easeInOut") { [weak self] in
+        let ui = Settings.shared.motionUI
+        slide.animate(to: 0, duration: ui.backdropSlideOut, curve: "easeInOut")
+        alpha.animate(to: 0, duration: ui.backdropFadeOut, curve: "easeInOut") { [weak self] in
             if self?.alphaValue == 0 { self?.orderOut(nil) }
         }
     }

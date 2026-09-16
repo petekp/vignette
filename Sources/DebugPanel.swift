@@ -117,6 +117,8 @@ struct DebugPanelView: View {
                     Tweak("Tint start", \.backdropTintStart, 0...1, step: 0.05)
                     Tweak("Fade in", \.backdropFadeIn, 0...1.5, step: 0.05, unit: "s")
                     Tweak("Fade out", \.backdropFadeOut, 0...1.5, step: 0.05, unit: "s")
+                    Tweak("Slide in", \.backdropSlideIn, 0...1.5, step: 0.05, unit: "s")
+                    Tweak("Slide out", \.backdropSlideOut, 0...1.5, step: 0.05, unit: "s")
                     Tweak("Dim behind annotator", \.dimOpacity, 0...0.9, step: 0.05)
                     Tweak("Dim fade", \.dimFade, 0...1, step: 0.05, unit: "s")
                 }

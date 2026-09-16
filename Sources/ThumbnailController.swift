@@ -92,7 +92,11 @@ final class ThumbnailController {
         panel.contentView = hosting
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
         panel.onScroll = { [weak self] event in self?.scroll(event) }
-        model.onAction = { [weak self] action, cards in self?.run(action, on: cards) }
+        model.onAction = { [weak self] action, cards in
+            guard let self else { return }
+            if cards.count == 1, let index = self.model.cards.firstIndex(where: { $0.id == cards[0].id }) { self.scrollToReveal(index) }
+            self.run(action, on: cards)
+        }
         model.onClickImage = { [weak self] card in
             guard let self else { return }
             if self.transition.isActive { self.annotate(card); return }
@@ -100,7 +104,11 @@ final class ThumbnailController {
             else if let action = Config.actions.first(where: \.isDefault) { self.run(action, on: [card]) }
         }
         model.onSweep = { [weak self] y in self?.sweep(toYFromTop: y) }
-        model.onSweepEnd = { [weak self] in self?.sweepAnchor = nil }
+        model.onSweepEnd = { [weak self] in
+            guard let self else { return }
+            self.sweepAnchor = nil
+            self.revealFocused()
+        }
         model.onHover = { [weak self] id in self?.prefetchFlightImage(id) }
     }
 
@@ -448,6 +456,13 @@ final class ThumbnailController {
         if model.selected.contains(card.id) { model.selected.remove(card.id) } else { model.selected.insert(card.id) }
         model.focused = card.id
         relayout()
+        revealFocused()
+    }
+
+    /// A card that was just interacted with while partly out of view scrolls into it.
+    private func revealFocused() {
+        guard let index = model.cards.firstIndex(where: { $0.id == model.focused }) else { return }
+        scrollToReveal(index)
     }
 
     /// Dragging from a circle selects (or deselects) every card between the start and the cursor.

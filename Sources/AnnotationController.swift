@@ -167,9 +167,13 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         return win
     }
 
+    /// The window's corner and ring match a card's, so the flight from the stack ends on a shape that looks the same.
     private func applyCornerRadius() {
-        container?.layer?.cornerRadius = Settings.shared.data.ui.annotationCornerRadius
+        let ui = Settings.shared.data.ui
+        container?.layer?.cornerRadius = ui.annotationCornerRadius
         container?.layer?.cornerCurve = .continuous
+        container?.layer?.borderWidth = ui.cardBorderWidth
+        container?.layer?.borderColor = NSColor.white.withAlphaComponent(ui.cardBorderOpacity).cgColor
     }
 
     private func sendImage(_ shot: Screenshot, windowSize: NSSize) {
