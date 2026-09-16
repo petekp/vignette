@@ -56,8 +56,8 @@ final class BackdropPanel: NSPanel {
         refresh(on: screen)
         if !isVisible { slide.set(0) }
         orderFront(nil)
-        alpha.animate(to: 1, duration: ui.backdropFadeIn)
-        slide.animate(to: 1, duration: ui.backdropSlideIn)
+        alpha.animate(to: 1, duration: ui.backdropFadeIn, curve: "spring")
+        slide.animate(to: 1, duration: ui.backdropSlideIn, curve: "spring")
     }
 
     private func applySlide(_ v: CGFloat) {
@@ -98,8 +98,8 @@ final class BackdropPanel: NSPanel {
 
     func hide() {
         let ui = Settings.shared.motionUI
-        slide.animate(to: 0, duration: ui.backdropSlideOut, curve: "easeInOut")
-        alpha.animate(to: 0, duration: ui.backdropFadeOut, curve: "easeInOut") { [weak self] in
+        slide.animate(to: 0, duration: ui.backdropSlideOut, curve: "spring")
+        alpha.animate(to: 0, duration: ui.backdropFadeOut, curve: "spring") { [weak self] in
             if self?.alphaValue == 0 { self?.orderOut(nil) }
         }
     }

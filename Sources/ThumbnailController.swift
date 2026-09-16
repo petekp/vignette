@@ -592,7 +592,7 @@ final class ThumbnailController {
         if span.bottom - model.scroll < 0 { target = span.bottom }
         target = min(maxScroll, max(0, target))
         guard target != model.scroll else { return }
-        withAnimation(.easeOut(duration: ui.relayoutDuration)) { model.scroll = target }
+        withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = target }
     }
 
     // MARK: Internals
@@ -693,7 +693,7 @@ final class ThumbnailController {
             model.cards.removeLast()
             model.selected.remove(last.id)
         }
-        withAnimation(.easeOut(duration: ui.relayoutDuration)) { model.scroll = 0 }
+        withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
         layoutPanel(shrinkLater: false, animated: true)
         DispatchQueue.main.async { [weak self] in self?.model.offscreen.remove(card.id) }
     }
@@ -710,7 +710,7 @@ final class ThumbnailController {
     private func layoutPanel(shrinkLater: Bool, animated: Bool) {
         let content = layout.contentHeight(cards: cardSizes, showsBar: showsBar)
         let viewport = layout.viewportHeight(content: content, visibleFrame: screen.visibleFrame)
-        var transaction = Transaction(animation: animated ? .easeOut(duration: ui.relayoutDuration) : nil)
+        var transaction = Transaction(animation: animated ? Anim.spring(ui.relayoutDuration) : nil)
         transaction.disablesAnimations = !animated
         withTransaction(transaction) {
             model.viewport = viewport

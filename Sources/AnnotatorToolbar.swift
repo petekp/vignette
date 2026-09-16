@@ -133,7 +133,7 @@ private struct ToolbarView: View {
     private var entrance: Animation {
         let scale = Settings.shared.motionScale
         guard scale > 0 else { return .linear(duration: 0) }
-        return model.shown ? .spring(response: 0.45 * scale, dampingFraction: 0.72) : .easeOut(duration: 0.18 * scale)
+        return model.shown ? .spring(response: 0.45 * scale, dampingFraction: 0.72) : Anim.spring(0.18 * scale)
     }
 }
 

@@ -31,7 +31,7 @@ struct StackView: View {
     /// Layout changes animate only while the cards are on screen. While they are offscreen, in
     /// or out, a toast or bar leaving the column would otherwise shift them as they slide in.
     private func layoutAnimation(_ duration: Double) -> Animation? {
-        model.offscreen.isEmpty ? .easeOut(duration: duration * settings.motionScale) : nil
+        model.offscreen.isEmpty ? Anim.spring(duration * settings.motionScale) : nil
     }
 
     /// The toast and the selection bar leave with the bottom card instead of vanishing under it.
@@ -53,18 +53,19 @@ struct StackView: View {
                     .frame(width: StackLayout.current.maxCardWidth, height: StackLayout.current.barHeight)
                     .transition(.opacity)
                     .offset(x: barSlide)
-                    .animation(.easeInOut(duration: settings.motionUI.slideOutDuration), value: model.slidingOut)
+                    .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
             } else if model.isStack && model.inSelectionMode {
                 SelectionBar(model: model)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                     .offset(x: barSlide)
-                    .animation(.easeInOut(duration: settings.motionUI.slideOutDuration), value: model.slidingOut)
+                    .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
             }
         }
         .coordinateSpace(name: "stack")
         .offset(y: model.scroll)
         .padding(inset)
-        .frame(width: StackLayout.current.maxCardWidth + inset * 2, height: model.viewport + inset * 2, alignment: .bottom)
+        // Trailing, not centered: a lone card narrower than the widest must rest where the stack will put it.
+        .frame(width: StackLayout.current.maxCardWidth + inset * 2, height: model.viewport + inset * 2, alignment: .bottomTrailing)
         .mask(
             VStack(spacing: 0) {
                 LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: inset)
@@ -166,7 +167,7 @@ private struct CardView: View {
                 CopiedOverlay(corner: ui.cardCornerRadius).transition(.opacity)
             }
         }
-        .animation(copied ? .easeOut(duration: 0.15) : .easeOut(duration: 0.4), value: copied)
+        .animation(Anim.spring(copied ? 0.15 : 0.4), value: copied)
         // "Draw" trails the mouse over the card, away from its controls: a click there annotates.
         // Positioned in the card's own coordinates, so it appears where the mouse is.
         .overlay(alignment: .topLeading) {
@@ -175,12 +176,12 @@ private struct CardView: View {
                     .transition(.asymmetric(insertion: .scale(scale: 0.6, anchor: .bottomTrailing).combined(with: .opacity), removal: .opacity))
             }
         }
-        .animation(showsDrawHint ? .spring(response: 0.3, dampingFraction: 0.68) : .easeOut(duration: 0.1), value: showsDrawHint)
+        .animation(showsDrawHint ? .spring(response: 0.3, dampingFraction: 0.68) : Anim.spring(0.1), value: showsDrawHint)
         .zIndex(hovered ? 1 : 0)   // the hint may hang over the card below
         .scaleEffect(pressed ? ui.pressScale : (hovered && !isOut ? ui.hoverScale : 1))
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: pressed)
-        .animation(.easeOut(duration: ui.hoverRevealDuration), value: hovered)
-        .animation(.easeOut(duration: ui.hoverRevealDuration), value: showsButtons)
+        .animation(Anim.spring(ui.hoverRevealDuration), value: hovered)
+        .animation(Anim.spring(ui.hoverRevealDuration), value: showsButtons)
         // Past the panel's right edge, which sits just beyond the screen edge, so the card slides off screen.
         .offset(x: offscreen ? StackLayout.current.offscreenDistance(cardWidth: card.size.width) : 0)
         .animation(slideAnimation.delay(slideDelay), value: offscreen)
@@ -211,7 +212,7 @@ private struct CardView: View {
     }
 
     private var slideAnimation: Animation {
-        model.slidingOut ? .easeInOut(duration: ui.slideOutDuration) : Anim.swiftUI(ui.slideInCurve, duration: ui.slideInDuration)
+        model.slidingOut ? Anim.spring(ui.slideOutDuration) : Anim.swiftUI(ui.slideInCurve, duration: ui.slideInDuration)
     }
 
     /// Dragging a selected card carries the whole selection, oldest first.
@@ -316,7 +317,7 @@ struct TactileButtonStyle: ButtonStyle {
             }
             .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? 1.08 : 1))
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
-            .animation(.easeOut(duration: 0.12), value: hovered)
+            .animation(Anim.spring(0.12), value: hovered)
             .onHover { hovered = $0 }
     }
 }

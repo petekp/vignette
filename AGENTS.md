@@ -120,7 +120,9 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
 - Every animation duration goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json
   scales them, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
   `toastSeconds`) are not motion. `"ui": {"motion": 0}` makes the stack appear and leave at once,
-  which is what a script wants.
+  which is what a script wants. Every SwiftUI animation is a spring made by `Anim.spring`
+  (`slideInCurve` "spring" included), and the AppKit tweens use `Tween`'s spring curve: an
+  interrupted motion keeps its velocity and blends into the new target instead of jumping.
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15 (verified: uniform blur), and a bare CABackdropLayer renders black. Do not retry.

@@ -557,8 +557,15 @@ enum Anim {
         case "easeOut": return .easeOut(duration: duration)
         case "easeInOut": return .easeInOut(duration: duration)
         case "linear": return .linear(duration: duration)
-        default: return .timingCurve(0.2, 0.9, 0.3, 1.0, duration: duration)   // "spring"
+        default: return spring(duration, bounce: 0.15)   // "spring"
         }
+    }
+
+    /// A SwiftUI spring that settles in about `duration`. Springs are the curve for every SwiftUI
+    /// motion here: when one is interrupted by another on the same property, SwiftUI keeps the
+    /// velocity, so a card that turns around or changes place mid-flight blends instead of jumping.
+    static func spring(_ duration: Double, bounce: Double = 0) -> Animation {
+        duration > 0 ? .spring(duration: duration, bounce: bounce) : .linear(duration: 0)
     }
 
     static func run(_ duration: Double, curve: String = "easeOut", _ body: @Sendable () -> Void, completion: (@Sendable () -> Void)? = nil) {
