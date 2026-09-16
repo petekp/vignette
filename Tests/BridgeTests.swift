@@ -7,12 +7,12 @@ final class BridgeTests: XCTestCase {
 
     func testReadyCarriesProtocolToolsAndColors() throws {
         let msg = WebMessage(body: [
-            "type": "ready", "protocol": 2,
+            "type": "ready", "protocol": 3,
             "tools": [["id": "draw", "label": "Draw", "key": "d", "symbol": "pencil"], ["id": "bad"]],
             "colors": [["id": "red", "hex": "#f00"]],
         ] as [String: Any])
         guard case .ready(let version, let tools, let colors)? = msg else { return XCTFail("\(String(describing: msg))") }
-        XCTAssertEqual(version, 2)
+        XCTAssertEqual(version, 3)
         XCTAssertEqual(tools.map(\.id), ["draw"], "an incomplete tool is dropped, not fatal")
         XCTAssertEqual(colors.map(\.hex), ["#f00"])
     }
@@ -33,12 +33,23 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(text, "hi")
         guard case .done(let data)? = WebMessage(body: ["type": "done", "png": png]) else { return XCTFail() }
         XCTAssertEqual(data.count, 4)
-        guard case .drafts(let keys)? = WebMessage(body: ["type": "drafts", "keys": ["/a.png", "/b.png"]]) else { return XCTFail() }
-        XCTAssertEqual(keys, ["/a.png", "/b.png"])
-        guard case .draft(let dkey, let preview)? = WebMessage(body: ["type": "draft", "key": "/a.png", "preview": png]) else { return XCTFail() }
-        XCTAssertEqual(dkey, "/a.png"); XCTAssertEqual(preview.count, 4)
-        guard case .exported(let items)? = WebMessage(body: ["type": "exported", "items": [["key": "/a.png", "png": png], ["key": "/b.png"]]]) else { return XCTFail() }
-        XCTAssertEqual(items.map(\.key), ["/a.png"], "an item without a png is dropped")
+        guard case .draft(let dkey, let snapshot)? = WebMessage(body: ["type": "draft", "key": "/a.png", "snapshot": ["document": ["x": 1]]]) else { return XCTFail() }
+        XCTAssertEqual(dkey, "/a.png")
+        XCTAssertEqual((snapshot as? [String: Any])?.keys.sorted(), ["document"])
+        guard case .draft(_, nil)? = WebMessage(body: ["type": "draft", "key": "/a.png", "snapshot": NSNull()]) else { return XCTFail("null snapshot means no annotations") }
+    }
+
+    func testParkAndExportResultsDecode() {
+        let parked = ParkResult(body: ["snapshot": ["document": [:]], "preview": png] as [String: Any])
+        XCTAssertNotNil(parked?.snapshot); XCTAssertEqual(parked?.preview?.count, 4)
+        let empty = ParkResult(body: ["snapshot": NSNull(), "preview": NSNull()])
+        XCTAssertNil(empty?.snapshot); XCTAssertNil(empty?.preview)
+        XCTAssertNil(ParkResult(body: nil), "the page did not answer")
+        let exported = ExportResult(body: ["items": [["key": "/a.png", "png": png], ["key": "/b.png"]], "error": NSNull()] as [String: Any])
+        XCTAssertEqual(exported?.pngs.keys.sorted(), ["/a.png"], "an item without a png is dropped")
+        XCTAssertNil(exported?.error)
+        XCTAssertEqual(ExportResult(body: ["items": [], "error": "render threw"])?.error, "render threw")
+        XCTAssertNil(ExportResult(body: "nope"))
     }
 
     func testMalformedBodiesAreRefused() {
@@ -47,7 +58,8 @@ final class BridgeTests: XCTestCase {
         XCTAssertNil(WebMessage(body: ["type": "teleport"]))
         XCTAssertNil(WebMessage(body: ["type": "loaded"]))
         XCTAssertNil(WebMessage(body: ["type": "done", "png": "not base64 !!"]))
-        XCTAssertNil(WebMessage(body: ["type": "draft", "key": "/a.png"]))
+        XCTAssertNil(WebMessage(body: ["type": "draft", "key": "/a.png"]), "a draft without a snapshot field")
+        XCTAssertNil(WebMessage(body: ["type": "draft", "snapshot": NSNull()]))
     }
 
     func testDescribeNamesTypeAndKeysOnly() {
@@ -58,24 +70,34 @@ final class BridgeTests: XCTestCase {
 
     // MARK: PageAPI scripts
 
-    func testLoadScriptEmbedsPayloadAsJSON() {
-        let payload = LoadPayload(key: "/Users/p/Shot \"one\".png", imageUrl: "http://127.0.0.1:1/t/file?p=%2Fa.png", mimeType: "image/png",
+    func testLoadScriptEmbedsPayloadAndSnapshotAsJSON() throws {
+        let payload = LoadPayload(key: "/Users/p/Shot \"one\".png", mimeType: "image/png",
                                   pixelWidth: 10, pixelHeight: 20, viewWidth: 5.5, viewHeight: 6)
-        let script = PageAPI.load(payload).script
-        XCTAssertTrue(script.hasPrefix("window.shotnote && window.shotnote.load({"), script)
-        XCTAssertTrue(script.contains(#""key":"/Users/p/Shot \"one\".png""#), script)
-        XCTAssertTrue(script.contains(#""imageUrl":"http://127.0.0.1:1/t/file?p=%2Fa.png""#), script)
-        XCTAssertTrue(script.contains(#""pixelWidth":10"#) && script.contains(#""viewWidth":5.5"#), script)
+        let fresh = PageAPI.load(payload, snapshot: nil).script
+        XCTAssertTrue(fresh.hasPrefix("window.shotnote && window.shotnote.load({\"snapshot\":null,\"key\":"), fresh)
+        XCTAssertTrue(fresh.contains(#""key":"/Users/p/Shot \"one\".png""#), fresh)
+        XCTAssertTrue(fresh.contains(#""pixelWidth":10"#) && fresh.contains(#""viewWidth":5.5"#), fresh)
+        let stored = PageAPI.load(payload, snapshot: Data(#"{"document":{"a":1}}"#.utf8)).script
+        XCTAssertTrue(stored.hasPrefix(#"window.shotnote && window.shotnote.load({"snapshot":{"document":{"a":1}},"key":"#), stored)
+        // The argument must be one JSON object: parse what the script passes to load().
+        let start = stored.range(of: "load(")!.upperBound
+        let object = try JSONSerialization.jsonObject(with: Data(stored[start...].dropLast(2).utf8)) as? [String: Any]
+        XCTAssertEqual(object?.keys.sorted(), ["key", "mimeType", "pixelHeight", "pixelWidth", "snapshot", "viewHeight", "viewWidth"])
+    }
+
+    func testExportScriptCarriesEachSnapshot() throws {
+        let script = PageAPI.export([(key: "/a b.png", snapshot: Data(#"{"d":1}"#.utf8)), (key: "/c.png", snapshot: Data(#"{"d":2}"#.utf8))]).script
+        XCTAssertEqual(script, #"return window.shotnote ? await window.shotnote.export([{"key":"/a b.png","snapshot":{"d":1}},{"key":"/c.png","snapshot":{"d":2}}]) : null;"#)
+        XCTAssertEqual(PageAPI.export([]).script, "return window.shotnote ? await window.shotnote.export([]) : null;")
     }
 
     func testStringArgumentsAreEscapedForJavaScript() {
         XCTAssertEqual(PageAPI.setTool("dr\"aw').x</script>").script, #"window.shotnote && window.shotnote.setTool("dr\"aw').x</script>");"#)
-        XCTAssertEqual(PageAPI.forget(["/a b.png", "line\nbreak"]).script, #"window.shotnote && window.shotnote.forget(["/a b.png","line\nbreak"]);"#)
-        XCTAssertEqual(PageAPI.export([]).script, "window.shotnote && window.shotnote.export([]);")
+        XCTAssertEqual(PageAPI.setColor("line\nbreak").script, #"window.shotnote && window.shotnote.setColor("line\nbreak");"#)
     }
 
     func testParkAwaitsAndOthersGuard() {
-        XCTAssertEqual(PageAPI.park.script, "if (window.shotnote) await window.shotnote.park();")
+        XCTAssertEqual(PageAPI.park.script, "return window.shotnote ? await window.shotnote.park() : null;")
         for api in [PageAPI.reset, .finish, .setColor("red")] {
             XCTAssertTrue(api.script.hasPrefix("window.shotnote && window.shotnote."), api.script)
         }

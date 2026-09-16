@@ -11,6 +11,7 @@ enum CommandError: String, CaseIterable {
     case unreadableImage = "unreadable-image"
     case pageNotReady = "page-not-ready"
     case exportTimeout = "export-timeout"
+    case exportFailed = "export-failed"
     case settingsInvalid = "settings-invalid"
     case debugDisabled = "debug-disabled"
     case noAppleOriginal = "no-apple-original"

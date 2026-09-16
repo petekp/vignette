@@ -8,6 +8,7 @@ import {
   DefaultSizeStyle,
   Editor,
   GeoShapeGeoStyle,
+  TLAssetStore,
   TLComponents,
   TLEditorSnapshot,
   TLImageShape,
@@ -20,41 +21,85 @@ import {
   useEditor,
 } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { LoadPayload, PROTOCOL, postToNative } from './bridge'
+import { ExportItem, ExportResult, LoadPayload, PROTOCOL, ParkResult, postToNative } from './bridge'
 import { COLORS, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
 
-/// Annotations in progress, by image key. A draft is the whole store so the image and camera come back with it.
-const drafts = new Map<string, TLEditorSnapshot>()
+/// The image on the canvas, by its key (file path). The host owns drafts; this page keeps no
+/// state that outlives a load, so a restarted web process loses nothing the host has not seen.
 let currentKey: string | null = null
 /// True when the user changed the canvas since the host last saw a rendering of it.
 let dirty = false
-/// Longest side, in pixels, of the preview sent with a parked draft.
+/// True while `load` or `export` mutate the store, so those changes are not reported as drafts.
+let quiet = false
+let draftTimer: ReturnType<typeof setTimeout> | null = null
+/// Longest side, in pixels, of the preview returned with a parked draft.
 const PREVIEW_MAX = 1600
+/// How long after the last change the draft snapshot goes to the host.
+const DRAFT_DELAY_MS = 300
+
+/// Asset `src` values are file paths; the host serves them from the page's own origin, under the
+/// same per-launch token as the page, so a snapshot saved in one launch resolves in the next.
+function fileUrl(path: string) {
+  return location.origin + location.pathname.replace(/[^/]*$/, 'file?p=' + encodeURIComponent(path))
+}
+
+const assets: TLAssetStore = {
+  async upload() {
+    throw new Error('the page never uploads assets')
+  },
+  resolve(asset) {
+    return asset.type === 'image' && asset.props.src?.startsWith('/') ? fileUrl(asset.props.src) : asset.props.src
+  },
+}
 
 function hasAnnotations(editor: Editor) {
   return editor.getCurrentPageShapeIds().size > 1
 }
 
-/// Sends the host a rendering of the current draft if it changed, then stores the draft.
-async function park(editor: Editor, scale: number) {
-  if (currentKey && dirty && hasAnnotations(editor)) {
-    const bounds = editor.getShapePageBounds(IMAGE_ID)
-    const previewScale = bounds ? Math.min(scale, PREVIEW_MAX / Math.max(bounds.w, bounds.h)) : scale
-    const preview = await render(editor, previewScale)
-    if (preview) postToNative({ type: 'draft', key: currentKey, preview })
-  }
-  dirty = false
-  saveDraft(editor)
+/// Runs `fn` without touching undo history: loading a snapshot otherwise records an undo entry.
+function silently(editor: Editor, fn: () => void) {
+  editor.run(fn, { history: 'ignore' })
 }
 
-/// Stores the current image's annotations, or drops its draft if they were all deleted.
-function saveDraft(editor: Editor) {
-  if (!currentKey) return
-  if (hasAnnotations(editor)) drafts.set(currentKey, getSnapshot(editor.store))
-  else drafts.delete(currentKey)
-  postToNative({ type: 'drafts', keys: [...drafts.keys()] })
+/// Runs `fn` with store changes not reported as drafts. Spans the whole operation, not just the
+/// mutating calls: tldraw delivers a snapshot load's changes to listeners on the next transaction,
+/// which for `load` is the camera fit one frame later.
+async function quietly<T>(fn: () => Promise<T>): Promise<T> {
+  quiet = true
+  try {
+    return await fn()
+  } finally {
+    quiet = false
+  }
+}
+
+/// Sends the host the current annotations, or null when there are none. Debounced from the store listener.
+function scheduleDraft(editor: Editor) {
+  if (draftTimer) clearTimeout(draftTimer)
+  draftTimer = setTimeout(() => {
+    draftTimer = null
+    if (currentKey) postToNative({ type: 'draft', key: currentKey, snapshot: hasAnnotations(editor) ? getSnapshot(editor.store) : null })
+  }, DRAFT_DELAY_MS)
+}
+
+/// The draft as the host should store it, with a rendering when the user changed it since the last one.
+async function park(editor: Editor, scale: number): Promise<ParkResult> {
+  if (draftTimer) {
+    clearTimeout(draftTimer)
+    draftTimer = null
+  }
+  if (!currentKey) return { snapshot: null, preview: null }
+  const annotated = hasAnnotations(editor)
+  let preview: string | null = null
+  if (dirty && annotated) {
+    const bounds = editor.getShapePageBounds(IMAGE_ID)
+    const previewScale = bounds ? Math.min(scale, PREVIEW_MAX / Math.max(bounds.w, bounds.h)) : scale
+    preview = await render(editor, previewScale)
+  }
+  dirty = false
+  return { snapshot: annotated ? getSnapshot(editor.store) : null, preview }
 }
 
 export function App() {
@@ -74,23 +119,16 @@ export function App() {
         }
       },
       async park() {
-        if (editor) await park(editor, scaleRef.current)
+        return editor ? park(editor, scaleRef.current) : { snapshot: null, preview: null }
       },
       reset() {
         if (!editor) return
-        saveDraft(editor)
         clearCanvas(editor)
         currentKey = null
       },
-      forget(keys) {
-        for (const k of keys) drafts.delete(k)
-        postToNative({ type: 'drafts', keys: [...drafts.keys()] })
-      },
-      export(keys) {
-        if (!editor) return postToNative({ type: 'exported', items: [] })
-        exportDrafts(editor, keys, scaleRef.current).catch((err) =>
-          postToNative({ type: 'log', message: 'export failed: ' + (err instanceof Error ? err.stack ?? err.message : String(err)) })
-        )
+      async export(items) {
+        if (!editor) return { items: [], error: 'editor not mounted' }
+        return exportDrafts(editor, items, scaleRef.current)
       },
       setTool(id) {
         if (editor && TOOLS.some((t) => t.id === id)) selectTool(editor, id as ToolId)
@@ -121,11 +159,19 @@ export function App() {
       <Tldraw
         hideUi
         licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}
+        assets={assets}
         components={components}
         onMount={(ed) => {
           ed.user.updateUserPreferences({ colorScheme: 'dark' })
           ed.updateInstanceState({ isDebugMode: false })
-          ed.store.listen(() => { dirty = true }, { scope: 'document', source: 'user' })
+          ed.store.listen(
+            () => {
+              if (quiet) return
+              dirty = true
+              scheduleDraft(ed)
+            },
+            { scope: 'document', source: 'user' }
+          )
           setEditor(ed)
           ;(window as unknown as { editor: Editor }).editor = ed // for `shotnote://eval` debugging
           postToNative({
@@ -141,7 +187,20 @@ export function App() {
 }
 
 function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }) {
-  saveDraft(editor)
+  if (draftTimer) {
+    clearTimeout(draftTimer)
+    draftTimer = null
+  }
+  quiet = true
+  try {
+    loadImageQuietly(editor, p, scaleRef)
+  } catch (err) {
+    quiet = false
+    throw err
+  }
+}
+
+function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: number }) {
   clearCanvas(editor)
   currentKey = p.key
   // The shape is sized in points so the canvas matches the window; export scales back up to pixels.
@@ -150,32 +209,40 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
   const h = p.pixelHeight / ratio
   scaleRef.current = ratio
 
-  const draft = drafts.get(p.key)
-  if (draft) {
-    loadSnapshot(editor.store, draft)
-  } else {
-    const assetId = AssetRecordType.createId()
-    editor.createAssets([
-      {
-        id: assetId,
-        typeName: 'asset',
-        type: 'image',
-        meta: {},
-        props: { w, h, mimeType: p.mimeType, src: p.imageUrl, name: 'screenshot', isAnimated: false },
-      },
-    ])
-    editor.createShape({ id: IMAGE_ID, type: 'image', x: 0, y: 0, isLocked: true, props: { w, h, assetId } })
-  }
+  silently(editor, () => {
+    if (p.snapshot) {
+      loadSnapshot(editor.store, p.snapshot)
+    } else {
+      const assetId = AssetRecordType.createId()
+      editor.createAssets([
+        {
+          id: assetId,
+          typeName: 'asset',
+          type: 'image',
+          meta: {},
+          props: { w, h, mimeType: p.mimeType, src: p.key, name: 'screenshot', isAnimated: false },
+        },
+      ])
+      editor.createShape({ id: IMAGE_ID, type: 'image', x: 0, y: 0, isLocked: true, props: { w, h, assetId } })
+    }
+  })
   fitCamera(editor, w, h)
 
   editor.setStyleForNextShapes(DefaultColorStyle, COLORS[0].id)
   editor.setStyleForNextShapes(DefaultSizeStyle, DEFAULT_SIZE)
   editor.setStyleForNextShapes(DefaultDashStyle, 'solid')
   editor.setStyleForNextShapes(DefaultFillStyle, 'none')
-  selectTool(editor, draft ? REOPEN_TOOL : DEFAULT_TOOL)
+  selectTool(editor, p.snapshot ? REOPEN_TOOL : DEFAULT_TOOL)
   editor.clearHistory()
   // Two frames: fitCamera re-measures on the next frame, so the image has been laid out by then.
-  requestAnimationFrame(() => requestAnimationFrame(() => postToNative({ type: 'loaded', key: p.key })))
+  // The load's store changes reach the listener during that first frame; drafts report from here on.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      quiet = false
+      dirty = false
+      postToNative({ type: 'loaded', key: p.key })
+    })
+  )
 }
 
 function fitCamera(editor: Editor, w: number, h: number) {
@@ -200,13 +267,15 @@ function fitCamera(editor: Editor, w: number, h: number) {
 }
 
 function clearCanvas(editor: Editor) {
-  const ids = [...editor.getCurrentPageShapeIds()]
-  if (ids.length) {
-    editor.updateShapes(ids.map((id) => ({ id, type: editor.getShape(id)!.type, isLocked: false })))
-    editor.deleteShapes(ids)
-  }
-  const assets = editor.getAssets().map((a) => a.id)
-  if (assets.length) editor.deleteAssets(assets)
+  silently(editor, () => {
+    const ids = [...editor.getCurrentPageShapeIds()]
+    if (ids.length) {
+      editor.updateShapes(ids.map((id) => ({ id, type: editor.getShape(id)!.type, isLocked: false })))
+      editor.deleteShapes(ids)
+    }
+    const assets = editor.getAssets().map((a) => a.id)
+    if (assets.length) editor.deleteAssets(assets)
+  })
   editor.clearHistory()
 }
 
@@ -229,14 +298,13 @@ function activeTool(editor: Editor): ToolId | null {
 
 async function finish(editor: Editor, scale: number) {
   const png = await render(editor, scale)
-  if (!png) return cancel(editor, scale)
+  if (!png) return cancel(editor)
   dirty = false // the host has this rendering; no preview needed when the draft is parked
   postToNative({ type: 'done', png })
 }
 
-/// Parks the draft so the host can show it on the card, then asks to close.
-async function cancel(editor: Editor, scale: number) {
-  await park(editor, scale)
+/// Asks the host to close; it parks the draft on the way out.
+function cancel(_editor: Editor) {
   postToNative({ type: 'cancel' })
 }
 
@@ -247,16 +315,17 @@ async function cancel(editor: Editor, scale: number) {
 async function render(editor: Editor, scale: number) {
   const bounds = editor.getShapePageBounds(IMAGE_ID)
   const shape = editor.getShape(IMAGE_ID)
-  const asset = shape?.type === 'image' ? editor.getAsset((shape as TLImageShape).props.assetId!) : null
-  if (!bounds || !asset || asset.type !== 'image' || !asset.props.src) return null
-  editor.selectNone()
+  const assetId = shape?.type === 'image' ? (shape as TLImageShape).props.assetId : null
+  const src = assetId ? await editor.resolveAssetUrl(assetId, { shouldResolveToOriginal: true }) : null
+  if (!bounds || !src) return null
+  silently(editor, () => editor.selectNone())
   const width = Math.round(bounds.w * scale)
   const height = Math.round(bounds.h * scale)
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
   const ctx = canvas.getContext('2d')!
-  ctx.drawImage(await decodeImage(asset.props.src), 0, 0, width, height)
+  ctx.drawImage(await decodeImage(src), 0, 0, width, height)
   const ids = [...editor.getCurrentPageShapeIds()].filter((id) => id !== IMAGE_ID)
   if (ids.length) {
     const svg = await editor.getSvgString(ids, { bounds: Box.From(bounds), padding: 0, background: false, scale })
@@ -272,20 +341,34 @@ async function decodeImage(src: string) {
   return img
 }
 
-/// Renders each key's draft by loading it into the live store, then puts the store back.
-async function exportDrafts(editor: Editor, keys: string[], scale: number) {
-  saveDraft(editor)
+/// Renders each item's draft by loading it into the live store, then puts the store back. The
+/// current image's draft is what is on the canvas, not the host's copy. Undo history is left as
+/// it was. A failure stops the run and is reported; whatever rendered before it is returned.
+function exportDrafts(editor: Editor, items: ExportItem[], scale: number): Promise<ExportResult> {
+  return quietly(() => exportDraftsQuietly(editor, items, scale))
+}
+
+async function exportDraftsQuietly(editor: Editor, items: ExportItem[], scale: number): Promise<ExportResult> {
   const before = getSnapshot(editor.store)
-  const items: { key: string; png: string }[] = []
-  for (const key of keys) {
-    const draft = drafts.get(key)
-    if (!draft) continue
-    loadSnapshot(editor.store, draft)
-    const png = await render(editor, scale)
-    if (png) items.push({ key, png })
+  const selected = editor.getSelectedShapeIds()
+  const rendered: { key: string; png: string }[] = []
+  let error: string | null = null
+  try {
+    for (const item of items) {
+      const snapshot = item.key === currentKey ? before : item.snapshot
+      silently(editor, () => loadSnapshot(editor.store, snapshot))
+      const png = await render(editor, scale)
+      if (png) rendered.push({ key: item.key, png })
+    }
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err)
+  } finally {
+    silently(editor, () => {
+      loadSnapshot(editor.store, before)
+      editor.setSelectedShapes(selected)
+    })
   }
-  loadSnapshot(editor.store, before)
-  postToNative({ type: 'exported', items })
+  return { items: rendered, error }
 }
 
 /// Keyboard shortcuts (tldraw's own are part of the UI we hide) and tool state for the native toolbar.
@@ -311,7 +394,7 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
       const mod = e.metaKey || e.ctrlKey
       if (e.key === 'Escape' && !editing) {
         e.preventDefault()
-        cancel(editor, scaleRef.current)
+        cancel(editor)
         return
       }
       if (e.key === 'Enter' && mod) {

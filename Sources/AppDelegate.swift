@@ -51,8 +51,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotator.onLoaded = { [weak self] key in self?.thumbnail.pageLoaded(key) }
         annotator.onProblem = { [weak self] text in self?.thumbnail.showFeedback(text) }
         annotator.fileAccess.update(folder: watchFolder, unrestricted: settings.data.debug)
-        annotator.onDraftsChanged = { [weak self] keys in self?.thumbnail.setDrafts(keys) }
         annotator.onDraftPreview = { [weak self] path, png in self?.thumbnail.setPreview(path, png) }
+        annotator.draftSnapshot = { [weak self] key in self?.drafts.snapshot(for: key) }
+        annotator.onDraft = { [weak self] key, snapshot in self?.storeDraft(key, snapshot: snapshot) }
+        annotator.onParked = { [weak self] key, parked in
+            self?.storeDraft(key, snapshot: parked.snapshot)
+            if let png = parked.preview { self?.storePreview(key, png) }
+        }
+        loadDrafts()
         startWatching()
         registerHotKey()
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
@@ -149,6 +155,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.showFeedback("Stitched \(shots.count) images, copied")
     }
 
+    // MARK: Drafts
+
+    private lazy var drafts = DraftStore(
+        directory: Identity.applicationSupportURL.appendingPathComponent("drafts"),
+        previewDirectory: Identity.cachesURL.appendingPathComponent("drafts"))
+
+    /// Drops drafts whose screenshot is gone, then shows the rest on their cards.
+    private func loadDrafts() {
+        let swept = drafts.sweep { FileManager.default.fileExists(atPath: $0) }
+        if !swept.isEmpty { Log.write("[drafts] swept \(swept.count) without a file") }
+        thumbnail.setDrafts(drafts.keys)
+        for key in drafts.keys { if let png = drafts.preview(for: key) { thumbnail.setPreview(key, png) } }
+        Log.write("[drafts] loaded \(drafts.keys.count) from \(drafts.directory.path)")
+    }
+
+    /// A nil snapshot means the annotations were all removed. A draft for a file that no longer
+    /// exists is dropped: the page can report one after the file was trashed.
+    private func storeDraft(_ key: String, snapshot: Any?) {
+        let name = (key as NSString).lastPathComponent
+        if let snapshot, FileManager.default.fileExists(atPath: key) {
+            do { try drafts.save(key: key, snapshot: snapshot); Log.write("[drafts] saved \(name)") }
+            catch { Log.write("[drafts] error write-failed \(key): \(error.localizedDescription)") }
+        } else if drafts.keys.contains(key) {
+            drafts.forget([key])
+            Log.write("[drafts] forgot \(name)")
+        }
+        thumbnail.setDrafts(drafts.keys)
+    }
+
+    private func storePreview(_ key: String, _ png: Data) {
+        guard drafts.keys.contains(key) else { return }
+        do { try drafts.savePreview(key: key, png: png) } catch { Log.write("[drafts] error write-failed preview \(key): \(error.localizedDescription)") }
+        thumbnail.setPreview(key, png)
+    }
+
+    private func forgetDrafts(_ shots: [Screenshot]) {
+        let had = shots.filter { drafts.keys.contains($0.url.path) }
+        guard !had.isEmpty else { return }
+        drafts.forget(had.map(\.url.path))
+        Log.write("[drafts] forgot \(had.map(\.url.lastPathComponent).joined(separator: ", "))")
+        thumbnail.setDrafts(drafts.keys)
+    }
+
     func moveToTrash(_ shots: [Screenshot]) {
         var trashed: [String] = []
         var failed: [String] = []
@@ -161,24 +210,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         }
         thumbnail.remove(shots)
-        annotator.forgetDrafts(shots)
+        forgetDrafts(shots)
         if failed.isEmpty { Commands.ok("trash", trashed.joined(separator: ", ")) }
         else { Commands.error("trash", .writeFailed, "\(failed.joined(separator: "; ")); trashed \(trashed.count) of \(shots.count)") }
     }
 
     func copyAnnotated(_ shots: [Screenshot]) {
-        annotator.exportDrafts(shots) { [weak self] pngs in
+        let items = shots.compactMap { shot in drafts.snapshot(for: shot.url.path).map { (key: shot.url.path, snapshot: $0) } }
+        guard !items.isEmpty else { finishCopyAnnotated(shots, pngs: [:]); return }
+        annotator.exportDrafts(items) { [weak self] pngs, error in
             guard let self else { return }
-            var urls: [URL] = []
-            var annotated = 0
-            for shot in shots {
-                if let png = pngs[shot.url.path], let out = self.writeAnnotated(shot, png) { urls.append(out); annotated += 1 }
-                else { urls.append(shot.url) }
+            if let error {
+                Commands.error("copy-annotated", error.hasPrefix("timeout") ? .exportTimeout : .exportFailed, error)
+                self.thumbnail.showFeedback("Could not render the annotations; see the log")
+                return
             }
-            Clipboard.copyFiles(urls)
-            Commands.ok("copy-annotated", "\(urls.map(\.lastPathComponent).joined(separator: ", ")); \(annotated) with annotations")
-            self.thumbnail.showFeedback(urls.count == 1 ? "Copied to clipboard" : "Copied \(urls.count) images")
+            self.finishCopyAnnotated(shots, pngs: pngs)
         }
+    }
+
+
+    private func finishCopyAnnotated(_ shots: [Screenshot], pngs: [String: Data]) {
+        var urls: [URL] = []
+        var annotated = 0
+        for shot in shots {
+            if let png = pngs[shot.url.path], let out = writeAnnotated(shot, png) { urls.append(out); annotated += 1 }
+            else { urls.append(shot.url) }
+        }
+        Clipboard.copyFiles(urls)
+        Commands.ok("copy-annotated", "\(urls.map(\.lastPathComponent).joined(separator: ", ")); \(annotated) with annotations")
+        thumbnail.showFeedback(urls.count == 1 ? "Copied to clipboard" : "Copied \(urls.count) images")
     }
 
     /// Done: the annotated file goes on the clipboard as a file, an image, and its path as text,
@@ -391,7 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }, onRemoved: { [weak self] urls in
             Log.write("[watcher] removed \(urls.map(\.lastPathComponent).joined(separator: ", "))")
             self?.thumbnail.remove(urls.map(Screenshot.init))
-            self?.annotator.forgetDrafts(urls.map(Screenshot.init))
+            self?.forgetDrafts(urls.map(Screenshot.init))
         })
         warmThumbnails()
         if wakeObserver == nil {

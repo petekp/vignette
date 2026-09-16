@@ -1,22 +1,37 @@
 // Messages between the tldraw page and the Swift host.
 
+import type { TLEditorSnapshot } from 'tldraw'
+
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 2
+export const PROTOCOL = 3
 
 export interface LoadPayload {
-  /** Identifies the image's draft; the host uses the file path. */
+  /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
   key: string
-  /** Same-origin URL of the image, served by the host's loopback server. */
-  imageUrl: string
   mimeType: string
   pixelWidth: number
   pixelHeight: number
   viewWidth: number
   viewHeight: number
+  /** The image's draft as the host stored it, or null for a fresh canvas. */
+  snapshot: TLEditorSnapshot | null
 }
 
 export interface ToolInfo { id: string; label: string; key: string; symbol: string }
 export interface ColorInfo { id: string; hex: string }
+
+/** What `park` returns: the annotations to store (null when there are none) and a rendering when they changed. */
+export interface ParkResult {
+  snapshot: TLEditorSnapshot | null
+  preview: string | null
+}
+
+export interface ExportItem { key: string; snapshot: TLEditorSnapshot }
+/** What `export` returns: the renderings that succeeded, and the error that stopped the run, if any. */
+export interface ExportResult {
+  items: { key: string; png: string }[]
+  error: string | null
+}
 
 type NativeMessage =
   /** The editor is mounted. Carries the protocol version and what the host's toolbar should offer. */
@@ -28,25 +43,19 @@ type NativeMessage =
   | { type: 'done'; png: string }
   | { type: 'cancel' }
   | { type: 'log'; message: string }
-  /** Keys of every image that currently has unsaved annotations. */
-  | { type: 'drafts'; keys: string[] }
-  /** A rendering of one image with its draft, sent when the draft is parked. */
-  | { type: 'draft'; key: string; preview: string }
-  /** Result of `window.shotnote.export(keys)`, in the order requested. */
-  | { type: 'exported'; items: { key: string; png: string }[] }
+  /** The current image's annotations changed; null means they were all removed. Sent shortly after each change. */
+  | { type: 'draft'; key: string; snapshot: TLEditorSnapshot | null }
 
 declare global {
   interface Window {
     shotnote?: {
       load(payload: LoadPayload): void
-      /** Renders and stores the current image's draft; resolves once the `draft` message is posted. */
-      park(): Promise<void>
+      /** The current draft for the host to store, with a preview when it changed. Does not clear the canvas. */
+      park(): Promise<ParkResult>
       /** Clears the canvas. Call `park` first to keep the annotations. */
       reset(): void
-      /** Drops drafts, e.g. when their files were deleted. */
-      forget(keys: string[]): void
-      /** Renders each key's draft to PNG and replies with an `exported` message. */
-      export(keys: string[]): void
+      /** Renders each item's draft to PNG. */
+      export(items: ExportItem[]): Promise<ExportResult>
       setTool(id: string): void
       setColor(id: string): void
       /** Exports the current image and replies with `done`. */

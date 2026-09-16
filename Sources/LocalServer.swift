@@ -4,8 +4,9 @@ import Network
 /// Serves the editor page and the screenshots it annotates on 127.0.0.1, so the page has an http
 /// origin (tldraw's license manager needs one) and the image is same-origin with the page
 /// (`render` draws it on a canvas, which a cross-origin image would taint). Every path carries a
-/// per-launch token, so another local process cannot read screenshots through the port. Only
-/// GET, only the loopback Host, only the bundle and files the `access` rule allows.
+/// per-launch token, so another local process cannot read screenshots through the port; the page
+/// builds `/<token>/file?p=<path>` from its own location. Only GET, only the loopback Host, only
+/// the bundle and files the `access` rule allows.
 final class LocalServer {
     private let root: URL
     private let token: String
@@ -41,13 +42,6 @@ final class LocalServer {
     }
 
     var indexURL: URL { URL(string: "http://127.0.0.1:\(port)/\(token)/index.html")! }
-
-    /// The URL the page loads `file` from. The path is a query value, so any absolute path fits.
-    func url(for file: URL) -> URL {
-        var c = URLComponents(string: "http://127.0.0.1:\(port)/\(token)/file")!
-        c.queryItems = [URLQueryItem(name: "p", value: file.path)]
-        return c.url!
-    }
 
     func start() throws {
         let params = NWParameters.tcp

@@ -67,7 +67,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `[app] ready pid=… build=… port=… watching=…` marks the end of launch: after it every command
    answers. `[web] ready` follows on its own once the editor page is up; `copy-annotated` and
    `eval` answer `error page-not-ready` before it, `annotate` queues one deep. `build` is
-   `git describe` of the checkout, stamped by build.sh.
+   `git describe` of the checkout, stamped by build.sh. The `[state] annotator` line carries
+   `webPid`, the web content process, for `kill -9` tests and memory checks.
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
 Delete test files afterwards; the watch folder is the user's real screenshot folder.
@@ -138,13 +139,21 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   of the UI that `hideUi` removes. `ExpandPanel` carries a card between its stack slot and that frame, and the
   annotator loads the image while hidden (`prepare`) so it can appear the moment the card lands
   (`show`). A swap runs two of these at once. The stack keeps a dashed placeholder in the slot.
-- Annotations in progress are drafts held in the page's memory, keyed by file path. A swap, Esc,
-  or Done parks the current image's draft; loading that image again restores it. Parking also
-  renders a preview that the stack shows on the card and in the fly-back, so the annotator hides
-  only after the page reports the park (`AnnotationController.hide(then:)`). Drafts die with
-  the app; they are never written to disk. Trashing a file forgets its draft. "Copy Annotated"
-  renders selected drafts through the live editor (`window.shotnote.export`) and falls back to the
-  original file for cards without one.
+- Annotations in progress are drafts owned by the app (`DraftStore`), one JSON snapshot per
+  screenshot under `~/Library/Application Support/<bundle id>/drafts/` keyed by the file path
+  the app uses everywhere (`shot.url.path`), with a preview PNG under `~/Library/Caches/<bundle
+  id>/drafts/`. The page holds only the image it is editing: it reports the snapshot shortly
+  after every change (`draft` message), and `park` returns the final snapshot plus a preview
+  when the user changed it, so the annotator hides only after that answer
+  (`AnnotationController.hide(then:)`). Drafts survive relaunches and a web content process
+  restart: the terminate delegate reloads the page and the next `ready` re-sends the image
+  with its stored draft. A draft for a file that no longer exists is dropped when it arrives,
+  and a launch-time sweep removes the rest. The snapshot's asset `src` is the file path; the
+  page's asset store resolves it to the served URL, so a stored draft never contains a token.
+  Loading a snapshot inside `editor.run(fn, { history: 'ignore' })` keeps it out of undo history.
+  "Copy Annotated" hands the stored snapshots to the live editor (`window.shotnote.export`),
+  which restores the canvas afterwards; it falls back to the original file for cards without a
+  draft, and answers `error export-failed` or `export-timeout` (15 s) instead of hanging.
 - Exports do not use tldraw's `toImage`. In WKWebView an SVG that embeds the screenshot
   rasterizes blank (WebKit loads the inner raster image asynchronously; tldraw only sleeps
   250ms for browsers it detects as Safari, which WKWebView is not). `render()` in `App.tsx`

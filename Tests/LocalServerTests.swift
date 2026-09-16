@@ -88,6 +88,13 @@ final class LocalServerTests: XCTestCase {
         XCTAssertEqual(get("/tok/%2e%2e/secret.txt").status, 404)
     }
 
+    /// The page builds this target itself, from its own location; the parser must give the path back whole.
+    func testFileTargetAsThePageBuildsItParses() {
+        let path = shots.path + "/Screenshot 2026-09-15 at 2.50.12 PM.png"
+        let target = "/tok/file?p=" + path.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowedStrict)!
+        XCTAssertEqual(HTTPRequest.parse(Data("GET \(target) HTTP/1.1\r\n\r\n".utf8))?.query["p"], path)
+    }
+
     func testServesScreenshotsInsideTheWatchFolderOnly() {
         let shot = get("/tok/file?p=" + (shots.path + "/Shot 1.png").addingPercentEncoding(withAllowedCharacters: .alphanumerics)!)
         XCTAssertEqual(shot.status, 200)
@@ -110,19 +117,10 @@ final class LocalServerTests: XCTestCase {
         XCTAssertEqual(get("/tok/file?p=" + secret.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!).status, 404)
     }
 
-    func testImageURLRoundTripsThroughTheParser() {
-        let server = LocalServer(root: root, access: access, token: "tok")
-        let file = shots.appendingPathComponent("Screenshot 2026-09-15 at 2.50.12 PM.png")
-        let url = server.url(for: file)
-        XCTAssertTrue(url.absoluteString.hasPrefix("http://127.0.0.1:0/tok/file?p="), url.absoluteString)
-        let target = url.absoluteString.replacingOccurrences(of: "http://127.0.0.1:0", with: "")
-        XCTAssertEqual(HTTPRequest.parse(Data("GET \(target) HTTP/1.1\r\n\r\n".utf8))?.query["p"], file.path)
-    }
-
     func testRedactedURLHidesTheToken() {
         let server = LocalServer(root: root, access: access, token: "s3cret")
         XCTAssertEqual(LocalServer.redacted(server.indexURL), "http://127.0.0.1:0/token/index.html")
-        XCTAssertFalse(LocalServer.redacted(server.url(for: shots.appendingPathComponent("a.png"))).contains("s3cret"))
+        XCTAssertEqual(LocalServer.redacted(URL(string: "http://127.0.0.1:0/s3cret/file?p=%2Fa.png")!), "http://127.0.0.1:0/token/file?p=%2Fa.png")
     }
 
     func testMimeTypesCoverEveryWatchedFormat() {
@@ -132,4 +130,9 @@ final class LocalServerTests: XCTestCase {
         XCTAssertEqual(LocalServer.mimeType(for: "JPG"), "image/jpeg")
         XCTAssertEqual(LocalServer.mimeType(for: "bin"), "application/octet-stream")
     }
+}
+
+private extension CharacterSet {
+    /// What `encodeURIComponent` leaves alone.
+    static let urlQueryValueAllowedStrict = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.!~*'()")
 }

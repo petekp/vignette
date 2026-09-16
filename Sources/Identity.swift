@@ -11,6 +11,8 @@ enum Identity {
     static let logURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/\(name).log")
     static let applicationSupportURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/\(bundleID)")
+    static let cachesURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Caches/\(bundleID)")
     static let statusItemAutosaveName = bundleID
     static let hotKeySignature = hotKeySignature(for: bundleID)
 

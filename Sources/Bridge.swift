@@ -3,13 +3,12 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 2
+let bridgeProtocolVersion = 3
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
+    /// The file path. Also the asset `src` the page resolves to a served URL.
     let key: String
-    /// Same-origin URL of the image, served by LocalServer.
-    let imageUrl: String
     let mimeType: String
     let pixelWidth: Int
     let pixelHeight: Int
@@ -31,29 +30,37 @@ struct ColorInfo: Identifiable, Equatable {
 
 /// Every call the host makes into the page, rendered as the JavaScript that makes it.
 enum PageAPI: Equatable {
-    case load(LoadPayload)
+    /// `snapshot` is the stored draft's JSON, or nil for a fresh canvas.
+    case load(LoadPayload, snapshot: Data?)
     case park
     case reset
-    case forget([String])
-    case export([String])
+    /// Each item's stored draft JSON, by key.
+    case export([(key: String, snapshot: Data)])
     case setTool(String)
     case setColor(String)
     case finish
 
-    /// `park` is awaited by the host; the rest are fire-and-forget. All guard on `window.shotnote`
-    /// so a call that lands before the page's script runs is a no-op rather than an exception.
+    /// `park` and `export` are async and return a value, so they run through `callAsyncJavaScript`;
+    /// the rest are fire-and-forget. All guard on `window.shotnote` so a call that lands before
+    /// the page's script runs is a no-op rather than an exception.
     var script: String {
         switch self {
-        case .load(let payload): return "window.shotnote && window.shotnote.load(\(PageAPI.json(payload)));"
-        case .park: return "if (window.shotnote) await window.shotnote.park();"
+        case .load(let payload, let snapshot):
+            let json = PageAPI.json(payload)
+            let text = snapshot.flatMap { String(data: $0, encoding: .utf8) } ?? "null"
+            return "window.shotnote && window.shotnote.load({\"snapshot\":\(text),\(json.dropFirst()));"
+        case .park: return "return window.shotnote ? await window.shotnote.park() : null;"
         case .reset: return "window.shotnote && window.shotnote.reset();"
-        case .forget(let keys): return "window.shotnote && window.shotnote.forget(\(PageAPI.json(keys)));"
-        case .export(let keys): return "window.shotnote && window.shotnote.export(\(PageAPI.json(keys)));"
+        case .export(let items):
+            let list = items.map { "{\"key\":\(PageAPI.json($0.key)),\"snapshot\":\(String(data: $0.snapshot, encoding: .utf8) ?? "null")}" }
+            return "return window.shotnote ? await window.shotnote.export([\(list.joined(separator: ","))]) : null;"
         case .setTool(let id): return "window.shotnote && window.shotnote.setTool(\(PageAPI.json(id)));"
         case .setColor(let id): return "window.shotnote && window.shotnote.setColor(\(PageAPI.json(id)));"
         case .finish: return "window.shotnote && window.shotnote.finish();"
         }
     }
+
+    static func == (a: PageAPI, b: PageAPI) -> Bool { a.script == b.script }
 
     /// JSON is valid JavaScript for objects, arrays, and strings; `withoutEscapingSlashes` keeps paths readable.
     static func json<T: Encodable>(_ value: T) -> String {
@@ -75,12 +82,8 @@ enum WebMessage {
     case done(png: Data)
     case cancel
     case log(String)
-    /// Keys of every image that currently has unsaved annotations.
-    case drafts([String])
-    /// A rendering of one image with its draft, sent when the draft is parked.
-    case draft(key: String, preview: Data)
-    /// Result of `window.shotnote.export(keys)`, in the order requested.
-    case exported([(key: String, png: Data)])
+    /// The current image's annotations changed; a nil snapshot means they were all removed.
+    case draft(key: String, snapshot: Any?)
 
     init?(body: Any) {
         guard let dict = body as? [String: Any], let type = dict["type"] as? String else { return nil }
@@ -105,22 +108,15 @@ enum WebMessage {
         case "done":
             guard let text = dict["png"] as? String, let data = Self.pngData(text) else { return nil }
             self = .done(png: data)
-        case "drafts":
-            self = .drafts(dict["keys"] as? [String] ?? [])
         case "draft":
-            guard let key = dict["key"] as? String, let text = dict["preview"] as? String, let data = Self.pngData(text) else { return nil }
-            self = .draft(key: key, preview: data)
-        case "exported":
-            let items = (dict["items"] as? [[String: Any]] ?? []).compactMap { item -> (key: String, png: Data)? in
-                guard let key = item["key"] as? String, let text = item["png"] as? String, let data = Self.pngData(text) else { return nil }
-                return (key, data)
-            }
-            self = .exported(items)
+            guard let key = dict["key"] as? String, dict.keys.contains("snapshot") else { return nil }
+            let snapshot = dict["snapshot"]
+            self = .draft(key: key, snapshot: snapshot is NSNull ? nil : snapshot)
         default: return nil
         }
     }
 
-    private static func pngData(_ dataUrl: String) -> Data? {
+    static func pngData(_ dataUrl: String) -> Data? {
         Data(base64Encoded: dataUrl.replacingOccurrences(of: "data:image/png;base64,", with: ""))
     }
 
@@ -128,5 +124,35 @@ enum WebMessage {
     static func describe(_ body: Any) -> String {
         guard let dict = body as? [String: Any] else { return "non-object \(type(of: body))" }
         return "type=\(dict["type"] as? String ?? "?") keys=\(dict.keys.sorted().joined(separator: ","))"
+    }
+}
+
+/// What `PageAPI.park` returns: the draft to store (nil when the canvas has no annotations) and
+/// a rendering when the user changed it since the host last saw one.
+struct ParkResult {
+    let snapshot: Any?
+    let preview: Data?
+
+    init?(body: Any?) {
+        guard let dict = body as? [String: Any] else { return nil }
+        let snapshot = dict["snapshot"]
+        self.snapshot = snapshot is NSNull ? nil : snapshot
+        self.preview = (dict["preview"] as? String).flatMap(WebMessage.pngData)
+    }
+}
+
+/// What `PageAPI.export` returns: the renderings that succeeded, and the error that stopped the run.
+struct ExportResult {
+    let pngs: [String: Data]
+    let error: String?
+
+    init?(body: Any?) {
+        guard let dict = body as? [String: Any] else { return nil }
+        var pngs: [String: Data] = [:]
+        for item in dict["items"] as? [[String: Any]] ?? [] {
+            if let key = item["key"] as? String, let text = item["png"] as? String, let data = WebMessage.pngData(text) { pngs[key] = data }
+        }
+        self.pngs = pngs
+        self.error = dict["error"] as? String
     }
 }
