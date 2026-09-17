@@ -103,7 +103,11 @@ struct UITweaks: Codable, Equatable {
     var relayoutDuration = 0.2
     var expandDuration = 0.4
     var hoverRevealDuration = 0.15
-    var motion = 1.0                 // multiplier on every animation duration, 0 to 1; Reduce Motion forces 0
+    // A flight between a stack slot and the annotator, bowed and swelled by FlightCurve
+    var flightArc = 0.08             // how far the path bows, as a fraction of its length
+    var flightArcMax = 64.0          // the bow never exceeds this many points
+    var flightDepth = 0.05           // how much larger the card is in the middle of the path
+    var motion = 1.0                 // multiplier on every animation, 0 to 1; Reduce Motion forces 0
     // Backdrop
     var backdropWidth = 290.0
     var backdropTint = 0.0           // darkness at the right edge, 0 to 1
@@ -137,8 +141,9 @@ struct UITweaks: Codable, Equatable {
         }
     }
 
-    /// The same tweaks with every animation duration multiplied by `scale`. Dwell times
-    /// (`thumbnailSeconds`, `toastSeconds`) are not motion and stay as they are.
+    /// The same tweaks with every animation scaled: the durations, and how far a flight bows and
+    /// swells. Dwell times (`thumbnailSeconds`, `toastSeconds`) are not motion and stay as they
+    /// are, and `flightArcMax` is a limit on the bow rather than an amount of it.
     func scaledForMotion(_ scale: Double) -> UITweaks {
         var u = self
         u.slideInDuration *= scale; u.slideOutDuration *= scale
@@ -146,6 +151,7 @@ struct UITweaks: Codable, Equatable {
         u.relayoutDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
+        u.flightArc *= scale; u.flightDepth *= scale
         return u
     }
 
@@ -167,6 +173,8 @@ struct UITweaks: Codable, Equatable {
         Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
         Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("expandDuration", \.expandDuration, 0...60),
         Bound("hoverRevealDuration", \.hoverRevealDuration, 0...60), Bound("motion", \.motion, 0...1),
+        Bound("flightArc", \.flightArc, 0...1), Bound("flightArcMax", \.flightArcMax, 0...2000),
+        Bound("flightDepth", \.flightDepth, 0...1),
         Bound("backdropWidth", \.backdropWidth, 1...10_000), Bound("backdropTint", \.backdropTint, 0...1),
         Bound("backdropTintStart", \.backdropTintStart, 0...1), Bound("backdropBlurRadius", \.backdropBlurRadius, 0...1000),
         Bound("backdropRampPower", \.backdropRampPower, 0.01...100), Bound("backdropFadeIn", \.backdropFadeIn, 0...60),

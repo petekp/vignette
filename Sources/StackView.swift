@@ -108,19 +108,23 @@ private struct CardView: View {
     private var selected: Bool { model.selected.contains(card.id) }
     private var focused: Bool { model.focused == card.id }
     private var isOut: Bool { model.outCards.contains(card.id) }
+    /// The card's image is in the transition layer, flying into or out of a stitch. The slot keeps
+    /// its place in the column and draws nothing, so the image is never on screen twice.
+    private var isForming: Bool { model.forming.contains(card.id) }
     private var offscreen: Bool { model.offscreen.contains(card.id) }
-    private var showsCircle: Bool { model.isStack && !isOut && (hovered || model.inSelectionMode || focused) }
+    private var showsCircle: Bool { model.isStack && !isOut && !isForming && (hovered || model.inSelectionMode || focused) }
     private var copied: Bool { model.copied.contains(card.id) }
-    private var showsButtons: Bool { hovered && !isOut && !model.inSelectionMode && !copied }
+    private var showsButtons: Bool { hovered && !isOut && !isForming && !model.inSelectionMode && !copied }
     private var showsDrawHint: Bool { showsButtons && !model.overControl && !pressed && !inButtonRow }
     /// The strip along the bottom that holds the buttons, gaps included: a click there is not a draw.
     private var inButtonRow: Bool { pointer.map { $0.y >= card.size.height - 6 - ui.buttonSize } ?? true }
 
     var body: some View {
         ZStack {
-            if isOut {
-                // The card is in the annotator. Its slot stays reserved, and empty, so the card
-                // flies back to the same place.
+            if isOut || isForming {
+                // The card's image is in the transition layer: in the annotator, or on its way
+                // into a stitch. The slot stays reserved, and empty, so the image is never on
+                // screen twice and the card flies back to the same place.
                 Color.clear
             } else {
                 Group {
@@ -163,7 +167,7 @@ private struct CardView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if let agent = card.agent, !isOut {
+            if let agent = card.agent, !isOut, !isForming {
                 AgentBadge(agent: agent, size: ui.selectionCircleSize)
                     .padding(6)
                     .transition(.opacity)
@@ -185,7 +189,7 @@ private struct CardView: View {
         }
         .frame(width: card.size.width, height: card.size.height)
         .overlay {
-            if copied && !isOut {
+            if copied && !isOut && !isForming {
                 CopiedOverlay(corner: ui.cardCornerRadius).transition(.opacity)
             }
         }

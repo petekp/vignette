@@ -123,8 +123,15 @@ struct DebugPanelView: View {
                     Tweak("Stagger per card", \.staggerDelay, 0...0.3, step: 0.01, unit: "s")
                     Tweak("Stagger total max", \.staggerTotalMax, 0...1.5, step: 0.05, unit: "s")
                     Tweak("Relayout", \.relayoutDuration, 0...1, step: 0.05, unit: "s")
-                    Tweak("Expand to annotator", \.expandDuration, 0...1.5, step: 0.05, unit: "s")
                     Tweak("Hover reveal", \.hoverRevealDuration, 0...0.6, step: 0.05, unit: "s")
+                }
+                Section("Flights") {
+                    Tweak("Expand to annotator", \.expandDuration, 0...1.5, step: 0.05, unit: "s")
+                    Tweak("Arc", \.flightArc, 0...0.4, step: 0.01)
+                    Tweak("Arc cap", \.flightArcMax, 0...300, step: 2, unit: "pt")
+                    Tweak("Depth", \.flightDepth, 0...0.3, step: 0.01)
+                    Text("How far a card bows off the straight line between its slot and the annotator, and how much it swells halfway there.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Backdrop") {
                     Tweak("Width", \.backdropWidth, 100...1000, step: 10)

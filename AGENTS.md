@@ -6,7 +6,7 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
 
 - `Sources/` Swift menu bar app. `AppDelegate.swift` wires everything; `Config.swift` holds the actions.
 - `~/.config/shotnote/settings.json` holds per-machine settings (`Settings.swift` defines the keys).
-  Its `ui` section (`UITweaks`) holds the layout, style, timing, and backdrop numbers, and its
+  Its `ui` section (`UITweaks`) holds the layout, style, timing, flight, and backdrop numbers, and its
   defaults are the tuned UI, so a fresh install renders the same. `open -g shotnote://tweaks`
   edits them live (needs `debug`). A few numbers stay in code on purpose: the toolbar's row and
   button sizes (`AnnotatorToolbar.swift`), the card button size (`StackView.swift`), the
@@ -46,6 +46,9 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
 2. `./scripts/run.sh`
 3. Drive the app: `open -g shotnote://annotate` (or `copy`, `trash`, `last`, `recent`, `state`;
    `open -g shotnote://help` logs every command). Plain `open` activates Shotnote; `-g` does not.
+   Every checkout builds the same bundle id, so with more than one build on the Mac LaunchServices
+   sends `shotnote://` to whichever copy it registered last, and that copy's launch replaces the
+   instance you started: `open -g -a <your build>/Shotnote.app "shotnote://…"` aims at yours.
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
    folder, and `eval`, `show-editor`, `tweaks`, and `send` are refused, unless settings.json has
@@ -81,8 +84,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    and error lands there with a `[tag]`. `open -g "shotnote://state?tag=<id>"` writes one
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
-   `stack` (cards with `file`, `frame`, `out`, `draft`, `agent`; selection, focus, feedback, panel,
-   and `strip`, the selection strip's frame or null),
+   `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; selection, focus,
+   feedback, panel, and `strip`, the selection strip's frame or null),
    `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
@@ -147,12 +150,21 @@ the same driven sequence; a single run varies.
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
 - Preload the web view at launch; the annotator must open instantly.
-- Every animation duration goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json
-  scales them, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
+- Every animation goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json scales
+  every duration, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
   `toastSeconds`) are not motion. `"ui": {"motion": 0}` makes the stack appear and leave at once,
   which is what a script wants. Every SwiftUI animation is a spring made by `Anim.spring`
   (`slideInCurve` "spring" included), and the AppKit tweens use `Tween`'s spring curve: an
   interrupted motion keeps its velocity and blends into the new target instead of jumping.
+- A flight does not run down a straight line. `FlightCurve` bows it to one side and swells the card,
+  both peaking in the middle and nothing at the ends, so the card still leaves and lands exactly
+  where the layout puts it. The amounts are `ui.flightArc` (a fraction of the path's length),
+  `ui.flightArcMax` (the bow's cap in points), and `ui.flightDepth`; the motion scale multiplies the
+  first and the third, so `motion: 0` and Reduce Motion give a straight line. The bow leans up from a
+  path that runs mostly sideways and left from one that runs mostly up or down, and the side belongs
+  to the line rather than the direction of travel, so a flight that turns around mid-air keeps bowing
+  the same way. `TransitionLayer`'s `Bow` reads the card's animated centre, so the curve follows the
+  frame's own spring and blends with it on a retarget.
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15 (verified: uniform blur), and a bare CABackdropLayer renders black. Do not retry.
@@ -161,8 +173,9 @@ the same driven sequence; a single run varies.
 - The status item has an autosave name and a seeded preferred position. Without it, a crowded
   menu bar on a notch Mac puts the new icon under the notch and it never appears.
 - Files named `*-annotated.png` are outputs and are ignored by the watcher. `Stitch *.png`
-  outputs are not ignored on purpose: they show up as a fresh thumbnail. The watcher takes png,
-  jpg, jpeg, and heic (`ScreenshotWatcher.candidateExtensions`), reports removals to the stack
+  outputs are not ignored on purpose: they arrive like a capture, which is what carries a stitch into
+  the annotator when `annotateOnCapture` is on. The watcher takes png, jpg, jpeg, and heic
+  (`ScreenshotWatcher.candidateExtensions`), reports removals to the stack
   (`[watcher] removed`), waits for a new file to decode before reporting it, and gives up on one
   that never does after ten seconds (`[watcher] error never-stable`); the next folder event or
   stack open picks it up. Wake from sleep rescans the folder. The watcher also keeps an index of
@@ -172,11 +185,21 @@ the same driven sequence; a single run varies.
   the index catches a file changed in place. While the folder cannot be watched (a volume not
   mounted yet) the reads list it directly and each rescan retries the watch. Copying puts the PNG
   on the pasteboard and promises the TIFF, which is rendered only when a paste target asks.
+- Stitching from the stack is one motion, not a file appearing later. `ThumbnailController.stitched`
+  takes the cards the image was made from out of the column, holds a slot for the new card at the
+  bottom, and hands both to `TransitionLayer.converge`: the pieces fly into that slot while the
+  finished image fades in under them. Both sets of cards sit in `model.forming` while their image is
+  in the transition layer, so a slot keeps its place in the column and draws nothing, and the image
+  is never on screen twice. The watcher reports the file a moment later as usual; the card is already
+  there, so `insert` ignores it, and with `annotateOnCapture` on that same report flies the new card
+  into the annotator. Only the choreography is new: the composing, the file, and the copy are
+  unchanged, and with the stack closed (a `shotnote://stitch` from a script) the toast is still the
+  whole of it.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor.
 - The panel widens to the left while cards are selected, to hold the selection strip
-  (`StackLayout.selectionStrip` places it, `panelSize(viewport:showsStrip:)` makes the room). Its
+  (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:)` makes the room). Its
   right edge never moves, so the cards stay where they are. Only the column carries the hair of
   alpha that catches clicks and scrolls; the strip's side of the panel stays clear, so a click
   there still reaches the window underneath.

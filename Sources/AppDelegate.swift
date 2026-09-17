@@ -186,7 +186,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         do { try png.write(to: out) } catch { Commands.error("stitch", .writeFailed, "\(out.path): \(error.localizedDescription)"); return }
         Clipboard.copyFiles([out])
         Commands.ok("stitch", "\(out.path) from \(shots.count) images, \(png.count) bytes, copied")
-        thumbnail.showFeedback("Stitched \(shots.count) images, copied")
+        // The cards conjoin into the new one when the stack is showing them; otherwise say so.
+        if !thumbnail.stitched(shots, into: out) { thumbnail.showFeedback("Stitched \(shots.count) images, copied") }
     }
 
     // MARK: Drafts
