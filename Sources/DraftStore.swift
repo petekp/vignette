@@ -50,6 +50,12 @@ final class DraftStore {
         return try? Data(contentsOf: previewURL(for: key))
     }
 
+    /// Drafts with no preview file. Caches is the system's to clear, and without the preview the
+    /// card shows the plain screenshot with no sign of the annotations.
+    func keysWithoutPreview() -> [String] {
+        keys.filter { !FileManager.default.fileExists(atPath: previewURL(for: $0).path) }.sorted()
+    }
+
     /// Removes the snapshot and preview for each key. Keys without a draft are ignored.
     func forget(_ removed: some Sequence<String>) {
         for key in removed {

@@ -102,8 +102,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    Log grammar (`Log.swift`): one event per line, `HH:mm:ss.SSS [tag] …`, details as
    `key=value` pairs, never an embedded newline (the logger flattens them); the launch line ends
    with `date=YYYY-MM-DD`; at 5 MB the file rotates to `Shotnote.log.1`, replacing the previous
-   one. Draft events: `[draft] saved|parked|built|forgot|swept <file>` and `[drafts] <n>` after every
-   change to the set. `[stack] shown cards=… files=… shown=…ms decoding=…` counts the
+   one. Draft events: `[draft] saved|parked|built|preview|forgot|swept <file>` and `[drafts] <n>`
+   after every change to the set. `[stack] shown cards=… files=… shown=…ms decoding=…` counts the
    watch folder from the watcher's index.
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
@@ -246,14 +246,17 @@ the same driven sequence; a single run varies.
   (`AnnotationController.hide(then:)`). Drafts survive relaunches and a web content process
   restart: the terminate delegate reloads the page and the next `ready` re-sends the image
   with its stored draft. A draft for a file that no longer exists is dropped when it arrives,
-  and a launch-time sweep removes the rest. The snapshot's asset `src` is the file path; the
+  and a launch-time sweep removes the rest. A draft whose preview is gone (Caches is the
+  system's to clear) is rendered again through `export` once the page reports `ready` and
+  nothing owns its canvas, one `[draft] preview <file>` line each; normally there is none, and
+  a refusal leaves the rest for the next launch. The snapshot's asset `src` is the file path; the
   page's asset store resolves it to the served URL, so a stored draft never contains a token.
   Loading a snapshot inside `editor.run(fn, { history: 'ignore' })` keeps it out of undo history.
 - A draft can arrive without anyone opening the editor: `add?marks=` sends the image and the marks
   to `window.shotnote.build`, which puts them on the page's canvas, takes the snapshot and a
   preview, and puts the canvas back the way it was (like `export`, and inside the same
   `history: 'ignore'`). That borrows the canvas for the length of one rendering, so a build is
-  refused while anything else owns it (`AnnotationController.buildRefusal`): the annotator owns it
+  refused while anything else owns it (`AnnotationController.canvasRefusal`): the annotator owns it
   from `prepare`, half a second before its window appears, until `park` answers, and an export owns
   it for as long as Copy Annotated runs. A refusal is one `page-not-ready` line and no file copied.
   `load`, `reset`, `park`, `export`, and `build` run one at a time on the page, in the order the
