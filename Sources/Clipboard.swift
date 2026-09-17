@@ -44,10 +44,24 @@ enum Clipboard {
         }.joined(separator: "\n")
     }
 
+    /// The PNG goes on now; the TIFF is a decode and re-encode of the whole image, so it is
+    /// rendered only when a paste target asks for it instead of on every copy.
     private static func imageItem(png: Data) -> NSPasteboardItem {
         let item = NSPasteboardItem()
         item.setData(png, forType: .png)
-        if let tiff = NSImage(data: png)?.tiffRepresentation { item.setData(tiff, forType: .tiff) }
+        item.setDataProvider(TIFFProvider(png: png), forTypes: [.tiff])
         return item
+    }
+}
+
+/// Renders the TIFF of a copied PNG when a paste target asks for it. The item retains it until the
+/// pasteboard changes. Immutable, so the callback may arrive on any thread.
+private final class TIFFProvider: NSObject, NSPasteboardItemDataProvider, @unchecked Sendable {
+    private let png: Data
+    init(png: Data) { self.png = png }
+
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
+        guard type == .tiff, let tiff = NSImage(data: png)?.tiffRepresentation else { return }
+        item.setData(tiff, forType: .tiff)
     }
 }

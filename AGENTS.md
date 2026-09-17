@@ -148,7 +148,8 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   the newest screenshot never list the folder on the main thread (measured: a per-file attribute
   read cost 150 ms on 1300 files at every open). Every stack open asks for a rescan, which is how
   the index catches a file changed in place. While the folder cannot be watched (a volume not
-  mounted yet) the reads list it directly and each rescan retries the watch.
+  mounted yet) the reads list it directly and each rescan retries the watch. Copying puts the PNG
+  on the pasteboard and promises the TIFF, which is rendered only when a paste target asks.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor.
