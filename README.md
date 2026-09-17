@@ -105,9 +105,9 @@ and closing it hands focus back to the app you came from.
   thumbnail is a preview PNG in `~/Library/Caches`; if macOS clears the folder, the next launch
   renders it again from the draft. Reopen the card and the annotations are back either way;
   Copy Annotated renders them without opening the editor.
-- Reopening a card that already has annotations starts on the selection tool with nothing
-  selected, so the first click picks up a mark instead of drawing another one. A fresh image
-  starts on the circle tool.
+- Reopening a card that already has annotations starts on the selection tool with the mark you
+  drew last already picked up, so a color, a drag, or Delete acts on it without a click first.
+  A fresh image starts on the circle tool.
 - A card with a purple badge was pushed in by an agent (`add?agent=<name>`), not captured. Hover
   it to see which one. The name is stored on the file itself, so it survives a rename.
 
