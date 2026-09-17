@@ -3,11 +3,13 @@ import AppKit
 /// Animates one value from wherever it is now, so a new target mid-flight retargets instead of
 /// jumping. Used for window alpha, which NSAnimationContext restarts from the model value.
 /// The "spring" curve also keeps its velocity across retargets, so a reversal mid-flight slows
-/// and turns instead of restarting from rest.
+/// and turns instead of restarting from rest. Ticks come from the screen's display link, so a
+/// 120 Hz display gets a step per refresh; a fixed timer would step at 60 Hz on it.
 @MainActor
-final class Tween {
+final class Tween: NSObject {
     private(set) var value: CGFloat
-    private var timer: Timer?
+    private var link: CADisplayLink?
+    private var timer: Timer?   // only when no screen can provide a display link
     private var start: (time: CFTimeInterval, value: CGFloat, target: CGFloat, duration: Double, curve: String)?
     /// A critically damped spring: no overshoot, and `omega` sized so it settles within the duration.
     private var spring: (target: CGFloat, omega: Double, lastTick: CFTimeInterval)?
@@ -20,8 +22,30 @@ final class Tween {
         self.apply = apply
     }
 
+    private func startTicking() {
+        stopTicking()
+        if let screen = NSScreen.main {
+            let link = screen.displayLink(target: self, selector: #selector(linkTick))
+            link.add(to: .main, forMode: .common)
+            self.link = link
+        } else {
+            // Runs on the main run loop (added to it with .common below).
+            timer = Timer.scheduledTimer(withTimeInterval: 1 / 60, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.tick() }
+            }
+            RunLoop.main.add(timer!, forMode: .common)
+        }
+    }
+
+    private func stopTicking() {
+        link?.invalidate(); link = nil
+        timer?.invalidate(); timer = nil
+    }
+
+    @objc private func linkTick(_ link: CADisplayLink) { tick() }
+
     func animate(to target: CGFloat, duration: Double, curve: String = "easeOut", completion: (() -> Void)? = nil) {
-        timer?.invalidate()
+        stopTicking()
         self.completion = completion
         guard duration > 0, target != value else { set(target); completion?(); return }
         if curve == "spring" {
@@ -33,15 +57,11 @@ final class Tween {
             spring = nil
             velocity = 0
         }
-        // Runs on the main run loop (added to it with .common below).
-        timer = Timer.scheduledTimer(withTimeInterval: 1 / 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.tick() }
-        }
-        RunLoop.main.add(timer!, forMode: .common)
+        startTicking()
     }
 
     func set(_ target: CGFloat) {
-        timer?.invalidate(); timer = nil; start = nil; spring = nil
+        stopTicking(); start = nil; spring = nil
         velocity = 0
         value = target
         apply(target)
@@ -54,7 +74,7 @@ final class Tween {
         value = s.value + (s.target - s.value) * Tween.ease(t, s.curve)
         apply(value)
         if t >= 1 {
-            timer?.invalidate(); timer = nil; start = nil
+            stopTicking(); start = nil
             let done = completion; completion = nil
             done?()
         }
@@ -73,7 +93,7 @@ final class Tween {
         if settled { value = sp.target; velocity = 0 }
         apply(value)
         if settled {
-            timer?.invalidate(); timer = nil; spring = nil
+            stopTicking(); spring = nil
             let done = completion; completion = nil
             done?()
         }

@@ -95,6 +95,18 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
 Delete test files afterwards; the watch folder is the user's real screenshot folder.
 
+Measuring a stutter: launch the app under Instruments and drive it as above.
+`xcrun xctrace record --template 'Time Profiler' --instrument 'Core Animation Commits' --env
+SHOTNOTE_SETTINGS=<scratch> --time-limit 75s --output perf.trace --launch -- <app>` (a
+`--launch` also replaces the running instance; the Animation Hitches template attached to a
+running process records no commits or samples on macOS). `xctrace export --xpath
+'/trace-toc/run[@number="1"]/data/table[@schema="coreanimation-commit-interval"]'` gives every
+commit with its duration; a commit over 8.3 ms dropped a frame at 120 Hz. `time-profile` samples
+on the main thread that run without a gap are a stall; the frames from the `Shotnote` binary name
+the code. Trace time zero is about `[app] launched` minus the first sample inside
+`applicationDidFinishLaunching`, which lines the trace up with the log. Compare before and after on
+the same driven sequence; a single run varies.
+
 ## Rules that are not obvious from the code
 
 - tldraw is licensed, not open source. Without a license key the SDK treats any `http:` origin
