@@ -598,6 +598,93 @@ Display, and the screen-edge give-way on a second display.
   activity that was not mine; I re-ran.
 - Fixtures were only ever in `integration2-scratch/shots`, which is empty again.
 
+### Review
+
+An adversarial review of `d87059a` found one bug on screen and seven smaller things. All eight are
+fixed in `607a4ae`, and `./scripts/build.sh --test` passes at that tip.
+
+**The bug: a card flew back from the wrong place.** With the annotator zoomed, closing it ordered
+the window out at its zoomed rect and started the card's flight from the fitted rect: a 200 pt step
+in one frame, on every Esc, Done and dismiss from a zoomed image. It also swapped the picture at
+that instant, because a zoomed window shows a crop of the screenshot and the flight image is the
+whole of it.
+
+`hide` now springs the level back to 1 first — 0.2 s, motion-scaled — and the window comes down
+once that has arrived, so the frame the flight starts at is the frame the window was last at. A
+0.3 s deadline still brings the window down if a zoom arriving mid-fit takes the spring's
+completion with it.
+
+**The seven others, in the same commit.**
+
+- `hideWindows` stops the zoom spring and drops the pending relayout and cover. Measured before:
+  after a cancel mid-gesture the spring kept ticking on a hidden window, `applyZoom` kept calling
+  the page's camera after `reset` had emptied it, and the at-rest relayout ran a snapshot, a cover
+  and a web-view resize on a hidden container.
+- The relayout's snapshot completion checks that the spring is still at rest. The snapshot is a
+  round trip to the web process, and a momentum tail resuming while it is out would have laid the
+  page out under a moving frame.
+- Camera calls go out one at a time with the latest value waiting, instead of one per display-link
+  tick into a channel that answers slower than 120 Hz.
+- `StackLayout.inset` is now at least the card's shadow plus a 7 pt fade. Before, a `cardShadowY`
+  and `cardShadowRadius` adding up to more than `ui.panelInset` left no room for the fade and the
+  column cut the shadow off with a hard edge. The panel grows around the column instead, so the
+  cards do not move. On Pete's numbers nothing changes; on the shipped defaults the inset goes from
+  19 to 21. A test covers it.
+- A flight's generation is monotonic. It used to be per id, so a timer from a removed flight could
+  snap the flight that took its id next.
+- `fly`'s `landed` callback and `AnnotationController.frameDidChange` are gone. Neither had a
+  caller, and both were seams for the single-owner shadow that was weighed and not built.
+- The AGENTS.md memory bullet now names the cover snapshot: one screen-sized bitmap at a time,
+  about 59 MB at 2x on a 5K display, freed when the page reports it has painted or after two
+  seconds.
+
+**Checked live**, my own build on my own scratch settings, five fixtures, nothing else driven.
+
+- *The fly-back.* Opened from the stack at the fitted `[165, 103, 1182, 689]`, zoomed by a wheel
+  stream to level 2.23 at `[16, 38, 1496, 872]`, then `cancel`. A 60 fps recording of a
+  300 x 100 pt strip across the window's left edge, read back frame by frame to sub-pixel
+  precision: the edge stands at 15.6 pt for ten frames, then walks 59.7, 95.7, 119.6, 141.6,
+  150.1, 153.1, 157.6, 160.1, 162.6, 163.1, 163.6, 164.2, 164.1, 164.6, 164.6 — a decelerating
+  spring whose last steps are under 0.6 pt — and lands on the fitted edge at 165. The flight leaves
+  from there. Before the fix that whole walk was a single frame. The log times it: `close ->
+  parking` at 16:06:34.888, `parked -> idle` at 16:06:35.224, 0.336 s apart, which is the park
+  round trip plus the fit.
+- *Nothing left running.* Same setup, `cancel` 0.03 s after the wheel stream stopped, with the
+  spring still mid-flight at level 7.07 and the window at the screen's own rect. 0.2 s later the
+  level reads 1.0006 at `[165, 103, 1183, 689]`; the window goes 0.39 s after the cancel, at
+  exactly `[165, 103, 1182, 689]`. From there the level, the frame and the page's
+  `innerWidth`/`innerHeight` are frozen for as long as they were polled — eight readings over
+  1.6 s — and the log has no line of any kind after `[focus] annotator closed`, no
+  `[web] error call failed` among them.
+- *One edge, recorded.* If zoom input keeps arriving after the close, each message takes the fit
+  spring's completion with it and the 0.3 s deadline brings the window down from wherever the frame
+  is: measured, the level stayed at 6.64 and the window left at the screen's rect, 0.53 s after the
+  cancel. A synthetic stream can do that; a hand on Esc cannot, and neither can Done.
+
+**Recorded, not changed.** Six things the review named and asked to leave alone.
+
+- `ui.motion: 0` lays the page out once per zoom message, because every step arrives at once. That
+  is the scripting path. A person with Reduce Motion on moves the level in far fewer steps.
+- The annotator takes key focus about 0.14 s later than it did before Round 3, because `show` runs
+  on `arrived` instead of on the old timer. Nothing is typed into the page in that window.
+- The column's mask fades over 19 pt at the top and 7 pt at the bottom. The asymmetry is the card
+  shadow's room; it is numbers, not a second rule.
+- A real trackpad pinch, a two-finger smart zoom, and the Studio Display above the primary screen
+  are all unverified. Every zoom measured here was a synthetic wheel stream or a key, and nothing
+  was driven on the second display. So are the hover buttons under a card since
+  `contentShape(Rectangle())` was added: the one capture of them in the smoke round was never
+  confirmed by a `[state]` line saying the card was hovered.
+- `page.inner` at a zoomed rest is one point smaller than the frame — `[1495, 871]` inside
+  `[16, 38, 1496, 872]` — which is the layout rounding that the layer transform makes up. It is not
+  drift.
+- After the window hides, the page keeps the size it was last laid out at, so a state dump taken
+  then can show a `page.inner` that has nothing to do with the fitted frame. The next `prepare`
+  lays it out for the image it is about to show.
+
+**What is left.** The Round 3 open questions above are unchanged. `landed` and `frameDidChange`
+are now gone rather than unused, so a single-owner shadow, if it is ever built, starts from
+nothing.
+
 ### How to take it
 
 Unchanged from section 3 above: `git merge todo2/integration` on `foundation` in your own checkout,
