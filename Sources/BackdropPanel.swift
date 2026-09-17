@@ -87,7 +87,11 @@ final class BackdropPanel: NSPanel {
             // Radii grow with a power curve; higher power keeps the left edge sharper.
             let t = CGFloat(i + 1) / CGFloat(n)
             band.radius = CGFloat(ui.backdropBlurRadius) * pow(t, CGFloat(ui.backdropRampPower))
-            band.maskImage = BackdropPanel.bandMask(width: width, band: i, of: n)
+            let key = "\(width)/\(i)/\(n)"
+            if band.maskKey != key {
+                band.maskKey = key
+                band.maskImage = BackdropPanel.bandMask(width: width, band: i, of: n)
+            }
         }
         tint.frame = bounds
         tintLayer.colors = [NSColor.black.withAlphaComponent(0).cgColor,
@@ -107,11 +111,22 @@ final class BackdropPanel: NSPanel {
     /// Alpha mask for one band: fades in over the previous band and out over the next, so adjacent
     /// bands cross-fade. The first band fades in from nothing at the strip's left edge; the last
     /// stays opaque to the screen edge.
+    /// One pixel tall and stretched: a drawing-handler image is shaded at the strip's full height on
+    /// every show (measured: 12 ms per open); a bitmap is a blit. Cached, since the width rarely changes.
     private static func bandMask(width: CGFloat, band i: Int, of n: Int) -> NSImage {
+        let key = "\(width)/\(i)/\(n)"
+        if let hit = masks[key] { return hit }
         let step = width / CGFloat(n)
         let start = step * CGFloat(i)
         let end = step * CGFloat(i + 1)
-        let image = NSImage(size: NSSize(width: width, height: 1), flipped: false) { rect in
+        let pixels = max(1, Int((width * 2).rounded()))
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: 1, bitsPerSample: 8, samplesPerPixel: 4,
+                                   hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = NSSize(width: width, height: 1)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        do {
+            let rect = NSRect(x: 0, y: 0, width: width, height: 1)
             var stops: [(NSColor, CGFloat)] = []
             let clear = NSColor.black.withAlphaComponent(0)
             let solid = NSColor.black
@@ -130,11 +145,16 @@ final class BackdropPanel: NSPanel {
             }
             let gradient = NSGradient(colors: stops.map(\.0), atLocations: stops.map(\.1), colorSpace: .deviceRGB)!
             gradient.draw(in: rect, angle: 0)
-            return true
         }
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
         image.resizingMode = .stretch
+        masks[key] = image
         return image
     }
+
+    private static var masks: [String: NSImage] = [:]
 }
 
 /// NSVisualEffectView with a chosen blur radius and no material tint. The radius lives on the
@@ -143,6 +163,7 @@ final class BackdropPanel: NSPanel {
 @MainActor
 final class TunedEffectView: NSVisualEffectView {
     var radius: CGFloat = 20 { didSet { retune() } }
+    var maskKey = ""   // which band mask is set, so `refresh` skips an unchanged one
 
     init() {
         super.init(frame: .zero)

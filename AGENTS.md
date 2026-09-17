@@ -136,6 +136,8 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15 (verified: uniform blur), and a bare CABackdropLayer renders black. Do not retry.
+  The band masks are one-pixel bitmaps stretched to the strip and cached by width: a drawing-handler
+  image is shaded at the strip's full height on every show (measured: 12 ms per open).
 - The status item has an autosave name and a seeded preferred position. Without it, a crowded
   menu bar on a notch Mac puts the new icon under the notch and it never appears.
 - Files named `*-annotated.png` are outputs and are ignored by the watcher. `Stitch *.png`
@@ -204,7 +206,10 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   (96 MB of RGBA), least recently used out first. Card previews never exceed
   `Config.previewMaxPixel` on the longest side: park previews are rendered at that size by the
   page, and the full-resolution Done rendering is downsampled before it reaches a card or the
-  disk. Screen-size flight decodes are dropped whenever the stack hides.
+  disk. Screen-size flight decodes are dropped whenever the stack hides. Every image that reaches
+  a card is decoded before it gets there (`Thumbnailer`, draft previews through
+  `Thumbnailer.decode`): an `NSImage(data:)` is decoded by Core Animation at its first commit, on
+  the main thread, which cost the stack's first paint 40 ms for ten previews.
 - Bumping tldraw (`web/package.json` pins the version; `LICENSE-tldraw.md` must be the matching
   license text) is a checklist, and `Tests/RenderTests.swift` is the gate:
   1. License: read the new version's LICENSE and its `LicenseProvider`; confirm an unlicensed

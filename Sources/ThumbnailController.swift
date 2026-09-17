@@ -264,12 +264,15 @@ final class ThumbnailController {
         }
     }
 
+    /// The preview lands a moment later, decoded off the main thread; a draft emptied meanwhile wins.
     func setPreview(_ path: String, _ png: Data) {
-        guard let image = NSImage(data: png) else { return }
-        previews[path] = image
-        if let card = model.cards.first(where: { $0.shot.url.path == path }) {
-            replaceImage(of: card, with: image)
-            flights.setImage(id: card.id, image)
+        Thumbnailer.decode(png: png) { [weak self] image in
+            guard let self, let image, self.model.drafts.contains(path) else { return }
+            self.previews[path] = image
+            if let card = self.model.cards.first(where: { $0.shot.url.path == path }) {
+                self.replaceImage(of: card, with: image)
+                self.flights.setImage(id: card.id, image)
+            }
         }
     }
 

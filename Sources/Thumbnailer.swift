@@ -17,6 +17,8 @@ enum Thumbnailer: @unchecked Sendable {
     /// Keys from least to most recently used.
     nonisolated(unsafe) private static var order: [String] = []
     nonisolated(unsafe) private static var bytes = 0
+    /// Point sizes by path, valid while the file's date matches; reading a header is a file open per card.
+    nonisolated(unsafe) private static var sizes: [String: (modified: Date, size: NSSize)] = [:]
     /// Decoded pixels the cache may hold, as RGBA bytes. About 30 cards at Retina card size plus a few
     /// screen-size flight decodes fit; beyond that the oldest go.
     nonisolated(unsafe) private static var budget = 96 << 20
@@ -33,6 +35,16 @@ enum Thumbnailer: @unchecked Sendable {
     /// The screenshot's size in points, from the file header only: pixels scaled by the file's DPI,
     /// which is what `NSImage.size` reports for a Retina capture.
     static func pointSize(of url: URL) -> NSSize? {
+        let modified = modified(url)
+        lock.lock()
+        if let hit = sizes[url.path], hit.modified == modified { lock.unlock(); return hit.size }
+        lock.unlock()
+        guard let size = readPointSize(of: url) else { return nil }
+        if let modified { lock.lock(); sizes[url.path] = (modified, size); lock.unlock() }
+        return size
+    }
+
+    private static func readPointSize(of url: URL) -> NSSize? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let w = props[kCGImagePropertyPixelWidth] as? Double, let h = props[kCGImagePropertyPixelHeight] as? Double,
@@ -49,6 +61,26 @@ enum Thumbnailer: @unchecked Sendable {
               let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int,
               w > 0, h > 0 else { return nil }
         return (w, h)
+    }
+
+    /// A fully decoded image from PNG bytes, sized in points like `pointSize`. `NSImage(data:)` would
+    /// defer the decode to Core Animation's first commit of the layer, on the main thread.
+    static func decode(png: Data) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(png as CFData, nil),
+              let cg = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { return nil }
+        let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
+        let dpiX = props[kCGImagePropertyDPIWidth] as? Double ?? 72
+        let dpiY = props[kCGImagePropertyDPIHeight] as? Double ?? 72
+        let size = NSSize(width: Double(cg.width) * 72 / (dpiX > 0 ? dpiX : 72), height: Double(cg.height) * 72 / (dpiY > 0 ? dpiY : 72))
+        return NSImage(cgImage: cg, size: size)
+    }
+
+    /// `decode(png:)` off the main thread, handed back on it.
+    static func decode(png: Data, completion: @escaping @MainActor @Sendable (NSImage?) -> Void) {
+        queue.async {
+            let image = decode(png: png)
+            DispatchQueue.main.async { MainActor.assumeIsolated { completion(image) } }
+        }
     }
 
     /// A cached decode of at least `maxPixel` on the longest side, if the file has not changed.
