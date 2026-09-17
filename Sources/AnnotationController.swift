@@ -191,6 +191,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let cursor = cursor.map(Zoom.clamped) ?? Zoom.center
         guard let factor else {
             setCanvasZoom(1, at: nil)
+            // Fitting ends at the middle, since at scale 1 the frame is the fitted one whatever the
+            // anchor. Blend there from the anchor the window has now: a hard reset would step the
+            // frame sideways on the next tick, by the width the old anchor was holding.
+            zoomAim = ZoomAim(was: zoomAnchor, now: Zoom.center, from: zoomScale, to: 1)
             windowTarget = 1
             zoom.animate(to: 1, duration: motionScaled(0.3), curve: "spring")
             return
@@ -490,7 +494,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             guard !answered else { return }
             answered = true
             self?.pendingExport = nil
-            completion(pngs, error)
+            // The page's own text can name the URL it failed on, and the log is readable by any
+            // local process, so the token comes out of it before anyone writes it down.
+            completion(pngs, error.map { self?.server?.redacted($0) ?? $0 })
         }
         pendingExport = finish
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) { finish([:], "timeout after \(Int(Self.exportTimeout)) s") }
@@ -520,7 +526,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     var canvasRefusal: String? {
         if webView == nil || !pageReady { return "the editor page is not ready" }
         if holdsCanvas { return "an image is in the annotator" }
-        if pendingExport != nil { return "Copy Annotated is still rendering" }
+        // Copy Annotated and a launch-time preview both run through `exportDrafts`, so this says
+        // what is true of either rather than naming one of them.
+        if pendingExport != nil { return "the page is rendering" }
         if pendingBuild != nil { return "another push is still building its marks" }
         return nil
     }

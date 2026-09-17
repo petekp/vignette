@@ -139,7 +139,6 @@ private struct CardView: View {
                 }
                     .frame(width: card.size.width, height: card.size.height)
                     .clipShape(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous).stroke(ringColor, lineWidth: ringWidth))
                     .shadow(color: .black.opacity(ui.cardShadowOpacity), radius: ui.cardShadowRadius, y: ui.cardShadowY)
                     .overlay(
                         // Drag out as files; a plain click goes to the model (annotate, or toggle in selection mode).
@@ -161,6 +160,14 @@ private struct CardView: View {
                     .fill(.black.opacity(ui.hoverDim))
                     .allowsHitTesting(false)
                     .transition(.opacity)
+            }
+        }
+        // After the dim, so a selected or focused card keeps its ring while the dim is up.
+        .overlay {
+            if !isOut && !isForming {
+                RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
+                    .stroke(ringColor, lineWidth: ringWidth)
+                    .allowsHitTesting(false)
             }
         }
         // Copy in the bottom-left corner with its name, delete in the bottom-right as an icon; a

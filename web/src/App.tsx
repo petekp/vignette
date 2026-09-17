@@ -224,7 +224,9 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
       loadImageQuietly(editor, p, scaleRef)
     } catch (err) {
       quiet = false
-      postToNative({ type: 'log', message: 'load failed: ' + (err instanceof Error ? err.stack ?? err.message : String(err)) })
+      // The message only. A WebKit stack names the bundle's served URL, and every served URL
+      // starts with the per-launch token, which must never reach the log.
+      postToNative({ type: 'log', message: 'load failed: ' + (err instanceof Error ? err.message : String(err)) })
     }
   })
 }

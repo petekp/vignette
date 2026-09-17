@@ -125,7 +125,11 @@ final class TransitionLayer {
         DispatchQueue.main.asyncAfter(deadline: .now() + ui.expandDuration * 1.15) { [weak self] in
             guard let self else { return }
             for piece in pieces { self.end(id: piece.id) }
-            self.dropShadow(id: result.id)   // the card behind it draws the shadow from here on
+            // The card behind it draws the shadow from here on. Not when the flight has been aimed
+            // somewhere else since (a new capture flying the stitched card into the annotator):
+            // that one is still in the air and needs its own shadow.
+            if let i = self.model.flights.firstIndex(where: { $0.id == result.id }),
+               self.model.flights[i].generation == resting.generation { self.dropShadow(id: result.id) }
             completion()
             // The card view draws on SwiftUI's next commit; lift the finished image after it.
             DispatchQueue.main.async {

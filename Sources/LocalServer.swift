@@ -133,6 +133,9 @@ final class LocalServer {
     }
 
     /// The URL for a log line: the token is replaced, since the log is readable by any local process.
+    /// The same for a line the page sent back: an error message can quote the URL it failed on.
+    func redacted(_ text: String) -> String { text.replacingOccurrences(of: token, with: "token") }
+
     static func redacted(_ url: URL) -> String {
         var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
         var parts = url.pathComponents.filter { $0 != "/" }

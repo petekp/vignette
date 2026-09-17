@@ -364,6 +364,7 @@ final class ThumbnailController: NSObject {
         model.forming.insert(result.id)
         model.cards.removeAll { ids.contains($0.id) }
         model.clearSelection()
+        endSweep()   // the pieces leave the column and the new card takes index 0: the anchor moved
         if let focused = model.focused, ids.contains(focused) { model.focused = nil }
         model.cards.insert(result, at: 0)
         withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
