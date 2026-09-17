@@ -83,8 +83,9 @@ and closing it hands focus back to the app you came from.
 
 - Hover a card for a selection circle. Click it, or drag from it down the column, to select.
   In selection mode clicking a card toggles it.
-- A selected circle carries that card's number in the selection. Counting starts at the oldest
-  card, which is the order every action receives them.
+- A selected circle carries the card's place in the selection, counting in the order you picked
+  them. That is the order every action receives them; picking a card again puts it last. Cmd+A
+  has nobody's order to follow, so it takes the column's: oldest first.
 - The selected cards get a control strip to their left: copy, copy annotated, stitch, delete.
   It stays centered between the topmost and the bottommost selected card, and follows the selection.
 - Drag a card out to drop it as a file on a chat window, Finder, or a terminal. A selected card
@@ -95,7 +96,8 @@ and closing it hands focus back to the app you came from.
   originals and copied. Each badge is the number the card's circle showed. The selected cards fly
   together into the new card, which takes their place at the bottom of the stack, or opens in the
   annotator when Annotate New Captures is on.
-- Arrows move focus, Shift extends, Space toggles, Cmd+A selects all, Return annotates,
+- Arrows move focus, Shift extends in the direction you travel (turning back drops the card it
+  added last), Space toggles, Cmd+A selects all, Return annotates the card you selected last,
   Cmd+Delete trashes, Esc clears then dismisses.
 - A card whose annotations you parked with Esc or a swap shows them in its thumbnail, as long as
   the preview beside the draft is still in `~/Library/Caches`. Reopen it and they are back either

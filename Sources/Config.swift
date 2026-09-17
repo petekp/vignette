@@ -10,7 +10,8 @@ enum Config {
 
     /// Everything you can do to screenshots. Each action is a hover button on a card, an entry in the
     /// selection strip, a keyboard shortcut inside the recent stack, and a `shotnote://<id>` URL, according
-    /// to its `placement` and `key`. Actions always receive a list, oldest first.
+    /// to its `placement` and `key`. Actions always receive a list: the cards in the order they were
+    /// selected when the stack runs them, and the files in the order a URL names them.
     static let actions: [ShotAction] = [
         ShotAction(id: "copy", symbol: "doc.on.doc", label: "Copy", key: .init("c", [.command]),
                    placement: .everywhere) { shots, app in app.copyToClipboard(shots) },
@@ -57,7 +58,8 @@ struct ShotAction: Sendable {
 protocol Actions: AnyObject {
     func copyToClipboard(_ shots: [Screenshot])
     func copyPaths(_ shots: [Screenshot])
-    /// Opens the newest of `shots`; the annotator holds one image.
+    /// Opens the last of `shots`: the card selected last, or the last file a URL named. The
+    /// annotator holds one image.
     func annotate(_ shots: [Screenshot])
     /// Exports each screenshot's draft (or uses the file as is when it has none) and copies the set.
     func copyAnnotated(_ shots: [Screenshot])

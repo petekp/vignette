@@ -324,8 +324,9 @@ the same driven sequence; a single run varies.
 - An action: add a `ShotAction` to `Config.actions` and a method on the `Actions` protocol. Its
   `placement` decides whether it is a hover button on a card, a button in the selection strip, or
   both; `key` gives it a shortcut inside the recent stack. It is a `shotnote://<id>` URL either
-  way. Actions always receive a list of screenshots, oldest first; `annotate` opens the newest of
-  them, since the annotator holds one image, and says so in its `ok` line.
+  way. Actions always receive a list of screenshots: in the order the cards were selected when the
+  stack runs them, and in the order a URL names its `file=` parameters otherwise. `annotate` opens
+  the last of them, since the annotator holds one image, and says so in its `ok` line.
 - An editor tool or color: edit `web/src/config.ts`. A tool needs an SF Symbol name for the
   native toolbar; a color needs the hex the swatch shows.
 - A new message across the bridge: add it to both bridge files, then handle it in

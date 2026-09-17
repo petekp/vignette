@@ -26,13 +26,15 @@ final class StackModel: ObservableObject {
     @Published var pressedCard: UUID? = nil
     @Published var overControl = false         // the mouse is on a card's button or circle, where a click does not draw
     @Published var copied: Set<UUID> = []      // cards showing "Copied" over their image
-    @Published var selected: Set<UUID> = []
+    /// The selected cards, in the order they were selected. Every action, Stitch included, takes
+    /// them in this order, and a card's circle shows its place here.
+    @Published private(set) var selection: [UUID] = []
     @Published var focused: UUID? = nil        // keyboard focus ring
     @Published var isStack = false             // selection UI only exists in the recent stack
     @Published var scroll: CGFloat = 0         // how far the column is pulled down to show older cards
     @Published var viewport: CGFloat = 0       // visible height of the column
 
-    var inSelectionMode: Bool { !selected.isEmpty }
+    var inSelectionMode: Bool { !selection.isEmpty }
     /// The row under the column, shown only for a feedback toast.
     var showsBar: Bool { isStack && feedback != nil }
     var onAction: (ShotAction, [Card]) -> Void = { _, _ in }
@@ -41,16 +43,26 @@ final class StackModel: ObservableObject {
     var onClickImage: (Card) -> Void = { _ in }
     var onHover: (UUID?) -> Void = { _ in }
 
-    /// Cards for a bulk action, oldest first.
-    func selectedCards() -> [Card] { cards.filter { selected.contains($0.id) }.reversed() }
+    /// Cards for a bulk action, in the order they were selected.
+    func selectedCards() -> [Card] { selection.compactMap { id in cards.first { $0.id == id } } }
     /// Where the selected cards sit in the column; 0 is the newest, at the bottom.
-    func selectedIndices() -> [Int] { cards.indices.filter { selected.contains(cards[$0].id) } }
+    func selectedIndices() -> [Int] { cards.indices.filter { isSelected(cards[$0].id) } }
 
-    /// A selected card's place in `selectedCards()`, counting from 1: the oldest card is 1, which
-    /// is the order every action receives them and the badge `Stitch` draws on each one.
-    func selectionNumber(of id: UUID) -> Int? {
-        guard selected.contains(id), let index = cards.firstIndex(where: { $0.id == id }) else { return nil }
-        return cards[(index + 1)...].reduce(1) { $0 + (selected.contains($1.id) ? 1 : 0) }
+    /// A selected card's place in `selectedCards()`, counting from 1: the first card selected is 1,
+    /// which is the order every action receives them and the badge `Stitch` draws on each one.
+    func selectionNumber(of id: UUID) -> Int? { selection.firstIndex(of: id).map { $0 + 1 } }
+
+    func isSelected(_ id: UUID) -> Bool { selection.contains(id) }
+    /// Puts the cards that are not selected yet at the end of the selection, in the order given.
+    func select(_ ids: [UUID]) { setSelection(selection + ids) }
+    func deselect(_ ids: [UUID]) { setSelection(selection.filter { !ids.contains($0) }) }
+    /// A card selected again goes to the end: its number is where it was picked this time.
+    func toggleSelection(of id: UUID) { isSelected(id) ? deselect([id]) : select([id]) }
+    func clearSelection() { setSelection([]) }
+    /// Replaces the selection, keeping the given order. A card named twice keeps its first place.
+    func setSelection(_ ids: [UUID]) {
+        var seen = Set<UUID>()
+        selection = ids.filter { seen.insert($0).inserted }
     }
 }
 
@@ -85,7 +97,7 @@ final class ThumbnailController {
     private var stitchGeneration = 0
     private var sweepAnchor: Int?
     private var sweepSelecting = true
-    private var sweepBefore: Set<UUID> = []
+    private var sweepBefore: [UUID] = []
     /// The one owner of the annotation session. Only `send` writes it; see AnnotatorTransition.
     private var transition = AnnotatorTransition()
     /// The card the session is about, kept here because a lone thumbnail leaves the model once the annotator shows.
@@ -307,7 +319,7 @@ final class ThumbnailController {
         for url in urls { send(.remove(url.path)) }
         for card in model.cards where urls.contains(card.shot.url) { flights.end(id: card.id) }
         model.cards.removeAll { urls.contains($0.shot.url) }
-        model.selected = model.selected.filter { id in model.cards.contains { $0.id == id } }
+        model.setSelection(model.selection.filter { id in model.cards.contains { $0.id == id } })
         if model.cards.isEmpty { dismiss(); return }
         relayout()
     }
@@ -343,7 +355,7 @@ final class ThumbnailController {
         model.forming.formUnion(ids)
         model.forming.insert(result.id)
         model.cards.removeAll { ids.contains($0.id) }
-        model.selected = []
+        model.clearSelection()
         if let focused = model.focused, ids.contains(focused) { model.focused = nil }
         model.cards.insert(result, at: 0)
         withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
@@ -401,7 +413,7 @@ final class ThumbnailController {
             return
         }
         model.cards = []
-        model.selected = []
+        model.clearSelection()
         model.outCards = []
         model.forming = []
         model.feedback = text
@@ -438,7 +450,7 @@ final class ThumbnailController {
             guard let self, self.dismissGeneration == gen, !self.visible else { return }
             self.panel.orderOut(nil)
             self.model.cards = []
-            self.model.selected = []
+            self.model.clearSelection()
             self.model.offscreen = []
             self.model.outCards = []
             self.model.forming = []
@@ -469,7 +481,7 @@ final class ThumbnailController {
             sessionCard = card
             loadedKeys.remove(key)
             dismissTimer?.invalidate()
-            model.selected = []
+            model.clearSelection()
             releaseKeys()
             _ = model.outCards.insert(card.id)
             let target = targetFrame(for: card)
@@ -579,7 +591,7 @@ final class ThumbnailController {
     // MARK: Selection
 
     private func toggle(_ card: Card) {
-        if model.selected.contains(card.id) { model.selected.remove(card.id) } else { model.selected.insert(card.id) }
+        model.toggleSelection(of: card.id)
         model.focused = card.id
         relayout()
         revealFocused()
@@ -591,21 +603,18 @@ final class ThumbnailController {
         scrollToReveal(index)
     }
 
-    /// Dragging from a circle selects (or deselects) every card between the start and the cursor.
-    /// Backing up restores cards the drag passed over.
+    /// Dragging from a circle selects (or deselects) every card between the start and the cursor,
+    /// in the order the drag reached them. Backing up restores cards the drag passed over.
     private func sweep(toYFromTop y: CGFloat) {
         guard let index = layout.cardIndex(atYFromTop: y, cards: cardSizes) else { return }
         if sweepAnchor == nil {
             sweepAnchor = index
-            sweepSelecting = !model.selected.contains(model.cards[index].id)
-            sweepBefore = model.selected
+            sweepSelecting = !model.isSelected(model.cards[index].id)
+            sweepBefore = model.selection
         }
-        var next = sweepBefore
-        for i in min(sweepAnchor!, index)...max(sweepAnchor!, index) {
-            let id = model.cards[i].id
-            if sweepSelecting { next.insert(id) } else { next.remove(id) }
-        }
-        model.selected = next
+        let anchor = sweepAnchor!
+        let passed = stride(from: anchor, through: index, by: index < anchor ? -1 : 1).map { model.cards[$0].id }
+        model.setSelection(sweepSelecting ? sweepBefore + passed : sweepBefore.filter { !passed.contains($0) })
         model.focused = model.cards[index].id
         relayout()
     }
@@ -633,7 +642,7 @@ final class ThumbnailController {
         let isDelete = code == 51 || code == 117
 
         if code == 53 {
-            if model.inSelectionMode { model.selected = []; relayout() }
+            if model.inSelectionMode { model.clearSelection(); relayout() }
             else { dismiss() }
             return true
         }
@@ -646,12 +655,13 @@ final class ThumbnailController {
             return true
         }
         if chars == "a" && mods == [.command] {
-            model.selected = Set(model.cards.map(\.id))
+            // Nobody picked an order, so the column's own is the answer: oldest first, top to bottom.
+            model.setSelection(model.cards.reversed().map(\.id))
             relayout()
             return true
         }
         if chars == "a" && mods == [.command, .shift] {
-            model.selected = []
+            model.clearSelection()
             relayout()
             return true
         }
@@ -667,14 +677,23 @@ final class ThumbnailController {
         return false
     }
 
-    /// Down arrow moves toward the newest card (index 0), which sits at the bottom.
+    /// Down arrow moves toward the newest card (index 0), which sits at the bottom. Shift extends
+    /// the selection in the direction of travel; turning back takes off the card added last.
     private func moveFocus(toward delta: Int, extend: Bool) {
         guard !model.cards.isEmpty else { return }
         let current = model.cards.firstIndex { $0.id == model.focused }
         let next: Int
         if let current { next = max(0, min(model.cards.count - 1, current + delta)) } else { next = delta < 0 ? model.cards.count - 1 : 0 }
+        if extend {
+            let here = current.map { model.cards[$0].id }
+            if let here, model.selection.last == here, model.selection.dropLast().last == model.cards[next].id {
+                model.deselect([here])
+            } else {
+                model.select([here, model.cards[next].id].compactMap { $0 })
+            }
+            relayout()
+        }
         model.focused = model.cards[next].id
-        if extend { model.selected.insert(model.cards[next].id); if let current { model.selected.insert(model.cards[current].id) }; relayout() }
         scrollToReveal(next)
     }
 
@@ -756,7 +775,7 @@ final class ThumbnailController {
         flights.endAll()
         model.feedback = nil
         model.hoveredCard = nil
-        model.selected = []
+        model.clearSelection()
         model.outCards = []
         model.forming = []
         model.focused = nil
@@ -810,7 +829,7 @@ final class ThumbnailController {
         model.cards.insert(card, at: 0)
         if model.cards.count > Settings.shared.data.recentCount, let last = model.cards.last {
             model.cards.removeLast()
-            model.selected.remove(last.id)
+            model.deselect([last.id])
         }
         withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
         layoutPanel(shrinkLater: false, animated: true)
