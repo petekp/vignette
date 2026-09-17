@@ -52,13 +52,16 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
    folder, and `eval`, `show-editor`, `tweaks`, and `send` are refused, unless settings.json has
-   `"debug": true`. `add?file=` is the exception: it copies an image in from anywhere and the
-   watcher then reports it like a capture, minus the copy and annotate toggles (`&annotate` opens
-   the editor). `&agent=<name>` says which agent is pushing it: the name is recorded on the copy as
-   the `com.petepetrash.shotnote.agent` extended attribute (`Agent.swift`, `xattr -l` shows it) and
-   the card gets a purple badge. `&marks=<json file>` pushes the agent's own annotations with the
-   image (README has the format): the page turns them into a draft before the card appears, so the
-   human edits them like their own, and the command answers once that draft is stored.
+   `"debug": true`. `add` is the exception, and it takes two paths the folder rule does not cover.
+   `add?file=` copies an image in from anywhere and the watcher then reports it like a capture,
+   minus the copy and annotate toggles (`&annotate` opens the editor). `&agent=<name>` says which
+   agent is pushing it: the name is recorded on the copy as the `com.petepetrash.shotnote.agent`
+   extended attribute (`Agent.swift`, `xattr -l` shows it) and the card gets a purple badge.
+   `&marks=<json file>` pushes the agent's own annotations with the image (README has the format):
+   the page turns them into a draft before the card appears, so the human edits them like their own,
+   and the command answers once that draft is stored. That JSON file may also be anywhere; it is
+   read on the main thread, so it is capped at 256 KB, and an error line names the mark and the
+   field without quoting what the file said.
    `[annotate] loaded <ms>` reports when the page has the image; it is posted
    from a `requestAnimationFrame`, which WebKit pauses while the screen is locked or the
    window is hidden, so the line never arrives in that state.
@@ -163,8 +166,11 @@ the same driven sequence; a single run varies.
   first and the third, so `motion: 0` and Reduce Motion give a straight line. The bow leans up from a
   path that runs mostly sideways and left from one that runs mostly up or down, and the side belongs
   to the line rather than the direction of travel, so a flight that turns around mid-air keeps bowing
-  the same way. `TransitionLayer`'s `Bow` reads the card's animated centre, so the curve follows the
-  frame's own spring and blends with it on a retarget.
+  the same way. `TransitionLayer`'s `Bow` animates the card's centre and a blend between the
+  flight's old and new paths, so the curve follows the frame's own spring, and a flight aimed
+  somewhere else in mid-air crosses from one bow to the other instead of stepping sideways. The
+  blend settles at 1, where only the new path counts and its own end is flat, so the card still
+  lands exactly on its target.
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15 (verified: uniform blur), and a bare CABackdropLayer renders black. Do not retry.
@@ -244,7 +250,9 @@ the same driven sequence; a single run varies.
   to `window.shotnote.build`, which puts them on the page's canvas, takes the snapshot and a
   preview, and puts the canvas back the way it was (like `export`, and inside the same
   `history: 'ignore'`). That borrows the canvas for the length of one rendering, so a build is
-  refused while an image is open in the annotator (`AnnotationController.buildRefusal`), and
+  refused while anything else owns it (`AnnotationController.buildRefusal`): the annotator owns it
+  from `prepare`, half a second before its window appears, until `park` answers, and an export owns
+  it for as long as Copy Annotated runs. A refusal is one `page-not-ready` line and no file copied.
   `park`, `export`, and `build` run one at a time on the page: each takes its snapshot after an
   `await`, so another one's shapes must never land in between. The transition reducer knows
   nothing about a build, on purpose: nothing is shown, so no card, dim, or flight is involved.

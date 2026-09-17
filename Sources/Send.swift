@@ -47,11 +47,13 @@ enum Send {
     }
 
     /// The line the agent receives. One line: herdr submits it with Return, so an embedded newline
-    /// would send half a message. The path is quoted because screenshot names carry spaces.
+    /// would send half a message. The path is quoted because screenshot names carry spaces. The
+    /// fixed word comes first so the argument never starts with a dash: it is one argv element with
+    /// no shell involved, but herdr's own parser would read a leading `--wait` as an option.
     static func message(text: String?, file: URL) -> String {
         let words = (text ?? "").components(separatedBy: .newlines).joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
-        return "\(words.isEmpty ? "Screenshot:" : words) \"\(file.path)\""
+        return "Screenshot \"\(file.path)\"\(words.isEmpty ? "" : ": \(words)")"
     }
 
     /// herdr's own words as one short log detail; nil when it said nothing. Its errors are JSON on

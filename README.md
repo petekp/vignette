@@ -97,8 +97,9 @@ and closing it hands focus back to the app you came from.
   annotator when Annotate New Captures is on.
 - Arrows move focus, Shift extends, Space toggles, Cmd+A selects all, Return annotates,
   Cmd+Delete trashes, Esc clears then dismisses.
-- A card whose annotations you parked with Esc or a swap shows them in its thumbnail. Reopen it
-  and they are back; Copy Annotated renders them without opening the editor.
+- A card whose annotations you parked with Esc or a swap shows them in its thumbnail, as long as
+  the preview beside the draft is still in `~/Library/Caches`. Reopen it and they are back either
+  way; Copy Annotated renders them without opening the editor.
 - A card with a purple badge was pushed in by an agent (`add?agent=<name>`), not captured. Hover
   it to see which one. The name is stored on the file itself, so it survives a rename.
 
@@ -162,7 +163,8 @@ The types are `ellipse`, `rectangle`, `arrow`, and `text`; the colors are the ed
 (`web/src/config.ts`), the first one by default. The marks become a draft before the card appears,
 so the card shows them, Copy Annotated has them, and opening the card puts them in the editor to
 move, retype, or delete like your own. The editor builds the draft on its own canvas, so a marked
-push is refused with `page-not-ready` while you have an image open in the annotator.
+push is refused with `page-not-ready` from the moment the annotator takes an image until it has
+given it back, and while a Copy Annotated is rendering.
 
 Every command answers with one line in `~/Library/Logs/Shotnote.log` (menu bar → Open Log):
 `[<command>] ok <detail>` or `[<command>] error <code> <detail>`. The codes are fixed:

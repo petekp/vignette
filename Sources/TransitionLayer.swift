@@ -6,16 +6,25 @@ import SwiftUI
 /// instead of restarting.
 @MainActor
 final class TransitionLayer {
+    /// The ends of the straight path a flight is on, and the shape it follows along it.
+    struct Path {
+        var from: CGPoint = .zero
+        var to: CGPoint = .zero
+        var curve = FlightCurve.straight
+    }
+
     struct Flight: Identifiable {
         let id: UUID
         var image: NSImage
         var frame: CGRect      // top-left origin, in the layer's own coordinates
         var corner: CGFloat
         var opacity: Double = 1
-        /// The ends of the straight path this flight is on, which `curve` bows and swells.
-        var pathFrom: CGPoint = .zero
-        var pathTo: CGPoint = .zero
-        var curve = FlightCurve.straight
+        /// The path this flight is on, and the one it was on before it was aimed again.
+        var path = Path()
+        var previousPath = Path()
+        /// 0 the moment a flight is aimed down a new path, 1 once it has settled there. In between
+        /// the bow comes from both paths, so a retarget bends instead of stepping sideways.
+        var blend: CGFloat = 1
         var generation = 0
     }
 
@@ -55,6 +64,7 @@ final class TransitionLayer {
                 self.model.flights[i].frame = self.local(to)
                 self.model.flights[i].corner = cornerTo
                 self.model.flights[i].opacity = 1
+                self.model.flights[i].blend = 1
             }
             // The spring settles a little after its nominal duration; wait for that before the
             // annotator window replaces the image, or the last of the motion shows as a snap.
@@ -108,19 +118,19 @@ final class TransitionLayer {
 
     /// Adds the flight, or aims an existing one down a new path, and returns its generation.
     /// The curve is fixed when the path is, so a flight keeps the motion scale it started with.
+    /// Aiming again keeps the old path and resets `blend`, which `fly` then animates back to 1.
     private func start(id: UUID, image: NSImage, from: NSRect, to: NSRect, corner: CGFloat, ui: UITweaks) -> Int {
-        let path = (from: center(local(from)), to: center(local(to)))
-        let curve = FlightCurve(ui: ui)
+        let path = Path(from: center(local(from)), to: center(local(to)), curve: FlightCurve(ui: ui))
         if let i = model.flights.firstIndex(where: { $0.id == id }) {
             model.flights[i].generation += 1
             model.flights[i].image = image
-            model.flights[i].pathFrom = path.from
-            model.flights[i].pathTo = path.to
-            model.flights[i].curve = curve
+            model.flights[i].previousPath = model.flights[i].path
+            model.flights[i].path = path
+            model.flights[i].blend = 0
             return model.flights[i].generation
         }
         model.flights.append(Flight(id: id, image: image, frame: local(from), corner: corner,
-                                    pathFrom: path.from, pathTo: path.to, curve: curve))
+                                    path: path, previousPath: path))
         return 0
     }
 
@@ -171,7 +181,7 @@ private struct FlightsView: View {
                     // The card's ring travels with the image, and the annotator window carries it on.
                     .overlay(RoundedRectangle(cornerRadius: f.corner, style: .continuous).stroke(.white.opacity(ui.cardBorderOpacity), lineWidth: ui.cardBorderWidth))
                     .shadow(color: .black.opacity(0.4), radius: 24, y: 10)
-                    .modifier(Bow(center: CGPoint(x: f.frame.midX, y: f.frame.midY), from: f.pathFrom, to: f.pathTo, curve: f.curve))
+                    .modifier(Bow(center: CGPoint(x: f.frame.midX, y: f.frame.midY), path: f.path, previous: f.previousPath, blend: f.blend))
                     .opacity(f.opacity)
                     .position(x: f.frame.midX, y: f.frame.midY)
             }
@@ -181,21 +191,27 @@ private struct FlightsView: View {
 }
 
 /// Bows the straight path the flight's frame is taking, and swells the card around its middle.
-/// Its animatable data is that frame's centre, so it moves in step with the frame's own animation
-/// and blends the same way when a flight is retargeted in mid-air.
+/// Its animatable data is that frame's centre and the blend between the flight's paths, so both
+/// the position along the path and a change of path move with the frame's own animation: a flight
+/// aimed somewhere else in mid-air bends across to the new bow instead of stepping sideways.
 private struct Bow: GeometryEffect {
     var center: CGPoint
-    var from: CGPoint
-    var to: CGPoint
-    var curve: FlightCurve
+    var path: TransitionLayer.Path
+    var previous: TransitionLayer.Path
+    var blend: CGFloat
 
-    var animatableData: CGPoint.AnimatableData {
-        get { CGPoint.AnimatableData(center.x, center.y) }
-        set { center = CGPoint(x: newValue.first, y: newValue.second) }
+    var animatableData: AnimatablePair<CGPoint.AnimatableData, CGFloat> {
+        get { AnimatablePair(CGPoint.AnimatableData(center.x, center.y), blend) }
+        set {
+            center = CGPoint(x: newValue.first.first, y: newValue.first.second)
+            blend = newValue.second
+        }
     }
 
     func effectValue(size: CGSize) -> ProjectionTransform {
-        let placed = curve.placement(at: center, from: from, to: to)
+        let placed = FlightCurve.blend(previous.curve.placement(at: center, from: previous.from, to: previous.to),
+                                       path.curve.placement(at: center, from: path.from, to: path.to),
+                                       blend)
         let mid = CGPoint(x: size.width / 2, y: size.height / 2)
         return ProjectionTransform(CGAffineTransform.identity
             .translatedBy(x: placed.offset.width, y: placed.offset.height)

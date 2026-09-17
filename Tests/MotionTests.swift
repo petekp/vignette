@@ -69,6 +69,21 @@ final class MotionTests: XCTestCase {
         }
     }
 
+    /// A flight aimed somewhere else in mid-air keeps the old bow and crosses to the new one, so
+    /// nothing steps sideways in a frame. What matters most is the end: at the new target the mix
+    /// is the new path's placement alone, which is nothing, so the card lands exactly there.
+    func testRetargetedFlightBlendsAndStillLandsOnItsTarget() {
+        let was = leg.placement(at: CGPoint(x: 300, y: 400), from: .zero, to: CGPoint(x: 600, y: 0))
+        let now = leg.placement(at: CGPoint(x: 300, y: 400), from: .zero, to: CGPoint(x: 300, y: 400))
+        XCTAssertNotEqual(was.offset, .zero, "the old path still bows where the new one ends")
+        XCTAssertEqual(now, FlightCurve.Placement(offset: .zero, scale: 1), "a path's own end is flat")
+        XCTAssertEqual(FlightCurve.blend(was, now, 1), now, "settled, only the new path counts")
+        XCTAssertEqual(FlightCurve.blend(was, now, 0), was, "the frame it is aimed again, only the old one")
+        let half = FlightCurve.blend(was, now, 0.5)
+        XCTAssertEqual(half.offset.width, was.offset.width / 2, accuracy: 0.001)
+        XCTAssertEqual(half.offset.height, was.offset.height / 2, accuracy: 0.001)
+    }
+
     func testFlightIsStraightWithMotionOff() {
         let curve = FlightCurve(ui: UITweaks().scaledForMotion(0))
         let from = CGPoint(x: 0, y: 0), to = CGPoint(x: 400, y: 300)

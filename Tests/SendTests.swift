@@ -42,10 +42,16 @@ final class SendTests: XCTestCase {
     func testTheMessageIsOneLineWithTheQuotedPath() {
         let file = URL(fileURLWithPath: "/Users/p/Dropbox/Screenshots/Screenshot 1 PM-annotated.png")
         XCTAssertEqual(Send.message(text: "the header scrolls", file: file),
-                       "the header scrolls \"/Users/p/Dropbox/Screenshots/Screenshot 1 PM-annotated.png\"")
+                       "Screenshot \"/Users/p/Dropbox/Screenshots/Screenshot 1 PM-annotated.png\": the header scrolls")
         XCTAssertEqual(Send.message(text: "two\nlines", file: file).components(separatedBy: .newlines).count, 1)
-        XCTAssertEqual(Send.message(text: nil, file: URL(fileURLWithPath: "/a/b.png")), "Screenshot: \"/a/b.png\"")
-        XCTAssertEqual(Send.message(text: "  ", file: URL(fileURLWithPath: "/a/b.png")), "Screenshot: \"/a/b.png\"")
+        XCTAssertEqual(Send.message(text: nil, file: URL(fileURLWithPath: "/a/b.png")), "Screenshot \"/a/b.png\"")
+        XCTAssertEqual(Send.message(text: "  ", file: URL(fileURLWithPath: "/a/b.png")), "Screenshot \"/a/b.png\"")
+    }
+
+    /// herdr takes the message as one argv element, but its own parser reads a leading dash as an
+    /// option, so the words never start the line.
+    func testWordsThatLookLikeAnOptionDoNotStartTheMessage() {
+        XCTAssertTrue(Send.message(text: "--wait for it", file: URL(fileURLWithPath: "/a/b.png")).hasPrefix("Screenshot \""))
     }
 
     func testTheHerdrBinaryIsTheFirstOneThatExists() {

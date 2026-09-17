@@ -332,14 +332,25 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         guard let shot = current, let webView, pageReady else { hideWindows(); completion?(); return }
         current = nil
         let epoch = pageEpoch
+        var answered = false
         let done: () -> Void = { [weak self] in
+            guard !answered else { return }
+            answered = true
             self?.pendingHide = nil
             self?.hideWindows()
             completion?()
         }
         pendingHide = done
+        // The page runs park, export, and build one at a time, so an Esc during a long Copy
+        // Annotated waits behind it. The window comes down on this deadline whatever the page does;
+        // a park that answers after it is dropped, because by then the canvas may hold another image.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) {
+            guard !answered else { return }
+            Log.write("[web] error park timeout after \(Int(Self.exportTimeout)) s \(shot.url.lastPathComponent)")
+            done()
+        }
         webView.callAsyncJavaScript(PageAPI.park.script, arguments: [:], in: nil, in: .page) { [weak self] result in
-            guard let self, self.pageEpoch == epoch, self.pendingHide != nil else { return }
+            guard let self, self.pageEpoch == epoch, !answered else { return }
             switch result {
             case .failure(let error): Log.write("[web] error park failed: \(error)")
             case .success(let value):
@@ -450,8 +461,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         }
     }
 
-    /// An image is in the annotator and on screen, so the page's canvas is the user's.
-    private var showingImage: Bool { current != nil && (window?.isVisible ?? false) }
+    /// The page's canvas belongs to the annotator, so nothing else may draw on it. It takes it in
+    /// `prepare`, about half a second before the window appears, and gives it back when `park`
+    /// answers, after the window is gone.
+    private var holdsCanvas: Bool { current != nil || pendingHide != nil }
 
     /// The colors the page offers, by id: what a mark's `color` may name.
     var colorIDs: [String] { toolbar.model.colors.map(\.id) }
@@ -461,7 +474,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// anything, so a refusal is one error line and no file left behind.
     var buildRefusal: String? {
         if webView == nil || !pageReady { return "the editor page is not ready" }
-        if showingImage { return "an image is open in the annotator" }
+        if holdsCanvas { return "an image is in the annotator" }
+        if pendingExport != nil { return "Copy Annotated is still rendering" }
         if pendingBuild != nil { return "another push is still building its marks" }
         return nil
     }

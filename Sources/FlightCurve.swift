@@ -50,4 +50,15 @@ struct FlightCurve: Equatable {
         let bow = min(length * arc, arcMax) * peak
         return Placement(offset: CGSize(width: nx * bow, height: ny * bow), scale: 1 + depth * peak)
     }
+
+    /// Two placements read at the same point, mixed: `t` 0 is all of `was`, 1 all of `now`. A
+    /// flight aimed down a new path in mid-air crosses from the old bow to the new one over the
+    /// rest of its animation instead of stepping sideways in a frame. At 1 only the new path
+    /// counts, and its placement at its own target is nothing, so the card still lands there.
+    static func blend(_ was: Placement, _ now: Placement, _ t: CGFloat) -> Placement {
+        let t = min(1, max(0, t))
+        return Placement(offset: CGSize(width: was.offset.width + (now.offset.width - was.offset.width) * t,
+                                        height: was.offset.height + (now.offset.height - was.offset.height) * t),
+                         scale: was.scale + (now.scale - was.scale) * t)
+    }
 }

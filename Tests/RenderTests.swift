@@ -169,12 +169,16 @@ final class RenderTests: XCTestCase {
     }
 
     /// The first thing this page ever draws is a text mark, on a canvas nobody has seen: the font
-    /// it needs has not been used yet, and the rendering must wait for it rather than come back blank.
-    func testATextMarkIsDrawnOnAPageThatHasShownNothing() throws {
+    /// it needs has not been used yet, and the rendering must wait for it rather than come back
+    /// blank. The second text mark must be drawn too: `render` waits once per font and then trusts
+    /// WebKit to keep it, and every rendering makes a new `Image` for the SVG.
+    func testEveryTextMarkIsDrawn() throws {
         waitFor("ready")
-        let marks = [Mark(type: .text, x: 0.1, y: 0.4, text: "Header should not scroll", color: "red")]
-        let built = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(payload, snapshot: nil, marks: marks).script)))
-        let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(built.preview)))
-        XCTAssertGreaterThan(redPixels(rep), 50, "the text is drawn, not left blank")
+        for words in ["Header should not scroll", "The second one draws too"] {
+            let marks = [Mark(type: .text, x: 0.1, y: 0.4, text: words, color: "red")]
+            let built = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(payload, snapshot: nil, marks: marks).script)))
+            let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(built.preview)))
+            XCTAssertGreaterThan(redPixels(rep), 50, "\"\(words)\" is drawn, not left blank")
+        }
     }
 }
