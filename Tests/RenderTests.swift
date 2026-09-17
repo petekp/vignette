@@ -168,6 +168,40 @@ final class RenderTests: XCTestCase {
         XCTAssertEqual(try eval("return window.editor.getShape('shape:screenshot').props.w > 0") as? Bool, true)
     }
 
+    /// A marked push and an image opening at the same moment. The build borrows the canvas and puts
+    /// back what it found when its rendering is done, so a `load` that landed in the middle would be
+    /// wiped. Both take their turn in the page's queue instead: the push keeps its draft, and the
+    /// image the host asked for is what stays on the canvas.
+    func testAnImageLoadedDuringABuildStaysOnTheCanvas() throws {
+        waitFor("ready")
+        try loadFixture()
+        _ = try eval("""
+            window.editor.createShape({ type: 'geo', x: 0, y: 0, props: { w: 10, h: 10, geo: 'rectangle', color: 'light-blue' } });
+            return window.editor.getCurrentPageShapeIds().size;
+            """)
+        let marks = [Mark(type: .ellipse, x: 0.2, y: 0.2, w: 0.5, h: 0.5, color: "red")]
+        // The build is not awaited. The load goes in once its mark is on the canvas, which is the
+        // build waiting on its rendering: the moment a load used to be thrown away.
+        _ = try eval("""
+            window.buildInFlight = window.shotnote.build(\(PageAPI.payload(payload, nil)),\(PageAPI.json(marks)));
+            for (let i = 0; i < 200; i++) {
+              const shapes = [...window.editor.getCurrentPageShapeIds()].map((id) => window.editor.getShape(id));
+              if (shapes.some((s) => s.type === 'geo' && s.props.geo === 'ellipse')) break;
+              await new Promise((r) => setTimeout(r, 5));
+            }
+            \(PageAPI.load(payload, snapshot: nil).script)
+            """)
+        let built = try XCTUnwrap(ParkResult(body: try eval("return await window.buildInFlight;")))
+        XCTAssertNotNil(built.snapshot, "the push still gets its draft")
+        let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(built.preview, "and its rendering")))
+        XCTAssertGreaterThan(redPixels(rep), 50, "with the marks on it")
+        for _ in 0..<50 where try eval("return window.editor.getCurrentPageShapeIds().size") as? Int != 1 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        XCTAssertEqual(try eval("return window.editor.getCurrentPageShapeIds().size") as? Int, 1,
+                       "the canvas holds the image the host loaded, not the one the build put back")
+    }
+
     /// The first thing this page ever draws is a text mark, on a canvas nobody has seen: the font
     /// it needs has not been used yet, and the rendering must wait for it rather than come back
     /// blank. The second text mark must be drawn too: `render` waits once per font and then trusts
