@@ -22,7 +22,7 @@ import {
   useEditor,
 } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, postToNative } from './bridge'
+import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, ZoomAnchor, postToNative } from './bridge'
 
 /** One keyboard zoom step (cmd+plus / cmd+minus). */
 const ZOOM_STEP = 1.25
@@ -157,8 +157,8 @@ export function App() {
       setColor(id) {
         if (editor && COLORS.some((c) => c.id === id)) setColor(editor, id as ColorId)
       },
-      setCanvasZoom(ratio) {
-        if (editor && Number.isFinite(ratio) && ratio >= 1) setCanvasZoom(editor, ratio)
+      setCanvasZoom(ratio, at) {
+        if (editor && Number.isFinite(ratio) && ratio >= 1) setCanvasZoom(editor, ratio, at)
       },
       finish() {
         if (editor) finish(editor, scaleRef.current)
@@ -279,14 +279,18 @@ function fitCamera(editor: Editor, w: number, h: number) {
 /** The host's last in-window magnification; a window resize refits and then puts it back. */
 let canvasRatio = 1
 
-/** Magnification inside the window about its center: 1 fits the image, larger zooms in. */
-function setCanvasZoom(editor: Editor, ratio: number) {
+/**
+ * Magnification inside the window: 1 fits the image, larger zooms in. `at` is the point that keeps
+ * its place, a fraction of the window; null holds its middle. The camera constraints keep the
+ * image covering the window, so a zoom at an edge pushes that far and no further.
+ */
+function setCanvasZoom(editor: Editor, ratio: number, at: ZoomAnchor | null) {
   canvasRatio = ratio
   const { x: cx, y: cy, z: cz } = editor.getCamera()
   const z = editor.getBaseZoom() * ratio
   const { w, h } = editor.getViewportScreenBounds()
-  const sx = w / 2
-  const sy = h / 2
+  const sx = (at ? at.x : 0.5) * w
+  const sy = (at ? at.y : 0.5) * h
   editor.setCamera({ x: cx + sx / z - sx / cz, y: cy + sy / z - sy / cz, z })
 }
 
@@ -504,6 +508,13 @@ async function exportDraftsQuietly(editor: Editor, items: ExportItem[], scale: n
   return { items: rendered, error }
 }
 
+/// Where the cursor is as a fraction of the window: what the host and the camera both hold in
+/// place while zooming. The viewport is the window, so the same fraction reads in either space.
+function cursorAnchor(editor: Editor, e: WheelEvent): ZoomAnchor {
+  const { x, y, w, h } = editor.getViewportScreenBounds()
+  return { x: (e.clientX - x) / w, y: (e.clientY - y) / h }
+}
+
 /// Keyboard shortcuts (tldraw's own are part of the UI we hide) and tool state for the native toolbar.
 const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: number } }) {
   const editor = useEditor()
@@ -516,13 +527,18 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
 
   // Refit as soon as the window is laid out at a new size, before that frame paints, so the image
   // never shows at the old fit. tldraw's own bounds update waits for the next frame. The reset
-  // drops any magnification, so it goes back on afterwards.
+  // drops any magnification, so it goes back on afterwards, over the same part of the image: a
+  // resize must not undo where a zoom at the cursor left the view.
   useEffect(() => {
     const container = editor.getContainer()
     const observer = new ResizeObserver(() => {
+      const held = canvasRatio > 1 ? editor.getViewportPageBounds().center : null
       editor.updateViewportScreenBounds(container)
       editor.setCamera(editor.getCamera(), { reset: true })
-      if (canvasRatio > 1) setCanvasZoom(editor, canvasRatio)
+      if (held) {
+        setCanvasZoom(editor, canvasRatio, null)
+        editor.centerOnPoint(held)
+      }
     })
     observer.observe(container)
     return () => observer.disconnect()
@@ -530,19 +546,22 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
 
   // A pinch arrives as a wheel event with ctrlKey; cmd+wheel zooms too. Both go to the host,
   // coalesced to one message per frame, and never reach tldraw's own zoom. Plain wheel still pans.
+  // Each message carries where the cursor was, so the host and the camera hold that point.
   useEffect(() => {
     let factor = 1
+    let at: ZoomAnchor | null = null
     let scheduled = false
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
       e.stopPropagation()
       factor *= Math.exp(-e.deltaY * WHEEL_ZOOM_RATE)
+      at = cursorAnchor(editor, e)
       if (scheduled) return
       scheduled = true
       requestAnimationFrame(() => {
         scheduled = false
-        if (factor !== 1) postToNative({ type: 'zoom', factor })
+        if (factor !== 1) postToNative({ type: 'zoom', factor, at })
         factor = 1
       })
     }
@@ -558,7 +577,7 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
       window.removeEventListener('wheel', onWheel, { capture: true })
       for (const g of gestures) window.removeEventListener(g, swallow, { capture: true })
     }
-  }, [])
+  }, [editor])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -583,7 +602,8 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
         e.preventDefault()
         // tldraw binds these too, on the document; stopping here keeps its camera zoom out of it.
         e.stopPropagation()
-        postToNative({ type: 'zoom', factor: e.key === '0' ? null : e.key === '-' ? 1 / ZOOM_STEP : ZOOM_STEP })
+        // No anchor: a keyboard step zooms about the window's middle, as Preview does.
+        postToNative({ type: 'zoom', factor: e.key === '0' ? null : e.key === '-' ? 1 / ZOOM_STEP : ZOOM_STEP, at: null })
         return
       }
       if (editing) return
