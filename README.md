@@ -190,8 +190,8 @@ An image that arrives through `add` skips both: a push from an agent is not a ca
 `settings.json.invalid` and replaced with defaults, with a toast saying so.
 
 The `ui` section holds the design numbers: card sizes, corners, shadows, hover buttons, animation
-durations and curves, backdrop blur and tint, annotator window limits. The defaults are the tuned
-UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or
+durations and curves, how far a card bows and swells on its way to the annotator, backdrop blur and
+tint, annotator window limits. The defaults are the tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or
 `open -g shotnote://tweaks`) opens a floating panel of sliders that edits them live, with buttons
 to summon the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns
 every animation off; the system's Reduce Motion does the same.

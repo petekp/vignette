@@ -6,7 +6,7 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
 
 - `Sources/` Swift menu bar app. `AppDelegate.swift` wires everything; `Config.swift` holds the actions.
 - `~/.config/shotnote/settings.json` holds per-machine settings (`Settings.swift` defines the keys).
-  Its `ui` section (`UITweaks`) holds the layout, style, timing, and backdrop numbers, and its
+  Its `ui` section (`UITweaks`) holds the layout, style, timing, flight, and backdrop numbers, and its
   defaults are the tuned UI, so a fresh install renders the same. `open -g shotnote://tweaks`
   edits them live (needs `debug`). A few numbers stay in code on purpose: the toolbar's row and
   button sizes (`AnnotatorToolbar.swift`), the card button size (`StackView.swift`), the
@@ -46,6 +46,9 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
 2. `./scripts/run.sh`
 3. Drive the app: `open -g shotnote://annotate` (or `copy`, `trash`, `last`, `recent`, `state`;
    `open -g shotnote://help` logs every command). Plain `open` activates Shotnote; `-g` does not.
+   Every checkout builds the same bundle id, so with more than one build on the Mac LaunchServices
+   sends `shotnote://` to whichever copy it registered last, and that copy's launch replaces the
+   instance you started: `open -g -a <your build>/Shotnote.app "shotnote://…"` aims at yours.
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
    folder, and `eval`, `show-editor`, and `tweaks` are refused, unless settings.json has
@@ -141,12 +144,21 @@ the same driven sequence; a single run varies.
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
 - Preload the web view at launch; the annotator must open instantly.
-- Every animation duration goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json
-  scales them, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
+- Every animation goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json scales
+  every duration, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
   `toastSeconds`) are not motion. `"ui": {"motion": 0}` makes the stack appear and leave at once,
   which is what a script wants. Every SwiftUI animation is a spring made by `Anim.spring`
   (`slideInCurve` "spring" included), and the AppKit tweens use `Tween`'s spring curve: an
   interrupted motion keeps its velocity and blends into the new target instead of jumping.
+- A flight does not run down a straight line. `FlightCurve` bows it to one side and swells the card,
+  both peaking in the middle and nothing at the ends, so the card still leaves and lands exactly
+  where the layout puts it. The amounts are `ui.flightArc` (a fraction of the path's length),
+  `ui.flightArcMax` (the bow's cap in points), and `ui.flightDepth`; the motion scale multiplies the
+  first and the third, so `motion: 0` and Reduce Motion give a straight line. The bow leans up from a
+  path that runs mostly sideways and left from one that runs mostly up or down, and the side belongs
+  to the line rather than the direction of travel, so a flight that turns around mid-air keeps bowing
+  the same way. `TransitionLayer`'s `Bow` reads the card's animated centre, so the curve follows the
+  frame's own spring and blends with it on a retarget.
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15 (verified: uniform blur), and a bare CABackdropLayer renders black. Do not retry.
