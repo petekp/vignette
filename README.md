@@ -83,15 +83,19 @@ and closing it hands focus back to the app you came from.
 
 - Hover a card for a selection circle. Click it, or drag from it down the column, to select.
   In selection mode clicking a card toggles it.
+- A selected circle carries that card's number in the selection. Counting starts at the oldest
+  card, which is the order every action receives them.
+- The selected cards get a control strip to their left: copy, copy annotated, stitch, delete.
+  It stays centered between the topmost and the bottommost selected card, and follows the selection.
 - Drag a card out to drop it as a file on a chat window, Finder, or a terminal. A selected card
   drags the whole selection.
 - Cmd+C copies the selection as files, paths as text, and the first image's pixels, so chat apps
   attach all of them and terminals paste the paths. Option+Cmd+C copies only the paths.
 - Cmd+S stitches the selection into one tall image with numbered badges, saved next to the
-  originals and copied.
+  originals and copied. Each badge is the number the card's circle showed.
 - Arrows move focus, Shift extends, Space toggles, Cmd+A selects all, Return annotates,
   Cmd+Delete trashes, Esc clears then dismisses.
-- A card with a pencil badge has a draft: annotations you parked with Esc or a swap. Reopen it
+- A card whose annotations you parked with Esc or a swap shows them in its thumbnail. Reopen it
   and they are back; Copy Annotated renders them without opening the editor.
 
 The hotkey is either a key combination (no permission needed) or `double-rshift`, a double tap

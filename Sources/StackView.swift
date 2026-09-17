@@ -11,16 +11,30 @@ struct StackView: View {
     @ObservedObject private var settings = Settings.shared
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        let layout = StackLayout.current
+        return ZStack(alignment: .bottomTrailing) {
             // Fully transparent pixels let events fall through to the window below, so the stack
-            // would only scroll over a card; a hair of alpha makes the whole panel catch them.
+            // would only scroll over a card; a hair of alpha makes the column catch them. The
+            // clear layer fills the panel, which is wider than the column while the strip is out,
+            // so the column stays against its right edge; the strip's side catches nothing.
+            Color.clear
             Color.black.opacity(model.isStack ? 0.01 : 0)
+                .frame(width: layout.maxCardWidth + layout.inset * 2)
             if !model.isStack, let text = model.feedback {
                 FeedbackToast(text: text)
-                    .padding(StackLayout.current.inset)
+                    .padding(layout.inset)
                     .transition(.opacity)
             } else {
                 column
+                if let strip = stripPlacement {
+                    SelectionStrip(model: model, size: strip.size)
+                        .offset(x: -(layout.inset + strip.right), y: -(layout.inset + strip.bottom))
+                        .animation(Anim.spring(settings.motionUI.relayoutDuration), value: strip)
+                        // Scrolling moves it with the cards, at once; the slide-out carries it off screen.
+                        .offset(x: stripSlide, y: model.scroll)
+                        .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
+                        .transition(.opacity)
+                }
             }
         }
         .animation(layoutAnimation(0.2), value: model.cards.map(\.id))
@@ -29,14 +43,27 @@ struct StackView: View {
     }
 
     /// Layout changes animate only while the cards are on screen. While they are offscreen, in
-    /// or out, a toast or bar leaving the column would otherwise shift them as they slide in.
+    /// or out, a toast or strip leaving the column would otherwise shift them as they slide in.
     private func layoutAnimation(_ duration: Double) -> Animation? {
         model.offscreen.isEmpty ? Anim.spring(duration * settings.motionScale) : nil
     }
 
-    /// The toast and the selection bar leave with the bottom card instead of vanishing under it.
+    private var stripPlacement: StackLayout.StripPlacement? {
+        guard model.isStack, model.inSelectionMode else { return nil }
+        return StackLayout.current.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
+                                                  cards: model.cards.map(\.size), showsBar: model.showsBar,
+                                                  scroll: model.scroll, viewport: model.viewport)
+    }
+
+    /// The toast leaves with the bottom card instead of vanishing under it.
     private var barSlide: CGFloat {
         model.slidingOut ? StackLayout.current.offscreenDistance(cardWidth: StackLayout.current.maxCardWidth) : 0
+    }
+
+    /// The strip starts a column's width further left, so it needs that much more to clear the screen.
+    private var stripSlide: CGFloat {
+        let layout = StackLayout.current
+        return model.slidingOut ? layout.offscreenDistance(cardWidth: layout.maxCardWidth + layout.stripGap + layout.stripWidth) : 0
     }
 
     /// The cards, newest at the bottom, pulled down by `scroll`. What leaves the viewport fades
@@ -52,11 +79,6 @@ struct StackView: View {
                 FeedbackToast(text: text)
                     .frame(width: StackLayout.current.maxCardWidth, height: StackLayout.current.barHeight)
                     .transition(.opacity)
-                    .offset(x: barSlide)
-                    .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
-            } else if model.isStack && model.inSelectionMode {
-                SelectionBar(model: model)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                     .offset(x: barSlide)
                     .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
             }
@@ -87,7 +109,6 @@ private struct CardView: View {
     private var focused: Bool { model.focused == card.id }
     private var isOut: Bool { model.outCards.contains(card.id) }
     private var offscreen: Bool { model.offscreen.contains(card.id) }
-    private var hasDraft: Bool { model.drafts.contains(card.shot.url.path) }
     private var showsCircle: Bool { model.isStack && !isOut && (hovered || model.inSelectionMode || focused) }
     private var copied: Bool { model.copied.contains(card.id) }
     private var showsButtons: Bool { hovered && !isOut && !model.inSelectionMode && !copied }
@@ -98,12 +119,9 @@ private struct CardView: View {
     var body: some View {
         ZStack {
             if isOut {
-                // The card is in the annotator; its slot stays reserved.
-                RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
-                    .fill(.white.opacity(0.06))
-                    .overlay(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
-                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                        .foregroundStyle(.white.opacity(0.35)))
+                // The card is in the annotator. Its slot stays reserved, and empty, so the card
+                // flies back to the same place.
+                Color.clear
             } else {
                 Group {
                     if let image = card.image {
@@ -144,14 +162,9 @@ private struct CardView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
-        .overlay(alignment: .topTrailing) {
-            if hasDraft && !isOut {
-                DraftBadge(size: ui.selectionCircleSize).padding(6).transition(.opacity)
-            }
-        }
         .overlay(alignment: .topLeading) {
             if showsCircle {
-                SelectionCircle(selected: selected, size: ui.selectionCircleSize)
+                SelectionCircle(number: model.selectionNumber(of: card.id), size: ui.selectionCircleSize)
                     .onHover { model.overControl = $0 }
                     .padding(6)
                     .transition(.opacity)
@@ -225,52 +238,44 @@ private struct CardView: View {
     }
 }
 
+/// Empty while the card is only hovered or focused; once it is selected it carries the card's
+/// number in the selection, which is the number Stitch will draw on it.
 private struct SelectionCircle: View {
-    let selected: Bool
+    let number: Int?
     let size: CGFloat
     var body: some View {
         ZStack {
-            Circle().fill(selected ? Color.accentColor : Color.black.opacity(0.45))
+            Circle().fill(number != nil ? Color.accentColor : Color.black.opacity(0.45))
             Circle().stroke(.white, lineWidth: 1.5)
-            if selected { Image(systemName: "checkmark").font(.system(size: size / 2, weight: .bold)).foregroundStyle(.white) }
+            if let number {
+                Text("\(number)")
+                    .font(.system(size: size * 0.6, weight: .bold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .padding(.horizontal, 2)
+            }
         }
         .frame(width: size, height: size)
         .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
     }
 }
 
-/// Marks a card whose annotations are still in the editor's memory.
-private struct DraftBadge: View {
-    let size: CGFloat
-    var body: some View {
-        ZStack {
-            Circle().fill(Color.orange)
-            Image(systemName: "pencil").font(.system(size: size / 2, weight: .bold)).foregroundStyle(.white)
-        }
-        .frame(width: size, height: size)
-        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-        .help("Has unsaved annotations")
-    }
-}
-
-/// Under the column while cards are selected: the count and the bulk actions.
-private struct SelectionBar: View {
+/// Beside the selected cards: the bulk actions, in one vertical strip. `StackLayout` places it
+/// and sizes it; the rows here fill that size exactly. The count is on the cards themselves.
+private struct SelectionStrip: View {
     @ObservedObject var model: StackModel
+    let size: NSSize
+    private var ui: UITweaks { Settings.shared.motionUI }
+
     var body: some View {
         let cards = model.selectedCards()
-        HStack(spacing: 2) {
-            Text("\(cards.count)")
-                .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.white)
-                .frame(minWidth: 20, minHeight: 20)
-                .background(Color.accentColor, in: Capsule())
-                .padding(.leading, 8)
-            Spacer(minLength: 4)
-            ForEach(Config.actions.filter(\.showsInBar), id: \.id) { action in
+        VStack(spacing: ui.buttonSpacing) {
+            ForEach(Config.stripActions, id: \.id) { action in
                 Button { model.onAction(action, cards) } label: {
                     Image(systemName: action.symbol)
                         .font(.system(size: 13, weight: .medium))
-                        .frame(width: 30, height: 28)
+                        .frame(width: ui.buttonSize, height: ui.buttonSize)
                 }
                 .buttonStyle(TactileButtonStyle(shape: .rounded))
                 .help(action.label + shortcutHint(action))
@@ -278,8 +283,7 @@ private struct SelectionBar: View {
                 .opacity(cards.count < action.minimumCount ? 0.35 : 1)
             }
         }
-        .padding(.horizontal, 4)
-        .frame(width: StackLayout.current.maxCardWidth, height: StackLayout.current.barHeight)
+        .frame(width: size.width, height: size.height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
