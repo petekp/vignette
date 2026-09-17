@@ -49,7 +49,9 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
    folder, and `eval`, `show-editor`, and `tweaks` are refused, unless settings.json has
-   `"debug": true`. `[annotate] loaded <ms>` reports when the page has the image; it is posted
+   `"debug": true`. `add?file=` is the exception: it copies an image in from anywhere and the
+   watcher then reports it like a capture, minus the copy and annotate toggles (`&annotate` opens
+   the editor). `[annotate] loaded <ms>` reports when the page has the image; it is posted
    from a `requestAnimationFrame`, which WebKit pauses while the screen is locked or the
    window is hidden, so the line never arrives in that state.
 4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.

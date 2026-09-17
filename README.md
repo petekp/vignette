@@ -113,7 +113,8 @@ See `AGENTS.md` for the working loop.
 
 Every action is a URL. Use `open -g` so the terminal keeps focus (plain `open` activates
 Shotnote). Without `?file=`, an action acts on the newest screenshot. Repeat `file=` for several.
-Paths must be percent-encoded and inside the watch folder.
+Paths must be percent-encoded and inside the watch folder, except for `add`, which copies a file in
+from anywhere.
 
 ```
 open -g shotnote://copy                       # copy to clipboard
@@ -123,6 +124,7 @@ open -g shotnote://paths                      # copy the path as text
 open -g "shotnote://trash?file=~/Dropbox/Screenshots/x.png"
 open -g "shotnote://stitch?file=/a.png&file=/b.png"
 open -g shotnote://last                       # show the thumbnail for the newest screenshot
+open -g "shotnote://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
 open -g shotnote://recent                     # toggle the recent stack (same as the hotkey)
 open -g shotnote://dismiss                    # close the thumbnail or the stack
 open -g shotnote://cancel                     # close the annotator without exporting, as Esc would
@@ -139,7 +141,7 @@ Every command answers with one line in `~/Library/Logs/Shotnote.log` (menu bar â
 `[<command>] ok <detail>` or `[<command>] error <code> <detail>`. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`,
 `unreadable-image`, `page-not-ready`, `export-timeout`, `export-failed`, `settings-invalid`,
-`debug-disabled`, `no-apple-original`, `eval-failed`, `write-failed`. The log has one event per
+`debug-disabled`, `no-apple-original`, `eval-failed`, `write-failed`, `unsupported-type`. The log has one event per
 line, `HH:mm:ss.SSS [tag] key=value â€¦`, and rotates to `Shotnote.log.1` at 5 MB.
 
 For clicks, drags, and the hotkey itself, `scripts/input.sh` posts real input events (it needs
@@ -182,6 +184,7 @@ annotated image and close the annotator and the stack at once, instead of return
 `copyOnCapture` puts every new screenshot on the clipboard as it lands (the image, plus its file
 URL and path for apps that take those), and is on by default. `annotateOnCapture` opens every new
 screenshot in the annotator right away, instead of showing a thumbnail. The menu bar toggles both.
+An image that arrives through `add` skips both: a push from an agent is not a capture.
 `debug` unlocks `eval`, `show-editor`,
 `tweaks`, and `file=` outside the watch folder. A file that does not parse is moved aside as
 `settings.json.invalid` and replaced with defaults, with a toast saying so.

@@ -28,6 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotator: { [weak self] in self?.annotateLast() }))
     private let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
+    /// Names of files `add` copied into the watch folder, with whether to open each in the annotator.
+    /// The watcher reports them like captures; this makes that report skip the capture toggles.
+    private var pendingAdds: [String: Bool] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         replaceOlderInstances()
@@ -340,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             for line in Commands.helpLines() { Log.write("[help] \(line)") }
             Commands.ok("help", "\(Commands.fixed.count + Config.actions.count) commands; errors end with one of: \(CommandError.allCases.map(\.rawValue).joined(separator: " "))")
         case "last": openLast()
+        case "add": addImage(request)
         case "recent": toggleRecent()
         case "state": dumpState(tag: request.tag)
         case "settings": settingsWindow.show(); Commands.ok("settings", "window opened")
@@ -513,6 +517,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Commands.ok("last", url.lastPathComponent)
     }
 
+    /// `add?file=<path>[&annotate]`: a copy of an image from anywhere lands in the watch folder, where
+    /// the watcher reports it like a capture; `pendingAdds` makes that report skip the capture toggles.
+    private func addImage(_ request: CommandRequest) {
+        guard let source = request.files.first else { Commands.error("add", .missingFile, "no file given"); return }
+        guard Commands.isReadableImage(source) else { Commands.error("add", .unreadableImage, source.path); return }
+        if Commands.policyError(for: source, watchFolder: watchFolder, debug: false) == nil {
+            // Already in the folder, so the watcher will not report it: present it directly.
+            present(Screenshot(url: source), annotate: request.annotate)
+            Commands.ok("add", "\(source.lastPathComponent) already in the watch folder")
+            return
+        }
+        guard ScreenshotWatcher.isCandidate(source.lastPathComponent) else {
+            Commands.error("add", .unsupportedType, "\(source.lastPathComponent): needs a png, jpg, jpeg, or heic name without \(Config.annotatedSuffix)"); return
+        }
+        let destination = Commands.destination(for: source, in: watchFolder) { FileManager.default.fileExists(atPath: $0.path) }
+        pendingAdds[destination.lastPathComponent] = request.annotate
+        do {
+            try FileManager.default.copyItem(at: source, to: destination)
+        } catch {
+            pendingAdds[destination.lastPathComponent] = nil
+            Commands.error("add", .writeFailed, "\(destination.path): \(error.localizedDescription)"); return
+        }
+        Commands.ok("add", "\(destination.lastPathComponent)\(request.annotate ? " annotate" : "")")
+    }
+
+    private func present(_ shot: Screenshot, annotate: Bool) {
+        if annotate { self.annotate([shot]) } else { thumbnail.show(shot) }
+    }
+
     @objc private func toggleRecent() { _ = pressRecent() }
 
     @discardableResult
@@ -539,11 +572,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[watcher] new \(url.lastPathComponent)")
             guard let self else { return }
             let shot = Screenshot(url: url)
+            if let annotate = self.pendingAdds.removeValue(forKey: url.lastPathComponent) {
+                self.present(shot, annotate: annotate); return
+            }
             if self.settings.data.copyOnCapture {
                 Clipboard.copyFiles([url])
                 Log.write("[watcher] copied \(url.lastPathComponent)")
             }
-            if self.settings.data.annotateOnCapture { self.annotate([shot]) } else { self.thumbnail.show(shot) }
+            self.present(shot, annotate: self.settings.data.annotateOnCapture)
         }, onRemoved: { [weak self] urls in
             Log.write("[watcher] removed \(urls.map(\.lastPathComponent).joined(separator: ", "))")
             self?.thumbnail.remove(urls.map(Screenshot.init))

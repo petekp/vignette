@@ -38,8 +38,26 @@ final class CommandsTests: XCTestCase {
         XCTAssertNil(Commands.parse(URL(string: "shotnote://state")!).tag)
     }
 
+    func testAddParsesTheAnnotateFlag() {
+        XCTAssertTrue(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&annotate")!).annotate)
+        XCTAssertTrue(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&annotate=1")!).annotate)
+        XCTAssertFalse(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&annotate=0")!).annotate)
+        XCTAssertFalse(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png")!).annotate)
+    }
+
+    func testAddDestinationNeverOverwrites() {
+        let folder = dir.appendingPathComponent("shots")
+        let source = URL(fileURLWithPath: "/tmp/agent/x.png")
+        let taken: Set<String> = ["x.png", "x 2.png"]
+        XCTAssertEqual(Commands.destination(for: source, in: folder) { taken.contains($0.lastPathComponent) },
+                       folder.appendingPathComponent("x 3.png"))
+        XCTAssertEqual(Commands.destination(for: source, in: folder) { _ in false }, folder.appendingPathComponent("x.png"))
+    }
+
     func testKnowsFixedCommandsAndActions() {
         XCTAssertTrue(Commands.isKnown("help"))
+        XCTAssertTrue(Commands.isKnown("add"))
+        XCTAssertFalse(Commands.needsDebug("add"))
         XCTAssertTrue(Commands.isKnown("copy"))
         XCTAssertFalse(Commands.isKnown("bogus"))
         XCTAssertFalse(Commands.isKnown(""))

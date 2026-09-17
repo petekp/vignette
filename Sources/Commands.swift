@@ -17,6 +17,7 @@ enum CommandError: String, CaseIterable {
     case noAppleOriginal = "no-apple-original"
     case evalFailed = "eval-failed"
     case writeFailed = "write-failed"
+    case unsupportedType = "unsupported-type"
 }
 
 /// A `shotnote://<name>?file=…&file=…` URL, decoded once.
@@ -27,6 +28,8 @@ struct CommandRequest: Equatable {
     let query: String?
     /// `tag=` from the query, echoed in the `[state]` line so a script can find its own answer.
     let tag: String?
+    /// `annotate` in the query: `add` opens the image in the annotator instead of showing its thumbnail.
+    let annotate: Bool
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -43,6 +46,7 @@ enum Commands {
         Fixed(name: "help", summary: "list every command and action in the log"),
         Fixed(name: "state", summary: "dump app and page state to the log"),
         Fixed(name: "last", summary: "show the thumbnail for the newest screenshot"),
+        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; ignores copyOnCapture and annotateOnCapture"),
         Fixed(name: "recent", summary: "toggle the recent stack"),
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
         Fixed(name: "cancel", summary: "close the annotator without exporting, as Esc would"),
@@ -58,8 +62,23 @@ enum Commands {
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let files = items.filter { $0.name == "file" }.compactMap(\.value)
             .map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+        let annotate = items.first { $0.name == "annotate" }.map { !["0", "false"].contains($0.value ?? "") } ?? false
         return CommandRequest(name: url.host ?? "", files: files, query: url.query?.removingPercentEncoding,
-                              tag: items.first { $0.name == "tag" }?.value)
+                              tag: items.first { $0.name == "tag" }?.value, annotate: annotate)
+    }
+
+    /// Where `add` copies `source` inside `folder`: its own name, or the name with a counter when
+    /// that is taken (`x.png`, `x 2.png`, `x 3.png`), so a push never overwrites a screenshot.
+    static func destination(for source: URL, in folder: URL, exists: (URL) -> Bool) -> URL {
+        let base = source.deletingPathExtension().lastPathComponent
+        let ext = source.pathExtension
+        var candidate = folder.appendingPathComponent(source.lastPathComponent)
+        var n = 2
+        while exists(candidate) {
+            candidate = folder.appendingPathComponent("\(base) \(n)").appendingPathExtension(ext)
+            n += 1
+        }
+        return candidate
     }
 
     static func isKnown(_ name: String) -> Bool {
