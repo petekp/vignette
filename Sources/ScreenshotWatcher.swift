@@ -1,23 +1,31 @@
 import Foundation
 import ImageIO
+import os
 
 /// Watches a folder and reports screenshot files as they arrive and leave. A new file is reported
 /// once it is fully written; one that never settles is logged and forgotten so the next event tries again.
-/// `@unchecked Sendable`: every mutable access (`known`, `source`) is confined to `queue`, and
+/// It also keeps an index of the folder (every candidate with its modification date), so the stack
+/// and the newest-screenshot lookups read memory instead of listing the folder on the main thread.
+/// `@unchecked Sendable`: `source` is confined to `queue`, the index sits behind a lock, and
 /// `onNew`/`onRemoved` only ever run after an explicit hop to the main queue.
 final class ScreenshotWatcher: @unchecked Sendable {
     private let folder: URL
     private let onNew: (URL) -> Void
     private let onRemoved: ([URL]) -> Void
     private var source: DispatchSourceFileSystemObject?
-    private var known: Set<String>
     private let queue = DispatchQueue(label: "shotnote.watcher")
+
+    private struct State {
+        var files: [String: Date] = [:]   // candidate name -> modification date
+        var watching = false              // the directory source is live
+    }
+    private let state = OSAllocatedUnfairLock(initialState: State())
 
     init(folder: URL, onNew: @escaping (URL) -> Void, onRemoved: @escaping ([URL]) -> Void) {
         self.folder = folder
         self.onNew = onNew
         self.onRemoved = onRemoved
-        self.known = Set(ScreenshotWatcher.candidateNames(in: folder))
+        state.withLock { $0.files = ScreenshotWatcher.listing(of: folder) }
         start()
     }
 
@@ -34,9 +42,11 @@ final class ScreenshotWatcher: @unchecked Sendable {
         src.setCancelHandler { close(fd) }
         src.resume()
         source = src
+        state.withLock { $0.watching = true }
     }
 
-    /// Compares the folder with what was last seen. Called on every directory event and on wake.
+    /// Compares the folder with what was last seen. Called on every directory event, on wake, and on
+    /// every stack open, which is how a file changed in place or one that never settled is picked up.
     func rescan(reason: String) {
         queue.async { [weak self] in
             Log.write("[watcher] rescan \(reason)")
@@ -44,10 +54,26 @@ final class ScreenshotWatcher: @unchecked Sendable {
         }
     }
 
+    /// The newest `limit` screenshots and how many candidates the folder holds, from the index.
+    /// While the folder cannot be watched (a volume that is not mounted yet) it lists the folder
+    /// instead, and the next rescan retries the watch.
+    func recent(limit: Int) -> (recent: [URL], files: Int) {
+        let snapshot = state.withLock { $0.watching ? $0.files : nil }
+        return ScreenshotWatcher.recent(from: snapshot ?? ScreenshotWatcher.listing(of: folder), in: folder, limit: limit)
+    }
+
+    func newest() -> URL? {
+        recent(limit: 1).recent.first
+    }
+
     private func scan() {
-        let current = Set(ScreenshotWatcher.candidateNames(in: folder))
-        let change = ScreenshotWatcher.diff(known: known, current: current)
-        known = current
+        if source == nil { start() }
+        let current = ScreenshotWatcher.listing(of: folder)
+        let change = state.withLock { s -> (added: [String], removed: [String]) in
+            let change = ScreenshotWatcher.diff(known: Set(s.files.keys), current: Set(current.keys))
+            s.files = current
+            return change
+        }
         if !change.removed.isEmpty {
             let urls = change.removed.map { folder.appendingPathComponent($0) }
             DispatchQueue.main.async { self.onRemoved(urls) }
@@ -57,11 +83,15 @@ final class ScreenshotWatcher: @unchecked Sendable {
             waitUntilComplete(url) { [weak self] complete in
                 guard let self else { return }
                 if complete {
+                    // A streamed file's date settles with its content; the index keeps the final one.
+                    if let date = ScreenshotWatcher.modificationDate(of: url) {
+                        self.state.withLock { if $0.files[name] != nil { $0.files[name] = date } }
+                    }
                     DispatchQueue.main.async { self.onNew(url) }
                 } else if FileManager.default.fileExists(atPath: url.path) {
                     // Forget it so the next directory event or stack open picks it up again.
                     Log.write("[watcher] error never-stable \(name)")
-                    self.known.remove(name)
+                    self.state.withLock { $0.files.removeValue(forKey: name) }
                 }
             }
         }
@@ -90,11 +120,6 @@ final class ScreenshotWatcher: @unchecked Sendable {
         return CGImageSourceCreateImageAtIndex(source, 0, nil) != nil
     }
 
-    static func candidateNames(in folder: URL) -> [String] {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        return names.filter(isCandidate)
-    }
-
     /// The formats screencapture can write that the app can decode. Outputs of the annotator are not candidates.
     static let candidateExtensions: Set<String> = ["png", "jpg", "jpeg", "heic"]
 
@@ -104,29 +129,35 @@ final class ScreenshotWatcher: @unchecked Sendable {
         return candidateExtensions.contains((lower as NSString).pathExtension)
     }
 
-    static func recentScreenshots(in folder: URL, limit: Int) -> [URL] {
-        recentScan(in: folder, limit: limit).recent
+    /// Every candidate in `folder` with its modification date, from one bulk listing. Asking the
+    /// listing for the date is what keeps this cheap: a per-file attribute call reads extended
+    /// attributes too and costs about 20 times more (measured on 1300 files: 7 ms against 110 ms).
+    static func listing(of folder: URL) -> [String: Date] {
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles)) ?? []
+        var files: [String: Date] = [:]
+        for url in urls where isCandidate(url.lastPathComponent) {
+            if let date = modificationDate(of: url) { files[url.lastPathComponent] = date }
+        }
+        return files
     }
 
-    /// The newest `limit` screenshots plus how many candidates the folder holds and how long the
-    /// scan took, for the `[stack] shown` line.
-    static func recentScan(in folder: URL, limit: Int) -> (recent: [URL], files: Int, ms: Int) {
-        let started = Date.timeIntervalSinceReferenceDate
-        let fm = FileManager.default
-        let names = candidateNames(in: folder)
-        let recent = names
-            .map { folder.appendingPathComponent($0) }
-            .compactMap { url -> (URL, Date)? in
-                guard let date = try? fm.attributesOfItem(atPath: url.path)[.modificationDate] as? Date else { return nil }
-                return (url, date)
-            }
-            .sorted { $0.1 > $1.1 }
+    static func modificationDate(of url: URL) -> Date? {
+        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    }
+
+    /// The newest `limit` of `files`, newest first, plus the candidate count. Ties fall to the name,
+    /// which carries the capture time for a screenshot.
+    static func recent(from files: [String: Date], in folder: URL, limit: Int) -> (recent: [URL], files: Int) {
+        let recent = files
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key > $1.key }
             .prefix(max(0, limit))   // prefix traps on a negative count
-            .map(\.0)
-        return (recent, names.count, Int((Date.timeIntervalSinceReferenceDate - started) * 1000))
+            .map { folder.appendingPathComponent($0.key) }
+        return (recent, files.count)
     }
 
-    static func newestScreenshot(in folder: URL) -> URL? {
-        recentScreenshots(in: folder, limit: 1).first
+    /// A fresh listing sorted like the index; for tests and for a folder that is not watched.
+    static func recent(in folder: URL, limit: Int) -> (recent: [URL], files: Int) {
+        recent(from: listing(of: folder), in: folder, limit: limit)
     }
 }

@@ -182,7 +182,7 @@ final class ThumbnailController {
 
     /// The recent stack: toggles. Takes keyboard focus. Stays until Esc, the hotkey, or a click elsewhere.
     @discardableResult
-    func toggleRecent(_ shots: [Screenshot], scan: String = "") -> StackToggle {
+    func toggleRecent(_ shots: [Screenshot], detail: String = "") -> StackToggle {
         if visible && model.isStack { dismiss(); return .dismissed }
         if transition.isActive { send(.dismiss) }   // a lone annotation gives way to the stack
         let started = CACurrentMediaTime()
@@ -192,7 +192,7 @@ final class ThumbnailController {
         installOutsideClickMonitor()
         backdrop.show(on: screen, below: panel)
         takeKeys()
-        Log.write("[stack] shown cards=\(cards.count) \(scan)shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
+        Log.write("[stack] shown cards=\(cards.count) \(detail)shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
         return .shown(cards.count)
     }
 

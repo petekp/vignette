@@ -158,7 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// The newest screenshot in the watch folder goes into the annotator, on screen or not.
     @objc private func annotateLast() {
-        guard let url = ScreenshotWatcher.newestScreenshot(in: watchFolder) else {
+        guard let url = watcher?.newest() else {
             Commands.error("annotate", .missingFile, "no screenshot in \(watchFolder.path)"); return
         }
         annotate([Screenshot(url: url)])
@@ -353,7 +353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let action = Config.action(id: cmd) else { return }
             var targets = request.files
             if targets.isEmpty {
-                guard let newest = ScreenshotWatcher.newestScreenshot(in: watchFolder) else {
+                guard let newest = watcher?.newest() else {
                     Commands.error(cmd, .missingFile, "no file given and no screenshot in \(watchFolder.path)"); return
                 }
                 targets = [newest]
@@ -506,7 +506,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     @objc private func openLast() {
-        guard let url = ScreenshotWatcher.newestScreenshot(in: watchFolder) else {
+        guard let url = watcher?.newest() else {
             Commands.error("last", .missingFile, "no screenshot in \(watchFolder.path)"); return
         }
         thumbnail.show(Screenshot(url: url))
@@ -541,7 +541,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             let shot = Screenshot(url: url)
             if self.settings.data.copyOnCapture {
                 Clipboard.copyFiles([url])
-                Commands.ok("copy", "\(url.lastPathComponent) on capture")
+                Log.write("[watcher] copied \(url.lastPathComponent)")
             }
             if self.settings.data.annotateOnCapture { self.annotate([shot]) } else { self.thumbnail.show(shot) }
         }, onRemoved: { [weak self] urls in
@@ -563,7 +563,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// Decodes thumbnails for the recent stack ahead of time so the hotkey shows it at once.
     private func warmThumbnails() {
-        thumbnail.warm(ScreenshotWatcher.recentScreenshots(in: watchFolder, limit: settings.data.recentCount).map(Screenshot.init))
+        thumbnail.warm((watcher?.recent(limit: settings.data.recentCount).recent ?? []).map(Screenshot.init))
     }
 }
 

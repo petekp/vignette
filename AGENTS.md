@@ -89,8 +89,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `key=value` pairs, never an embedded newline (the logger flattens them); the launch line ends
    with `date=YYYY-MM-DD`; at 5 MB the file rotates to `Shotnote.log.1`, replacing the previous
    one. Draft events: `[draft] saved|parked|forgot|swept <file>` and `[drafts] <n>` after every
-   change to the set. `[stack] shown cards=… files=… scan=…ms shown=…ms decoding=…` counts the
-   watch folder and times the scan.
+   change to the set. `[stack] shown cards=… files=… shown=…ms decoding=…` counts the
+   watch folder from the watcher's index.
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
 Delete test files afterwards; the watch folder is the user's real screenshot folder.
@@ -143,7 +143,12 @@ Delete test files afterwards; the watch folder is the user's real screenshot fol
   jpg, jpeg, and heic (`ScreenshotWatcher.candidateExtensions`), reports removals to the stack
   (`[watcher] removed`), waits for a new file to decode before reporting it, and gives up on one
   that never does after ten seconds (`[watcher] error never-stable`); the next folder event or
-  stack open picks it up. Wake from sleep rescans the folder.
+  stack open picks it up. Wake from sleep rescans the folder. The watcher also keeps an index of
+  the folder (name and modification date, from one bulk listing) so opening the stack and finding
+  the newest screenshot never list the folder on the main thread (measured: a per-file attribute
+  read cost 150 ms on 1300 files at every open). Every stack open asks for a rescan, which is how
+  the index catches a file changed in place. While the folder cannot be watched (a volume not
+  mounted yet) the reads list it directly and each rescan retries the watch.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor.
