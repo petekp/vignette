@@ -264,15 +264,27 @@ the same driven sequence; a single run varies.
   afterwards, so an image that landed in between would be stored under the wrong key or wiped.
   Only the canvas change waits in that queue; a load reports `loaded` two frames later, and the
   flight waits for that, so a load behind a long export keeps the card in the air instead of
-  showing an empty window. The transition reducer knows
-  nothing about a build, on purpose: nothing is shown, so no card, dim, or flight is involved.
+  showing an empty window. The transition reducer knows nothing about a build, on purpose:
+  nothing is shown, so no card, dim, or flight is involved.
 - Zoom belongs to the app, not the page. A pinch, cmd+wheel, or cmd+plus/minus/0 sends a
-  `zoom` message (tldraw never sees those wheels; a plain wheel still pans a magnified image)
-  and `AnnotationController.zoom(by:animated:)` grows the window around its center up to the
-  visible screen, then magnifies the image inside it through `setCanvasZoom`. Zooming out
-  reverses that and stops at the fitted size with a short pull that springs back. The toolbar
-  stays where `prepare` placed it and sits above the window as a child. The state report's
-  `page.zoom` is the in-window magnification as tldraw sees it (1 = the image fills the window).
+  `zoom` message (tldraw never sees those wheels; a plain wheel still pans a magnified image) and
+  `AnnotationController.zoom(by:at:animated:)` grows the window up to the visible screen, then
+  magnifies the image inside it through `setCanvasZoom`. Zooming out reverses that and stops at
+  the fitted size with a short pull that springs back. The toolbar stays where `prepare` placed it
+  and sits above the window as a child.
+  Both phases hold the point under the cursor. The message carries the cursor as a fraction of the
+  window (`at`, y from the top), which the window growth and the page's camera each read in their
+  own space; a keyboard step sends none and zooms about the window's middle, as Preview does. A
+  two-finger double tap (`smartMagnify`) zooms twofold at the tap, or back to the fitted size from
+  anywhere above it. `Sources/Zoom.swift` is the geometry: the window grows away from the anchor,
+  at scale 1 it is the fitted frame again whatever the anchor, and against the screen edge the
+  frame slides and the anchor gives way, which is where magnification takes over. The anchor is
+  read off the frame on screen at each step, so a frame the edge nudged does not carry that error
+  forward, and a step aimed somewhere else mid-spring blends from the anchor it had to the new one
+  (`ZoomAim`) instead of stepping sideways. Zoom's springs are in code rather than the tweaks, but
+  the motion scale still shortens them. The state report's `page.zoom` is the in-window
+  magnification as tldraw sees it (1 = the image fills the window), `page.visible` is the part of
+  the image the window shows, and `annotator.zoomAnchor` is the point zoom is holding.
   "Copy Annotated" hands the stored snapshots to the live editor (`window.shotnote.export`),
   which restores the canvas afterwards; it falls back to the original file for cards without a
   draft, and answers `error export-failed` or `export-timeout` (15 s) instead of hanging.

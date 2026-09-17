@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 6
+export const PROTOCOL = 7
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
@@ -35,6 +35,9 @@ export interface Mark {
   color?: string
 }
 
+/** A point zoom keeps in place: a fraction of the window, x from the left and y from the top. */
+export interface ZoomAnchor { x: number; y: number }
+
 export interface ToolInfo { id: string; label: string; key: string; symbol: string }
 export interface ColorInfo { id: string; hex: string }
 
@@ -64,8 +67,12 @@ type NativeMessage =
   | { type: 'log'; message: string }
   /** The current image's annotations changed; null means they were all removed. Sent shortly after each change. */
   | { type: 'draft'; key: string; snapshot: TLEditorSnapshot | null }
-  /** Zoom is the host's: it resizes the window. `factor` multiplies the current size; null asks for the fitted size. */
-  | { type: 'zoom'; factor: number | null }
+  /**
+   * Zoom is the host's: it resizes the window. `factor` multiplies the current size; null asks for
+   * the fitted size. `at` is the cursor, whose point both sides keep in place; null (the keyboard)
+   * means the window's middle.
+   */
+  | { type: 'zoom'; factor: number | null; at: ZoomAnchor | null }
 
 declare global {
   interface Window {
@@ -84,8 +91,11 @@ declare global {
       export(items: ExportItem[]): Promise<ExportResult>
       setTool(id: string): void
       setColor(id: string): void
-      /** Magnifies the image inside the window once the window cannot grow; 1 fits the image. */
-      setCanvasZoom(ratio: number): void
+      /**
+       * Magnifies the image inside the window once the window cannot grow; 1 fits the image.
+       * `at` is the point to keep in place; null magnifies about the window's middle.
+       */
+      setCanvasZoom(ratio: number, at: ZoomAnchor | null): void
       /** Exports the current image and replies with `done`. */
       finish(): void
     }

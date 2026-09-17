@@ -3,7 +3,7 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 6
+let bridgeProtocolVersion = 7
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
@@ -60,8 +60,9 @@ enum PageAPI: Equatable {
     case export([(key: String, snapshot: Data)])
     case setTool(String)
     case setColor(String)
-    /// Magnification inside the window; 1 fits the image.
-    case setCanvasZoom(Double)
+    /// Magnification inside the window; 1 fits the image. `at` is the point to keep in place, a
+    /// fraction of the window with y from the top; nil is its middle.
+    case setCanvasZoom(Double, at: CGPoint?)
     case finish
 
     /// `park`, `build`, and `export` are async and return a value, so they run through
@@ -80,7 +81,7 @@ enum PageAPI: Equatable {
             return "return window.shotnote ? await window.shotnote.export([\(list.joined(separator: ","))]) : null;"
         case .setTool(let id): return "window.shotnote && window.shotnote.setTool(\(PageAPI.json(id)));"
         case .setColor(let id): return "window.shotnote && window.shotnote.setColor(\(PageAPI.json(id)));"
-        case .setCanvasZoom(let ratio): return "window.shotnote && window.shotnote.setCanvasZoom(\(PageAPI.json(ratio)));"
+        case .setCanvasZoom(let ratio, let at): return "window.shotnote && window.shotnote.setCanvasZoom(\(PageAPI.json(ratio)),\(PageAPI.point(at)));"
         case .finish: return "window.shotnote && window.shotnote.finish();"
         }
     }
@@ -92,6 +93,12 @@ enum PageAPI: Equatable {
     static func payload(_ payload: LoadPayload, _ snapshot: Data?) -> String {
         let text = snapshot.flatMap { String(data: $0, encoding: .utf8) } ?? "null"
         return "{\"snapshot\":\(text),\(json(payload).dropFirst())"
+    }
+
+    /// A unit point as the page reads it, or `null`. CGPoint encodes as an array, not `{x, y}`.
+    static func point(_ p: CGPoint?) -> String {
+        guard let p else { return "null" }
+        return "{\"x\":\(json(Double(p.x))),\"y\":\(json(Double(p.y)))}"
     }
 
     /// JSON is valid JavaScript for objects, arrays, and strings; `withoutEscapingSlashes` keeps paths readable.
@@ -117,8 +124,10 @@ enum WebMessage {
     case log(String)
     /// The current image's annotations changed; a nil snapshot means they were all removed.
     case draft(key: String, snapshot: Any?)
-    /// Multiply the window size by `factor`; nil asks for the fitted size.
-    case zoom(factor: Double?)
+    /// Multiply the window size by `factor`; nil asks for the fitted size. `at` is the cursor, a
+    /// fraction of the window with y from the top, whose point zoom keeps in place; nil (the
+    /// keyboard) means the window's middle.
+    case zoom(factor: Double?, at: CGPoint?)
 
     init?(body: Any) {
         guard let dict = body as? [String: Any], let type = dict["type"] as? String else { return nil }
@@ -151,11 +160,21 @@ enum WebMessage {
             self = .draft(key: key, snapshot: snapshot is NSNull ? nil : snapshot)
         case "zoom":
             guard let raw = dict["factor"] else { return nil }
-            if raw is NSNull { self = .zoom(factor: nil) }
-            else if let n = raw as? NSNumber, n.doubleValue.isFinite, n.doubleValue > 0 { self = .zoom(factor: n.doubleValue) }
+            let at = Self.point(dict["at"])
+            if raw is NSNull { self = .zoom(factor: nil, at: at) }
+            else if let n = raw as? NSNumber, n.doubleValue.isFinite, n.doubleValue > 0 { self = .zoom(factor: n.doubleValue, at: at) }
             else { return nil }
         default: return nil
         }
+    }
+
+    /// A unit point the page sent, or nil when it sent none: a keyboard step names no cursor, and
+    /// a half-written one must not move the window on its own.
+    static func point(_ raw: Any?) -> CGPoint? {
+        guard let dict = raw as? [String: Any],
+              let x = (dict["x"] as? NSNumber)?.doubleValue, x.isFinite,
+              let y = (dict["y"] as? NSNumber)?.doubleValue, y.isFinite else { return nil }
+        return CGPoint(x: x, y: y)
     }
 
     static func pngData(_ dataUrl: String) -> Data? {
