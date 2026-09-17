@@ -92,6 +92,25 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(object?.keys.sorted(), ["key", "mimeType", "pixelHeight", "pixelWidth", "snapshot", "viewHeight", "viewWidth"])
     }
 
+    func testBuildScriptCarriesTheImageItsDraftAndTheMarks() throws {
+        let payload = LoadPayload(key: "/a b.png", mimeType: "image/png", pixelWidth: 10, pixelHeight: 20, viewWidth: 5, viewHeight: 6)
+        let marks = [Mark(type: .ellipse, x: 0.1, y: 0.2, w: 0.3, h: 0.4, color: "red"),
+                     Mark(type: .text, x: 0, y: 0, text: "say \"hi\"")]
+        let script = PageAPI.build(payload, snapshot: Data(#"{"document":1}"#.utf8), marks: marks).script
+        XCTAssertTrue(script.hasPrefix(#"return window.shotnote ? await window.shotnote.build({"snapshot":{"document":1},"key":"/a b.png""#), script)
+        // Both arguments must be JSON the page can take as they are: read them back as a pair.
+        let start = script.range(of: "build(")!.upperBound
+        let end = script.range(of: ") : null;")!.lowerBound
+        let args = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(("[" + script[start..<end] + "]").utf8)) as? [Any])
+        XCTAssertEqual((args.first as? [String: Any])?["key"] as? String, "/a b.png")
+        let sent = try XCTUnwrap(args.last as? [[String: Any]])
+        XCTAssertEqual(sent.count, 2)
+        XCTAssertEqual(sent[0]["type"] as? String, "ellipse")
+        XCTAssertEqual(sent[0]["w"] as? Double, 0.3)
+        XCTAssertEqual(sent[1]["text"] as? String, "say \"hi\"")
+        XCTAssertNil(sent[1]["w"], "a mark carries only the numbers its type uses")
+    }
+
     func testExportScriptCarriesEachSnapshot() throws {
         let script = PageAPI.export([(key: "/a b.png", snapshot: Data(#"{"d":1}"#.utf8)), (key: "/c.png", snapshot: Data(#"{"d":2}"#.utf8))]).script
         XCTAssertEqual(script, #"return window.shotnote ? await window.shotnote.export([{"key":"/a b.png","snapshot":{"d":1}},{"key":"/c.png","snapshot":{"d":2}}]) : null;"#)

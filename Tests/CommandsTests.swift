@@ -45,6 +45,16 @@ final class CommandsTests: XCTestCase {
         XCTAssertFalse(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png")!).annotate)
     }
 
+    func testAddParsesTheAgentName() {
+        XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&agent=claude")!).agent, "claude")
+        XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&agent")!).agent, "",
+                       "the parameter without a name still means an agent added it")
+        XCTAssertNil(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png")!).agent)
+        XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?agent=%20claude%20code%0A")!).agent, "claude code",
+                       "a name is one trimmed line: the log and the state report are one line each")
+        XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?agent=\(String(repeating: "x", count: 200))")!).agent?.count, Agent.maxLength)
+    }
+
     func testAddDestinationNeverOverwrites() {
         let folder = dir.appendingPathComponent("shots")
         let source = URL(fileURLWithPath: "/tmp/agent/x.png")
@@ -52,6 +62,39 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(Commands.destination(for: source, in: folder) { taken.contains($0.lastPathComponent) },
                        folder.appendingPathComponent("x 3.png"))
         XCTAssertEqual(Commands.destination(for: source, in: folder) { _ in false }, folder.appendingPathComponent("x.png"))
+    }
+
+    // MARK: marks
+
+    func testMarksComeFromAFileOrFromTheURLItself() throws {
+        let file = dir.appendingPathComponent("marks.json")
+        try Data(#"[{"type":"ellipse","x":0.1,"y":0.2,"w":0.3,"h":0.4,"color":"red"}]"#.utf8).write(to: file)
+        XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&marks=/tmp/m.json")!).marks, "/tmp/m.json")
+        XCTAssertEqual(try Commands.marks(from: file.path), [Mark(type: .ellipse, x: 0.1, y: 0.2, w: 0.3, h: 0.4, color: "red")])
+        XCTAssertEqual(try Commands.marks(from: #"[{"type":"arrow","x":0.5,"y":0.5,"x2":0.7,"y2":0.6}]"#),
+                       [Mark(type: .arrow, x: 0.5, y: 0.5, x2: 0.7, y2: 0.6)])
+        XCTAssertEqual(try Commands.marks(from: #"[{"type":"text","x":0.1,"y":0.8,"text":"Header should not scroll"}]"#),
+                       [Mark(type: .text, x: 0.1, y: 0.8, text: "Header should not scroll")])
+    }
+
+    func testMarksNameTheOneThingWrong() throws {
+        let cases = [
+            ("/tmp/does-not-exist.json", "cannot read"),
+            ("[]", "no marks"),
+            (#"{"type":"ellipse"}"#, "expected a JSON array"),
+            ("[" + String(repeating: #"{"type":"text","x":0,"y":0,"text":"x"},"#, count: Commands.maxMarks) + #"{"type":"text","x":0,"y":0,"text":"x"}]"#, "at most \(Commands.maxMarks)"),
+            (#"[{"type":"ellipse","x":0,"y":0,"w":0.1,"h":0.1},{"type":"circle","x":0,"y":0}]"#, "mark 2: unknown type \"circle\""),
+            (#"[{"type":"ellipse","x":340,"y":120,"w":0.1,"h":0.1}]"#, "x must be a number from 0 to 1, a fraction of the image; got 340"),
+            (#"[{"type":"ellipse","x":"0.5","y":0,"w":0.1,"h":0.1}]"#, #"got "0.5""#),
+            (#"[{"type":"ellipse","x":0,"y":0,"w":0,"h":0.1}]"#, "w must be more than 0"),
+            (#"[{"type":"arrow","x":0.1,"y":0.1,"x2":0.1,"y2":0.1}]"#, "ends where it starts"),
+            (#"[{"type":"text","x":0.1,"y":0.1}]"#, "text is missing"),
+        ]
+        for (value, expected) in cases {
+            XCTAssertThrowsError(try Commands.marks(from: value), value) { error in
+                XCTAssertTrue("\(error)".contains(expected), "\(value) gave \"\(error)\", wanted \"\(expected)\"")
+            }
+        }
     }
 
     func testKnowsFixedCommandsAndActions() {
@@ -130,6 +173,37 @@ final class CommandsTests: XCTestCase {
         let codes = CommandError.allCases.map(\.rawValue)
         XCTAssertEqual(Set(codes).count, codes.count)
         for code in codes { XCTAssertNil(code.rangeOfCharacter(from: CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz-").inverted), code) }
+    }
+}
+
+final class AgentTests: XCTestCase {
+    private var dir: URL!
+
+    override func setUpWithError() throws {
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("shotnote-agent-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try FileManager.default.removeItem(at: dir)
+    }
+
+    func testARecordedAgentReadsBackAndFollowsTheFile() throws {
+        let file = dir.appendingPathComponent("Screenshot.png")
+        try Data("png".utf8).write(to: file)
+        XCTAssertNil(Agent.of(file), "a capture has no agent")
+        Agent.record("claude", on: file)
+        XCTAssertEqual(Agent.of(file), "claude")
+        let renamed = dir.appendingPathComponent("Screenshot 2.png")
+        try FileManager.default.moveItem(at: file, to: renamed)
+        XCTAssertEqual(Agent.of(renamed), "claude", "the name travels with the file, not with its path")
+        XCTAssertNil(Agent.of(dir.appendingPathComponent("gone.png")))
+    }
+
+    func testEveryVendorFallsBackToOneGlyphToday() {
+        XCTAssertEqual(Agent.symbol(for: "claude"), Agent.fallbackSymbol)
+        XCTAssertEqual(Agent.symbol(for: ""), Agent.fallbackSymbol)
+        XCTAssertNotNil(NSImage(systemSymbolName: Agent.fallbackSymbol, accessibilityDescription: nil), "the badge glyph must exist")
     }
 }
 

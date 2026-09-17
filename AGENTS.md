@@ -51,7 +51,12 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    folder, and `eval`, `show-editor`, and `tweaks` are refused, unless settings.json has
    `"debug": true`. `add?file=` is the exception: it copies an image in from anywhere and the
    watcher then reports it like a capture, minus the copy and annotate toggles (`&annotate` opens
-   the editor). `[annotate] loaded <ms>` reports when the page has the image; it is posted
+   the editor). `&agent=<name>` says which agent is pushing it: the name is recorded on the copy as
+   the `com.petepetrash.shotnote.agent` extended attribute (`Agent.swift`, `xattr -l` shows it) and
+   the card gets a purple badge. `&marks=<json file>` pushes the agent's own annotations with the
+   image (README has the format): the page turns them into a draft before the card appears, so the
+   human edits them like their own, and the command answers once that draft is stored.
+   `[annotate] loaded <ms>` reports when the page has the image; it is posted
    from a `requestAnimationFrame`, which WebKit pauses while the screen is locked or the
    window is hidden, so the line never arrives in that state.
 4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.
@@ -76,8 +81,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    and error lands there with a `[tag]`. `open -g "shotnote://state?tag=<id>"` writes one
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
-   `stack` (cards with `file`, `frame`, `out`, `draft`; selection, focus, feedback, panel, and
-   `strip`, the selection strip's frame or null),
+   `stack` (cards with `file`, `frame`, `out`, `draft`, `agent`; selection, focus, feedback, panel,
+   and `strip`, the selection strip's frame or null),
    `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
@@ -91,7 +96,7 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    Log grammar (`Log.swift`): one event per line, `HH:mm:ss.SSS [tag] …`, details as
    `key=value` pairs, never an embedded newline (the logger flattens them); the launch line ends
    with `date=YYYY-MM-DD`; at 5 MB the file rotates to `Shotnote.log.1`, replacing the previous
-   one. Draft events: `[draft] saved|parked|forgot|swept <file>` and `[drafts] <n>` after every
+   one. Draft events: `[draft] saved|parked|built|forgot|swept <file>` and `[drafts] <n>` after every
    change to the set. `[stack] shown cards=… files=… shown=…ms decoding=…` counts the
    watch folder from the watcher's index.
 
@@ -212,6 +217,14 @@ the same driven sequence; a single run varies.
   and a launch-time sweep removes the rest. The snapshot's asset `src` is the file path; the
   page's asset store resolves it to the served URL, so a stored draft never contains a token.
   Loading a snapshot inside `editor.run(fn, { history: 'ignore' })` keeps it out of undo history.
+- A draft can arrive without anyone opening the editor: `add?marks=` sends the image and the marks
+  to `window.shotnote.build`, which puts them on the page's canvas, takes the snapshot and a
+  preview, and puts the canvas back the way it was (like `export`, and inside the same
+  `history: 'ignore'`). That borrows the canvas for the length of one rendering, so a build is
+  refused while an image is open in the annotator (`AnnotationController.buildRefusal`), and
+  `park`, `export`, and `build` run one at a time on the page: each takes its snapshot after an
+  `await`, so another one's shapes must never land in between. The transition reducer knows
+  nothing about a build, on purpose: nothing is shown, so no card, dim, or flight is involved.
 - Zoom belongs to the app, not the page. A pinch, cmd+wheel, or cmd+plus/minus/0 sends a
   `zoom` message (tldraw never sees those wheels; a plain wheel still pans a magnified image)
   and `AnnotationController.zoom(by:animated:)` grows the window around its center up to the

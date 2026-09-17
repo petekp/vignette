@@ -7,9 +7,10 @@ struct Card: Identifiable {
     var image: NSImage?       // thumbnail-sized, or the draft preview; nil until decoded
     let pointSize: NSSize     // the screenshot in points, for the annotator frame
     let size: NSSize          // the card on screen
+    let agent: String?        // the agent that added the file (see Agent); nil for a capture
 
-    func with(image: NSImage?) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size) }
-    func with(size: NSSize) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size) }
+    func with(image: NSImage?) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent) }
+    func with(size: NSSize) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent) }
 }
 
 @MainActor
@@ -165,7 +166,8 @@ final class ThumbnailController {
                 "cards": model.cards.indices.map { i -> [String: Any] in
                     let card = model.cards[i]
                     return ["file": card.shot.url.path, "frame": StateReport.topLeft(cardFrame(i), primaryHeight: h),
-                            "out": model.outCards.contains(card.id), "draft": model.drafts.contains(card.shot.url.path)]
+                            "out": model.outCards.contains(card.id), "draft": model.drafts.contains(card.shot.url.path),
+                            "agent": card.agent as Any]
                 },
                 "selected": model.selectedCards().map(\.shot.url.path),
                 "focused": model.cards.first { $0.id == model.focused }?.shot.url.path as Any,
@@ -671,7 +673,8 @@ final class ThumbnailController {
         guard let pointSize = Thumbnailer.pointSize(of: shot.url) else { return nil }
         let size = layout.cardSize(for: pointSize)
         let maxPixel = thumbnailPixels(size: size, pointSize: pointSize)
-        let card = Card(id: UUID(), shot: shot, image: previews[shot.url.path] ?? Thumbnailer.cached(at: shot.url, maxPixel: maxPixel), pointSize: pointSize, size: size)
+        let card = Card(id: UUID(), shot: shot, image: previews[shot.url.path] ?? Thumbnailer.cached(at: shot.url, maxPixel: maxPixel),
+                        pointSize: pointSize, size: size, agent: Agent.of(shot.url))
         if card.image == nil {
             Thumbnailer.load(at: shot.url, maxPixel: maxPixel) { [weak self] image in
                 guard let self, let image, self.previews[shot.url.path] == nil, self.model.cards.contains(where: { $0.id == card.id }) else { return }

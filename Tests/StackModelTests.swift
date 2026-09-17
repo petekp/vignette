@@ -8,7 +8,7 @@ final class StackModelTests: XCTestCase {
         // Index 0 is the newest card, at the bottom of the column.
         model.cards = (0..<count).map { i in
             Card(id: UUID(), shot: Screenshot(url: URL(fileURLWithPath: "/tmp/shot \(i).png")), image: nil,
-                 pointSize: NSSize(width: 100, height: 100), size: NSSize(width: 100, height: 100))
+                 pointSize: NSSize(width: 100, height: 100), size: NSSize(width: 100, height: 100), agent: nil)
         }
         return model
     }

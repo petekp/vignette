@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 5
+export const PROTOCOL = 6
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
@@ -15,6 +15,24 @@ export interface LoadPayload {
   viewHeight: number
   /** The image's draft as the host stored it, or null for a fresh canvas. */
   snapshot: TLEditorSnapshot | null
+}
+
+/**
+ * One annotation an agent supplied with `add?marks=`. Every number is a fraction of the image:
+ * `x` and `y` from its top-left corner, `w` and `h` of its size, `x2` and `y2` where an arrow
+ * points. `build` turns these into ordinary shapes, which the user then edits like their own.
+ */
+export interface Mark {
+  type: 'ellipse' | 'rectangle' | 'arrow' | 'text'
+  x: number
+  y: number
+  w?: number
+  h?: number
+  x2?: number
+  y2?: number
+  text?: string
+  /** A color id from config.ts; the first color when absent. */
+  color?: string
 }
 
 export interface ToolInfo { id: string; label: string; key: string; symbol: string }
@@ -57,6 +75,11 @@ declare global {
       park(): Promise<ParkResult>
       /** Clears the canvas. Call `park` first to keep the annotations. */
       reset(): void
+      /**
+       * An agent's marks as a draft, without the editor being shown: the shapes go on the canvas,
+       * the snapshot and a rendering come back, and whatever was on the canvas is put back.
+       */
+      build(payload: LoadPayload, marks: Mark[]): Promise<ParkResult>
       /** Renders each item's draft to PNG. */
       export(items: ExportItem[]): Promise<ExportResult>
       setTool(id: string): void

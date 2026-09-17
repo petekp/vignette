@@ -162,6 +162,13 @@ private struct CardView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if let agent = card.agent, !isOut {
+                AgentBadge(agent: agent, size: ui.selectionCircleSize)
+                    .padding(6)
+                    .transition(.opacity)
+            }
+        }
         .overlay(alignment: .topLeading) {
             if showsCircle {
                 SelectionCircle(number: model.selectionNumber(of: card.id), size: ui.selectionCircleSize)
@@ -258,6 +265,21 @@ private struct SelectionCircle: View {
         }
         .frame(width: size, height: size)
         .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+    }
+}
+
+/// Marks a card an agent pushed in with `add?agent=`.
+private struct AgentBadge: View {
+    let agent: String
+    let size: CGFloat
+    var body: some View {
+        ZStack {
+            Circle().fill(Color.purple)
+            Image(systemName: Agent.symbol(for: agent)).font(.system(size: size / 2, weight: .bold)).foregroundStyle(.white)
+        }
+        .frame(width: size, height: size)
+        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+        .help(agent.isEmpty ? "Added by an agent" : "Added by \(agent)")
     }
 }
 

@@ -60,6 +60,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// The export waiting on the page, if any. Called exactly once: by the page's answer, the
     /// timeout, or a process restart, whichever comes first.
     private var pendingExport: (([String: Data], String?) -> Void)?
+    /// The marks build waiting on the page, if any. One at a time, and called exactly once.
+    private var pendingBuild: ((ParkResult?, String?) -> Void)?
     /// The hide waiting on the page's park, so a process restart still hides the window.
     private var pendingHide: (() -> Void)?
     /// How long Copy Annotated waits for the page before giving up.
@@ -448,6 +450,63 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         }
     }
 
+    /// An image is in the annotator and on screen, so the page's canvas is the user's.
+    private var showingImage: Bool { current != nil && (window?.isVisible ?? false) }
+
+    /// The colors the page offers, by id: what a mark's `color` may name.
+    var colorIDs: [String] { toolbar.model.colors.map(\.id) }
+
+    /// Why a marks build cannot run, or nil when it can. A build borrows the page's canvas for the
+    /// length of one rendering, so it waits for the annotator; the command asks before it copies
+    /// anything, so a refusal is one error line and no file left behind.
+    var buildRefusal: String? {
+        if webView == nil || !pageReady { return "the editor page is not ready" }
+        if showingImage { return "an image is open in the annotator" }
+        if pendingBuild != nil { return "another push is still building its marks" }
+        return nil
+    }
+
+    /// Turns an agent's marks into a draft without showing anything: the page puts the image and the
+    /// marks on its canvas, hands back the snapshot and a rendering, and restores its own canvas.
+    /// `snapshot` is the image's existing draft, so marks add to it instead of replacing it.
+    /// Always answers, like `exportDrafts`: with the result, or with an error after a failure, a
+    /// timeout, or when the page cannot take the call.
+    func buildDraft(_ shot: Screenshot, marks: [Mark], completion: @escaping (ParkResult?, String?) -> Void) {
+        if let refusal = buildRefusal { completion(nil, refusal); return }
+        guard let webView else { completion(nil, "the editor page is not ready"); return }
+        guard let pixels = Thumbnailer.pixelSize(of: shot.url), let points = Thumbnailer.pointSize(of: shot.url) else {
+            completion(nil, "could not read \(shot.url.lastPathComponent)"); return
+        }
+        // The frame the image would open in: the page does not lay anything out for a build, but the
+        // payload says what a view of it looks like.
+        let frame = StackLayout.current.annotationFrame(
+            for: points, visibleFrame: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame, below: spaceBelow)
+        let payload = LoadPayload(
+            key: shot.url.path, mimeType: LocalServer.mimeType(for: shot.url.pathExtension),
+            pixelWidth: pixels.width, pixelHeight: pixels.height,
+            viewWidth: frame.width, viewHeight: frame.height)
+        let epoch = pageEpoch
+        var answered = false
+        let finish: (ParkResult?, String?) -> Void = { [weak self] parked, error in
+            guard !answered else { return }
+            answered = true
+            self?.pendingBuild = nil
+            completion(parked, error)
+        }
+        pendingBuild = finish
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) { finish(nil, "timeout after \(Int(Self.exportTimeout)) s") }
+        let script = PageAPI.build(payload, snapshot: draftSnapshot?(shot.url.path), marks: marks).script
+        webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { [weak self] result in
+            guard let self, self.pageEpoch == epoch else { return }
+            switch result {
+            case .failure(let error): finish(nil, String(describing: error).replacingOccurrences(of: "\n", with: " "))
+            case .success(let value):
+                guard let parked = ParkResult(body: value) else { finish(nil, "page returned \(WebMessage.describe(value as Any))"); return }
+                finish(parked, nil)
+            }
+        }
+    }
+
     /// When each image's `load` was sent, by key, for the `[annotate] loaded` line. A swap can have two in flight.
     private var loadStarted: [String: CFTimeInterval] = [:]
 
@@ -607,6 +666,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         pageEpoch += 1
         Log.write("[web] error process-terminated; reloading")
         pendingExport?([:], "web process terminated")
+        pendingBuild?(nil, "web process terminated")
         pendingHide?()
         onProblem?("The editor restarted")
         webView.reload()

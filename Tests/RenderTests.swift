@@ -82,16 +82,32 @@ final class RenderTests: XCTestCase {
         return (Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255), Int(c.alphaComponent * 255))
     }
 
-    func testExportKeepsTheScreenshotAndDrawsTheAnnotation() throws {
-        waitFor("ready")
-        XCTAssertEqual(messages["ready"]?["protocol"] as? Int, bridgeProtocolVersion, "the built page must match the app's protocol")
-        let payload = LoadPayload(key: fixture.path, mimeType: "image/png", pixelWidth: pixelWidth, pixelHeight: pixelHeight, viewWidth: 800, viewHeight: 600)
-        _ = try eval(PageAPI.load(payload, snapshot: nil).script)
-        // The page confirms `loaded` from a requestAnimationFrame, which never fires in a view that
-        // is not on screen, so poll for the image shape instead.
+    /// Pixels no part of the blue fixture can produce, so they came from a red annotation.
+    private func redPixels(_ rep: NSBitmapImageRep) -> Int {
+        var count = 0
+        for y in stride(from: 0, to: rep.pixelsHigh, by: 2) {
+            for x in stride(from: 0, to: rep.pixelsWide, by: 2) where pixel(rep, x, y).r > pixel(rep, x, y).b + 60 { count += 1 }
+        }
+        return count
+    }
+
+    /// Loads the fixture and waits for the image shape. `loaded` is posted from a
+    /// requestAnimationFrame, which never fires in a view that is not on screen, so this polls.
+    private func loadFixture(snapshot: Data? = nil) throws {
+        _ = try eval(PageAPI.load(payload, snapshot: snapshot).script)
         for _ in 0..<50 where try eval("return window.editor ? window.editor.getShape('shape:screenshot') != null : false") as? Bool != true {
             RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         }
+    }
+
+    private var payload: LoadPayload {
+        LoadPayload(key: fixture.path, mimeType: "image/png", pixelWidth: pixelWidth, pixelHeight: pixelHeight, viewWidth: 800, viewHeight: 600)
+    }
+
+    func testExportKeepsTheScreenshotAndDrawsTheAnnotation() throws {
+        waitFor("ready")
+        XCTAssertEqual(messages["ready"]?["protocol"] as? Int, bridgeProtocolVersion, "the built page must match the app's protocol")
+        try loadFixture()
         XCTAssertEqual(try eval("return window.editor.getCurrentPageShapeIds().size") as? Int, 1)
         // A solid red rectangle over the middle half of the image, in canvas points.
         _ = try eval("""
@@ -117,5 +133,48 @@ final class RenderTests: XCTestCase {
         XCTAssertGreaterThan(center.r, center.b, "the red fill covers the middle: \(center)")
         XCTAssertGreaterThan(abs(center.r - background.r) + abs(center.g - background.g) + abs(center.b - background.b), 100, "the annotation changed the middle: \(center)")
         XCTAssertEqual(try eval("return window.editor.getCanUndo()") as? Bool, true, "export leaves the drawing's undo entry in place")
+    }
+
+    /// An agent's marks become a draft while the editor is busy with another image and never shown:
+    /// the rendering carries the marks, the page's own canvas comes back untouched, and the stored
+    /// snapshot reopens as the image with the marks on it, for the user to edit.
+    func testBuildMakesADraftFromMarksWithoutDisturbingTheCanvas() throws {
+        waitFor("ready")
+        try loadFixture()
+        _ = try eval("""
+            const img = window.editor.getShape('shape:screenshot');
+            window.editor.createShape({ type: 'geo', x: 0, y: 0, props: { w: 10, h: 10, geo: 'rectangle', color: 'light-blue' } });
+            return window.editor.getCurrentPageShapeIds().size;
+            """)
+        let marks = [
+            Mark(type: .ellipse, x: 0.2, y: 0.2, w: 0.5, h: 0.5, color: "red"),
+            Mark(type: .arrow, x: 0.1, y: 0.9, x2: 0.4, y2: 0.6, color: "red"),
+            Mark(type: .text, x: 0.05, y: 0.05, text: "Header should not scroll", color: "red"),
+        ]
+        let built = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(payload, snapshot: nil, marks: marks).script)))
+        let preview = try XCTUnwrap(built.preview, "a build always renders a preview for the card")
+        let rep = try XCTUnwrap(NSBitmapImageRep(data: preview))
+        XCTAssertGreaterThan(redPixels(rep), 50, "the marks are drawn on the screenshot")
+        let corner = pixel(rep, rep.pixelsWide - 4, 4)
+        XCTAssertGreaterThan(corner.b, corner.r + 60, "the screenshot is under the marks: \(corner)")
+
+        XCTAssertEqual(try eval("return window.editor.getCurrentPageShapeIds().size") as? Int, 2, "the page's own canvas is back")
+        XCTAssertEqual(try eval("return window.editor.getCanUndo()") as? Bool, true, "a build leaves the drawing's undo entry in place")
+
+        let snapshot = try JSONSerialization.data(withJSONObject: try XCTUnwrap(built.snapshot))
+        try loadFixture(snapshot: snapshot)
+        XCTAssertEqual(try eval("return window.editor.getCurrentPageShapeIds().size") as? Int, 1 + marks.count,
+                       "the stored draft reopens as the image with every mark on it")
+        XCTAssertEqual(try eval("return window.editor.getShape('shape:screenshot').props.w > 0") as? Bool, true)
+    }
+
+    /// The first thing this page ever draws is a text mark, on a canvas nobody has seen: the font
+    /// it needs has not been used yet, and the rendering must wait for it rather than come back blank.
+    func testATextMarkIsDrawnOnAPageThatHasShownNothing() throws {
+        waitFor("ready")
+        let marks = [Mark(type: .text, x: 0.1, y: 0.4, text: "Header should not scroll", color: "red")]
+        let built = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(payload, snapshot: nil, marks: marks).script)))
+        let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(built.preview)))
+        XCTAssertGreaterThan(redPixels(rep), 50, "the text is drawn, not left blank")
     }
 }
