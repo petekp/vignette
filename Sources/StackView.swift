@@ -98,12 +98,9 @@ private struct CardView: View {
     var body: some View {
         ZStack {
             if isOut {
-                // The card is in the annotator; its slot stays reserved.
-                RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
-                    .fill(.white.opacity(0.06))
-                    .overlay(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
-                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                        .foregroundStyle(.white.opacity(0.35)))
+                // The card is in the annotator. Its slot stays reserved, and empty, so the card
+                // flies back to the same place.
+                Color.clear
             } else {
                 Group {
                     if let image = card.image {

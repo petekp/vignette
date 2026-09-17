@@ -192,8 +192,8 @@ the same driven sequence; a single run varies.
   delete, Esc, Return) live in `Hotkeys` in `App.tsx`, because tldraw's own shortcuts are part
   of the UI that `hideUi` removes. `TransitionLayer` flies a card between its stack slot and that
   frame, and the annotator loads the image while hidden (`prepare`) so it can appear the moment
-  the card lands (`show`). A swap runs two of these at once. The stack keeps a dashed placeholder
-  in the slot.
+  the card lands (`show`). A swap runs two of these at once. The stack keeps the slot, drawn
+  empty, so the card flies back to the same place.
 - Annotations in progress are drafts owned by the app (`DraftStore`), one JSON snapshot per
   screenshot under `~/Library/Application Support/<bundle id>/drafts/` keyed by the file path
   the app uses everywhere (`shot.url.path`), with a preview PNG under `~/Library/Caches/<bundle

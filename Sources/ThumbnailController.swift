@@ -17,7 +17,7 @@ final class StackModel: ObservableObject {
     @Published var cards: [Card] = []          // index 0 is newest, drawn at the bottom
     @Published var offscreen: Set<UUID> = []   // cards parked past the right screen edge
     var slidingOut = false                     // picks the exit stagger order and curve for `offscreen`
-    @Published var outCards: Set<UUID> = []    // cards currently in the annotator; drawn as placeholders
+    @Published var outCards: Set<UUID> = []    // cards currently in the annotator; their slots stay empty
     @Published var drafts: Set<String> = []    // file paths with annotations in progress
     @Published var feedback: String? = nil
     @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
@@ -444,7 +444,7 @@ final class ThumbnailController {
     private func returnCard(_ card: Card) {
         if !model.cards.contains(where: { $0.id == card.id }) {
             // A lone thumbnail left the panel when the annotator opened (see `.show`); it comes back
-            // to the corner as a placeholder the flight lands on. No slide-in: the flight is the entrance.
+            // to the corner as an empty slot the flight lands on. No slide-in: the flight is the entrance.
             if visible { insert(card, entrance: .inPlace) } else { present(cards: [card], stack: false, entrance: .inPlace) }
             _ = model.outCards.insert(card.id)
         }
