@@ -100,6 +100,9 @@ and closing it hands focus back to the app you came from.
 - A card whose annotations you parked with Esc or a swap shows them in its thumbnail, as long as
   the preview beside the draft is still in `~/Library/Caches`. Reopen it and they are back either
   way; Copy Annotated renders them without opening the editor.
+- Reopening a card that already has annotations starts on the selection tool with nothing
+  selected, so the first click picks up a mark instead of drawing another one. A fresh image
+  starts on the circle tool.
 - A card with a purple badge was pushed in by an agent (`add?agent=<name>`), not captured. Hover
   it to see which one. The name is stored on the file itself, so it survives a rename.
 
@@ -113,7 +116,7 @@ menu bar has the same command.
 
 - `~/.config/shotnote/settings.json`: folder, counts, timing, hotkey, backdrop. No rebuild.
 - `Sources/Config.swift`: the actions list.
-- `web/src/config.ts`: editor tools, default tool, colors, stroke size.
+- `web/src/config.ts`: editor tools, the tool each image opens on, colors, stroke size.
 - `web/src/bridge.ts` and `Sources/Bridge.swift`: the only contract between the two sides.
 
 See `AGENTS.md` for the working loop.

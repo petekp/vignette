@@ -232,7 +232,12 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
   const h = p.pixelHeight / ratio
   scaleRef.current = ratio
 
-  silently(editor, () => placeImage(editor, p, w, h))
+  silently(editor, () => {
+    placeImage(editor, p, w, h)
+    // A stored draft carries the selection it was parked with. On the select tool those handles
+    // would be back, and a color picked for the next shape repaints the selected ones instead.
+    editor.selectNone()
+  })
   fitCamera(editor, w, h)
 
   editor.setStyleForNextShapes(DefaultColorStyle, COLORS[0].id)
