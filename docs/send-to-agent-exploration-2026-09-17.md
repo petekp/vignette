@@ -267,7 +267,7 @@ Two details decide whether it feels good:
 
 After Done there is a second home for it: the toast that confirms the copy could carry "Send to
 <agent>" for its few seconds, which costs no toolbar space and catches the moment Pete realizes he
-wants it. In the recent stack, the same thing is a `ShotAction` with `placement: .bar`, so a card
+wants it. In the recent stack, the same thing is a `ShotAction` with `placement: .strip`, so a card
 can go to an agent without opening the editor.
 
 ## Open questions
