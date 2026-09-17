@@ -150,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Log.write("[hotkey] registered \(settings.data.recentHotkey)")
     }
 
-    // MARK: Actions (see Config.actions). Lists arrive oldest first.
+    // MARK: Actions (see Config.actions). Lists arrive in selection order from the stack, else as the URL named them.
 
     func copyToClipboard(_ shots: [Screenshot]) {
         guard !shots.isEmpty else { Commands.error("copy", .missingFile, "nothing selected"); return }
@@ -168,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     func annotate(_ shots: [Screenshot]) {
         guard let shot = shots.last else { Commands.error("annotate", .missingFile, "nothing selected"); return }
-        Commands.ok("annotate", shots.count > 1 ? "\(shot.url.lastPathComponent), the newest of \(shots.count); the annotator holds one image" : shot.url.lastPathComponent)
+        Commands.ok("annotate", shots.count > 1 ? "\(shot.url.lastPathComponent), the last of \(shots.count); the annotator holds one image" : shot.url.lastPathComponent)
         thumbnail.annotate(shot)
     }
 

@@ -65,6 +65,20 @@ struct StackLayout {
         return NSRect(x: panelFrame.maxX - inset - size.width, y: y, width: size.width, height: size.height)
     }
 
+    /// How fast a drag-select scrolls the column, in points a second, from how far the drag point
+    /// sits below the top of the visible column. Zero away from the ends, ramping to the top speed
+    /// at each end and capped past it. Positive brings older cards down into view, negative newer
+    /// ones. The two bands meet in the middle rather than overlapping on a short column.
+    func autoScrollSpeed(fromTop y: CGFloat, viewport: CGFloat) -> CGFloat {
+        let zone = min(ui.autoScrollZone, viewport / 2)
+        guard zone > 0 else { return 0 }
+        let depth: CGFloat
+        if y < zone { depth = (zone - y) / zone }
+        else if y > viewport - zone { depth = (viewport - zone - y) / zone }
+        else { return 0 }
+        return ui.autoScrollSpeed * max(-1, min(1, depth))
+    }
+
     /// Which card (0 = newest) sits at `y` measured from the top of the column. Nil between cards.
     func cardIndex(atYFromTop y: CGFloat, cards: [NSSize]) -> Int? {
         var top: CGFloat = 0

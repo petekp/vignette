@@ -71,7 +71,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `keystroke "a" using command down` after `open shotnote://recent` selects all.
    For the global hotkey, the sweep gesture, or drag-out, System Events is not enough: use
    `scripts/input.sh` (CGEvent; `hotkey double-rshift`, `hotkey cmd+shift+6`, `click X Y`,
-   `drag`, `scroll`, `tap`, `key`; run it with no arguments for the list). It compiles
+   `drag X1 Y1 X2 Y2 [seconds]`, which holds the button at the end that long and posts nothing
+   while it does, `scroll`, `tap`, `key`; run it with no arguments for the list). It compiles
    `scripts/input.swift` with `Sources/HotKeySpec.swift` on first use, so it reads the same hotkey
    strings as settings.json. It posts events only because the terminal it runs from is trusted for
    Accessibility. Its coordinates are global Core Graphics points: top-left of the primary
@@ -155,7 +156,10 @@ the same driven sequence; a single run varies.
 - Preload the web view at launch; the annotator must open instantly.
 - Every animation goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json scales
   every duration, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
-  `toastSeconds`) are not motion. `"ui": {"motion": 0}` makes the stack appear and leave at once,
+  `toastSeconds`) are not motion, and neither is a movement the user's own hand is driving: the
+  drag-select's auto-scroll (`ui.autoScrollZone`, `ui.autoScrollSpeed`, the speed function in
+  `StackLayout.autoScrollSpeed`, ticked by a display link in `ThumbnailController`) follows the
+  drag at its own speed whatever the scale says. `"ui": {"motion": 0}` makes the stack appear and leave at once,
   which is what a script wants. Every SwiftUI animation is a spring made by `Anim.spring`
   (`slideInCurve` "spring" included), and the AppKit tweens use `Tween`'s spring curve: an
   interrupted motion keeps its velocity and blends into the new target instead of jumping.
@@ -346,8 +350,9 @@ the same driven sequence; a single run varies.
 - An action: add a `ShotAction` to `Config.actions` and a method on the `Actions` protocol. Its
   `placement` decides whether it is a hover button on a card, a button in the selection strip, or
   both; `key` gives it a shortcut inside the recent stack. It is a `shotnote://<id>` URL either
-  way. Actions always receive a list of screenshots, oldest first; `annotate` opens the newest of
-  them, since the annotator holds one image, and says so in its `ok` line.
+  way. Actions always receive a list of screenshots: in the order the cards were selected when the
+  stack runs them, and in the order a URL names its `file=` parameters otherwise. `annotate` opens
+  the last of them, since the annotator holds one image, and says so in its `ok` line.
 - An editor tool or color: edit `web/src/config.ts`. A tool needs an SF Symbol name for the
   native toolbar; a color needs the hex the swatch shows.
 - A new message across the bridge: add it to both bridge files, then handle it in

@@ -1,6 +1,7 @@
 import AppKit
 
-/// Composes several screenshots into one tall image with numbered badges, oldest at the top.
+/// Composes several screenshots into one tall image with numbered badges, in the order given:
+/// the first is at the top and wears badge 1.
 enum Stitch {
     static let gap = 24
     static let pad = 24

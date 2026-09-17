@@ -105,7 +105,7 @@ private struct CardView: View {
     @State private var pointer: CGPoint? = nil   // the mouse over this card, in its own coordinates
     private var hovered: Bool { model.hoveredCard == card.id }
     private var pressed: Bool { model.pressedCard == card.id }
-    private var selected: Bool { model.selected.contains(card.id) }
+    private var selected: Bool { model.isSelected(card.id) }
     private var focused: Bool { model.focused == card.id }
     private var isOut: Bool { model.outCards.contains(card.id) }
     /// The card's image is in the transition layer, flying into or out of a stitch. The slot keeps
@@ -242,7 +242,7 @@ private struct CardView: View {
         model.slidingOut ? Anim.spring(ui.slideOutDuration) : Anim.swiftUI(ui.slideInCurve, duration: ui.slideInDuration)
     }
 
-    /// Dragging a selected card carries the whole selection, oldest first.
+    /// Dragging a selected card carries the whole selection, in the order it was selected.
     private func dragURLs() -> [URL] {
         if selected { return model.selectedCards().map(\.shot.url) }
         return [card.shot.url]
@@ -250,7 +250,7 @@ private struct CardView: View {
 }
 
 /// Empty while the card is only hovered or focused; once it is selected it carries the card's
-/// number in the selection, which is the number Stitch will draw on it.
+/// place in the selection, which is the number Stitch will draw on it.
 private struct SelectionCircle: View {
     let number: Int?
     let size: CGFloat
