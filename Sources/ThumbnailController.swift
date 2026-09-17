@@ -423,7 +423,9 @@ final class ThumbnailController {
             if !transition.isActive { sessionCard = nil; dim.hide(); endSession() }
             returnCard(currentCard(card))
         case .hideAnnotator:
-            if let card = sessionCard { model.outCards.remove(card.id); flights.end(id: card.id) }
+            // While the stack slides out, the image is flying to its slot's offscreen position
+            // (see `dismiss`); that flight ends itself, and the slide-out's completion clears the card.
+            if let card = sessionCard, !model.slidingOut { model.outCards.remove(card.id); flights.end(id: card.id) }
             sessionCard = nil
             dim.hide()
             endSession()
