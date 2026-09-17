@@ -21,8 +21,11 @@ final class StackLayoutTests: XCTestCase {
         let cards = [NSSize(width: 200, height: 100), NSSize(width: 100, height: 50)]
         XCTAssertEqual(layout.contentHeight(cards: cards, showsBar: false), 160)
         XCTAssertEqual(layout.contentHeight(cards: cards, showsBar: true), 210)
-        let panel = layout.panelFrame(viewport: 160, visibleFrame: screen)
+        let panel = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: false)
         XCTAssertEqual(panel, NSRect(x: 1512 - 240 - 16 + 20, y: 16 - 20, width: 240, height: 200))
+        let wide = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true)
+        XCTAssertEqual(wide.width, 240 + layout.stripWidth + layout.stripGap, "the strip widens the panel")
+        XCTAssertEqual(wide.maxX, panel.maxX, "the right edge stays put, so the cards do not move")
         let newest = layout.cardFrame(index: 0, cards: cards, panelFrame: panel, showsBar: false, scroll: 0)
         let older = layout.cardFrame(index: 1, cards: cards, panelFrame: panel, showsBar: false, scroll: 0)
         XCTAssertEqual(newest, NSRect(x: panel.maxX - 20 - 200, y: panel.minY + 20, width: 200, height: 100))
@@ -44,6 +47,51 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(layout.cardIndex(atYFromTop: 60, cards: cards), 0)
         XCTAssertNil(layout.cardIndex(atYFromTop: 500, cards: cards))
         XCTAssertEqual(layout.cardSpan(index: 1, cards: cards, showsBar: false).bottom, 110)
+    }
+
+    /// buttonSize 30 and buttonSpacing 5 make a 40-wide strip; two rows are 75 tall.
+    private var stripLayout: StackLayout {
+        var u = ui
+        u.buttonSize = 30; u.buttonSpacing = 5; u.selectionStripGap = 10
+        return StackLayout(ui: u)
+    }
+    private let stripCards = [NSSize(width: 200, height: 100), NSSize(width: 100, height: 50)]   // index 1 on top
+
+    func testSelectionStripCentersOnTheSelectedCardsAndHugsTheWidestOfThem() {
+        let layout = stripLayout
+        func strip(_ selection: [Int], showsBar: Bool = false) -> StackLayout.StripPlacement? {
+            layout.stripPlacement(rows: 2, selection: selection, cards: stripCards, showsBar: showsBar, scroll: 0, viewport: 160)
+        }
+        XCTAssertNil(strip([]), "nothing selected, no strip")
+        XCTAssertNil(strip([7]), "an index that is not a card is ignored")
+        XCTAssertEqual(strip([0])?.size, NSSize(width: 40, height: 75))
+        XCTAssertEqual(strip([0])?.bottom, 12.5, "centered on the newest card, which spans 0 to 100")
+        XCTAssertEqual(strip([0])?.right, 210, "clear of the 200-wide card by the gap")
+        XCTAssertEqual(strip([0, 1])?.bottom, 42.5, "centered on the span from 0 to 160")
+        XCTAssertEqual(strip([1])?.right, 110, "a narrower card brings the strip closer")
+        XCTAssertEqual(strip([0], showsBar: true)?.bottom, 62.5, "the toast row lifts the column and the strip with it")
+    }
+
+    func testSelectionStripStaysInsideTheVisibleColumn() {
+        let layout = stripLayout
+        func bottom(scroll: CGFloat, viewport: CGFloat) -> CGFloat? {
+            layout.stripPlacement(rows: 2, selection: [1], cards: stripCards, showsBar: false, scroll: scroll, viewport: viewport)?.bottom
+        }
+        XCTAssertEqual(bottom(scroll: 0, viewport: 160), 85, "the top card's center would push the strip past the column top")
+        XCTAssertEqual(bottom(scroll: 0, viewport: 100), 25, "clamped to what is on screen")
+        XCTAssertEqual(bottom(scroll: 60, viewport: 100), 85, "scrolled, the visible band moves with it")
+        XCTAssertEqual(bottom(scroll: 0, viewport: 50), -12.5, "a strip taller than the column centers on it")
+    }
+
+    func testSelectionStripFrameSitsLeftOfTheSelectedCard() {
+        let layout = stripLayout
+        let panel = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true)
+        let strip = layout.stripPlacement(rows: 2, selection: [0], cards: stripCards, showsBar: false, scroll: 0, viewport: 160)!
+        let frame = layout.stripFrame(strip, panelFrame: panel, scroll: 0)
+        let card = layout.cardFrame(index: 0, cards: stripCards, panelFrame: panel, showsBar: false, scroll: 0)
+        XCTAssertEqual(frame.maxX, card.minX - layout.stripGap, "the gap separates the strip from the card")
+        XCTAssertEqual(frame.midY, card.midY, "and it is centered on the card")
+        XCTAssertGreaterThanOrEqual(frame.minX, panel.minX, "inside the panel")
     }
 
     func testAnnotationFrameKeepsAspectAndCentersOnTheScreen() {

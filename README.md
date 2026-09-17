@@ -83,6 +83,8 @@ and closing it hands focus back to the app you came from.
 
 - Hover a card for a selection circle. Click it, or drag from it down the column, to select.
   In selection mode clicking a card toggles it.
+- The selected cards get a control strip to their left: copy, copy annotated, stitch, delete.
+  It stays centered between the topmost and the bottommost selected card, and follows the selection.
 - Drag a card out to drop it as a file on a chat window, Finder, or a terminal. A selected card
   drags the whole selection.
 - Cmd+C copies the selection as files, paths as text, and the first image's pixels, so chat apps

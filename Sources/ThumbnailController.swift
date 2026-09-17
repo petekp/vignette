@@ -31,6 +31,8 @@ final class StackModel: ObservableObject {
     @Published var viewport: CGFloat = 0       // visible height of the column
 
     var inSelectionMode: Bool { !selected.isEmpty }
+    /// The row under the column, shown only for a feedback toast.
+    var showsBar: Bool { isStack && feedback != nil }
     var onAction: (ShotAction, [Card]) -> Void = { _, _ in }
     var onSweep: (CGFloat) -> Void = { _ in }       // y from the column top, during a drag from a circle
     var onSweepEnd: () -> Void = {}
@@ -39,6 +41,8 @@ final class StackModel: ObservableObject {
 
     /// Cards for a bulk action, oldest first.
     func selectedCards() -> [Card] { cards.filter { selected.contains($0.id) }.reversed() }
+    /// Where the selected cards sit in the column; 0 is the newest, at the bottom.
+    func selectedIndices() -> [Int] { cards.indices.filter { selected.contains(cards[$0].id) } }
 }
 
 /// Owns the bottom-right panel: fresh-screenshot thumbnails, the recent stack, feedback toasts,
@@ -132,7 +136,16 @@ final class ThumbnailController {
     private var cardSizes: [NSSize] { model.cards.map(\.size) }
     private var ui: UITweaks { Settings.shared.motionUI }
     private var layout: StackLayout { StackLayout(ui: ui) }
-    private var showsBar: Bool { model.isStack && (model.inSelectionMode || model.feedback != nil) }
+    private var showsBar: Bool { model.showsBar }
+    private var showsStrip: Bool { model.isStack && model.inSelectionMode }
+
+    /// The selection strip's screen frame, or nil when nothing is selected.
+    private var stripFrame: NSRect? {
+        guard showsStrip, let strip = layout.stripPlacement(rows: Config.stripRows, selection: model.selectedIndices(),
+                                                            cards: cardSizes, showsBar: showsBar,
+                                                            scroll: model.scroll, viewport: model.viewport) else { return nil }
+        return layout.stripFrame(strip, panelFrame: panel.frame, scroll: model.scroll)
+    }
 
 
     /// The stack, the transition, and the screen, for the `[state]` line. Frames in global top-left points.
@@ -152,6 +165,7 @@ final class ThumbnailController {
                 "feedback": model.feedback as Any, "key": panel.isKeyWindow,
                 "scroll": Int(model.scroll), "viewport": Int(model.viewport),
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h),
+                "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
             ] as [String: Any],
             "transition": ["phase": "\(transition.phase)", "annotating": annotating?.shot.url.path as Any, "isActive": transition.isActive],
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
@@ -718,7 +732,7 @@ final class ThumbnailController {
         model.scroll = 0
         visible = true
         model.viewport = 40
-        panel.setFrame(layout.panelFrame(viewport: 40, visibleFrame: screen.visibleFrame), display: false)
+        panel.setFrame(layout.panelFrame(viewport: 40, visibleFrame: screen.visibleFrame, showsStrip: false), display: false)
         panel.orderFrontRegardless()
     }
 
@@ -744,10 +758,11 @@ final class ThumbnailController {
         layoutPanel(shrinkLater: true, animated: true)
     }
 
-    /// The panel grows at once so nothing is clipped while cards move, and shrinks once they have.
-    /// Its bottom edge never moves; the column is anchored there. A fresh presentation applies
-    /// the viewport at once: animated, its change overlaps the cards' entrance and bends their
-    /// path, since the column frame's height and the slide land in the same transaction.
+    /// The panel grows at once so nothing is clipped while cards and the selection strip move, and
+    /// shrinks once they have. Its bottom and right edges never move; the column is anchored there.
+    /// A fresh presentation applies the viewport at once: animated, its change overlaps the cards'
+    /// entrance and bends their path, since the column frame's height and the slide land in the
+    /// same transaction.
     private func layoutPanel(shrinkLater: Bool, animated: Bool) {
         let content = layout.contentHeight(cards: cardSizes, showsBar: showsBar)
         let viewport = layout.viewportHeight(content: content, visibleFrame: screen.visibleFrame)
@@ -757,9 +772,10 @@ final class ThumbnailController {
             model.viewport = viewport
             model.scroll = min(model.scroll, max(0, content - viewport))
         }
-        let target = layout.panelFrame(viewport: viewport, visibleFrame: screen.visibleFrame)
+        let target = layout.panelFrame(viewport: viewport, visibleFrame: screen.visibleFrame, showsStrip: showsStrip)
         shrinkGeneration += 1
-        if target.height >= panel.frame.height || !panel.isVisible || !shrinkLater {
+        let grows = target.height >= panel.frame.height && target.width >= panel.frame.width
+        if grows || !panel.isVisible || !shrinkLater {
             panel.setFrame(target, display: true)
         } else {
             let gen = shrinkGeneration

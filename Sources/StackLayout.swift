@@ -14,7 +14,15 @@ struct StackLayout {
     var spacing: CGFloat { ui.cardSpacing }
     var inset: CGFloat { ui.panelInset }
     var margin: CGFloat { ui.screenMargin }
+    /// The row under the column that carries the feedback toast.
     var barHeight: CGFloat { ui.selectionBarHeight }
+    /// One column of button-sized rows, padded by the button spacing.
+    var stripWidth: CGFloat { ui.buttonSize + ui.buttonSpacing * 2 }
+    var stripGap: CGFloat { ui.selectionStripGap }
+
+    func stripHeight(rows: Int) -> CGFloat {
+        CGFloat(rows) * ui.buttonSize + CGFloat(max(0, rows - 1)) * ui.buttonSpacing + ui.buttonSpacing * 2
+    }
 
     func cardSize(for image: NSSize) -> NSSize {
         guard image.width > 0, image.height > 0 else { return NSSize(width: maxCardWidth, height: maxCardHeight) }
@@ -35,13 +43,16 @@ struct StackLayout {
         min(content, visibleFrame.height - margin * 2)
     }
 
-    func panelSize(viewport: CGFloat) -> NSSize {
-        NSSize(width: maxCardWidth + inset * 2, height: viewport + inset * 2)
+    /// The panel makes room for the selection strip on its left while cards are selected. Its right
+    /// edge never moves, so the cards stay where they are.
+    func panelSize(viewport: CGFloat, showsStrip: Bool) -> NSSize {
+        let strip = showsStrip ? stripWidth + stripGap : 0
+        return NSSize(width: maxCardWidth + strip + inset * 2, height: viewport + inset * 2)
     }
 
-    /// Panel frame anchored to the bottom-right corner of the screen's visible area. Only the height varies.
-    func panelFrame(viewport: CGFloat, visibleFrame v: NSRect) -> NSRect {
-        let size = panelSize(viewport: viewport)
+    /// Panel frame anchored to the bottom-right corner of the screen's visible area.
+    func panelFrame(viewport: CGFloat, visibleFrame v: NSRect, showsStrip: Bool) -> NSRect {
+        let size = panelSize(viewport: viewport, showsStrip: showsStrip)
         return NSRect(x: v.maxX - size.width - margin + inset, y: v.minY + margin - inset, width: size.width, height: size.height)
     }
 
@@ -69,6 +80,40 @@ struct StackLayout {
         var y: CGFloat = showsBar ? barHeight + spacing : 0
         for i in 0..<index { y += cards[i].height + spacing }
         return (y, y + cards[index].height)
+    }
+
+    /// Where the selection strip sits. Distances are measured from the column's bottom-right
+    /// corner and leave out the scroll, like `cardSpan`.
+    struct StripPlacement: Equatable {
+        var size: NSSize
+        /// Column's right edge to the strip's right edge: the widest selected card, plus the gap.
+        var right: CGFloat
+        /// Column's bottom to the strip's bottom.
+        var bottom: CGFloat
+    }
+
+    /// The strip beside the selection: centered on the span from the topmost to the bottommost
+    /// selected card, and kept inside the part of the column that is on screen. Nil without a selection.
+    func stripPlacement(rows: Int, selection: [Int], cards: [NSSize], showsBar: Bool, scroll: CGFloat, viewport: CGFloat) -> StripPlacement? {
+        let picked = selection.filter { cards.indices.contains($0) }
+        guard let lowest = picked.min(), let highest = picked.max() else { return nil }
+        let size = NSSize(width: stripWidth, height: stripHeight(rows: rows))
+        let span = (bottom: cardSpan(index: lowest, cards: cards, showsBar: showsBar).bottom,
+                    top: cardSpan(index: highest, cards: cards, showsBar: showsBar).top)
+        let center = (span.bottom + span.top) / 2
+        let lowestBottom = scroll, highestBottom = scroll + viewport - size.height
+        // A strip taller than the visible column has nowhere to sit inside it, so it centers on it.
+        let bottom = highestBottom < lowestBottom
+            ? scroll + (viewport - size.height) / 2
+            : min(max(center - size.height / 2, lowestBottom), highestBottom)
+        return StripPlacement(size: size, right: picked.map { cards[$0].width }.max()! + stripGap, bottom: bottom)
+    }
+
+    /// The strip's screen frame, for the state report. The view places it from the same numbers.
+    func stripFrame(_ strip: StripPlacement, panelFrame: NSRect, scroll: CGFloat) -> NSRect {
+        NSRect(x: panelFrame.maxX - inset - strip.right - strip.size.width,
+               y: panelFrame.minY + inset + strip.bottom - scroll,
+               width: strip.size.width, height: strip.size.height)
     }
 
     /// How far a card has to travel to the right to leave the screen.

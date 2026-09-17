@@ -107,6 +107,7 @@ struct DebugPanelView: View {
                     Tweak("Spacing", \.buttonSpacing, 0...24)
                     Tweak("Selection circle", \.selectionCircleSize, 12...36)
                     Tweak("Selection bar height", \.selectionBarHeight, 24...60)
+                    Tweak("Selection strip gap", \.selectionStripGap, 0...40)
                 }
                 Section("Timings") {
                     Tweak("Motion", \.motion, 0...1, step: 0.05)

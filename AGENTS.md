@@ -76,7 +76,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    and error lands there with a `[tag]`. `open -g "shotnote://state?tag=<id>"` writes one
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
-   `stack` (cards with `file`, `frame`, `out`, `draft`; selection, focus, feedback, panel),
+   `stack` (cards with `file`, `frame`, `out`, `draft`; selection, focus, feedback, panel, and
+   `strip`, the selection strip's frame or null),
    `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
@@ -169,6 +170,11 @@ the same driven sequence; a single run varies.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor.
+- The panel widens to the left while cards are selected, to hold the selection strip
+  (`StackLayout.selectionStrip` places it, `panelSize(viewport:showsStrip:)` makes the room). Its
+  right edge never moves, so the cards stay where they are. Only the column carries the hair of
+  alpha that catches clicks and scrolls; the strip's side of the panel stays clear, so a click
+  there still reaches the window underneath.
 - "Click outside" detection goes through `OutsideClick`. A plain global mouse monitor also
   reports clicks on this app's own floating windows (verified: a click inside the annotator
   closed it), so the topmost window under the cursor is checked first.
@@ -264,7 +270,7 @@ the same driven sequence; a single run varies.
 ## Adding things
 
 - An action: add a `ShotAction` to `Config.actions` and a method on the `Actions` protocol. Its
-  `placement` decides whether it is a hover button on a card, a button in the selection bar, or
+  `placement` decides whether it is a hover button on a card, a button in the selection strip, or
   both; `key` gives it a shortcut inside the recent stack. It is a `shotnote://<id>` URL either
   way. Actions always receive a list of screenshots, oldest first; `annotate` opens the newest of
   them, since the annotator holds one image, and says so in its `ok` line.

@@ -9,7 +9,7 @@ enum Config {
     static let previewMaxPixel = 1600
 
     /// Everything you can do to screenshots. Each action is a hover button on a card, an entry in the
-    /// selection bar, a keyboard shortcut inside the recent stack, and a `shotnote://<id>` URL, according
+    /// selection strip, a keyboard shortcut inside the recent stack, and a `shotnote://<id>` URL, according
     /// to its `placement` and `key`. Actions always receive a list, oldest first.
     static let actions: [ShotAction] = [
         ShotAction(id: "copy", symbol: "doc.on.doc", label: "Copy", key: .init("c", [.command]),
@@ -19,18 +19,22 @@ enum Config {
         ShotAction(id: "paths", symbol: "text.quote", label: "Copy Paths", key: .init("c", [.command, .option]),
                    placement: .shortcut) { shots, app in app.copyPaths(shots) },
         ShotAction(id: "copy-annotated", symbol: "pencil.line", label: "Copy Annotated", key: .init("c", [.command, .shift]),
-                   placement: .bar) { shots, app in app.copyAnnotated(shots) },
+                   placement: .strip) { shots, app in app.copyAnnotated(shots) },
         ShotAction(id: "stitch", symbol: "rectangle.stack", label: "Stitch", key: .init("s", [.command]),
-                   placement: .bar, minimumCount: 2) { shots, app in app.stitch(shots) },
+                   placement: .strip, minimumCount: 2) { shots, app in app.stitch(shots) },
         ShotAction(id: "trash", symbol: "trash", label: "Delete", key: .init("\u{7f}", [.command]),
                    placement: .everywhere) { shots, app in app.moveToTrash(shots) },
     ]
 
     static func action(id: String) -> ShotAction? { actions.first { $0.id == id } }
+
+    /// The selection strip, top to bottom: the count, then these.
+    static var stripActions: [ShotAction] { actions.filter(\.showsInStrip) }
+    static var stripRows: Int { stripActions.count + 1 }
 }
 
 struct ShotAction: Sendable {
-    enum Placement { case bar, everywhere, shortcut }   // shortcut: keyboard and URL only; everywhere: the card's corners too
+    enum Placement { case strip, everywhere, shortcut }   // shortcut: keyboard and URL only; everywhere: the card's corners too
     struct Key: Equatable, Sendable {
         let character: String
         let modifiers: NSEvent.ModifierFlags
@@ -46,7 +50,7 @@ struct ShotAction: Sendable {
     var minimumCount = 1
     let run: @MainActor @Sendable ([Screenshot], Actions) -> Void
 
-    var showsInBar: Bool { placement == .bar || placement == .everywhere }
+    var showsInStrip: Bool { placement == .strip || placement == .everywhere }
 }
 
 /// What an action can do. Implemented by AppDelegate.
