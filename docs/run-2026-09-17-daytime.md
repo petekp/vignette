@@ -285,10 +285,12 @@ overlaps I checked rather than trusted:
 - `Sources/AnnotationController.swift` carries page's `onPageReady` and `canvasRefusal`, zoom's
   `zoom(by:at:animated:)`, `applyZoom` and `setCanvasZoom(_:at:)`, and transitions' frame shadow
   read from `Look.annotator`. All three are present and none overwrote another.
-- `web/src/App.tsx`: zoom's `setCanvasZoom` and its resize handler only move the camera; they never
-  touch the store. Every rendering works from explicit export bounds, so it is camera-independent.
-  Zoom therefore correctly stays **outside** the page's one-at-a-time queue. Putting it in would
-  make a zoom wait behind a fifteen-second export and protect nothing.
+- `web/src/App.tsx`: zoom's `setCanvasZoom` and its resize handler move the camera. That is a
+  store write — `setCamera` records a camera, and a snapshot carries session state — so the reason
+  they are safe is not that they leave the store alone. It is that no rendering reads the camera:
+  `render()` exports from explicit shape bounds, and `fitCamera` sets the camera again on every
+  load. Zoom therefore correctly stays **outside** the page's one-at-a-time queue. Putting it in
+  would make a zoom wait behind a fifteen-second export and protect nothing.
 - `Sources/ThumbnailController.swift` carries select's ordered selection, display link and
   `endSweep`, and transitions' `dismiss()` ending flights plus the converge completion's toast.
   Select never put an `endSweep()` in `dismiss()`, so nothing was lost there: the auto-scroll's own
@@ -322,3 +324,108 @@ Deleting it is safe.
 
 **Closing state:** no agent instance is running, your build is running on your real settings, and
 the launch lock is released.
+
+---
+
+## Review
+
+An adversarial review of `todo2/integration` ran after the merges. It found six real defects. All
+six are fixed, plus the two it offered as optional. `./scripts/build.sh --test` passes at the
+branch tip.
+
+Fixes are in two commits:
+
+- `f8c00b4` — the six confirmed findings.
+- `f3de5ba` — Done joins the page's queue.
+
+### What was found and fixed
+
+**A stitch left a live drag-select pointing at cards that had gone.** `stitched` removed the pieces
+from the column and inserted the new card without ending the sweep, so the sweep's anchor named an
+index that no longer existed. The auto-scroll's display link calls `select()` every frame while the
+drag sits in a band, so the next tick read `model.cards[anchor]` past the end: a crash, or a
+selection from the wrong card. `stitched` now calls `endSweep()` next to `clearSelection()`, the
+same as `remove`, `present` and `insert`. This was the one missing site: I read every path that
+changes `model.cards`, and the rest either keep the count and order (`applyTweaks`, `replaceImage`)
+or already end the sweep, and the ones that clear the column do it with `isStack` false, where a
+sweep cannot run.
+
+**The refusal for a borrowed canvas named the wrong caller.** `canvasRefusal` said "Copy Annotated
+is still rendering" whenever an export was in flight. Since a launch now regenerates missing
+previews through the same export, an `add?…&marks=` in the first seconds after such a launch was
+refused with a message that was not true. It says "the page is rendering", which is true of either.
+
+**Cmd+0 left the zoom anchor where the cursor last put it.** `[state] annotator.zoomAnchor` kept
+reading, say, `[0.206, 0.209]` on a window that was back at its fitted frame. The fit now aims the
+anchor home. Not as a hard reset: it blends from the anchor the window has to the middle, because a
+hard reset would step the frame sideways on the next tick by the width the old anchor was holding —
+the bug `ZoomAim` exists to prevent. The endpoint is the same either way, since at scale 1 the frame
+is the fitted one whatever the anchor.
+
+**A re-aimed flight lost its shadow in mid-air.** The stitch converge dropped the new card's flight
+shadow unconditionally, while the sibling `end(id:)` two lines later was guarded by the flight's
+generation. With Annotate New Captures on, the watcher reports the stitched file and the flight is
+re-aimed at the annotator inside that window, so it kept flying with no shadow and never got one
+back. `dropShadow` is now guarded the same way.
+
+**The hover dim painted over a card's ring.** The dim became a sibling overlay so it fades in when a
+card lands under a waiting mouse, but it was applied after the ring stroke, so a focused card's 2 pt
+white ring went under it. The ring moved out of the image chain to a sibling overlay applied after
+the dim. It keeps its own guard, so an empty slot still draws nothing.
+
+**The page could log the server token.** `load failed:` logged `err.stack`, and a WebKit stack names
+the served bundle URL, which begins with the per-launch token. It logs `err.message` now. The same
+concern reaches the page's error text, which `[draft] error preview-failed` and
+`[copy-annotated] error` both echo, so `exportDrafts` now takes every error through a new
+`LocalServer.redacted(_ text:)` that replaces its own token. That was the review's optional item 8.
+
+**Done joined the queue** (the review's optional item 7). It was the last call that renders after an
+`await` outside the page's one-at-a-time queue. The wrapper went on the function rather than on one
+caller, because Return inside the page calls it directly and would otherwise have stayed outside.
+`AGENTS.md` now names `finish` in that list.
+
+### How the fixes were checked
+
+`./scripts/build.sh --test` passed before each commit and at the tip. One launch round, 12:21 to
+12:24, on my scratch settings:
+
+- **Done through the queue:** Return in the annotator gave `[annotate] done Screenshot test
+  5-annotated.png 210543 bytes, copied`, `[transition] finish -> parking(…) effects=park(…)`,
+  `[draft] parked`, `[transition] parked -> idle effects=returnCard(…) markCopied(…)` — the same
+  sequence as before, with the park now running behind the rendering in the queue.
+- **Cmd+0:** three cmd+wheel steps at (0.15, 0.80) gave anchor `[0.151, 0.665]` (y gave way at the
+  screen edge, as documented) and frame `[16,38,1496,872]`. Cmd+0 gave anchor exactly `[0.5, 0.5]`
+  and frame exactly the fitted `[165,103,1182,689]`.
+- **The ring over the dim:** a focused, hovered card outside selection mode. The capture shows the
+  Draw hint, Copy and trash over a dimmed card, with the white ring unbroken all the way round.
+- **The stitch repro:** ten cards, a drag-select held in the top band with the auto-scroll running
+  (scroll 303, eight cards selected), then a two-file `stitch` fired from under it. The column went
+  to nine cards, the sweep ended, the selection cleared, and the app answered `[state]` throughout
+  on the same pid. No crash. On the fixed build this proves only that the fix holds; the reviewer
+  found the defect by reading.
+
+### What is left, and what is not proven
+
+- The smoke round in this report ran a binary stamped `b8ea131-dirty`, because the build preceded
+  the merge commit. The code was identical to the commit — the merge was in the working tree — but
+  the stamp did not say so. The reviewer rebuilt at `40a853e` and re-ran it: 146 tests,
+  `[app] ready build=40a853e`, `[web] ready protocol=7`, and reopen, zoom, the `annotate` wording
+  and the silent preview regeneration all re-verified there.
+- The transitions A.3 fix, the annotator frame's doubled shadow, is inferred. It was measured
+  photometrically before and after under a 1.6 s artificial stall, never caught as a visible frame
+  at natural speed.
+- `MotionTests`' spring-step test starts from rest only. A step retargeted while the spring still
+  has velocity is covered by reading the closed form, not by a test.
+- The corrected `scroll` comment in `scripts/input.swift` describes this Mac, where "natural
+  scrolling" is on. With that preference off the sign is the other way round.
+- Unverified: zoom on the Studio Display, and the screen-edge give-way on a second display. The
+  display link's lifetime over many repeated drags was not measured with `[state] memory`.
+- The pinch and the two-finger double tap are still unverified, for the reason in section 1.
+
+### Incidents in the review round
+
+Stitching in the repro copied its result, so your clipboard holds a stitched image of two
+screenshots of your own screen; Done in the queue check copied its annotated PNG before that. I left
+the clipboard alone afterwards. Fixtures were only in `integration2-scratch/shots`, which is empty
+again, and my one draft was dropped when its file went (`[draft] forgot Screenshot test 5.png`).
+Your build is back on `~/.config/shotnote/settings.json` and the lock is released.
