@@ -184,6 +184,19 @@ the same driven sequence; a single run varies.
   shadow from the same `Look.annotator`, so the two ends cannot drift apart. `dropShadow(id:)`
   zeroes a flight's shadow in the same run-loop turn the card appears or the annotator window
   comes up, so the shadow is never drawn twice and never missing for a frame.
+- Nothing takes a flight's place until it has arrived. A spring's tail runs well past its nominal
+  duration: at `expandDuration * 1.15` it is still a few points short, and a card or a window put
+  at the exact target then steps by that much, shadow included. `fly` therefore has two callbacks.
+  `landed`, at that nominal time, is for what the flight covers: the annotator window and its
+  toolbar come up under the flight image. `arrived`, at `Anim.settle` (when the spring is within
+  half a point of the target, with the flight put exactly on it in that turn), is for anything that
+  becomes visible: the card retakes its slot there, and `lift(id:)` removes the flight image then
+  or later, when the page reports the shot. `docs/shadow-2026-09-17.md` has the frames.
+- A card in the stack and the same card in flight have to cast the same shadow. The column is
+  masked with a fade over the panel's inset at each end (`StackView.column`), and the newest card
+  rests on the viewport's bottom edge, so the bottom fade starts below its shadow rather than
+  through it: solid for `StackLayout.cardShadowRoom` and fading over what is left of the inset. The
+  flight's shadow is cast by the clipped image, before the ring, for the same reason.
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15 (verified: uniform blur), and a bare CABackdropLayer renders black. Do not retry.

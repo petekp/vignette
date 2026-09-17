@@ -13,6 +13,9 @@ struct StackLayout {
     var minCardSide: CGFloat { ui.cardMinSide }
     var spacing: CGFloat { ui.cardSpacing }
     var inset: CGFloat { ui.panelInset }
+    /// How far a card's shadow reaches below its bottom edge: the offset plus the blur's spread,
+    /// which is about twice the radius. The inset is all the room there is, so it is the cap.
+    var cardShadowRoom: CGFloat { min(inset, max(0, ui.cardShadowY + ui.cardShadowRadius * 2)) }
     var margin: CGFloat { ui.screenMargin }
     /// The row under the column that carries the feedback toast.
     var barHeight: CGFloat { ui.selectionBarHeight }

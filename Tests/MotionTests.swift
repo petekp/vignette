@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 
 final class MotionTests: XCTestCase {
@@ -24,6 +25,23 @@ final class MotionTests: XCTestCase {
         XCTAssertEqual(off.flightArcMax, base.flightArcMax, "the cap is a limit on the bow, not an amount of it")
         XCTAssertEqual(base.scaledForMotion(1), base)
         XCTAssertEqual(base.scaledForMotion(0.5).slideInDuration, base.slideInDuration / 2)
+    }
+
+    // MARK: Handing a flight over
+
+    @MainActor func testAFlightHandsOverOnlyOnceItIsThere() {
+        let duration = 0.4, bounce = 0.15, screenWide: CGFloat = 1138
+        let spring = Spring(duration: duration, bounce: bounce)
+        func short(at t: Double) -> CGFloat { abs(1 - spring.value(target: 1.0, time: t)) * screenWide }
+        XCTAssertGreaterThan(short(at: duration * 1.15), 1,
+                             "the nominal end of the motion leaves a screen-wide flight points short")
+        let settled = Anim.settle(duration, bounce: bounce, distance: screenWide, within: 0.5)
+        XCTAssertGreaterThan(settled, duration * 1.15)
+        XCTAssertLessThanOrEqual(short(at: settled), 0.5, "within a pixel by then, so nothing steps")
+        XCTAssertLessThan(Anim.settle(duration, bounce: bounce, distance: 20, within: 0.5), settled,
+                          "a short hop is there sooner")
+        XCTAssertEqual(Anim.settle(0, bounce: bounce, distance: screenWide, within: 0.5), 0,
+                       "motion off hands over in the same turn")
     }
 
     // MARK: The flight curve
