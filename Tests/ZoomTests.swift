@@ -104,6 +104,41 @@ final class ZoomTests: XCTestCase {
         XCTAssertEqual(Zoom.anchor(holding: cursor, of: fitted, fitted: fitted, at: 1.5).y, cursor.y, accuracy: 0.001)
     }
 
+    func testTheWindowAndTheCameraMultiplyToTheLevel() {
+        // Whatever the level, what the user sees is the window's scale times the page's camera.
+        // That is the invariant the two sides cannot drift apart from, so it is checked across the
+        // point where the window stops growing and the camera takes over.
+        for level in stride(from: 1.0, through: 6.0, by: 0.05) {
+            let s = Zoom.split(level: CGFloat(level), maxWindow: 1.2656, maxCamera: 8, pull: 0.3)
+            XCTAssertEqual(s.window * s.camera, CGFloat(level), accuracy: 1e-9, "level \(level)")
+            XCTAssertLessThanOrEqual(s.window, 1.2656)
+            XCTAssertGreaterThanOrEqual(s.camera, 1)
+        }
+    }
+
+    func testTheWindowGrowsFirstAndTheCameraOnlyAfterIt() {
+        XCTAssertEqual(Zoom.split(level: 1, maxWindow: 2, maxCamera: 8, pull: 0.3).window, 1)
+        XCTAssertEqual(Zoom.split(level: 1, maxWindow: 2, maxCamera: 8, pull: 0.3).camera, 1)
+        // Under the window's limit the camera is exactly 1: nothing is asked of the page at all.
+        XCTAssertEqual(Zoom.split(level: 1.9, maxWindow: 2, maxCamera: 8, pull: 0.3).camera, 1)
+        XCTAssertEqual(Zoom.split(level: 1.9, maxWindow: 2, maxCamera: 8, pull: 0.3).window, 1.9)
+        // Past it the window stops and the rest is the camera's.
+        XCTAssertEqual(Zoom.split(level: 5, maxWindow: 2, maxCamera: 8, pull: 0.3).window, 2)
+        XCTAssertEqual(Zoom.split(level: 5, maxWindow: 2, maxCamera: 8, pull: 0.3).camera, 2.5)
+        // A screen that cannot hold a bigger window leaves every level to the camera.
+        XCTAssertEqual(Zoom.split(level: 3, maxWindow: 1, maxCamera: 8, pull: 0.3).window, 1)
+        XCTAssertEqual(Zoom.split(level: 3, maxWindow: 1, maxCamera: 8, pull: 0.3).camera, 3)
+    }
+
+    func testAPullBelowTheFittedSizeShowsAFractionOfItself() {
+        // The window gives a little and the page is not involved, which is what springs back.
+        let pulled = Zoom.split(level: 0.5, maxWindow: 2, maxCamera: 8, pull: 0.3)
+        XCTAssertEqual(pulled.window, 0.85, accuracy: 1e-9)
+        XCTAssertEqual(pulled.camera, 1)
+        XCTAssertEqual(Zoom.split(level: 0, maxWindow: 2, maxCamera: 8, pull: 0.3).window, 1, "a level of zero is not a size")
+        XCTAssertEqual(Zoom.split(level: .nan, maxWindow: 2, maxCamera: 8, pull: 0.3).window, 1)
+    }
+
     func testABadNumberLeavesTheAnchorWhereTheCursorIs() {
         let cursor = CGPoint(x: 0.25, y: 0.25)
         XCTAssertEqual(Zoom.anchor(holding: cursor, of: fitted, fitted: .zero, at: 2), cursor)

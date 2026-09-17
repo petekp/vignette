@@ -187,11 +187,14 @@ the same driven sequence; a single run varies.
 - Nothing takes a flight's place until it has arrived. A spring's tail runs well past its nominal
   duration: at `expandDuration * 1.15` it is still a few points short, and a card or a window put
   at the exact target then steps by that much, shadow included. `fly` therefore has two callbacks.
-  `landed`, at that nominal time, is for what the flight covers: the annotator window and its
-  toolbar come up under the flight image. `arrived`, at `Anim.settle` (when the spring is within
-  half a point of the target, with the flight put exactly on it in that turn), is for anything that
-  becomes visible: the card retakes its slot there, and `lift(id:)` removes the flight image then
-  or later, when the page reports the shot. `docs/shadow-2026-09-17.md` has the frames.
+  `landed`, at that nominal time, is for what the flight covers, and nothing uses it today.
+  `arrived`, at `Anim.settle` (when the spring is within half a point of the target, with the
+  flight put exactly on it in that turn), is for everything else: the card retakes its slot there,
+  the annotator window comes up there, and `lift(id:)` removes the flight image then or later, when
+  the page reports the shot. The annotator draws the same ring and shadow as the flight, so putting
+  its window up at `landed` would step against the picture the flight is still showing; the cost is
+  the toolbar, which is outside the flight image and appears with it.
+  `docs/shadow-2026-09-17.md` has the frames.
 - A card in the stack and the same card in flight have to cast the same shadow. The column is
   masked with a fade over the panel's inset at each end (`StackView.column`), and the newest card
   rests on the viewport's bottom edge, so the bottom fade starts below its shadow rather than
@@ -302,10 +305,23 @@ the same driven sequence; a single run varies.
   nothing is shown, so no card, dim, or flight is involved.
 - Zoom belongs to the app, not the page. A pinch, cmd+wheel, or cmd+plus/minus/0 sends a
   `zoom` message (tldraw never sees those wheels; a plain wheel still pans a magnified image) and
-  `AnnotationController.zoom(by:at:animated:)` grows the window up to the visible screen, then
-  magnifies the image inside it through `setCanvasZoom`. Zooming out reverses that and stops at
-  the fitted size with a short pull that springs back. The toolbar stays where `prepare` placed it
-  and sits above the window as a child.
+  `AnnotationController.zoom(by:at:as:)` moves one number, `zoomLevel`: how far the image is
+  magnified past the frame it opened in. `Zoom.split` divides that level between the window's scale
+  and the page's camera in one place, so `window * camera` is the level and the two cannot disagree:
+  the window grows up to the visible screen and the camera stays at exactly 1 until it cannot grow
+  further. Zooming out reverses that and stops at the fitted size with a short pull that springs
+  back. The toolbar stays where `prepare` placed it and sits above the window as a child.
+  One spring carries the level, ticked by the screen's display link, so nothing teleports and a
+  gesture, a key and a fit bend into each other; a gesture's spring is short (it follows the
+  fingers), a key's, a double tap's and a fit's is longer. What tells them apart is the cursor: a
+  gesture names the point it is over, a key names none. Each tick sets the frame's rect from
+  `Zoom.frame` and then scales the web view's layer by **the frame's own bounds over the size the
+  page was laid out at**, so the image's edges are the frame's edges by construction, in one layer
+  commit. `moveFrame` is the only place the rect is set and it publishes it through `frameOnScreen`
+  and `frameDidChange`. The page is relaid out at the frame's size only once a spring has arrived
+  (on the next turn of the run loop, and skipped if a new input has arrived), because a page laid
+  out smaller than it is drawn is soft; the relayout is a geometric no-op, since the page's
+  `fit-max` camera grows with its viewport by exactly the transform the host drops.
   Both phases hold the point under the cursor. The message carries the cursor as a fraction of the
   window (`at`, y from the top), which the window growth and the page's camera each read in their
   own space; a keyboard step sends none and zooms about the window's middle, as Preview does. A
@@ -316,9 +332,12 @@ the same driven sequence; a single run varies.
   read off the frame on screen at each step, so a frame the edge nudged does not carry that error
   forward, and a step aimed somewhere else mid-spring blends from the anchor it had to the new one
   (`ZoomAim`) instead of stepping sideways. Zoom's springs are in code rather than the tweaks, but
-  the motion scale still shortens them. The state report's `page.zoom` is the in-window
+  the motion scale still shortens them, so `ui.motion: 0` and Reduce Motion land a step at once.
+  The state report's `page.zoom` is the in-window
   magnification as tldraw sees it (1 = the image fills the window), `page.visible` is the part of
-  the image the window shows, and `annotator.zoomAnchor` is the point zoom is holding.
+  the image the window shows, `annotator.zoomLevel` is the one number, `annotator.zoom` and
+  `annotator.canvasZoom` are its two halves, and `annotator.zoomAnchor` is the point zoom is
+  holding. `docs/zoom-2026-09-17.md` says why it is shaped this way.
   "Copy Annotated" hands the stored snapshots to the live editor (`window.shotnote.export`),
   which restores the canvas afterwards; it falls back to the original file for cards without a
   draft, and answers `error export-failed` or `export-timeout` (15 s) instead of hanging.

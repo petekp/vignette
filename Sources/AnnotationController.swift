@@ -28,6 +28,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     var onDraftPreview: ((String, Data) -> Void)?
     /// The editor page is up and can take calls. Also after a web content process restart.
     var onPageReady: (() -> Void)?
+    /// The visible frame's rect on screen, every time it moves, mid-spring ticks included, so
+    /// anything drawn against the frame follows it in the same commit.
+    var frameDidChange: ((NSRect) -> Void)?
 
     /// Nil when the bundle has no page or the server did not start; every call then no-ops.
     private var webView: WKWebView?
@@ -38,6 +41,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// inside it (shadow) with `container` (clip, corner, ring, web view), so a zoom step moves the
     /// frame and scales the page in one layer commit: a window resize and a layer change do not
     /// land on the same display frame, and the image would drift from the frame between them.
+    /// The web view's scale is read off `container.bounds`, so the image's edges are the frame's.
     private var frameView: NSView?
     private var container: NSView?
     private var zoomScreen: NSScreen?
@@ -72,35 +76,50 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// Room the annotator needs below its window: the toolbar and its gap.
     var spaceBelow: CGFloat { AnnotatorToolbar.height + Settings.shared.data.ui.annotationToolbarGap }
 
-    /// The frame `prepare` fitted the image into; zoom scales the window from here.
+    /// The frame `prepare` fitted the image into; zoom grows the window from here.
     private var fittedFrame: NSRect = .zero
-    private lazy var zoom = Tween(initial: 1) { [weak self] v in self?.applyZoom(v) }
-    /// The window's scale on screen. Reset to 1 for each image.
-    private(set) var zoomScale: CGFloat = 1
-    /// Where zooming has pushed the window scale; below 1 only while a gesture pulls against the fitted size.
-    private var windowTarget: CGFloat = 1
+    /// How far the image is magnified past the fitted frame. One number: `Zoom.split` divides it
+    /// between the window's scale and the page's camera, so those two can never disagree about it.
+    private(set) var zoomLevel: CGFloat = 1
+    /// Where the level is heading. Every input moves this; one spring carries the level to it, so
+    /// a gesture, a key and a fit bend into each other instead of stepping.
+    private var zoomTarget: CGFloat = 1
+    private lazy var zoomTween = Tween(initial: 1) { [weak self] v in self?.applyZoom(v) }
+    /// The window's scale on screen. 1 is the fitted frame.
+    var zoomScale: CGFloat { split(zoomLevel).window }
+    /// Magnification inside a window that can grow no further, as the page was last told it; 1 fits.
+    private(set) var canvasZoom: CGFloat = 1
     /// The point the window grows away from, as a fraction of the window: the cursor's own point,
-    /// so what is under it stays under it, or the middle for a keyboard step. See `Zoom`.
+    /// so what is under it stays under it, or the middle for a key. See `Zoom`.
     private var zoomAim = ZoomAim.fitted
+    /// The point the last input named. The page holds the same one while it magnifies.
+    private var zoomCursor = Zoom.center
     /// The anchor in effect at the scale on screen.
     var zoomAnchor: CGPoint { zoomAim.anchor(at: zoomScale) }
-    /// Magnification inside a window that can grow no further; 1 fits the image.
-    private(set) var canvasZoom: CGFloat = 1
-    private var settleTimer: Timer?
     /// How much of a pull below the fitted size the window shows before springing back.
     private let overpull: CGFloat = 0.3
     private let maxCanvasZoom: CGFloat = 8
     /// How far a two-finger double tap zooms in. Preview picks a level from the content; one step
     /// of twice the fitted size is the same gesture without guessing at what is under the cursor.
     private let smartZoomFactor = 2.0
-    /// The window scale the page was last laid out at. Between rest positions the web view keeps
-    /// that layout and a layer transform scales it with the window, so image and frame move in
-    /// the same commit; a real relayout (and the page's refit) happens once, at rest.
-    private var committedScale: CGFloat = 1
-    /// A snapshot of the scaled page shown over the web view while it relays out at rest: the web
-    /// process paints the new size a frame or two later, and the old size would flash meanwhile.
+    /// A gesture's spring. Short enough to follow the fingers; long enough that the window still
+    /// moves once per display refresh when the page's messages arrive unevenly, which they do:
+    /// they cross a process boundary, so two can land in one refresh and none in the next.
+    private let trackingSeconds = 0.1
+    /// A step's spring: a key, a two-finger double tap, or a fit is a movement the eye follows.
+    private let stepSeconds = 0.3
+    /// Set when the spring has arrived, so the page is laid out at its new size once, on the next
+    /// turn of the run loop, rather than inside a display link tick.
+    private var pageLayoutPending = false
+    /// A picture of the page laid over the web view while the page re-renders at a new size.
+    /// Measured: a web view grown before its process has painted draws its old, smaller content in
+    /// the corner of the new size, so the image stops filling the frame until the paint lands. The
+    /// cover is those same pixels stretched to the frame, which is what the live page under a
+    /// transform was showing anyway, and it follows the frame, so a gesture may start while it is
+    /// up. It comes down when the page says it has painted, not on a timer.
     private var cover: NSImageView?
-    private var uncoverTimer: Timer?
+    /// Which relayout the cover belongs to, so a late answer never takes down a newer cover.
+    private var coverEpoch = 0
 
     func preload() {
         _ = FocusReturn.shared
@@ -139,15 +158,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         current = shot
         let win = window ?? makeWindow(webView)
         fittedFrame = frame
-        windowTarget = 1
+        zoomTarget = 1
         zoomAim = .fitted
+        zoomCursor = Zoom.center
         canvasZoom = 1
-        settleTimer?.invalidate()
-        zoom.set(1)
+        zoomTween.set(1)
         place(win, frame: frame)
-        committedScale = 1
         removeCover()
-        layoutWebView()
+        resizeWebView()
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         webView.layoutSubtreeIfNeeded()
@@ -162,12 +180,15 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         moveFrame(to: frame)
     }
 
+    /// The one place the frame's rect is set. The clip, the shadow's path and whoever else follows
+    /// the frame all take it from here, in the same tick, so nothing can be a frame behind.
     private func moveFrame(to frame: NSRect) {
         guard let win = window, let frameView, let container else { return }
         frameView.frame = NSRect(x: frame.minX - win.frame.minX, y: frame.minY - win.frame.minY, width: frame.width, height: frame.height)
         container.frame = frameView.bounds
         let r = Settings.shared.data.ui.annotationCornerRadius
         frameView.layer?.shadowPath = CGPath(roundedRect: frameView.bounds, cornerWidth: r, cornerHeight: r, transform: nil)
+        frameDidChange?(frame)
     }
 
     /// The visible frame in screen coordinates.
@@ -176,141 +197,189 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         return win.convertToScreen(frameView.frame)
     }
 
+    /// What asked for a zoom: the fingers on a trackpad, or a key, a two-finger double tap, or a fit.
+    enum ZoomInput { case gesture, step }
+
     /// Zoom in grows the window until it fills the screen, then magnifies the image inside it.
     /// Zoom out reverses that and stops at the fitted size: pulling further shrinks the window a
-    /// little and it springs back once the gesture ends. The toolbar stays where it is. A gesture
-    /// tracks directly, a keyboard step springs.
+    /// little and it springs back once the gesture ends. The toolbar stays where it is.
     ///
-    /// `cursor` is the point to keep in place, a fraction of the window with y from the top; nil
-    /// means its middle, which is where a keyboard step zooms. Both phases honor it: the window
-    /// grows away from it, and past that the page moves its camera about it.
-    func zoom(by factor: Double?, at cursor: CGPoint?, animated: Bool) {
+    /// `factor` multiplies the zoom level; nil asks for the fitted size. `cursor` is the point to
+    /// keep in place, a fraction of the window with y from the top; nil means its middle, which is
+    /// where a key zooms. Both phases honor it: the window grows away from it, and past that the
+    /// page moves its camera about it.
+    func zoom(by factor: Double?, at cursor: CGPoint?, as input: ZoomInput) {
         guard window != nil, fittedFrame.width > 0 else { return }
-        settleTimer?.invalidate()
-        removeCover()
         let cursor = cursor.map(Zoom.clamped) ?? Zoom.center
-        guard let factor else {
-            setCanvasZoom(1, at: nil)
-            // Fitting ends at the middle, since at scale 1 the frame is the fitted one whatever the
-            // anchor. Blend there from the anchor the window has now: a hard reset would step the
-            // frame sideways on the next tick, by the width the old anchor was holding.
-            zoomAim = ZoomAim(was: zoomAnchor, now: Zoom.center, from: zoomScale, to: 1)
-            windowTarget = 1
-            zoom.animate(to: 1, duration: motionScaled(0.3), curve: "spring")
-            return
-        }
-        var f = CGFloat(factor)
-        if f > 1 {
-            let grown = min(maxZoom, max(1, windowTarget) * f)
-            f *= max(1, windowTarget) / grown   // the part the window could not take
-            windowTarget = grown
-            if f > 1 { setCanvasZoom(min(maxCanvasZoom, canvasZoom * f), at: cursor) }
+        zoomCursor = cursor
+        if let factor, factor.isFinite, factor > 0 {
+            zoomTarget = min(maxLevel, max(minLevel, zoomTarget * CGFloat(factor)))
         } else {
-            let shrunk = max(1, canvasZoom * f)
-            f *= canvasZoom / shrunk
-            setCanvasZoom(shrunk, at: cursor)
-            windowTarget = max(0.5, windowTarget * f)
+            zoomTarget = 1
         }
-        let shown = windowTarget < 1 ? 1 - (1 - windowTarget) * overpull : windowTarget
-        // Only when the window itself moves. A step the window cannot take is the page's alone, and
-        // re-reading the anchor off a frame that is not changing would feed its rounding back in.
-        if shown != zoomScale, let onScreen = frameOnScreen {
-            zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, scale: zoomScale, to: shown)
-        }
-        if animated {
-            zoom.animate(to: shown, duration: motionScaled(0.3), curve: "spring") { [weak self] in
-                guard let self, self.windowTarget >= 1 else { return }   // a pull settles on its own
-                self.commitZoom()
-            }
-        } else {
-            zoom.set(shown)
-        }
-        if !animated || windowTarget < 1 { scheduleSettle() }
+        aim(at: cursor, to: split(zoomTarget).window)
+        zoomTween.animate(to: zoomTarget, duration: motionScaled(input == .gesture ? trackingSeconds : stepSeconds),
+                          curve: "spring") { [weak self] in self?.arrived() }
+    }
+
+    /// Points the window's growth at `cursor`. The anchor it starts from is read off the frame on
+    /// screen, so the step carries on from where the window is: a frame the screen edge has nudged
+    /// does not carry that error forward, and a step aimed elsewhere mid-spring bends rather than
+    /// stepping sideways. The window standing still has nothing to aim.
+    private func aim(at cursor: CGPoint, to target: CGFloat) {
+        guard let onScreen = frameOnScreen, target != zoomScale else { return }
+        zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, scale: zoomScale, to: target)
     }
 
     /// Zoom's springs are in code rather than in the tweaks, but the motion scale still shortens
     /// them, so `ui.motion: 0` and Reduce Motion land a zoom step at once.
     private func motionScaled(_ seconds: Double) -> Double { seconds * Settings.shared.motionScale }
 
-    /// Lays the page out at the window's current size and drops the live transform. A snapshot of
-    /// the scaled page covers the change until the page has painted at the new size.
-    private func commitZoom() {
-        guard let webView, let container else { return }
-        let scale = zoomScale
-        guard scale != committedScale else { layoutWebView(); return }
+    /// How a level divides between the window and the page's camera on this screen.
+    private func split(_ level: CGFloat) -> (window: CGFloat, camera: CGFloat) {
+        Zoom.split(level: level, maxWindow: maxZoom, maxCamera: maxCanvasZoom, pull: overpull)
+    }
+
+    /// The window may grow to the whole visible screen, past the fitted inset and the toolbar's room.
+    private var maxZoom: CGFloat {
+        guard let screen = zoomScreen, fittedFrame.width > 0, fittedFrame.height > 0 else { return 1 }
+        let v = screen.visibleFrame
+        return max(1, min(v.width / fittedFrame.width, v.height / fittedFrame.height))
+    }
+    private var maxLevel: CGFloat { maxZoom * maxCanvasZoom }
+    /// How far a gesture may pull below the fitted size before the level stops following it.
+    private let minLevel: CGFloat = 0.5
+
+    /// One tick. The frame's rect and the image's scale both come from this level, and the web
+    /// view's scale is read off the frame's own bounds, so the image's edges are the frame's edges
+    /// in every commit. The camera only moves once the window cannot grow any further.
+    private func applyZoom(_ level: CGFloat) {
+        guard window != nil, fittedFrame.width > 0 else { return }
+        zoomLevel = level
+        let step = split(level)
+        // Kept on screen: a frame grown to the screen's height slides rather than clips.
+        moveFrame(to: Zoom.frame(fitted: fittedFrame, scale: step.window,
+                                 anchor: zoomAim.anchor(at: step.window), within: zoomScreen?.visibleFrame))
+        fitWebView()
+        setCanvasZoom(step.camera, at: zoomCursor)
+    }
+
+    /// Scales the web view to the frame around it, about the frame's centre. The scale is the
+    /// frame's own size over the size the page was laid out at, so the image lands on the frame's
+    /// edges exactly whatever rect the frame came out as, and both change in one layer commit.
+    private func fitWebView() {
+        guard let webView, let container, let layer = webView.layer else { return }
+        let laid = webView.bounds.size
+        let b = container.bounds
+        guard laid.width > 0, laid.height > 0, b.width > 0, b.height > 0 else { return }
+        webView.frame = NSRect(x: (b.width - laid.width) / 2, y: (b.height - laid.height) / 2,
+                               width: laid.width, height: laid.height)
+        // Scaling happens about the layer's anchor point, wherever that is; the shift puts the
+        // result back on the frame. With the usual centre anchor the shift is zero.
+        let a = layer.anchorPoint
+        let shift = NSPoint(x: (b.width - laid.width) * (a.x - 0.5), y: (b.height - laid.height) * (a.y - 0.5))
+        layer.transform = CATransform3DConcat(CATransform3DMakeScale(b.width / laid.width, b.height / laid.height, 1),
+                                              CATransform3DMakeTranslation(shift.x, shift.y, 0))
+    }
+
+    /// Lays the page out at the size it is drawn at, so it renders at the screen's own resolution
+    /// again. Only at rest: between rest positions the web view keeps its layout and `fitWebView`
+    /// scales it, because a resize costs a round trip to the web process and the page paints the
+    /// new size a frame or more later. A picture of the page covers that gap.
+    private func layoutPageAtFrame() {
+        guard let webView, let container, webView.bounds.size != container.bounds.size else { return }
+        guard cover == nil else { resizeWebView(); return }
         let config = WKSnapshotConfiguration()
         config.afterScreenUpdates = false
         webView.takeSnapshot(with: config) { [weak self] image, _ in
-            guard let self, self.zoomScale == scale, self.committedScale != scale else { return }   // a new gesture settles again
-            if let image {
-                let cover = NSImageView(frame: container.bounds)
-                cover.image = image
-                cover.imageScaling = .scaleAxesIndependently
-                cover.autoresizingMask = [.width, .height]
-                container.addSubview(cover, positioned: .above, relativeTo: webView)
-                self.cover = cover
-            }
-            self.committedScale = scale
-            self.layoutWebView()
-            self.uncoverAfterPaint()
+            guard let self, let webView = self.webView, let container = self.container,
+                  webView.bounds.size != container.bounds.size else { return }
+            if let image { self.showCover(image) }
+            self.resizeWebView()
         }
     }
 
-    /// Three frames: the resize reaches the page in one, its refit and paint land in the next,
-    /// and the third is a margin. A timer backs it up in case the page is busy.
-    private func uncoverAfterPaint() {
-        uncoverTimer?.invalidate()
-        uncoverTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.removeCover() }
+    /// The resize itself. `prepare` calls it directly: nothing is on screen to cover.
+    private func resizeWebView() {
+        guard let webView, let container else { return }
+        webView.frame = container.bounds
+        webView.layer?.transform = CATransform3DIdentity
+        uncoverWhenPainted()
+    }
+
+    private func showCover(_ image: NSImage) {
+        guard let container, let webView else { return }
+        removeCover()
+        let view = NSImageView(frame: container.bounds)
+        view.image = image
+        view.imageScaling = .scaleAxesIndependently
+        view.autoresizingMask = [.width, .height]
+        container.addSubview(view, positioned: .above, relativeTo: webView)
+        cover = view
+    }
+
+    /// Takes the cover down once the page has painted at its new size: two of its frames, the
+    /// second after its resize observer has refitted. A deadline backs that up in case the page
+    /// never answers; it is a main-queue hop, which still runs while a gesture is tracking.
+    private func uncoverWhenPainted() {
+        guard cover != nil else { return }
+        coverEpoch += 1
+        let epoch = coverEpoch
+        let frames = "await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));"
+        webView?.callAsyncJavaScript(frames, arguments: [:], in: nil, in: .page) { [weak self] _ in
+            guard let self, self.coverEpoch == epoch else { return }
+            self.removeCover()
         }
-        let frames = "await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));"
-        webView?.callAsyncJavaScript(frames, arguments: [:], in: nil, in: .page) { [weak self] _ in self?.removeCover() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, self.coverEpoch == epoch else { return }
+            self.removeCover()
+        }
     }
 
     private func removeCover() {
-        uncoverTimer?.invalidate()
-        uncoverTimer = nil
+        guard cover != nil else { return }
         cover?.removeFromSuperview()
         cover = nil
     }
 
-    private func layoutWebView() {
-        guard let webView, let container else { return }
-        webView.layer?.transform = CATransform3DIdentity
-        webView.frame = container.bounds
-    }
-
-    private func scaleWebView(_ scale: CGFloat) {
-        guard let webView, let container, let layer = webView.layer else { return }
-        let s = scale / committedScale
-        let size = NSSize(width: fittedFrame.width * committedScale, height: fittedFrame.height * committedScale)
-        let bounds = container.bounds
-        webView.frame = NSRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2, width: size.width, height: size.height)
-        // Scale about the container's center whatever the layer's anchor point is: scaling about
-        // the anchor A moves the center C to A + s(C - A), and the translation puts it back.
-        let a = layer.anchorPoint
-        let anchor = NSPoint(x: webView.frame.minX + a.x * size.width, y: webView.frame.minY + a.y * size.height)
-        let center = NSPoint(x: bounds.midX, y: bounds.midY)
-        let shift = NSPoint(x: (center.x - anchor.x) * (1 - s), y: (center.y - anchor.y) * (1 - s))
-        layer.transform = CATransform3DConcat(CATransform3DMakeScale(s, s, 1), CATransform3DMakeTranslation(shift.x, shift.y, 0))
+    /// The spring has arrived. A pull below the fitted size lets go here; otherwise the page is
+    /// laid out at its new size, on the next turn of the run loop rather than inside the tick that
+    /// just ran, and only if nothing has aimed the zoom somewhere else meanwhile.
+    private func arrived() {
+        if zoomTarget < 1 { zoom(by: nil, at: nil, as: .step); return }
+        guard !pageLayoutPending else { return }
+        pageLayoutPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pageLayoutPending = false
+            guard self.zoomTween.value == self.zoomTarget else { return }
+            self.layoutPageAtFrame()
+        }
     }
 
     /// A trackpad pinch, straight from AppKit: WebKit would otherwise turn it into gesture events
-    /// the page zooms on. It follows the fingers with no step of its own, about the point they are
-    /// over. The pull springs back the moment the fingers lift.
+    /// the page zooms on. It follows the fingers about the point they are over. The pull springs
+    /// back the moment the fingers lift.
     private func pinch(_ magnification: CGFloat, phase: NSEvent.Phase, at locationInWindow: NSPoint) {
         switch phase {
-        case .ended, .cancelled: settleNow()
-        default: zoom(by: Double(1 + magnification), at: cursorFraction(locationInWindow), animated: false)
+        case .ended, .cancelled: release()
+        default: zoom(by: Double(1 + magnification), at: cursorFraction(locationInWindow), as: .gesture)
         }
+    }
+
+    /// The fingers lifted. A pull below the fitted size lets go now, rather than when the spring
+    /// catches up with it.
+    private func release() {
+        guard zoomTarget < 1 else { return }
+        zoom(by: nil, at: nil, as: .step)
     }
 
     /// The trackpad's two-finger double tap, as Preview and Safari use it: in on the point tapped,
     /// or back to the fitted size from anywhere above it.
     private func smartZoom(at locationInWindow: NSPoint) {
         guard window?.isVisible == true else { return }
-        let zoomedIn = windowTarget > 1.001 || canvasZoom > 1.001
-        zoom(by: zoomedIn ? nil : smartZoomFactor, at: zoomedIn ? nil : cursorFraction(locationInWindow), animated: true)
+        let zoomedIn = zoomTarget > 1.001
+        zoom(by: zoomedIn ? nil : smartZoomFactor, at: zoomedIn ? nil : cursorFraction(locationInWindow), as: .step)
     }
 
     /// A point in the window's coordinates as a fraction of the visible frame, x from the left and
@@ -323,41 +392,11 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         return Zoom.clamped(CGPoint(x: p.x / frameView.bounds.width, y: 1 - p.y / frameView.bounds.height))
     }
 
-    /// A pull below the fitted size lets go shortly after the last zoom message, for cmd+wheel
-    /// and keyboard steps that have no end event.
-    private func scheduleSettle() {
-        settleTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.settleNow() }
-        }
-    }
-
-    private func settleNow() {
-        settleTimer?.invalidate()
-        guard windowTarget < 1 else { commitZoom(); return }
-        windowTarget = 1
-        zoom.animate(to: 1, duration: motionScaled(0.35), curve: "spring") { [weak self] in self?.commitZoom() }
-    }
-
-    /// `cursor` is the point the page keeps in place, a fraction of the window; nil is its middle.
-    private func setCanvasZoom(_ ratio: CGFloat, at cursor: CGPoint?) {
-        guard ratio != canvasZoom else { return }
+    /// `cursor` is the point the page keeps in place, a fraction of the window.
+    private func setCanvasZoom(_ ratio: CGFloat, at cursor: CGPoint) {
+        guard abs(ratio - canvasZoom) > 1e-6 else { return }
         canvasZoom = ratio
         call(.setCanvasZoom(Double(ratio), at: cursor))
-    }
-    /// The window may grow to the whole visible screen, past the fitted inset and the toolbar's room.
-    private var maxZoom: CGFloat {
-        guard let screen = zoomScreen else { return 1 }
-        let v = screen.visibleFrame
-        return max(1, min(v.width / fittedFrame.width, v.height / fittedFrame.height))
-    }
-
-    private func applyZoom(_ scale: CGFloat) {
-        guard window != nil, fittedFrame.width > 0 else { return }
-        zoomScale = scale
-        // Kept on screen: a frame grown to the screen's height slides rather than clips.
-        let f = Zoom.frame(fitted: fittedFrame, scale: scale, anchor: zoomAim.anchor(at: scale), within: zoomScreen?.visibleFrame)
-        moveFrame(to: f.integral)
-        scaleWebView(scale)
     }
 
     func show() {
@@ -440,7 +479,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         container.layer?.masksToBounds = true
         container.autoresizesSubviews = true
         webView.frame = container.bounds
-        // Sized by hand: see `committedScale`.
+        // Sized by hand: a zoom keeps the layout and scales the layer; see `fitWebView`.
         webView.autoresizingMask = []
         container.addSubview(webView)
         frameView.addSubview(container)
@@ -594,7 +633,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let frame = StackLayout.current.annotationFrame(for: NSSize(width: 1200, height: 800), visibleFrame: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame)
         let win = window ?? makeWindow(webView)
         place(win, frame: frame)
-        layoutWebView()
+        resizeWebView()
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         win.makeKeyAndOrderFront(nil)
@@ -675,7 +714,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         case .draft(let key, let snapshot):
             onDraft?(key, snapshot)
         case .zoom(let factor, let at):
-            zoom(by: factor, at: at, animated: factor == nil || abs(log(factor!)) >= log(1.2))
+            // A cursor names a gesture: the wheel and the pinch send the point they are over, a
+            // key sends none. The two differ only in how long their spring is.
+            zoom(by: factor, at: at, as: at == nil ? .step : .gesture)
         }
     }
 
@@ -684,6 +725,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             "current": current?.url.path as Any,
             "windowVisible": window?.isVisible ?? false,
             "zoom": zoomScale,
+            "zoomLevel": zoomLevel,
             "canvasZoom": canvasZoom,
             "zoomAnchor": [zoomAnchor.x, zoomAnchor.y],
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,

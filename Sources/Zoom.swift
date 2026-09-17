@@ -60,6 +60,18 @@ enum Zoom {
     static func clamped(_ cursor: CGPoint) -> CGPoint {
         CGPoint(x: min(max(cursor.x, 0), 1), y: min(max(cursor.y, 0), 1))
     }
+
+    /// How far the image is magnified, divided between the window and the page's camera. The
+    /// window grows until it can grow no further and the camera takes what is left, so
+    /// `window * camera` is the level asked for and the two sides cannot disagree about it. Below
+    /// the fitted size there is nothing to magnify: the window shows `pull` of what was asked and
+    /// the camera stays at 1, which is the give a gesture pulls against.
+    static func split(level: CGFloat, maxWindow: CGFloat, maxCamera: CGFloat, pull: CGFloat) -> (window: CGFloat, camera: CGFloat) {
+        guard level.isFinite, level > 0, maxWindow >= 1, maxCamera >= 1 else { return (1, 1) }
+        if level < 1 { return (1 - (1 - level) * pull, 1) }
+        let window = min(maxWindow, level)
+        return (window, min(maxCamera, level / window))
+    }
 }
 
 /// A zoom step in flight: the anchor the window is growing away from, the one it is aimed at, and
