@@ -92,6 +92,8 @@ struct UITweaks: Codable, Equatable {
     var selectionCircleSize = 19.0
     var selectionBarHeight = 44.0    // the toast row under the column
     var selectionStripGap = 8.0      // selected cards to the control strip beside them
+    var autoScrollZone = 44.0        // band at each end of the column where a drag-select scrolls it
+    var autoScrollSpeed = 600.0      // points a second at the very edge of that band
     // Timings
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
     var toastSeconds = 1.7
@@ -168,6 +170,7 @@ struct UITweaks: Codable, Equatable {
         Bound("buttonSpacing", \.buttonSpacing, 0...1000), Bound("selectionCircleSize", \.selectionCircleSize, 1...1000),
         Bound("selectionBarHeight", \.selectionBarHeight, 1...1000),
         Bound("selectionStripGap", \.selectionStripGap, 0...1000),
+        Bound("autoScrollZone", \.autoScrollZone, 0...10_000), Bound("autoScrollSpeed", \.autoScrollSpeed, 0...10_000),
         Bound("thumbnailSeconds", \.thumbnailSeconds, 0...3600), Bound("toastSeconds", \.toastSeconds, 0...3600),
         Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
         Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),

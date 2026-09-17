@@ -19,8 +19,8 @@ struct InputTool {
       holdtap <modifier keycode> [seconds]       tap a modifier key once, then hold a second press (0.7 s)
       move X Y                                   move the mouse
       click X Y                                  click the left button
-      drag X1 Y1 X2 Y2                           drag with the left button
-      scroll DY [steps]                          scroll; positive DY reveals what is above
+      drag X1 Y1 X2 Y2 [seconds]                 drag with the left button, held at the end that long
+      scroll DY [steps]                          scroll; negative DY reveals what is above
       pasteboard                                 print the general pasteboard's item count and types
     """
 
@@ -54,7 +54,8 @@ struct InputTool {
         case "click":
             let p = points(rest, 2); click(p[0].0, p[0].1)
         case "drag":
-            let p = points(rest, 4); drag(from: p[0], to: p[1])
+            let p = points(rest, 4)
+            drag(from: p[0], to: p[1], hold: rest.count > 4 ? Double(rest[4]) ?? 0 : 0)
         case "scroll":
             guard let dy = rest.first.flatMap({ Double($0) }) else { fail(usage) }
             scroll(dy, steps: rest.dropFirst().first.flatMap { Int($0) } ?? 10)
@@ -109,7 +110,9 @@ struct InputTool {
         mouse(.leftMouseUp, p)
     }
 
-    static func drag(from: (Double, Double), to: (Double, Double), steps: Int = 12) {
+    /// `hold` keeps the button down at the end point that long, posting nothing, the way a hand
+    /// that stops moving does. That is what a drag-select's auto-scroll runs on.
+    static func drag(from: (Double, Double), to: (Double, Double), steps: Int = 12, hold: Double = 0) {
         move(from.0, from.1); pause(0.15)
         mouse(.leftMouseDown, CGPoint(x: from.0, y: from.1)); pause(0.1)
         for i in 1...steps {
@@ -117,10 +120,13 @@ struct InputTool {
             mouse(.leftMouseDragged, CGPoint(x: from.0 + (to.0 - from.0) * t, y: from.1 + (to.1 - from.1) * t))
             pause(0.03)
         }
+        if hold > 0 { pause(hold) }
         mouse(.leftMouseUp, CGPoint(x: to.0, y: to.1))
     }
 
-    /// Trackpad-style pixel deltas; positive dy pulls content down (reveals what is above).
+    /// Trackpad-style pixel deltas. Negative dy pulls the content down, which is what reveals
+    /// the older cards above in the stack (measured against it; CGEvent's sign is the other way
+    /// round from the `scrollingDeltaY` the app reads).
     static func scroll(_ dy: Double, steps: Int) {
         for _ in 0..<max(steps, 1) {
             post(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,

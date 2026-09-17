@@ -67,9 +67,10 @@ final class StackModel: ObservableObject {
 }
 
 /// Owns the bottom-right panel: fresh-screenshot thumbnails, the recent stack, feedback toasts,
-/// and the transitions into and out of the annotator.
+/// and the transitions into and out of the annotator. An NSObject because the drag-select's
+/// auto-scroll takes its ticks from a display link, which calls a target and a selector.
 @MainActor
-final class ThumbnailController {
+final class ThumbnailController: NSObject {
     weak var actions: Actions?
     /// A card starts travelling to `frame`; the annotator loads the image there while hidden.
     var onAnnotatorPrepare: ((Screenshot, NSRect) -> Void)?
@@ -98,6 +99,11 @@ final class ThumbnailController {
     private var sweepAnchor: Int?
     private var sweepSelecting = true
     private var sweepBefore: [UUID] = []
+    /// How far the drag point sits below the top of the visible column, kept while a sweep runs so
+    /// the auto-scroll can re-select from it without a mouse event. Nil when no sweep is running.
+    private var sweepFromTop: CGFloat?
+    private var autoScrollLink: CADisplayLink?
+    private var autoScrollTick: CFTimeInterval = 0
     /// The one owner of the annotation session. Only `send` writes it; see AnnotatorTransition.
     private var transition = AnnotatorTransition()
     /// The card the session is about, kept here because a lone thumbnail leaves the model once the annotator shows.
@@ -115,7 +121,8 @@ final class ThumbnailController {
     private var flightImages: [String: NSImage] = [:]
     private var flightOrder: [String] = []
 
-    init() {
+    override init() {
+        super.init()
         hosting = NSHostingView(rootView: StackView(model: model))
         panel.contentView = hosting
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
@@ -134,7 +141,7 @@ final class ThumbnailController {
         model.onSweep = { [weak self] y in self?.sweep(toYFromTop: y) }
         model.onSweepEnd = { [weak self] in
             guard let self else { return }
-            self.sweepAnchor = nil
+            self.endSweep()
             self.revealFocused()
         }
         model.onHover = { [weak self] id in self?.prefetchFlightImage(id) }
@@ -318,6 +325,7 @@ final class ThumbnailController {
         let urls = Set(shots.map(\.url))
         for url in urls { send(.remove(url.path)) }
         for card in model.cards where urls.contains(card.shot.url) { flights.end(id: card.id) }
+        endSweep()
         model.cards.removeAll { urls.contains($0.shot.url) }
         model.setSelection(model.selection.filter { id in model.cards.contains { $0.id == id } })
         if model.cards.isEmpty { dismiss(); return }
@@ -603,9 +611,25 @@ final class ThumbnailController {
         scrollToReveal(index)
     }
 
+    /// The drag is over: it ended, or the cards it was sweeping changed under it, which makes the
+    /// anchor point at another card. The selection stays as it is.
+    private func endSweep() {
+        sweepAnchor = nil
+        sweepFromTop = nil
+        stopAutoScroll()
+    }
+
+    /// The drag moved. Its place in the column is kept as a distance from the top of what is on
+    /// screen, so the auto-scroll can keep selecting from the same point while the cards move under it.
+    private func sweep(toYFromTop y: CGFloat) {
+        sweepFromTop = y - contentHeight + model.viewport + model.scroll
+        select(toYFromTop: y)
+        updateAutoScroll()
+    }
+
     /// Dragging from a circle selects (or deselects) every card between the start and the cursor,
     /// in the order the drag reached them. Backing up restores cards the drag passed over.
-    private func sweep(toYFromTop y: CGFloat) {
+    private func select(toYFromTop y: CGFloat) {
         guard let index = layout.cardIndex(atYFromTop: y, cards: cardSizes) else { return }
         if sweepAnchor == nil {
             sweepAnchor = index
@@ -614,9 +638,46 @@ final class ThumbnailController {
         }
         let anchor = sweepAnchor!
         let passed = stride(from: anchor, through: index, by: index < anchor ? -1 : 1).map { model.cards[$0].id }
-        model.setSelection(sweepSelecting ? sweepBefore + passed : sweepBefore.filter { !passed.contains($0) })
+        let next = sweepSelecting ? sweepBefore + passed : sweepBefore.filter { !passed.contains($0) }
+        // The auto-scroll runs this every frame; a relayout that changes nothing would still move
+        // the panel and animate the strip.
+        guard next != model.selection || model.focused != model.cards[index].id else { return }
+        model.setSelection(next)
         model.focused = model.cards[index].id
         relayout()
+    }
+
+    /// While the drag sits in a band at either end of the column, the column scrolls on its own and
+    /// the cards passing under the drag keep joining the selection. This is the user's own drag, so
+    /// the motion scale leaves it alone; it stops at the ends of the column and when the drag leaves
+    /// the band or ends.
+    private func updateAutoScroll() {
+        let speed = sweepFromTop.map { layout.autoScrollSpeed(fromTop: $0, viewport: model.viewport) } ?? 0
+        guard speed != 0, visible, model.isStack else { stopAutoScroll(); return }
+        guard autoScrollLink == nil else { return }
+        autoScrollTick = CACurrentMediaTime()
+        let link = screen.displayLink(target: self, selector: #selector(autoScrollStep))
+        link.add(to: .main, forMode: .common)
+        autoScrollLink = link
+    }
+
+    private func stopAutoScroll() {
+        autoScrollLink?.invalidate()
+        autoScrollLink = nil
+    }
+
+    @objc private func autoScrollStep(_ link: CADisplayLink) {
+        guard let fromTop = sweepFromTop, visible, model.isStack else { stopAutoScroll(); return }
+        let speed = layout.autoScrollSpeed(fromTop: fromTop, viewport: model.viewport)
+        guard speed != 0 else { stopAutoScroll(); return }
+        let now = CACurrentMediaTime()
+        // A stalled run loop would otherwise scroll the whole column in one step.
+        let dt = min(0.1, now - autoScrollTick)
+        autoScrollTick = now
+        let next = min(maxScroll, max(0, model.scroll + speed * dt))
+        guard next != model.scroll else { return }
+        model.scroll = next
+        select(toYFromTop: fromTop + contentHeight - model.viewport - model.scroll)
     }
 
     private func run(_ action: ShotAction, on cards: [Card]) {
@@ -705,9 +766,9 @@ final class ThumbnailController {
 
     // MARK: Scrolling
 
-    private var maxScroll: CGFloat {
-        max(0, layout.contentHeight(cards: cardSizes, showsBar: showsBar) - model.viewport)
-    }
+    private var contentHeight: CGFloat { layout.contentHeight(cards: cardSizes, showsBar: showsBar) }
+
+    private var maxScroll: CGFloat { max(0, contentHeight - model.viewport) }
 
     private func scroll(_ event: NSEvent) {
         guard visible, maxScroll > 0 else { return }
@@ -779,6 +840,7 @@ final class ThumbnailController {
         model.outCards = []
         model.forming = []
         model.focused = nil
+        endSweep()
         let wasStack = model.isStack
         model.isStack = stack
         model.slidingOut = false
@@ -823,6 +885,7 @@ final class ThumbnailController {
     private func insert(_ card: Card, entrance: Entrance = .slide) {
         guard !model.cards.contains(where: { $0.shot.url == card.shot.url }) else { return }
         dismissGeneration += 1
+        endSweep()   // the new card takes index 0 and shifts every other, the sweep's anchor included
         if model.feedback != nil && !model.isStack { model.feedback = nil; model.cards = [] }
         if entrance != .inPlace { _ = model.offscreen.insert(card.id) }
         model.slidingOut = false

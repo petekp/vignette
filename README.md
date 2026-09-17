@@ -82,7 +82,9 @@ keyboard focus without stealing your app's focus. Opening the annotator does act
 and closing it hands focus back to the app you came from.
 
 - Hover a card for a selection circle. Click it, or drag from it down the column, to select.
-  In selection mode clicking a card toggles it.
+  In selection mode clicking a card toggles it. Drag into the band at the top or bottom of the
+  column and it scrolls on its own, faster the closer to the edge you hold, selecting the cards
+  that come past until you leave the band, stop at the end of the column, or let go.
 - A selected circle carries the card's place in the selection, counting in the order you picked
   them. That is the order every action receives them; picking a card again puts it last. Cmd+A
   has nobody's order to follow, so it takes the column's: oldest first.
@@ -222,8 +224,9 @@ An image that arrives through `add` skips both: a push from an agent is not a ca
 `settings.json.invalid` and replaced with defaults, with a toast saying so.
 
 The `ui` section holds the design numbers: card sizes, corners, shadows, hover buttons, animation
-durations and curves, how far a card bows and swells on its way to the annotator, backdrop blur and
-tint, annotator window limits. The defaults are the tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or
+durations and curves, how far a card bows and swells on its way to the annotator, how deep the
+drag-select's edge band is and how fast it scrolls there, backdrop blur and tint, annotator window
+limits. The defaults are the tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or
 `open -g shotnote://tweaks`) opens a floating panel of sliders that edits them live, with buttons
 to summon the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns
 every animation off; the system's Reduce Motion does the same.

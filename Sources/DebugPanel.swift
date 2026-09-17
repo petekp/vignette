@@ -108,6 +108,10 @@ struct DebugPanelView: View {
                     Tweak("Selection circle", \.selectionCircleSize, 12...36)
                     Tweak("Selection bar height", \.selectionBarHeight, 24...60)
                     Tweak("Selection strip gap", \.selectionStripGap, 0...40)
+                    Tweak("Drag-select edge band", \.autoScrollZone, 0...120, unit: "pt")
+                    Tweak("Drag-select speed", \.autoScrollSpeed, 0...2000, step: 25, unit: "pt/s")
+                    Text("How deep the band at each end of the column is, and how fast a drag-select scrolls at its very edge.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Timings") {
                     Tweak("Motion", \.motion, 0...1, step: 0.05)

@@ -49,6 +49,26 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(layout.cardSpan(index: 1, cards: cards, showsBar: false).bottom, 110)
     }
 
+    func testDragSelectScrollsOnlyInTheBandsAtTheEndsOfTheColumn() {
+        var u = ui
+        u.autoScrollZone = 40; u.autoScrollSpeed = 600
+        let layout = StackLayout(ui: u)
+        func speed(_ y: CGFloat, viewport: CGFloat = 400) -> CGFloat { layout.autoScrollSpeed(fromTop: y, viewport: viewport) }
+        XCTAssertEqual(speed(200), 0, "the middle of the column does not scroll")
+        XCTAssertEqual(speed(40), 0, "just inside the band's edge")
+        XCTAssertEqual(speed(360), 0)
+        XCTAssertEqual(speed(20), 300, "halfway into the top band, half speed; older cards come down")
+        XCTAssertEqual(speed(0), 600, "at the top edge, full speed")
+        XCTAssertEqual(speed(-100), 600, "past the edge is still full speed, not more")
+        XCTAssertEqual(speed(380), -300, "the bottom band goes the other way")
+        XCTAssertEqual(speed(500), -600)
+        XCTAssertEqual(speed(100, viewport: 100), -600, "a column shorter than two bands still has both")
+        XCTAssertEqual(speed(50, viewport: 100), 0, "and they meet in the middle instead of overlapping")
+        var off = u
+        off.autoScrollZone = 0
+        XCTAssertEqual(StackLayout(ui: off).autoScrollSpeed(fromTop: 0, viewport: 400), 0, "no band, no scrolling")
+    }
+
     /// buttonSize 30 and buttonSpacing 5 make a 40-wide strip; two rows are 75 tall.
     private var stripLayout: StackLayout {
         var u = ui
