@@ -25,10 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail: { [weak self] in self?.openLast() },
         stack: { [weak self] in self?.toggleRecent() },
         toast: { [weak self] in self?.thumbnail.showFeedback("Copied 3 images") },
-        annotator: { [weak self] in
-            guard let self, let url = ScreenshotWatcher.newestScreenshot(in: self.watchFolder) else { return }
-            self.annotate([Screenshot(url: url)])
-        }))
+        annotator: { [weak self] in self?.annotateLast() }))
     private let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
 
@@ -160,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     /// The newest screenshot in the watch folder goes into the annotator, on screen or not.
-    private func annotateLast() {
+    @objc private func annotateLast() {
         guard let url = ScreenshotWatcher.newestScreenshot(in: watchFolder) else {
             Commands.error("annotate", .missingFile, "no screenshot in \(watchFolder.path)"); return
         }
@@ -460,7 +457,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.removeAllItems()
         menu.addItem(withTitle: "Open Last Screenshot", action: #selector(openLast), keyEquivalent: "")
         menu.addItem(withTitle: "Show Recent Screenshots  (\(settings.data.recentHotkey))", action: #selector(toggleRecent), keyEquivalent: "")
-        menu.addItem(withTitle: "Annotate Last Screenshot  (hold \(settings.data.recentHotkey))", action: #selector(annotateLastFromMenu), keyEquivalent: "")
+        menu.addItem(withTitle: "Annotate Last Screenshot  (hold \(settings.data.recentHotkey))", action: #selector(annotateLast), keyEquivalent: "")
         let copyItem = NSMenuItem(title: "Copy New Captures", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
         copyItem.state = settings.data.copyOnCapture ? .on : .off
         menu.addItem(copyItem)
@@ -498,8 +495,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         debugPanel.toggle()
     }
 
-    @objc private func annotateLastFromMenu() { annotateLast() }
-
     @objc private func toggleCopyOnCapture() {
         settings.update { $0.copyOnCapture.toggle() }
         Log.write("[settings] copyOnCapture=\(settings.data.copyOnCapture)")
@@ -522,10 +517,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     @discardableResult
     private func pressRecent() -> ThumbnailController.StackToggle {
-        // Closing must not wait for the folder scan (over 100 ms on a big folder).
         if thumbnail.stackShowing { thumbnail.dismiss(); Commands.ok("recent", "dismissed"); return .dismissed }
-        let scan = ScreenshotWatcher.recentScan(in: watchFolder, limit: settings.data.recentCount)
-        let result = thumbnail.toggleRecent(scan.recent.map(Screenshot.init), scan: "files=\(scan.files) scan=\(scan.ms)ms ")
+        let index = watcher?.recent(limit: settings.data.recentCount) ?? (recent: [], files: 0)
+        watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
+        let result = thumbnail.toggleRecent(index.recent.map(Screenshot.init), detail: "files=\(index.files) ")
         switch result {
         case .shown(let count): Commands.ok("recent", "shown \(count) cards")
         case .dismissed: Commands.ok("recent", "dismissed")

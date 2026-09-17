@@ -537,6 +537,7 @@ final class Settings: ObservableObject {
             let validated = loaded.data.validated()
             for note in validated.corrections { Log.write("[settings] warning clamped \(note)") }
             apply(validated.data, source: "file")
+            lastWrittenData = validated.data   // the next tweak-panel write logs only what it changed
             // Stamp a pre-version file once so the migration does not repeat on every reload.
             if loaded.fileVersion < Settings.currentVersion { writeNow(loaded.data) }
         }

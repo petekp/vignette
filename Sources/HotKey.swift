@@ -11,6 +11,7 @@ final class HotKey {
     private let hold: (() -> Void)?
     private let holdSeconds: TimeInterval
     private var holdTimer: Timer?
+    private var isDown = false
 
     init(keyCode: UInt32, modifiers: UInt32, holdSeconds: TimeInterval = 0.4, action: @escaping () -> Void, hold: (() -> Void)? = nil) {
         self.action = action
@@ -27,7 +28,7 @@ final class HotKey {
             let pressed = GetEventKind(event) == UInt32(kEventHotKeyPressed)
             MainActor.assumeIsolated {
                 let hotKey = Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue()
-                if pressed { hotKey.pressed() } else { hotKey.holdTimer?.invalidate() }
+                if pressed { hotKey.pressed() } else { hotKey.released() }
             }
             return noErr
         }, 2, &specs, selfPtr, &handler)
@@ -36,12 +37,20 @@ final class HotKey {
     }
 
     private func pressed() {
+        // A held key can deliver the press again (auto-repeat); only the first counts until the release.
+        guard !isDown else { return }
+        isDown = true
         action()
         guard let hold else { return }
         holdTimer?.invalidate()
         holdTimer = Timer.scheduledTimer(withTimeInterval: holdSeconds, repeats: false) { _ in
             MainActor.assumeIsolated { hold() }
         }
+    }
+
+    private func released() {
+        isDown = false
+        holdTimer?.invalidate()
     }
 
     // Isolated so `ref`/`handler` (non-Sendable Carbon pointers) can be read without hopping actors.

@@ -296,7 +296,6 @@ final class ThumbnailController {
         if model.isStack { backdrop.refresh(on: screen) }
     }
 
-    /// In the stack the toast sits under the cards; on its own it replaces the thumbnails.
     /// "Copied" over the cards themselves; the toast only when none of them is showing.
     func showCopied(_ shots: [Screenshot]) {
         let ids = shots.compactMap { shot in model.cards.first { $0.shot.url == shot.url }?.id }
@@ -311,6 +310,7 @@ final class ThumbnailController {
         if !model.isStack { scheduleDismiss(after: hold) }
     }
 
+    /// In the stack the toast sits under the cards; on its own it replaces the thumbnails.
     func showFeedback(_ text: String) {
         dismissTimer?.invalidate()
         if visible && model.isStack {

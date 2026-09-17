@@ -169,7 +169,7 @@ private struct CardView: View {
                 CopiedOverlay(corner: ui.cardCornerRadius).transition(.opacity)
             }
         }
-        .animation(Anim.spring(copied ? 0.15 : 0.4), value: copied)
+        .animation(Anim.spring((copied ? 0.15 : 0.4) * motion), value: copied)
         // "Draw" trails the mouse over the card, away from its controls: a click there annotates.
         // Positioned in the card's own coordinates, so it appears where the mouse is.
         .overlay(alignment: .topLeading) {
@@ -178,10 +178,10 @@ private struct CardView: View {
                     .transition(.asymmetric(insertion: .scale(scale: 0.6, anchor: .bottom).combined(with: .opacity), removal: .opacity))
             }
         }
-        .animation(showsDrawHint ? .spring(response: 0.3, dampingFraction: 0.68) : Anim.spring(0.1), value: showsDrawHint)
+        .animation(showsDrawHint ? Anim.spring(0.3 * motion, bounce: 0.3) : Anim.spring(0.1 * motion), value: showsDrawHint)
         .zIndex(hovered ? 1 : 0)   // the hint may hang over the card below
         .scaleEffect(pressed ? ui.pressScale : (hovered && !isOut ? ui.hoverScale : 1))
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: pressed)
+        .animation(Anim.spring(0.25 * motion, bounce: 0.3), value: pressed)
         .animation(Anim.spring(ui.hoverRevealDuration), value: hovered)
         .animation(Anim.spring(ui.hoverRevealDuration), value: showsButtons)
         // Past the panel's right edge, which sits just beyond the screen edge, so the card slides off screen.
@@ -199,6 +199,7 @@ private struct CardView: View {
     }
 
     private var ui: UITweaks { Settings.shared.motionUI }
+    private var motion: Double { Settings.shared.motionScale }
     private var ringColor: Color {
         if selected { return .accentColor }
         if focused { return .white.opacity(0.9) }
@@ -305,6 +306,7 @@ struct TactileButtonStyle: ButtonStyle {
     enum Shape { case circle, rounded, capsule }
     let shape: Shape
     @State private var hovered = false
+    private var motion: Double { Settings.shared.motionScale }
 
     func makeBody(configuration: Configuration) -> some View {
         let fill: AnyShapeStyle = hovered ? AnyShapeStyle(.white.opacity(0.18)) : AnyShapeStyle(.clear)
@@ -318,8 +320,8 @@ struct TactileButtonStyle: ButtonStyle {
                 }
             }
             .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? 1.08 : 1))
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
-            .animation(Anim.spring(0.12), value: hovered)
+            .animation(Anim.spring(0.2 * motion, bounce: 0.3), value: configuration.isPressed)
+            .animation(Anim.spring(0.12 * motion), value: hovered)
             .onHover { hovered = $0 }
     }
 }
@@ -339,7 +341,7 @@ private struct CopiedOverlay: View {
             .scaleEffect(landed ? 1 : 0.3)
             .opacity(landed ? 1 : 0)
         }
-        .onAppear { withAnimation(.spring(response: 0.4, dampingFraction: 0.55)) { landed = true } }
+        .onAppear { withAnimation(Anim.spring(0.4 * Settings.shared.motionScale, bounce: 0.45)) { landed = true } }
         .allowsHitTesting(false)
     }
 }
@@ -366,7 +368,7 @@ private struct DrawHintFollower: View {
             .frame(width: max(0, p.x + width / 2), height: max(0, p.y - 8), alignment: .bottomTrailing)
             .onAppear { shown = point }
             .onChange(of: point) { _, new in
-                withAnimation(.interactiveSpring(response: 0.18, dampingFraction: 0.86)) { shown = new }
+                withAnimation(Anim.spring(0.18 * Settings.shared.motionScale, bounce: 0.15)) { shown = new }
             }
     }
 }
