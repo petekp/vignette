@@ -355,9 +355,11 @@ final class ThumbnailController {
             guard let self else { return }
             self.model.forming.subtract(ids)
             self.model.forming.remove(result.id)
-            guard self.stitchGeneration == generation, self.visible,
-                  self.model.cards.contains(where: { $0.id == result.id }) else { return }
-            self.showCopied([result.shot])
+            guard self.stitchGeneration == generation else { return }
+            // The card takes the copied mark; if the stack has gone meanwhile, or the card with it,
+            // the toast says what the stitch did instead, so a stitch never finishes in silence.
+            if self.visible, self.model.cards.contains(where: { $0.id == result.id }) { self.showCopied([result.shot]) }
+            else { self.showFeedback("Stitched \(cards.count) images, copied") }
         }
         Log.write("[stack] stitched cards=\(cards.count) into=\(url.lastPathComponent)")
         return true
@@ -420,6 +422,12 @@ final class ThumbnailController {
         removeOutsideClickMonitor()
         releaseKeys()
         backdrop.hide()
+        // A stitch still converging ends with the stack: its pieces stop where they are, and the
+        // new card, an empty slot while its image was in the layer, slides out with the column.
+        if !model.forming.isEmpty {
+            for id in model.forming { flights.end(id: id) }
+            model.forming = []
+        }
         if let card = annotating, model.isStack {
             // The image in the annotator leaves with the stack while the page parks its draft.
             var slot = cardFrame(of: card)
