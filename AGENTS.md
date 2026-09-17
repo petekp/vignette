@@ -186,20 +186,24 @@ the same driven sequence; a single run varies.
   comes up, so the shadow is never drawn twice and never missing for a frame.
 - Nothing takes a flight's place until it has arrived. A spring's tail runs well past its nominal
   duration: at `expandDuration * 1.15` it is still a few points short, and a card or a window put
-  at the exact target then steps by that much, shadow included. `fly` therefore has two callbacks.
-  `landed`, at that nominal time, is for what the flight covers, and nothing uses it today.
+  at the exact target then steps by that much, shadow included. `fly` therefore answers on
   `arrived`, at `Anim.settle` (when the spring is within half a point of the target, with the
-  flight put exactly on it in that turn), is for everything else: the card retakes its slot there,
-  the annotator window comes up there, and `lift(id:)` removes the flight image then or later, when
-  the page reports the shot. The annotator draws the same ring and shadow as the flight, so putting
-  its window up at `landed` would step against the picture the flight is still showing; the cost is
-  the toolbar, which is outside the flight image and appears with it.
+  flight put exactly on it in that turn): the card retakes its slot there, the annotator window
+  comes up there, and `lift(id:)` removes the flight image then or later, when the page reports the
+  shot. The annotator draws the same ring and shadow as the flight, so a window put up earlier
+  would step against the picture the flight is still showing; the cost is the toolbar, which is
+  outside the flight image and appears with it. The window is at the fitted frame by then whatever
+  the zoom was: `hide` springs the level back to 1 first and comes down once that has arrived, so
+  the flight starts where the picture is (`AnnotationController.fitBeforeHide`).
   `docs/shadow-2026-09-17.md` has the frames.
 - A card in the stack and the same card in flight have to cast the same shadow. The column is
   masked with a fade over the panel's inset at each end (`StackView.column`), and the newest card
   rests on the viewport's bottom edge, so the bottom fade starts below its shadow rather than
-  through it: solid for `StackLayout.cardShadowRoom` and fading over what is left of the inset. The
-  flight's shadow is cast by the clipped image, before the ring, for the same reason.
+  through it: solid for `StackLayout.cardShadowRoom` and fading over what is left of the inset.
+  `StackLayout.inset` is therefore at least that room plus `shadowFade`, so a shadow bigger than
+  `ui.panelInset` grows the panel around the column instead of being cut off; the cards do not
+  move, since their frames are measured from the panel's edge inwards. The flight's shadow is cast
+  by the clipped image, before the ring, for the same reason.
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15 (verified: uniform blur), and a bare CABackdropLayer renders black. Do not retry.
@@ -318,7 +322,7 @@ the same driven sequence; a single run varies.
   `Zoom.frame` and then scales the web view's layer by **the frame's own bounds over the size the
   page was laid out at**, so the image's edges are the frame's edges by construction, in one layer
   commit. `moveFrame` is the only place the rect is set and it publishes it through `frameOnScreen`
-  and `frameDidChange`. The page is relaid out at the frame's size only once a spring has arrived
+  and `frameOnScreen` reads that rect back. The page is relaid out at the frame's size only once a spring has arrived
   (on the next turn of the run loop, and skipped if a new input has arrived), because a page laid
   out smaller than it is drawn is soft; the relayout is a geometric no-op, since the page's
   `fit-max` camera grows with its viewport by exactly the transform the host drops.
@@ -348,7 +352,10 @@ the same driven sequence; a single run varies.
   disk. Screen-size flight decodes are dropped whenever the stack hides. Every image that reaches
   a card is decoded before it gets there (`Thumbnailer`, draft previews through
   `Thumbnailer.decode`): an `NSImage(data:)` is decoded by Core Animation at its first commit, on
-  the main thread, which cost the stack's first paint 40 ms for ten previews.
+  the main thread, which cost the stack's first paint 40 ms for ten previews. The cover a zoom's
+  relayout hides behind is a snapshot of the web view at its previous rest size (about 59 MB at 2x
+  on a 5K display); there is one at a time, and it is freed when the page reports it has painted or
+  after two seconds.
 - Bumping tldraw (`web/package.json` pins the version; `LICENSE-tldraw.md` must be the matching
   license text) is a checklist, and `Tests/RenderTests.swift` is the gate:
   1. License: read the new version's LICENSE and its `LicenseProvider`; confirm an unlicensed

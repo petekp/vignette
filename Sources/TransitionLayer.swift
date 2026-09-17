@@ -60,6 +60,8 @@ final class TransitionLayer {
     /// How close a flight has to be to its target before something else may take its place:
     /// one pixel on a Retina display.
     private static let arrivalTolerance: CGFloat = 0.5
+    /// Counts every flight this layer has started, so no two ever share a generation.
+    private var nextGeneration = 0
 
     init() {
         panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
@@ -76,11 +78,11 @@ final class TransitionLayer {
     var isFlying: Bool { !model.flights.isEmpty }
 
     /// Moves `id` to `to`. A new flight starts at `from`; an existing one turns from where it is.
-    /// `landed` runs when the motion is visually over; `arrived` when the spring has really settled
-    /// on the target. Whatever takes the flight's place draws at the exact target, so it has to
-    /// appear on `arrived` or it steps by what the spring still had to go.
+    /// `arrived` runs when the spring has really settled on the target. Whatever takes the flight's
+    /// place draws at the exact target, so it has to appear then or it steps by what the spring
+    /// still had to go.
     func fly(id: UUID, image: NSImage, from: NSRect, to: NSRect, lookFrom: Look, lookTo: Look,
-             on screen: NSScreen, landed: @escaping () -> Void = {}, arrived: @escaping () -> Void = {}) {
+             on screen: NSScreen, arrived: @escaping () -> Void = {}) {
         let ui = Settings.shared.motionUI
         showPanel(on: screen)
         let gen = start(id: id, image: image, from: from, to: to, look: lookFrom, ui: ui)
@@ -98,13 +100,7 @@ final class TransitionLayer {
                 self.model.flights[i].opacity = 1
                 self.model.flights[i].blend = 1
             }
-            // A spring settles a little after its nominal duration, so the motion is over here even
-            // though the value is not quite there. Only what the flight covers may appear now.
-            DispatchQueue.main.asyncAfter(deadline: .now() + ui.expandDuration * 1.15) { [weak self] in
-                guard let self, self.isCurrent(id, gen) else { return }
-                landed()
-            }
-            // The spring's tail runs on past that, still a pixel or two short of the target. By here
+            // The spring's tail runs on past its nominal duration. By here
             // it is inside `arrivalTolerance`, so putting it exactly on the target is a sub-pixel
             // move, and whatever takes its place lands on the same pixels.
             DispatchQueue.main.asyncAfter(deadline: .now() + settleTime) { [weak self] in
@@ -181,17 +177,21 @@ final class TransitionLayer {
         // It is going somewhere else now, so it has not arrived and any lift waits for the new end.
         arrivedFlights.remove(id)
         pendingLift.remove(id)
+        // Never repeats, so a timer left over from a flight that has been removed cannot match the
+        // one that takes the same id next and snap it to the old target.
+        nextGeneration += 1
+        let gen = nextGeneration
         if let i = model.flights.firstIndex(where: { $0.id == id }) {
-            model.flights[i].generation += 1
+            model.flights[i].generation = gen
             model.flights[i].image = image
             model.flights[i].previousPath = model.flights[i].path
             model.flights[i].path = path
             model.flights[i].blend = 0
-            return model.flights[i].generation
+            return gen
         }
         model.flights.append(Flight(id: id, image: image, frame: local(from), look: look,
-                                    path: path, previousPath: path))
-        return 0
+                                    path: path, previousPath: path, generation: gen))
+        return gen
     }
 
     func setImage(id: UUID, _ image: NSImage) {

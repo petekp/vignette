@@ -5,6 +5,9 @@ final class StackLayoutTests: XCTestCase {
         var u = UITweaks()
         u.cardMaxWidth = 200; u.cardMaxHeight = 100; u.cardMinSide = 50; u.cardSpacing = 10
         u.panelInset = 20; u.screenMargin = 16; u.selectionBarHeight = 40
+        // The inset is at least the card's shadow plus a fade, so these decide it too: 4 + 4*2 + 7
+        // is 19, under the 20 below, which is what the frames in these tests are written against.
+        u.cardShadowY = 4; u.cardShadowRadius = 4
         u.annotationScreenInset = 60; u.annotationMinWidth = 480; u.annotationMinHeight = 140
         return u
     }
@@ -15,6 +18,22 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(layout.cardSize(for: NSSize(width: 2000, height: 1000)), NSSize(width: 200, height: 100))
         XCTAssertEqual(layout.cardSize(for: NSSize(width: 1000, height: 100)), NSSize(width: 200, height: 50), "a wide strip keeps the minimum side")
         XCTAssertEqual(layout.cardSize(for: .zero), NSSize(width: 200, height: 100))
+    }
+
+    func testAShadowBiggerThanTheInsetWidensThePanelInsteadOfBeingCutOff() {
+        var big = ui
+        big.cardShadowY = 10; big.cardShadowRadius = 8   // room 26, past the 20 pt inset
+        let layout = StackLayout(ui: big)
+        XCTAssertEqual(layout.cardShadowRoom, 26)
+        XCTAssertEqual(layout.inset, 26 + StackLayout.shadowFade, "the panel makes room rather than clipping the shadow")
+        XCTAssertGreaterThanOrEqual(layout.inset - layout.cardShadowRoom, StackLayout.shadowFade,
+                                    "the column always keeps a soft edge below the shadow")
+        // The cards stay where they are: the panel grows around them.
+        let cards = [NSSize(width: 200, height: 100)]
+        let panel = layout.panelFrame(viewport: 100, visibleFrame: screen, showsStrip: false)
+        let card = layout.cardFrame(index: 0, cards: cards, panelFrame: panel, showsBar: false, scroll: 0)
+        XCTAssertEqual(card.maxX, screen.maxX - big.screenMargin)
+        XCTAssertEqual(card.minY, screen.minY + big.screenMargin)
     }
 
     func testColumnHeightAndCardFramesStackUpwardFromTheBottom() {

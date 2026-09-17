@@ -28,9 +28,6 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     var onDraftPreview: ((String, Data) -> Void)?
     /// The editor page is up and can take calls. Also after a web content process restart.
     var onPageReady: (() -> Void)?
-    /// The visible frame's rect on screen, every time it moves, mid-spring ticks included, so
-    /// anything drawn against the frame follows it in the same commit.
-    var frameDidChange: ((NSRect) -> Void)?
 
     /// Nil when the bundle has no page or the server did not start; every call then no-ops.
     private var webView: WKWebView?
@@ -108,9 +105,15 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private let trackingSeconds = 0.1
     /// A step's spring: a key, a two-finger double tap, or a fit is a movement the eye follows.
     private let stepSeconds = 0.3
+    /// The fit the window makes on its way out, before the card flies back. Shorter than a step:
+    /// it is the start of the card leaving rather than a zoom the user asked for.
+    private let fitToCloseSeconds = 0.2
     /// Set when the spring has arrived, so the page is laid out at its new size once, on the next
     /// turn of the run loop, rather than inside a display link tick.
     private var pageLayoutPending = false
+    /// One camera call at a time, with the newest value waiting; see `setCanvasZoom`.
+    private var cameraInFlight = false
+    private var cameraPending: (ratio: CGFloat, cursor: CGPoint)?
     /// A picture of the page laid over the web view while the page re-renders at a new size.
     /// Measured: a web view grown before its process has painted draws its old, smaller content in
     /// the corner of the new size, so the image stops filling the frame until the paint lands. The
@@ -180,15 +183,15 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         moveFrame(to: frame)
     }
 
-    /// The one place the frame's rect is set. The clip, the shadow's path and whoever else follows
-    /// the frame all take it from here, in the same tick, so nothing can be a frame behind.
+    /// The one place the frame's rect is set: the frame view, the clip and the shadow's path all
+    /// take it from here, in the same tick, so nothing can be a frame behind. `frameOnScreen`
+    /// reads the result back for anyone who needs the rect.
     private func moveFrame(to frame: NSRect) {
         guard let win = window, let frameView, let container else { return }
         frameView.frame = NSRect(x: frame.minX - win.frame.minX, y: frame.minY - win.frame.minY, width: frame.width, height: frame.height)
         container.frame = frameView.bounds
         let r = Settings.shared.data.ui.annotationCornerRadius
         frameView.layer?.shadowPath = CGPath(roundedRect: frameView.bounds, cornerWidth: r, cornerHeight: r, transform: nil)
-        frameDidChange?(frame)
     }
 
     /// The visible frame in screen coordinates.
@@ -294,6 +297,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         webView.takeSnapshot(with: config) { [weak self] image, _ in
             guard let self, let webView = self.webView, let container = self.container,
                   webView.bounds.size != container.bounds.size else { return }
+            // A snapshot is a round trip to the web process: a momentum tail can resume while it is
+            // out. Laying the page out then would resize it under a moving frame.
+            guard self.zoomTween.value == self.zoomTarget else { return }
             if let image { self.showCover(image) }
             self.resizeWebView()
         }
@@ -393,10 +399,30 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// `cursor` is the point the page keeps in place, a fraction of the window.
+    ///
+    /// Sent at the page's pace, not the display link's. The window fills the screen at a modest
+    /// level on a large image, so almost all of a zoom is the camera phase, and a call per tick at
+    /// 120 Hz would queue work in the web process faster than it can run it. One call is in flight
+    /// at a time; the latest value goes when it returns, and the ones in between are dropped,
+    /// because only the last one is where the camera should be.
     private func setCanvasZoom(_ ratio: CGFloat, at cursor: CGPoint) {
         guard abs(ratio - canvasZoom) > 1e-6 else { return }
         canvasZoom = ratio
-        call(.setCanvasZoom(Double(ratio), at: cursor))
+        if cameraInFlight { cameraPending = (ratio, cursor); return }
+        sendCanvasZoom(ratio, at: cursor)
+    }
+
+    private func sendCanvasZoom(_ ratio: CGFloat, at cursor: CGPoint) {
+        guard let webView else { return }
+        cameraInFlight = true
+        webView.evaluateJavaScript(PageAPI.setCanvasZoom(Double(ratio), at: cursor).script) { [weak self] _, error in
+            guard let self else { return }
+            self.cameraInFlight = false
+            if let error { Log.write("[web] error call failed: \(String(describing: error).replacingOccurrences(of: "\n", with: " "))") }
+            guard let next = self.cameraPending else { return }
+            self.cameraPending = nil
+            self.sendCanvasZoom(next.ratio, at: next.cursor)
+        }
     }
 
     func show() {
@@ -413,16 +439,25 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// transition that starts there shows the annotations. Called once per `prepare`, by the reducer.
     func hide(then completion: (() -> Void)? = nil) {
         removeOutsideClickMonitor()
-        guard let shot = current, let webView, pageReady else { hideWindows(); completion?(); return }
-        current = nil
-        let epoch = pageEpoch
-        var answered = false
-        let done: () -> Void = { [weak self] in
-            guard !answered else { return }
-            answered = true
+        // The window comes home to the fitted frame before it goes. The card flies back from that
+        // frame, and a zoomed window is not only somewhere else: it shows a crop of the image where
+        // the flight image is the whole picture, so handing over from it would swap the content too.
+        var fitted = false, answered = false, finished = false
+        let finish: () -> Void = { [weak self] in
+            guard fitted, answered, !finished else { return }
+            finished = true
             self?.pendingHide = nil
             self?.hideWindows()
             completion?()
+        }
+        fitBeforeHide { fitted = true; finish() }
+        guard let shot = current, let webView, pageReady else { answered = true; finish(); return }
+        current = nil
+        let epoch = pageEpoch
+        let done: () -> Void = {
+            guard !answered else { return }
+            answered = true
+            finish()
         }
         pendingHide = done
         // The page runs park, export, and build one at a time, so an Esc during a long Copy
@@ -446,7 +481,31 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         }
     }
 
+    /// Springs the level back to the fitted size and answers once it is there, so the window the
+    /// flight takes over from is the frame the flight starts at. Shorter than a fit the user asked
+    /// for: this one is the start of the card leaving, not a zoom of its own. The deadline is there
+    /// because a zoom arriving mid-fit takes the tween's completion with it, and the window still
+    /// has to come down.
+    private func fitBeforeHide(_ done: @escaping () -> Void) {
+        guard window != nil, fittedFrame.width > 0, abs(zoomLevel - 1) > 0.001 || abs(zoomTarget - 1) > 0.001 else {
+            done(); return
+        }
+        var answered = false
+        let once = { if !answered { answered = true; done() } }
+        zoomCursor = Zoom.center
+        zoomTarget = 1
+        aim(at: Zoom.center, to: split(1).window)
+        zoomTween.animate(to: 1, duration: motionScaled(fitToCloseSeconds), curve: "spring", completion: once)
+        DispatchQueue.main.asyncAfter(deadline: .now() + motionScaled(fitToCloseSeconds) + 0.3) { once() }
+    }
+
     private func hideWindows() {
+        // Nothing here is on screen any more: a spring still ticking would move a hidden frame,
+        // call the page's camera after `reset` has emptied it, and relayout a hidden web view.
+        zoomTween.stop()
+        pageLayoutPending = false
+        cameraPending = nil
+        coverEpoch += 1
         removeCover()
         if let win = window, toolbar.panel.parent === win { win.removeChildWindow(toolbar.panel) }
         toolbar.hide()

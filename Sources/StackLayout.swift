@@ -12,10 +12,16 @@ struct StackLayout {
     var maxCardHeight: CGFloat { ui.cardMaxHeight }
     var minCardSide: CGFloat { ui.cardMinSide }
     var spacing: CGFloat { ui.cardSpacing }
-    var inset: CGFloat { ui.panelInset }
+    /// The padding between the column and the edge of the panel. At least `ui.panelInset`, and
+    /// always the card's shadow plus a short fade: the column's bottom fade starts below the newest
+    /// card's shadow, so a shadow bigger than the inset has to move the column up rather than be
+    /// cut off. The cards do not move with it — the panel grows around them (see `panelFrame`).
+    var inset: CGFloat { max(ui.panelInset, cardShadowRoom + Self.shadowFade) }
     /// How far a card's shadow reaches below its bottom edge: the offset plus the blur's spread,
-    /// which is about twice the radius. The inset is all the room there is, so it is the cap.
-    var cardShadowRoom: CGFloat { min(inset, max(0, ui.cardShadowY + ui.cardShadowRadius * 2)) }
+    /// which is about twice the radius.
+    var cardShadowRoom: CGFloat { max(0, ui.cardShadowY + ui.cardShadowRadius * 2) }
+    /// The soft edge the column keeps below a card's shadow, where it fades into the panel.
+    static let shadowFade: CGFloat = 7
     var margin: CGFloat { ui.screenMargin }
     /// The row under the column that carries the feedback toast.
     var barHeight: CGFloat { ui.selectionBarHeight }

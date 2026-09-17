@@ -67,6 +67,14 @@ final class Tween: NSObject {
         apply(target)
     }
 
+    /// Stops where it is, without a tick and without its completion: what it animates has gone, so
+    /// applying the value again would drive a view that is no longer on screen.
+    func stop() {
+        stopTicking(); start = nil; spring = nil
+        velocity = 0
+        completion = nil
+    }
+
     private func tick() {
         if let sp = spring { springTick(sp); return }
         guard let s = start else { return }
