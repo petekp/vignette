@@ -192,6 +192,7 @@ final class ThumbnailController: NSObject {
                 },
                 "selected": model.selectedCards().map(\.shot.url.path),
                 "focused": model.cards.first { $0.id == model.focused }?.shot.url.path as Any,
+                "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.url.path as Any,
                 "feedback": model.feedback as Any, "key": panel.isKeyWindow,
                 "scroll": Int(model.scroll), "viewport": Int(model.viewport),
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h),

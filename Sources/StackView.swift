@@ -210,6 +210,10 @@ private struct CardView: View {
             }
         }
         .frame(width: card.size.width, height: card.size.height)
+        // The thumbnail fills the card, so an image whose shape differs from the card's box hangs
+        // outside it, and the clip that hides it does not shrink the hit area. Without this the
+        // card takes hover and clicks everywhere its image reaches, over its neighbours.
+        .contentShape(Rectangle())
         .overlay {
             if copied && !isOut && !isForming {
                 CopiedOverlay(corner: ui.cardCornerRadius).transition(.opacity)

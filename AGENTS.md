@@ -89,7 +89,7 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
    `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; selection, focus,
-   feedback, panel, and `strip`, the selection strip's frame or null),
+   the hovered card, feedback, panel, and `strip`, the selection strip's frame or null),
    `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
@@ -223,6 +223,11 @@ the same driven sequence; a single run varies.
   right edge never moves, so the cards stay where they are. Only the column carries the hair of
   alpha that catches clicks and scrolls; the strip's side of the panel stays clear, so a click
   there still reaches the window underneath.
+- A card's thumbnail fills the card, so a screenshot whose shape differs from the card's box hangs
+  outside the card's frame, and the clip that hides it does not shrink the hit area. The
+  `contentShape` in `CardView` holds each card's hover and clicks to its own frame; without it a
+  card takes both over its neighbours, and a hovered card, which `zIndex` raises for the Draw hint,
+  takes them from the card below.
 - "Click outside" detection goes through `OutsideClick`. A plain global mouse monitor also
   reports clicks on this app's own floating windows (verified: a click inside the annotator
   closed it), so the topmost window under the cursor is checked first.
