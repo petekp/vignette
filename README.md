@@ -88,7 +88,8 @@ and closing it hands focus back to the app you came from.
 - Cmd+C copies the selection as files, paths as text, and the first image's pixels, so chat apps
   attach all of them and terminals paste the paths. Option+Cmd+C copies only the paths.
 - Cmd+S stitches the selection into one tall image with numbered badges, saved next to the
-  originals and copied.
+  originals and copied. The selected cards fly together into the new card, which takes their place
+  at the bottom of the stack, or opens in the annotator when Annotate New Captures is on.
 - Arrows move focus, Shift extends, Space toggles, Cmd+A selects all, Return annotates,
   Cmd+Delete trashes, Esc clears then dismisses.
 - A card with a pencil badge has a draft: annotations you parked with Esc or a swap. Reopen it

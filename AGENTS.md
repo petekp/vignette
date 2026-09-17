@@ -79,7 +79,7 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    and error lands there with a `[tag]`. `open -g "shotnote://state?tag=<id>"` writes one
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
-   `stack` (cards with `file`, `frame`, `out`, `draft`; selection, focus, feedback, panel),
+   `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`; selection, focus, feedback, panel),
    `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
@@ -167,8 +167,9 @@ the same driven sequence; a single run varies.
 - The status item has an autosave name and a seeded preferred position. Without it, a crowded
   menu bar on a notch Mac puts the new icon under the notch and it never appears.
 - Files named `*-annotated.png` are outputs and are ignored by the watcher. `Stitch *.png`
-  outputs are not ignored on purpose: they show up as a fresh thumbnail. The watcher takes png,
-  jpg, jpeg, and heic (`ScreenshotWatcher.candidateExtensions`), reports removals to the stack
+  outputs are not ignored on purpose: they arrive like a capture, which is what carries a stitch into
+  the annotator when `annotateOnCapture` is on. The watcher takes png, jpg, jpeg, and heic
+  (`ScreenshotWatcher.candidateExtensions`), reports removals to the stack
   (`[watcher] removed`), waits for a new file to decode before reporting it, and gives up on one
   that never does after ten seconds (`[watcher] error never-stable`); the next folder event or
   stack open picks it up. Wake from sleep rescans the folder. The watcher also keeps an index of
@@ -178,6 +179,16 @@ the same driven sequence; a single run varies.
   the index catches a file changed in place. While the folder cannot be watched (a volume not
   mounted yet) the reads list it directly and each rescan retries the watch. Copying puts the PNG
   on the pasteboard and promises the TIFF, which is rendered only when a paste target asks.
+- Stitching from the stack is one motion, not a file appearing later. `ThumbnailController.stitched`
+  takes the cards the image was made from out of the column, holds a slot for the new card at the
+  bottom, and hands both to `TransitionLayer.converge`: the pieces fly into that slot while the
+  finished image fades in under them. Both sets of cards sit in `model.forming` while their image is
+  in the transition layer, so a slot keeps its place in the column and draws nothing, and the image
+  is never on screen twice. The watcher reports the file a moment later as usual; the card is already
+  there, so `insert` ignores it, and with `annotateOnCapture` on that same report flies the new card
+  into the annotator. Only the choreography is new: the composing, the file, and the copy are
+  unchanged, and with the stack closed (a `shotnote://stitch` from a script) the toast is still the
+  whole of it.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor.

@@ -11,6 +11,7 @@ final class TransitionLayer {
         var image: NSImage
         var frame: CGRect      // top-left origin, in the layer's own coordinates
         var corner: CGFloat
+        var opacity: Double = 1
         /// The ends of the straight path this flight is on, which `curve` bows and swells.
         var pathFrom: CGPoint = .zero
         var pathTo: CGPoint = .zero
@@ -53,12 +54,54 @@ final class TransitionLayer {
             withAnimation(Anim.spring(ui.expandDuration, bounce: 0.15)) {
                 self.model.flights[i].frame = self.local(to)
                 self.model.flights[i].corner = cornerTo
+                self.model.flights[i].opacity = 1
             }
             // The spring settles a little after its nominal duration; wait for that before the
             // annotator window replaces the image, or the last of the motion shows as a snap.
             DispatchQueue.main.asyncAfter(deadline: .now() + ui.expandDuration * 1.15) { [weak self] in
                 guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
                 completion()
+            }
+        }
+    }
+
+    /// Several card images fly into one frame and become `result`: the pieces converge, and the
+    /// finished image fades in under them as they arrive and fade. `completion` runs once the
+    /// result is the only thing drawn, so the caller can put the real card in that slot; the
+    /// result's own flight lifts after that, unless something has aimed it elsewhere meanwhile.
+    func converge(pieces: [(id: UUID, image: NSImage, from: NSRect)],
+                  result: (id: UUID, image: NSImage, frame: NSRect),
+                  corner: CGFloat, on screen: NSScreen, completion: @escaping () -> Void) {
+        let ui = Settings.shared.motionUI
+        showPanel(on: screen)
+        let fade = ui.expandDuration * 0.45
+        // The finished image waits in the slot, under the pieces, until they are nearly there.
+        model.flights.removeAll { $0.id == result.id }
+        let resting = Flight(id: result.id, image: result.image, frame: local(result.frame), corner: corner, opacity: 0)
+        model.flights.append(resting)
+        for piece in pieces {
+            fly(id: piece.id, image: piece.image, from: piece.from, to: result.frame,
+                cornerFrom: corner, cornerTo: corner, on: screen) {}
+        }
+        let flying = Set(pieces.map(\.id))
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            withAnimation(Anim.spring(fade).delay(max(0, ui.expandDuration - fade))) {
+                for i in self.model.flights.indices {
+                    if self.model.flights[i].id == result.id { self.model.flights[i].opacity = 1 }
+                    else if flying.contains(self.model.flights[i].id) { self.model.flights[i].opacity = 0 }
+                }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + ui.expandDuration * 1.15) { [weak self] in
+            guard let self else { return }
+            for piece in pieces { self.end(id: piece.id) }
+            completion()
+            // The card view draws on SwiftUI's next commit; lift the finished image after it.
+            DispatchQueue.main.async {
+                guard let i = self.model.flights.firstIndex(where: { $0.id == result.id }),
+                      self.model.flights[i].generation == resting.generation else { return }
+                self.end(id: result.id)
             }
         }
     }
@@ -129,6 +172,7 @@ private struct FlightsView: View {
                     .overlay(RoundedRectangle(cornerRadius: f.corner, style: .continuous).stroke(.white.opacity(ui.cardBorderOpacity), lineWidth: ui.cardBorderWidth))
                     .shadow(color: .black.opacity(0.4), radius: 24, y: 10)
                     .modifier(Bow(center: CGPoint(x: f.frame.midX, y: f.frame.midY), from: f.pathFrom, to: f.pathTo, curve: f.curve))
+                    .opacity(f.opacity)
                     .position(x: f.frame.midX, y: f.frame.midY)
             }
         }

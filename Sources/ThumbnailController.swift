@@ -18,6 +18,7 @@ final class StackModel: ObservableObject {
     @Published var offscreen: Set<UUID> = []   // cards parked past the right screen edge
     var slidingOut = false                     // picks the exit stagger order and curve for `offscreen`
     @Published var outCards: Set<UUID> = []    // cards currently in the annotator; drawn as placeholders
+    @Published var forming: Set<UUID> = []     // cards whose image is in the transition layer, mid-stitch; drawn as nothing
     @Published var drafts: Set<String> = []    // file paths with annotations in progress
     @Published var feedback: String? = nil
     @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
@@ -69,6 +70,7 @@ final class ThumbnailController {
     }
     private var dismissGeneration = 0
     private var shrinkGeneration = 0
+    private var stitchGeneration = 0
     private var sweepAnchor: Int?
     private var sweepSelecting = true
     private var sweepBefore: Set<UUID> = []
@@ -145,7 +147,8 @@ final class ThumbnailController {
                 "cards": model.cards.indices.map { i -> [String: Any] in
                     let card = model.cards[i]
                     return ["file": card.shot.url.path, "frame": StateReport.topLeft(cardFrame(i), primaryHeight: h),
-                            "out": model.outCards.contains(card.id), "draft": model.drafts.contains(card.shot.url.path)]
+                            "out": model.outCards.contains(card.id), "forming": model.forming.contains(card.id),
+                            "draft": model.drafts.contains(card.shot.url.path)]
                 },
                 "selected": model.selectedCards().map(\.shot.url.path),
                 "focused": model.cards.first { $0.id == model.focused }?.shot.url.path as Any,
@@ -299,6 +302,54 @@ final class ThumbnailController {
         if model.isStack { backdrop.refresh(on: screen) }
     }
 
+    /// The stitched file is written: the cards it was made from converge into its slot and the new
+    /// card takes their place as the newest. The originals leave the stack; their files are
+    /// untouched, so the next stack open has them back. False when the stack is not showing all of
+    /// them, and the caller falls back to a toast.
+    ///
+    /// The watcher reports the new file a moment later like any capture. The card is already in the
+    /// column by then, so `insert` ignores it; with `annotateOnCapture` on, the same report carries
+    /// it into the annotator from the slot the stitch just filled.
+    @discardableResult
+    func stitched(_ pieces: [Screenshot], into url: URL) -> Bool {
+        guard visible, model.isStack, !transition.isActive, pieces.count > 1 else { return false }
+        let cards = pieces.compactMap { shot in model.cards.first { $0.shot.url == shot.url } }
+        guard cards.count == pieces.count, let result = makeStitchedCard(url), let stitched = result.image else { return false }
+        // Where each card is now, while the selection bar is still part of the column.
+        let flying = cards.map { (id: $0.id, image: flightImage(for: $0), from: cardFrame(of: $0)) }
+        let ids = Set(cards.map(\.id))
+        model.forming.formUnion(ids)
+        model.forming.insert(result.id)
+        model.cards.removeAll { ids.contains($0.id) }
+        model.selected = []
+        if let focused = model.focused, ids.contains(focused) { model.focused = nil }
+        model.cards.insert(result, at: 0)
+        withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
+        relayout()
+        stitchGeneration += 1
+        let generation = stitchGeneration
+        flights.converge(pieces: flying, result: (id: result.id, image: stitched, frame: cardFrame(of: result)),
+                         corner: ui.cardCornerRadius, on: screen) { [weak self] in
+            guard let self else { return }
+            self.model.forming.subtract(ids)
+            self.model.forming.remove(result.id)
+            guard self.stitchGeneration == generation, self.visible,
+                  self.model.cards.contains(where: { $0.id == result.id }) else { return }
+            self.showCopied([result.shot])
+        }
+        Log.write("[stack] stitched cards=\(cards.count) into=\(url.lastPathComponent)")
+        return true
+    }
+
+    /// The stitched image decodes here and not on the background queue `makeCard` uses: the card is
+    /// the destination of a flight that starts in the same run loop turn, so it cannot arrive later.
+    private func makeStitchedCard(_ url: URL) -> Card? {
+        guard let pointSize = Thumbnailer.pointSize(of: url) else { return nil }
+        let size = layout.cardSize(for: pointSize)
+        guard let image = Thumbnailer.image(at: url, maxPixel: thumbnailPixels(size: size, pointSize: pointSize)) else { return nil }
+        return Card(id: UUID(), shot: Screenshot(url: url), image: image, pointSize: pointSize, size: size)
+    }
+
     /// "Copied" over the cards themselves; the toast only when none of them is showing.
     func showCopied(_ shots: [Screenshot]) {
         let ids = shots.compactMap { shot in model.cards.first { $0.shot.url == shot.url }?.id }
@@ -329,6 +380,7 @@ final class ThumbnailController {
         model.cards = []
         model.selected = []
         model.outCards = []
+        model.forming = []
         model.feedback = text
         releaseKeys()
         backdrop.hide()
@@ -366,6 +418,7 @@ final class ThumbnailController {
             self.model.selected = []
             self.model.offscreen = []
             self.model.outCards = []
+            self.model.forming = []
             self.model.slidingOut = false
             self.model.feedback = nil
             self.model.scroll = 0
@@ -681,6 +734,7 @@ final class ThumbnailController {
         model.hoveredCard = nil
         model.selected = []
         model.outCards = []
+        model.forming = []
         model.focused = nil
         let wasStack = model.isStack
         model.isStack = stack
