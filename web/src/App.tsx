@@ -241,9 +241,11 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
 
   silently(editor, () => {
     placeImage(editor, p, w, h)
-    // A stored draft carries the selection it was parked with. On the select tool those handles
-    // would be back, and a color picked for the next shape repaints the selected ones instead.
-    editor.selectNone()
+    // A draft comes back with whatever selection it was parked with. A reopen picks up the
+    // annotation drawn last instead, and only that one: the select tool is what opens, so a color
+    // press, a drag, or Delete acts on it. A fresh image has nothing to pick up.
+    const last = p.snapshot ? lastAnnotation(editor) : null
+    editor.setSelectedShapes(last ? [last] : [])
   })
   fitCamera(editor, w, h)
 
@@ -325,6 +327,14 @@ function placeImage(editor: Editor, p: LoadPayload, w: number, h: number) {
     },
   ])
   editor.createShape({ id: IMAGE_ID, type: 'image', x: 0, y: 0, isLocked: true, props: { w, h, assetId } })
+}
+
+/// The annotation drawn last: the top of the page's z-order, which is where tldraw puts each new
+/// shape (`getHighestIndexForParent`). Nothing here reorders shapes, so top is newest. The
+/// screenshot is under all of them and is never it.
+function lastAnnotation(editor: Editor): TLShapeId | null {
+  const shapes = editor.getCurrentPageShapesSorted().filter((s) => s.id !== IMAGE_ID)
+  return shapes.length ? shapes[shapes.length - 1].id : null
 }
 
 function clearCanvas(editor: Editor) {

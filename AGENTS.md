@@ -249,8 +249,9 @@ the same driven sequence; a single run varies.
   the card lands (`show`). A swap runs two of these at once. The stack keeps the slot, drawn
   empty, so the card flies back to the same place. Which tool an image opens on is in
   `web/src/config.ts`: `DEFAULT_TOOL` (circle) for a fresh image, `REOPEN_TOOL` (select) for one
-  that already has a draft, and that draft's stored selection is cleared as it loads, so a color
-  press changes the next shape rather than repainting the last one.
+  that already has a draft. A reopen drops the selection the draft was parked with and picks up
+  the annotation drawn last instead (`lastAnnotation`: the top of the page's z-order, which is
+  where tldraw puts each new shape), so a color press, a drag, or Delete acts on that mark.
 - Annotations in progress are drafts owned by the app (`DraftStore`), one JSON snapshot per
   screenshot under `~/Library/Application Support/<bundle id>/drafts/` keyed by the file path
   the app uses everywhere (`shot.url.path`), with a preview PNG under `~/Library/Caches/<bundle
