@@ -295,7 +295,7 @@ final class ThumbnailController: NSObject {
     /// The page has the image for `key` on its canvas.
     func pageLoaded(_ key: String) {
         loadedKeys.insert(key)
-        if case .annotating(let k) = transition.phase, k == key, let card = sessionCard { flights.end(id: card.id) }
+        if case .annotating(let k) = transition.phase, k == key, let card = sessionCard { flights.lift(id: card.id) }
     }
 
     func setDrafts(_ paths: Set<String>) {
@@ -455,9 +455,9 @@ final class ThumbnailController: NSObject {
             var slot = cardFrame(of: card)
             slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
             flights.fly(id: card.id, image: flightImage(for: currentCard(card)), from: annotationFrame, to: slot,
-                        lookFrom: .annotator(ui), lookTo: .card(ui), on: screen) { [weak self] in
+                        lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
                 self?.flights.end(id: card.id)
-            }
+            })
         }
         if transition.isActive { send(.dismiss) }
         // Cards leave the way they came, newest first (see CardView). The selection and any toast
@@ -509,18 +509,22 @@ final class ThumbnailController: NSObject {
             onAnnotatorPrepare?(card.shot, target)
             var from = cardFrame(of: card)
             if model.offscreen.contains(card.id) { from.origin.x += layout.offscreenDistance(cardWidth: from.width) }
+            // The annotator window appears only once the flight is exactly on the target frame.
+            // It draws the same ring and shadow there, so a window put up while the spring still
+            // had a few points to go would step against the picture the flight is still showing.
             flights.fly(id: card.id, image: flightImage(for: card), from: from, to: target,
-                        lookFrom: .card(ui), lookTo: .annotator(ui), on: screen) { [weak self] in
+                        lookFrom: .card(ui), lookTo: .annotator(ui), on: screen, arrived: { [weak self] in
                 guard let self, self.transition.phase == .flyingOut(key) else { return }
                 self.send(.shown)
-            }
+            })
         case .show:
             onAnnotatorShow?()
             guard let card = sessionCard else { return }
-            // The window is up and draws the frame's shadow itself; the flight image stays only to
-            // cover the page until it reports the image, and a second shadow would darken the edge.
-            if loadedKeys.contains(card.shot.url.path) { flights.end(id: card.id) }   // else pageLoaded lifts it
-            else { flights.dropShadow(id: card.id) }
+            // The window is up and draws the frame's shadow itself; a second shadow would darken the
+            // edge. The flight image stays on top until the page reports the image and the flight
+            // has settled on the frame, so neither the shadow nor the picture steps.
+            flights.dropShadow(id: card.id)
+            if loadedKeys.contains(card.shot.url.path) { flights.lift(id: card.id) }   // else pageLoaded lifts it
             if !model.isStack {
                 // A lone thumbnail has nothing to keep open behind the annotator; cards that joined stay.
                 model.cards.removeAll { $0.id == card.id }
@@ -562,17 +566,20 @@ final class ThumbnailController: NSObject {
         guard visible, model.cards.contains(where: { $0.id == card.id }) else {
             model.outCards.remove(card.id); flights.end(id: card.id); return
         }
+        // The card takes its slot back only once the flight has settled on it: the card draws at the
+        // exact slot, so a card and a shadow put there while the flight still had a few points to
+        // go would both step. Nothing is visible before then; the flight covers the slot.
         flights.fly(id: card.id, image: flightImage(for: card), from: annotationFrame, to: cardFrame(of: card),
-                    lookFrom: .annotator(ui), lookTo: .card(ui), on: screen) { [weak self] in
+                    lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
             guard let self else { return }
             self.model.outCards.remove(card.id)
             self.flights.dropShadow(id: card.id)   // the card draws it now, in this same commit
             // The card view comes back on SwiftUI's next commit; lift the flight image after it.
-            DispatchQueue.main.async { self.flights.end(id: card.id) }
+            DispatchQueue.main.async { self.flights.lift(id: card.id) }
             if !self.transition.isActive, self.visible, self.model.isStack { self.takeKeys() }
             // A lone thumbnail leaves on its own; the copied mark usually sets a shorter timer first.
             if !self.model.isStack, self.dismissTimer == nil { self.scheduleDismiss(after: self.ui.thumbnailSeconds) }
-        }
+        })
     }
 
     private func targetFrame(for card: Card) -> NSRect {

@@ -54,6 +54,12 @@ final class TransitionLayer {
     private let panel: NSPanel
     private let model = Model()
     private var screen: NSScreen = NSScreen.main ?? NSScreen.screens[0]
+    /// Flights whose spring has settled on the target, and flights waiting to be lifted when it does.
+    private var arrivedFlights: Set<UUID> = []
+    private var pendingLift: Set<UUID> = []
+    /// How close a flight has to be to its target before something else may take its place:
+    /// one pixel on a Retina display.
+    private static let arrivalTolerance: CGFloat = 0.5
 
     init() {
         panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
@@ -70,10 +76,17 @@ final class TransitionLayer {
     var isFlying: Bool { !model.flights.isEmpty }
 
     /// Moves `id` to `to`. A new flight starts at `from`; an existing one turns from where it is.
-    func fly(id: UUID, image: NSImage, from: NSRect, to: NSRect, lookFrom: Look, lookTo: Look, on screen: NSScreen, completion: @escaping () -> Void) {
+    /// `landed` runs when the motion is visually over; `arrived` when the spring has really settled
+    /// on the target. Whatever takes the flight's place draws at the exact target, so it has to
+    /// appear on `arrived` or it steps by what the spring still had to go.
+    func fly(id: UUID, image: NSImage, from: NSRect, to: NSRect, lookFrom: Look, lookTo: Look,
+             on screen: NSScreen, landed: @escaping () -> Void = {}, arrived: @escaping () -> Void = {}) {
         let ui = Settings.shared.motionUI
         showPanel(on: screen)
         let gen = start(id: id, image: image, from: from, to: to, look: lookFrom, ui: ui)
+        let travel = max(abs(to.minX - from.minX), abs(to.minY - from.minY),
+                         abs(to.width - from.width), abs(to.height - from.height))
+        let settleTime = Anim.settle(ui.expandDuration, bounce: 0.15, distance: travel, within: Self.arrivalTolerance)
         // The starting state has to be committed before the animated change, or it starts at `to`.
         DispatchQueue.main.async { [weak self] in
             guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
@@ -85,13 +98,31 @@ final class TransitionLayer {
                 self.model.flights[i].opacity = 1
                 self.model.flights[i].blend = 1
             }
-            // The spring settles a little after its nominal duration; wait for that before the
-            // annotator window replaces the image, or the last of the motion shows as a snap.
+            // A spring settles a little after its nominal duration, so the motion is over here even
+            // though the value is not quite there. Only what the flight covers may appear now.
             DispatchQueue.main.asyncAfter(deadline: .now() + ui.expandDuration * 1.15) { [weak self] in
-                guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
-                completion()
+                guard let self, self.isCurrent(id, gen) else { return }
+                landed()
+            }
+            // The spring's tail runs on past that, still a pixel or two short of the target. By here
+            // it is inside `arrivalTolerance`, so putting it exactly on the target is a sub-pixel
+            // move, and whatever takes its place lands on the same pixels.
+            DispatchQueue.main.asyncAfter(deadline: .now() + settleTime) { [weak self] in
+                guard let self, self.isCurrent(id, gen), let i = self.model.flights.firstIndex(where: { $0.id == id }) else { return }
+                withTransaction(Transaction(animation: nil)) {
+                    self.model.flights[i].frame = self.local(to)
+                    self.model.flights[i].look = lookTo
+                    self.model.flights[i].blend = 1
+                }
+                self.arrivedFlights.insert(id)
+                arrived()
+                if self.pendingLift.remove(id) != nil { self.end(id: id) }
             }
         }
+    }
+
+    private func isCurrent(_ id: UUID, _ gen: Int) -> Bool {
+        model.flights.first(where: { $0.id == id })?.generation == gen
     }
 
     /// Several card images fly into one frame and become `result`: the pieces converge, and the
@@ -106,11 +137,13 @@ final class TransitionLayer {
         let fade = ui.expandDuration * 0.45
         // The finished image waits in the slot, under the pieces, until they are nearly there.
         model.flights.removeAll { $0.id == result.id }
+        arrivedFlights.remove(result.id)
+        pendingLift.remove(result.id)
         let resting = Flight(id: result.id, image: result.image, frame: local(result.frame), look: look, opacity: 0)
         model.flights.append(resting)
         for piece in pieces {
             fly(id: piece.id, image: piece.image, from: piece.from, to: result.frame,
-                lookFrom: look, lookTo: look, on: screen) {}
+                lookFrom: look, lookTo: look, on: screen)
         }
         let flying = Set(pieces.map(\.id))
         DispatchQueue.main.async { [weak self] in
@@ -145,6 +178,9 @@ final class TransitionLayer {
     /// Aiming again keeps the old path and resets `blend`, which `fly` then animates back to 1.
     private func start(id: UUID, image: NSImage, from: NSRect, to: NSRect, look: Look, ui: UITweaks) -> Int {
         let path = Path(from: center(local(from)), to: center(local(to)), curve: FlightCurve(ui: ui))
+        // It is going somewhere else now, so it has not arrived and any lift waits for the new end.
+        arrivedFlights.remove(id)
+        pendingLift.remove(id)
         if let i = model.flights.firstIndex(where: { $0.id == id }) {
             model.flights[i].generation += 1
             model.flights[i].image = image
@@ -171,14 +207,25 @@ final class TransitionLayer {
         model.flights[i].look.shadowOpacity = 0
     }
 
+    /// Removes the flight once it has finished arriving, so what takes its place is at the same
+    /// frame. Until then the flight covers it, and both show the same picture.
+    func lift(id: UUID) {
+        guard model.flights.contains(where: { $0.id == id }) else { return }
+        if arrivedFlights.contains(id) { end(id: id) } else { pendingLift.insert(id) }
+    }
+
     /// Removes the flight. Call once whatever it was flying toward is drawn.
     func end(id: UUID) {
         model.flights.removeAll { $0.id == id }
+        arrivedFlights.remove(id)
+        pendingLift.remove(id)
         if model.flights.isEmpty { panel.orderOut(nil) }
     }
 
     func endAll() {
         model.flights = []
+        arrivedFlights = []
+        pendingLift = []
         panel.orderOut(nil)
     }
 
@@ -210,11 +257,13 @@ private struct FlightsView: View {
                     .scaledToFill()
                     .frame(width: f.frame.width, height: f.frame.height)
                     .clipShape(RoundedRectangle(cornerRadius: f.look.corner, style: .continuous))
+                    // The shadow of whichever end the flight is nearest, so nothing pops when the
+                    // card or the annotator window takes over. Cast by the clipped image, before
+                    // the ring: a card casts its shadow from the same shape, and the two have to
+                    // match at the ends or the shadow steps when one takes the other's place.
+                    .shadow(color: .black.opacity(f.look.shadowOpacity), radius: f.look.shadowRadius, y: f.look.shadowY)
                     // The card's ring travels with the image, and the annotator window carries it on.
                     .overlay(RoundedRectangle(cornerRadius: f.look.corner, style: .continuous).stroke(.white.opacity(ui.cardBorderOpacity), lineWidth: ui.cardBorderWidth))
-                    // The shadow of whichever end the flight is nearest, so nothing pops when the
-                    // card or the annotator window takes over.
-                    .shadow(color: .black.opacity(f.look.shadowOpacity), radius: f.look.shadowRadius, y: f.look.shadowY)
                     .modifier(Bow(center: CGPoint(x: f.frame.midX, y: f.frame.midY), path: f.path, previous: f.previousPath, blend: f.blend))
                     .opacity(f.opacity)
                     .position(x: f.frame.midX, y: f.frame.midY)

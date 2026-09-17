@@ -605,6 +605,22 @@ enum Anim {
         duration > 0 ? .spring(duration: duration, bounce: bounce) : .linear(duration: 0)
     }
 
+    /// When the same spring is within `within` points of a target `distance` points away. Its tail
+    /// runs well past its nominal duration: at 1.15 times it is still about 0.4% short, which is
+    /// several points across a screen. Uses SwiftUI's own spring, so it matches what it animates.
+    static func settle(_ duration: Double, bounce: Double = 0, distance: CGFloat, within: CGFloat) -> Double {
+        guard duration > 0, distance > within else { return 0 }
+        let spring = Spring(duration: duration, bounce: bounce)
+        let tolerance = Double(within / distance)
+        let step = duration / 32
+        var t = spring.settlingDuration
+        while t > step {
+            if abs(1 - spring.value(target: 1.0, time: t - step)) > tolerance { return t }
+            t -= step
+        }
+        return 0
+    }
+
     static func run(_ duration: Double, curve: String = "easeOut", _ body: @Sendable () -> Void, completion: (@Sendable () -> Void)? = nil) {
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = duration

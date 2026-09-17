@@ -70,6 +70,7 @@ struct StackView: View {
     /// out over the panel's inset instead of being cut.
     private var column: some View {
         let inset = StackLayout.current.inset
+        let shadowRoom = StackLayout.current.cardShadowRoom
         return VStack(alignment: .trailing, spacing: StackLayout.current.spacing) {
             ForEach(Array(model.cards.enumerated().reversed()), id: \.element.id) { index, card in
                 CardView(card: card, index: index, model: model)
@@ -92,7 +93,13 @@ struct StackView: View {
             VStack(spacing: 0) {
                 LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: inset)
                 Color.black
-                LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: inset)
+                // The newest card rests on the viewport's bottom edge and its shadow falls in the
+                // inset below it, so the fade starts under that shadow: a card in the column and
+                // the same card in flight have to cast the same shadow, or one of them steps when
+                // it takes the other's place. A card shadow falls downwards, so the top fade never
+                // reaches one and keeps the whole inset.
+                LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: max(0, inset - shadowRoom))
             }
         )
     }
