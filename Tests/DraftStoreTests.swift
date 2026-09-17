@@ -46,6 +46,17 @@ final class DraftStoreTests: XCTestCase {
         XCTAssertEqual(DraftStore(directory: store.directory, previewDirectory: store.previewDirectory).keys, ["/ok.png"])
     }
 
+    func testDraftsWithoutAPreviewAreListed() throws {
+        try store.save(key: "/a.png", snapshot: ["v": 1])
+        try store.save(key: "/b.png", snapshot: ["v": 2])
+        try store.savePreview(key: "/a.png", png: Data([1, 2, 3]))
+        XCTAssertEqual(store.keysWithoutPreview(), ["/b.png"])
+        try FileManager.default.removeItem(at: store.previewURL(for: "/a.png"))
+        XCTAssertEqual(store.keysWithoutPreview(), ["/a.png", "/b.png"])
+        store.forget(["/a.png"])
+        XCTAssertEqual(store.keysWithoutPreview(), ["/b.png"], "a draft that is gone is not missing a preview")
+    }
+
     func testForgetRemovesSnapshotAndPreview() throws {
         try store.save(key: "/a.png", snapshot: ["v": 1])
         try store.savePreview(key: "/a.png", png: Data([9]))

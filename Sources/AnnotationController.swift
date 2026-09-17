@@ -26,6 +26,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     var onParked: ((String, ParkResult) -> Void)?
     /// A rendering of a screenshot with its draft, for the stack to show in place of the original.
     var onDraftPreview: ((String, Data) -> Void)?
+    /// The editor page is up and can take calls. Also after a web content process restart.
+    var onPageReady: (() -> Void)?
 
     /// Nil when the bundle has no page or the server did not start; every call then no-ops.
     private var webView: WKWebView?
@@ -469,10 +471,11 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// The colors the page offers, by id: what a mark's `color` may name.
     var colorIDs: [String] { toolbar.model.colors.map(\.id) }
 
-    /// Why a marks build cannot run, or nil when it can. A build borrows the page's canvas for the
-    /// length of one rendering, so it waits for the annotator; the command asks before it copies
-    /// anything, so a refusal is one error line and no file left behind.
-    var buildRefusal: String? {
+    /// Why nothing may borrow the page's canvas right now, or nil when it is free. A marks build
+    /// and a preview rendering both put their own image there for the length of one rendering, so
+    /// they wait for the annotator; `add` asks before it copies anything, so a refusal is one error
+    /// line and no file left behind.
+    var canvasRefusal: String? {
         if webView == nil || !pageReady { return "the editor page is not ready" }
         if holdsCanvas { return "an image is in the annotator" }
         if pendingExport != nil { return "Copy Annotated is still rendering" }
@@ -486,7 +489,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// Always answers, like `exportDrafts`: with the result, or with an error after a failure, a
     /// timeout, or when the page cannot take the call.
     func buildDraft(_ shot: Screenshot, marks: [Mark], completion: @escaping (ParkResult?, String?) -> Void) {
-        if let refusal = buildRefusal { completion(nil, refusal); return }
+        if let refusal = canvasRefusal { completion(nil, refusal); return }
         guard let webView else { completion(nil, "the editor page is not ready"); return }
         guard let pixels = Thumbnailer.pixelSize(of: shot.url), let points = Thumbnailer.pointSize(of: shot.url) else {
             completion(nil, "could not read \(shot.url.lastPathComponent)"); return
@@ -602,6 +605,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             if let call = pendingCall { self.call(call); pendingCall = nil }
             // After a web process restart the window is still up: put its image and stored draft back.
             else if let shot = current, let container { sendImage(shot, windowSize: container.bounds.size) }
+            onPageReady?()
         case .tool(let tool, let color):
             toolbar.model.tool = tool
             toolbar.model.color = color

@@ -12,8 +12,9 @@ export type ToolId = (typeof TOOLS)[number]['id']
 
 /// Tool active when an image opens for the first time.
 export const DEFAULT_TOOL: ToolId = 'ellipse'
-/// Tool active when an image that already has annotations reopens.
-export const REOPEN_TOOL: ToolId = 'arrow'
+/// Tool active when an image that already has annotations reopens: the first click lands on the
+/// work that is there instead of drawing over it.
+export const REOPEN_TOOL: ToolId = 'select'
 
 /// tldraw color names with the hex the host shows as swatches, left to right. The first is the default.
 export const COLORS = [

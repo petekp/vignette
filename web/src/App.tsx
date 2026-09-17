@@ -83,8 +83,10 @@ async function quietly<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/// The operations that stand the canvas on its head run one at a time. Each takes its snapshot
-/// after an await, so another one's shapes must never land in between: `park` would store them.
+/// The operations that stand the canvas on its head run one at a time, in the order the host
+/// called them. Each takes its snapshot after an await, so another one's shapes must never land in
+/// between: `park` would store them, and `export` and `build` would wipe them when they put the
+/// canvas back.
 let pending: Promise<unknown> = Promise.resolve()
 function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
   const next = pending.then(work, work)
@@ -128,20 +130,18 @@ export function App() {
   useEffect(() => {
     window.shotnote = {
       load(payload) {
-        try {
-          if (editor) loadImage(editor, payload, scaleRef)
-          else pending.current = payload
-        } catch (err) {
-          postToNative({ type: 'log', message: 'load failed: ' + (err instanceof Error ? err.stack ?? err.message : String(err)) })
-        }
+        if (editor) loadImage(editor, payload, scaleRef)
+        else pending.current = payload
       },
       async park() {
         return editor ? oneAtATime(() => park(editor, scaleRef.current)) : { snapshot: null, preview: null }
       },
       reset() {
         if (!editor) return
-        clearCanvas(editor)
-        currentKey = null
+        void oneAtATime(async () => {
+          clearCanvas(editor)
+          currentKey = null
+        })
       },
       async build(payload, marks) {
         if (!editor) return { snapshot: null, preview: null }
@@ -210,18 +210,23 @@ export function App() {
   )
 }
 
+/// Puts the image on the canvas, in its turn in the queue. Only the canvas change waits there:
+/// `loaded` follows two frames later, outside the queue, because WebKit pauses frames while the
+/// window is hidden or the screen is locked and the next operation must not wait for that.
 function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }) {
-  if (draftTimer) {
-    clearTimeout(draftTimer)
-    draftTimer = null
-  }
-  quiet = true
-  try {
-    loadImageQuietly(editor, p, scaleRef)
-  } catch (err) {
-    quiet = false
-    throw err
-  }
+  void oneAtATime(async () => {
+    if (draftTimer) {
+      clearTimeout(draftTimer)
+      draftTimer = null
+    }
+    quiet = true
+    try {
+      loadImageQuietly(editor, p, scaleRef)
+    } catch (err) {
+      quiet = false
+      postToNative({ type: 'log', message: 'load failed: ' + (err instanceof Error ? err.stack ?? err.message : String(err)) })
+    }
+  })
 }
 
 function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: number }) {
@@ -232,7 +237,12 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
   const h = p.pixelHeight / ratio
   scaleRef.current = ratio
 
-  silently(editor, () => placeImage(editor, p, w, h))
+  silently(editor, () => {
+    placeImage(editor, p, w, h)
+    // A stored draft carries the selection it was parked with. On the select tool those handles
+    // would be back, and a color picked for the next shape repaints the selected ones instead.
+    editor.selectNone()
+  })
   fitCamera(editor, w, h)
 
   editor.setStyleForNextShapes(DefaultColorStyle, COLORS[0].id)
@@ -360,7 +370,6 @@ function createMarks(editor: Editor, marks: Mark[], w: number, h: number) {
 /// opens the editor. `p.snapshot` is the image's existing draft, so marks add to it.
 async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<ParkResult> {
   const before = getSnapshot(editor.store)
-  const beforeKey = currentKey
   const selected = editor.getSelectedShapeIds()
   const ratio = window.devicePixelRatio || 1
   const w = p.pixelWidth / ratio
@@ -373,17 +382,13 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
     })
     const snapshot = getSnapshot(editor.store)
     const preview = await render(editor, Math.min(ratio, PREVIEW_MAX / Math.max(w, h)))
-    // A `load` landed while the rendering was in flight: it drew the other image, so drop it.
-    return { snapshot, preview: currentKey === beforeKey ? preview : null }
+    return { snapshot, preview }
   } finally {
-    if (currentKey === beforeKey) {
-      silently(editor, () => {
-        loadSnapshot(editor.store, before)
-        editor.setSelectedShapes(selected)
-      })
-      quiet = false
-    }
-    // Else the page is loading another image and owns `quiet`; its canvas stays.
+    silently(editor, () => {
+      loadSnapshot(editor.store, before)
+      editor.setSelectedShapes(selected)
+    })
+    quiet = false
   }
 }
 

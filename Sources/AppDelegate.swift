@@ -69,6 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             self?.storeDraft(key, snapshot: parked.snapshot, reason: "parked")
             if let png = parked.preview { self?.storePreview(key, png) }
         }
+        annotator.onPageReady = { [weak self] in
+            guard let self else { return }
+            self.renderMissingPreviews(self.drafts.keysWithoutPreview())
+        }
         loadDrafts()
         startWatching()
         registerHotKey()
@@ -233,6 +237,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 guard let small else { Log.write("[draft] error preview downsample failed \((key as NSString).lastPathComponent)"); return }
                 self.storePreview(key, small)
             } }
+        }
+    }
+
+    /// A parked draft shows on its card as the preview PNG beside it, and macOS can clear the
+    /// folder those live in. Each draft that lost its preview is rendered again from the stored
+    /// annotations, one at a time, once the page is up. Nothing is shown and nothing is logged when
+    /// there is nothing to render. The canvas is the annotator's the moment it takes an image, so a
+    /// refusal leaves the rest for the next launch rather than queueing behind a drawing session.
+    private func renderMissingPreviews(_ keys: [String]) {
+        guard let key = keys.first, annotator.canvasRefusal == nil else { return }
+        let rest = Array(keys.dropFirst())
+        guard let snapshot = drafts.snapshot(for: key) else { renderMissingPreviews(rest); return }
+        let name = (key as NSString).lastPathComponent
+        annotator.exportDrafts([(key: key, snapshot: snapshot)]) { [weak self] pngs, error in
+            guard let self else { return }
+            if let png = pngs[key] {
+                Log.write("[draft] preview \(name)")
+                self.storeDonePreview(key, png)
+            } else {
+                Log.write("[draft] error preview-failed \(name): \(error ?? "no rendering")")
+            }
+            self.renderMissingPreviews(rest)
         }
     }
 
@@ -542,7 +568,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             do { marks = try Commands.marks(from: value) } catch { Commands.error("add", .invalidMarks, "\(error)"); return }
             // Before the color check: the colors come from the page, so without one the answer is
             // that the page is not ready, not that the color is wrong.
-            if let refused = annotator.buildRefusal {
+            if let refused = annotator.canvasRefusal {
                 Commands.error("add", .pageNotReady, "\(refused); marks need the editor free"); return
             }
             if let unknown = marks.compactMap(\.color).first(where: { !annotator.colorIDs.contains($0) }) {
