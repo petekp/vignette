@@ -429,3 +429,178 @@ screenshots of your own screen; Done in the queue check copied its annotated PNG
 the clipboard alone afterwards. Fixtures were only in `integration2-scratch/shots`, which is empty
 again, and my one draft was dropped when its file went (`[draft] forgot Screenshot test 5.png`).
 Your build is back on `~/.config/shotnote/settings.json` and the lock is released.
+
+---
+
+## Round 3 (Pete's feedback on c43304a)
+
+Pete tried the merged run-2 branch and reported four things. Four agents fixed them on branches off
+`c43304a`; all four are merged, build, and pass the tests. The branch to take is still
+`todo2/integration`, now at `ad31403`.
+
+| commit | branch | what |
+| --- | --- | --- |
+| `0786fa2` | `todo3/reopen` | a reopen picks up the mark drawn last |
+| `73412c1` | `todo3/select` | a card takes hover and clicks over its own frame |
+| `fc97e81` | `todo3/shadow` | nothing takes a flight's place until it has arrived |
+| `ad31403` | `todo3/zoom` | zoom is one number carried by one spring |
+
+### Reopening selects the last mark
+`todo3/reopen`, `e9416d2`. Pete: "instead of just reopening to the select tool, let's also
+auto-select the last added shape."
+
+The load now selects the top of the page's z-order excluding the screenshot, which is where tldraw
+puts each new shape. A fresh image still opens on the circle tool with nothing selected.
+
+Measured on the merged build: drew an ellipse then a rectangle, cancelled, reopened.
+`annotator.tool` is `select`, `getSelectedShapeIds()` is exactly the rectangle's id — the second
+shape, and only it — `shapes` 3 (screenshot plus two), `canUndo` false. The selection change stays
+out of undo history.
+
+Unverified: nothing.
+
+### A card under a selected card answers again
+`todo3/select`, `cd9661d`. Pete: "thumbnails don't respond to clicks or hover when underneath a
+selected thumbnail."
+
+The cause: a card's thumbnail fills the card, so a screenshot whose shape differs from the card's
+box hangs outside that box, and the clip that hides it does not shrink the hit area. A card took
+hover and clicks everywhere its image reached, and `zIndex` raises a hovered card over the one below
+it, so the card just selected swallowed its neighbour's face, circle included. One
+`.contentShape(Rectangle())` in `CardView` holds each card to its own frame. `[state]` now also
+names the hovered card, which is the only sign of hover while the buttons are away.
+
+Measured on the merged build, Pete's exact repro: eight cards, clicked the circle of the second
+newest, walked the cursor onto the newest — `[state] hovered` is the newest — and clicked its
+circle. `selected` came back `["Screenshot test 7.png", "Screenshot test 8.png"]`, both of them, in
+click order. A crop shows the selection circle drawn on that unselected card while its neighbour
+above is selected.
+
+One correction to the smoke script: it asked for hover *buttons* on an unselected card beside a
+selected one. Buttons never show while anything is selected (`showsButtons` excludes selection
+mode), and that is older than this round. In selection mode the affordance is the circle, and the
+circle appears.
+
+Unverified: I could not get a clean capture of the hover buttons with nothing selected on this
+build. `scripts/input.sh move` fired hover three times and then stopped firing it, which is the
+known flake, and Pete was using the mouse. The buttons live inside the card's own frame, which is
+the only thing `contentShape` narrows.
+
+### One shadow, and nothing steps at a handoff
+`todo3/shadow`, `7e0662e`, with `docs/shadow-2026-09-17.md`. Pete: "thumbnail shadows still flicker
+once the annotator transitions back into a thumbnail; when a thumbnail transitions to the annotator,
+the shadow under the annotator also flickers."
+
+The agent's camera found that the handovers themselves are atomic — never two shadows, never none.
+The flicker was the picture and its shadow *stepping* at the moment one drawer took over, for two
+reasons: the flight handed over on a timer while its spring was still about 3 pt short, and the
+column's bottom fade ate exactly the newest card's shadow, so the card at rest drew a weaker shadow
+than the flight did (0.77 to 0.98 of it, measured 1 to 8 pt below the edge).
+
+So `fly` got two callbacks. `arrived` runs when `Anim.settle` says the spring is within half a
+point, and puts the flight exactly on target in that turn; everything that becomes visible waits for
+it. The column's bottom fade starts below the card's shadow (`StackLayout.cardShadowRoom`), and the
+flight's shadow is cast by the clipped image before its ring, the way a card casts its own.
+
+Measured on the merged build, at 60 fps over the newest card's slot, a card annotated from the stack
+and cancelled at natural speed: the card's bottom edge flies in at 53, 16, 21, 12, 15, 9, 7, 3, 6,
+3, 2 px a frame — the spring decelerating — and then **every frame after it lands moves by 0.07 px
+or less** (0.035 pt). No one-frame jump at the handoff. The shadow band 1 to 12 pt below the card
+settles from 20.06 to 20.30 grey levels with no frame changing by more than 0.36, against the 1.86
+jump the agent measured before.
+
+Unverified: the agent reports one frame, unexplained, with no shadow, which it could not reproduce
+or account for. I did not see one in 174 frames, but I recorded one landing, not six.
+
+### Zoom, rebuilt from the bottom up
+`todo3/zoom`, `17ce3a4`, with `docs/zoom-2026-09-17.md`. Pete: "the image within the frame is often
+out of sync with the frame, or does these layout jumps and skips while zooming, sometimes getting
+stuck at a position or size that doesn't match the frame."
+
+The agent measured all three of those, with numbers: a stream that mixed step sizes teleported the
+window 48 points in one frame, because the host chose between a spring and an immediate set per
+message; the camera ran 2.7x while the window ran 1.03x in the same flick, because the split was
+decided against the window's target rather than the window on screen; and the image was 0.2 to 2.0
+points smaller than its frame on 57 of 63 ticks.
+
+Now a zoom session is one number. `Zoom.split` divides it into the window's scale and the page's
+camera in one place, so `window × camera` is the level by construction. One spring carries it,
+ticked by the display link. Each tick sets the frame from `Zoom.frame` and then scales the web
+view's layer by the frame's own bounds over the size the page was laid out at, so the image's edges
+are the frame's edges because they are derived from them. The page is relaid out once, at rest,
+under a cover that comes down when the page says it has painted rather than on a timer.
+
+Measured on the merged build, with the agent's own trackpad-shaped wheel stream:
+
+- **Fitted**: frame `[386,103,740,689]`, `page.inner` `[740,689]` — equal.
+- **A smooth stream at (0.22, 0.30)**: at rest, frame `[343,38,937,872]`, anchor `[0.219, 0.299]` —
+  the point asked for — level 2.0138, window 1.2656, camera 1.5912, and 1.2656 × 1.5912 = 2.0138
+  exactly. The window had hit the screen, so the camera took the rest, with no boundary visible.
+- **cmd+0**: frame exactly back to `[386,103,740,689]`, level 1, window 1, camera 1, anchor
+  `[0.5, 0.5]`, `page.inner` `[740,689]`.
+- **A stream at (0.70, 0.60)**, at rest: frame `[63,38,1278,872]`, anchor `[0.700, 0.470]` — x
+  exactly, y given way at the screen's edge, as documented — level 1.8221 = 1.2656 × 1.4397 exactly.
+- **A swap while zoomed**: annotating another card from there landed it at `[288,103,936,689]`,
+  level 1, `page.inner` `[936,689]` — fitted, and agreeing exactly.
+
+On frame versus `page.inner`: the frame is no longer rounded to whole points, so at a zoomed rest
+the frame is 936.55 × 872.00 while the page is laid out at 936 × 871 and the layer scale (1.0006,
+1.0011) makes up the fraction. They agree to within the layout's own rounding, by design rather
+than by drift, and captures of both frame corners show the page's content flush to the frame with
+no gap.
+
+Unverified, and worth saying plainly: **a real trackpad**. Every measurement here and on the branch
+is a synthetic wheel stream dispatched into the page. A real pinch (`magnify` with its phases), a
+two-finger double tap (`smartMagnify`) and a hardware cmd+wheel all funnel into the same
+`zoom(by:at:as:)`, but AppKit delivering those events is untested. Also unverified: the Studio
+Display, and the screen-edge give-way on a second display.
+
+### Decisions made without Pete, and open questions
+
+- **Zoom's springs are in code, not in the tweaks**: 0.1 s while a gesture is tracking, 0.3 s for a
+  key, a double tap or a fit, both multiplied by the motion scale. No new settings key, so nothing
+  is written into the real settings file. **Open**: worth tuning by feel.
+- **The screen-edge give-way is unchanged.** When the window reaches the screen in one axis the
+  anchor cannot be honoured and the content slides under the cursor. It is visible in the numbers
+  above as y going from 0.60 to 0.470.
+- **Smart zoom still goes to twice the fitted size.** Preview picks a level from the content.
+- **`Look.annotator` is still hard-coded** at `0.45 / 24 / y10`. It is now the single source for the
+  card, the flight and the annotator window, but it is not in `UITweaks`, so it cannot be tuned
+  without a build.
+- **The column's bottom fade is now 7 pt on your numbers** (19 pt of inset, 12 pt of it reserved for
+  the card's shadow). A card scrolled out of the bottom of the column fades over 7 pt instead of 19.
+  That is the price of the card and the flight casting the same shadow. The top fade is untouched.
+- **A flight stands still on its target for 0.14 s** between `landed` (0.46 s) and `arrived`
+  (0.60 s). On a warm page the live editor could have taken over at the earlier moment. The toolbar,
+  which sits below the frame and outside the flight image, appears at the later one.
+- **My own decision, as integrator**: both `fly` call sites used an unlabeled trailing closure,
+  which Swift binds to the *last* closure parameter — `arrived`, not `landed` — with a deprecation
+  warning the branch did not act on. So the annotator window was already coming up on `arrived`,
+  and that is what the branch's own "after" frames measured; putting it up on `landed` would step
+  it 3 pt against the picture the flight is still showing. I labelled both call sites `arrived:`,
+  which changes nothing and removes the ambiguity, and corrected the two places that said otherwise
+  (the design note and the AGENTS.md bullet). **Open**: `landed` now has no caller at all, and
+  neither does `frameDidChange`, the callback the two agents were told to publish so a shadow could
+  follow the frame — the single-owner shadow it was for was weighed and not built. Both are seams
+  kept for a design that is not there. Say the word and they go.
+
+### Incidents
+
+- Two agents contended for the launch lock during the round.
+- Twice a build ran against the real settings for about fifteen seconds. Nothing was written to
+  `~/.config/shotnote/settings.json` either time.
+- Before anything was rebuilt, the app Pete was running was copied out of
+  `integration2/build` to `shotnote-todo/pete-build/Shotnote.app` and relaunched from there, because
+  a rebuild rewrites a bundle under its own running process. Every restore this round went to that
+  copy, and at the end the copy was replaced with the merged build.
+- My smoke round held the lock from 15:21 to 15:32 and drove nothing but its own build on its own
+  scratch settings. No stitch ran, so the clipboard was not touched. The stack was dismissed once by
+  activity that was not mine; I re-ran.
+- Fixtures were only ever in `integration2-scratch/shots`, which is empty again.
+
+### How to take it
+
+Unchanged from section 3 above: `git merge todo2/integration` on `foundation` in your own checkout,
+then `./scripts/run.sh`. Your `docs/TODOS.md` is uncommitted and no branch touches it. The worktrees
+and `todo3/*` branches can go the same way as the `todo2/*` ones, and `shotnote-todo/pete-build` is
+a throwaway copy you can delete once `run.sh` has built your own.
