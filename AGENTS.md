@@ -48,7 +48,7 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `open -g shotnote://help` logs every command). Plain `open` activates Shotnote; `-g` does not.
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
-   folder, and `eval`, `show-editor`, and `tweaks` are refused, unless settings.json has
+   folder, and `eval`, `show-editor`, `tweaks`, and `send` are refused, unless settings.json has
    `"debug": true`. `add?file=` is the exception: it copies an image in from anywhere and the
    watcher then reports it like a capture, minus the copy and annotate toggles (`&annotate` opens
    the editor). `[annotate] loaded <ms>` reports when the page has the image; it is posted
@@ -260,6 +260,14 @@ the same driven sequence; a single run varies.
   exist before `xcodegen generate` runs, which build.sh guarantees.
 - Settings changes push to Apple's `com.apple.screencapture` defaults (location, show-thumbnail,
   disable-shadow, type). Only keys that changed are written, and never on first run.
+- `send` (`Send.swift`, debug only) shells out to herdr, which is the only thing on the machine that
+  knows which panes hold a coding agent: `herdr agent list` names them, `herdr agent prompt` types
+  one line into one of them. The image travels as a path the agent opens itself, so the agent must
+  already be allowed to read it or it stops on a permission prompt and herdr reports it as
+  `blocked`. The herdr calls are socket round trips, so they run off the main thread and the
+  `[send]` line arrives when herdr answers. Without herdr the command is one `no-agent` error;
+  nothing else in the app depends on it. `docs/send-to-agent-exploration-2026-09-17.md` has the
+  routes that were measured and why the others were refused.
 
 ## Adding things
 

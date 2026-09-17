@@ -18,6 +18,8 @@ enum CommandError: String, CaseIterable {
     case evalFailed = "eval-failed"
     case writeFailed = "write-failed"
     case unsupportedType = "unsupported-type"
+    case noAgent = "no-agent"
+    case sendFailed = "send-failed"
 }
 
 /// A `shotnote://<name>?file=…&file=…` URL, decoded once.
@@ -30,6 +32,9 @@ struct CommandRequest: Equatable {
     let tag: String?
     /// `annotate` in the query: `add` opens the image in the annotator instead of showing its thumbnail.
     let annotate: Bool
+    /// `to=` and `text=` from the query: which agent `send` hands the image to, and the words with it.
+    let to: String?
+    let text: String?
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -52,6 +57,7 @@ enum Commands {
         Fixed(name: "cancel", summary: "close the annotator without exporting, as Esc would"),
         Fixed(name: "settings", summary: "open the Settings window"),
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Shotnote first recorded"),
+        Fixed(name: "send", summary: "hand a screenshot's path to a coding agent herdr is running: \(Identity.urlScheme)://send?file=<path>&to=<agent or pane>&text=<words>; the focused pane's agent when no target is given", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "show-editor", summary: "open the editor window without an image", needsDebug: true),
         Fixed(name: "eval", summary: "run JavaScript in the editor page: \(Identity.urlScheme)://eval?<code>", needsDebug: true),
@@ -64,7 +70,8 @@ enum Commands {
             .map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
         let annotate = items.first { $0.name == "annotate" }.map { !["0", "false"].contains($0.value ?? "") } ?? false
         return CommandRequest(name: url.host ?? "", files: files, query: url.query?.removingPercentEncoding,
-                              tag: items.first { $0.name == "tag" }?.value, annotate: annotate)
+                              tag: items.first { $0.name == "tag" }?.value, annotate: annotate,
+                              to: items.first { $0.name == "to" }?.value, text: items.first { $0.name == "text" }?.value)
     }
 
     /// Where `add` copies `source` inside `folder`: its own name, or the name with a counter when
