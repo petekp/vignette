@@ -424,10 +424,13 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         root.wantsLayer = true
         let frameView = NSView()
         frameView.wantsLayer = true
+        // The same shadow the flight carries into this frame, so the handover shows nothing.
+        // AppKit's y points up, so a shadow below the frame is a negative offset.
+        let look = TransitionLayer.Look.annotator(Settings.shared.data.ui)
         frameView.layer?.shadowColor = NSColor.black.cgColor
-        frameView.layer?.shadowOpacity = 0.45
-        frameView.layer?.shadowRadius = 24
-        frameView.layer?.shadowOffset = CGSize(width: 0, height: -10)
+        frameView.layer?.shadowOpacity = Float(look.shadowOpacity)
+        frameView.layer?.shadowRadius = look.shadowRadius
+        frameView.layer?.shadowOffset = CGSize(width: 0, height: -look.shadowY)
         let container = NSView()
         container.wantsLayer = true
         container.layer?.masksToBounds = true

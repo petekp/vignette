@@ -82,13 +82,10 @@ final class Tween: NSObject {
 
     private func springTick(_ sp: (target: CGFloat, omega: Double, lastTick: CFTimeInterval)) {
         let now = CACurrentMediaTime()
-        // A stalled run loop would otherwise integrate one huge step; cap it at a few frames.
-        let dt = min(0.1, now - sp.lastTick)
+        let step = Tween.spring(value: value, velocity: velocity, target: sp.target, omega: sp.omega, dt: now - sp.lastTick)
         spring?.lastTick = now
-        let w = CGFloat(sp.omega)
-        let acceleration = -2 * w * velocity - w * w * (value - sp.target)
-        velocity += acceleration * dt
-        value += velocity * dt
+        value = step.value
+        velocity = step.velocity
         let settled = abs(value - sp.target) < 0.001 && abs(velocity) < 0.01
         if settled { value = sp.target; velocity = 0 }
         apply(value)
@@ -97,6 +94,21 @@ final class Tween: NSObject {
             let done = completion; completion = nil
             done?()
         }
+    }
+
+    /// Where a critically damped spring is `dt` after this point, in closed form. Stepping the
+    /// acceleration instead multiplies the value by about (omega * dt)^2 when a tick is late, so a
+    /// run loop that stalled for 50 ms threw the backdrop most of a screen past its target and it
+    /// swept back into place; this lands where the spring really is, however late the tick, and a
+    /// long stall simply finds it settled.
+    static func spring(value: CGFloat, velocity: CGFloat, target: CGFloat, omega: Double, dt: Double) -> (value: CGFloat, velocity: CGFloat) {
+        guard dt > 0, omega > 0 else { return (value, velocity) }
+        // Measured from the target, a critically damped spring is (offset + slope t) e^(-omega t).
+        let offset = Double(value - target)
+        let slope = Double(velocity) + omega * offset
+        let decay = exp(-omega * dt)
+        let next = (offset + slope * dt) * decay
+        return (CGFloat(Double(target) + next), CGFloat((slope - omega * (offset + slope * dt)) * decay))
     }
 
     private static func ease(_ t: Double, _ curve: String) -> CGFloat {

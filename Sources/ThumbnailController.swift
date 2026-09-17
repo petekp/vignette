@@ -371,13 +371,15 @@ final class ThumbnailController: NSObject {
         stitchGeneration += 1
         let generation = stitchGeneration
         flights.converge(pieces: flying, result: (id: result.id, image: stitched, frame: cardFrame(of: result)),
-                         corner: ui.cardCornerRadius, on: screen) { [weak self] in
+                         look: .card(ui), on: screen) { [weak self] in
             guard let self else { return }
             self.model.forming.subtract(ids)
             self.model.forming.remove(result.id)
-            guard self.stitchGeneration == generation, self.visible,
-                  self.model.cards.contains(where: { $0.id == result.id }) else { return }
-            self.showCopied([result.shot])
+            guard self.stitchGeneration == generation else { return }
+            // The card takes the copied mark; if the stack has gone meanwhile, or the card with it,
+            // the toast says what the stitch did instead, so a stitch never finishes in silence.
+            if self.visible, self.model.cards.contains(where: { $0.id == result.id }) { self.showCopied([result.shot]) }
+            else { self.showFeedback("Stitched \(cards.count) images, copied") }
         }
         Log.write("[stack] stitched cards=\(cards.count) into=\(url.lastPathComponent)")
         return true
@@ -440,11 +442,18 @@ final class ThumbnailController: NSObject {
         removeOutsideClickMonitor()
         releaseKeys()
         backdrop.hide()
+        // A stitch still converging ends with the stack: its pieces stop where they are, and the
+        // new card, an empty slot while its image was in the layer, slides out with the column.
+        if !model.forming.isEmpty {
+            for id in model.forming { flights.end(id: id) }
+            model.forming = []
+        }
         if let card = annotating, model.isStack {
             // The image in the annotator leaves with the stack while the page parks its draft.
             var slot = cardFrame(of: card)
             slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
-            flights.fly(id: card.id, image: flightImage(for: currentCard(card)), from: annotationFrame, to: slot, cornerFrom: ui.annotationCornerRadius, cornerTo: ui.cardCornerRadius, on: screen) { [weak self] in
+            flights.fly(id: card.id, image: flightImage(for: currentCard(card)), from: annotationFrame, to: slot,
+                        lookFrom: .annotator(ui), lookTo: .card(ui), on: screen) { [weak self] in
                 self?.flights.end(id: card.id)
             }
         }
@@ -498,14 +507,18 @@ final class ThumbnailController: NSObject {
             onAnnotatorPrepare?(card.shot, target)
             var from = cardFrame(of: card)
             if model.offscreen.contains(card.id) { from.origin.x += layout.offscreenDistance(cardWidth: from.width) }
-            flights.fly(id: card.id, image: flightImage(for: card), from: from, to: target, cornerFrom: ui.cardCornerRadius, cornerTo: ui.annotationCornerRadius, on: screen) { [weak self] in
+            flights.fly(id: card.id, image: flightImage(for: card), from: from, to: target,
+                        lookFrom: .card(ui), lookTo: .annotator(ui), on: screen) { [weak self] in
                 guard let self, self.transition.phase == .flyingOut(key) else { return }
                 self.send(.shown)
             }
         case .show:
             onAnnotatorShow?()
             guard let card = sessionCard else { return }
+            // The window is up and draws the frame's shadow itself; the flight image stays only to
+            // cover the page until it reports the image, and a second shadow would darken the edge.
             if loadedKeys.contains(card.shot.url.path) { flights.end(id: card.id) }   // else pageLoaded lifts it
+            else { flights.dropShadow(id: card.id) }
             if !model.isStack {
                 // A lone thumbnail has nothing to keep open behind the annotator; cards that joined stay.
                 model.cards.removeAll { $0.id == card.id }
@@ -547,9 +560,11 @@ final class ThumbnailController: NSObject {
         guard visible, model.cards.contains(where: { $0.id == card.id }) else {
             model.outCards.remove(card.id); flights.end(id: card.id); return
         }
-        flights.fly(id: card.id, image: flightImage(for: card), from: annotationFrame, to: cardFrame(of: card), cornerFrom: ui.annotationCornerRadius, cornerTo: ui.cardCornerRadius, on: screen) { [weak self] in
+        flights.fly(id: card.id, image: flightImage(for: card), from: annotationFrame, to: cardFrame(of: card),
+                    lookFrom: .annotator(ui), lookTo: .card(ui), on: screen) { [weak self] in
             guard let self else { return }
             self.model.outCards.remove(card.id)
+            self.flights.dropShadow(id: card.id)   // the card draws it now, in this same commit
             // The card view comes back on SwiftUI's next commit; lift the flight image after it.
             DispatchQueue.main.async { self.flights.end(id: card.id) }
             if !self.transition.isActive, self.visible, self.model.isStack { self.takeKeys() }

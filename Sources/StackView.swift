@@ -112,9 +112,12 @@ private struct CardView: View {
     /// its place in the column and draws nothing, so the image is never on screen twice.
     private var isForming: Bool { model.forming.contains(card.id) }
     private var offscreen: Bool { model.offscreen.contains(card.id) }
+    /// The card itself is under the mouse. A slot whose image is in the transition layer is not:
+    /// the flight is what the eye follows, so the hover state arrives with the card that lands.
+    private var showsHover: Bool { hovered && !isOut && !isForming }
     private var showsCircle: Bool { model.isStack && !isOut && !isForming && (hovered || model.inSelectionMode || focused) }
     private var copied: Bool { model.copied.contains(card.id) }
-    private var showsButtons: Bool { hovered && !isOut && !isForming && !model.inSelectionMode && !copied }
+    private var showsButtons: Bool { showsHover && !model.inSelectionMode && !copied }
     private var showsDrawHint: Bool { showsButtons && !model.overControl && !pressed && !inButtonRow }
     /// The strip along the bottom that holds the buttons, gaps included: a click there is not a draw.
     private var inButtonRow: Bool { pointer.map { $0.y >= card.size.height - 6 - ui.buttonSize } ?? true }
@@ -135,7 +138,6 @@ private struct CardView: View {
                     }
                 }
                     .frame(width: card.size.width, height: card.size.height)
-                    .overlay(Color.black.opacity(showsButtons ? ui.hoverDim : 0))
                     .clipShape(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous).stroke(ringColor, lineWidth: ringWidth))
                     .shadow(color: .black.opacity(ui.cardShadowOpacity), radius: ui.cardShadowRadius, y: ui.cardShadowY)
@@ -145,8 +147,21 @@ private struct CardView: View {
                                    onPress: { down in model.pressedCard = down ? card.id : (model.pressedCard == card.id ? nil : model.pressedCard) },
                                    onClick: { model.onClickImage(card) })
                     )
+                    // The image itself never fades: a card landing from the annotator takes over
+                    // from its flight in one frame, and the hover state around it is what animates.
+                    .transition(.identity)
             }
 
+        }
+        // Darkens the card behind its buttons. Outside the branch above, so it fades in with them
+        // when a card lands under a waiting mouse instead of appearing at full strength at once.
+        .overlay {
+            if showsButtons {
+                RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
+                    .fill(.black.opacity(ui.hoverDim))
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
         }
         // Copy in the bottom-left corner with its name, delete in the bottom-right as an icon; a
         // click anywhere else on the card draws.
@@ -203,10 +218,10 @@ private struct CardView: View {
             }
         }
         .animation(showsDrawHint ? Anim.spring(0.3 * motion, bounce: 0.3) : Anim.spring(0.1 * motion), value: showsDrawHint)
-        .zIndex(hovered ? 1 : 0)   // the hint may hang over the card below
-        .scaleEffect(pressed ? ui.pressScale : (hovered && !isOut ? ui.hoverScale : 1))
+        .zIndex(showsHover ? 1 : 0)   // the hint may hang over the card below
+        .scaleEffect(pressed ? ui.pressScale : (showsHover ? ui.hoverScale : 1))
         .animation(Anim.spring(0.25 * motion, bounce: 0.3), value: pressed)
-        .animation(Anim.spring(ui.hoverRevealDuration), value: hovered)
+        .animation(Anim.spring(ui.hoverRevealDuration), value: showsHover)
         .animation(Anim.spring(ui.hoverRevealDuration), value: showsButtons)
         // Past the panel's right edge, which sits just beyond the screen edge, so the card slides off screen.
         .offset(x: offscreen ? StackLayout.current.offscreenDistance(cardWidth: card.size.width) : 0)

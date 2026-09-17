@@ -117,4 +117,21 @@ final class MotionTests: XCTestCase {
         wait(for: [back], timeout: 2)
         XCTAssertEqual(tween.value, 1)
     }
+
+    /// The run loop stalls — a launch, a decode, a stitch — and the next tick arrives several
+    /// frames late. The step must land where the spring really is by then: one late tick used to
+    /// carry the value far past its target, which is what threw the stack's backdrop most of a
+    /// screen to the left and swept it back into place.
+    @MainActor
+    func testSpringStepNeverPassesItsTargetHoweverLateTheTickIs() {
+        let omega = 6.6 / 0.3      // the backdrop's slide-in
+        for dt in [0.008, 0.016, 0.042, 0.06, 0.1, 0.4] {
+            var value: CGFloat = 0, velocity: CGFloat = 0
+            for _ in 0..<400 {
+                (value, velocity) = Tween.spring(value: value, velocity: velocity, target: 1, omega: omega, dt: dt)
+                XCTAssertLessThanOrEqual(value, 1, "a tick \(Int(dt * 1000)) ms late carried the value past its target")
+            }
+            XCTAssertEqual(value, 1, accuracy: 0.001, "and it still arrives")
+        }
+    }
 }
