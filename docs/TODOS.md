@@ -41,6 +41,9 @@ its version supports. So the app is the source of the skill.
   Annotated. Verified by hand on 2026-09-16 with `jq` over a draft: one ellipse, center x 26%,
   y 30%, enough to crop the marked region from the original. Per-mark crops are the follow-on.
   Pete: keep using the app and see whether the need shows up.
+- A vendor's own logo on the agent badge (Claude, ChatGPT) instead of the one fallback glyph.
+  `Agent.symbol(for:)` is the lookup, empty today. Those logos are trademark assets Pete has to
+  review before they ship, so it waits on that, not on code.
 - Agent pushes piling up in the screenshots folder: a name rule or a second watched folder. Only
   if the push loop proves itself in use.
 - A name convention for pushed files, `Agent <what> <state>.png`, so the card reads at a glance.

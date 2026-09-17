@@ -517,15 +517,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Commands.ok("last", url.lastPathComponent)
     }
 
-    /// `add?file=<path>[&annotate]`: a copy of an image from anywhere lands in the watch folder, where
-    /// the watcher reports it like a capture; `pendingAdds` makes that report skip the capture toggles.
+    /// `add?file=<path>[&annotate][&agent=<name>]`: a copy of an image from anywhere lands in the watch
+    /// folder, where the watcher reports it like a capture; `pendingAdds` makes that report skip the
+    /// capture toggles. `agent=` is recorded on the copy, which is what puts the badge on its card.
     private func addImage(_ request: CommandRequest) {
         guard let source = request.files.first else { Commands.error("add", .missingFile, "no file given"); return }
         guard Commands.isReadableImage(source) else { Commands.error("add", .unreadableImage, source.path); return }
         if Commands.policyError(for: source, watchFolder: watchFolder, debug: false) == nil {
             // Already in the folder, so the watcher will not report it: present it directly.
+            if let agent = request.agent { Agent.record(agent, on: source) }
             present(Screenshot(url: source), annotate: request.annotate)
-            Commands.ok("add", "\(source.lastPathComponent) already in the watch folder")
+            Commands.ok("add", "\(source.lastPathComponent) already in the watch folder\(detail(request))")
             return
         }
         guard ScreenshotWatcher.isCandidate(source.lastPathComponent) else {
@@ -539,7 +541,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             pendingAdds[destination.lastPathComponent] = nil
             Commands.error("add", .writeFailed, "\(destination.path): \(error.localizedDescription)"); return
         }
-        Commands.ok("add", "\(destination.lastPathComponent)\(request.annotate ? " annotate" : "")")
+        if let agent = request.agent { Agent.record(agent, on: destination) }
+        Commands.ok("add", "\(destination.lastPathComponent)\(detail(request))")
+    }
+
+    /// What an `[add] ok` line says about the request beyond the file name.
+    private func detail(_ request: CommandRequest) -> String {
+        (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "")
     }
 
     private func present(_ shot: Screenshot, annotate: Bool) {

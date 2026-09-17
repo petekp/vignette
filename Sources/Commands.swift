@@ -30,6 +30,9 @@ struct CommandRequest: Equatable {
     let tag: String?
     /// `annotate` in the query: `add` opens the image in the annotator instead of showing its thumbnail.
     let annotate: Bool
+    /// `agent=` from the query: which agent is pushing the image. Empty when the parameter carried
+    /// no name, which still marks the card; nil when it was not given at all.
+    let agent: String?
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -46,7 +49,7 @@ enum Commands {
         Fixed(name: "help", summary: "list every command and action in the log"),
         Fixed(name: "state", summary: "dump app and page state to the log"),
         Fixed(name: "last", summary: "show the thumbnail for the newest screenshot"),
-        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; ignores copyOnCapture and annotateOnCapture"),
+        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; ignores copyOnCapture and annotateOnCapture"),
         Fixed(name: "recent", summary: "toggle the recent stack"),
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
         Fixed(name: "cancel", summary: "close the annotator without exporting, as Esc would"),
@@ -64,7 +67,8 @@ enum Commands {
             .map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
         let annotate = items.first { $0.name == "annotate" }.map { !["0", "false"].contains($0.value ?? "") } ?? false
         return CommandRequest(name: url.host ?? "", files: files, query: url.query?.removingPercentEncoding,
-                              tag: items.first { $0.name == "tag" }?.value, annotate: annotate)
+                              tag: items.first { $0.name == "tag" }?.value, annotate: annotate,
+                              agent: Agent.clean(items.first { $0.name == "agent" }.map { $0.value ?? "" }))
     }
 
     /// Where `add` copies `source` inside `folder`: its own name, or the name with a counter when

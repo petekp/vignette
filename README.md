@@ -93,6 +93,8 @@ and closing it hands focus back to the app you came from.
   Cmd+Delete trashes, Esc clears then dismisses.
 - A card with a pencil badge has a draft: annotations you parked with Esc or a swap. Reopen it
   and they are back; Copy Annotated renders them without opening the editor.
+- A card with a purple badge was pushed in by an agent (`add?agent=<name>`), not captured. Hover
+  it to see which one. The name is stored on the file itself, so it survives a rename.
 
 The hotkey is either a key combination (no permission needed) or `double-rshift`, a double tap
 of right Shift, which needs Shotnote trusted for Accessibility (System Settings → Privacy &
@@ -125,6 +127,7 @@ open -g "shotnote://trash?file=~/Dropbox/Screenshots/x.png"
 open -g "shotnote://stitch?file=/a.png&file=/b.png"
 open -g shotnote://last                       # show the thumbnail for the newest screenshot
 open -g "shotnote://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
+open -g "shotnote://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a purple badge on the card
 open -g shotnote://recent                     # toggle the recent stack (same as the hotkey)
 open -g shotnote://dismiss                    # close the thumbnail or the stack
 open -g shotnote://cancel                     # close the annotator without exporting, as Esc would

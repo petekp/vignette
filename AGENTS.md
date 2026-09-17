@@ -51,7 +51,9 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    folder, and `eval`, `show-editor`, and `tweaks` are refused, unless settings.json has
    `"debug": true`. `add?file=` is the exception: it copies an image in from anywhere and the
    watcher then reports it like a capture, minus the copy and annotate toggles (`&annotate` opens
-   the editor). `[annotate] loaded <ms>` reports when the page has the image; it is posted
+   the editor). `&agent=<name>` says which agent is pushing it: the name is recorded on the copy as
+   the `com.petepetrash.shotnote.agent` extended attribute (`Agent.swift`, `xattr -l` shows it) and
+   the card gets a purple badge. `[annotate] loaded <ms>` reports when the page has the image; it is posted
    from a `requestAnimationFrame`, which WebKit pauses while the screen is locked or the
    window is hidden, so the line never arrives in that state.
 4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.
@@ -76,7 +78,7 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    and error lands there with a `[tag]`. `open -g "shotnote://state?tag=<id>"` writes one
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
-   `stack` (cards with `file`, `frame`, `out`, `draft`; selection, focus, feedback, panel),
+   `stack` (cards with `file`, `frame`, `out`, `draft`, `agent`; selection, focus, feedback, panel),
    `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
