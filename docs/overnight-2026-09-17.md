@@ -14,6 +14,8 @@ Branch and merge commits:
 | `todo/motion` | items 2, 7 | `1dd292a` |
 
 `./scripts/build.sh --test` passes on `todo/integration` at every merge and at the tip.
+An independent review of the whole range came back afterwards; section 5 says what it found,
+what is fixed, and what is left for you.
 
 ## 1. What landed
 
@@ -308,7 +310,93 @@ the next launch.
 Nothing was written to `~/Dropbox/Screenshots` or `~/.config/shotnote/` by me. Every fixture I made
 is in `~/Code/shotnote-todo/integration-scratch/`.
 
-## 5. Merge notes
+## 5. Review
+
+An independent review read `todo/base..todo/integration` and found ten things. Nine are fixed on
+`todo/integration` in commit `c12fca5`; the tenth was a question about the page's font handling,
+which I checked and answered. Build and tests pass, and I drove the changed paths live.
+
+### Fixed
+
+**A marked push could draw on your image as it opened.** The refusal for `add?marks=` asked whether
+the annotator's window was visible. The annotator takes the page's canvas in `prepare`, about half a
+second before the window appears, so a push in that window was accepted and could replace the image
+being loaded. The refusal now asks who owns the canvas, which is true from `prepare` until `park`
+answers. Verified live: a push 254 ms after `prepare` and 1.2 s before the window appeared answered
+`[add] error page-not-ready an image is in the annotator`.
+
+**Esc could leave the annotator on screen.** Closing the annotator waits for the page to park the
+draft, and the page runs park, export, and build one at a time. An Esc during a multi-card Copy
+Annotated therefore waited for the export, and a page promise that never settled left the annotator
+and the dim panel over your app for good. It now arms the same 15 second watchdog the export uses, so
+the window comes down either way and the log carries one `park timeout` line.
+
+**A failed build could forget an existing draft.** The page answers a build with a null snapshot when
+its editor is not mounted yet. That null was stored, which forgets whatever draft the image already
+had, and the command still answered `ok`. A build without a snapshot is now a failure with one
+`export-failed` line, and the existing draft is left alone.
+
+**A coloured mark before the page was up said the wrong thing.** The colour check ran first, so a
+mark naming a real colour answered `invalid-marks` when the truth was that the editor was not ready.
+The refusal check now runs first.
+
+**A push during Copy Annotated was accepted and then lost.** The refusal knew about another push but
+not about a running export, so a marked push during a long Copy Annotated was accepted, the file was
+copied, and the marks timed out. It now refuses before copying anything.
+
+**Words beginning with a dash could be read as an option.** `send?text=` put your words first in the
+argument handed to herdr. No shell is involved, but herdr's own parser reads a leading `--wait` as an
+option. The message now starts with the fixed word and the path: `Screenshot "<path>": <words>`.
+
+**A marks file could be any size, and errors quoted it.** `add?marks=` read any path into memory on
+the main thread with no cap, and an error line repeated what the file said. It is now capped at
+256 KB, anything that is not a regular file is refused before it is read, and an error names the mark
+and the field without quoting the value.
+
+**A retargeted flight could step sideways.** The bow was read from the flight's current path only, so
+aiming a flight somewhere else in mid-air (the hotkey again during a fly-out) changed the path in one
+frame and could move the card sideways by up to the arc cap. A flight now keeps the path it was on and
+blends to the new one over the rest of its animation. The blend settles at 1, where only the new path
+counts and its own end is flat, so the card still lands exactly on its target;
+`Tests/MotionTests.swift` pins that. Verified live with a swap: both cards moved smoothly and the
+annotator landed on the same frame as an unswapped open, `[202, 103, 1108, 689]`.
+
+**Stale documentation.** `AGENTS.md` now says what the bow does on a retarget, and that the annotator
+owns the canvas from `prepare` rather than from the window; the `add` paragraph says `marks=` is a
+second path that may point anywhere, with its cap. `README.md` says when a marked push is refused, and
+that a parked card's thumbnail shows its annotations as long as the preview beside the draft is still
+in `~/Library/Caches`.
+
+### Checked, no change
+
+**The page waits for an embedded font once per font, not once per rendering.** The reviewer asked
+whether WebKit really keeps a decoded font across the new `Image` each rendering creates, since
+`render()` only waits the first time it sees a font. It does: the render test now draws two different
+text annotations in one page session and both come back with their red pixels. The memo stays.
+
+### Left open for Pete
+
+- **A draft whose preview was purged is invisible on its card.** With the badge gone, the only sign of
+  a parked draft is the thumbnail, which is the preview PNG in `~/Library/Caches`. macOS may clear
+  that folder; the draft itself survives in Application Support, so the card silently looks plain
+  while Copy Annotated still has the annotations. You asked for the badge gone, so the durable fix is
+  regenerating a missing preview from the draft at launch, not putting the badge back.
+- **A stitch you dismiss shows no confirmation.** Dismissing the stack while the pieces are converging
+  leaves them flying for a moment and suppresses both the Copied mark on the new card and the toast
+  that used to replace it, so a stitch that worked says nothing.
+- **One `getxattr` per card at stack open, on the main thread.** That is how the agent badge reads its
+  name. It was measured at about 4 µs, which is nothing for thirty cards, but the folder listing was
+  moved off the main thread for exactly this kind of per-file read; a Dropbox folder with online-only
+  files and a much larger `recentCount` is where it would show.
+- **Nothing stops the annotator from taking the canvas while a build is running.** The fix above
+  protects the annotator from a push; the other direction is still open. I saw it once while testing:
+  a push that arrived 15 ms before an annotate was accepted, and `prepare` loaded the user's image
+  while the build was mid-render. Both finished correctly that time, but the page's `load` is not part
+  of the one-at-a-time queue that `park`, `export`, and `build` share, so a `load` that lands inside a
+  build's render would be undone when the build puts the canvas back. The window is a few tens of
+  milliseconds and needs an agent push and a human Return at the same instant.
+
+## 6. Merge notes
 
 Git stopped on fifteen conflict hunks across six files, and two more places stopped compiling
 afterwards. Every resolution kept both sides:
