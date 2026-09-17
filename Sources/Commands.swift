@@ -19,6 +19,8 @@ enum CommandError: String, CaseIterable {
     case writeFailed = "write-failed"
     case unsupportedType = "unsupported-type"
     case invalidMarks = "invalid-marks"
+    case noAgent = "no-agent"
+    case sendFailed = "send-failed"
 }
 
 /// What is wrong with an agent's `marks=`, in the words the error line uses.
@@ -42,6 +44,9 @@ struct CommandRequest: Equatable {
     let agent: String?
     /// `marks=` from the query, as given: a path to a JSON file, or the JSON itself. See `Commands.marks(from:)`.
     let marks: String?
+    /// `to=` and `text=` from the query: which agent `send` hands the image to, and the words with it.
+    let to: String?
+    let text: String?
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -64,6 +69,7 @@ enum Commands {
         Fixed(name: "cancel", summary: "close the annotator without exporting, as Esc would"),
         Fixed(name: "settings", summary: "open the Settings window"),
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Shotnote first recorded"),
+        Fixed(name: "send", summary: "hand a screenshot's path to a coding agent herdr is running: \(Identity.urlScheme)://send?file=<path>&to=<agent or pane>&text=<words>; the focused pane's agent when no target is given", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "show-editor", summary: "open the editor window without an image", needsDebug: true),
         Fixed(name: "eval", summary: "run JavaScript in the editor page: \(Identity.urlScheme)://eval?<code>", needsDebug: true),
@@ -78,7 +84,8 @@ enum Commands {
         return CommandRequest(name: url.host ?? "", files: files, query: url.query?.removingPercentEncoding,
                               tag: items.first { $0.name == "tag" }?.value, annotate: annotate,
                               agent: Agent.clean(items.first { $0.name == "agent" }.map { $0.value ?? "" }),
-                              marks: items.first { $0.name == "marks" }?.value)
+                              marks: items.first { $0.name == "marks" }?.value,
+                              to: items.first { $0.name == "to" }?.value, text: items.first { $0.name == "text" }?.value)
     }
 
     /// Where `add` copies `source` inside `folder`: its own name, or the name with a counter when

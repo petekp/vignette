@@ -55,6 +55,14 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?agent=\(String(repeating: "x", count: 200))")!).agent?.count, Agent.maxLength)
     }
 
+    func testSendParsesItsTargetAndWords() {
+        let r = Commands.parse(URL(string: "shotnote://send?file=/tmp/x.png&to=reviewer&text=the%20header%20scrolls")!)
+        XCTAssertEqual(r.to, "reviewer")
+        XCTAssertEqual(r.text, "the header scrolls")
+        XCTAssertNil(Commands.parse(URL(string: "shotnote://send?file=/tmp/x.png")!).to)
+        XCTAssertTrue(Commands.needsDebug("send"))
+    }
+
     func testAddDestinationNeverOverwrites() {
         let folder = dir.appendingPathComponent("shots")
         let source = URL(fileURLWithPath: "/tmp/agent/x.png")
