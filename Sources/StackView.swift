@@ -50,7 +50,7 @@ struct StackView: View {
 
     private var stripPlacement: StackLayout.StripPlacement? {
         guard model.isStack, model.inSelectionMode else { return nil }
-        return StackLayout.current.stripPlacement(rows: Config.stripRows, selection: model.selectedIndices(),
+        return StackLayout.current.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
                                                   cards: model.cards.map(\.size), showsBar: model.showsBar,
                                                   scroll: model.scroll, viewport: model.viewport)
     }
@@ -164,7 +164,7 @@ private struct CardView: View {
         }
         .overlay(alignment: .topLeading) {
             if showsCircle {
-                SelectionCircle(selected: selected, size: ui.selectionCircleSize)
+                SelectionCircle(number: model.selectionNumber(of: card.id), size: ui.selectionCircleSize)
                     .onHover { model.overControl = $0 }
                     .padding(6)
                     .transition(.opacity)
@@ -238,22 +238,31 @@ private struct CardView: View {
     }
 }
 
+/// Empty while the card is only hovered or focused; once it is selected it carries the card's
+/// number in the selection, which is the number Stitch will draw on it.
 private struct SelectionCircle: View {
-    let selected: Bool
+    let number: Int?
     let size: CGFloat
     var body: some View {
         ZStack {
-            Circle().fill(selected ? Color.accentColor : Color.black.opacity(0.45))
+            Circle().fill(number != nil ? Color.accentColor : Color.black.opacity(0.45))
             Circle().stroke(.white, lineWidth: 1.5)
-            if selected { Image(systemName: "checkmark").font(.system(size: size / 2, weight: .bold)).foregroundStyle(.white) }
+            if let number {
+                Text("\(number)")
+                    .font(.system(size: size * 0.6, weight: .bold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .padding(.horizontal, 2)
+            }
         }
         .frame(width: size, height: size)
         .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
     }
 }
 
-/// Beside the selected cards: the count and the bulk actions, in one vertical strip. `StackLayout`
-/// places it and sizes it; the rows here fill that size exactly.
+/// Beside the selected cards: the bulk actions, in one vertical strip. `StackLayout` places it
+/// and sizes it; the rows here fill that size exactly. The count is on the cards themselves.
 private struct SelectionStrip: View {
     @ObservedObject var model: StackModel
     let size: NSSize
@@ -262,12 +271,6 @@ private struct SelectionStrip: View {
     var body: some View {
         let cards = model.selectedCards()
         VStack(spacing: ui.buttonSpacing) {
-            Text("\(cards.count)")
-                .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.white)
-                .frame(minWidth: 20, minHeight: 20)
-                .background(Color.accentColor, in: Capsule())
-                .frame(height: ui.buttonSize)
             ForEach(Config.stripActions, id: \.id) { action in
                 Button { model.onAction(action, cards) } label: {
                     Image(systemName: action.symbol)

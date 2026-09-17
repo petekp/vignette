@@ -28,9 +28,8 @@ enum Config {
 
     static func action(id: String) -> ShotAction? { actions.first { $0.id == id } }
 
-    /// The selection strip, top to bottom: the count, then these.
+    /// The selection strip, top to bottom.
     static var stripActions: [ShotAction] { actions.filter(\.showsInStrip) }
-    static var stripRows: Int { stripActions.count + 1 }
 }
 
 struct ShotAction: Sendable {

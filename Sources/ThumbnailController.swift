@@ -43,6 +43,13 @@ final class StackModel: ObservableObject {
     func selectedCards() -> [Card] { cards.filter { selected.contains($0.id) }.reversed() }
     /// Where the selected cards sit in the column; 0 is the newest, at the bottom.
     func selectedIndices() -> [Int] { cards.indices.filter { selected.contains(cards[$0].id) } }
+
+    /// A selected card's place in `selectedCards()`, counting from 1: the oldest card is 1, which
+    /// is the order every action receives them and the badge `Stitch` draws on each one.
+    func selectionNumber(of id: UUID) -> Int? {
+        guard selected.contains(id), let index = cards.firstIndex(where: { $0.id == id }) else { return nil }
+        return cards[(index + 1)...].reduce(1) { $0 + (selected.contains($1.id) ? 1 : 0) }
+    }
 }
 
 /// Owns the bottom-right panel: fresh-screenshot thumbnails, the recent stack, feedback toasts,
@@ -141,7 +148,7 @@ final class ThumbnailController {
 
     /// The selection strip's screen frame, or nil when nothing is selected.
     private var stripFrame: NSRect? {
-        guard showsStrip, let strip = layout.stripPlacement(rows: Config.stripRows, selection: model.selectedIndices(),
+        guard showsStrip, let strip = layout.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
                                                             cards: cardSizes, showsBar: showsBar,
                                                             scroll: model.scroll, viewport: model.viewport) else { return nil }
         return layout.stripFrame(strip, panelFrame: panel.frame, scroll: model.scroll)
