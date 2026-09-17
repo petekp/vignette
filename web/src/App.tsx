@@ -17,11 +17,12 @@ import {
   createShapeId,
   getSnapshot,
   loadSnapshot,
+  toRichText,
   track,
   useEditor,
 } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { ExportItem, ExportResult, LoadPayload, PROTOCOL, ParkResult, postToNative } from './bridge'
+import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, postToNative } from './bridge'
 
 /** One keyboard zoom step (cmd+plus / cmd+minus). */
 const ZOOM_STEP = 1.25
@@ -43,6 +44,8 @@ let draftTimer: ReturnType<typeof setTimeout> | null = null
 const PREVIEW_MAX = 1600
 /// How long after the last change the draft snapshot goes to the host.
 const DRAFT_DELAY_MS = 300
+/// How long a rendering waits for a font it embeds the first time; see `waitForEmbeddedFonts`.
+const FONT_RASTER_MS = 250
 
 /// Asset `src` values are file paths; the host serves them from the page's own origin, under the
 /// same per-launch token as the page, so a snapshot saved in one launch resolves in the next.
@@ -78,6 +81,15 @@ async function quietly<T>(fn: () => Promise<T>): Promise<T> {
   } finally {
     quiet = false
   }
+}
+
+/// The operations that stand the canvas on its head run one at a time. Each takes its snapshot
+/// after an await, so another one's shapes must never land in between: `park` would store them.
+let pending: Promise<unknown> = Promise.resolve()
+function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
+  const next = pending.then(work, work)
+  pending = next.catch(() => {})
+  return next
 }
 
 /// Sends the host the current annotations, or null when there are none. Debounced from the store listener.
@@ -124,16 +136,20 @@ export function App() {
         }
       },
       async park() {
-        return editor ? park(editor, scaleRef.current) : { snapshot: null, preview: null }
+        return editor ? oneAtATime(() => park(editor, scaleRef.current)) : { snapshot: null, preview: null }
       },
       reset() {
         if (!editor) return
         clearCanvas(editor)
         currentKey = null
       },
+      async build(payload, marks) {
+        if (!editor) return { snapshot: null, preview: null }
+        return oneAtATime(() => build(editor, payload, marks))
+      },
       async export(items) {
         if (!editor) return { items: [], error: 'editor not mounted' }
-        return exportDrafts(editor, items, scaleRef.current)
+        return oneAtATime(() => exportDrafts(editor, items, scaleRef.current))
       },
       setTool(id) {
         if (editor && TOOLS.some((t) => t.id === id)) selectTool(editor, id as ToolId)
@@ -209,7 +225,6 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
 }
 
 function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: number }) {
-  clearCanvas(editor)
   currentKey = p.key
   // The shape is sized in points so the canvas matches the window; export scales back up to pixels.
   const ratio = window.devicePixelRatio || 1
@@ -217,23 +232,7 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
   const h = p.pixelHeight / ratio
   scaleRef.current = ratio
 
-  silently(editor, () => {
-    if (p.snapshot) {
-      loadSnapshot(editor.store, p.snapshot)
-    } else {
-      const assetId = AssetRecordType.createId()
-      editor.createAssets([
-        {
-          id: assetId,
-          typeName: 'asset',
-          type: 'image',
-          meta: {},
-          props: { w, h, mimeType: p.mimeType, src: p.key, name: 'screenshot', isAnimated: false },
-        },
-      ])
-      editor.createShape({ id: IMAGE_ID, type: 'image', x: 0, y: 0, isLocked: true, props: { w, h, assetId } })
-    }
-  })
+  silently(editor, () => placeImage(editor, p, w, h))
   fitCamera(editor, w, h)
 
   editor.setStyleForNextShapes(DefaultColorStyle, COLORS[0].id)
@@ -291,17 +290,101 @@ function setCanvasZoom(editor: Editor, ratio: number) {
   editor.setCamera({ x: cx + sx / z - sx / cz, y: cy + sy / z - sy / cz, z })
 }
 
+/// The screenshot on an empty canvas, or the draft the host stored for it, which carries the image
+/// shape with it. The caller owns `quiet`, the camera, and `currentKey`, and runs this silently.
+function placeImage(editor: Editor, p: LoadPayload, w: number, h: number) {
+  removeAll(editor)
+  if (p.snapshot) {
+    loadSnapshot(editor.store, p.snapshot)
+    return
+  }
+  const assetId = AssetRecordType.createId()
+  editor.createAssets([
+    {
+      id: assetId,
+      typeName: 'asset',
+      type: 'image',
+      meta: {},
+      props: { w, h, mimeType: p.mimeType, src: p.key, name: 'screenshot', isAnimated: false },
+    },
+  ])
+  editor.createShape({ id: IMAGE_ID, type: 'image', x: 0, y: 0, isLocked: true, props: { w, h, assetId } })
+}
+
 function clearCanvas(editor: Editor) {
-  silently(editor, () => {
-    const ids = [...editor.getCurrentPageShapeIds()]
-    if (ids.length) {
-      editor.updateShapes(ids.map((id) => ({ id, type: editor.getShape(id)!.type, isLocked: false })))
-      editor.deleteShapes(ids)
-    }
-    const assets = editor.getAssets().map((a) => a.id)
-    if (assets.length) editor.deleteAssets(assets)
-  })
+  silently(editor, () => removeAll(editor))
   editor.clearHistory()
+}
+
+/// Every shape and asset, gone. The image shape is locked, so it is unlocked first.
+function removeAll(editor: Editor) {
+  const ids = [...editor.getCurrentPageShapeIds()]
+  if (ids.length) {
+    editor.updateShapes(ids.map((id) => ({ id, type: editor.getShape(id)!.type, isLocked: false })))
+    editor.deleteShapes(ids)
+  }
+  const assets = editor.getAssets().map((a) => a.id)
+  if (assets.length) editor.deleteAssets(assets)
+}
+
+/// An agent's marks as ordinary shapes, in canvas points: the image is at the origin, `w` by `h`,
+/// and every mark number is a fraction of it. The host has already checked the numbers and the color.
+function createMarks(editor: Editor, marks: Mark[], w: number, h: number) {
+  for (const m of marks) {
+    const x = m.x * w
+    const y = m.y * h
+    const color = (m.color ?? COLORS[0].id) as ColorId
+    if (m.type === 'arrow') {
+      editor.createShape({
+        type: 'arrow',
+        x,
+        y,
+        props: { start: { x: 0, y: 0 }, end: { x: (m.x2! - m.x) * w, y: (m.y2! - m.y) * h }, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
+      })
+    } else if (m.type === 'text') {
+      editor.createShape({ type: 'text', x, y, props: { richText: toRichText(m.text!), color, size: DEFAULT_SIZE } })
+    } else {
+      editor.createShape({
+        type: 'geo',
+        x,
+        y,
+        props: { geo: m.type, w: m.w! * w, h: m.h! * h, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
+      })
+    }
+  }
+}
+
+/// An agent's marks as a draft, with the editor never shown: the image and the marks go on the
+/// canvas, the snapshot and a rendering come back, and whatever the canvas held is put back. The
+/// host stores the result, so the card shows the marks and Copy Annotated has them before anyone
+/// opens the editor. `p.snapshot` is the image's existing draft, so marks add to it.
+async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<ParkResult> {
+  const before = getSnapshot(editor.store)
+  const beforeKey = currentKey
+  const selected = editor.getSelectedShapeIds()
+  const ratio = window.devicePixelRatio || 1
+  const w = p.pixelWidth / ratio
+  const h = p.pixelHeight / ratio
+  quiet = true
+  try {
+    silently(editor, () => {
+      placeImage(editor, p, w, h)
+      createMarks(editor, marks, w, h)
+    })
+    const snapshot = getSnapshot(editor.store)
+    const preview = await render(editor, Math.min(ratio, PREVIEW_MAX / Math.max(w, h)))
+    // A `load` landed while the rendering was in flight: it drew the other image, so drop it.
+    return { snapshot, preview: currentKey === beforeKey ? preview : null }
+  } finally {
+    if (currentKey === beforeKey) {
+      silently(editor, () => {
+        loadSnapshot(editor.store, before)
+        editor.setSelectedShapes(selected)
+      })
+      quiet = false
+    }
+    // Else the page is loading another image and owns `quiet`; its canvas stays.
+  }
 }
 
 function selectTool(editor: Editor, id: ToolId) {
@@ -362,7 +445,11 @@ async function render(editor: Editor, scale: number) {
   const ids = [...editor.getCurrentPageShapeIds()].filter((id) => id !== IMAGE_ID)
   if (ids.length) {
     const svg = await editor.getSvgString(ids, { bounds: Box.From(bounds), padding: 0, background: false, scale })
-    if (svg) ctx.drawImage(await decodeImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.svg)), 0, 0, width, height)
+    if (svg) {
+      const annotations = await decodeImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.svg))
+      await waitForEmbeddedFonts(svg.svg)
+      ctx.drawImage(annotations, 0, 0, width, height)
+    }
   }
   return canvas.toDataURL('image/png')
 }
@@ -372,6 +459,19 @@ async function decodeImage(src: string) {
   img.src = src
   await img.decode()
   return img
+}
+
+/// WebKit starts loading a font embedded in an SVG image when it renders it, after `decode()` has
+/// resolved, and paints nothing where that font is still loading: the first text annotation the
+/// page rasterizes comes out blank. tldraw's own export sleeps 250 ms for browsers it detects as
+/// Safari, which WKWebView is not. One wait per font: WebKit keeps it for every rendering after.
+const rasterizedFonts = new Set<string>()
+async function waitForEmbeddedFonts(svg: string) {
+  // Enough of each embedded font's data URL to tell one from another, not the whole 100 KB of it.
+  const fresh = (svg.match(/url\(["']?data:font\/[^"')]{0,48}/g) ?? []).filter((font) => !rasterizedFonts.has(font))
+  if (!fresh.length) return
+  await new Promise((resolve) => setTimeout(resolve, FONT_RASTER_MS))
+  for (const url of fresh) rasterizedFonts.add(url)
 }
 
 /// Renders each item's draft by loading it into the live store, then puts the store back. The

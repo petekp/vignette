@@ -18,6 +18,13 @@ enum CommandError: String, CaseIterable {
     case evalFailed = "eval-failed"
     case writeFailed = "write-failed"
     case unsupportedType = "unsupported-type"
+    case invalidMarks = "invalid-marks"
+}
+
+/// What is wrong with an agent's `marks=`, in the words the error line uses.
+struct MarkProblem: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
 }
 
 /// A `shotnote://<name>?file=…&file=…` URL, decoded once.
@@ -33,6 +40,8 @@ struct CommandRequest: Equatable {
     /// `agent=` from the query: which agent is pushing the image. Empty when the parameter carried
     /// no name, which still marks the card; nil when it was not given at all.
     let agent: String?
+    /// `marks=` from the query, as given: a path to a JSON file, or the JSON itself. See `Commands.marks(from:)`.
+    let marks: String?
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -49,7 +58,7 @@ enum Commands {
         Fixed(name: "help", summary: "list every command and action in the log"),
         Fixed(name: "state", summary: "dump app and page state to the log"),
         Fixed(name: "last", summary: "show the thumbnail for the newest screenshot"),
-        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; ignores copyOnCapture and annotateOnCapture"),
+        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &marks=<json file> draws on it, as a draft the user can edit; ignores copyOnCapture and annotateOnCapture"),
         Fixed(name: "recent", summary: "toggle the recent stack"),
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
         Fixed(name: "cancel", summary: "close the annotator without exporting, as Esc would"),
@@ -68,7 +77,8 @@ enum Commands {
         let annotate = items.first { $0.name == "annotate" }.map { !["0", "false"].contains($0.value ?? "") } ?? false
         return CommandRequest(name: url.host ?? "", files: files, query: url.query?.removingPercentEncoding,
                               tag: items.first { $0.name == "tag" }?.value, annotate: annotate,
-                              agent: Agent.clean(items.first { $0.name == "agent" }.map { $0.value ?? "" }))
+                              agent: Agent.clean(items.first { $0.name == "agent" }.map { $0.value ?? "" }),
+                              marks: items.first { $0.name == "marks" }?.value)
     }
 
     /// Where `add` copies `source` inside `folder`: its own name, or the name with a counter when
@@ -83,6 +93,66 @@ enum Commands {
             n += 1
         }
         return candidate
+    }
+
+    /// How many marks one push may carry. A draft is a snapshot the editor has to open.
+    static let maxMarks = 100
+
+    /// The marks for `add?marks=<value>`: the JSON itself when the value starts with a bracket or a
+    /// brace, else the path to a file holding it. Throws the one thing wrong with it, worded for
+    /// the error line. Numbers are fractions of the image, so a pixel coordinate is caught here.
+    static func marks(from value: String) throws -> [Mark] {
+        let data: Data
+        if value.hasPrefix("[") || value.hasPrefix("{") {
+            data = Data(value.utf8)
+        } else {
+            let url = URL(fileURLWithPath: (value as NSString).expandingTildeInPath)
+            guard let read = try? Data(contentsOf: url) else { throw MarkProblem("cannot read \(url.path)") }
+            data = read
+        }
+        guard let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
+            throw MarkProblem("expected a JSON array of marks")
+        }
+        guard !list.isEmpty else { throw MarkProblem("no marks in it") }
+        guard list.count <= maxMarks else { throw MarkProblem("\(list.count) marks; at most \(maxMarks)") }
+        return try list.enumerated().map { index, item in
+            do { return try mark(from: item) }
+            catch { throw MarkProblem("mark \(index + 1): \(error)") }
+        }
+    }
+
+    private static func mark(from item: [String: Any]) throws -> Mark {
+        guard let name = item["type"] as? String else { throw MarkProblem("no type") }
+        guard let kind = Mark.Kind(rawValue: name) else {
+            throw MarkProblem("unknown type \"\(name)\"; use \(Mark.Kind.allCases.map(\.rawValue).joined(separator: ", "))")
+        }
+        func fraction(_ key: String) throws -> Double {
+            guard let number = item[key] as? Double, number.isFinite, number >= 0, number <= 1 else {
+                let given = item[key].map { $0 is String ? "\"\($0)\"" : "\($0)" } ?? "nothing"
+                throw MarkProblem("\(key) must be a number from 0 to 1, a fraction of the image; got \(given)")
+            }
+            return number
+        }
+        func side(_ key: String) throws -> Double {
+            let value = try fraction(key)
+            guard value > 0 else { throw MarkProblem("\(key) must be more than 0") }
+            return value
+        }
+        let color = item["color"] as? String
+        var mark = Mark(type: kind, x: try fraction("x"), y: try fraction("y"), color: color)
+        switch kind {
+        case .ellipse, .rectangle:
+            mark.w = try side("w")
+            mark.h = try side("h")
+        case .arrow:
+            mark.x2 = try fraction("x2")
+            mark.y2 = try fraction("y2")
+            guard mark.x2 != mark.x || mark.y2 != mark.y else { throw MarkProblem("the arrow ends where it starts") }
+        case .text:
+            guard let text = item["text"] as? String, !text.isEmpty else { throw MarkProblem("text is missing") }
+            mark.text = text
+        }
+        return mark
     }
 
     static func isKnown(_ name: String) -> Bool {

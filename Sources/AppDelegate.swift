@@ -28,9 +28,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotator: { [weak self] in self?.annotateLast() }))
     private let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
-    /// Names of files `add` copied into the watch folder, with whether to open each in the annotator.
-    /// The watcher reports them like captures; this makes that report skip the capture toggles.
-    private var pendingAdds: [String: Bool] = [:]
+    /// What `add` still owes a file it put in the watch folder, by file name. The watcher reports
+    /// the file like a capture; this is what makes that report skip the capture toggles.
+    private struct PendingAdd {
+        var annotate = false
+        /// The page is still turning the push's marks into a draft. The presentation waits for it,
+        /// so the card's first image carries the marks and the annotator opens with them.
+        var buildingDraft = false
+        /// The file, once there is something to present: the watcher's report, or the file itself
+        /// when it was already in the folder and no report is coming.
+        var waiting: Screenshot?
+    }
+    private var pendingAdds: [String: PendingAdd] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         replaceOlderInstances()
@@ -517,32 +526,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Commands.ok("last", url.lastPathComponent)
     }
 
-    /// `add?file=<path>[&annotate][&agent=<name>]`: a copy of an image from anywhere lands in the watch
-    /// folder, where the watcher reports it like a capture; `pendingAdds` makes that report skip the
-    /// capture toggles. `agent=` is recorded on the copy, which is what puts the badge on its card.
+    /// `add?file=<path>[&annotate][&agent=<name>][&marks=<json>]`: a copy of an image from anywhere
+    /// lands in the watch folder, where the watcher reports it like a capture; `pendingAdds` makes
+    /// that report skip the capture toggles. `agent=` is recorded on the copy, which is what puts
+    /// the badge on its card. `marks=` becomes a draft before the card appears, so the user opens
+    /// the agent's drawing and edits it like their own.
     private func addImage(_ request: CommandRequest) {
         guard let source = request.files.first else { Commands.error("add", .missingFile, "no file given"); return }
         guard Commands.isReadableImage(source) else { Commands.error("add", .unreadableImage, source.path); return }
-        if Commands.policyError(for: source, watchFolder: watchFolder, debug: false) == nil {
-            // Already in the folder, so the watcher will not report it: present it directly.
-            if let agent = request.agent { Agent.record(agent, on: source) }
-            present(Screenshot(url: source), annotate: request.annotate)
-            Commands.ok("add", "\(source.lastPathComponent) already in the watch folder\(detail(request))")
-            return
+        var marks: [Mark] = []
+        if let value = request.marks {
+            // Checked before anything is copied: a push with bad marks is one error line and no file.
+            do { marks = try Commands.marks(from: value) } catch { Commands.error("add", .invalidMarks, "\(error)"); return }
+            if let unknown = marks.compactMap(\.color).first(where: { !annotator.colorIDs.contains($0) }) {
+                let known = annotator.colorIDs.isEmpty ? "none until the editor page is up" : annotator.colorIDs.joined(separator: ", ")
+                Commands.error("add", .invalidMarks, "unknown color \"\(unknown)\"; the editor has \(known)"); return
+            }
+            if let refused = annotator.buildRefusal {
+                Commands.error("add", .pageNotReady, "\(refused); marks need the editor free"); return
+            }
         }
-        guard ScreenshotWatcher.isCandidate(source.lastPathComponent) else {
-            Commands.error("add", .unsupportedType, "\(source.lastPathComponent): needs a png, jpg, jpeg, or heic name without \(Config.annotatedSuffix)"); return
+        let inFolder = Commands.policyError(for: source, watchFolder: watchFolder, debug: false) == nil
+        var destination = source
+        if !inFolder {
+            guard ScreenshotWatcher.isCandidate(source.lastPathComponent) else {
+                Commands.error("add", .unsupportedType, "\(source.lastPathComponent): needs a png, jpg, jpeg, or heic name without \(Config.annotatedSuffix)"); return
+            }
+            destination = Commands.destination(for: source, in: watchFolder) { FileManager.default.fileExists(atPath: $0.path) }
         }
-        let destination = Commands.destination(for: source, in: watchFolder) { FileManager.default.fileExists(atPath: $0.path) }
-        pendingAdds[destination.lastPathComponent] = request.annotate
-        do {
-            try FileManager.default.copyItem(at: source, to: destination)
-        } catch {
-            pendingAdds[destination.lastPathComponent] = nil
-            Commands.error("add", .writeFailed, "\(destination.path): \(error.localizedDescription)"); return
+        let name = destination.lastPathComponent
+        // Already in the folder means no watcher report is coming, so the file itself waits here.
+        pendingAdds[name] = PendingAdd(annotate: request.annotate, buildingDraft: !marks.isEmpty,
+                                       waiting: inFolder ? Screenshot(url: destination) : nil)
+        if !inFolder {
+            do {
+                try FileManager.default.copyItem(at: source, to: destination)
+            } catch {
+                pendingAdds[name] = nil
+                Commands.error("add", .writeFailed, "\(destination.path): \(error.localizedDescription)"); return
+            }
         }
         if let agent = request.agent { Agent.record(agent, on: destination) }
-        Commands.ok("add", "\(destination.lastPathComponent)\(detail(request))")
+        guard !marks.isEmpty else {
+            presentAdd(name)
+            Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request))")
+            return
+        }
+        annotator.buildDraft(Screenshot(url: destination), marks: marks) { [weak self] parked, error in
+            guard let self else { return }
+            if let error {
+                Commands.error("add", error.hasPrefix("timeout") ? .exportTimeout : .exportFailed,
+                               "\(name): the image is in the folder, its marks are not: \(error)")
+            } else {
+                if let parked {
+                    self.storeDraft(destination.path, snapshot: parked.snapshot, reason: "built")
+                    if let png = parked.preview { self.storePreview(destination.path, png) }
+                }
+                Commands.ok("add", "\(name)\(self.detail(request)) marks=\(marks.count)")
+            }
+            self.pendingAdds[name]?.buildingDraft = false
+            self.presentAdd(name)
+        }
+    }
+
+    /// Shows the added file once nothing is owed on it: the watcher has reported it and its marks,
+    /// if any, are a stored draft.
+    private func presentAdd(_ name: String) {
+        guard let pending = pendingAdds[name], !pending.buildingDraft, let shot = pending.waiting else { return }
+        pendingAdds[name] = nil
+        present(shot, annotate: pending.annotate)
     }
 
     /// What an `[add] ok` line says about the request beyond the file name.
@@ -580,8 +632,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[watcher] new \(url.lastPathComponent)")
             guard let self else { return }
             let shot = Screenshot(url: url)
-            if let annotate = self.pendingAdds.removeValue(forKey: url.lastPathComponent) {
-                self.present(shot, annotate: annotate); return
+            let name = url.lastPathComponent
+            if self.pendingAdds[name] != nil {
+                self.pendingAdds[name]?.waiting = shot
+                self.presentAdd(name)   // waits when the push's marks are still becoming a draft
+                return
             }
             if self.settings.data.copyOnCapture {
                 Clipboard.copyFiles([url])

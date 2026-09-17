@@ -64,6 +64,39 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(Commands.destination(for: source, in: folder) { _ in false }, folder.appendingPathComponent("x.png"))
     }
 
+    // MARK: marks
+
+    func testMarksComeFromAFileOrFromTheURLItself() throws {
+        let file = dir.appendingPathComponent("marks.json")
+        try Data(#"[{"type":"ellipse","x":0.1,"y":0.2,"w":0.3,"h":0.4,"color":"red"}]"#.utf8).write(to: file)
+        XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&marks=/tmp/m.json")!).marks, "/tmp/m.json")
+        XCTAssertEqual(try Commands.marks(from: file.path), [Mark(type: .ellipse, x: 0.1, y: 0.2, w: 0.3, h: 0.4, color: "red")])
+        XCTAssertEqual(try Commands.marks(from: #"[{"type":"arrow","x":0.5,"y":0.5,"x2":0.7,"y2":0.6}]"#),
+                       [Mark(type: .arrow, x: 0.5, y: 0.5, x2: 0.7, y2: 0.6)])
+        XCTAssertEqual(try Commands.marks(from: #"[{"type":"text","x":0.1,"y":0.8,"text":"Header should not scroll"}]"#),
+                       [Mark(type: .text, x: 0.1, y: 0.8, text: "Header should not scroll")])
+    }
+
+    func testMarksNameTheOneThingWrong() throws {
+        let cases = [
+            ("/tmp/does-not-exist.json", "cannot read"),
+            ("[]", "no marks"),
+            (#"{"type":"ellipse"}"#, "expected a JSON array"),
+            ("[" + String(repeating: #"{"type":"text","x":0,"y":0,"text":"x"},"#, count: Commands.maxMarks) + #"{"type":"text","x":0,"y":0,"text":"x"}]"#, "at most \(Commands.maxMarks)"),
+            (#"[{"type":"ellipse","x":0,"y":0,"w":0.1,"h":0.1},{"type":"circle","x":0,"y":0}]"#, "mark 2: unknown type \"circle\""),
+            (#"[{"type":"ellipse","x":340,"y":120,"w":0.1,"h":0.1}]"#, "x must be a number from 0 to 1, a fraction of the image; got 340"),
+            (#"[{"type":"ellipse","x":"0.5","y":0,"w":0.1,"h":0.1}]"#, #"got "0.5""#),
+            (#"[{"type":"ellipse","x":0,"y":0,"w":0,"h":0.1}]"#, "w must be more than 0"),
+            (#"[{"type":"arrow","x":0.1,"y":0.1,"x2":0.1,"y2":0.1}]"#, "ends where it starts"),
+            (#"[{"type":"text","x":0.1,"y":0.1}]"#, "text is missing"),
+        ]
+        for (value, expected) in cases {
+            XCTAssertThrowsError(try Commands.marks(from: value), value) { error in
+                XCTAssertTrue("\(error)".contains(expected), "\(value) gave \"\(error)\", wanted \"\(expected)\"")
+            }
+        }
+    }
+
     func testKnowsFixedCommandsAndActions() {
         XCTAssertTrue(Commands.isKnown("help"))
         XCTAssertTrue(Commands.isKnown("add"))

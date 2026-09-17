@@ -128,6 +128,7 @@ open -g "shotnote://stitch?file=/a.png&file=/b.png"
 open -g shotnote://last                       # show the thumbnail for the newest screenshot
 open -g "shotnote://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
 open -g "shotnote://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a purple badge on the card
+open -g "shotnote://add?file=/tmp/agent/x.png&marks=/tmp/agent/marks.json"  # the same, with the agent's drawing on it
 open -g shotnote://recent                     # toggle the recent stack (same as the hotkey)
 open -g shotnote://dismiss                    # close the thumbnail or the stack
 open -g shotnote://cancel                     # close the annotator without exporting, as Esc would
@@ -140,11 +141,28 @@ open -g shotnote://show-editor                # the editor window without an ima
 open -g "shotnote://eval?return%201%2B1"      # JavaScript in the editor page (needs "debug": true)
 ```
 
+An agent can push its own annotations with the image. `marks=` takes the path to a JSON file, or
+the JSON itself, with one object per mark. Every number is a fraction of the image, so a mark does
+not depend on its pixel size:
+
+```json
+[{"type": "ellipse", "x": 0.12, "y": 0.30, "w": 0.20, "h": 0.10, "color": "red"},
+ {"type": "arrow", "x": 0.5, "y": 0.5, "x2": 0.7, "y2": 0.6},
+ {"type": "text", "x": 0.1, "y": 0.8, "text": "Header should not scroll"}]
+```
+
+The types are `ellipse`, `rectangle`, `arrow`, and `text`; the colors are the editor's
+(`web/src/config.ts`), the first one by default. The marks become a draft before the card appears,
+so the card shows them, Copy Annotated has them, and opening the card puts them in the editor to
+move, retype, or delete like your own. The editor builds the draft on its own canvas, so a marked
+push is refused with `page-not-ready` while you have an image open in the annotator.
+
 Every command answers with one line in `~/Library/Logs/Shotnote.log` (menu bar → Open Log):
 `[<command>] ok <detail>` or `[<command>] error <code> <detail>`. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`,
 `unreadable-image`, `page-not-ready`, `export-timeout`, `export-failed`, `settings-invalid`,
-`debug-disabled`, `no-apple-original`, `eval-failed`, `write-failed`, `unsupported-type`. The log has one event per
+`debug-disabled`, `no-apple-original`, `eval-failed`, `write-failed`, `unsupported-type`,
+`invalid-marks`. The log has one event per
 line, `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Shotnote.log.1` at 5 MB.
 
 For clicks, drags, and the hotkey itself, `scripts/input.sh` posts real input events (it needs
