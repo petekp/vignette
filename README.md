@@ -91,7 +91,7 @@ and closing it hands focus back to the app you came from.
   originals and copied.
 - Arrows move focus, Shift extends, Space toggles, Cmd+A selects all, Return annotates,
   Cmd+Delete trashes, Esc clears then dismisses.
-- A card with a pencil badge has a draft: annotations you parked with Esc or a swap. Reopen it
+- A card whose annotations you parked with Esc or a swap shows them in its thumbnail. Reopen it
   and they are back; Copy Annotated renders them without opening the editor.
 
 The hotkey is either a key combination (no permission needed) or `double-rshift`, a double tap

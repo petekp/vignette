@@ -87,7 +87,6 @@ private struct CardView: View {
     private var focused: Bool { model.focused == card.id }
     private var isOut: Bool { model.outCards.contains(card.id) }
     private var offscreen: Bool { model.offscreen.contains(card.id) }
-    private var hasDraft: Bool { model.drafts.contains(card.shot.url.path) }
     private var showsCircle: Bool { model.isStack && !isOut && (hovered || model.inSelectionMode || focused) }
     private var copied: Bool { model.copied.contains(card.id) }
     private var showsButtons: Bool { hovered && !isOut && !model.inSelectionMode && !copied }
@@ -139,11 +138,6 @@ private struct CardView: View {
                     .onHover { model.overControl = $0 }
                     .padding(6)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            if hasDraft && !isOut {
-                DraftBadge(size: ui.selectionCircleSize).padding(6).transition(.opacity)
             }
         }
         .overlay(alignment: .topLeading) {
@@ -233,20 +227,6 @@ private struct SelectionCircle: View {
         }
         .frame(width: size, height: size)
         .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-    }
-}
-
-/// Marks a card whose annotations are still in the editor's memory.
-private struct DraftBadge: View {
-    let size: CGFloat
-    var body: some View {
-        ZStack {
-            Circle().fill(Color.orange)
-            Image(systemName: "pencil").font(.system(size: size / 2, weight: .bold)).foregroundStyle(.white)
-        }
-        .frame(width: size, height: size)
-        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-        .help("Has unsaved annotations")
     }
 }
 
