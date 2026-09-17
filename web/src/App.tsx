@@ -418,7 +418,13 @@ function activeTool(editor: Editor): ToolId | null {
   return TOOLS.find((t) => t.tool === current)?.id ?? null
 }
 
-async function finish(editor: Editor, scale: number) {
+/// Done, from the toolbar or from Return. It renders after an await like `park` and `export`, so
+/// it takes its turn with them rather than reading a canvas one of them is part way through.
+function finish(editor: Editor, scale: number) {
+  void oneAtATime(() => renderDone(editor, scale))
+}
+
+async function renderDone(editor: Editor, scale: number) {
   if (!hasAnnotations(editor)) {
     dirty = false
     postToNative({ type: 'done', png: null })

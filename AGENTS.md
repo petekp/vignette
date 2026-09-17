@@ -273,9 +273,10 @@ the same driven sequence; a single run varies.
   refused while anything else owns it (`AnnotationController.canvasRefusal`): the annotator owns it
   from `prepare`, half a second before its window appears, until `park` answers, and an export owns
   it for as long as Copy Annotated runs. A refusal is one `page-not-ready` line and no file copied.
-  `load`, `reset`, `park`, `export`, and `build` run one at a time on the page, in the order the
-  host called them: the last three take their snapshot after an `await` and put the canvas back
-  afterwards, so an image that landed in between would be stored under the wrong key or wiped.
+  Every call that touches the canvas — `load`, `reset`, `park`, `export`, `build`, and `finish` —
+  runs one at a time on the page, in the order the host called them: the rendering ones take their
+  snapshot after an `await` and put the canvas back afterwards, so an image that landed in between
+  would be stored under the wrong key or wiped.
   Only the canvas change waits in that queue; a load reports `loaded` two frames later, and the
   flight waits for that, so a load behind a long export keeps the card in the air instead of
   showing an empty window. The transition reducer knows nothing about a build, on purpose:
