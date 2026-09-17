@@ -163,6 +163,10 @@ the same driven sequence; a single run varies.
   which is what a script wants. Every SwiftUI animation is a spring made by `Anim.spring`
   (`slideInCurve` "spring" included), and the AppKit tweens use `Tween`'s spring curve: an
   interrupted motion keeps its velocity and blends into the new target instead of jumping.
+  `Tween.spring` is the closed form of a critically damped spring, so a tick that arrives late
+  lands where the spring really is by then and a stalled main thread simply finds it settled. Do
+  not step it forward by hand: integrating it cost the backdrop strip hundreds of points of
+  overshoot after one late tick, which is what swept back across the screen.
 - A flight does not run down a straight line. `FlightCurve` bows it to one side and swells the card,
   both peaking in the middle and nothing at the ends, so the card still leaves and lands exactly
   where the layout puts it. The amounts are `ui.flightArc` (a fraction of the path's length),
@@ -174,7 +178,12 @@ the same driven sequence; a single run varies.
   flight's old and new paths, so the curve follows the frame's own spring, and a flight aimed
   somewhere else in mid-air crosses from one bow to the other instead of stepping sideways. The
   blend settles at 1, where only the new path counts and its own end is flat, so the card still
-  lands exactly on its target.
+  lands exactly on its target. A flight also carries a `Look` (corner, shadow opacity, radius, y)
+  animated from `.annotator(ui)` to `.card(ui)`, so its shadow shrinks along the path instead of
+  swapping for the card's at the end; `AnnotationController` reads the annotator window's frame
+  shadow from the same `Look.annotator`, so the two ends cannot drift apart. `dropShadow(id:)`
+  zeroes a flight's shadow in the same run-loop turn the card appears or the annotator window
+  comes up, so the shadow is never drawn twice and never missing for a frame.
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15 (verified: uniform blur), and a bare CABackdropLayer renders black. Do not retry.
@@ -204,7 +213,8 @@ the same driven sequence; a single run varies.
   there, so `insert` ignores it, and with `annotateOnCapture` on that same report flies the new card
   into the annotator. Only the choreography is new: the composing, the file, and the copy are
   unchanged, and with the stack closed (a `shotnote://stitch` from a script) the toast is still the
-  whole of it.
+  whole of it. Dismissing the stack mid-converge ends the pieces' flights with it and the stitch
+  says so as a toast instead of marking a card that has gone, so it never finishes in silence.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor.
