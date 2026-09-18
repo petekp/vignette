@@ -101,7 +101,8 @@ final class RenderTests: XCTestCase {
     }
 
     private var payload: LoadPayload {
-        LoadPayload(key: fixture.path, mimeType: "image/png", pixelWidth: pixelWidth, pixelHeight: pixelHeight, viewWidth: 800, viewHeight: 600)
+        LoadPayload(key: fixture.path, mimeType: "image/png", pixelWidth: pixelWidth, pixelHeight: pixelHeight,
+                    viewWidth: 800, viewHeight: 600)
     }
 
     func testExportKeepsTheScreenshotAndDrawsTheAnnotation() throws {
@@ -133,6 +134,43 @@ final class RenderTests: XCTestCase {
         XCTAssertGreaterThan(center.r, center.b, "the red fill covers the middle: \(center)")
         XCTAssertGreaterThan(abs(center.r - background.r) + abs(center.g - background.g) + abs(center.b - background.b), 100, "the annotation changed the middle: \(center)")
         XCTAssertEqual(try eval("return window.editor.getCanUndo()") as? Bool, true, "export leaves the drawing's undo entry in place")
+    }
+
+    /// The overlay is what the host lays over the screenshot while a zoom is moving: the same
+    /// annotations the export draws, alone, clear everywhere else, and no larger than the cap the
+    /// host asked for. The page sends one after every change, behind the draft's debounce.
+    func testTheOverlayIsTheAnnotationsAloneAndHonoursTheCap() throws {
+        waitFor("ready")
+        try loadFixture()
+        XCTAssertNil(try eval(PageAPI.overlay(maxPixel: 2048).script) as? String, "nothing drawn, no overlay")
+        // A solid red rectangle over the middle half of the image, in canvas points.
+        _ = try eval("""
+            const img = window.editor.getShape('shape:screenshot');
+            window.editor.createShape({ id: 'shape:mark', type: 'geo', x: img.props.w / 4, y: img.props.h / 4,
+              props: { w: img.props.w / 2, h: img.props.h / 2, geo: 'rectangle', color: 'red', fill: 'solid' } });
+            window.editor.setSelectedShapes(['shape:mark']);
+            return window.editor.getCurrentPageShapeIds().size;
+            """)
+        let full = try XCTUnwrap(NSBitmapImageRep(data: try overlay(maxPixel: 2048)))
+        // The screenshot is 400 x 300 pixels at 2x, so 200 x 150 canvas points; under the cap the
+        // overlay is rendered at the device's own scale, which is the screenshot's pixel size.
+        XCTAssertEqual(full.pixelsWide, pixelWidth, "under the cap the overlay is the image's own size")
+        XCTAssertEqual(full.pixelsHigh, pixelHeight)
+        XCTAssertEqual(pixel(full, 8, 8).a, 0, "the screenshot is not in it: the corner is clear")
+        let middle = pixel(full, pixelWidth / 2, pixelHeight / 2)
+        XCTAssertEqual(middle.a, 255, "the annotation is opaque where it is drawn: \(middle)")
+        XCTAssertGreaterThan(middle.r, middle.b, "and it is the red it was drawn in: \(middle)")
+        XCTAssertGreaterThan(redPixels(full), 50)
+        XCTAssertEqual(try eval("return window.editor.getSelectedShapeIds().length") as? Int, 1,
+                       "the user's selection is put back: they are still editing this canvas")
+
+        let capped = try XCTUnwrap(NSBitmapImageRep(data: try overlay(maxPixel: 100)))
+        XCTAssertEqual(capped.pixelsWide, 100, "the cap is the longest side")
+        XCTAssertEqual(capped.pixelsHigh, 75)
+    }
+
+    private func overlay(maxPixel: Int) throws -> Data {
+        try XCTUnwrap(WebMessage.pngData(try XCTUnwrap(try eval(PageAPI.overlay(maxPixel: maxPixel).script) as? String, "a rendering")))
     }
 
     /// An agent's marks become a draft while the editor is busy with another image and never shown:

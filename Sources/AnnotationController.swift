@@ -36,9 +36,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private var window: AnnotationWindow?
     /// The window spans the screen's visible frame and stays put. The visible frame is `frameView`
     /// inside it (shadow) with `container` (clip, corner, ring, web view), so a zoom step moves the
-    /// frame and scales the page in one layer commit: a window resize and a layer change do not
-    /// land on the same display frame, and the image would drift from the frame between them.
-    /// The web view's scale is read off `container.bounds`, so the image's edges are the frame's.
+    /// frame and the picture inside it in one layer commit: a window resize and a layer change do
+    /// not land on the same display frame, and the image would drift from the frame between them.
+    /// While a zoom moves, the picture is the native stand-in over the web view; see `StandIn`.
     private var frameView: NSView?
     private var container: NSView?
     private var zoomScreen: NSScreen?
@@ -89,8 +89,12 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// The point the window grows away from, as a fraction of the window: the cursor's own point,
     /// so what is under it stays under it, or the middle for a key. See `Zoom`.
     private var zoomAim = ZoomAim.fitted
-    /// The point the last input named. The page holds the same one while it magnifies.
-    private var zoomCursor = Zoom.center
+    /// The same for the magnification inside a window that can grow no further: where the visible
+    /// middle was when the input arrived, and the point it named.
+    private var zoomPan = ZoomPan.centered
+    /// The middle of the visible part of the image, as a fraction of it. The stand-in draws from
+    /// this and the page is given it at rest, so the two show the same part of the image.
+    private(set) var zoomCenter = Zoom.center
     /// The anchor in effect at the scale on screen.
     var zoomAnchor: CGPoint { zoomAim.anchor(at: zoomScale) }
     /// How much of a pull below the fitted size the window shows before springing back.
@@ -108,21 +112,26 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// The fit the window makes on its way out, before the card flies back. Shorter than a step:
     /// it is the start of the card leaving rather than a zoom the user asked for.
     private let fitToCloseSeconds = 0.2
+    /// How long the stand-in takes to give the picture back to the page. Short: the two are
+    /// showing the same thing, so this only covers the last pixel of difference between them.
+    private let standInFadeSeconds = 0.12
     /// Set when the spring has arrived, so the page is laid out at its new size once, on the next
     /// turn of the run loop, rather than inside a display link tick.
     private var pageLayoutPending = false
-    /// One camera call at a time, with the newest value waiting; see `setCanvasZoom`.
-    private var cameraInFlight = false
-    private var cameraPending: (ratio: CGFloat, cursor: CGPoint)?
-    /// A picture of the page laid over the web view while the page re-renders at a new size.
-    /// Measured: a web view grown before its process has painted draws its old, smaller content in
-    /// the corner of the new size, so the image stops filling the frame until the paint lands. The
-    /// cover is those same pixels stretched to the frame, which is what the live page under a
-    /// transform was showing anyway, and it follows the frame, so a gesture may start while it is
-    /// up. It comes down when the page says it has painted, not on a timer.
-    private var cover: NSImageView?
-    /// Which relayout the cover belongs to, so a late answer never takes down a newer cover.
-    private var coverEpoch = 0
+    /// The picture drawn in place of the page while a zoom moves. Nil at rest, when the page is
+    /// what is seen and edited.
+    private var standIn: StandIn?
+    /// Counts the stand-in's comings and goings, so a fade that was cancelled by a new input does
+    /// not take away the picture the new input is using.
+    private var standInGeneration = 0
+    /// The screenshot for the stand-in, decoded off the main thread when the image is prepared.
+    private var standInShot: CGImage?
+    /// The current image's annotations alone, as the page last rendered them.
+    private var standInMarks: CGImage?
+    /// One overlay rendering at a time, with a redo waiting when the annotations changed while it
+    /// was out; the stand-in keeps the last finished one meanwhile.
+    private var overlayInFlight = false
+    private var overlayStale = false
 
     func preload() {
         _ = FocusReturn.shared
@@ -163,16 +172,71 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         fittedFrame = frame
         zoomTarget = 1
         zoomAim = .fitted
-        zoomCursor = Zoom.center
+        zoomPan = .centered
+        zoomCenter = Zoom.center
         canvasZoom = 1
         zoomTween.set(1)
         place(win, frame: frame)
-        removeCover()
+        dropStandIn()
+        standInMarks = nil
+        loadStandInShot(shot)
         resizeWebView()
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         webView.layoutSubtreeIfNeeded()
         sendImage(shot, windowSize: frame.size)
+    }
+
+    /// Decodes the screenshot the stand-in draws, off the main thread and in the thumbnail cache's
+    /// budget. Big enough for the frame at its largest, which is the whole visible screen: past
+    /// that the picture is magnified rather than grown, and the page takes over crisp at rest.
+    /// It is usually the decode the flight already asked for, so it costs nothing twice.
+    private func loadStandInShot(_ shot: Screenshot) {
+        standInShot = nil
+        let url = shot.url
+        Thumbnailer.load(at: url, maxPixel: standInPixels) { [weak self] image in
+            guard let self, self.current?.url == url else { return }
+            self.standInShot = image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            self.standIn?.setShot(self.standInShot)
+        }
+    }
+
+    /// Asks the page for the annotations alone, for the stand-in to lay over the screenshot. One
+    /// at a time: the page renders it in its own queue, and while one is out the stand-in keeps
+    /// the last one, which is the same annotations minus the change that started this.
+    private func refreshOverlay(for key: String) {
+        guard let webView, pageReady, key == current?.url.path else { return }
+        guard !overlayInFlight else { overlayStale = true; return }
+        overlayInFlight = true
+        overlayStale = false
+        let epoch = pageEpoch
+        webView.callAsyncJavaScript(PageAPI.overlay(maxPixel: Config.overlayMaxPixel).script, arguments: [:], in: nil, in: .page) { [weak self] result in
+            guard let self else { return }
+            guard self.pageEpoch == epoch else { self.overlayInFlight = false; return }
+            guard case .success(let value) = result, let png = (value as? String).flatMap(WebMessage.pngData) else {
+                self.setMarks(nil, for: key)
+                return
+            }
+            Thumbnailer.decode(png: png) { [weak self] image in
+                self?.setMarks(image?.cgImage(forProposedRect: nil, context: nil, hints: nil), for: key)
+            }
+        }
+    }
+
+    /// The annotations the stand-in draws, and the next rendering when they changed while this one
+    /// was out. The redo waits for this one so the newest rendering is the one that stays.
+    private func setMarks(_ image: CGImage?, for key: String) {
+        overlayInFlight = false
+        guard key == current?.url.path else { return }
+        standInMarks = image
+        standIn?.setMarks(image)
+        if let image { Log.write("[annotate] overlay \(image.width)x\(image.height) \((key as NSString).lastPathComponent)") }
+        if overlayStale { refreshOverlay(for: key) }
+    }
+
+    private var standInPixels: Int {
+        let screen = zoomScreen ?? NSScreen.main ?? NSScreen.screens[0]
+        return Int(ceil(max(screen.visibleFrame.width, screen.visibleFrame.height) * screen.backingScaleFactor))
     }
 
     private func place(_ win: NSWindow, frame: NSRect) {
@@ -214,13 +278,16 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     func zoom(by factor: Double?, at cursor: CGPoint?, as input: ZoomInput) {
         guard window != nil, fittedFrame.width > 0 else { return }
         let cursor = cursor.map(Zoom.clamped) ?? Zoom.center
-        zoomCursor = cursor
+        // The picture becomes the app's own before the frame moves: the page is drawn in another
+        // process and cannot keep step with a frame that moves every refresh.
+        raiseStandIn()
         if let factor, factor.isFinite, factor > 0 {
             zoomTarget = min(maxLevel, max(minLevel, zoomTarget * CGFloat(factor)))
         } else {
             zoomTarget = 1
         }
         aim(at: cursor, to: split(zoomTarget).window)
+        aimPan(at: cursor)
         zoomTween.animate(to: zoomTarget, duration: motionScaled(input == .gesture ? trackingSeconds : stepSeconds),
                           curve: "spring") { [weak self] in self?.arrived() }
     }
@@ -234,6 +301,13 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, scale: zoomScale, to: target)
     }
 
+    /// Points the magnification at `cursor`, from the part of the image that is visible now. Like
+    /// `aim`, it starts from what is on screen, so a step aimed elsewhere mid-spring bends.
+    private func aimPan(at cursor: CGPoint) {
+        let camera = split(zoomLevel).camera
+        zoomPan = ZoomPan(center: zoomPan.center(at: camera), camera: camera, cursor: cursor)
+    }
+
     /// Zoom's springs are in code rather than in the tweaks, but the motion scale still shortens
     /// them, so `ui.motion: 0` and Reduce Motion land a zoom step at once.
     private func motionScaled(_ seconds: Double) -> Double { seconds * Settings.shared.motionScale }
@@ -243,114 +317,131 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         Zoom.split(level: level, maxWindow: maxZoom, maxCamera: maxCanvasZoom, pull: overpull)
     }
 
-    /// The window may grow to the whole visible screen, past the fitted inset and the toolbar's room.
+    /// The rect the frame may grow within. The one place that says it, so anything that narrows it
+    /// reaches both how far the window may grow and where the frame ends up.
+    private var growthLimit: CGRect? { zoomScreen?.visibleFrame }
+
+    /// The window may grow to the whole of that rect, past the fitted inset and the toolbar's room.
     private var maxZoom: CGFloat {
-        guard let screen = zoomScreen, fittedFrame.width > 0, fittedFrame.height > 0 else { return 1 }
-        let v = screen.visibleFrame
+        guard let v = growthLimit, fittedFrame.width > 0, fittedFrame.height > 0 else { return 1 }
         return max(1, min(v.width / fittedFrame.width, v.height / fittedFrame.height))
     }
     private var maxLevel: CGFloat { maxZoom * maxCanvasZoom }
     /// How far a gesture may pull below the fitted size before the level stops following it.
     private let minLevel: CGFloat = 0.5
 
-    /// One tick. The frame's rect and the image's scale both come from this level, and the web
-    /// view's scale is read off the frame's own bounds, so the image's edges are the frame's edges
-    /// in every commit. The camera only moves once the window cannot grow any further.
+    /// One tick. The frame's rect and the picture inside it both come from this level: the window
+    /// grows until it can grow no further and the magnification takes the rest. Both are set here,
+    /// in one run loop turn, so they reach the window server in one Core Animation commit.
     private func applyZoom(_ level: CGFloat) {
         guard window != nil, fittedFrame.width > 0 else { return }
         zoomLevel = level
         let step = split(level)
+        canvasZoom = step.camera
+        zoomCenter = zoomPan.center(at: step.camera)
         // Kept on screen: a frame grown to the screen's height slides rather than clips.
         moveFrame(to: Zoom.frame(fitted: fittedFrame, scale: step.window,
-                                 anchor: zoomAim.anchor(at: step.window), within: zoomScreen?.visibleFrame))
-        fitWebView()
-        setCanvasZoom(step.camera, at: zoomCursor)
+                                 anchor: zoomAim.anchor(at: step.window), within: growthLimit))
+        if let container { standIn?.layout(in: container.bounds, camera: step.camera, center: zoomCenter) }
     }
 
-    /// Scales the web view to the frame around it, about the frame's centre. The scale is the
-    /// frame's own size over the size the page was laid out at, so the image lands on the frame's
-    /// edges exactly whatever rect the frame came out as, and both change in one layer commit.
-    private func fitWebView() {
-        guard let webView, let container, let layer = webView.layer else { return }
-        let laid = webView.bounds.size
-        let b = container.bounds
-        guard laid.width > 0, laid.height > 0, b.width > 0, b.height > 0 else { return }
-        webView.frame = NSRect(x: (b.width - laid.width) / 2, y: (b.height - laid.height) / 2,
-                               width: laid.width, height: laid.height)
-        // Scaling happens about the layer's anchor point, wherever that is; the shift puts the
-        // result back on the frame. With the usual centre anchor the shift is zero.
-        let a = layer.anchorPoint
-        let shift = NSPoint(x: (b.width - laid.width) * (a.x - 0.5), y: (b.height - laid.height) * (a.y - 0.5))
-        layer.transform = CATransform3DConcat(CATransform3DMakeScale(b.width / laid.width, b.height / laid.height, 1),
-                                              CATransform3DMakeTranslation(shift.x, shift.y, 0))
-    }
-
-    /// Lays the page out at the size it is drawn at, so it renders at the screen's own resolution
-    /// again. Only at rest: between rest positions the web view keeps its layout and `fitWebView`
-    /// scales it, because a resize costs a round trip to the web process and the page paints the
-    /// new size a frame or more later. A picture of the page covers that gap.
-    private func layoutPageAtFrame() {
-        guard let webView, let container, webView.bounds.size != container.bounds.size else { return }
-        guard cover == nil else { resizeWebView(); return }
-        let config = WKSnapshotConfiguration()
-        config.afterScreenUpdates = false
-        webView.takeSnapshot(with: config) { [weak self] image, _ in
-            guard let self, let webView = self.webView, let container = self.container,
-                  webView.bounds.size != container.bounds.size else { return }
-            // A snapshot is a round trip to the web process: a momentum tail can resume while it is
-            // out. Laying the page out then would resize it under a moving frame.
-            guard self.zoomTween.value == self.zoomTarget else { return }
-            if let image { self.showCover(image) }
-            self.resizeWebView()
+    /// The picture becomes the app's own: the screenshot and the annotations in the frame's own
+    /// layer tree, over the page, which stays where it is. Called before every zoom step, and on
+    /// the fit the window makes on its way out.
+    private func raiseStandIn() {
+        standInGeneration += 1
+        if let standIn {
+            // A fade out may be running: the picture is wanted again, so take it back at once.
+            standIn.view.layer?.removeAllAnimations()
+            standIn.view.alphaValue = 1
+            return
         }
-    }
-
-    /// The resize itself. `prepare` calls it directly: nothing is on screen to cover.
-    private func resizeWebView() {
-        guard let webView, let container else { return }
-        webView.frame = container.bounds
-        webView.layer?.transform = CATransform3DIdentity
-        uncoverWhenPainted()
-    }
-
-    private func showCover(_ image: NSImage) {
         guard let container, let webView else { return }
-        removeCover()
-        let view = NSImageView(frame: container.bounds)
-        view.image = image
-        view.imageScaling = .scaleAxesIndependently
-        view.autoresizingMask = [.width, .height]
-        container.addSubview(view, positioned: .above, relativeTo: webView)
-        cover = view
+        // Whatever is decoded stands in until the full decode lands; the card's own thumbnail is
+        // warm by now, and a soft picture for a frame or two beats an empty frame.
+        let shot = standInShot ?? current.flatMap { Thumbnailer.cached(at: $0.url, maxPixel: 1) }?
+            .cgImage(forProposedRect: nil, context: nil, hints: nil)
+        let made = StandIn(shot: shot, marks: standInMarks)
+        container.addSubview(made.view, positioned: .above, relativeTo: webView)
+        standIn = made
+        made.layout(in: container.bounds, camera: canvasZoom, center: zoomCenter)
     }
 
-    /// Takes the cover down once the page has painted at its new size: two of its frames, the
-    /// second after its resize observer has refitted. A deadline backs that up in case the page
-    /// never answers; it is a main-queue hop, which still runs while a gesture is tracking.
-    private func uncoverWhenPainted() {
-        guard cover != nil else { return }
-        coverEpoch += 1
-        let epoch = coverEpoch
-        let frames = "await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));"
-        webView?.callAsyncJavaScript(frames, arguments: [:], in: nil, in: .page) { [weak self] _ in
-            guard let self, self.coverEpoch == epoch else { return }
-            self.removeCover()
+    /// Gives the picture back to the page: it is laid out at the frame's size and given the exact
+    /// view the stand-in is showing. The page answers when it has painted that, and the stand-in
+    /// fades out over it. The page is covered, never hidden, so its frame callbacks keep running
+    /// and the answer arrives.
+    private func handOverToPage() {
+        guard let webView, let container, standIn != nil, window?.isVisible == true else { return }
+        guard zoomTween.value == zoomTarget else { return }
+        // Only when the frame's size really changed: past the window's limit a zoom moves the
+        // magnification alone, and a resize the page has to answer costs it a relayout.
+        let size = pageSize
+        if webView.frame.size != size { webView.frame = CGRect(origin: .zero, size: size) }
+        guard pageReady else { fadeStandIn(); return }
+        let request = ViewRequest(ratio: Double(canvasZoom), x: Double(zoomCenter.x), y: Double(zoomCenter.y),
+                                  width: Double(size.width), height: Double(size.height))
+        let epoch = pageEpoch
+        let generation = standInGeneration
+        let started = CACurrentMediaTime()
+        webView.callAsyncJavaScript(PageAPI.setView(request).script, arguments: [:], in: nil, in: .page) { [weak self] result in
+            guard let self, self.pageEpoch == epoch, self.standInGeneration == generation else { return }
+            if case .failure(let error) = result {
+                Log.write("[web] error view failed: \(String(describing: error).replacingOccurrences(of: "\n", with: " "))")
+            }
+            let waited = ((try? result.get()) as? [String: Any])?["waited"] as? Int ?? -1
+            Log.write("[annotate] view \(Int((CACurrentMediaTime() - started) * 1000))ms ratio=\(String(format: "%.4f", self.canvasZoom)) waited=\(waited)")
+            self.fadeStandIn()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard let self, self.coverEpoch == epoch else { return }
-            self.removeCover()
-        }
     }
 
-    private func removeCover() {
-        guard cover != nil else { return }
-        cover?.removeFromSuperview()
-        cover = nil
+    /// The page has the picture; the stand-in goes. Short and motion scaled, so `ui.motion: 0` and
+    /// Reduce Motion swap outright.
+    ///
+    /// Only while the zoom is standing still. The page paints the view it was given at the size it
+    /// was given; if the spring has moved on while that answer was in the air, the page's picture
+    /// is behind the frame and fading to it would show the gap for a frame. The stand-in stays and
+    /// the next rest hands over again.
+    private func fadeStandIn() {
+        guard let standIn, zoomTween.value == zoomTarget else { return }
+        standInGeneration += 1
+        let generation = standInGeneration
+        let seconds = motionScaled(standInFadeSeconds)
+        guard seconds > 0 else { dropStandIn(); return }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = seconds
+            standIn.view.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            guard let self, self.standInGeneration == generation else { return }
+            self.dropStandIn()
+        })
     }
 
-    /// The spring has arrived. A pull below the fitted size lets go here; otherwise the page is
-    /// laid out at its new size, on the next turn of the run loop rather than inside the tick that
-    /// just ran, and only if nothing has aimed the zoom somewhere else meanwhile.
+    private func dropStandIn() {
+        standInGeneration += 1
+        standIn?.view.removeFromSuperview()
+        standIn = nil
+    }
+
+    /// The size the page is laid out at: the frame's own size rounded up to whole points. A page's
+    /// layout viewport is a whole number of CSS pixels, so a frame 1318.8 points wide would leave
+    /// its last fifth of a point uncovered and the picture would end short of the frame; rounded
+    /// up, the page covers the frame and the container's mask clips the fraction over.
+    private var pageSize: CGSize {
+        guard let container else { return .zero }
+        return CGSize(width: ceil(container.bounds.width), height: ceil(container.bounds.height))
+    }
+
+    /// Lays the page out at the size it is drawn at, so it renders at the screen's own resolution.
+    /// `prepare` calls it directly: there is nothing on screen yet.
+    private func resizeWebView() {
+        guard let webView else { return }
+        webView.frame = CGRect(origin: .zero, size: pageSize)
+    }
+
+    /// The spring has arrived. A pull below the fitted size lets go here; otherwise the page takes
+    /// the picture back, on the next turn of the run loop rather than inside the tick that just
+    /// ran, and only if nothing has aimed the zoom somewhere else meanwhile.
     private func arrived() {
         if zoomTarget < 1 { zoom(by: nil, at: nil, as: .step); return }
         guard !pageLayoutPending else { return }
@@ -359,7 +450,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             guard let self else { return }
             self.pageLayoutPending = false
             guard self.zoomTween.value == self.zoomTarget else { return }
-            self.layoutPageAtFrame()
+            self.handOverToPage()
         }
     }
 
@@ -396,33 +487,6 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         guard let frameView, frameView.bounds.width > 0, frameView.bounds.height > 0 else { return nil }
         let p = frameView.convert(locationInWindow, from: nil)
         return Zoom.clamped(CGPoint(x: p.x / frameView.bounds.width, y: 1 - p.y / frameView.bounds.height))
-    }
-
-    /// `cursor` is the point the page keeps in place, a fraction of the window.
-    ///
-    /// Sent at the page's pace, not the display link's. The window fills the screen at a modest
-    /// level on a large image, so almost all of a zoom is the camera phase, and a call per tick at
-    /// 120 Hz would queue work in the web process faster than it can run it. One call is in flight
-    /// at a time; the latest value goes when it returns, and the ones in between are dropped,
-    /// because only the last one is where the camera should be.
-    private func setCanvasZoom(_ ratio: CGFloat, at cursor: CGPoint) {
-        guard abs(ratio - canvasZoom) > 1e-6 else { return }
-        canvasZoom = ratio
-        if cameraInFlight { cameraPending = (ratio, cursor); return }
-        sendCanvasZoom(ratio, at: cursor)
-    }
-
-    private func sendCanvasZoom(_ ratio: CGFloat, at cursor: CGPoint) {
-        guard let webView else { return }
-        cameraInFlight = true
-        webView.evaluateJavaScript(PageAPI.setCanvasZoom(Double(ratio), at: cursor).script) { [weak self] _, error in
-            guard let self else { return }
-            self.cameraInFlight = false
-            if let error { Log.write("[web] error call failed: \(String(describing: error).replacingOccurrences(of: "\n", with: " "))") }
-            guard let next = self.cameraPending else { return }
-            self.cameraPending = nil
-            self.sendCanvasZoom(next.ratio, at: next.cursor)
-        }
     }
 
     func show() {
@@ -492,21 +556,22 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         }
         var answered = false
         let once = { if !answered { answered = true; done() } }
-        zoomCursor = Zoom.center
+        raiseStandIn()
         zoomTarget = 1
         aim(at: Zoom.center, to: split(1).window)
+        aimPan(at: Zoom.center)
         zoomTween.animate(to: 1, duration: motionScaled(fitToCloseSeconds), curve: "spring", completion: once)
         DispatchQueue.main.asyncAfter(deadline: .now() + motionScaled(fitToCloseSeconds) + 0.3) { once() }
     }
 
     private func hideWindows() {
         // Nothing here is on screen any more: a spring still ticking would move a hidden frame,
-        // call the page's camera after `reset` has emptied it, and relayout a hidden web view.
+        // hand a view to a page that has been reset, and lay out a hidden web view.
         zoomTween.stop()
         pageLayoutPending = false
-        cameraPending = nil
-        coverEpoch += 1
-        removeCover()
+        dropStandIn()
+        standInShot = nil
+        standInMarks = nil
         if let win = window, toolbar.panel.parent === win { win.removeChildWindow(toolbar.panel) }
         toolbar.hide()
         window?.orderOut(nil)
@@ -538,7 +603,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         container.layer?.masksToBounds = true
         container.autoresizesSubviews = true
         webView.frame = container.bounds
-        // Sized by hand: a zoom keeps the layout and scales the layer; see `fitWebView`.
+        // Sized by hand: a moving zoom leaves the page at the size it was laid out at, under the
+        // stand-in, and lays it out again once, at rest.
         webView.autoresizingMask = []
         container.addSubview(webView)
         frameView.addSubview(container)
@@ -761,6 +827,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             let ms = loadStarted.removeValue(forKey: key).map { Int((CACurrentMediaTime() - $0) * 1000) } ?? -1
             Log.write("[annotate] loaded \(ms)ms \((key as NSString).lastPathComponent)")
             onLoaded?(key)
+            // A stored draft comes with the image, so the stand-in has its annotations before the
+            // first zoom rather than after the first change.
+            refreshOverlay(for: key)
         case .done(let png):
             // The host answers through the transition (finish or dismiss), which parks and hides.
             guard let shot = current else { return }
@@ -772,6 +841,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             Log.write("[web] \(text)")
         case .draft(let key, let snapshot):
             onDraft?(key, snapshot)
+            // The annotations changed, so the picture the stand-in draws them with has to change
+            // too. The draft is already debounced behind the last change, so this is as well.
+            refreshOverlay(for: key)
         case .zoom(let factor, let at):
             // A cursor names a gesture: the wheel and the pinch send the point they are over, a
             // key sends none. The two differ only in how long their spring is.
@@ -787,6 +859,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             "zoomLevel": zoomLevel,
             "canvasZoom": canvasZoom,
             "zoomAnchor": [zoomAnchor.x, zoomAnchor.y],
+            "zoomCenter": [zoomCenter.x, zoomCenter.y],
+            "standIn": standIn != nil,
+            "overlay": standInMarks.map { [$0.width, $0.height] } as Any,
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "pageState": "\(pageState)",
             "tool": toolbar.model.tool as Any, "color": toolbar.model.color,
@@ -838,6 +913,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         pendingExport?([:], "web process terminated")
         pendingBuild?(nil, "web process terminated")
         pendingHide?()
+        // The page cannot answer that it has painted, and the stand-in only ever comes down on
+        // that answer; without this it would cover the reloaded page for good.
+        dropStandIn()
         onProblem?("The editor restarted")
         webView.reload()
     }

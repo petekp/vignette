@@ -336,15 +336,39 @@ the same driven sequence; a single run varies.
   One spring carries the level, ticked by the screen's display link, so nothing teleports and a
   gesture, a key and a fit bend into each other; a gesture's spring is short (it follows the
   fingers), a key's, a double tap's and a fit's is longer. What tells them apart is the cursor: a
-  gesture names the point it is over, a key names none. Each tick sets the frame's rect from
-  `Zoom.frame` and then scales the web view's layer by **the frame's own bounds over the size the
-  page was laid out at**, so the image's edges are the frame's edges by construction, in one layer
-  commit. `moveFrame` is the only place the rect is set and it publishes it through `frameOnScreen`
-  and `frameOnScreen` reads that rect back. The page is relaid out at the frame's size only once a spring has arrived
-  (on the next turn of the run loop, and skipped if a new input has arrived), because a page laid
-  out smaller than it is drawn is soft; the relayout is a geometric no-op, since the page's
-  `fit-max` camera grows with its viewport by exactly the transform the host drops.
-  Both phases hold the point under the cursor. The message carries the cursor as a fraction of the
+  gesture names the point it is over, a key names none.
+
+  While a zoom moves, what is on screen is the app's own picture, not the page: the page is drawn
+  by WebKit's process and the frame by this one, and two drawers with no shared frame clock cannot
+  be perfectly aligned. The first zoom input raises a **stand-in** (`Sources/StandIn.swift`) over
+  the web view inside the frame: the screenshot decoded through `Thumbnailer`, the annotations over
+  it as a transparent overlay the page rendered earlier, in the frame's own layer tree. Each tick
+  sets the frame's rect from `Zoom.frame` and the picture's rect inside it from `Zoom.picture`, in
+  one run loop turn, so the frame and what is in it reach the window server in one Core Animation
+  commit and the image's edges are the frame's edges by construction. `moveFrame` is the only place
+  the frame's rect is set and `frameOnScreen` reads it back. The page is not called at all while a
+  zoom moves.
+
+  At rest the page is what is seen and edited. When the spring arrives, the web view is laid out at
+  the frame's size rounded up to whole points (a layout viewport is whole CSS pixels, so a frame
+  1318.8 wide would leave a fifth of a point of itself uncovered) and the page is given the exact
+  view through `setView`: the magnification and the middle of the visible part, as fractions of the
+  image, which is the same `Zoom.split` and `ZoomPan` the stand-in drew from. The page answers when
+  it has painted that view, and the stand-in crossfades out over it — 0.12 s, motion scaled, so
+  `ui.motion: 0` swaps outright — but only while the zoom is still standing still: if the spring
+  moved on while the answer was in the air, the stand-in stays and the next rest hands over again.
+  The page is covered, never hidden: WebKit pauses a hidden view's frame callbacks and that answer
+  would never come. `[annotate] view <ms> ratio=… waited=…` reports each handover; `waited` is how
+  many frames the page waited for the resize to reach it.
+
+  The overlay is the export's "annotations alone on a transparent canvas" (`window.shotnote.overlay`),
+  capped at `Config.overlayMaxPixel` on the longest side. The host asks for one when the image
+  loads and after every `draft` message, which is already debounced behind the last change; one
+  render at a time, and the stand-in keeps the last finished one while a new one is out. An image
+  with nothing drawn on it has no overlay.
+
+  Both phases hold the point under the cursor: `ZoomAim` for the window, `ZoomPan` for the
+  magnification, each read off what is on screen when the input arrives. The message carries the cursor as a fraction of the
   window (`at`, y from the top), which the window growth and the page's camera each read in their
   own space; a keyboard step sends none and zooms about the window's middle, as Preview does. A
   two-finger double tap (`smartMagnify`) zooms twofold at the tap, or back to the fitted size from
@@ -358,8 +382,10 @@ the same driven sequence; a single run varies.
   The state report's `page.zoom` is the in-window
   magnification as tldraw sees it (1 = the image fills the window), `page.visible` is the part of
   the image the window shows, `annotator.zoomLevel` is the one number, `annotator.zoom` and
-  `annotator.canvasZoom` are its two halves, and `annotator.zoomAnchor` is the point zoom is
-  holding. `docs/zoom-2026-09-17.md` says why it is shaped this way.
+  `annotator.canvasZoom` are its two halves, `annotator.zoomAnchor` is the point the window is
+  growing away from, `annotator.zoomCenter` is the middle of the visible part of the image,
+  `annotator.standIn` says whether the app's own picture is up, and `annotator.overlay` is the
+  overlay's pixel size. `docs/zoom-2026-09-17.md` says why it is shaped this way.
   "Copy Annotated" hands the stored snapshots to the live editor (`window.shotnote.export`),
   which restores the canvas afterwards; it falls back to the original file for cards without a
   draft, and answers `error export-failed` or `export-timeout` (15 s) instead of hanging.
@@ -370,10 +396,11 @@ the same driven sequence; a single run varies.
   disk. Screen-size flight decodes are dropped whenever the stack hides. Every image that reaches
   a card is decoded before it gets there (`Thumbnailer`, draft previews through
   `Thumbnailer.decode`): an `NSImage(data:)` is decoded by Core Animation at its first commit, on
-  the main thread, which cost the stack's first paint 40 ms for ten previews. The cover a zoom's
-  relayout hides behind is a snapshot of the web view at its previous rest size (about 59 MB at 2x
-  on a 5K display); there is one at a time, and it is freed when the page reports it has painted or
-  after two seconds.
+  the main thread, which cost the stack's first paint 40 ms for ten previews. The zoom stand-in
+  holds two images for the image in the annotator: the screenshot, decoded no larger than the
+  visible screen in device pixels, which is the same decode a flight asks for and is counted in the
+  thumbnail cache's budget; and the annotation overlay, capped at `Config.overlayMaxPixel` on the
+  longest side (about 11 MB of RGBA at 2048). Both are freed when the annotator hides.
 - Bumping tldraw (`web/package.json` pins the version; `LICENSE-tldraw.md` must be the matching
   license text) is a checklist, and `Tests/RenderTests.swift` is the gate:
   1. License: read the new version's LICENSE and its `LicenseProvider`; confirm an unlicensed

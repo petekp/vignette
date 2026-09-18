@@ -22,7 +22,7 @@ import {
   useEditor,
 } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, ZoomAnchor, postToNative } from './bridge'
+import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, ViewRequest, ViewResult, ZoomAnchor, postToNative } from './bridge'
 
 /** One keyboard zoom step (cmd+plus / cmd+minus). */
 const ZOOM_STEP = 1.25
@@ -44,6 +44,8 @@ let draftTimer: ReturnType<typeof setTimeout> | null = null
 const PREVIEW_MAX = 1600
 /// How long after the last change the draft snapshot goes to the host.
 const DRAFT_DELAY_MS = 300
+/// How many frames `setView` waits for the host's resize to reach this process before it draws.
+const VIEW_FRAMES = 20
 /// How long a rendering waits for a font it embeds the first time; see `waitForEmbeddedFonts`.
 const FONT_RASTER_MS = 250
 
@@ -94,7 +96,8 @@ function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
   return next
 }
 
-/// Sends the host the current annotations, or null when there are none. Debounced from the store listener.
+/// Sends the host the current annotations, or null when there are none. Debounced from the store
+/// listener. The host asks for the zoom overlay when this arrives.
 function scheduleDraft(editor: Editor) {
   if (draftTimer) clearTimeout(draftTimer)
   draftTimer = setTimeout(() => {
@@ -151,14 +154,17 @@ export function App() {
         if (!editor) return { items: [], error: 'editor not mounted' }
         return oneAtATime(() => exportDrafts(editor, items, scaleRef.current))
       },
+      async overlay(maxPixel) {
+        return editor ? oneAtATime(() => overlay(editor, maxPixel)) : null
+      },
       setTool(id) {
         if (editor && TOOLS.some((t) => t.id === id)) selectTool(editor, id as ToolId)
       },
       setColor(id) {
         if (editor && COLORS.some((c) => c.id === id)) setColor(editor, id as ColorId)
       },
-      setCanvasZoom(ratio, at) {
-        if (editor && Number.isFinite(ratio) && ratio >= 1) setCanvasZoom(editor, ratio, at)
+      async setView(request) {
+        return editor ? setView(editor, request) : null
       },
       finish() {
         if (editor) finish(editor, scaleRef.current)
@@ -267,7 +273,7 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
 }
 
 function fitCamera(editor: Editor, w: number, h: number) {
-  canvasRatio = 1
+  view = { ratio: 1, x: 0.5, y: 0.5 }
   // The host sizes the window to the image's aspect, so 'fit' makes the image flush with the window.
   editor.setCameraOptions({
     // No step below the fit: nothing tldraw does on its own can zoom the image out of the window.
@@ -290,22 +296,50 @@ function fitCamera(editor: Editor, w: number, h: number) {
   })
 }
 
-/** The host's last in-window magnification; a window resize refits and then puts it back. */
-let canvasRatio = 1
+/**
+ * The picture the host last asked for: how far the image is magnified inside the window, and the
+ * middle of the part that is visible, as fractions of the image. The host holds the same three
+ * numbers and draws its own copy of this picture while a zoom is moving, so this is the whole of
+ * what the page is told about a zoom.
+ */
+let view = { ratio: 1, x: 0.5, y: 0.5 }
 
 /**
- * Magnification inside the window: 1 fits the image, larger zooms in. `at` is the point that keeps
- * its place, a fraction of the window; null holds its middle. The camera constraints keep the
- * image covering the window, so a zoom at an edge pushes that far and no further.
+ * Draws the view the host asked for and answers once it is painted. The host has already laid the
+ * window out at `width` by `height`; that resize crosses a process boundary, so the page waits for
+ * it to arrive rather than drawing this camera at the old size. The host takes its own copy of the
+ * picture away when this answers.
  */
-function setCanvasZoom(editor: Editor, ratio: number, at: ZoomAnchor | null) {
-  canvasRatio = ratio
-  const { x: cx, y: cy, z: cz } = editor.getCamera()
-  const z = editor.getBaseZoom() * ratio
+async function setView(editor: Editor, request: ViewRequest): Promise<ViewResult> {
+  view = { ratio: request.ratio, x: request.x, y: request.y }
+  const container = editor.getContainer()
+  let waited = 0
+  for (; waited < VIEW_FRAMES; waited++) {
+    const box = container.getBoundingClientRect()
+    // Within a pixel: the host's frame is fractional and a layout viewport is whole pixels, so the
+    // size that arrives here can be one short of the size the host asked for.
+    if (Math.abs(box.width - request.width) <= 1 && Math.abs(box.height - request.height) <= 1) break
+    await new Promise((r) => requestAnimationFrame(r))
+  }
+  applyView(editor)
+  // Two frames: the first carries this camera into a paint, the second has been on screen.
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const box = container.getBoundingClientRect()
+  return { width: box.width, height: box.height, ratio: editor.getZoomLevel() / editor.getBaseZoom(), waited }
+}
+
+/**
+ * Puts the stored view on the camera: the image magnified by `ratio` with the point it names in
+ * the middle of the window. Idempotent, and the resize observer runs it too, so it does not matter
+ * whether the host's call or the resize reaches the page first.
+ */
+function applyView(editor: Editor) {
+  const bounds = editor.getShapePageBounds(IMAGE_ID)
+  if (!bounds) return
+  editor.updateViewportScreenBounds(editor.getContainer())
+  const z = editor.getBaseZoom() * view.ratio
   const { w, h } = editor.getViewportScreenBounds()
-  const sx = (at ? at.x : 0.5) * w
-  const sy = (at ? at.y : 0.5) * h
-  editor.setCamera({ x: cx + sx / z - sx / cz, y: cy + sy / z - sy / cz, z })
+  editor.setCamera({ x: w / 2 / z - (bounds.x + view.x * bounds.w), y: h / 2 / z - (bounds.y + view.y * bounds.h), z })
 }
 
 /// The screenshot on an empty canvas, or the draft the host stored for it, which carries the image
@@ -469,14 +503,40 @@ async function render(editor: Editor, scale: number) {
   canvas.height = height
   const ctx = canvas.getContext('2d')!
   ctx.drawImage(await decodeImage(src), 0, 0, width, height)
+  await drawAnnotations(editor, ctx, bounds, width, height, scale)
+  return canvas.toDataURL('image/png')
+}
+
+/// tldraw's SVG of the annotations alone, drawn over the whole image. False when nothing is drawn.
+async function drawAnnotations(editor: Editor, ctx: CanvasRenderingContext2D, bounds: Box, width: number, height: number, scale: number) {
   const ids = [...editor.getCurrentPageShapeIds()].filter((id) => id !== IMAGE_ID)
-  if (ids.length) {
-    const svg = await editor.getSvgString(ids, { bounds: Box.From(bounds), padding: 0, background: false, scale })
-    if (svg) {
-      const annotations = await decodeImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.svg))
-      await waitForEmbeddedFonts(svg.svg)
-      ctx.drawImage(annotations, 0, 0, width, height)
-    }
+  if (!ids.length) return false
+  const svg = await editor.getSvgString(ids, { bounds: Box.From(bounds), padding: 0, background: false, scale })
+  if (!svg) return false
+  const annotations = await decodeImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.svg))
+  await waitForEmbeddedFonts(svg.svg)
+  ctx.drawImage(annotations, 0, 0, width, height)
+  return true
+}
+
+/// The annotations alone on a transparent canvas, covering the image: what the host lays over the
+/// screenshot while a zoom is moving. Null when nothing is drawn. The selection is put back, since
+/// the user is editing this canvas.
+async function overlay(editor: Editor, maxPixel: number): Promise<string | null> {
+  const bounds = editor.getShapePageBounds(IMAGE_ID)
+  if (!bounds || !hasAnnotations(editor)) return null
+  const scale = Math.min(window.devicePixelRatio || 1, maxPixel / Math.max(bounds.w, bounds.h))
+  const width = Math.round(bounds.w * scale)
+  const height = Math.round(bounds.h * scale)
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const selected = editor.getSelectedShapeIds()
+  silently(editor, () => editor.selectNone())
+  try {
+    if (!(await drawAnnotations(editor, canvas.getContext('2d')!, bounds, width, height, scale))) return null
+  } finally {
+    silently(editor, () => editor.setSelectedShapes(selected))
   }
   return canvas.toDataURL('image/png')
 }
@@ -549,20 +609,11 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
   }, [tool, color])
 
   // Refit as soon as the window is laid out at a new size, before that frame paints, so the image
-  // never shows at the old fit. tldraw's own bounds update waits for the next frame. The reset
-  // drops any magnification, so it goes back on afterwards, over the same part of the image: a
-  // resize must not undo where a zoom at the cursor left the view.
+  // never shows at the old fit: tldraw's own bounds update waits for the next frame. The view the
+  // host asked for is what it refits to, so a resize cannot undo where a zoom left the camera.
   useEffect(() => {
     const container = editor.getContainer()
-    const observer = new ResizeObserver(() => {
-      const held = canvasRatio > 1 ? editor.getViewportPageBounds().center : null
-      editor.updateViewportScreenBounds(container)
-      editor.setCamera(editor.getCamera(), { reset: true })
-      if (held) {
-        setCanvasZoom(editor, canvasRatio, null)
-        editor.centerOnPoint(held)
-      }
-    })
+    const observer = new ResizeObserver(() => applyView(editor))
     observer.observe(container)
     return () => observer.disconnect()
   }, [editor])

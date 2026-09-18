@@ -139,6 +139,90 @@ final class ZoomTests: XCTestCase {
         XCTAssertEqual(Zoom.split(level: .nan, maxWindow: 2, maxCamera: 8, pull: 0.3).window, 1)
     }
 
+    // MARK: The magnification's side: which part of the image is visible
+
+    func testTheWholeImageIsVisibleUntilTheMagnificationStarts() {
+        XCTAssertEqual(Zoom.visible(center: Zoom.center, camera: 1), CGRect(x: 0, y: 0, width: 1, height: 1))
+        // Wherever the middle is asked to be, at the fitted size it is the image's own middle.
+        XCTAssertEqual(Zoom.clamped(center: CGPoint(x: 0.1, y: 0.9), camera: 1), Zoom.center)
+        XCTAssertEqual(Zoom.visible(center: CGPoint(x: 0.1, y: 0.9), camera: 1), CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+
+    func testTheVisiblePartNeverLeavesTheImage() {
+        for camera in [1.5, 2, 4, 8] as [CGFloat] {
+            for center in [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 1), CGPoint(x: 0.5, y: 0.5), CGPoint(x: -2, y: 3)] {
+                let v = Zoom.visible(center: center, camera: camera)
+                XCTAssertEqual(v.width, 1 / camera, accuracy: 1e-9)
+                XCTAssertGreaterThanOrEqual(v.minX, -1e-9, "camera \(camera) center \(center)")
+                XCTAssertGreaterThanOrEqual(v.minY, -1e-9)
+                XCTAssertLessThanOrEqual(v.maxX, 1 + 1e-9)
+                XCTAssertLessThanOrEqual(v.maxY, 1 + 1e-9)
+            }
+        }
+    }
+
+    func testThePointUnderTheCursorStaysUnderItWhileMagnifying() {
+        // The same run of steps as the window's test, in the magnification's half of the zoom:
+        // the image's point under the cursor has to keep its place on screen there too.
+        for cursor in [CGPoint(x: 0.1, y: 0.2), Zoom.center, CGPoint(x: 0.8, y: 0.85)] {
+            var pan = ZoomPan.centered
+            var camera: CGFloat = 1
+            for step in [1.4, 1.4, 1.2, 0.9] as [CGFloat] {
+                let next = max(1, camera * step)
+                pan = ZoomPan(center: pan.center(at: camera), camera: camera, cursor: cursor)
+                let before = Zoom.visible(center: pan.center(at: camera), camera: camera)
+                let after = Zoom.visible(center: pan.center(at: next), camera: next)
+                // The image's point at the cursor, in both views.
+                let was = CGPoint(x: before.minX + cursor.x * before.width, y: before.minY + cursor.y * before.height)
+                let now = CGPoint(x: after.minX + cursor.x * after.width, y: after.minY + cursor.y * after.height)
+                // Away from the image's edges the point is held exactly; at them the view slides
+                // and the cursor gives way, as the window does against the screen's edge.
+                let slid = after.minX <= 1e-9 || after.maxX >= 1 - 1e-9 || after.minY <= 1e-9 || after.maxY >= 1 - 1e-9
+                if !slid {
+                    XCTAssertEqual(now.x, was.x, accuracy: 0.001, "cursor \(cursor) at camera \(next)")
+                    XCTAssertEqual(now.y, was.y, accuracy: 0.001)
+                }
+                camera = next
+            }
+        }
+    }
+
+    func testAPanComesHomeToTheWholeImage() {
+        let pan = ZoomPan(center: CGPoint(x: 0.8, y: 0.2), camera: 4, cursor: CGPoint(x: 0.1, y: 0.1))
+        XCTAssertEqual(pan.center(at: 1), Zoom.center, "zooming back out shows the whole image again")
+        XCTAssertEqual(ZoomPan.centered.center(at: 3), Zoom.center, "a step about the middle stays centred")
+    }
+
+    func testThePictureFillsTheFrameAndCropsToTheVisiblePart() {
+        let bounds = CGRect(x: 0, y: 0, width: 400, height: 300)
+        // At the fitted size the whole image is the frame.
+        XCTAssertEqual(Zoom.picture(in: bounds, camera: 1, center: Zoom.center), bounds)
+        // Magnified about the middle: twice the size, centred on the frame.
+        let twice = Zoom.picture(in: bounds, camera: 2, center: Zoom.center)
+        XCTAssertEqual(twice, CGRect(x: -200, y: -150, width: 800, height: 600))
+        // Magnified at the image's top left corner: that corner is the frame's top left.
+        let corner = Zoom.picture(in: bounds, camera: 2, center: CGPoint(x: 0, y: 0))
+        XCTAssertEqual(corner.minX, 0, accuracy: 1e-9, "the image's left edge is the frame's")
+        XCTAssertEqual(corner.maxY, bounds.maxY, accuracy: 1e-9, "and its top edge is the frame's top")
+        // The picture always covers the frame, whatever the middle asks for.
+        for camera in [1, 1.5, 3, 8] as [CGFloat] {
+            for center in [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 1), CGPoint(x: 0.3, y: 0.7)] {
+                let p = Zoom.picture(in: bounds, camera: camera, center: center)
+                XCTAssertLessThanOrEqual(p.minX, bounds.minX + 1e-9, "camera \(camera) center \(center)")
+                XCTAssertGreaterThanOrEqual(p.maxX, bounds.maxX - 1e-9)
+                XCTAssertLessThanOrEqual(p.minY, bounds.minY + 1e-9)
+                XCTAssertGreaterThanOrEqual(p.maxY, bounds.maxY - 1e-9)
+            }
+        }
+    }
+
+    func testABadNumberLeavesTheVisiblePartAlone() {
+        XCTAssertEqual(Zoom.visible(center: Zoom.center, camera: .nan), CGRect(x: 0, y: 0, width: 1, height: 1))
+        XCTAssertEqual(Zoom.picture(in: CGRect(x: 0, y: 0, width: 4, height: 3), camera: .nan, center: Zoom.center),
+                       CGRect(x: 0, y: 0, width: 4, height: 3))
+        XCTAssertEqual(ZoomPan(center: Zoom.center, camera: .nan, cursor: Zoom.center).center(at: 2), Zoom.center)
+    }
+
     func testABadNumberLeavesTheAnchorWhereTheCursorIs() {
         let cursor = CGPoint(x: 0.25, y: 0.25)
         XCTAssertEqual(Zoom.anchor(holding: cursor, of: fitted, fitted: .zero, at: 2), cursor)
