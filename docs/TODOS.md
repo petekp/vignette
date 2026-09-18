@@ -212,6 +212,28 @@ its outline).
     docs/zoom-2026-09-17.md (per-frame position of the frame's edge and of a stroke inside the
     picture) before changing anything, then remove whatever moves sideways or steps.
 
+## Queued by Pete, 2026-09-18 (morning, on the todo5/integration build d1870d3)
+
+23. The zoom's edge hold works on the left and right edges only. Pete: "the zoom anchoring --
+    where we have the image stick to one side of the frame while zooming -- is great but only
+    seems to be working on the left and right edges. we want it on the top and bottom too. i'd
+    also like to be able to adjust the parameters / thresholds for this behavior." The pull
+    (`Zoom.pulledToEdges`) is the same code in x and y, but the band is a fraction of each side
+    of the window, so on a wide screenshot the vertical band is a fraction of a short height:
+    about 45 points on a 300-point-tall frame against 148 on its 986-point width. Candidate: make
+    the band a fraction of the shorter side, or a number of points, so the reach is the same on
+    every edge; measure `page.visible` at the top and bottom edges on a wide fixture before and
+    after. The parameters exist as `ui.zoomEdgeBand` and `ui.zoomEdgePull` with sliders in the
+    tweak panel (`open -g shotnote://tweaks`, needs `"debug": true`), and in settings.json; if the
+    band changes unit, rename the key and its slider to say the unit.
+24. More space between the selection strip and the thumbnail column, specifically beside the
+    wider thumbnails. Pete: "add a bit more space between the thumbnail select toolbar and the
+    thumbnail column -- specifically the wider thumbnails." The strip is placed against the widest
+    selected card by `ui.selectionStripGap` (8 points), so a wide card has exactly that gap and a
+    narrow one has more. Raise the default, or measure the gap from the widest card in the
+    column rather than the widest selected one, so the strip does not step sideways when the
+    selection changes; say which in the doc.
+
 ## Feedback on the run-2 branch (Pete, 2026-09-17 afternoon, on `todo2/integration` c43304a)
 
 All four landed the same afternoon on `todo2/integration`, reviewed and fixed (tip f59cec8); the
