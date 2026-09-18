@@ -5,22 +5,20 @@ final class BridgeTests: XCTestCase {
 
     // MARK: WebMessage decoding
 
-    func testReadyCarriesProtocolToolsAndColors() throws {
+    func testReadyCarriesProtocolToolsAndMarkColors() throws {
         let msg = WebMessage(body: [
             "type": "ready", "protocol": 3,
             "tools": [["id": "draw", "label": "Draw", "key": "d", "symbol": "pencil"], ["id": "bad"]],
-            "colors": [["id": "red", "hex": "#f00"]],
             "markColors": [["id": "red", "hex": "#f00"], ["id": "white", "hex": "#fff"]],
         ] as [String: Any])
-        guard case .ready(let version, let tools, let colors, let markColors)? = msg else { return XCTFail("\(String(describing: msg))") }
+        guard case .ready(let version, let tools, let markColors)? = msg else { return XCTFail("\(String(describing: msg))") }
         XCTAssertEqual(version, 3)
         XCTAssertEqual(tools.map(\.id), ["draw"], "an incomplete tool is dropped, not fatal")
-        XCTAssertEqual(colors.map(\.hex), ["#f00"])
-        XCTAssertEqual(markColors.map(\.id), ["red", "white"], "a mark may name a color the toolbar does not show")
+        XCTAssertEqual(markColors.map(\.id), ["red", "white"], "every color an agent's marks may name")
     }
 
     func testReadyWithoutProtocolIsVersionZero() {
-        guard case .ready(let version, _, _, _)? = WebMessage(body: ["type": "ready"]) else { return XCTFail() }
+        guard case .ready(let version, _, _)? = WebMessage(body: ["type": "ready"]) else { return XCTFail() }
         XCTAssertEqual(version, 0, "a page built before versioning must never pass the version check")
     }
 
@@ -48,6 +46,9 @@ final class BridgeTests: XCTestCase {
         guard case .zoom(_, nil)? = WebMessage(body: ["type": "zoom", "factor": 1.25, "at": ["x": 0.5]] as [String: Any]) else { return XCTFail("half an anchor is no anchor") }
         XCTAssertNil(WebMessage(body: ["type": "zoom", "factor": 0, "at": NSNull()]), "a zero or negative factor would collapse the window")
         XCTAssertNil(WebMessage(body: ["type": "zoom"]))
+        guard case .smartZoom(let tap)? = WebMessage(body: ["type": "smartZoom", "at": ["x": 0.4, "y": 0.6]] as [String: Any]) else { return XCTFail() }
+        XCTAssertEqual(tap, CGPoint(x: 0.4, y: 0.6))
+        XCTAssertNil(WebMessage(body: ["type": "smartZoom"]), "a double click zooms about the point it names, so half a point is no message")
     }
 
     func testParkAndExportResultsDecode() {
@@ -88,12 +89,13 @@ final class BridgeTests: XCTestCase {
         XCTAssertTrue(fresh.hasPrefix("window.shotnote && window.shotnote.load({\"snapshot\":null,\"key\":"), fresh)
         XCTAssertTrue(fresh.contains(#""key":"/Users/p/Shot \"one\".png""#), fresh)
         XCTAssertTrue(fresh.contains(#""pixelWidth":10"#) && fresh.contains(#""pixelHeight":20"#), fresh)
+        XCTAssertTrue(fresh.contains(#""previewMaxPixel":\#(Config.previewMaxPixel)"#), "the preview cap rides with the image; the page keeps no copy of it")
         let stored = PageAPI.load(payload, snapshot: Data(#"{"document":{"a":1}}"#.utf8)).script
         XCTAssertTrue(stored.hasPrefix(#"window.shotnote && window.shotnote.load({"snapshot":{"document":{"a":1}},"key":"#), stored)
         // The argument must be one JSON object: parse what the script passes to load().
         let start = stored.range(of: "load(")!.upperBound
         let object = try JSONSerialization.jsonObject(with: Data(stored[start...].dropLast(2).utf8)) as? [String: Any]
-        XCTAssertEqual(object?.keys.sorted(), ["key", "mimeType", "pixelHeight", "pixelWidth", "snapshot"])
+        XCTAssertEqual(object?.keys.sorted(), ["key", "mimeType", "pixelHeight", "pixelWidth", "previewMaxPixel", "snapshot"])
     }
 
     func testBuildScriptCarriesTheImageItsDraftAndTheMarks() throws {
@@ -123,13 +125,13 @@ final class BridgeTests: XCTestCase {
 
     func testStringArgumentsAreEscapedForJavaScript() {
         XCTAssertEqual(PageAPI.setTool("dr\"aw').x</script>").script, #"window.shotnote && window.shotnote.setTool("dr\"aw').x</script>");"#)
-        XCTAssertEqual(PageAPI.setColor("line\nbreak").script, #"window.shotnote && window.shotnote.setColor("line\nbreak");"#)
+        XCTAssertEqual(PageAPI.setTool("line\nbreak").script, #"window.shotnote && window.shotnote.setTool("line\nbreak");"#)
     }
 
     func testParkAwaitsAndOthersGuard() {
         XCTAssertEqual(PageAPI.park.script, "return window.shotnote ? await window.shotnote.park() : null;")
         XCTAssertEqual(PageAPI.overlay(maxPixel: 2048).script, "return window.shotnote ? await window.shotnote.overlay(2048) : null;")
-        for api in [PageAPI.reset, .finish, .setColor("red")] {
+        for api in [PageAPI.reset, .finish, .setTool("select")] {
             XCTAssertTrue(api.script.hasPrefix("window.shotnote && window.shotnote."), api.script)
         }
     }

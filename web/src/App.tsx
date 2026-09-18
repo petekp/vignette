@@ -32,7 +32,7 @@ import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, View
 const ZOOM_STEP = 1.25
 /** Wheel and pinch: window scale per wheel unit; pinch-out (negative deltaY) grows the window. */
 const WHEEL_ZOOM_RATE = 0.01
-import { CANDIDATES, COLORS, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, MARK_COLORS, REOPEN_TOOL, SHOW_COLORS, TOOLS, ToolId } from './config'
+import { CANDIDATES, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
 import { Area, explain, hasSample, pickColor, prepareSample } from './contrast'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
@@ -48,8 +48,9 @@ let draftTimer: ReturnType<typeof setTimeout> | null = null
 /// Marks whose colour the heuristic has not picked for where they now are: drawn, moved, or
 /// resized since the last pick. Emptied when the hand lets go, before the draft goes to the host.
 let unpicked = new Set<TLShapeId>()
-/// Longest side, in pixels, of the preview returned with a parked draft.
-const PREVIEW_MAX = 1600
+/// Longest side, in pixels, of the preview returned with the parked draft of the image on the
+/// canvas. The host sends it with the image; `build` uses the one in its own payload.
+let previewMax = 0
 /// How long after the last change the draft snapshot goes to the host.
 const DRAFT_DELAY_MS = 300
 /// How many frames `setView` waits for the host's resize to reach this process before it draws.
@@ -219,7 +220,7 @@ async function park(editor: Editor, scale: number): Promise<ParkResult> {
   let preview: string | null = null
   if (dirty && annotated) {
     const bounds = editor.getShapePageBounds(IMAGE_ID)
-    const previewScale = bounds ? Math.min(scale, PREVIEW_MAX / Math.max(bounds.w, bounds.h)) : scale
+    const previewScale = bounds ? Math.min(scale, previewMax / Math.max(bounds.w, bounds.h)) : scale
     preview = await render(editor, previewScale)
   }
   dirty = false
@@ -262,9 +263,6 @@ export function App() {
       setTool(id) {
         if (editor && TOOLS.some((t) => t.id === id)) selectTool(editor, id as ToolId)
       },
-      setColor(id) {
-        if (editor && COLORS.some((c) => c.id === id)) setColor(editor, id as ColorId)
-      },
       async setView(request) {
         // In the queue like every other canvas call: `export` and `build` put the camera back when
         // they restore their snapshot, so a view applied in the middle of one is undone behind the
@@ -293,6 +291,9 @@ export function App() {
     <div className="editor">
       <Tldraw
         hideUi
+        // A double click on the canvas is the zoom's (see `Hotkeys`), so it must not also leave a
+        // text shape behind. The text tool is how text is drawn here.
+        options={{ createTextOnCanvasDoubleClick: false }}
         licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}
         assets={assets}
         components={components}
@@ -315,8 +316,7 @@ export function App() {
             type: 'ready',
             protocol: PROTOCOL,
             tools: TOOLS.map(({ id, label, key, symbol }) => ({ id, label, key, symbol })),
-            colors: SHOW_COLORS ? COLORS.map(({ id, hex }) => ({ id, hex })) : [],
-            markColors: MARK_COLORS.map(({ id, hex }) => ({ id, hex })),
+            markColors: CANDIDATES.map(({ id, hex }) => ({ id, hex })),
           })
         }}
       />
@@ -347,6 +347,7 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
 
 function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: number }) {
   currentKey = p.key
+  previewMax = p.previewMaxPixel
   unpicked.clear()
   // The decode runs alongside the load: `loaded` must not wait for it, and a mark drawn before it
   // lands keeps the first candidate until the next pick.
@@ -367,7 +368,7 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
   })
   fitCamera(editor, w, h)
 
-  editor.setStyleForNextShapes(DefaultColorStyle, COLORS[0].id)
+  editor.setStyleForNextShapes(DefaultColorStyle, CANDIDATES[0].id)
   editor.setStyleForNextShapes(DefaultSizeStyle, DEFAULT_SIZE)
   editor.setStyleForNextShapes(DefaultDashStyle, 'solid')
   editor.setStyleForNextShapes(DefaultFillStyle, 'none')
@@ -567,7 +568,7 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
       applyColors(editor, p.key, unnamed)
     }
     const snapshot = getSnapshot(editor.store)
-    const preview = await render(editor, Math.min(ratio, PREVIEW_MAX / Math.max(w, h)))
+    const preview = await render(editor, Math.min(ratio, p.previewMaxPixel / Math.max(w, h)))
     return { snapshot, preview }
   } finally {
     silently(editor, () => {
@@ -582,23 +583,6 @@ function selectTool(editor: Editor, id: ToolId) {
   const t = TOOLS.find((t) => t.id === id)!
   if ('geo' in t) editor.setStyleForNextShapes(GeoShapeGeoStyle, t.geo)
   editor.setCurrentTool(t.tool)
-}
-
-function setColor(editor: Editor, id: ColorId) {
-  editor.setStyleForNextShapes(DefaultColorStyle, id)
-  const ids = editor.getSelectedShapeIds()
-  if (!ids.length) return
-  editor.setStyleForSelectedShapes(DefaultColorStyle, id)
-  // A colour the user picked is the user's: the heuristic never changes that mark again. The mark
-  // is outside undo history, like the colours the heuristic writes, so one undo cannot drop the
-  // guard and leave the colour to be picked again 300 ms later.
-  silently(editor, () => {
-    for (const shapeId of ids) {
-      const shape = editor.getShape(shapeId)
-      if (shape) editor.updateShape({ id: shapeId, type: shape.type, meta: { ...shape.meta, colorChosen: true } })
-      unpicked.delete(shapeId)
-    }
-  })
 }
 
 function activeTool(editor: Editor): ToolId | null {
@@ -742,7 +726,7 @@ async function exportDraftsQuietly(editor: Editor, items: ExportItem[], scale: n
 
 /// Where the cursor is as a fraction of the window: what the host and the camera both hold in
 /// place while zooming. The viewport is the window, so the same fraction reads in either space.
-function cursorAnchor(editor: Editor, e: WheelEvent): ZoomAnchor {
+function cursorAnchor(editor: Editor, e: MouseEvent): ZoomAnchor {
   const { x, y, w, h } = editor.getViewportScreenBounds()
   return { x: (e.clientX - x) / w, y: (e.clientY - y) / h }
 }
@@ -800,6 +784,27 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
       window.removeEventListener('wheel', onWheel, { capture: true })
       for (const g of gestures) window.removeEventListener(g, swallow, { capture: true })
     }
+  }, [editor])
+
+  // A double-click with the select tool zooms in on the point clicked, the same step the
+  // trackpad's two-finger double tap takes, and comes home from above the fitted size. The page
+  // decides, because it knows the tool and what is under the pointer; the host owns the zoom.
+  // Over a mark, or while a mark's text is being edited, tldraw's own meaning stands.
+  useEffect(() => {
+    const onDoubleClick = (e: MouseEvent) => {
+      if (editor.getCurrentToolId() !== 'select' || editor.getEditingShapeId() !== null) return
+      // The screenshot is locked and a locked shape is not hit-tested, so anything here is a mark.
+      // The same margin and the same hollow-shape rule as tldraw's own double click, so the two
+      // never both act and never both do nothing.
+      const mark = editor.getShapeAtPoint(editor.screenToPage({ x: e.clientX, y: e.clientY }), {
+        margin: editor.getHitTestMargin(),
+        hitInside: false,
+      })
+      if (mark) return
+      postToNative({ type: 'smartZoom', at: cursorAnchor(editor, e) })
+    }
+    window.addEventListener('dblclick', onDoubleClick, true)
+    return () => window.removeEventListener('dblclick', onDoubleClick, true)
   }, [editor])
 
   useEffect(() => {

@@ -123,6 +123,10 @@ and closing it hands focus back to the app you came from.
 - Reopening a card you have already drawn on starts on the selection tool with the mark you
   drew last already picked up, so a drag or Delete acts on it without a click first.
   A fresh image starts on the rectangle tool.
+- Pinch, Cmd+scroll, or Cmd+plus and Cmd+minus zoom the image in the annotator; Cmd+0 fits it
+  again. A two-finger double tap, or a double-click with the selection tool, zooms in twice on the
+  point you are on and comes home to the fitted size from anywhere above it. A double-click on a
+  mark is the editor's, not the zoom's.
 - A mark is drawn in red unless red is what it sits on. The editor measures the pixels under each
   mark, when you draw it and when you let go of it, and moves to yellow, light blue, white, or
   violet, whichever is far enough from them.
@@ -188,7 +192,7 @@ not depend on its pixel size:
 ```
 
 The types are `ellipse`, `rectangle`, `arrow`, and `text`; `ellipse` has no toolbar button, and an
-agent can still push one. A mark that names a `color` keeps it — any of `MARK_COLORS` in
+agent can still push one. A mark that names a `color` keeps it — any of `CANDIDATES` in
 `web/src/config.ts` — and a mark that names none is coloured from what it covers, like your own. The
 marks become a draft before the card appears, so the card shows them, Copy Drawing has them, and
 opening the card puts them in the editor to move, retype, or delete like your own. The editor builds
@@ -254,8 +258,11 @@ An image that arrives through `add` skips both: a push from an agent is not a ca
 The `ui` section holds the design numbers: card sizes, corners, shadows, hover buttons, animation
 durations and curves, how far a card bows and swells on its way to the annotator, how narrow the
 stack goes to make room for it and how far it stays from it, how deep the drag-select's edge band is
-and how fast it scrolls there, backdrop blur and tint, annotator window limits. The defaults are the
-tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or `open -g
+and how fast it scrolls there, how near an edge of the image a zoom holds that edge, backdrop blur
+and tint, annotator window limits. The defaults are the
+tuned UI, so a fresh install looks the same. A key the app does not know is ignored and the number
+it names takes its default, so a renamed key leaves a dead line you can delete: `zoomEdgeBand`, a
+fraction of the picture, is now `zoomEdgeBandPoints`, in points. With `debug` on, menu bar → Tweak UI… (or `open -g
 shotnote://tweaks`) opens a floating panel of sliders that edits them live, with buttons to summon
 the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns every
 animation off; the system's Reduce Motion does the same.

@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 9
+export const PROTOCOL = 11
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
@@ -11,6 +11,8 @@ export interface LoadPayload {
   mimeType: string
   pixelWidth: number
   pixelHeight: number
+  /** Longest side, in pixels, of the preview this image's draft is rendered at. */
+  previewMaxPixel: number
   /** The image's draft as the host stored it, or null for a fresh canvas. */
   snapshot: TLEditorSnapshot | null
 }
@@ -77,11 +79,11 @@ export interface ExportResult {
 
 type NativeMessage =
   /**
-   * The editor is mounted. Carries the protocol version, what the host's toolbar should offer
-   * (`colors` is empty when the palette is hidden), and every colour a pushed mark may name.
+   * The editor is mounted. Carries the protocol version, what the host's toolbar should offer,
+   * and every colour a mark may be drawn in.
    */
-  | { type: 'ready'; protocol: number; tools: ToolInfo[]; colors: ColorInfo[]; markColors: ColorInfo[] }
-  /** The active tool or color changed. */
+  | { type: 'ready'; protocol: number; tools: ToolInfo[]; markColors: ColorInfo[] }
+  /** The active tool or the colour the next mark will be drawn in changed. */
   | { type: 'tool'; tool: string | null; color: string }
   /** The image from `load` is on the canvas. */
   | { type: 'loaded'; key: string }
@@ -97,6 +99,12 @@ type NativeMessage =
    * means the window's middle.
    */
   | { type: 'zoom'; factor: number | null; at: ZoomAnchor | null }
+  /**
+   * A double-click with the select tool over the picture rather than over a mark: zoom in twofold
+   * on the point it names, or back to the fitted size from anywhere above it. The host's own
+   * two-finger double tap does the same.
+   */
+  | { type: 'smartZoom'; at: ZoomAnchor }
 
 declare global {
   interface Window {
@@ -120,7 +128,6 @@ declare global {
        */
       overlay(maxPixel: number): Promise<string | null>
       setTool(id: string): void
-      setColor(id: string): void
       /**
        * Draws the exact picture the host's zoom stand-in is showing, and answers once it has been
        * painted: the host waits for that answer before it takes the stand-in away.
