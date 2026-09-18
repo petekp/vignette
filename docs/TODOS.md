@@ -4,6 +4,12 @@ Things decided or raised but not built. Each entry says what, why, and what it w
 
 ## Ship the agent skill with the app (decided 2026-09-16)
 
+Built on 2026-09-18 on branch `todo6/integration` (`skills/shotnote/SKILL.md` bundled, the
+`agentSkill` setting with the Agents section, `shotnote://install-skill`, the ownership marker,
+a root whose `skills` directory is a link refused); docs/agent-skill-2026-09-18.md has the
+design as built and docs/run-2026-09-18.md the verification. Publishing on skills.sh still
+waits on the public repo.
+
 Someone who downloads the app needs their agent to learn the `shotnote://` contract, and the
 app is the only thing they are guaranteed to have and the only thing that knows which commands
 its version supports. So the app is the source of the skill.
@@ -213,6 +219,14 @@ its outline).
     picture) before changing anything, then remove whatever moves sideways or steps.
 
 ## Queued by Pete, 2026-09-18 (morning, on the todo5/integration build d1870d3)
+
+All three landed on 2026-09-18 on branch `todo6/integration` (tip 4d96079), with the agent
+skill above, the architecture sweep's refactors R1 to R4, the palette removal (D6), and the
+preview cap (D3); docs/run-2026-09-18.md on that branch has the verification, the review, and
+the open questions. Not yet merged. Still open from the sweep: D1 (after a park timeout the app
+believes the canvas is free while the page still holds the image; two lines) and D5 (AGENTS.md's
+length). Discussed, not decided: folding Copy Drawing into Copy, so one Copy gives the image as
+the card shows it.
 
 23. The zoom's edge hold works on the left and right edges only. Pete: "the zoom anchoring --
     where we have the image stick to one side of the frame while zooming -- is great but only
