@@ -290,7 +290,10 @@ the same driven sequence; a single run varies.
 - The panel widens to the left while cards are selected, to hold the selection strip
   (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:reveal:)` makes the room:
   the icon column, the gap to the cards, and the room the labels grow into, whether they are out or
-  not). Its right edge never moves, so the cards stay where they are. Only the column carries the hair of
+  not). Its right edge never moves, so the cards stay where they are. The gap to the cards is
+  `ui.selectionStripGap`, 16 points, measured from the widest selected card: the strip is beside the
+  cards it acts on, and it steps sideways when a wider one joins them
+  (`docs/selection-strip-2026-09-18.md`). Only the column carries the hair of
   alpha that catches clicks and scrolls; the strip's side of the panel stays clear, so a click
   there still reaches the window underneath.
 - The cursor on the strip brings a label out beside each icon, and Copy on a card does the same

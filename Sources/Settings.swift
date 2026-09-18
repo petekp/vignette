@@ -93,7 +93,7 @@ struct UITweaks: Codable, Equatable {
     var buttonSpacing = 4.0
     var selectionCircleSize = 19.0
     var selectionBarHeight = 44.0    // the toast row under the column
-    var selectionStripGap = 8.0      // selected cards to the control strip beside them
+    var selectionStripGap = 16.0     // the widest selected card to the control strip beside it
     var autoScrollZone = 44.0        // band at each end of the column where a drag-select scrolls it
     var autoScrollSpeed = 600.0      // points a second at the very edge of that band
     // Timings

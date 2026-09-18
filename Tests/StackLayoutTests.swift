@@ -166,6 +166,22 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(grown.minX, panel.minX)
     }
 
+    func testAWiderGapMovesTheStripLeftAndWidensThePanelWithIt() {
+        var wider = stripLayout.ui
+        wider.selectionStripGap += 16
+        let widened = StackLayout(ui: wider)
+        let reveal = widened.stripReveal(labels: ["Copy", "Copy Drawing"])
+        let panel = stripLayout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true, reveal: reveal)
+        let wide = widened.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true, reveal: reveal)
+        XCTAssertEqual(wide.width, panel.width + 16, "the panel holds the gap it is asked for")
+        XCTAssertEqual(wide.maxX, panel.maxX, "on the left, so the cards do not move")
+        let strip = widened.stripPlacement(rows: 2, selection: [0], cards: stripCards, showsBar: false, scroll: 0, viewport: 160)!
+        let card = widened.cardFrame(index: 0, cards: stripCards, panelFrame: wide, showsBar: false, scroll: 0)
+        let grown = widened.stripFrame(strip, panelFrame: wide, scroll: 0, reveal: reveal)
+        XCTAssertEqual(grown.maxX, card.minX - widened.stripGap, "the widest selected card keeps the whole gap")
+        XCTAssertGreaterThanOrEqual(grown.minX, wide.minX, "and the labels still have room inside the panel")
+    }
+
     func testAnnotationFrameKeepsAspectAndCentersInTheRectItIsGiven() {
         let frame = layout.annotationFrame(for: NSSize(width: 1600, height: 800), visibleFrame: screen, below: 60)
         XCTAssertEqual(frame.width / frame.height, 2, accuracy: 0.01)
