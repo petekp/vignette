@@ -143,3 +143,27 @@ each candidate's distance from the pixels under the mark:
 Red over white and over dark grey; yellow over red (where red scores 0) and over dark red (35.8,
 under the threshold). Moving the mark on white onto the red block turned it yellow, 300 ms after
 the move. The toolbar showed four tools, one divider, and Done, with no swatches.
+
+## The palette is gone (2026-09-18)
+
+Pete: "you can delete the palette code." `SHOW_COLORS` had only ever been `false`, so the whole
+swatch path was unreachable: the page sent an empty `colors` list in `ready`, the toolbar's swatch
+block never rendered, its button was the only caller of `onColor`, and `onColor` was the only
+constructor of `PageAPI.setColor`. A live wire with nothing at either end.
+
+What went: `SHOW_COLORS`, the `COLORS` list, `MARK_COLORS`, `colors` in the `ready` message on both
+sides of the bridge, `PageAPI.setColor` and the page's receiver, and the toolbar's `colors`,
+`onColor` and swatch block. The protocol went to 11.
+
+One colour list is left, `CANDIDATES`. It was always the same list: `MARK_COLORS` merged `COLORS`
+into it, and every id in `COLORS` was already in `CANDIDATES`, so the merge could never add
+anything. It is the heuristic's order, what an agent's `marks=` may name, and — its first entry —
+what a fresh image opens on. The `ready` message still carries it as `markColors`, which is what
+`add?marks=` checks a colour against.
+
+`meta.colorChosen` stays. A mark an agent pushed with a colour still sets it, and the heuristic
+still leaves those marks alone. Only the user's half of that guard went with `setColor`.
+
+To bring a palette back: a swatch list in `ready` (or a subset of `CANDIDATES` named in
+`config.ts`), a `setColor` call on the page that writes `colorChosen` the way the deleted one did,
+and the swatch block and its divider in `AnnotatorToolbar`.

@@ -3,7 +3,7 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 9
+let bridgeProtocolVersion = 11
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
@@ -12,6 +12,9 @@ struct LoadPayload: Encodable, Equatable {
     let mimeType: String
     let pixelWidth: Int
     let pixelHeight: Int
+    /// Longest side, in pixels, of the preview the page renders for this image's draft. It rides
+    /// with the image rather than being written on both sides, like `PageAPI.overlay(maxPixel:)`.
+    let previewMaxPixel: Int = Config.previewMaxPixel
 }
 
 /// The picture the page should draw when a zoom comes to rest: how far the image is magnified
@@ -72,7 +75,6 @@ enum PageAPI: Equatable {
     /// longest side: what the zoom stand-in lays over the screenshot.
     case overlay(maxPixel: Int)
     case setTool(String)
-    case setColor(String)
     /// The picture to draw at the end of a zoom, and the answer that says it has been painted.
     case setView(ViewRequest)
     case finish
@@ -94,7 +96,6 @@ enum PageAPI: Equatable {
         case .overlay(let maxPixel):
             return "return window.shotnote ? await window.shotnote.overlay(\(maxPixel)) : null;"
         case .setTool(let id): return "window.shotnote && window.shotnote.setTool(\(PageAPI.json(id)));"
-        case .setColor(let id): return "window.shotnote && window.shotnote.setColor(\(PageAPI.json(id)));"
         case .setView(let view): return "return window.shotnote ? await window.shotnote.setView(\(PageAPI.json(view))) : null;"
         case .finish: return "window.shotnote && window.shotnote.finish();"
         }
@@ -120,10 +121,10 @@ enum PageAPI: Equatable {
 
 /// Received from the page via `window.webkit.messageHandlers.shotnote.postMessage(...)`.
 enum WebMessage {
-    /// The editor is mounted. Carries the page's protocol version, what the toolbar should offer
-    /// (`colors` is empty while the palette is hidden), and every color a pushed mark may name.
-    case ready(protocol: Int, tools: [ToolInfo], colors: [ColorInfo], markColors: [ColorInfo])
-    /// The active tool or color changed.
+    /// The editor is mounted. Carries the page's protocol version, what the toolbar should offer,
+    /// and every color a mark may be drawn in.
+    case ready(protocol: Int, tools: [ToolInfo], markColors: [ColorInfo])
+    /// The active tool or the color the next mark will be drawn in changed.
     case tool(tool: String?, color: String)
     /// The image from `load` is on the canvas.
     case loaded(key: String)
@@ -137,6 +138,10 @@ enum WebMessage {
     /// fraction of the window with y from the top, whose point zoom keeps in place; nil (the
     /// keyboard) means the window's middle.
     case zoom(factor: Double?, at: CGPoint?)
+    /// A double-click with the select tool over the picture: zoom in on the point it names, or
+    /// back to the fitted size from anywhere above it. The trackpad's two-finger double tap asks
+    /// for the same thing, straight from AppKit.
+    case smartZoom(at: CGPoint)
 
     init?(body: Any) {
         guard let dict = body as? [String: Any], let type = dict["type"] as? String else { return nil }
@@ -146,13 +151,11 @@ enum WebMessage {
                 guard let id = t["id"] as? String, let label = t["label"] as? String, let key = t["key"] as? String, let symbol = t["symbol"] as? String else { return nil }
                 return ToolInfo(id: id, label: label, key: key, symbol: symbol)
             }
-            func colors(_ key: String) -> [ColorInfo] {
-                (dict[key] as? [[String: Any]] ?? []).compactMap { c -> ColorInfo? in
-                    guard let id = c["id"] as? String, let hex = c["hex"] as? String else { return nil }
-                    return ColorInfo(id: id, hex: hex)
-                }
+            let markColors = (dict["markColors"] as? [[String: Any]] ?? []).compactMap { c -> ColorInfo? in
+                guard let id = c["id"] as? String, let hex = c["hex"] as? String else { return nil }
+                return ColorInfo(id: id, hex: hex)
             }
-            self = .ready(protocol: dict["protocol"] as? Int ?? 0, tools: tools, colors: colors("colors"), markColors: colors("markColors"))
+            self = .ready(protocol: dict["protocol"] as? Int ?? 0, tools: tools, markColors: markColors)
         case "tool":
             self = .tool(tool: dict["tool"] as? String, color: dict["color"] as? String ?? "")
         case "loaded":
@@ -175,6 +178,9 @@ enum WebMessage {
             if raw is NSNull { self = .zoom(factor: nil, at: at) }
             else if let n = raw as? NSNumber, n.doubleValue.isFinite, n.doubleValue > 0 { self = .zoom(factor: n.doubleValue, at: at) }
             else { return nil }
+        case "smartZoom":
+            guard let at = Self.point(dict["at"]) else { return nil }
+            self = .smartZoom(at: at)
         default: return nil
         }
     }

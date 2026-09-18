@@ -5,20 +5,34 @@ import SwiftUI
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
+    private let focus = SettingsFocus()
 
-    func show() {
+    /// `section` is a section id to bring into view, for a window opened to ask something.
+    /// `activating` is false for a window the user did not ask for: it comes up where they can see
+    /// it without taking the keyboard from what they are doing.
+    func show(scrollTo section: String? = nil, activating: Bool = true) {
         let win = window ?? makeWindow()
         win.center()
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if activating {
+            win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            win.orderFront(nil)
+        }
+        focus.section = section
     }
 
     private func makeWindow() -> NSWindow {
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         win.title = "Shotnote Settings"
-        let hosting = NSHostingView(rootView: SettingsView())
+        let hosting = NSHostingView(rootView: SettingsView(focus: focus))
         win.contentView = hosting
-        win.setContentSize(hosting.fittingSize)
+        // The form is taller than a laptop screen, and the window has no resize control, so the
+        // last sections would hang off the bottom where nothing can reach them. Capped, the form
+        // scrolls inside the window instead.
+        let room = (NSScreen.main?.visibleFrame.height ?? .greatestFiniteMagnitude) - SettingsView.screenRoom
+        let fitting = hosting.fittingSize
+        win.setContentSize(NSSize(width: fitting.width, height: min(fitting.height, room)))
         win.isReleasedWhenClosed = false
         win.delegate = self
         window = win
@@ -30,8 +44,22 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 }
 
+/// Which section the window was opened to show. The offer sets it; the view clears it once it has
+/// scrolled, so reopening the window by hand starts at the top again.
+@MainActor
+final class SettingsFocus: ObservableObject {
+    @Published var section: String?
+}
+
 @MainActor
 struct SettingsView: View {
+    /// Title bar plus a margin: how much of the screen's visible height the form may not use.
+    static let screenRoom: CGFloat = 60
+    /// What `show(scrollTo:)` names to open the window on the skill toggle.
+    static let agentsSection = "agents"
+
+
+    @ObservedObject var focus: SettingsFocus
     @ObservedObject private var settings = Settings.shared
     @State private var hotkeyText = Settings.shared.data.recentHotkey
 
@@ -39,7 +67,29 @@ struct SettingsView: View {
         Binding(get: { settings.data[keyPath: path] }, set: { v in settings.update { $0[keyPath: path] = v } })
     }
 
+    /// The skill toggle. Off is an answer, so the setting never goes back to `unasked` from here.
+    private var agentSkill: Binding<Bool> {
+        Binding(get: { settings.data.agentSkillChoice == .on },
+                set: { on in settings.update { $0.agentSkill = (on ? AgentSkill.on : AgentSkill.off).rawValue } })
+    }
+
     var body: some View {
+        ScrollViewReader { proxy in
+            form
+                .onAppear { scroll(proxy) }
+                .onChange(of: focus.section) { _, _ in scroll(proxy) }
+        }
+    }
+
+    /// Brings the section the window was opened for into view. Not animated: it is where the
+    /// window starts, not a movement.
+    private func scroll(_ proxy: ScrollViewProxy) {
+        guard let section = focus.section else { return }
+        proxy.scrollTo(section, anchor: .top)
+        focus.section = nil
+    }
+
+    private var form: some View {
         Form {
             Section("Screenshots") {
                 LabeledContent("Folder") {
@@ -88,6 +138,12 @@ struct SettingsView: View {
             Section("Drawing") {
                 Toggle("Quick draw", isOn: binding(\.quickAnnotate))
                 Text("Done copies the image you drew on and closes everything, instead of returning to the stack.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Agents") {
+                Toggle("Install the Shotnote skill", isOn: agentSkill)
+                    .id(SettingsView.agentsSection)
+                Text("Copies a skill into ~/.claude/skills and ~/.codex/skills, so Claude Code and Codex know how to show you an image and read back what you drew on it. Off removes the copies Shotnote made; a skill you put there yourself is left alone.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Startup") {

@@ -2,14 +2,15 @@ import AppKit
 import SwiftUI
 
 /// The annotator's toolbar: a native panel that floats just below the image window, so it is
-/// never clipped by the image and looks like the rest of macOS. Tools and colors come from the
-/// page at load; the active state is mirrored from the page; taps are sent back to it.
+/// never clipped by the image and looks like the rest of macOS. The tools come from the page at
+/// load; the active state is mirrored from the page; taps are sent back to it.
 @MainActor
 final class AnnotatorToolbar {
     final class Model: ObservableObject {
         @Published var tools: [ToolInfo] = []
-        @Published var colors: [ColorInfo] = []
         @Published var tool: String? = nil
+        /// The colour the next mark will be drawn in. Nothing in the bar shows it; it is what
+        /// `[state] annotator.color` reports.
         @Published var color: String = ""
         @Published var shown = false     // drives the entrance and exit
     }
@@ -17,7 +18,6 @@ final class AnnotatorToolbar {
     let panel: NSPanel
     let model = Model()
     var onTool: ((String) -> Void)?
-    var onColor: ((String) -> Void)?
     var onDone: (() -> Void)?
     private var hosting: NSHostingView<ToolbarView>!
 
@@ -35,7 +35,7 @@ final class AnnotatorToolbar {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.animationBehavior = .none
         panel.isMovable = false
-        hosting = NSHostingView(rootView: ToolbarView(model: model, onTool: { [weak self] in self?.onTool?($0) }, onColor: { [weak self] in self?.onColor?($0) }, onDone: { [weak self] in self?.onDone?() }))
+        hosting = NSHostingView(rootView: ToolbarView(model: model, onTool: { [weak self] in self?.onTool?($0) }, onDone: { [weak self] in self?.onDone?() }))
         panel.contentView = hosting
     }
 
@@ -75,7 +75,6 @@ private final class ToolbarPanel: NSPanel {
 private struct ToolbarView: View {
     @ObservedObject var model: AnnotatorToolbar.Model
     let onTool: (String) -> Void
-    let onColor: (String) -> Void
     let onDone: () -> Void
 
     var body: some View {
@@ -90,22 +89,6 @@ private struct ToolbarView: View {
                 }
                 .buttonStyle(TactileButtonStyle(shape: .rounded))
                 .help("\(tool.label) (\(tool.key.uppercased()))")
-            }
-            // No colors, no swatches and no divider of their own: the bar is tools, one divider, Done.
-            if !model.colors.isEmpty {
-                Divider().frame(height: 20).padding(.horizontal, 6)
-                ForEach(model.colors) { color in
-                    Button { onColor(color.id) } label: {
-                        Circle()
-                            .fill(Color(hex: color.hex))
-                            .frame(width: 16, height: 16)
-                            .overlay(Circle().stroke(.white, lineWidth: model.color == color.id ? 2 : 0))
-                            .shadow(color: .black.opacity(model.color == color.id ? 0.4 : 0), radius: 2)
-                            .frame(width: 28, height: 30)
-                    }
-                    .buttonStyle(TactileButtonStyle(shape: .circle))
-                    .help(color.id)
-                }
             }
             Divider().frame(height: 20).padding(.horizontal, 6)
             Button(action: onDone) {
@@ -137,13 +120,5 @@ private struct ToolbarView: View {
         let scale = Settings.shared.motionScale
         guard scale > 0 else { return .linear(duration: 0) }
         return model.shown ? .spring(response: 0.45 * scale, dampingFraction: 0.72) : Anim.spring(0.18 * scale)
-    }
-}
-
-extension Color {
-    init(hex: String) {
-        var value: UInt64 = 0
-        Scanner(string: hex.replacingOccurrences(of: "#", with: "")).scanHexInt64(&value)
-        self.init(red: Double((value >> 16) & 0xff) / 255, green: Double((value >> 8) & 0xff) / 255, blue: Double(value & 0xff) / 255)
     }
 }

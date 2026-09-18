@@ -123,6 +123,10 @@ and closing it hands focus back to the app you came from.
 - Reopening a card you have already drawn on starts on the selection tool with the mark you
   drew last already picked up, so a drag or Delete acts on it without a click first.
   A fresh image starts on the rectangle tool.
+- Pinch, Cmd+scroll, or Cmd+plus and Cmd+minus zoom the image in the annotator; Cmd+0 fits it
+  again. A two-finger double tap, or a double-click with the selection tool, zooms in twice on the
+  point you are on and comes home to the fitted size from anywhere above it. A double-click on a
+  mark is the editor's, not the zoom's.
 - A mark is drawn in red unless red is what it sits on. The editor measures the pixels under each
   mark, when you draw it and when you let go of it, and moves to yellow, light blue, white, or
   violet, whichever is far enough from them.
@@ -139,8 +143,8 @@ menu bar has the same command.
 
 - `~/.config/shotnote/settings.json`: folder, counts, timing, hotkey, backdrop. No rebuild.
 - `Sources/Config.swift`: the actions list.
-- `web/src/config.ts`: editor tools, the tool each image opens on, the colour palette (off by
-  default), stroke size.
+- `web/src/config.ts`: editor tools, the tool each image opens on, the colours a mark may be drawn
+  in, stroke size.
 - `web/src/bridge.ts` and `Sources/Bridge.swift`: the only contract between the two sides.
 
 See `AGENTS.md` for the working loop.
@@ -169,6 +173,7 @@ open -g shotnote://cancel                     # close the annotator without expo
 open -g "shotnote://state?tag=t1"             # one [state] {json} line in the log, tag echoed
 open -g shotnote://help                       # list every command in the log
 open -g shotnote://settings                   # open the Settings window
+open -g shotnote://install-skill              # install the agent skill for Claude Code and Codex
 open -g shotnote://restore-apple-defaults     # put Apple's screencapture defaults back
 open -g "shotnote://send?to=reviewer&text=why%20is%20this%20clipped"  # hand the path to an agent herdr is running (needs "debug": true)
 open -g shotnote://tweaks                     # live UI tweaks panel (needs "debug": true)
@@ -187,7 +192,7 @@ not depend on its pixel size:
 ```
 
 The types are `ellipse`, `rectangle`, `arrow`, and `text`; `ellipse` has no toolbar button, and an
-agent can still push one. A mark that names a `color` keeps it — any of `MARK_COLORS` in
+agent can still push one. A mark that names a `color` keeps it — any of `CANDIDATES` in
 `web/src/config.ts` — and a mark that names none is coloured from what it covers, like your own. The
 marks become a draft before the card appears, so the card shows them, Copy Drawing has them, and
 opening the card puts them in the editor to move, retype, or delete like your own. The editor builds
@@ -199,7 +204,7 @@ Every command answers with one line in `~/Library/Logs/Shotnote.log` (menu bar �
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`,
 `unreadable-image`, `page-not-ready`, `export-timeout`, `export-failed`, `settings-invalid`,
 `debug-disabled`, `no-apple-original`, `eval-failed`, `write-failed`, `unsupported-type`,
-`invalid-marks`, `no-agent`, `send-failed`. The log has one event per
+`invalid-marks`, `no-agent`, `send-failed`, `not-ours`, `linked-root`. The log has one event per
 line, `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Shotnote.log.1` at 5 MB.
 
 For clicks, drags, and the hotkey itself, `scripts/input.sh` posts real input events (it needs
@@ -228,6 +233,7 @@ which is how tests and agents keep away from the real one.
   "annotateOnCapture": false,
   "copyOnCapture": true,
   "debug": false,
+  "agentSkill": "unasked",
   "ui": { "cardMaxWidth": 208, "slideInDuration": 0.75, "backdropBlurRadius": 13, "...": "the design numbers" },
   "appleOriginal": { "location": "~/Desktop", "showThumbnail": true, "disableShadow": false, "type": "png" }
 }
@@ -244,6 +250,7 @@ plus its file URL and path for apps that take those), and is on by default. `ann
 Draw on New Captures: it opens every new screenshot in the annotator right away, instead of showing
 a thumbnail. The menu bar toggles both.
 An image that arrives through `add` skips both: a push from an agent is not a capture.
+`agentSkill` is the skill for coding agents: `unasked`, `on`, or `off` (see For agents).
 `debug` unlocks `eval`, `show-editor`,
 `tweaks`, `send`, and `file=` outside the watch folder. A file that does not parse is moved aside as
 `settings.json.invalid` and replaced with defaults, with a toast saying so.
@@ -251,11 +258,35 @@ An image that arrives through `add` skips both: a push from an agent is not a ca
 The `ui` section holds the design numbers: card sizes, corners, shadows, hover buttons, animation
 durations and curves, how far a card bows and swells on its way to the annotator, how narrow the
 stack goes to make room for it and how far it stays from it, how deep the drag-select's edge band is
-and how fast it scrolls there, backdrop blur and tint, annotator window limits. The defaults are the
-tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or `open -g
+and how fast it scrolls there, how near an edge of the image a zoom holds that edge, backdrop blur
+and tint, annotator window limits. The defaults are the
+tuned UI, so a fresh install looks the same. A key the app does not know is ignored and the number
+it names takes its default, so a renamed key leaves a dead line you can delete: `zoomEdgeBand`, a
+fraction of the picture, is now `zoomEdgeBandPoints`, in points. With `debug` on, menu bar → Tweak UI… (or `open -g
 shotnote://tweaks`) opens a floating panel of sliders that edits them live, with buttons to summon
 the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns every
 animation off; the system's Reduce Motion does the same.
+
+## For agents
+
+The app ships a skill that teaches a coding agent the `shotnote://` contract: push an image with
+`add`, draw on it with `marks=`, read `<name>-annotated.png` back. It lives in
+`skills/shotnote/SKILL.md`, ships in the bundle, and the app is what installs it, because the app
+is the only thing that knows which commands its version has.
+
+On the first launch that finds `~/.claude` or `~/.codex`, Shotnote opens Settings at the Agents
+section and asks once. The window comes up without taking the keyboard from what you are doing, the
+answer is recorded as `agentSkill` in settings.json, and the question never comes back. Turning the toggle on copies the skill into `~/.claude/skills/shotnote` and
+`~/.codex/skills/shotnote`; turning it off removes those copies. A later launch rewrites a copy
+that is older than the app. `open -g shotnote://install-skill` does the same from a script.
+
+The installer only ever touches a copy it made. It writes `.shotnote-skill.json` beside the skill
+naming the build that wrote it, and anything at that path without one, including a link to your own
+copy, is left alone and answered with `not-ours`.
+
+An agent directory whose `skills` is itself a link is skipped whole, with `linked-root`: writing
+through the link would put the skill inside whatever that link points at, which on this Mac is a git
+repository. Move the skill there by hand if you want it.
 
 ## Forking
 

@@ -7,6 +7,15 @@ struct Screenshot: Sendable {
     let url: URL
 }
 
+/// Whether the bundled skill is installed for the coding agents on this Mac. Three values in one
+/// key, because "not asked yet" is a state of its own: writing into another tool's directory needs
+/// a yes, and the app asks once. A bool plus an `offered` flag could say two things at once.
+enum AgentSkill: String, CaseIterable {
+    case unasked
+    case on
+    case off
+}
+
 /// Everything a user changes per machine. Lives in ~/.config/shotnote/settings.json.
 /// Missing keys fall back to defaults, so a partial file is fine.
 struct SettingsData: Codable, Equatable {
@@ -24,10 +33,15 @@ struct SettingsData: Codable, Equatable {
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
     var debug = false                        // unlocks eval, show-editor, tweaks, and file= outside the watch folder
+    var agentSkill = AgentSkill.unasked.rawValue  // the skill for coding agents: unasked, on, off
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
     var appleOriginal: AppleOriginal?        // Apple's screencapture values before Shotnote changed them
 
     var folderURL: URL { URL(fileURLWithPath: (screenshotsFolder as NSString).expandingTildeInPath) }
+
+    /// `agentSkill` as the three states it holds. An unknown word reads as `unasked`, which
+    /// `validated()` then writes back.
+    var agentSkillChoice: AgentSkill { AgentSkill(rawValue: agentSkill) ?? .unasked }
 
     /// Clamps values that would crash or break layout math and reports each correction.
     /// Design limits live in the debug panel; these are only the bounds the code cannot survive.
@@ -40,6 +54,9 @@ struct SettingsData: Codable, Equatable {
         }
         if d.screenshotsFolder.trimmingCharacters(in: .whitespaces).isEmpty {
             notes.append("screenshotsFolder \"\" -> \"~/Desktop\""); d.screenshotsFolder = "~/Desktop"
+        }
+        if AgentSkill(rawValue: d.agentSkill) == nil {
+            notes.append("agentSkill \"\(d.agentSkill)\" -> \"\(AgentSkill.unasked.rawValue)\""); d.agentSkill = AgentSkill.unasked.rawValue
         }
         if !["spring", "easeOut", "easeInOut", "linear"].contains(d.ui.slideInCurve) {
             notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"
@@ -93,7 +110,7 @@ struct UITweaks: Codable, Equatable {
     var buttonSpacing = 4.0
     var selectionCircleSize = 19.0
     var selectionBarHeight = 44.0    // the toast row under the column
-    var selectionStripGap = 8.0      // selected cards to the control strip beside them
+    var selectionStripGap = 16.0     // the widest selected card to the control strip beside it
     var autoScrollZone = 44.0        // band at each end of the column where a drag-select scrolls it
     var autoScrollSpeed = 600.0      // points a second at the very edge of that band
     // Timings
@@ -132,7 +149,7 @@ struct UITweaks: Codable, Equatable {
     var annotationCornerRadius = 10.0
     var annotationToolbarGap = 12.0
     var annotationScreenInset = 65.0
-    var zoomEdgeBand = 0.15          // how far from each edge of the picture a zoom holds that edge
+    var zoomEdgeBandPoints = 120.0   // how far from each edge of the picture a zoom holds that edge
     var zoomEdgePull = 0.5           // the part of that band in which the edge is held exactly
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
@@ -193,7 +210,9 @@ struct UITweaks: Codable, Equatable {
         Bound("annotationMinWidth", \.annotationMinWidth, 1...100_000), Bound("annotationMinHeight", \.annotationMinHeight, 1...100_000),
         Bound("annotationCornerRadius", \.annotationCornerRadius, 0...1000), Bound("annotationToolbarGap", \.annotationToolbarGap, 0...1000),
         Bound("annotationScreenInset", \.annotationScreenInset, 0...10_000),
-        Bound("zoomEdgeBand", \.zoomEdgeBand, 0...0.5), Bound("zoomEdgePull", \.zoomEdgePull, 0...1),
+        // `Zoom.pulledToEdges` caps the band at half a side, so any value past a frame's own size
+        // behaves the same; this is that, not a design limit. 0...400 is the slider's range.
+        Bound("zoomEdgeBandPoints", \.zoomEdgeBandPoints, 0...2000), Bound("zoomEdgePull", \.zoomEdgePull, 0...1),
         // The floor is the slider's, because below it a stitch is not a smaller picture but a
         // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),

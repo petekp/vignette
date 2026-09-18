@@ -109,14 +109,20 @@ enum Zoom {
     /// picture magnifies at all, so a cursor beside a corner has to be within a few points of it
     /// before the corner survives a zoom.
     ///
-    /// `band` is how far from each edge, as a fraction of the picture, the pull reaches. `pull` is
-    /// the part of that band in which the edge is taken outright; across the rest the pull eases
-    /// off to nothing at the band's inner edge, so the middle of the picture zooms about itself.
-    /// The point the zoom then holds is not the one under the cursor but the one the pull names,
-    /// which is what keeps the edge from being cropped.
-    static func pulledToEdges(_ cursor: CGPoint, band: CGFloat, pull: CGFloat) -> CGPoint {
-        CGPoint(x: pulledToEdge(cursor.x, band: band, pull: pull),
-                y: pulledToEdge(cursor.y, band: band, pull: pull))
+    /// `band` is how far from each edge the pull reaches, in points of a picture `size` points
+    /// across, so the reach is the same on all four edges of a picture of any shape. As a fraction
+    /// of each side it was a short band on the short side: on a wide screenshot the sides held
+    /// their edges and the top and bottom did not. The band reaches at most half of a side, so the
+    /// middle of the picture is its own anchor whatever the band is set to.
+    ///
+    /// `pull` is the part of that band in which the edge is taken outright; across the rest the
+    /// pull eases off to nothing at the band's inner edge, so the middle of the picture zooms about
+    /// itself. The point the zoom then holds is not the one under the cursor but the one the pull
+    /// names, which is what keeps the edge from being cropped.
+    static func pulledToEdges(_ cursor: CGPoint, in size: CGSize, band: CGFloat, pull: CGFloat) -> CGPoint {
+        guard band.isFinite, size.width > 0, size.height > 0 else { return cursor }
+        return CGPoint(x: pulledToEdge(cursor.x, band: min(0.5, band / size.width), pull: pull),
+                       y: pulledToEdge(cursor.y, band: min(0.5, band / size.height), pull: pull))
     }
 
     private static func pulledToEdge(_ fraction: CGFloat, band: CGFloat, pull: CGFloat) -> CGFloat {

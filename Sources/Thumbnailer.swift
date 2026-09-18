@@ -107,6 +107,13 @@ enum Thumbnailer: @unchecked Sendable {
         return CGImageDestinationFinalize(dest) ? out as Data : nil
     }
 
+    /// The `maxPixel` for an image drawn at screen size: a card in flight and the zoom stand-in's
+    /// screenshot. Both ask for it so the cache holds one decode for the two of them; the cache is
+    /// keyed on `maxPixel`, so two expressions that drifted apart would silently hold two.
+    static func screenPixels(on screen: NSScreen) -> Int {
+        Int(ceil(max(screen.visibleFrame.width, screen.visibleFrame.height) * screen.backingScaleFactor))
+    }
+
     /// A decoded copy whose longest side is at most `maxPixel` pixels. Cached.
     static func image(at url: URL, maxPixel: Int) -> NSImage? {
         if let hit = cached(at: url, maxPixel: maxPixel) { return hit }

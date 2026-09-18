@@ -98,7 +98,7 @@ final class ThumbnailController: NSObject {
     private let model = StackModel()
     private var hosting: NSHostingView<StackView>!
     private var dismissTimer: Timer?
-    private var outsideClickMonitor: Any?
+    private let outsideClick = OutsideClick()
     private var visible = false {
         // Flight decodes are screen-sized; they are only worth keeping while the stack is up.
         didSet { if !visible { flightImages.removeAll(); flightOrder.removeAll() } }
@@ -192,7 +192,7 @@ final class ThumbnailController: NSObject {
     /// The cards as they are drawn now: at the stack's full width, or narrowed for the annotator.
     private var cardSizes: [NSSize] { model.cards.map { layout.drawn($0.size) } }
     private var ui: UITweaks { Settings.shared.motionUI }
-    private var layout: StackLayout { StackLayout(ui: ui, widthScale: model.widthScale) }
+    private var layout: StackLayout { StackLayout.current.at(widthScale: model.widthScale) }
     private var showsBar: Bool { model.showsBar }
     private var showsStrip: Bool { model.isStack && model.inSelectionMode }
 
@@ -269,7 +269,8 @@ final class ThumbnailController: NSObject {
         let cards = shots.compactMap(makeCard)
         guard !cards.isEmpty else { return .empty }
         present(cards: cards, stack: true)
-        installOutsideClickMonitor()
+        // A click outside this app's windows closes the stack, and the annotator with it.
+        outsideClick.start { [weak self] in self?.dismiss() }
         backdrop.show(on: screen, below: panel)
         takeKeys()
         Log.write("[stack] shown cards=\(cards.count) \(detail)shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
@@ -499,7 +500,7 @@ final class ThumbnailController: NSObject {
         dismissGeneration += 1
         let gen = dismissGeneration
         dismissTimer?.invalidate()
-        removeOutsideClickMonitor()
+        outsideClick.stop()
         releaseKeys()
         backdrop.hide()
         // A stitch still converging ends with the stack: its pieces stop where they are, and the
@@ -740,8 +741,7 @@ final class ThumbnailController: NSObject {
         guard let id, let card = model.cards.first(where: { $0.id == id }) else { return }
         let path = card.shot.url.path
         guard flightImages[path] == nil, previews[path] == nil else { return }
-        let maxPixel = Int(ceil(max(screen.visibleFrame.width, screen.visibleFrame.height) * (screen.backingScaleFactor)))
-        Thumbnailer.load(at: card.shot.url, maxPixel: maxPixel) { [weak self] image in
+        Thumbnailer.load(at: card.shot.url, maxPixel: Thumbnailer.screenPixels(on: screen)) { [weak self] image in
             // `visible`: a decode that lands after the stack hid must not refill the cache it cleared.
             guard let self, let image, self.visible, self.previews[path] == nil else { return }
             self.flightImages[path] = image
@@ -1112,16 +1112,5 @@ final class ThumbnailController: NSObject {
                 self.dismiss()
             }
         }
-    }
-
-    /// A click outside this app's windows closes the stack, and the annotator with it.
-    private func installOutsideClickMonitor() {
-        removeOutsideClickMonitor()
-        outsideClickMonitor = OutsideClick.monitor { [weak self] in self?.dismiss() }
-    }
-
-    private func removeOutsideClickMonitor() {
-        if let m = outsideClickMonitor { NSEvent.removeMonitor(m) }
-        outsideClickMonitor = nil
     }
 }

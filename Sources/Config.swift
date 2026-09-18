@@ -5,7 +5,8 @@ import AppKit
 enum Config {
     /// Appended to the original file name when an annotated copy is saved next to it.
     static let annotatedSuffix = "-annotated"
-    /// Longest side of a card preview, in pixels. Matches PREVIEW_MAX in App.tsx for park previews.
+    /// Longest side of a card preview, in pixels. The page renders park previews at this size; it
+    /// crosses in the `load` payload, so this is the only place it is written.
     static let previewMaxPixel = 1600
     /// Longest side, in pixels, of the annotations the page renders for the zoom stand-in. One at
     /// a time, for the image in the annotator only, so this is what it costs to hold.

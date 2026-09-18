@@ -39,6 +39,19 @@ final class SettingsTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentSkillStartsUnaskedAndAnUnknownWordIsClamped() throws {
+        XCTAssertEqual(SettingsData().agentSkillChoice, .unasked)
+        try write(#"{"agentSkill": "on"}"#)
+        guard case .loaded(let loaded) = Settings.load(file) else { return XCTFail("expected .loaded") }
+        XCTAssertEqual(loaded.data.agentSkillChoice, .on)
+        var odd = SettingsData()
+        odd.agentSkill = "maybe"
+        let validated = odd.validated()
+        XCTAssertEqual(validated.data.agentSkillChoice, .unasked)
+        XCTAssertEqual(validated.corrections, ["agentSkill \"maybe\" -> \"unasked\""])
+    }
+
+    @MainActor
     func testSyntaxErrorIsInvalid() throws {
         try write(#"{"recentCount": 7"#)
         guard case .invalid(let reason) = Settings.load(file) else { return XCTFail("expected .invalid") }
