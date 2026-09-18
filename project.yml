@@ -21,6 +21,10 @@ targets:
         buildPhase: resources
       - path: LICENSE-tldraw.md
         buildPhase: resources
+      # The agent skill the app offers to install; SkillInstaller copies this folder out.
+      - path: skills/shotnote
+        type: folder
+        buildPhase: resources
     info:
       path: Info.plist
       properties:
