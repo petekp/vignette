@@ -386,7 +386,7 @@ the same driven sequence; a single run varies.
   `history: 'ignore'`). That borrows the canvas for the length of one rendering, so a build is
   refused while anything else owns it (`AnnotationController.canvasRefusal`): the annotator owns it
   from `prepare`, half a second before its window appears, until `park` answers, and an export owns
-  it for as long as Copy Annotated runs. A refusal is one `page-not-ready` line and no file copied.
+  it for as long as Copy Drawing runs. A refusal is one `page-not-ready` line and no file copied.
   Every call that touches the canvas — `load`, `reset`, `park`, `export`, `build`, `overlay`,
   `setView`, and `finish` — runs one at a time on the page, in the order the host called them: the
   rendering ones take their snapshot after an `await` and put the canvas back afterwards, so an
@@ -462,7 +462,7 @@ the same driven sequence; a single run varies.
   `annotator.zoomCenter` is the middle of the visible part of the image, `annotator.standIn` says
   whether the app's own picture is up, `annotator.overlay` is the overlay's pixel size, and
   `annotator.room` is the rect the frame may grow within. `docs/zoom-2026-09-17.md` says why it is
-  shaped this way. "Copy Annotated" hands the stored snapshots to the live editor
+  shaped this way. "Copy Drawing" hands the stored snapshots to the live editor
   (`window.shotnote.export`), which restores the canvas afterwards; it falls back to the original
   file for cards without a draft, and answers `error export-failed` or `export-timeout` (15 s)
   instead of hanging.

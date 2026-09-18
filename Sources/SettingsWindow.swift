@@ -74,7 +74,7 @@ struct SettingsView: View {
                         .onSubmit(commitHotkey)
                         .foregroundStyle(HotKeySpec.parse(hotkeyText) == nil ? .red : .primary)
                 }
-                Text("Modifiers cmd, shift, opt, ctrl and a key, joined with +, or double-rshift for a double tap of right Shift (asks for Accessibility permission). Press Return to apply. Hold the key, or the second tap, to annotate the newest screenshot.")
+                Text("Modifiers cmd, shift, opt, ctrl and a key, joined with +, or double-rshift for a double tap of right Shift (asks for Accessibility permission). Press Return to apply. Hold the key, or the second tap, to draw on the newest screenshot.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("New captures") {
@@ -85,9 +85,9 @@ struct SettingsView: View {
                 Text("Every new screenshot opens in the annotator right away, instead of showing a thumbnail.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Annotating") {
-                Toggle("Quick annotate", isOn: binding(\.quickAnnotate))
-                Text("Done copies the annotated image and closes everything, instead of returning to the stack.")
+            Section("Drawing") {
+                Toggle("Quick draw", isOn: binding(\.quickAnnotate))
+                Text("Done copies the image you drew on and closes everything, instead of returning to the stack.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Startup") {

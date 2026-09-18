@@ -136,9 +136,9 @@ final class StackLayoutTests: XCTestCase {
 
     func testTheStripGrowsToTheLeftWhenItsLabelsComeOut() {
         let layout = stripLayout
-        let labels = ["Copy", "Copy Annotated"]
+        let labels = ["Copy", "Copy Drawing"]
         let reveal = layout.stripReveal(labels: labels)
-        XCTAssertGreaterThan(reveal, ButtonLabel.width("Copy Annotated", size: StackLayout.stripLabelSize),
+        XCTAssertGreaterThan(reveal, ButtonLabel.width("Copy Drawing", size: StackLayout.stripLabelSize),
                              "the widest label, and room beside it")
         XCTAssertEqual(layout.stripReveal(labels: []), 0, "no labels, no growth")
         let panel = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true, reveal: reveal)
@@ -155,7 +155,7 @@ final class StackLayoutTests: XCTestCase {
 
     func testThePanelHoldsTheRevealSoTheLabelsNeverResizeIt() {
         let layout = stripLayout
-        let reveal = layout.stripReveal(labels: ["Copy", "Copy Annotated"])
+        let reveal = layout.stripReveal(labels: ["Copy", "Copy Drawing"])
         let panel = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true, reveal: reveal)
         let plain = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true)
         XCTAssertEqual(panel.width, plain.width + reveal, "the room is there before the labels come out")
