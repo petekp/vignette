@@ -603,5 +603,23 @@ row is keyed by bundle id and is your build's row too. The clipboard held a stit
 at the end of the round and I cleared it (`pbcopy < /dev/null`), so it is empty rather than holding
 anything of yours. Two drafts were made and both were swept when their fixtures went: your build
 came back up on `[drafts] 15`, the same count it had before. `integration-scratch/shots` is empty
-again, your build is running from `~/.config/shotnote/settings.json` on
-`~/Dropbox/Screenshots`, and the launch lock is released.
+again and the launch lock is released.
+
+**Your settings file was written, three times, and not by me driving anything.** After the round I
+sent one plain `open -g shotnote://state` to find out which copy LaunchServices would route a URL
+to — the hazard AGENTS.md describes — and that launched the copy it had registered, with no
+`SHOTNOTE_SETTINGS`, so it came up on your real settings and your real folder and replaced your
+build. Three copies took a turn before I stopped: mine, `todo4/page`'s, and the `zoom-scratch`
+stable copy. Each one bootstrapped the keys its own schema has and your file's mtime moved. What
+that adds is the merged branch's three new tweaks at their defaults — `stackGap` 24,
+`stackMinScale` 0.5, `stitchLongSide` 4096 — which the branch would write on its first run anyway.
+Bootstrap only fills in keys that are missing, so nothing you had set was changed; the file is
+valid JSON with 55 `ui` keys and `com.apple.screencapture` is untouched. Say the word if you want
+the three keys taken out again.
+
+**LaunchServices now points at your build.** It was pointing at `zoom-scratch/before`, which is why
+a bare `shotnote://` reached the wrong app at all. Every `shotnote-todo` worktree copy and that one
+stable copy are unregistered — the files are all still there, and a rebuild or a launch registers
+one again — and your build at `~/Code/shotnote/build/…` is registered and is what
+`NSWorkspace.urlForApplication(toOpen:)` answers for the scheme. Your build is running from it, on
+`~/.config/shotnote/settings.json` and `~/Dropbox/Screenshots`.
