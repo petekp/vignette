@@ -528,7 +528,8 @@ answers `dismiss` with `parking(… then dismiss)`, whose effect is `hideAnnotat
 ### How the fixes were checked
 
 `./scripts/build.sh --test` passed before each commit and at the tip, and the user's settings file
-kept the same mtime (1789701474) across every run. One launch round, 21:49 to 21:59, on my scratch
+kept the same mtime (1789701474) across every build, every test run and the launch round itself —
+what wrote it afterwards is the last incident below. One launch round, 21:49 to 21:59, on my scratch
 settings, guarded by `[state] app.settingsFile` and the running pid's own environment:
 
 - **The strip stands aside.** Two cards selected by clicking their circles, strip at
