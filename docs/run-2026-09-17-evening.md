@@ -392,7 +392,8 @@ Two things to know before the first run:
   (zoom) all present; `Mark.Kind` still has `ellipse` on both sides.
 - `web/src/App.tsx` — the whole file. The colour pick, the letter swallow and the text-edit guard
   (page) sit alongside `setView`, `applyView`, the resize observer and the overlay (zoom). The
-  canvas queue still covers `load`, `reset`, `park`, `export`, `build` and `finish`.
+  canvas queue still covers `load`, `reset`, `park`, `export`, `build` and `finish` — the review
+  found `overlay` and `setView` outside it, which section 6 fixes.
 - `Sources/AnnotationController.swift` — the whole file. Page's two changes (`colorIDs` from
   `markColors`, the `ready` line) survive zoom's rewrite; the stand-in, the hand-over guard, the
   overlay throttle and `fitBeforeHide` are intact; `room` is stored and `growthLimit` returns it.
@@ -422,3 +423,185 @@ Two things to know before the first run:
   `stack-keys` merged it does not, and the strip is out while the stack is squeezed. Section 2 has
   the measurement.
 - The `page` and `zoom` reports both claim protocol 8. They now share it.
+
+---
+
+## 6. Review
+
+An adversarial review of `todo4/integration` ran after the merges, reading the tip at `586081b`
+with F1 and F2 re-checked at `eff26c3`. It ranked eleven findings, F1 to F11. Nine were real and
+are fixed; F8 turns out not to be reachable and is left alone; the doubled draft save it could not
+confirm does not happen, and is measured below. `./scripts/build.sh --test` passes at the tip:
+168 tests, one fewer than before because two assertions that recomputed a formula became one test
+that pins the doc's table.
+
+Fixes are in three commits:
+
+- `a759066` — the selection strip stands aside while the annotator has an image (F1).
+- `15174bb` — the page and the zoom (F2, F4, F5, F7, F9, F10).
+- `44663e2` — the stitch, the settings hazard and the tests (F3, F6, F11).
+
+### What was found and fixed
+
+**The selection strip sat inside the annotator's frame.** The strip hangs to the left of the
+column, and `widthScale(clearing:)` clears the column alone, so the strip overlapped the annotator
+by `(buttonSize + 2·buttonSpacing) + selectionStripGap − stackGap` — 19 pt at every width scale,
+not only when the stack was squeezed. The panel is `.statusBar` and the annotator `.floating`, so
+the strip drew over the image and caught the click. Reserving the width does not fix it: the search
+places the column at every intermediate frame, and the room is frozen at `prepare`. The strip is
+hidden instead, for as long as the annotator holds an image. One new published flag,
+`StackModel.annotating`, set in `ThumbnailController.send` — the one place the session changes —
+and read by the two places that ask where the strip goes (`stripFrame` and `StackView`), never by
+`showsStrip`, which sizes the panel window and would resize it mid-session. `[state] stack.strip`
+is null while a card is in the annotator.
+
+**`setView` was the one page call outside the canvas queue.** The camera is part of a tldraw
+snapshot, so `export` and `build` put it back as it was when they started. An export running while
+a zoom came to rest would take the new camera away behind a stand-in that had already faded: the
+page left at the wrong magnification until the window next changed size. `setView` now takes its
+turn like every other canvas call. `overlay` was already in the queue and missing from the AGENTS
+sentence; both are named there now, with the reason.
+
+**A mark took its colour from pixels it never covers.** The pick sampled a grid over the mark's
+bounding box. A diagonal arrow's box is the whole rectangle its two ends span, most of which the
+stroke never touches, so a red banner in a corner of that box turned an arrow that runs nowhere
+near it yellow. `Area` in `contrast.ts` now says what the ink covers: a strip along the line for an
+arrow (41 points, one to either side), the border band for a shape drawn with no fill, the whole
+box for anything else. `docs/annotation-colour-2026-09-17.md` has the rule.
+
+**A build failed outright when the screenshot would not decode.** `build` awaited `prepareSample`
+inside its `try`, and `img.decode()` rejects on a load failure, so `add?file=…&marks=…` with an
+unreadable image lost the agent's marks entirely. Both calls catch now: the marks keep the colour
+they were given and the draft is stored. Losing an agent's marks over a colour is not a trade.
+
+**`setColor` wrote its guard inside undo history.** The `colorChosen` meta mark was the only
+colour-related write not wrapped in `silently()`. One Cmd+Z reverted it, `noteChanged` put the
+shape back in `unpicked`, and 300 ms later the heuristic overwrote the user's own colour. Latent
+while `SHOW_COLORS` is off; fixed anyway, since the palette is one constant away.
+
+**The hand-over had no deadline, and its answer was read out of a raw dictionary.** The page
+answers `setView` from a `requestAnimationFrame`, which WebKit stops while the screen is locked, so
+a hand-over could never settle and the stand-in would cover a live editor. It now has an export's
+deadline and one retry, and then comes down anyway: a picture that never leaves is worse than a
+page at the wrong camera, which the next rest corrects. `ViewResult` has a Swift mirror, so the
+page's painted size is checked against the host's frame and a gap wider than the layout's own
+rounding is logged as `[annotate] view mismatch`. The page checks the five numbers it is sent
+before they reach the camera and answers null if they are not finite or the ratio is under 1.
+
+**`[stitch] ok readerScale=` reported a number nobody sees.** It was the reader's resize of the
+capped picture, not what a reader leaves of the screenshots: a six-piece 5K stitch printed 0.38 and
+arrives at 0.29, because `ui.stitchLongSide` had already taken a quarter of it. The line now
+reports the cap and the resize together, which is the number the layout is chosen against and the
+number the doc's headline claim is about. The doc's verified block carried the old one.
+
+**The stitch badge could leave its piece.** A badge is inset by a quarter of itself, so it needs
+1.25 times its diameter to sit in; the 32 px floor pushed it off any piece under 40 px, and under
+28 px it reached the neighbouring screenshot through the gap. It is capped at 80% of its piece's
+short side, which is exactly what `docs/stitch-2026-09-17.md` already claimed as an invariant.
+
+**The ok line counted files, not pieces.** `Stitch.compose` drops a file that will not decode; the
+line and the toast said how many were asked for. Both count what is in the picture now.
+
+**`ui.stitchLongSide` is refused below 512**, the slider's own floor. Under it a stitch is not a
+smaller picture but a useless one: the review's own example is four wide captures at 64, which
+compose to a 64 x 1 PNG the app still calls ok.
+
+**No test process can reach the user's settings file.** `project.yml`'s scheme covers
+`xcodebuild -scheme Shotnote test` and Xcode's Product ▸ Test, but not `xcrun xctest`, a
+hand-written `.xctestrun`, or CI running the bundle, and any of those reading `Settings.shared`
+would bootstrap whatever path `Settings.fileURL` returns — the user's own. It now refuses that path
+whenever `XCTestConfigurationFilePath` is in the environment and uses a per-process file under
+`NSTemporaryDirectory()`, which also keeps parallel worktree runs apart. The scheme entry stays.
+
+**Two tests asserted the implementation.** `gap == 22` and `badgeDiameter == 65` were the formula
+recomputed, and `testNoOtherColumnCountSurvivesTheResizeBetter` followed from the search loop by
+induction. In their place one test pins the table in `docs/stitch-2026-09-17.md` — column count,
+composed size and reader scale for two through six browser windows — and the badge test asserts the
+invariant that a badge fits its piece. The floor assertions stay. `StackLayoutTests` no longer says
+the annotator centres on the screen, which it has not done since the room landed.
+
+**F8 is not reachable, and nothing changed for it.** The annotator's room is a snapshot taken at
+`prepare` and never widened, so a `shotnote://dismiss` that took the stack away while the annotator
+was open would leave the room narrowed around a stack that has gone. It cannot happen: every phase
+answers `dismiss` with `parking(… then dismiss)`, whose effect is `hideAnnotator`. Driven below.
+
+### How the fixes were checked
+
+`./scripts/build.sh --test` passed before each commit and at the tip, and the user's settings file
+kept the same mtime (1789701474) across every run. One launch round, 21:49 to 21:59, on my scratch
+settings, guarded by `[state] app.settingsFile` and the running pid's own environment:
+
+- **The strip stands aside.** Two cards selected by clicking their circles, strip at
+  `[1264, 704, 35, 128]` showing Copy, Annotate, Stitch, Delete
+  (`integration-scratch/captures/rev2-strip-before.png`). A click on its pencil gave
+  `[annotate] ok Screenshot fix 3.png 1 of 2`; `[state]` then read `strip: null` with
+  `selected` still both files and `panel` still the widened `[1245, 494, 269, 418]`. A capture of
+  the strip's own place (`rev2-strip-during.png`) is empty. After Done on both images the strip is
+  back at `[1264, 569, 35, 128]` with the same two cards selected (`rev2-strip-after.png`). The
+  annotator's frame was `[134, 103, 1109, 689]`, whose right edge is 1243 against the panel's 1245:
+  no overlap left even in the frame the review measured.
+- **F8, driven.** `shotnote://dismiss` with `Screenshot halves.png` in the annotator gave
+  `[transition] dismiss -> parking(…) effects=park(…)`, `[draft] parked`, and
+  `[transition] parked -> idle effects=hideAnnotator`. The annotator went with the stack, so the
+  frozen room is never read with the stack gone. Nothing changed.
+- **The arrow's colour.** A fixture 1200x800, white with a red block over its top-right quarter.
+  An arrow drawn from (100, 100) to (1100, 700) — its box covers a fifth of that red block, its
+  line never goes near it — came out `["arrow","red"]`. `window.contrast.explain` on the same
+  arrow, both ways: along the line, 123 points, red at distance 93.2, so red is kept; over the box,
+  400 points, red at distance 0, so yellow would win. That is the defect and the fix in one call.
+- **The doubled draft save, measured.** Drawing a rectangle over the red half of the halves fixture
+  gave exactly two `[draft] saved` lines, 312 ms apart: the draw, then the colour change 300 ms
+  later, which the eval confirms happened (`["geo","yellow","none"]`, drawn red). The arrow, whose
+  colour the heuristic kept, gave exactly one. One save per change, not two per change — the
+  review's unconfirmed doubling does not reproduce, and `quiet` is left as it is.
+- **Copy Annotated while the annotator holds the canvas.** `shotnote://copy-annotated` answered
+  `ok Screenshot corner-annotated.png; 1 with annotations` in 30 ms with the annotator open and a
+  live draft, as it did before. Three keyboard zoom steps each handed over cleanly
+  (`[annotate] view 21ms/29ms/30ms ratio=… waited=0`), with no timeout, no refusal and no mismatch,
+  and `[state] annotator.standIn` false at rest. An export fired a frame before a zoom step left
+  `page.zoom` and `annotator.canvasZoom` equal to sixteen digits (1.9290469108371562).
+- **The stitch numbers.** Six fixtures at the documented sizes: `from 2 images, 1792x1928
+  columns=1 readerScale=0.59`, `from 3 images, 1792x3344 columns=1 readerScale=0.45`, and
+  `from 6 images, 4096x1906 columns=3 readerScale=0.29` — the third was 0.38 before the fix, and
+  the first two are unchanged because nothing capped them. The same six with a file that is not an
+  image among them reported `from 2 images`.
+- **The settings guard.** The tests were run once with the scheme's `SHOTNOTE_SETTINGS` disabled:
+  the settings file appeared at `…/T/shotnote-test-25420/settings.json` and the user's file kept its
+  mtime. The temporary check that proved it was removed and the scheme restored.
+
+### What is left, and what is not proven
+
+- The F2 race itself was never staged. The export in the round finished in 30 ms, far too fast to
+  still be running when a zoom settled; what is proven is the ordering and that the camera survives
+  an export. The fix is structural — the call is in the queue — rather than measured under the race.
+- `[annotate] view timeout` has not been seen. Locking the screen mid-zoom was not driven, so the
+  retry and the give-up path are read, not run.
+- The badge cap is arithmetic and a unit test; no stitch was composed from pieces small enough to
+  trigger it.
+- The colour rule was driven for an arrow and for an unfilled rectangle. Text, and a filled shape,
+  keep the old whole-box path and were not re-driven.
+- `ViewResult`'s mismatch line has never fired, which is the point; it is a report, not a fix.
+- Two pieces of the review's own "checked and found sound" list stay open, unchanged by this round:
+  `Stitch.compose` still holds every piece decoded at once with no cap, and a card whose file will
+  not decode still leaves the column when the stitch converges even though it is not in the picture.
+
+### The behaviour change to decide
+
+Hiding the strip costs the only in-session route to Stitch and Annotate. Keys are released while an
+annotation is open, so with the strip gone there is nothing to press: mid-annotation, a second
+image can be reached only by finishing first. The queue covers the common case — Annotate on a
+selection runs them one after another — but stitching the selection you are looking at now waits
+for Done. The alternative is to let the strip show and to move the annotator instead, which means
+the room would have to depend on the selection and the frame would move under the image while it is
+being drawn on. Say which you want.
+
+### Incidents in the review round
+
+macOS asked for Accessibility for my build while the round was running — a system prompt over the
+cards, which I left alone; it went when my build quit, and neither button was pressed, since that
+row is keyed by bundle id and is your build's row too. The clipboard held a stitch of six fixtures
+at the end of the round and I cleared it (`pbcopy < /dev/null`), so it is empty rather than holding
+anything of yours. Two drafts were made and both were swept when their fixtures went: your build
+came back up on `[drafts] 15`, the same count it had before. `integration-scratch/shots` is empty
+again, your build is running from `~/.config/shotnote/settings.json` on
+`~/Dropbox/Screenshots`, and the launch lock is released.
