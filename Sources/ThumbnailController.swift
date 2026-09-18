@@ -204,7 +204,7 @@ final class ThumbnailController: NSObject {
         guard showsStrip, let strip = layout.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
                                                             cards: cardSizes, showsBar: showsBar,
                                                             scroll: model.scroll, viewport: model.viewport) else { return nil }
-        let reveal = model.stripHovered ? layout.stripReveal(labels: Config.stripActions.map(\.label), right: strip.right) : 0
+        let reveal = model.stripHovered ? layout.stripReveal(labels: Config.stripActions.map(\.label)) : 0
         return layout.stripFrame(strip, panelFrame: panel.frame, scroll: model.scroll, reveal: reveal)
     }
 
@@ -1086,7 +1086,9 @@ final class ThumbnailController: NSObject {
             model.viewport = viewport
             model.scroll = min(model.scroll, max(0, content - viewport))
         }
-        let target = layout.panelFrame(viewport: viewport, visibleFrame: screen.visibleFrame, showsStrip: showsStrip)
+        // The strip's room includes the reveal, so the labels coming out never resize the window.
+        let target = layout.panelFrame(viewport: viewport, visibleFrame: screen.visibleFrame, showsStrip: showsStrip,
+                                       reveal: layout.stripReveal(labels: Config.stripActions.map(\.label)))
         shrinkGeneration += 1
         let grows = target.height >= panel.frame.height && target.width >= panel.frame.width
         if grows || !panel.isVisible || !shrinkLater {

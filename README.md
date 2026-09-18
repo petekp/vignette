@@ -90,8 +90,8 @@ and closing it hands focus back to the app you came from.
   has nobody's order to follow, so it takes the column's: oldest first.
 - The selected cards get a control strip to their left: copy, annotate, stitch, delete.
   It stays centered between the topmost and the bottommost selected card, and follows the selection.
-  Put the cursor on it and it grows to the right to name each button. The icons stay where they
-  are, so the button under the cursor is still the button you press. While you are annotating, the
+  Put the cursor on it and it grows to the left to name each button, so the names never cover a
+  thumbnail. The row under the cursor is still the button you press. While you are annotating, the
   strip steps out of the annotator's way; the cards stay selected and it comes back when you are done.
 - Opening a card in the annotator narrows the stack to make room for it, down to half its width.
   The cards keep their corner; only their size changes, and they come back when the annotator

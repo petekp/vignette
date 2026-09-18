@@ -134,23 +134,36 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(frame.minX, panel.minX, "inside the panel")
     }
 
-    func testTheStripGrowsToTheRightWhenItsLabelsComeOut() {
+    func testTheStripGrowsToTheLeftWhenItsLabelsComeOut() {
         let layout = stripLayout
-        let panel = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true)
-        let strip = layout.stripPlacement(rows: 2, selection: [0], cards: stripCards, showsBar: false, scroll: 0, viewport: 160)!
-        let reveal = layout.stripReveal(labels: ["Copy", "Copy Annotated"], right: strip.right)
+        let labels = ["Copy", "Copy Annotated"]
+        let reveal = layout.stripReveal(labels: labels)
         XCTAssertGreaterThan(reveal, ButtonLabel.width("Copy Annotated", size: StackLayout.stripLabelSize),
-                             "the widest label, and room to its right")
+                             "the widest label, and room beside it")
+        XCTAssertEqual(layout.stripReveal(labels: []), 0, "no labels, no growth")
+        let panel = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true, reveal: reveal)
+        let strip = layout.stripPlacement(rows: 2, selection: [0], cards: stripCards, showsBar: false, scroll: 0, viewport: 160)!
         let rest = layout.stripFrame(strip, panelFrame: panel, scroll: 0)
         let grown = layout.stripFrame(strip, panelFrame: panel, scroll: 0, reveal: reveal)
-        XCTAssertEqual(grown.minX, rest.minX, "the icons stay where they are")
+        XCTAssertEqual(grown.maxX, rest.maxX, "the right edge does not move")
+        XCTAssertEqual(grown.minX, rest.minX - reveal, "the icons travel left with the labels")
         XCTAssertEqual(grown.width, rest.width + reveal)
         let card = layout.cardFrame(index: 0, cards: stripCards, panelFrame: panel, showsBar: false, scroll: 0)
-        XCTAssertGreaterThan(grown.maxX, card.minX, "the labels run over the gap and the card's edge")
-        XCTAssertLessThanOrEqual(grown.maxX, panel.maxX, "and stop inside the panel")
-        XCTAssertEqual(layout.stripReveal(labels: ["Copy Annotated"], right: 10), 10 + layout.inset,
-                       "a narrow selected card leaves less room, and the labels take only that")
-        XCTAssertEqual(layout.stripReveal(labels: [], right: strip.right), 0, "no labels, no growth")
+        XCTAssertLessThanOrEqual(grown.maxX, card.minX - layout.stripGap, "the labels never reach a card")
+        XCTAssertGreaterThanOrEqual(grown.minX, panel.minX, "and the grown strip stays inside the panel")
+    }
+
+    func testThePanelHoldsTheRevealSoTheLabelsNeverResizeIt() {
+        let layout = stripLayout
+        let reveal = layout.stripReveal(labels: ["Copy", "Copy Annotated"])
+        let panel = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true, reveal: reveal)
+        let plain = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true)
+        XCTAssertEqual(panel.width, plain.width + reveal, "the room is there before the labels come out")
+        XCTAssertEqual(panel.maxX, plain.maxX, "and it is added on the left, so the cards do not move")
+        // The widest selected card pushes the strip furthest left; it still has the room.
+        let strip = layout.stripPlacement(rows: 2, selection: [0], cards: stripCards, showsBar: false, scroll: 0, viewport: 160)!
+        let grown = layout.stripFrame(strip, panelFrame: panel, scroll: 0, reveal: reveal)
+        XCTAssertGreaterThanOrEqual(grown.minX, panel.minX)
     }
 
     func testAnnotationFrameKeepsAspectAndCentersInTheRectItIsGiven() {

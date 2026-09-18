@@ -277,16 +277,19 @@ the same driven sequence; a single run varies.
   a focused one. So Space over one card after another builds a selection from the mouse alone, and
   Return opens the card the mouse is on.
 - The panel widens to the left while cards are selected, to hold the selection strip
-  (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:)` makes the room). Its
-  right edge never moves, so the cards stay where they are. Only the column carries the hair of
+  (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:reveal:)` makes the room:
+  the icon column, the gap to the cards, and the room the labels grow into, whether they are out or
+  not). Its right edge never moves, so the cards stay where they are. Only the column carries the hair of
   alpha that catches clicks and scrolls; the strip's side of the panel stays clear, so a click
   there still reaches the window underneath.
 - The cursor on the strip brings a label out beside each icon, and Copy on a card does the same
-  (`docs/hover-reveal-2026-09-17.md`). The button under the cursor has to stay under it, so the
-  icons never move and the strip grows to the right instead, over the gap and the cards' edge:
-  `StackLayout.stripReveal` says how far, capped at the panel's right edge, and the view keeps its
-  box that wide and puts the strip against its leading edge. The strip is drawn after the column,
-  so the grown side is above the cards and catches the mouse rather than falling through to one.
+  (`docs/hover-reveal-2026-09-17.md`). A card's Copy grows to the right from an icon that does not
+  move. The strip is the other way round: it keeps its right edge and grows to the left, so a label
+  never covers a card, and the icons translate left by the reveal. `StackLayout.stripReveal` says
+  how far — the widest label plus the room beside the icons — and the view keeps its box that wide
+  and puts the strip against its trailing edge. The panel already holds that room, so nothing is
+  resized while the labels come out. The button under the cursor stays under it because a row is
+  one button, icon and label together, and the grown row contains the resting row.
   The strip stands aside while the annotator has an image: it hangs a column's width further left
   than the cards, which is inside the room the frame may grow into, so the two would overlap. The
   two places that ask for its placement refuse (`ThumbnailController.stripFrame` and
