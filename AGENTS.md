@@ -8,10 +8,13 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
 - `~/.config/shotnote/settings.json` holds per-machine settings (`Settings.swift` defines the keys).
   Its `ui` section (`UITweaks`) holds the layout, style, timing, flight, and backdrop numbers, and its
   defaults are the tuned UI, so a fresh install renders the same. `open -g shotnote://tweaks`
-  edits them live (needs `debug`). A few numbers stay in code on purpose: the toolbar's row and
-  button sizes (`AnnotatorToolbar.swift`), the card button size (`StackView.swift`), the
-  fly-back timing (`TransitionLayer.swift`), and the stitch's gap, padding, and badge, which are
-  fractions of the piece rather than fixed sizes (`Stitch.swift`).
+  edits them live (needs `debug`). Not every number is in there. A number stays in code when
+  changing it would mean changing the code around it, or when it is a fraction of something rather
+  than a size: the toolbar's rows and buttons (`AnnotatorToolbar.swift`), the card button size and
+  the strip's icon and label sizes (`StackView.swift`, `StackLayout.swift`), the fly-back timing and
+  the annotator's own shadow (`TransitionLayer.swift`), the zoom's springs and limits
+  (`AnnotationController.swift`), and the stitch's gap, padding, and badge (`Stitch.swift`). What a
+  user would tune belongs in `UITweaks` with a `Bound` and a slider; when in doubt, put it there.
   Editing the file is a supported way to change settings; the app reloads it within a second.
   It is the user's real config: never test against it. The tweak panel writes to whichever file
   the running instance was launched with, and a test launch replaces the user's instance, so copy
@@ -102,10 +105,12 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    and error lands there with a `[tag]`. `open -g "shotnote://state?tag=<id>"` writes one
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
-   `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; selection, focus,
-   the hovered card, `queue`, the files waiting for the annotator, feedback, panel, `widthScale`,
-   how wide the stack is drawn, `strip`, the selection strip's frame or null, and `stripHovered`),
-   `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
+   `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; `selected`, `focused`,
+   `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`, `scroll`,
+   `viewport`, feedback, panel, `widthScale`, how wide the stack is drawn, `strip`, the selection
+   strip's frame or null, and `stripHovered`),
+   `transition` (phase), `annotator` (`current`, `frame`, `pageState`, `port`, `webPid`,
+   `windowVisible`, `tool`, `color`, and the zoom's own keys, which the zoom bullet below names),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
    page does not answer within a second. Frames are `[x, y, w, h]` in global top-left points.
@@ -174,6 +179,12 @@ the same driven sequence; a single run varies.
   `annotate` instead of `show`.
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
+- Two vocabularies, and they do not mix. Every string a user reads says draw: the buttons, the menu
+  items, the toggles, the section headings, the toasts. Every name a script, a log reader or a
+  compiler reads says annotate: the URL ids (`shotnote://annotate`, `copy-annotated`), the log tags
+  (`[annotate]`), the settings keys (`quickAnnotate`, `annotateOnCapture`), the `-annotated.png`
+  suffix, and every identifier. A label is free to change; those are a contract. The editor window
+  is still the annotator in both, because it is a thing rather than an action.
 - Preload the web view at launch; the annotator must open instantly.
 - Every animation goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json scales
   every duration, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
@@ -387,8 +398,11 @@ the same driven sequence; a single run varies.
   refused while anything else owns it (`AnnotationController.canvasRefusal`): the annotator owns it
   from `prepare`, half a second before its window appears, until `park` answers, and an export owns
   it for as long as Copy Drawing runs. A refusal is one `page-not-ready` line and no file copied.
-  Every call that touches the canvas — `load`, `reset`, `park`, `export`, `build`, `overlay`,
-  `setView`, and `finish` — runs one at a time on the page, in the order the host called them: the
+  Every call that takes a snapshot of the canvas and puts it back — `load`, `reset`, `park`,
+  `export`, `build`, `overlay`, `setView`, and `finish` — runs one at a time on the page, in the
+  order the host called them. The page's own edits do not queue: `setTool`, `setColor`, the
+  debounced colour pass, the hotkeys' undo, redo and delete, and the resize observer's refit all
+  touch the store directly, because none of them reads the canvas back. Of the queued ones, the
   rendering ones take their snapshot after an `await` and put the canvas back afterwards, so an
   image that landed in between would be stored under the wrong key or wiped. The camera is part of
   a snapshot, so `export` and `build` put it back as it was when they started: a `setView` that
@@ -431,7 +445,9 @@ the same driven sequence; a single run varies.
   `ui.motion: 0` swaps outright — but only while the zoom is still standing still: if the spring
   moved on while the answer was in the air, the stand-in stays and the next rest hands over again.
   The page is covered, never hidden: WebKit pauses a hidden view's frame callbacks and that answer
-  would never come. `[annotate] view <ms> ratio=… waited=…` reports each handover; `waited` is how
+  would never come. `[annotate] view <ms> ratio=… painted=… waited=…` reports each handover:
+  `ratio` is the magnification the host asked for and `painted` the one the page answered with, and
+  a gap between them, or between the sizes, is one `[annotate] view mismatch` line. `waited` is how
   many frames the page waited for the resize to reach it. A page that refuses the view (a number
   that is not finite, or a ratio under 1) logs `[web] error view refused`, and a hand-over with no
   answer inside an export's timeout logs `[annotate] view timeout` and is made once more; the

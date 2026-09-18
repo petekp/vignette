@@ -83,21 +83,21 @@ final class BridgeTests: XCTestCase {
 
     func testLoadScriptEmbedsPayloadAndSnapshotAsJSON() throws {
         let payload = LoadPayload(key: "/Users/p/Shot \"one\".png", mimeType: "image/png",
-                                  pixelWidth: 10, pixelHeight: 20, viewWidth: 5.5, viewHeight: 6)
+                                  pixelWidth: 10, pixelHeight: 20)
         let fresh = PageAPI.load(payload, snapshot: nil).script
         XCTAssertTrue(fresh.hasPrefix("window.shotnote && window.shotnote.load({\"snapshot\":null,\"key\":"), fresh)
         XCTAssertTrue(fresh.contains(#""key":"/Users/p/Shot \"one\".png""#), fresh)
-        XCTAssertTrue(fresh.contains(#""pixelWidth":10"#) && fresh.contains(#""viewWidth":5.5"#), fresh)
+        XCTAssertTrue(fresh.contains(#""pixelWidth":10"#) && fresh.contains(#""pixelHeight":20"#), fresh)
         let stored = PageAPI.load(payload, snapshot: Data(#"{"document":{"a":1}}"#.utf8)).script
         XCTAssertTrue(stored.hasPrefix(#"window.shotnote && window.shotnote.load({"snapshot":{"document":{"a":1}},"key":"#), stored)
         // The argument must be one JSON object: parse what the script passes to load().
         let start = stored.range(of: "load(")!.upperBound
         let object = try JSONSerialization.jsonObject(with: Data(stored[start...].dropLast(2).utf8)) as? [String: Any]
-        XCTAssertEqual(object?.keys.sorted(), ["key", "mimeType", "pixelHeight", "pixelWidth", "snapshot", "viewHeight", "viewWidth"])
+        XCTAssertEqual(object?.keys.sorted(), ["key", "mimeType", "pixelHeight", "pixelWidth", "snapshot"])
     }
 
     func testBuildScriptCarriesTheImageItsDraftAndTheMarks() throws {
-        let payload = LoadPayload(key: "/a b.png", mimeType: "image/png", pixelWidth: 10, pixelHeight: 20, viewWidth: 5, viewHeight: 6)
+        let payload = LoadPayload(key: "/a b.png", mimeType: "image/png", pixelWidth: 10, pixelHeight: 20)
         let marks = [Mark(type: .ellipse, x: 0.1, y: 0.2, w: 0.3, h: 0.4, color: "red"),
                      Mark(type: .text, x: 0, y: 0, text: "say \"hi\"")]
         let script = PageAPI.build(payload, snapshot: Data(#"{"document":1}"#.utf8), marks: marks).script

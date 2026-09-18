@@ -424,11 +424,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             if case .failure(let error) = result {
                 Log.write("[web] error view failed: \(String(describing: error).replacingOccurrences(of: "\n", with: " "))")
             } else if let view = ViewResult(body: try? result.get()) {
-                Log.write("[annotate] view \(Int((CACurrentMediaTime() - started) * 1000))ms ratio=\(String(format: "%.4f", self.canvasZoom)) waited=\(view.waited)")
-                // The page paints at the size that reached its process. A gap wider than the
-                // layout's own rounding means its picture is not this frame's, so it gets a line.
-                if abs(view.width - Double(size.width)) > 1 || abs(view.height - Double(size.height)) > 1 {
-                    Log.write("[annotate] view mismatch page=\(Int(view.width))x\(Int(view.height)) host=\(Int(size.width))x\(Int(size.height))")
+                let asked = String(format: "%.4f", self.canvasZoom), painted = String(format: "%.4f", view.ratio)
+                Log.write("[annotate] view \(Int((CACurrentMediaTime() - started) * 1000))ms ratio=\(asked) painted=\(painted) waited=\(view.waited)")
+                // The page paints at the size and the magnification that reached its process. A gap
+                // wider than the layout's own rounding, or a magnification that is not the one
+                // asked for, means its picture is not this frame's, so it gets a line.
+                if abs(view.width - Double(size.width)) > 1 || abs(view.height - Double(size.height)) > 1
+                    || abs(view.ratio - Double(self.canvasZoom)) > 0.001 {
+                    Log.write("[annotate] view mismatch page=\(Int(view.width))x\(Int(view.height))@\(painted) host=\(Int(size.width))x\(Int(size.height))@\(asked)")
                 }
             } else {
                 // The page refused the numbers and left its camera where it was, so it is showing
@@ -679,8 +682,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let payload = LoadPayload(
             key: shot.url.path,
             mimeType: LocalServer.mimeType(for: shot.url.pathExtension),
-            pixelWidth: size.width, pixelHeight: size.height,
-            viewWidth: windowSize.width, viewHeight: windowSize.height)
+            pixelWidth: size.width, pixelHeight: size.height)
         let load = PageAPI.load(payload, snapshot: draftSnapshot?(shot.url.path))
         if pageReady { call(load) } else { pendingCall = load }
     }
@@ -751,17 +753,12 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     func buildDraft(_ shot: Screenshot, marks: [Mark], completion: @escaping (ParkResult?, String?) -> Void) {
         if let refusal = canvasRefusal { completion(nil, refusal); return }
         guard let webView else { completion(nil, "the editor page is not ready"); return }
-        guard let pixels = Thumbnailer.pixelSize(of: shot.url), let points = Thumbnailer.pointSize(of: shot.url) else {
+        guard let pixels = Thumbnailer.pixelSize(of: shot.url) else {
             completion(nil, "could not read \(shot.url.lastPathComponent)"); return
         }
-        // The frame the image would open in: the page does not lay anything out for a build, but the
-        // payload says what a view of it looks like.
-        let frame = StackLayout.current.annotationFrame(
-            for: points, visibleFrame: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame, below: spaceBelow)
         let payload = LoadPayload(
             key: shot.url.path, mimeType: LocalServer.mimeType(for: shot.url.pathExtension),
-            pixelWidth: pixels.width, pixelHeight: pixels.height,
-            viewWidth: frame.width, viewHeight: frame.height)
+            pixelWidth: pixels.width, pixelHeight: pixels.height)
         let epoch = pageEpoch
         var answered = false
         let finish: (ParkResult?, String?) -> Void = { [weak self] parked, error in

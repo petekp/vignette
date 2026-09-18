@@ -385,19 +385,13 @@ final class Settings: ObservableObject {
     }
 
     /// Brings a file's raw JSON up to `currentVersion`. Files with no `version` are version 0.
-    /// A file from a newer version is returned unchanged. Add a case here for each version bump.
+    /// A file from a newer version is returned unchanged. Version 1 only introduced the version
+    /// field, so there is nothing to rewrite yet; a bump that changes a key rewrites it here,
+    /// between the guard and the stamp, one step per version.
     static func migrate(_ raw: [String: Any]) -> (json: [String: Any], from: Int) {
         var json = raw
         let from = (json["version"] as? NSNumber)?.intValue ?? 0
         guard from < currentVersion else { return (json, from) }
-        var version = from
-        while version < currentVersion {
-            switch version {
-            case 0: break   // version 1 only introduced the version field
-            default: break
-            }
-            version += 1
-        }
         json["version"] = currentVersion
         return (json, from)
     }
@@ -599,15 +593,6 @@ enum AppleScreencapture {
 /// Animation helper honoring the tweakable curves.
 @MainActor
 enum Anim {
-    static func timing(_ curve: String) -> CAMediaTimingFunction {
-        switch curve {
-        case "easeOut": return CAMediaTimingFunction(name: .easeOut)
-        case "easeInOut": return CAMediaTimingFunction(name: .easeInEaseOut)
-        case "linear": return CAMediaTimingFunction(name: .linear)
-        default: return CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0)   // "spring"
-        }
-    }
-
     static func swiftUI(_ curve: String, duration: Double) -> Animation {
         switch curve {
         case "easeOut": return .easeOut(duration: duration)
@@ -638,14 +623,6 @@ enum Anim {
             t -= step
         }
         return 0
-    }
-
-    static func run(_ duration: Double, curve: String = "easeOut", _ body: @Sendable () -> Void, completion: (@Sendable () -> Void)? = nil) {
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = duration
-            ctx.timingFunction = timing(curve)
-            body()
-        }, completionHandler: completion)
     }
 }
 
