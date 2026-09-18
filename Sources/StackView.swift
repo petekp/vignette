@@ -27,8 +27,11 @@ struct StackView: View {
             } else {
                 column
                 if let strip = stripPlacement {
-                    SelectionStrip(model: model, size: strip.size)
-                        .offset(x: -(layout.inset + strip.right), y: -(layout.inset + strip.bottom))
+                    let reveal = layout.stripReveal(labels: Config.stripActions.map(\.label), right: strip.right)
+                    // The strip's box is always the grown width and the offset carries it, so the
+                    // icons sit where the placement put them whether the labels are out or not.
+                    SelectionStrip(model: model, size: strip.size, reveal: reveal)
+                        .offset(x: -(layout.inset + strip.right) + reveal, y: -(layout.inset + strip.bottom))
                         .animation(Anim.spring(settings.motionUI.relayoutDuration), value: strip)
                         // Scrolling moves it with the cards, at once; the slide-out carries it off screen.
                         .offset(x: stripSlide, y: model.scroll)
@@ -177,11 +180,11 @@ private struct CardView: View {
                     .allowsHitTesting(false)
             }
         }
-        // Copy in the bottom-left corner with its name, delete in the bottom-right as an icon; a
-        // click anywhere else on the card draws.
+        // Copy in the bottom-left corner, delete in the bottom-right, both as icons; Copy says its
+        // name while the cursor is on it. A click anywhere else on the card draws.
         .overlay(alignment: .bottomLeading) {
             if showsButtons, let copy = Config.action(id: "copy") {
-                PillButton(symbol: copy.symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
+                RevealButton(symbol: copy.symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
                     .onHover { model.overControl = $0 }
                     .padding(6)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
@@ -292,8 +295,10 @@ private struct SelectionCircle: View {
             Circle().fill(number != nil ? Color.accentColor : Color.black.opacity(0.45))
             Circle().stroke(.white, lineWidth: 1.5)
             if let number {
+                // SF Rounded at proportional widths: monospaced digits pad a "1" to the width of a
+                // "0" and leave it floating, and two digits at the bold weight reach the ring.
                 Text("\(number)")
-                    .font(.system(size: size * 0.6, weight: .bold).monospacedDigit())
+                    .font(.system(size: size * 0.56, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
@@ -322,30 +327,46 @@ private struct AgentBadge: View {
 
 /// Beside the selected cards: the bulk actions, in one vertical strip. `StackLayout` places it
 /// and sizes it; the rows here fill that size exactly. The count is on the cards themselves.
+/// The cursor on the strip names every button: the icons cannot move, so it grows to the right,
+/// over the gap and the cards' edge. It is drawn after the column, so the grown side is above the
+/// cards and catches the mouse itself.
 private struct SelectionStrip: View {
     @ObservedObject var model: StackModel
-    let size: NSSize
+    let size: NSSize        // the icon column, as the placement sized it
+    let reveal: CGFloat     // how far the labels put the strip's right edge out
     private var ui: UITweaks { Settings.shared.motionUI }
 
     var body: some View {
         let cards = model.selectedCards()
+        let out = model.stripHovered ? reveal : 0
         VStack(spacing: ui.buttonSpacing) {
             ForEach(Config.stripActions, id: \.id) { action in
                 Button { model.onAction(action, cards) } label: {
-                    Image(systemName: action.symbol)
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: ui.buttonSize, height: ui.buttonSize)
+                    HStack(spacing: 0) {
+                        Image(systemName: action.symbol)
+                            .font(.system(size: 13, weight: .medium))
+                            .frame(width: ui.buttonSize, height: ui.buttonSize)
+                        RevealedLabel(text: action.label, size: StackLayout.stripLabelSize,
+                                      width: reveal, revealed: model.stripHovered)
+                    }
                 }
-                .buttonStyle(TactileButtonStyle(shape: .rounded))
+                .buttonStyle(TactileButtonStyle(shape: .rounded, hoverScale: 1))
                 .help(action.label + shortcutHint(action))
                 .disabled(cards.count < action.minimumCount)
                 .opacity(cards.count < action.minimumCount ? 0.35 : 1)
             }
         }
-        .frame(width: size.width, height: size.height)
+        .frame(width: size.width + out, height: size.height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+        .onHover { model.stripHovered = $0 }
+        .animation(Anim.spring(ui.hoverRevealDuration), value: model.stripHovered)
+        // A strip that goes while the cursor is on it gets no leaving hover.
+        .onDisappear { model.stripHovered = false }
+        // The box stays the grown width and the strip sits against its leading edge: growing to the
+        // right moves nothing else, and the labels are what the box makes room for.
+        .frame(width: size.width + reveal, alignment: .leading)
     }
 
     private func shortcutHint(_ action: ShotAction) -> String {
@@ -368,6 +389,12 @@ private struct SelectionStrip: View {
 struct TactileButtonStyle: ButtonStyle {
     enum Shape { case circle, rounded, capsule }
     let shape: Shape
+    /// Where the hover scale grows from. A button that grows a label to the right scales from its
+    /// leading edge, so the two motions pull the same way.
+    var anchor: UnitPoint = .center
+    /// 1 for a button whose label coming out is its hover already: a scale on top of that would
+    /// stretch the label and move the icon out from under the cursor.
+    var hoverScale: CGFloat = 1.08
     @State private var hovered = false
     private var motion: Double { Settings.shared.motionScale }
 
@@ -382,7 +409,7 @@ struct TactileButtonStyle: ButtonStyle {
                 case .capsule: Capsule().fill(fill)
                 }
             }
-            .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? 1.08 : 1))
+            .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? hoverScale : 1), anchor: anchor)
             .animation(Anim.spring(0.2 * motion, bounce: 0.3), value: configuration.isPressed)
             .animation(Anim.spring(0.12 * motion), value: hovered)
             .onHover { hovered = $0 }
@@ -451,26 +478,58 @@ private struct DrawHint: View {
     }
 }
 
-private struct PillButton: View {
+/// A label beside an icon, out while `revealed`. The width and the opacity are animated from that
+/// one bool by whatever animation the caller puts around it; the label is never inserted or
+/// removed, because a removal transition starts again from nothing and jumps when the cursor leaves
+/// halfway. `width` is what `ButtonLabel.width` measured, plus the room the label keeps on its right.
+private struct RevealedLabel: View {
+    let text: String
+    let size: CGFloat
+    let width: CGFloat
+    let revealed: Bool
+
+    var body: some View {
+        // The same font ButtonLabel measured; the text keeps its own width and the frame around it
+        // is what grows, so the label is uncovered from the icon outwards.
+        Text(text)
+            .font(.system(size: size, weight: .semibold))
+            .fixedSize()
+            .frame(width: revealed ? width : 0, alignment: .leading)
+            .opacity(revealed ? 1 : 0)
+            .clipped()
+            .contentShape(Rectangle())   // clipping hides the text; the hit area has to shrink with it
+    }
+}
+
+/// An icon button whose label comes out beside it while the cursor is on it. At rest it is the same
+/// circle as the other icon buttons. It grows to the right, from a leading edge that never moves,
+/// so the icon stays under the cursor and the buttons around it stay where they are.
+private struct RevealButton: View {
     let symbol: String
     let label: String
     let ui: UITweaks
     let action: () -> Void
+    @State private var hovered = false
+
+    private var labelSize: CGFloat { ui.buttonIconSize - 1 }
+    private var revealWidth: CGFloat { ButtonLabel.width(label, size: labelSize) + ui.buttonSpacing * 2 }
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: symbol).font(.system(size: ui.buttonIconSize - 1, weight: .semibold))
-                Text(label).font(.system(size: ui.buttonIconSize - 1, weight: .semibold))
+            HStack(spacing: 0) {
+                Image(systemName: symbol).font(.system(size: ui.buttonIconSize, weight: .semibold))
+                    .frame(width: ui.buttonSize, height: ui.buttonSize)
+                RevealedLabel(text: label, size: labelSize, width: revealWidth, revealed: hovered)
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 9)
             .frame(height: ui.buttonSize)
             .background(Capsule().fill(.regularMaterial))
             .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
         }
-        .buttonStyle(TactileButtonStyle(shape: .capsule))
+        .buttonStyle(TactileButtonStyle(shape: .capsule, anchor: .leading))
+        .onHover { hovered = $0 }
+        .animation(Anim.spring(ui.hoverRevealDuration), value: hovered)
     }
 }
 

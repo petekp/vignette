@@ -101,7 +101,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
    `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; selection, focus,
-   the hovered card, feedback, panel, and `strip`, the selection strip's frame or null),
+   the hovered card, feedback, panel, `strip`, the selection strip's frame or null, and
+   `stripHovered`),
    `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
@@ -269,6 +270,13 @@ the same driven sequence; a single run varies.
   right edge never moves, so the cards stay where they are. Only the column carries the hair of
   alpha that catches clicks and scrolls; the strip's side of the panel stays clear, so a click
   there still reaches the window underneath.
+- The cursor on the strip brings a label out beside each icon, and Copy on a card does the same
+  (`docs/hover-reveal-2026-09-17.md`). The button under the cursor has to stay under it, so the
+  icons never move and the strip grows to the right instead, over the gap and the cards' edge:
+  `StackLayout.stripReveal` says how far, capped at the panel's right edge, and the view keeps its
+  box that wide and puts the strip against its leading edge. The strip is drawn after the column,
+  so the grown side is above the cards and catches the mouse rather than falling through to one.
+  `[state] stack.strip` is the grown frame and `stack.stripHovered` says whether the labels are out.
 - A card's thumbnail fills the card, so a screenshot whose shape differs from the card's box hangs
   outside the card's frame, and the clip that hides it does not shrink the hit area. The
   `contentShape` in `CardView` holds each card's hover and clicks to its own frame; without it a

@@ -90,6 +90,8 @@ and closing it hands focus back to the app you came from.
   has nobody's order to follow, so it takes the column's: oldest first.
 - The selected cards get a control strip to their left: copy, copy annotated, stitch, delete.
   It stays centered between the topmost and the bottommost selected card, and follows the selection.
+  Put the cursor on it and it grows to the right to name each button. The icons stay where they
+  are, so the button under the cursor is still the button you press.
 - Drag a card out to drop it as a file on a chat window, Finder, or a terminal. A selected card
   drags the whole selection.
 - Cmd+C copies the selection as files, paths as text, and the first image's pixels, so chat apps
