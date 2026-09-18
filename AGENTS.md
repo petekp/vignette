@@ -382,10 +382,12 @@ the same driven sequence; a single run varies.
   refused while anything else owns it (`AnnotationController.canvasRefusal`): the annotator owns it
   from `prepare`, half a second before its window appears, until `park` answers, and an export owns
   it for as long as Copy Annotated runs. A refusal is one `page-not-ready` line and no file copied.
-  Every call that touches the canvas — `load`, `reset`, `park`, `export`, `build`, and `finish` —
-  runs one at a time on the page, in the order the host called them: the rendering ones take their
-  snapshot after an `await` and put the canvas back afterwards, so an image that landed in between
-  would be stored under the wrong key or wiped.
+  Every call that touches the canvas — `load`, `reset`, `park`, `export`, `build`, `overlay`,
+  `setView`, and `finish` — runs one at a time on the page, in the order the host called them: the
+  rendering ones take their snapshot after an `await` and put the canvas back afterwards, so an
+  image that landed in between would be stored under the wrong key or wiped. The camera is part of
+  a snapshot, so `export` and `build` put it back as it was when they started: a `setView` that
+  jumped the queue would be undone behind a stand-in that has already gone.
   Only the canvas change waits in that queue; a load reports `loaded` two frames later, and the
   flight waits for that, so a load behind a long export keeps the card in the air instead of
   showing an empty window. The transition reducer knows nothing about a build, on purpose:
@@ -425,7 +427,10 @@ the same driven sequence; a single run varies.
   moved on while the answer was in the air, the stand-in stays and the next rest hands over again.
   The page is covered, never hidden: WebKit pauses a hidden view's frame callbacks and that answer
   would never come. `[annotate] view <ms> ratio=… waited=…` reports each handover; `waited` is how
-  many frames the page waited for the resize to reach it.
+  many frames the page waited for the resize to reach it. A page that refuses the view (a number
+  that is not finite, or a ratio under 1) logs `[web] error view refused`, and a hand-over with no
+  answer inside an export's timeout logs `[annotate] view timeout` and is made once more; the
+  stand-in comes down either way, since a picture that never leaves covers a live editor.
 
   The overlay is the export's "annotations alone on a transparent canvas" (`window.shotnote.overlay`),
   capped at `Config.overlayMaxPixel` on the longest side. The host asks for one when the image

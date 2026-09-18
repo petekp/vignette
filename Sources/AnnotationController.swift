@@ -381,7 +381,12 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// view the stand-in is showing. The page answers when it has painted that, and the stand-in
     /// fades out over it. The page is covered, never hidden, so its frame callbacks keep running
     /// and the answer arrives.
-    private func handOverToPage() {
+    ///
+    /// `retrying` is the second attempt, made once when the first one does not answer inside an
+    /// export's timeout: the page answers from a `requestAnimationFrame`, which WebKit stops while
+    /// the screen is locked. After that the stand-in comes down without an answer, since a picture
+    /// that never leaves covers an editor the user can still draw in.
+    private func handOverToPage(retrying: Bool = false) {
         guard let webView, let container, standIn != nil, window?.isVisible == true else { return }
         guard zoomTween.value == zoomTarget else { return }
         // Only when the frame's size really changed: past the window's limit a zoom moves the
@@ -394,13 +399,34 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let epoch = pageEpoch
         let generation = standInGeneration
         let started = CACurrentMediaTime()
+        var answered = false
+        // The call takes its turn behind the other canvas calls, so the deadline is an export's:
+        // a hand-over behind a Copy Annotated is late, not lost. One retry, and then the picture
+        // comes down anyway; a stand-in left up covers an editor the user can draw in blind.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) { [weak self] in
+            guard let self, !answered, self.pageEpoch == epoch, self.standInGeneration == generation else { return }
+            answered = true
+            Log.write("[annotate] view timeout after \(Int(Self.exportTimeout)) s\(retrying ? " (second try)" : "")")
+            guard !retrying, self.window?.isVisible == true else { self.fadeStandIn(); return }
+            self.handOverToPage(retrying: true)
+        }
         webView.callAsyncJavaScript(PageAPI.setView(request).script, arguments: [:], in: nil, in: .page) { [weak self] result in
-            guard let self, self.pageEpoch == epoch, self.standInGeneration == generation else { return }
+            guard let self, !answered, self.pageEpoch == epoch, self.standInGeneration == generation else { return }
+            answered = true
             if case .failure(let error) = result {
                 Log.write("[web] error view failed: \(String(describing: error).replacingOccurrences(of: "\n", with: " "))")
+            } else if let view = ViewResult(body: try? result.get()) {
+                Log.write("[annotate] view \(Int((CACurrentMediaTime() - started) * 1000))ms ratio=\(String(format: "%.4f", self.canvasZoom)) waited=\(view.waited)")
+                // The page paints at the size that reached its process. A gap wider than the
+                // layout's own rounding means its picture is not this frame's, so it gets a line.
+                if abs(view.width - Double(size.width)) > 1 || abs(view.height - Double(size.height)) > 1 {
+                    Log.write("[annotate] view mismatch page=\(Int(view.width))x\(Int(view.height)) host=\(Int(size.width))x\(Int(size.height))")
+                }
+            } else {
+                // The page refused the numbers and left its camera where it was, so it is showing
+                // the view it had. Uncovering that beats a frozen picture over a live editor.
+                Log.write("[web] error view refused ratio=\(String(format: "%.4f", self.canvasZoom))")
             }
-            let waited = ((try? result.get()) as? [String: Any])?["waited"] as? Int ?? -1
-            Log.write("[annotate] view \(Int((CACurrentMediaTime() - started) * 1000))ms ratio=\(String(format: "%.4f", self.canvasZoom)) waited=\(waited)")
             self.fadeStandIn()
         }
     }

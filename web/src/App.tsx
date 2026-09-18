@@ -9,11 +9,13 @@ import {
   Editor,
   GeoShapeGeoStyle,
   HistoryEntry,
+  TLArrowShape,
   TLAssetStore,
   TLComponents,
   TLEditorSnapshot,
   TLImageShape,
   TLRecord,
+  TLShape,
   TLShapeId,
   Tldraw,
   createShapeId,
@@ -31,7 +33,7 @@ const ZOOM_STEP = 1.25
 /** Wheel and pinch: window scale per wheel unit; pinch-out (negative deltaY) grows the window. */
 const WHEEL_ZOOM_RATE = 0.01
 import { CANDIDATES, COLORS, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, MARK_COLORS, REOPEN_TOOL, SHOW_COLORS, TOOLS, ToolId } from './config'
-import { explain, hasSample, pickColor, prepareSample } from './contrast'
+import { Area, explain, hasSample, pickColor, prepareSample } from './contrast'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
 
@@ -136,6 +138,35 @@ function pickColors(editor: Editor) {
   applyColors(editor, currentKey, ids)
 }
 
+/// What a mark's ink covers, in fractions of the screenshot. An arrow is the strip between its two
+/// ends: its bounding box is the whole rectangle they span, most of which the stroke never touches,
+/// so a banner in a corner of that box would colour an arrow that runs nowhere near it. A shape
+/// drawn with no fill is its border band for the same reason.
+function areaOf(editor: Editor, shape: TLShape, image: Box): Area | null {
+  if (shape.type === 'arrow') {
+    const arrow = shape as TLArrowShape
+    const transform = editor.getShapePageTransform(shape.id)
+    const from = transform.applyToPoint(arrow.props.start)
+    const to = transform.applyToPoint(arrow.props.end)
+    return {
+      kind: 'line',
+      from: { x: (from.x - image.x) / image.w, y: (from.y - image.y) / image.h },
+      to: { x: (to.x - image.x) / image.w, y: (to.y - image.y) / image.h },
+    }
+  }
+  const bounds = editor.getShapePageBounds(shape.id)
+  if (!bounds) return null
+  const rect = {
+    x: (bounds.x - image.x) / image.w,
+    y: (bounds.y - image.y) / image.h,
+    w: bounds.w / image.w,
+    h: bounds.h / image.h,
+  }
+  // A shape with no `fill` prop at all (text, a freehand stroke) keeps the whole box.
+  const fill = (shape.props as { fill?: string }).fill
+  return { kind: fill === 'none' ? 'border' : 'fill', rect }
+}
+
 /// Sets each mark's colour from the screenshot under it. The image shape is the frame every mark is
 /// measured against, so a mark's bounds become the fraction of the screenshot it covers.
 ///
@@ -149,14 +180,9 @@ function applyColors(editor: Editor, key: string, ids: TLShapeId[]) {
     const shape = editor.getShape(id)
     const props = shape?.props as { color?: string } | undefined
     if (!shape || shape.meta.colorChosen || props?.color === undefined) continue
-    const bounds = editor.getShapePageBounds(id)
-    if (!bounds) continue
-    const color = pickColor(key, {
-      x: (bounds.x - image.x) / image.w,
-      y: (bounds.y - image.y) / image.h,
-      w: bounds.w / image.w,
-      h: bounds.h / image.h,
-    })
+    const area = areaOf(editor, shape, image)
+    if (!area) continue
+    const color = pickColor(key, area)
     if (color && color !== props.color) picked.push({ id, color })
   }
   if (!picked.length) return
@@ -240,7 +266,10 @@ export function App() {
         if (editor && COLORS.some((c) => c.id === id)) setColor(editor, id as ColorId)
       },
       async setView(request) {
-        return editor ? setView(editor, request) : null
+        // In the queue like every other canvas call: `export` and `build` put the camera back when
+        // they restore their snapshot, so a view applied in the middle of one is undone behind the
+        // stand-in. The stand-in covers the page for as long as this waits.
+        return editor ? oneAtATime(() => setView(editor, request)) : null
       },
       finish() {
         if (editor) finish(editor, scaleRef.current)
@@ -321,7 +350,7 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
   unpicked.clear()
   // The decode runs alongside the load: `loaded` must not wait for it, and a mark drawn before it
   // lands keeps the first candidate until the next pick.
-  void prepareSample(p.key, fileUrl(p.key))
+  void prepareSample(p.key, fileUrl(p.key)).catch(() => {})
   // The shape is sized in points so the canvas matches the window; export scales back up to pixels.
   const ratio = window.devicePixelRatio || 1
   const w = p.pixelWidth / ratio
@@ -393,7 +422,12 @@ let view = { ratio: 1, x: 0.5, y: 0.5 }
  * it to arrive rather than drawing this camera at the old size. The host takes its own copy of the
  * picture away when this answers.
  */
-async function setView(editor: Editor, request: ViewRequest): Promise<ViewResult> {
+async function setView(editor: Editor, request: ViewRequest): Promise<ViewResult | null> {
+  // Five numbers from the host, checked before they reach the camera: a ratio below 1 would zoom
+  // the image out of a window sized to fit it, and one number that is not finite moves the camera
+  // where nothing can bring it back. The host keeps its stand-in up when this answers null.
+  const numbers = [request.ratio, request.x, request.y, request.width, request.height]
+  if (!numbers.every(Number.isFinite) || request.ratio < 1) return null
   view = { ratio: request.ratio, x: request.x, y: request.y }
   const container = editor.getContainer()
   let waited = 0
@@ -527,7 +561,9 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
     })
     // The snapshot is stored as it stands, so the colours are picked before it is taken.
     if (unnamed.length) {
-      await prepareSample(p.key, fileUrl(p.key))
+      // A screenshot that will not decode leaves no sample: the marks keep the colour they were
+      // given, and the draft is still stored. Losing an agent's marks over a colour is not a trade.
+      await prepareSample(p.key, fileUrl(p.key)).catch(() => {})
       applyColors(editor, p.key, unnamed)
     }
     const snapshot = getSnapshot(editor.store)
@@ -553,12 +589,16 @@ function setColor(editor: Editor, id: ColorId) {
   const ids = editor.getSelectedShapeIds()
   if (!ids.length) return
   editor.setStyleForSelectedShapes(DefaultColorStyle, id)
-  // A colour the user picked is the user's: the heuristic never changes that mark again.
-  for (const shapeId of ids) {
-    const shape = editor.getShape(shapeId)
-    if (shape) editor.updateShape({ id: shapeId, type: shape.type, meta: { ...shape.meta, colorChosen: true } })
-    unpicked.delete(shapeId)
-  }
+  // A colour the user picked is the user's: the heuristic never changes that mark again. The mark
+  // is outside undo history, like the colours the heuristic writes, so one undo cannot drop the
+  // guard and leave the colour to be picked again 300 ms later.
+  silently(editor, () => {
+    for (const shapeId of ids) {
+      const shape = editor.getShape(shapeId)
+      if (shape) editor.updateShape({ id: shapeId, type: shape.type, meta: { ...shape.meta, colorChosen: true } })
+      unpicked.delete(shapeId)
+    }
+  })
 }
 
 function activeTool(editor: Editor): ToolId | null {

@@ -215,6 +215,28 @@ struct ParkResult {
     }
 }
 
+/// What `PageAPI.setView` returns: the picture the page painted, and how many frames it waited for
+/// the host's resize to reach its process. Nil when the page refused the view, which keeps the
+/// stand-in up rather than uncovering a page at the wrong magnification.
+struct ViewResult {
+    let width: Double
+    let height: Double
+    let ratio: Double
+    let waited: Int
+
+    init?(body: Any?) {
+        guard let dict = body as? [String: Any],
+              let width = (dict["width"] as? NSNumber)?.doubleValue,
+              let height = (dict["height"] as? NSNumber)?.doubleValue,
+              let ratio = (dict["ratio"] as? NSNumber)?.doubleValue,
+              let waited = (dict["waited"] as? NSNumber)?.intValue else { return nil }
+        self.width = width
+        self.height = height
+        self.ratio = ratio
+        self.waited = waited
+    }
+}
+
 /// What `PageAPI.export` returns: the renderings that succeeded, and the error that stopped the run.
 struct ExportResult {
     let pngs: [String: Data]

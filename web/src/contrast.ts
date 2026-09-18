@@ -22,6 +22,27 @@ export interface Rect {
   h: number
 }
 
+/// A point on the screenshot, both numbers fractions of it.
+export interface Point {
+  x: number
+  y: number
+}
+
+/// What a mark's ink actually covers. A mark is coloured for the pixels it is drawn over, not for
+/// the pixels its bounding box happens to span: a diagonal arrow's box is the whole rectangle its
+/// ends reach across, and an unfilled rectangle covers its border and nothing inside it.
+export type Area =
+  | { kind: 'fill'; rect: Rect }
+  | { kind: 'border'; rect: Rect }
+  | { kind: 'line'; from: Point; to: Point }
+
+/// How wide the border band is, as a share of the shorter side of the mark's box.
+const BORDER_BAND = 0.15
+/// How far a line's strip reaches to either side of it, as a share of the screenshot's long side.
+const LINE_BAND = 0.01
+/// Points along a line, before the strip's three offsets.
+const LINE_STEPS = 40
+
 type Lab = [number, number, number]
 
 let sample: { key: string; w: number; h: number; pixels: Uint8ClampedArray } | null = null
@@ -54,8 +75,8 @@ export function hasSample(key: string) {
 
 /// The colour a mark should have where it sits: the first candidate far enough from the pixels
 /// under it, or the furthest one when none is far enough. Null when there is nothing to measure.
-export function pickColor(key: string, rect: Rect): ColorId | null {
-  const under = pixelsUnder(key, rect)
+export function pickColor(key: string, area: Area): ColorId | null {
+  const under = pixelsUnder(key, area)
   if (!under.length) return null
   let furthest: { id: ColorId; distance: number } | null = null
   for (const candidate of CANDIDATES) {
@@ -66,9 +87,9 @@ export function pickColor(key: string, rect: Rect): ColorId | null {
   return furthest!.id
 }
 
-/// Every candidate with its distance from the pixels under `rect`, for `shotnote://eval`.
-export function explain(key: string, rect: Rect) {
-  const under = pixelsUnder(key, rect)
+/// Every candidate with its distance from the pixels under `area`, for `shotnote://eval`.
+export function explain(key: string, area: Area) {
+  const under = pixelsUnder(key, area)
   return {
     pixels: under.length,
     min: MIN_COLOR_DISTANCE,
@@ -76,26 +97,63 @@ export function explain(key: string, rect: Rect) {
   }
 }
 
-/// A grid of sample points from inside `rect`, clamped to the image, as CIELAB.
-function pixelsUnder(key: string, rect: Rect): Lab[] {
+/// The pixels the mark is drawn over, clamped to the image, as CIELAB.
+function pixelsUnder(key: string, area: Area): Lab[] {
   if (!sample || sample.key !== key) return []
-  const { w, h, pixels } = sample
+  return area.kind === 'line' ? pixelsAlong(area.from, area.to) : pixelsIn(area.rect, area.kind === 'border')
+}
+
+/// A strip of sample points around the line from `from` to `to`: the points along it, and one to
+/// either side, so a stroke drawn between two corners is measured against what it crosses.
+function pixelsAlong(from: Point, to: Point): Lab[] {
+  const { w, h } = sample!
+  const ax = from.x * w, ay = from.y * h, bx = to.x * w, by = to.y * h
+  const length = Math.hypot(bx - ax, by - ay)
+  const nx = length > 0 ? -(by - ay) / length : 0
+  const ny = length > 0 ? (bx - ax) / length : 0
+  const band = Math.max(1, Math.round(LINE_BAND * Math.max(w, h)))
+  const out: Lab[] = []
+  for (let step = 0; step <= LINE_STEPS; step++) {
+    const t = step / LINE_STEPS
+    const px = ax + (bx - ax) * t
+    const py = ay + (by - ay) * t
+    for (const side of [-1, 0, 1]) out.push(pixelAt(px + nx * band * side, py + ny * band * side))
+  }
+  return out
+}
+
+/// A grid of sample points from inside `rect`, or from its border band alone when the mark is only
+/// drawn there. A box too small for a band keeps the whole grid.
+function pixelsIn(rect: Rect, borderOnly: boolean): Lab[] {
+  const { w, h } = sample!
   const left = Math.max(0, Math.min(w - 1, Math.floor(rect.x * w)))
   const top = Math.max(0, Math.min(h - 1, Math.floor(rect.y * h)))
   const right = Math.max(left, Math.min(w - 1, Math.ceil((rect.x + rect.w) * w) - 1))
   const bottom = Math.max(top, Math.min(h - 1, Math.ceil((rect.y + rect.h) * h) - 1))
   const cols = Math.min(GRID, right - left + 1)
   const rows = Math.min(GRID, bottom - top + 1)
+  const band = Math.max(1, Math.round(BORDER_BAND * Math.min(right - left, bottom - top)))
   const out: Lab[] = []
+  const border: Lab[] = []
   for (let row = 0; row < rows; row++) {
     const y = rows === 1 ? top : top + Math.round((row * (bottom - top)) / (rows - 1))
     for (let col = 0; col < cols; col++) {
       const x = cols === 1 ? left : left + Math.round((col * (right - left)) / (cols - 1))
-      const i = (y * w + x) * 4
-      out.push(toLab(pixels[i], pixels[i + 1], pixels[i + 2]))
+      const lab = pixelAt(x, y)
+      out.push(lab)
+      if (x - left <= band || right - x <= band || y - top <= band || bottom - y <= band) border.push(lab)
     }
   }
-  return out
+  return borderOnly && border.length ? border : out
+}
+
+/// One sample pixel, clamped to the image, as CIELAB.
+function pixelAt(x: number, y: number): Lab {
+  const { w, h, pixels } = sample!
+  const cx = Math.max(0, Math.min(w - 1, Math.round(x)))
+  const cy = Math.max(0, Math.min(h - 1, Math.round(y)))
+  const i = (cy * w + cx) * 4
+  return toLab(pixels[i], pixels[i + 1], pixels[i + 2])
 }
 
 /// How far a colour is from the pixels under a mark: the distance the closest `TOLERANCE` of them

@@ -61,9 +61,21 @@ colour the user never sees.
 which is what a mark is drawn across rather than the glyphs; one decode costs a few milliseconds;
 and 320 x 200 pixels is 256 KB held for the length of one image.
 
-A pick samples a grid of at most 20 x 20 points inside the mark's bounds, expressed as fractions of
-the image, and clamped to it. Text samples under its own bounds, an arrow under its bounding box:
-`getShapePageBounds` answers for all three shapes a mark can be.
+A pick samples what the mark's ink covers, not what its bounding box spans. The box is the same
+rectangle for a diagonal arrow and for the rectangle drawn between the same two corners, and the
+arrow touches almost none of it: a red banner in a corner of that box would turn an arrow that runs
+nowhere near it yellow. So the sample follows the shape (`Area` in `contrast.ts`):
+
+- **a line** for an arrow — 41 points along it, each with one to either side, a strip
+  `LINE_BAND` (1% of the screenshot's long side) wide, taken from the arrow's own ends through its
+  page transform rather than from its box;
+- **a border band** for a shape drawn with no fill — the grid, keeping the points within
+  `BORDER_BAND` (15% of the shorter side) of an edge, which is where the stroke is. A box too small
+  for a band keeps the whole grid;
+- **the whole box** for anything filled, and for text, which covers its box closely enough.
+
+Either way the points are at most a 20 x 20 grid, expressed as fractions of the image and clamped
+to it.
 
 The score for a candidate is **not** its distance from the mean colour of the sample. A mean is a
 colour that need not appear anywhere in the picture: black and white average to a grey that is
@@ -103,15 +115,16 @@ the listener notes, so the mark is coloured again for where it lands.
 
 ## What it does not do
 
-- It judges the region, not the stroke. A mark whose outline happens to run along a red line on a
-  white card stays red: nine tenths of what it covers is white.
+- It judges the band, not the stroke. A rectangle's border band is 15% of its shorter side, which
+  is many times the stroke's own width, so an outline running along a red line on a white card
+  stays red: nine tenths of the band is white.
 - It has no dark candidate. In tldraw's dark theme nothing in the palette is dark, so a mark over a
   pale washed-out region gets violet, the darkest thing available, at `ΔE` 59 over pink.
 - It does not re-pick when the image behind the mark changes, because it cannot: one screenshot is
   one image for the life of a draft.
-- `MIN_COLOR_DISTANCE`, `SAMPLE_LONG_SIDE`, `GRID`, and `TOLERANCE` are page constants, not
-  settings keys: they are the heuristic, not a preference, and a user who wants a colour has the
-  palette (`SHOW_COLORS`).
+- `MIN_COLOR_DISTANCE`, `SAMPLE_LONG_SIDE`, `GRID`, `TOLERANCE`, `BORDER_BAND`, and `LINE_BAND`
+  are page constants, not settings keys: they are the heuristic, not a preference, and a user who
+  wants a colour has the palette (`SHOW_COLORS`).
 
 ## Verified
 
