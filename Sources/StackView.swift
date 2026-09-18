@@ -11,7 +11,7 @@ struct StackView: View {
     @ObservedObject private var settings = Settings.shared
 
     /// The layout at the stack's current width; `StackLayout.current` is the same at rest.
-    private var layout: StackLayout { StackLayout(ui: settings.data.ui, widthScale: model.widthScale) }
+    private var layout: StackLayout { StackLayout.current.at(widthScale: model.widthScale) }
 
     var body: some View {
         let layout = self.layout
@@ -144,7 +144,7 @@ private struct CardView: View {
     private var inButtonRow: Bool { pointer.map { $0.y >= size.height - 6 - ui.buttonSize } ?? true }
     /// The card on screen. `Card.size` is its size at rest; the stack narrows while the annotator
     /// is beside it, and every card narrows with it.
-    private var size: NSSize { StackLayout(ui: ui, widthScale: model.widthScale).drawn(card.size) }
+    private var size: NSSize { StackLayout.current.at(widthScale: model.widthScale).drawn(card.size) }
 
     var body: some View {
         ZStack {
