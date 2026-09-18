@@ -130,6 +130,8 @@ struct UITweaks: Codable, Equatable {
     var annotationCornerRadius = 10.0
     var annotationToolbarGap = 12.0
     var annotationScreenInset = 65.0
+    // Stitch
+    var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
 
     /// One entry of `bounds`. A plain struct, not a tuple, so the array can be `Sendable`.
     /// `@unchecked`: `WritableKeyPath` isn't marked `Sendable` in the standard library, but key
@@ -186,6 +188,7 @@ struct UITweaks: Codable, Equatable {
         Bound("annotationMinWidth", \.annotationMinWidth, 1...100_000), Bound("annotationMinHeight", \.annotationMinHeight, 1...100_000),
         Bound("annotationCornerRadius", \.annotationCornerRadius, 0...1000), Bound("annotationToolbarGap", \.annotationToolbarGap, 0...1000),
         Bound("annotationScreenInset", \.annotationScreenInset, 0...10_000),
+        Bound("stitchLongSide", \.stitchLongSide, 64...20_000),
     ]
 }
 

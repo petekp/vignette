@@ -182,14 +182,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     func stitch(_ shots: [Screenshot]) {
         guard shots.count >= 2 else { Commands.error("stitch", .notEnoughFiles, "needs 2, got \(shots.count)"); return }
-        guard let png = Stitch.compose(shots.map(\.url)) else {
+        guard let composed = Stitch.compose(shots.map(\.url), longSideLimit: Settings.shared.data.ui.stitchLongSide) else {
             Commands.error("stitch", .unreadableImage, shots.map(\.url.lastPathComponent).joined(separator: ", ")); return
         }
         let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
         let out = watchFolder.appendingPathComponent("Stitch \(stamp.string(from: Date())).png")
-        do { try png.write(to: out) } catch { Commands.error("stitch", .writeFailed, "\(out.path): \(error.localizedDescription)"); return }
+        do { try composed.png.write(to: out) } catch { Commands.error("stitch", .writeFailed, "\(out.path): \(error.localizedDescription)"); return }
         Clipboard.copyFiles([out])
-        Commands.ok("stitch", "\(out.path) from \(shots.count) images, \(png.count) bytes, copied")
+        // readerScale is what a vision model's resize leaves of the composition; see Stitch.swift.
+        Commands.ok("stitch", "\(out.path) from \(shots.count) images, \(Int(composed.size.width))x\(Int(composed.size.height)) columns=\(composed.columns) readerScale=\(String(format: "%.2f", composed.readerScale)) \(composed.png.count) bytes, copied")
         // The cards conjoin into the new one when the stack is showing them; otherwise say so.
         if !thumbnail.stitched(shots, into: out) { thumbnail.showFeedback("Stitched \(shots.count) images, copied") }
     }

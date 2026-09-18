@@ -159,6 +159,9 @@ struct DebugPanelView: View {
                     Tweak("Corner radius", \.annotationCornerRadius, 0...30)
                     Tweak("Toolbar gap", \.annotationToolbarGap, 0...40)
                 }
+                Section("Stitch") {
+                    Tweak("Long side", \.stitchLongSide, 512...8192, step: 128, unit: "px")
+                }
             }
             .formStyle(.grouped)
             Divider()

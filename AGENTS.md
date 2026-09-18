@@ -10,8 +10,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
   defaults are the tuned UI, so a fresh install renders the same. `open -g shotnote://tweaks`
   edits them live (needs `debug`). A few numbers stay in code on purpose: the toolbar's row and
   button sizes (`AnnotatorToolbar.swift`), the card button size (`StackView.swift`), the
-  fly-back timing (`TransitionLayer.swift`), and the stitch gap, padding, and badge
-  (`Stitch.swift`).
+  fly-back timing (`TransitionLayer.swift`), and the stitch's gap, padding, and badge, which are
+  fractions of the piece rather than fixed sizes (`Stitch.swift`).
   Editing the file is a supported way to change settings; the app reloads it within a second.
   It is the user's real config: never test against it. The tweak panel writes to whichever file
   the running instance was launched with, and a test launch replaces the user's instance, so copy
@@ -253,6 +253,14 @@ the same driven sequence; a single run varies.
   unchanged, and with the stack closed (a `shotnote://stitch` from a script) the toast is still the
   whole of it. Dismissing the stack mid-converge ends the pieces' flights with it and the stitch
   says so as a toast instead of marking a card that has gone, so it never finishes in silence.
+  `Stitch.compose` lays the pieces out for the model that will read the result: it tries every
+  column count and keeps the one whose composition survives a vision model's resize best
+  (`readerScale`, Anthropic's standard tier — a long edge of 1568 px and 1568 patches of 28 px), so
+  two or three screenshots stack and six go in two columns. The gap and the badges are fractions of
+  the piece they are on, `ui.stitchLongSide` caps the output, and `[stitch] ok` reports the composed
+  size and that scale. `docs/stitch-2026-09-17.md` has the numbers, and the first of them is that a
+  stitch of three screenshots reaches a reader at 45% of its size: separate images are better when
+  the model has to read the text.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor.

@@ -94,10 +94,11 @@ and closing it hands focus back to the app you came from.
   drags the whole selection.
 - Cmd+C copies the selection as files, paths as text, and the first image's pixels, so chat apps
   attach all of them and terminals paste the paths. Option+Cmd+C copies only the paths.
-- Cmd+S stitches the selection into one tall image with numbered badges, saved next to the
-  originals and copied. Each badge is the number the card's circle showed. The selected cards fly
-  together into the new card, which takes their place at the bottom of the stack, or opens in the
-  annotator when Annotate New Captures is on.
+- Cmd+S stitches the selection into one image with numbered badges, saved next to the originals
+  and copied. Two or three pieces stack; more go in a grid, because a very tall image loses more of
+  itself when a model resizes it to read it. Each badge is the number the card's circle showed. The
+  selected cards fly together into the new card, which takes their place at the bottom of the
+  stack, or opens in the annotator when Annotate New Captures is on.
 - Arrows move focus, Shift extends in the direction you travel (turning back drops the card it
   added last), Space toggles, Cmd+A selects all, Return annotates the card you selected last,
   Cmd+Delete trashes, Esc clears then dismisses.
