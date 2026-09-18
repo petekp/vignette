@@ -34,13 +34,21 @@ against each other.
 A card puts Copy in the bottom-left corner and Delete in the bottom-right, so growing right also
 leaves the other button where it is. At rest Copy is the same circle as Delete.
 
-The strip is the harder case: it sits to the left of the cards, so its labels run toward them. The
-icons still cannot move, so the strip grows over the gap and the cards' edge rather than shifting
-left to make room. Two things make that work. The strip is drawn after the column, so it is above
-the cards: a click or a hover on a label reaches the label, not the card under it. And the strip's
-box is always the grown width, with the strip against its leading edge, so the panel's layout never
-moves when the labels come out. `StackLayout.stripReveal` caps the growth at the panel's right edge,
-because the panel is what would cut a label off.
+The strip is the other way round. It sits to the left of the cards, so labels growing to the right
+would run over them. The strip keeps its right edge instead and grows to the left: the icons
+translate left by the reveal and the labels take the room they leave. The button under the cursor
+still stays under it, because a row is one button — icon and label in one `HStack` — and the grown
+row always contains the resting row. The cursor's x ends up over the label of the row it started on,
+so the hover does not end when the icon moves out from under it.
+
+`StackLayout.stripReveal` is the widest label plus the room the icons keep on their own side. There
+is no cap: `panelSize` adds the reveal to the strip's room whenever the strip shows, so the panel is
+already that wide before the labels come out and the reveal never resizes the panel's window. The
+panel's right edge does not move, so the extra width is on the left, away from the cards, and the
+panel is transparent there.
+
+The strip's box is always the grown width with the strip against its trailing edge, so the icon
+column sits where the placement put it whether the labels are out or not.
 
 One hover drives the whole strip: the cursor anywhere on it brings out every row's label, and every
 label takes the same width, so the rows stay a column. A row's own hover keeps its fill and loses

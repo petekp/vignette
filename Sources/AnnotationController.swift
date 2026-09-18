@@ -70,7 +70,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private var pendingBuild: ((ParkResult?, String?) -> Void)?
     /// The hide waiting on the page's park, so a process restart still hides the window.
     private var pendingHide: (() -> Void)?
-    /// How long Copy Annotated waits for the page before giving up.
+    /// How long Copy Drawing waits for the page before giving up.
     static let exportTimeout: TimeInterval = 15
 
     /// Room the annotator needs below its window: the toolbar and its gap.
@@ -409,7 +409,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let started = CACurrentMediaTime()
         var answered = false
         // The call takes its turn behind the other canvas calls, so the deadline is an export's:
-        // a hand-over behind a Copy Annotated is late, not lost. One retry, and then the picture
+        // a hand-over behind a Copy Drawing is late, not lost. One retry, and then the picture
         // comes down anyway; a stand-in left up covers an editor the user can draw in blind.
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) { [weak self] in
             guard let self, !answered, self.pageEpoch == epoch, self.standInGeneration == generation else { return }
@@ -735,7 +735,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     var canvasRefusal: String? {
         if webView == nil || !pageReady { return "the editor page is not ready" }
         if holdsCanvas { return "an image is in the annotator" }
-        // Copy Annotated and a launch-time preview both run through `exportDrafts`, so this says
+        // Copy Drawing and a launch-time preview both run through `exportDrafts`, so this says
         // what is true of either rather than naming one of them.
         if pendingExport != nil { return "the page is rendering" }
         if pendingBuild != nil { return "another push is still building its marks" }
