@@ -91,6 +91,10 @@ struct DebugPanelView: View {
                     Tweak("Spacing", \.cardSpacing, 0...40)
                     Tweak("Panel inset", \.panelInset, 0...60)
                     Tweak("Screen margin", \.screenMargin, 0...80)
+                    Tweak("Narrows to", \.stackMinScale, 0.3...1, step: 0.05)
+                    Tweak("Gap to annotator", \.stackGap, 0...80)
+                    Text("How narrow the stack goes to make room for the annotator's frame, and how far it stays from it. The frame never grows into that narrowest width.")
+                        .font(.caption).foregroundStyle(.secondary)
                     Tweak("Corner radius", \.cardCornerRadius, 0...30)
                     Tweak("Border width", \.cardBorderWidth, 0...4, step: 0.5)
                     Tweak("Border opacity", \.cardBorderOpacity, 0...1, step: 0.05)
@@ -158,6 +162,9 @@ struct DebugPanelView: View {
                     Tweak("Screen inset", \.annotationScreenInset, 0...200, step: 5)
                     Tweak("Corner radius", \.annotationCornerRadius, 0...30)
                     Tweak("Toolbar gap", \.annotationToolbarGap, 0...40)
+                }
+                Section("Stitch") {
+                    Tweak("Long side", \.stitchLongSide, 512...8192, step: 128, unit: "px")
                 }
             }
             .formStyle(.grouped)

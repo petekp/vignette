@@ -1,13 +1,31 @@
 import AppKit
 
+/// A button label that comes out on hover. Measured here with AppKit, in the font the view draws it
+/// in, so the room a button makes for its label is the room the label needs.
+enum ButtonLabel {
+    private static func font(size: CGFloat) -> NSFont { .systemFont(ofSize: size, weight: .semibold) }
+
+    /// Rounded up, with a point of slack: a width a hair under what the text needs would clip its
+    /// last column of pixels.
+    static func width(_ text: String, size: CGFloat) -> CGFloat {
+        ((text as NSString).size(withAttributes: [.font: font(size: size)]).width + 1).rounded(.up)
+    }
+}
+
 /// Geometry shared by the SwiftUI cards, the transition layer, and the sweep gesture, so all agree
 /// on where each card sits. A value over one `UITweaks`, so the math is testable without settings;
 /// `StackLayout.current` reads the live tweaks for the debug panel's sliders.
 struct StackLayout {
     let ui: UITweaks
+    /// How wide the stack is drawn, 1 at rest: the recent stack narrows to make room for the
+    /// annotator's frame (see `widthScale(clearing:visibleFrame:)`). Only the cards and the column
+    /// change with it. The card box, the spacing, the insets and the panel stay as they are, so a
+    /// card casts the same shadow at any width and the panel never has to be resized for it.
+    var widthScale: CGFloat = 1
 
     @MainActor static var current: StackLayout { StackLayout(ui: Settings.shared.data.ui) }
 
+    /// The card box at rest. `Card.size` is measured against this, whatever the stack's width.
     var maxCardWidth: CGFloat { ui.cardMaxWidth }
     var maxCardHeight: CGFloat { ui.cardMaxHeight }
     var minCardSide: CGFloat { ui.cardMinSide }
@@ -23,14 +41,29 @@ struct StackLayout {
     /// The soft edge the column keeps below a card's shadow, where it fades into the panel.
     static let shadowFade: CGFloat = 7
     var margin: CGFloat { ui.screenMargin }
+    /// The column's width on screen: the card box at the stack's current width.
+    var columnWidth: CGFloat { maxCardWidth * widthScale }
+    /// How narrow the stack goes, and the width it reserves for itself at that narrowest.
+    var minWidthScale: CGFloat { min(1, max(0.05, ui.stackMinScale)) }
     /// The row under the column that carries the feedback toast.
     var barHeight: CGFloat { ui.selectionBarHeight }
     /// One column of button-sized rows, padded by the button spacing.
     var stripWidth: CGFloat { ui.buttonSize + ui.buttonSpacing * 2 }
     var stripGap: CGFloat { ui.selectionStripGap }
+    /// The size the strip's labels are drawn at. In code, like the size of the icons beside them.
+    static let stripLabelSize: CGFloat = 12
 
     func stripHeight(rows: Int) -> CGFloat {
         CGFloat(rows) * ui.buttonSize + CGFloat(max(0, rows - 1)) * ui.buttonSpacing + ui.buttonSpacing * 2
+    }
+
+    /// How far the strip grows to the right when the cursor is on it and the labels come out: the
+    /// widest label, plus the room the icons have on their own side. Never past the panel's right
+    /// edge — the labels run over the gap and the cards, and the panel is what would cut them off.
+    /// `right` is the placement's, so a narrow selected card leaves the labels less room.
+    func stripReveal(labels: [String], right: CGFloat) -> CGFloat {
+        guard let widest = labels.map({ ButtonLabel.width($0, size: Self.stripLabelSize) }).max(), widest > 0 else { return 0 }
+        return min(widest + ui.buttonSpacing * 2, max(0, right + inset))
     }
 
     func cardSize(for image: NSSize) -> NSSize {
@@ -39,6 +72,13 @@ struct StackLayout {
         let w = max(image.width * scale, minCardSide)
         let h = max(image.height * scale, minCardSide)
         return NSSize(width: w.rounded(), height: h.rounded())
+    }
+
+    /// A card on screen at the stack's current width. `Card.size` is the size at rest, so a stack
+    /// that narrows and comes back does not re-measure a card or re-decode its thumbnail.
+    func drawn(_ size: NSSize) -> NSSize {
+        guard widthScale != 1 else { return size }
+        return NSSize(width: (size.width * widthScale).rounded(), height: (size.height * widthScale).rounded())
     }
 
     /// Height of the whole column: every card, plus the bar when shown.
@@ -53,7 +93,9 @@ struct StackLayout {
     }
 
     /// The panel makes room for the selection strip on its left while cards are selected. Its right
-    /// edge never moves, so the cards stay where they are.
+    /// edge never moves, so the cards stay where they are. Always the stack's width at rest: the
+    /// panel is transparent outside the column, so a stack that has narrowed for the annotator
+    /// simply draws in part of it and no window is resized while it moves.
     func panelSize(viewport: CGFloat, showsStrip: Bool) -> NSSize {
         let strip = showsStrip ? stripWidth + stripGap : 0
         return NSSize(width: maxCardWidth + strip + inset * 2, height: viewport + inset * 2)
@@ -133,17 +175,38 @@ struct StackLayout {
     }
 
     /// The strip's screen frame, for the state report. The view places it from the same numbers.
-    func stripFrame(_ strip: StripPlacement, panelFrame: NSRect, scroll: CGFloat) -> NSRect {
+    /// `reveal` is how far the labels are out: the icons keep their place and the strip grows to
+    /// the right, over the gap to the cards.
+    func stripFrame(_ strip: StripPlacement, panelFrame: NSRect, scroll: CGFloat, reveal: CGFloat = 0) -> NSRect {
         NSRect(x: panelFrame.maxX - inset - strip.right - strip.size.width,
                y: panelFrame.minY + inset + strip.bottom - scroll,
-               width: strip.size.width, height: strip.size.height)
+               width: strip.size.width + reveal, height: strip.size.height)
     }
 
     /// How far a card has to travel to the right to leave the screen.
     func offscreenDistance(cardWidth: CGFloat) -> CGFloat { cardWidth + inset + margin }
 
-    /// Where the annotator goes: the image's exact aspect, centered on the screen, with room below
-    /// for the toolbar. Small crops scale up until the toolbar fits.
+    /// The strip of the screen the stack keeps for itself at its narrowest, and the gap beside it.
+    /// The annotator's frame never enters it, so the stack always has somewhere to be.
+    var reservedWidth: CGFloat { margin + maxCardWidth * minWidthScale + ui.stackGap }
+
+    /// The rect the annotator's frame fits and grows within while the recent stack is showing:
+    /// the visible frame, less the stack's reserved strip on the right.
+    func annotatorRoom(visibleFrame v: NSRect) -> NSRect {
+        NSRect(x: v.minX, y: v.minY, width: max(1, v.width - reservedWidth), height: v.height)
+    }
+
+    /// How wide the stack may be drawn with the annotator's frame where it is: the largest width
+    /// at which the column's left edge still clears the frame's right edge by the gap. 1 when the
+    /// frame is far enough away, and never below the minimum, which is the width the room the
+    /// frame grows within was reserved for.
+    func widthScale(clearing frame: NSRect, visibleFrame v: NSRect) -> CGFloat {
+        let free = v.maxX - margin - ui.stackGap - frame.maxX
+        return min(1, max(minWidthScale, free / max(maxCardWidth, 1)))
+    }
+
+    /// Where the annotator goes: the image's exact aspect, centered in the rect it is given, with
+    /// room below for the toolbar. Small crops scale up until the toolbar fits.
     func annotationFrame(for image: NSSize, visibleFrame: NSRect, below: CGFloat = 0) -> NSRect {
         var v = visibleFrame.insetBy(dx: ui.annotationScreenInset, dy: ui.annotationScreenInset)
         v.origin.y += below

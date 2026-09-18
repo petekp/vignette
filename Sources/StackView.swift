@@ -10,8 +10,11 @@ struct StackView: View {
     @ObservedObject var model: StackModel
     @ObservedObject private var settings = Settings.shared
 
+    /// The layout at the stack's current width; `StackLayout.current` is the same at rest.
+    private var layout: StackLayout { StackLayout(ui: settings.data.ui, widthScale: model.widthScale) }
+
     var body: some View {
-        let layout = StackLayout.current
+        let layout = self.layout
         return ZStack(alignment: .bottomTrailing) {
             // Fully transparent pixels let events fall through to the window below, so the stack
             // would only scroll over a card; a hair of alpha makes the column catch them. The
@@ -19,7 +22,7 @@ struct StackView: View {
             // so the column stays against its right edge; the strip's side catches nothing.
             Color.clear
             Color.black.opacity(model.isStack ? 0.01 : 0)
-                .frame(width: layout.maxCardWidth + layout.inset * 2)
+                .frame(width: layout.columnWidth + layout.inset * 2)
             if !model.isStack, let text = model.feedback {
                 FeedbackToast(text: text)
                     .padding(layout.inset)
@@ -27,8 +30,11 @@ struct StackView: View {
             } else {
                 column
                 if let strip = stripPlacement {
-                    SelectionStrip(model: model, size: strip.size)
-                        .offset(x: -(layout.inset + strip.right), y: -(layout.inset + strip.bottom))
+                    let reveal = layout.stripReveal(labels: Config.stripActions.map(\.label), right: strip.right)
+                    // The strip's box is always the grown width and the offset carries it, so the
+                    // icons sit where the placement put them whether the labels are out or not.
+                    SelectionStrip(model: model, size: strip.size, reveal: reveal)
+                        .offset(x: -(layout.inset + strip.right) + reveal, y: -(layout.inset + strip.bottom))
                         .animation(Anim.spring(settings.motionUI.relayoutDuration), value: strip)
                         // Scrolling moves it with the cards, at once; the slide-out carries it off screen.
                         .offset(x: stripSlide, y: model.scroll)
@@ -39,6 +45,7 @@ struct StackView: View {
         }
         .animation(layoutAnimation(0.2), value: model.cards.map(\.id))
         .animation(layoutAnimation(0.15), value: model.inSelectionMode)
+        .animation(layoutAnimation(0.15), value: model.annotating)
         .animation(layoutAnimation(0.15), value: model.feedback)
     }
 
@@ -49,36 +56,38 @@ struct StackView: View {
     }
 
     private var stripPlacement: StackLayout.StripPlacement? {
-        guard model.isStack, model.inSelectionMode else { return nil }
-        return StackLayout.current.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
-                                                  cards: model.cards.map(\.size), showsBar: model.showsBar,
-                                                  scroll: model.scroll, viewport: model.viewport)
+        // The strip stands aside while the annotator has an image: it hangs to the left of the
+        // column, inside the room the frame may grow into. The selection stays; the strip is back
+        // when the session ends.
+        guard model.isStack, model.inSelectionMode, !model.annotating else { return nil }
+        return layout.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
+                                     cards: model.cards.map { layout.drawn($0.size) }, showsBar: model.showsBar,
+                                     scroll: model.scroll, viewport: model.viewport)
     }
 
     /// The toast leaves with the bottom card instead of vanishing under it.
     private var barSlide: CGFloat {
-        model.slidingOut ? StackLayout.current.offscreenDistance(cardWidth: StackLayout.current.maxCardWidth) : 0
+        model.slidingOut ? layout.offscreenDistance(cardWidth: layout.columnWidth) : 0
     }
 
     /// The strip starts a column's width further left, so it needs that much more to clear the screen.
     private var stripSlide: CGFloat {
-        let layout = StackLayout.current
-        return model.slidingOut ? layout.offscreenDistance(cardWidth: layout.maxCardWidth + layout.stripGap + layout.stripWidth) : 0
+        model.slidingOut ? layout.offscreenDistance(cardWidth: layout.columnWidth + layout.stripGap + layout.stripWidth) : 0
     }
 
     /// The cards, newest at the bottom, pulled down by `scroll`. What leaves the viewport fades
     /// out over the panel's inset instead of being cut.
     private var column: some View {
-        let inset = StackLayout.current.inset
-        let shadowRoom = StackLayout.current.cardShadowRoom
-        return VStack(alignment: .trailing, spacing: StackLayout.current.spacing) {
+        let inset = layout.inset
+        let shadowRoom = layout.cardShadowRoom
+        return VStack(alignment: .trailing, spacing: layout.spacing) {
             ForEach(Array(model.cards.enumerated().reversed()), id: \.element.id) { index, card in
                 CardView(card: card, index: index, model: model)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
             if model.isStack, let text = model.feedback {
                 FeedbackToast(text: text)
-                    .frame(width: StackLayout.current.maxCardWidth, height: StackLayout.current.barHeight)
+                    .frame(width: layout.columnWidth, height: layout.barHeight)
                     .transition(.opacity)
                     .offset(x: barSlide)
                     .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
@@ -88,7 +97,7 @@ struct StackView: View {
         .offset(y: model.scroll)
         .padding(inset)
         // Trailing, not centered: a lone card narrower than the widest must rest where the stack will put it.
-        .frame(width: StackLayout.current.maxCardWidth + inset * 2, height: model.viewport + inset * 2, alignment: .bottomTrailing)
+        .frame(width: layout.columnWidth + inset * 2, height: model.viewport + inset * 2, alignment: .bottomTrailing)
         .mask(
             VStack(spacing: 0) {
                 LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: inset)
@@ -127,7 +136,10 @@ private struct CardView: View {
     private var showsButtons: Bool { showsHover && !model.inSelectionMode && !copied }
     private var showsDrawHint: Bool { showsButtons && !model.overControl && !pressed && !inButtonRow }
     /// The strip along the bottom that holds the buttons, gaps included: a click there is not a draw.
-    private var inButtonRow: Bool { pointer.map { $0.y >= card.size.height - 6 - ui.buttonSize } ?? true }
+    private var inButtonRow: Bool { pointer.map { $0.y >= size.height - 6 - ui.buttonSize } ?? true }
+    /// The card on screen. `Card.size` is its size at rest; the stack narrows while the annotator
+    /// is beside it, and every card narrows with it.
+    private var size: NSSize { StackLayout(ui: ui, widthScale: model.widthScale).drawn(card.size) }
 
     var body: some View {
         ZStack {
@@ -144,12 +156,12 @@ private struct CardView: View {
                         Color(white: 0.16)   // thumbnail still decoding
                     }
                 }
-                    .frame(width: card.size.width, height: card.size.height)
+                    .frame(width: size.width, height: size.height)
                     .clipShape(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous))
                     .shadow(color: .black.opacity(ui.cardShadowOpacity), radius: ui.cardShadowRadius, y: ui.cardShadowY)
                     .overlay(
                         // Drag out as files; a plain click goes to the model (annotate, or toggle in selection mode).
-                        DragSource(urls: { dragURLs() }, image: card.image ?? NSImage(size: card.size),
+                        DragSource(urls: { dragURLs() }, image: card.image ?? NSImage(size: size),
                                    onPress: { down in model.pressedCard = down ? card.id : (model.pressedCard == card.id ? nil : model.pressedCard) },
                                    onClick: { model.onClickImage(card) })
                     )
@@ -177,11 +189,11 @@ private struct CardView: View {
                     .allowsHitTesting(false)
             }
         }
-        // Copy in the bottom-left corner with its name, delete in the bottom-right as an icon; a
-        // click anywhere else on the card draws.
+        // Copy in the bottom-left corner, delete in the bottom-right, both as icons; Copy says its
+        // name while the cursor is on it. A click anywhere else on the card draws.
         .overlay(alignment: .bottomLeading) {
             if showsButtons, let copy = Config.action(id: "copy") {
-                PillButton(symbol: copy.symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
+                RevealButton(symbol: copy.symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
                     .onHover { model.overControl = $0 }
                     .padding(6)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
@@ -216,7 +228,7 @@ private struct CardView: View {
                     )
             }
         }
-        .frame(width: card.size.width, height: card.size.height)
+        .frame(width: size.width, height: size.height)
         // The thumbnail fills the card, so an image whose shape differs from the card's box hangs
         // outside it, and the clip that hides it does not shrink the hit area. Without this the
         // card takes hover and clicks everywhere its image reaches, over its neighbours.
@@ -242,7 +254,7 @@ private struct CardView: View {
         .animation(Anim.spring(ui.hoverRevealDuration), value: showsHover)
         .animation(Anim.spring(ui.hoverRevealDuration), value: showsButtons)
         // Past the panel's right edge, which sits just beyond the screen edge, so the card slides off screen.
-        .offset(x: offscreen ? StackLayout.current.offscreenDistance(cardWidth: card.size.width) : 0)
+        .offset(x: offscreen ? StackLayout.current.offscreenDistance(cardWidth: size.width) : 0)
         .animation(slideAnimation.delay(slideDelay), value: offscreen)
         .onHover { inside in
             model.hoveredCard = inside ? card.id : (model.hoveredCard == card.id ? nil : model.hoveredCard)
@@ -292,8 +304,10 @@ private struct SelectionCircle: View {
             Circle().fill(number != nil ? Color.accentColor : Color.black.opacity(0.45))
             Circle().stroke(.white, lineWidth: 1.5)
             if let number {
+                // SF Rounded at proportional widths: monospaced digits pad a "1" to the width of a
+                // "0" and leave it floating, and two digits at the bold weight reach the ring.
                 Text("\(number)")
-                    .font(.system(size: size * 0.6, weight: .bold).monospacedDigit())
+                    .font(.system(size: size * 0.56, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
@@ -322,30 +336,46 @@ private struct AgentBadge: View {
 
 /// Beside the selected cards: the bulk actions, in one vertical strip. `StackLayout` places it
 /// and sizes it; the rows here fill that size exactly. The count is on the cards themselves.
+/// The cursor on the strip names every button: the icons cannot move, so it grows to the right,
+/// over the gap and the cards' edge. It is drawn after the column, so the grown side is above the
+/// cards and catches the mouse itself.
 private struct SelectionStrip: View {
     @ObservedObject var model: StackModel
-    let size: NSSize
+    let size: NSSize        // the icon column, as the placement sized it
+    let reveal: CGFloat     // how far the labels put the strip's right edge out
     private var ui: UITweaks { Settings.shared.motionUI }
 
     var body: some View {
         let cards = model.selectedCards()
+        let out = model.stripHovered ? reveal : 0
         VStack(spacing: ui.buttonSpacing) {
             ForEach(Config.stripActions, id: \.id) { action in
                 Button { model.onAction(action, cards) } label: {
-                    Image(systemName: action.symbol)
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: ui.buttonSize, height: ui.buttonSize)
+                    HStack(spacing: 0) {
+                        Image(systemName: action.symbol)
+                            .font(.system(size: 13, weight: .medium))
+                            .frame(width: ui.buttonSize, height: ui.buttonSize)
+                        RevealedLabel(text: action.label, size: StackLayout.stripLabelSize,
+                                      width: reveal, revealed: model.stripHovered)
+                    }
                 }
-                .buttonStyle(TactileButtonStyle(shape: .rounded))
+                .buttonStyle(TactileButtonStyle(shape: .rounded, hoverScale: 1))
                 .help(action.label + shortcutHint(action))
                 .disabled(cards.count < action.minimumCount)
                 .opacity(cards.count < action.minimumCount ? 0.35 : 1)
             }
         }
-        .frame(width: size.width, height: size.height)
+        .frame(width: size.width + out, height: size.height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+        .onHover { model.stripHovered = $0 }
+        .animation(Anim.spring(ui.hoverRevealDuration), value: model.stripHovered)
+        // A strip that goes while the cursor is on it gets no leaving hover.
+        .onDisappear { model.stripHovered = false }
+        // The box stays the grown width and the strip sits against its leading edge: growing to the
+        // right moves nothing else, and the labels are what the box makes room for.
+        .frame(width: size.width + reveal, alignment: .leading)
     }
 
     private func shortcutHint(_ action: ShotAction) -> String {
@@ -368,6 +398,12 @@ private struct SelectionStrip: View {
 struct TactileButtonStyle: ButtonStyle {
     enum Shape { case circle, rounded, capsule }
     let shape: Shape
+    /// Where the hover scale grows from. A button that grows a label to the right scales from its
+    /// leading edge, so the two motions pull the same way.
+    var anchor: UnitPoint = .center
+    /// 1 for a button whose label coming out is its hover already: a scale on top of that would
+    /// stretch the label and move the icon out from under the cursor.
+    var hoverScale: CGFloat = 1.08
     @State private var hovered = false
     private var motion: Double { Settings.shared.motionScale }
 
@@ -382,7 +418,7 @@ struct TactileButtonStyle: ButtonStyle {
                 case .capsule: Capsule().fill(fill)
                 }
             }
-            .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? 1.08 : 1))
+            .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? hoverScale : 1), anchor: anchor)
             .animation(Anim.spring(0.2 * motion, bounce: 0.3), value: configuration.isPressed)
             .animation(Anim.spring(0.12 * motion), value: hovered)
             .onHover { hovered = $0 }
@@ -451,26 +487,58 @@ private struct DrawHint: View {
     }
 }
 
-private struct PillButton: View {
+/// A label beside an icon, out while `revealed`. The width and the opacity are animated from that
+/// one bool by whatever animation the caller puts around it; the label is never inserted or
+/// removed, because a removal transition starts again from nothing and jumps when the cursor leaves
+/// halfway. `width` is what `ButtonLabel.width` measured, plus the room the label keeps on its right.
+private struct RevealedLabel: View {
+    let text: String
+    let size: CGFloat
+    let width: CGFloat
+    let revealed: Bool
+
+    var body: some View {
+        // The same font ButtonLabel measured; the text keeps its own width and the frame around it
+        // is what grows, so the label is uncovered from the icon outwards.
+        Text(text)
+            .font(.system(size: size, weight: .semibold))
+            .fixedSize()
+            .frame(width: revealed ? width : 0, alignment: .leading)
+            .opacity(revealed ? 1 : 0)
+            .clipped()
+            .contentShape(Rectangle())   // clipping hides the text; the hit area has to shrink with it
+    }
+}
+
+/// An icon button whose label comes out beside it while the cursor is on it. At rest it is the same
+/// circle as the other icon buttons. It grows to the right, from a leading edge that never moves,
+/// so the icon stays under the cursor and the buttons around it stay where they are.
+private struct RevealButton: View {
     let symbol: String
     let label: String
     let ui: UITweaks
     let action: () -> Void
+    @State private var hovered = false
+
+    private var labelSize: CGFloat { ui.buttonIconSize - 1 }
+    private var revealWidth: CGFloat { ButtonLabel.width(label, size: labelSize) + ui.buttonSpacing * 2 }
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: symbol).font(.system(size: ui.buttonIconSize - 1, weight: .semibold))
-                Text(label).font(.system(size: ui.buttonIconSize - 1, weight: .semibold))
+            HStack(spacing: 0) {
+                Image(systemName: symbol).font(.system(size: ui.buttonIconSize, weight: .semibold))
+                    .frame(width: ui.buttonSize, height: ui.buttonSize)
+                RevealedLabel(text: label, size: labelSize, width: revealWidth, revealed: hovered)
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 9)
             .frame(height: ui.buttonSize)
             .background(Capsule().fill(.regularMaterial))
             .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
         }
-        .buttonStyle(TactileButtonStyle(shape: .capsule))
+        .buttonStyle(TactileButtonStyle(shape: .capsule, anchor: .leading))
+        .onHover { hovered = $0 }
+        .animation(Anim.spring(ui.hoverRevealDuration), value: hovered)
     }
 }
 

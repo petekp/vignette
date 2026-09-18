@@ -88,26 +88,44 @@ and closing it hands focus back to the app you came from.
 - A selected circle carries the card's place in the selection, counting in the order you picked
   them. That is the order every action receives them; picking a card again puts it last. Cmd+A
   has nobody's order to follow, so it takes the column's: oldest first.
-- The selected cards get a control strip to their left: copy, copy annotated, stitch, delete.
+- The selected cards get a control strip to their left: copy, annotate, stitch, delete.
   It stays centered between the topmost and the bottommost selected card, and follows the selection.
+  Put the cursor on it and it grows to the right to name each button. The icons stay where they
+  are, so the button under the cursor is still the button you press. While you are annotating, the
+  strip steps out of the annotator's way; the cards stay selected and it comes back when you are done.
+- Opening a card in the annotator narrows the stack to make room for it, down to half its width.
+  The cards keep their corner; only their size changes, and they come back when the annotator
+  closes. The annotator never grows into the width the stack keeps, however far you zoom in.
 - Drag a card out to drop it as a file on a chat window, Finder, or a terminal. A selected card
   drags the whole selection.
 - Cmd+C copies the selection as files, paths as text, and the first image's pixels, so chat apps
   attach all of them and terminals paste the paths. Option+Cmd+C copies only the paths.
-- Cmd+S stitches the selection into one tall image with numbered badges, saved next to the
-  originals and copied. Each badge is the number the card's circle showed. The selected cards fly
-  together into the new card, which takes their place at the bottom of the stack, or opens in the
-  annotator when Annotate New Captures is on.
+- Cmd+S stitches the selection into one image with numbered badges, saved next to the originals
+  and copied. Two or three pieces stack; more go in a grid, because a very tall image loses more of
+  itself when a model resizes it to read it. Each badge is the number the card's circle showed. The
+  selected cards fly together into the new card, which takes their place at the bottom of the
+  stack, or opens in the annotator when Annotate New Captures is on.
+- The newest card has the focus as soon as the stack is up, and the focus follows the mouse: move
+  onto a card and keys act on that one. So Space over one card after another builds a selection
+  without clicking, and Return opens the card the mouse is on. A key runs on the selection when
+  there is one, else on the focused card.
 - Arrows move focus, Shift extends in the direction you travel (turning back drops the card it
-  added last), Space toggles, Cmd+A selects all, Return annotates the card you selected last,
-  Cmd+Delete trashes, Esc clears then dismisses.
+  added last), Space toggles, Cmd+A selects all, Return annotates, Cmd+Shift+C copies with the
+  annotations rendered in, Cmd+Delete trashes, Esc clears then dismisses.
+- Return on several selected cards, or Annotate in the strip, annotates them one after another, in
+  the order you picked them: each Done sends that card home and opens the next. They stay selected
+  the whole time, so Cmd+C or Cmd+S afterwards still takes all of them. Esc, or closing the stack,
+  drops the rest of the queue.
 - A card whose annotations you parked with Esc or a swap shows them in its thumbnail. That
   thumbnail is a preview PNG in `~/Library/Caches`; if macOS clears the folder, the next launch
   renders it again from the draft. Reopen the card and the annotations are back either way;
   Copy Annotated renders them without opening the editor.
 - Reopening a card that already has annotations starts on the selection tool with the mark you
-  drew last already picked up, so a color, a drag, or Delete acts on it without a click first.
-  A fresh image starts on the circle tool.
+  drew last already picked up, so a drag or Delete acts on it without a click first.
+  A fresh image starts on the rectangle tool.
+- A mark is drawn in red unless red is what it sits on. The editor measures the pixels under each
+  mark, when you draw it and when you let go of it, and moves to yellow, light blue, white, or
+  violet, whichever is far enough from them.
 - A card with a purple badge was pushed in by an agent (`add?agent=<name>`), not captured. Hover
   it to see which one. The name is stored on the file itself, so it survives a rename.
 
@@ -121,7 +139,8 @@ menu bar has the same command.
 
 - `~/.config/shotnote/settings.json`: folder, counts, timing, hotkey, backdrop. No rebuild.
 - `Sources/Config.swift`: the actions list.
-- `web/src/config.ts`: editor tools, the tool each image opens on, colors, stroke size.
+- `web/src/config.ts`: editor tools, the tool each image opens on, the colour palette (off by
+  default), stroke size.
 - `web/src/bridge.ts` and `Sources/Bridge.swift`: the only contract between the two sides.
 
 See `AGENTS.md` for the working loop.
@@ -167,12 +186,13 @@ not depend on its pixel size:
  {"type": "text", "x": 0.1, "y": 0.8, "text": "Header should not scroll"}]
 ```
 
-The types are `ellipse`, `rectangle`, `arrow`, and `text`; the colors are the editor's
-(`web/src/config.ts`), the first one by default. The marks become a draft before the card appears,
-so the card shows them, Copy Annotated has them, and opening the card puts them in the editor to
-move, retype, or delete like your own. The editor builds the draft on its own canvas, so a marked
-push is refused with `page-not-ready` from the moment the annotator takes an image until it has
-given it back, and while a Copy Annotated is rendering.
+The types are `ellipse`, `rectangle`, `arrow`, and `text`; `ellipse` has no toolbar button, and an
+agent can still push one. A mark that names a `color` keeps it — any of `MARK_COLORS` in
+`web/src/config.ts` — and a mark that names none is coloured from what it covers, like your own. The
+marks become a draft before the card appears, so the card shows them, Copy Annotated has them, and
+opening the card puts them in the editor to move, retype, or delete like your own. The editor builds
+the draft on its own canvas, so a marked push is refused with `page-not-ready` from the moment the
+annotator takes an image until it has given it back, and while a Copy Annotated is rendering.
 
 Every command answers with one line in `~/Library/Logs/Shotnote.log` (menu bar → Open Log):
 `[<command>] ok <detail>` or `[<command>] error <code> <detail>`. The codes are fixed:
@@ -228,12 +248,13 @@ An image that arrives through `add` skips both: a push from an agent is not a ca
 `settings.json.invalid` and replaced with defaults, with a toast saying so.
 
 The `ui` section holds the design numbers: card sizes, corners, shadows, hover buttons, animation
-durations and curves, how far a card bows and swells on its way to the annotator, how deep the
-drag-select's edge band is and how fast it scrolls there, backdrop blur and tint, annotator window
-limits. The defaults are the tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or
-`open -g shotnote://tweaks`) opens a floating panel of sliders that edits them live, with buttons
-to summon the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns
-every animation off; the system's Reduce Motion does the same.
+durations and curves, how far a card bows and swells on its way to the annotator, how narrow the
+stack goes to make room for it and how far it stays from it, how deep the drag-select's edge band is
+and how fast it scrolls there, backdrop blur and tint, annotator window limits. The defaults are the
+tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or `open -g
+shotnote://tweaks`) opens a floating panel of sliders that edits them live, with buttons to summon
+the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns every
+animation off; the system's Reduce Motion does the same.
 
 ## Forking
 

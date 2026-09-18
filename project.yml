@@ -100,3 +100,8 @@ schemes:
     test:
       config: Debug
       targets: [ShotnoteTests]
+      # A test that reaches Settings.shared bootstraps it, and a bootstrap fills in any keys the
+      # file lacks. Without this the file it fills in is the user's own, so a test run rewrites it
+      # the moment a build adds a tweak.
+      environmentVariables:
+        SHOTNOTE_SETTINGS: /tmp/shotnote-tests/settings.json

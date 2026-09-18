@@ -3,7 +3,7 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 7
+let bridgeProtocolVersion = 8
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
@@ -14,6 +14,18 @@ struct LoadPayload: Encodable, Equatable {
     let pixelHeight: Int
     let viewWidth: Double
     let viewHeight: Double
+}
+
+/// The picture the page should draw when a zoom comes to rest: how far the image is magnified
+/// inside the window (1 fits it), the middle of the visible part as a fraction of the image, and
+/// the size the host has laid the window out at. The page waits for that size, applies the view,
+/// and answers once it has painted it, which is when the stand-in may go.
+struct ViewRequest: Encodable, Equatable {
+    let ratio: Double
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
 }
 
 /// One annotation an agent supplied with `add?marks=`. Every number is a fraction of the image:
@@ -58,14 +70,16 @@ enum PageAPI: Equatable {
     case build(LoadPayload, snapshot: Data?, marks: [Mark])
     /// Each item's stored draft JSON, by key.
     case export([(key: String, snapshot: Data)])
+    /// The current image's annotations alone, on a transparent canvas, no larger than this on the
+    /// longest side: what the zoom stand-in lays over the screenshot.
+    case overlay(maxPixel: Int)
     case setTool(String)
     case setColor(String)
-    /// Magnification inside the window; 1 fits the image. `at` is the point to keep in place, a
-    /// fraction of the window with y from the top; nil is its middle.
-    case setCanvasZoom(Double, at: CGPoint?)
+    /// The picture to draw at the end of a zoom, and the answer that says it has been painted.
+    case setView(ViewRequest)
     case finish
 
-    /// `park`, `build`, and `export` are async and return a value, so they run through
+    /// `park`, `build`, `export`, and `setView` are async and return a value, so they run through
     /// `callAsyncJavaScript`; the rest are fire-and-forget. All guard on `window.shotnote` so a
     /// call that lands before the page's script runs is a no-op rather than an exception.
     var script: String {
@@ -79,9 +93,11 @@ enum PageAPI: Equatable {
         case .export(let items):
             let list = items.map { "{\"key\":\(PageAPI.json($0.key)),\"snapshot\":\(String(data: $0.snapshot, encoding: .utf8) ?? "null")}" }
             return "return window.shotnote ? await window.shotnote.export([\(list.joined(separator: ","))]) : null;"
+        case .overlay(let maxPixel):
+            return "return window.shotnote ? await window.shotnote.overlay(\(maxPixel)) : null;"
         case .setTool(let id): return "window.shotnote && window.shotnote.setTool(\(PageAPI.json(id)));"
         case .setColor(let id): return "window.shotnote && window.shotnote.setColor(\(PageAPI.json(id)));"
-        case .setCanvasZoom(let ratio, let at): return "window.shotnote && window.shotnote.setCanvasZoom(\(PageAPI.json(ratio)),\(PageAPI.point(at)));"
+        case .setView(let view): return "return window.shotnote ? await window.shotnote.setView(\(PageAPI.json(view))) : null;"
         case .finish: return "window.shotnote && window.shotnote.finish();"
         }
     }
@@ -95,12 +111,6 @@ enum PageAPI: Equatable {
         return "{\"snapshot\":\(text),\(json(payload).dropFirst())"
     }
 
-    /// A unit point as the page reads it, or `null`. CGPoint encodes as an array, not `{x, y}`.
-    static func point(_ p: CGPoint?) -> String {
-        guard let p else { return "null" }
-        return "{\"x\":\(json(Double(p.x))),\"y\":\(json(Double(p.y)))}"
-    }
-
     /// JSON is valid JavaScript for objects, arrays, and strings; `withoutEscapingSlashes` keeps paths readable.
     static func json<T: Encodable>(_ value: T) -> String {
         let enc = JSONEncoder()
@@ -112,8 +122,9 @@ enum PageAPI: Equatable {
 
 /// Received from the page via `window.webkit.messageHandlers.shotnote.postMessage(...)`.
 enum WebMessage {
-    /// The editor is mounted. Carries the page's protocol version and what the toolbar should offer.
-    case ready(protocol: Int, tools: [ToolInfo], colors: [ColorInfo])
+    /// The editor is mounted. Carries the page's protocol version, what the toolbar should offer
+    /// (`colors` is empty while the palette is hidden), and every color a pushed mark may name.
+    case ready(protocol: Int, tools: [ToolInfo], colors: [ColorInfo], markColors: [ColorInfo])
     /// The active tool or color changed.
     case tool(tool: String?, color: String)
     /// The image from `load` is on the canvas.
@@ -137,11 +148,13 @@ enum WebMessage {
                 guard let id = t["id"] as? String, let label = t["label"] as? String, let key = t["key"] as? String, let symbol = t["symbol"] as? String else { return nil }
                 return ToolInfo(id: id, label: label, key: key, symbol: symbol)
             }
-            let colors = (dict["colors"] as? [[String: Any]] ?? []).compactMap { c -> ColorInfo? in
-                guard let id = c["id"] as? String, let hex = c["hex"] as? String else { return nil }
-                return ColorInfo(id: id, hex: hex)
+            func colors(_ key: String) -> [ColorInfo] {
+                (dict[key] as? [[String: Any]] ?? []).compactMap { c -> ColorInfo? in
+                    guard let id = c["id"] as? String, let hex = c["hex"] as? String else { return nil }
+                    return ColorInfo(id: id, hex: hex)
+                }
             }
-            self = .ready(protocol: dict["protocol"] as? Int ?? 0, tools: tools, colors: colors)
+            self = .ready(protocol: dict["protocol"] as? Int ?? 0, tools: tools, colors: colors("colors"), markColors: colors("markColors"))
         case "tool":
             self = .tool(tool: dict["tool"] as? String, color: dict["color"] as? String ?? "")
         case "loaded":
@@ -199,6 +212,28 @@ struct ParkResult {
         let snapshot = dict["snapshot"]
         self.snapshot = snapshot is NSNull ? nil : snapshot
         self.preview = (dict["preview"] as? String).flatMap(WebMessage.pngData)
+    }
+}
+
+/// What `PageAPI.setView` returns: the picture the page painted, and how many frames it waited for
+/// the host's resize to reach its process. Nil when the page refused the view, which keeps the
+/// stand-in up rather than uncovering a page at the wrong magnification.
+struct ViewResult {
+    let width: Double
+    let height: Double
+    let ratio: Double
+    let waited: Int
+
+    init?(body: Any?) {
+        guard let dict = body as? [String: Any],
+              let width = (dict["width"] as? NSNumber)?.doubleValue,
+              let height = (dict["height"] as? NSNumber)?.doubleValue,
+              let ratio = (dict["ratio"] as? NSNumber)?.doubleValue,
+              let waited = (dict["waited"] as? NSNumber)?.intValue else { return nil }
+        self.width = width
+        self.height = height
+        self.ratio = ratio
+        self.waited = waited
     }
 }
 

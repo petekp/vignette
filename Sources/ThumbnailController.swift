@@ -25,6 +25,12 @@ final class StackModel: ObservableObject {
     @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
     @Published var pressedCard: UUID? = nil
     @Published var overControl = false         // the mouse is on a card's button or circle, where a click does not draw
+    @Published var stripHovered = false        // the mouse is on the selection strip, so its labels are out
+    /// A card is in the annotator. The strip stands aside for it: the strip hangs to the left of
+    /// the column, which is further left than the room the annotator's frame is kept out of, so
+    /// the two would overlap. The selection is untouched and the strip comes back when the session
+    /// ends. Set from `send`, which is the one place the session changes.
+    @Published var annotating = false
     @Published var copied: Set<UUID> = []      // cards showing "Copied" over their image
     /// The selected cards, in the order they were selected. Every action, Stitch included, takes
     /// them in this order, and a card's circle shows its place here.
@@ -32,7 +38,10 @@ final class StackModel: ObservableObject {
     @Published var focused: UUID? = nil        // keyboard focus ring
     @Published var isStack = false             // selection UI only exists in the recent stack
     @Published var scroll: CGFloat = 0         // how far the column is pulled down to show older cards
-    @Published var viewport: CGFloat = 0       // visible height of the column
+    @Published var viewport: CGFloat = 0       // visible height of the column, at the stack's full width
+    /// How wide the stack is drawn, 1 at rest. It narrows while the annotator's frame comes near
+    /// it; the column keeps its right edge, so the cards stay in their corner. See `StackLayout`.
+    @Published var widthScale: CGFloat = 1
 
     var inSelectionMode: Bool { !selection.isEmpty }
     /// The row under the column, shown only for a feedback toast.
@@ -73,7 +82,8 @@ final class StackModel: ObservableObject {
 final class ThumbnailController: NSObject {
     weak var actions: Actions?
     /// A card starts travelling to `frame`; the annotator loads the image there while hidden.
-    var onAnnotatorPrepare: ((Screenshot, NSRect) -> Void)?
+    /// `room` is the rect its frame may grow within, which a zoom may not leave.
+    var onAnnotatorPrepare: ((Screenshot, NSRect, NSRect) -> Void)?
     /// The card has arrived; the annotator becomes visible in its place.
     var onAnnotatorShow: (() -> Void)?
     /// A swap, return, or dismissal has started. The annotator parks its draft, hides, then calls back.
@@ -106,6 +116,15 @@ final class ThumbnailController: NSObject {
     private var autoScrollTick: CFTimeInterval = 0
     /// The one owner of the annotation session. Only `send` writes it; see AnnotatorTransition.
     private var transition = AnnotatorTransition()
+    /// The annotation queue: the files still waiting, in the order they were given, and how many
+    /// the run started with, which the `[annotate] next` line counts against. Only the queue
+    /// continues itself; every other request to annotate replaces it.
+    private var queue: [String] = []
+    private var queueTotal = 0
+    /// The file the queue hands over to, held for the length of one `send`: it is taken before the
+    /// finished card's effects run, so `returnCard` knows another image follows and leaves the
+    /// session open.
+    private var handover: Screenshot?
     /// The card the session is about, kept here because a lone thumbnail leaves the model once the annotator shows.
     private var sessionCard: Card?
     private var annotating: Card? { transition.isActive ? sessionCard : nil }
@@ -134,7 +153,8 @@ final class ThumbnailController: NSObject {
         }
         model.onClickImage = { [weak self] card in
             guard let self else { return }
-            if self.transition.isActive { self.annotate(card); return }
+            // A click picks the next image by hand, so it replaces whatever the queue had left.
+            if self.transition.isActive { self.queue = []; self.annotate(card); return }
             if self.model.inSelectionMode { self.toggle(card) }
             else if let action = Config.actions.first(where: \.isDefault) { self.run(action, on: [card]) }
         }
@@ -144,7 +164,14 @@ final class ThumbnailController: NSObject {
             self.endSweep()
             self.revealFocused()
         }
-        model.onHover = { [weak self] id in self?.prefetchFlightImage(id) }
+        model.onHover = { [weak self] id in
+            guard let self else { return }
+            self.prefetchFlightImage(id)
+            // Focus follows the pointer: one variable says where a key acts, and moving onto a card
+            // moves it there. Leaving a card leaves the focus behind, so keys still act on the card
+            // the pointer last named. Only while the stack holds keys; otherwise the annotator has them.
+            if let id, self.model.isStack, self.panel.acceptsKeys { self.model.focused = id }
+        }
     }
 
     /// The screen a presentation started on. `NSScreen.main` follows the active display, which is
@@ -162,18 +189,23 @@ final class ThumbnailController: NSObject {
         relayout()
         if model.isStack { backdrop.refresh(on: screen) }
     }
-    private var cardSizes: [NSSize] { model.cards.map(\.size) }
+    /// The cards as they are drawn now: at the stack's full width, or narrowed for the annotator.
+    private var cardSizes: [NSSize] { model.cards.map { layout.drawn($0.size) } }
     private var ui: UITweaks { Settings.shared.motionUI }
-    private var layout: StackLayout { StackLayout(ui: ui) }
+    private var layout: StackLayout { StackLayout(ui: ui, widthScale: model.widthScale) }
     private var showsBar: Bool { model.showsBar }
     private var showsStrip: Bool { model.isStack && model.inSelectionMode }
 
-    /// The selection strip's screen frame, or nil when nothing is selected.
+    /// The selection strip's screen frame, or nil when nothing is selected or the annotator has an
+    /// image. Asked here and in `StackView`, never in `showsStrip`: that one sizes the panel, and
+    /// the panel's window must not be resized while a session is running.
     private var stripFrame: NSRect? {
+        guard !model.annotating else { return nil }
         guard showsStrip, let strip = layout.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
                                                             cards: cardSizes, showsBar: showsBar,
                                                             scroll: model.scroll, viewport: model.viewport) else { return nil }
-        return layout.stripFrame(strip, panelFrame: panel.frame, scroll: model.scroll)
+        let reveal = model.stripHovered ? layout.stripReveal(labels: Config.stripActions.map(\.label), right: strip.right) : 0
+        return layout.stripFrame(strip, panelFrame: panel.frame, scroll: model.scroll, reveal: reveal)
     }
 
 
@@ -191,12 +223,14 @@ final class ThumbnailController: NSObject {
                             "draft": model.drafts.contains(card.shot.url.path), "agent": card.agent as Any]
                 },
                 "selected": model.selectedCards().map(\.shot.url.path),
+                "queue": queue,
                 "focused": model.cards.first { $0.id == model.focused }?.shot.url.path as Any,
                 "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.url.path as Any,
                 "feedback": model.feedback as Any, "key": panel.isKeyWindow,
-                "scroll": Int(model.scroll), "viewport": Int(model.viewport),
+                "scroll": Int(model.scroll), "viewport": Int(model.viewport), "widthScale": model.widthScale,
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h),
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
+                "stripHovered": model.stripHovered,
             ] as [String: Any],
             "transition": ["phase": "\(transition.phase)", "annotating": annotating?.shot.url.path as Any, "isActive": transition.isActive],
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
@@ -230,6 +264,7 @@ final class ThumbnailController: NSObject {
     func toggleRecent(_ shots: [Screenshot], detail: String = "") -> StackToggle {
         if visible && model.isStack { dismiss(); return .dismissed }
         if transition.isActive { send(.dismiss) }   // a lone annotation gives way to the stack
+        queue = []   // a stack presented anew starts with nothing queued
         let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
         guard !cards.isEmpty else { return .empty }
@@ -251,8 +286,11 @@ final class ThumbnailController: NSObject {
     }
 
     /// The panel can refuse key status right after resigning it (a dismissal being reversed), so try twice.
+    /// The stack has a focused card from the moment it takes keys, so arrows, Space, and Return act
+    /// on the newest card without a click or a first arrow press.
     private func takeKeys() {
         panel.acceptsKeys = true
+        if model.focused == nil { model.focused = model.hoveredCard ?? model.cards.first?.id }
         panel.makeKey()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self, self.visible, self.model.isStack, !self.transition.isActive, !self.panel.isKeyWindow else { return }
@@ -260,9 +298,19 @@ final class ThumbnailController: NSObject {
         }
     }
 
+    /// Opens the annotator on the first of `shots` and queues the rest: finishing one opens the
+    /// next, until the list is done. The selection is untouched by the whole run, so the same cards
+    /// can be copied or stitched after the last one.
+    func annotate(_ shots: [Screenshot]) {
+        guard let first = shots.first else { return }
+        queue = shots.dropFirst().map(\.url.path)
+        queueTotal = shots.count
+        annotate(first)
+    }
+
     /// Opens the annotator on `shot`, or swaps to it if the annotator is already open. Shows the
     /// card first if it is not on screen.
-    func annotate(_ shot: Screenshot) {
+    private func annotate(_ shot: Screenshot) {
         if visible {
             // A shot the panel does not have yet joins it; the flight starts from its offscreen slot.
             if card(for: shot) == nil, let card = makeCard(shot) { insert(card) }
@@ -278,6 +326,7 @@ final class ThumbnailController: NSObject {
     /// The page abandoned the session (Esc, click outside, Cmd+W). The reducer decides what returns.
     func annotationEnded() {
         restoreFocusOnEnd = true
+        queue = []   // ending one card ends the run; the rest of the list is dropped
         send(.close)
     }
 
@@ -286,6 +335,7 @@ final class ThumbnailController: NSObject {
     func annotationFinished(quick: Bool) {
         restoreFocusOnEnd = true
         if quick {
+            queue = []   // quick annotate closes everything; nothing follows it
             if visible { dismiss() } else { send(.dismiss) }
         } else {
             send(.finish)
@@ -324,12 +374,19 @@ final class ThumbnailController: NSObject {
     /// Drops cards whose files no longer exist.
     func remove(_ shots: [Screenshot]) {
         let urls = Set(shots.map(\.url))
+        let paths = Set(urls.map(\.path))
+        queue.removeAll { paths.contains($0) }
+        // The file in the annotator going ends the run: the annotator hides, and nothing should
+        // take its place in the same turn.
+        if let key = transition.key, paths.contains(key) { queue = [] }
         for url in urls { send(.remove(url.path)) }
         for card in model.cards where urls.contains(card.shot.url) { flights.end(id: card.id) }
         endSweep()
         model.cards.removeAll { urls.contains($0.shot.url) }
         model.setSelection(model.selection.filter { id in model.cards.contains { $0.id == id } })
         if model.cards.isEmpty { dismiss(); return }
+        // The focused card is where keys act; when its file goes, the newest takes the focus.
+        if let focused = model.focused, !model.cards.contains(where: { $0.id == focused }) { model.focused = model.cards.first?.id }
         relayout()
     }
 
@@ -438,6 +495,7 @@ final class ThumbnailController: NSObject {
     func dismiss() {
         guard visible else { return }
         visible = false
+        queue = []
         dismissGeneration += 1
         let gen = dismissGeneration
         dismissTimer?.invalidate()
@@ -490,24 +548,70 @@ final class ThumbnailController: NSObject {
     private func send(_ event: AnnotatorTransition.Event) {
         let effects = transition.reduce(event)
         Log.write("[transition] \(event) -> \(transition.phase) effects=\(effects.map(\.description).joined(separator: " "))")
-        for effect in effects { perform(effect) }
+        // A queue hands over in the turn the finished card is sent home, so its flight back and the
+        // next card's flight out run together, the way a swap's two flights do.
+        if event == .parked, !transition.isActive { handover = takeNext() }
+        // The stack's width is set before this batch's flights are aimed, so a swap's returning
+        // card and the card leaving are aimed at one column. The card leaving is still drawn at the
+        // width the stack had, so it flies from the slot it has now. A handover keeps the annotator
+        // open, so the room is made for the image the queue opens next instead of being given back.
+        let leaving = preparedCard(in: effects)
+        let slot = leaving.map { cardFrame(of: $0) }
+        let opening = leaving ?? handover.flatMap { shot in model.cards.first { $0.shot.url.path == shot.url.path } }
+        if opening != nil || (releasesRoom(effects) && handover == nil) {
+            makeRoom(besides: opening.map { targetFrame(for: $0) }, animated: true)
+        }
+        for effect in effects { perform(effect, leaving: slot) }
+        if let next = handover {
+            handover = nil
+            annotate(next)
+        }
+        model.annotating = transition.isActive
     }
 
-    private func perform(_ effect: AnnotatorTransition.Effect) {
+    /// The next file the queue has for the annotator. Files that have gone since drop out.
+    private func takeNext() -> Screenshot? {
+        while !queue.isEmpty {
+            let key = queue.removeFirst()
+            guard FileManager.default.fileExists(atPath: key) else { continue }
+            Log.write("[annotate] next \((key as NSString).lastPathComponent) \(queueTotal - queue.count) of \(queueTotal)")
+            return Screenshot(url: URL(fileURLWithPath: key))
+        }
+        return nil
+    }
+
+    /// The card a `prepare` in this batch sends to the annotator, if the stack has it.
+    private func preparedCard(in effects: [AnnotatorTransition.Effect]) -> Card? {
+        for effect in effects {
+            if case .prepare(let key) = effect { return model.cards.first { $0.shot.url.path == key } }
+        }
+        return nil
+    }
+
+    /// Whether this batch takes the annotator off the screen, so nothing is beside the stack.
+    private func releasesRoom(_ effects: [AnnotatorTransition.Effect]) -> Bool {
+        effects.contains { effect in
+            if case .returnCard = effect { return true }
+            return effect == .hideAnnotator
+        }
+    }
+
+    private func perform(_ effect: AnnotatorTransition.Effect, leaving slot: NSRect?) {
         switch effect {
         case .prepare(let key):
             guard let card = model.cards.first(where: { $0.shot.url.path == key }) else { return }
             sessionCard = card
             loadedKeys.remove(key)
             dismissTimer?.invalidate()
-            model.clearSelection()
+            // The selection stays: the card comes back to its slot, and a queued run needs the rest
+            // of it to still be there when the last card is done.
             releaseKeys()
             _ = model.outCards.insert(card.id)
             let target = targetFrame(for: card)
             annotationFrame = target
             dim.show(on: screen)
-            onAnnotatorPrepare?(card.shot, target)
-            var from = cardFrame(of: card)
+            onAnnotatorPrepare?(card.shot, target, annotatorRoom)
+            var from = slot ?? cardFrame(of: card)
             if model.offscreen.contains(card.id) { from.origin.x += layout.offscreenDistance(cardWidth: from.width) }
             // The annotator window appears only once the flight is exactly on the target frame.
             // It draws the same ring and shadow there, so a window put up while the spring still
@@ -535,7 +639,9 @@ final class ThumbnailController: NSObject {
             onAnnotatorHide? { [weak self] in self?.send(.parked) }
         case .returnCard(let key):
             guard let card = sessionCard, card.shot.url.path == key else { return }
-            if !transition.isActive { sessionCard = nil; dim.hide(); endSession() }
+            // With another file coming from the queue the session is not over: the dim stays up and
+            // the user's app does not get the focus back between two cards.
+            if !transition.isActive, handover == nil { sessionCard = nil; dim.hide(); endSession() }
             returnCard(currentCard(card))
         case .hideAnnotator:
             // While the stack slides out, the image is flying to its slot's offscreen position
@@ -583,7 +689,41 @@ final class ThumbnailController: NSObject {
     }
 
     private func targetFrame(for card: Card) -> NSRect {
-        layout.annotationFrame(for: card.pointSize, visibleFrame: screen.visibleFrame, below: annotatorBelow())
+        layout.annotationFrame(for: card.pointSize, visibleFrame: annotatorRoom, below: annotatorBelow())
+    }
+
+    /// The rect the annotator fits and grows within. The recent stack keeps a strip of the screen
+    /// on the right, so a wide image opens and zooms beside the cards instead of over them; a lone
+    /// thumbnail leaves the panel when the annotator opens and reserves nothing.
+    private var annotatorRoom: NSRect {
+        guard visible, model.isStack else { return screen.visibleFrame }
+        return layout.annotatorRoom(visibleFrame: screen.visibleFrame)
+    }
+
+    /// The annotator's frame moved: a zoom step, or the fit it makes on its way out. The stack
+    /// follows it straight rather than through a spring of its own, so the two move together and a
+    /// frame that has grown never reaches a card that has not narrowed yet.
+    func annotatorFrameMoved(_ frame: NSRect) {
+        makeRoom(besides: frame, animated: false)
+    }
+
+    /// How wide the stack is drawn: the widest that still clears the annotator's frame by the gap,
+    /// down to `ui.stackMinScale`, and back to full width when nothing is beside it.
+    private func makeRoom(besides frame: NSRect?, animated: Bool) {
+        guard visible, model.isStack else { return }
+        let wanted = frame.map { layout.widthScale(clearing: $0, visibleFrame: screen.visibleFrame) } ?? 1
+        // In hundredths: a zoom moves the frame at every display refresh, and a step under two
+        // points of a card's width is not worth laying the column out for. Rounded down, so the
+        // gap the stack keeps is never smaller than the one asked for.
+        let next = min(1, (wanted * 100).rounded(.down) / 100)
+        guard abs(next - model.widthScale) > 0.0001 else { return }
+        var transaction = Transaction(animation: animated ? Anim.spring(ui.relayoutDuration) : nil)
+        transaction.disablesAnimations = !animated
+        withTransaction(transaction) {
+            model.widthScale = next
+            // Narrower cards are a shorter column; the panel keeps the height it has at rest.
+            model.scroll = min(model.scroll, max(0, contentHeight - model.viewport))
+        }
     }
 
     /// The best image for the flight: the draft preview, a larger decode if hovering fetched one,
@@ -709,10 +849,11 @@ final class ThumbnailController: NSObject {
         action.run(cards.map(\.shot), actions)
     }
 
-    /// Cards a shortcut acts on: the selection, else the focused card, else the hovered one, else the newest.
+    /// Cards a shortcut acts on: the selection, else the focused card. The focus is the newest card
+    /// while the stack has keys and follows the pointer, so the card under the mouse is the target.
     private func targetCards() -> [Card] {
         if model.inSelectionMode { return model.selectedCards() }
-        if let id = model.focused ?? model.hoveredCard, let card = model.cards.first(where: { $0.id == id }) { return [card] }
+        if let id = model.focused, let card = model.cards.first(where: { $0.id == id }) { return [card] }
         return model.cards.first.map { [$0] } ?? []
     }
 
@@ -869,6 +1010,7 @@ final class ThumbnailController: NSObject {
         model.isStack = stack
         model.slidingOut = false
         model.scroll = 0
+        model.widthScale = 1
         if !stack { releaseKeys() }
         // A dismissal in progress is simply reversed: the same cards turn around. `visible` is
         // already false then; the panel stays up until the slide-out ends.
@@ -934,7 +1076,9 @@ final class ThumbnailController: NSObject {
     /// entrance and bends their path, since the column frame's height and the slide land in the
     /// same transaction.
     private func layoutPanel(shrinkLater: Bool, animated: Bool) {
-        let content = layout.contentHeight(cards: cardSizes, showsBar: showsBar)
+        // At the stack's full width, so a stack narrowed for the annotator keeps the panel it will
+        // need when it comes back. The panel is transparent outside the column either way.
+        let content = layout.contentHeight(cards: model.cards.map(\.size), showsBar: showsBar)
         let viewport = layout.viewportHeight(content: content, visibleFrame: screen.visibleFrame)
         var transaction = Transaction(animation: animated ? Anim.spring(ui.relayoutDuration) : nil)
         transaction.disablesAnimations = !animated

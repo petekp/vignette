@@ -8,10 +8,14 @@ import {
   DefaultSizeStyle,
   Editor,
   GeoShapeGeoStyle,
+  HistoryEntry,
+  TLArrowShape,
   TLAssetStore,
   TLComponents,
   TLEditorSnapshot,
   TLImageShape,
+  TLRecord,
+  TLShape,
   TLShapeId,
   Tldraw,
   createShapeId,
@@ -22,13 +26,14 @@ import {
   useEditor,
 } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, ZoomAnchor, postToNative } from './bridge'
+import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, ViewRequest, ViewResult, ZoomAnchor, postToNative } from './bridge'
 
 /** One keyboard zoom step (cmd+plus / cmd+minus). */
 const ZOOM_STEP = 1.25
 /** Wheel and pinch: window scale per wheel unit; pinch-out (negative deltaY) grows the window. */
 const WHEEL_ZOOM_RATE = 0.01
-import { COLORS, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
+import { CANDIDATES, COLORS, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, MARK_COLORS, REOPEN_TOOL, SHOW_COLORS, TOOLS, ToolId } from './config'
+import { Area, explain, hasSample, pickColor, prepareSample } from './contrast'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
 
@@ -40,10 +45,15 @@ let dirty = false
 /// True while `load` or `export` mutate the store, so those changes are not reported as drafts.
 let quiet = false
 let draftTimer: ReturnType<typeof setTimeout> | null = null
+/// Marks whose colour the heuristic has not picked for where they now are: drawn, moved, or
+/// resized since the last pick. Emptied when the hand lets go, before the draft goes to the host.
+let unpicked = new Set<TLShapeId>()
 /// Longest side, in pixels, of the preview returned with a parked draft.
 const PREVIEW_MAX = 1600
 /// How long after the last change the draft snapshot goes to the host.
 const DRAFT_DELAY_MS = 300
+/// How many frames `setView` waits for the host's resize to reach this process before it draws.
+const VIEW_FRAMES = 20
 /// How long a rendering waits for a font it embeds the first time; see `waitForEmbeddedFonts`.
 const FONT_RASTER_MS = 250
 
@@ -94,13 +104,107 @@ function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
   return next
 }
 
-/// Sends the host the current annotations, or null when there are none. Debounced from the store listener.
+/// Sends the host the current annotations, or null when there are none. Debounced from the store
+/// listener. The host asks for the zoom overlay when this arrives.
 function scheduleDraft(editor: Editor) {
   if (draftTimer) clearTimeout(draftTimer)
   draftTimer = setTimeout(() => {
+    // A drag is one motion, not its frames: the colours wait until the hand lets go.
+    if (editor.inputs.isPointing) return scheduleDraft(editor)
     draftTimer = null
+    pickColors(editor)
     if (currentKey) postToNative({ type: 'draft', key: currentKey, snapshot: hasAnnotations(editor) ? getSnapshot(editor.store) : null })
   }, DRAFT_DELAY_MS)
+}
+
+/// Notes the marks a change touched, so their colour is picked again for where they now sit.
+function noteChanged(entry: HistoryEntry<TLRecord>) {
+  const changes = entry.changes
+  for (const record of Object.values(changes.added)) noteShape(record)
+  for (const [, after] of Object.values(changes.updated)) noteShape(after)
+  for (const record of Object.values(changes.removed)) if (record.typeName === 'shape') unpicked.delete(record.id)
+}
+
+function noteShape(record: TLRecord) {
+  if (record.typeName === 'shape' && record.id !== IMAGE_ID) unpicked.add(record.id)
+}
+
+/// The colour of every mark that is waiting for one. Marks the decode has not caught up with stay
+/// in the set, so the next pick colours them.
+function pickColors(editor: Editor) {
+  if (!currentKey || !unpicked.size || !hasSample(currentKey)) return
+  const ids = [...unpicked]
+  unpicked.clear()
+  applyColors(editor, currentKey, ids)
+}
+
+/// What a mark's ink covers, in fractions of the screenshot. An arrow is the strip between its two
+/// ends: its bounding box is the whole rectangle they span, most of which the stroke never touches,
+/// so a banner in a corner of that box would colour an arrow that runs nowhere near it. A shape
+/// drawn with no fill is its border band for the same reason.
+function areaOf(editor: Editor, shape: TLShape, image: Box): Area | null {
+  if (shape.type === 'arrow') {
+    const arrow = shape as TLArrowShape
+    const transform = editor.getShapePageTransform(shape.id)
+    const from = transform.applyToPoint(arrow.props.start)
+    const to = transform.applyToPoint(arrow.props.end)
+    return {
+      kind: 'line',
+      from: { x: (from.x - image.x) / image.w, y: (from.y - image.y) / image.h },
+      to: { x: (to.x - image.x) / image.w, y: (to.y - image.y) / image.h },
+    }
+  }
+  const bounds = editor.getShapePageBounds(shape.id)
+  if (!bounds) return null
+  const rect = {
+    x: (bounds.x - image.x) / image.w,
+    y: (bounds.y - image.y) / image.h,
+    w: bounds.w / image.w,
+    h: bounds.h / image.h,
+  }
+  // A shape with no `fill` prop at all (text, a freehand stroke) keeps the whole box.
+  const fill = (shape.props as { fill?: string }).fill
+  return { kind: fill === 'none' ? 'border' : 'fill', rect }
+}
+
+/// Sets each mark's colour from the screenshot under it. The image shape is the frame every mark is
+/// measured against, so a mark's bounds become the fraction of the screenshot it covers.
+///
+/// The change is outside undo history: the colour belongs to where the mark is, not to an edit of
+/// its own, so one undo moves or removes the mark and the next pick colours it for where it lands.
+function applyColors(editor: Editor, key: string, ids: TLShapeId[]) {
+  const image = editor.getShapePageBounds(IMAGE_ID)
+  if (!image) return
+  const picked: { id: TLShapeId; color: ColorId }[] = []
+  for (const id of ids) {
+    const shape = editor.getShape(id)
+    const props = shape?.props as { color?: string } | undefined
+    if (!shape || shape.meta.colorChosen || props?.color === undefined) continue
+    const area = areaOf(editor, shape, image)
+    if (!area) continue
+    const color = pickColor(key, area)
+    if (color && color !== props.color) picked.push({ id, color })
+  }
+  if (!picked.length) return
+  const was = quiet
+  quiet = true // the caller reports the draft this belongs to
+  silently(editor, () => {
+    // One case per shape a mark can be: `updateShape` takes the shape's own type, not the union.
+    for (const { id, color } of picked) {
+      switch (editor.getShape(id)?.type) {
+        case 'geo':
+          editor.updateShape({ id, type: 'geo', props: { color } })
+          break
+        case 'arrow':
+          editor.updateShape({ id, type: 'arrow', props: { color } })
+          break
+        case 'text':
+          editor.updateShape({ id, type: 'text', props: { color } })
+          break
+      }
+    }
+  })
+  quiet = was
 }
 
 /// The draft as the host should store it, with a rendering when the user changed it since the last one.
@@ -110,6 +214,7 @@ async function park(editor: Editor, scale: number): Promise<ParkResult> {
     draftTimer = null
   }
   if (!currentKey) return { snapshot: null, preview: null }
+  pickColors(editor)
   const annotated = hasAnnotations(editor)
   let preview: string | null = null
   if (dirty && annotated) {
@@ -151,14 +256,20 @@ export function App() {
         if (!editor) return { items: [], error: 'editor not mounted' }
         return oneAtATime(() => exportDrafts(editor, items, scaleRef.current))
       },
+      async overlay(maxPixel) {
+        return editor ? oneAtATime(() => overlay(editor, maxPixel)) : null
+      },
       setTool(id) {
         if (editor && TOOLS.some((t) => t.id === id)) selectTool(editor, id as ToolId)
       },
       setColor(id) {
         if (editor && COLORS.some((c) => c.id === id)) setColor(editor, id as ColorId)
       },
-      setCanvasZoom(ratio, at) {
-        if (editor && Number.isFinite(ratio) && ratio >= 1) setCanvasZoom(editor, ratio, at)
+      async setView(request) {
+        // In the queue like every other canvas call: `export` and `build` put the camera back when
+        // they restore their snapshot, so a view applied in the middle of one is undone behind the
+        // stand-in. The stand-in covers the page for as long as this waits.
+        return editor ? oneAtATime(() => setView(editor, request)) : null
       },
       finish() {
         if (editor) finish(editor, scaleRef.current)
@@ -189,20 +300,23 @@ export function App() {
           ed.user.updateUserPreferences({ colorScheme: 'dark' })
           ed.updateInstanceState({ isDebugMode: false })
           ed.store.listen(
-            () => {
+            (entry) => {
               if (quiet) return
               dirty = true
+              noteChanged(entry)
               scheduleDraft(ed)
             },
             { scope: 'document', source: 'user' }
           )
           setEditor(ed)
           ;(window as unknown as { editor: Editor }).editor = ed // for `shotnote://eval` debugging
+          ;(window as unknown as { contrast: unknown }).contrast = { pick: pickColor, explain }
           postToNative({
             type: 'ready',
             protocol: PROTOCOL,
             tools: TOOLS.map(({ id, label, key, symbol }) => ({ id, label, key, symbol })),
-            colors: COLORS.map(({ id, hex }) => ({ id, hex })),
+            colors: SHOW_COLORS ? COLORS.map(({ id, hex }) => ({ id, hex })) : [],
+            markColors: MARK_COLORS.map(({ id, hex }) => ({ id, hex })),
           })
         }}
       />
@@ -233,6 +347,10 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
 
 function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: number }) {
   currentKey = p.key
+  unpicked.clear()
+  // The decode runs alongside the load: `loaded` must not wait for it, and a mark drawn before it
+  // lands keeps the first candidate until the next pick.
+  void prepareSample(p.key, fileUrl(p.key)).catch(() => {})
   // The shape is sized in points so the canvas matches the window; export scales back up to pixels.
   const ratio = window.devicePixelRatio || 1
   const w = p.pixelWidth / ratio
@@ -267,7 +385,7 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
 }
 
 function fitCamera(editor: Editor, w: number, h: number) {
-  canvasRatio = 1
+  view = { ratio: 1, x: 0.5, y: 0.5 }
   // The host sizes the window to the image's aspect, so 'fit' makes the image flush with the window.
   editor.setCameraOptions({
     // No step below the fit: nothing tldraw does on its own can zoom the image out of the window.
@@ -290,22 +408,55 @@ function fitCamera(editor: Editor, w: number, h: number) {
   })
 }
 
-/** The host's last in-window magnification; a window resize refits and then puts it back. */
-let canvasRatio = 1
+/**
+ * The picture the host last asked for: how far the image is magnified inside the window, and the
+ * middle of the part that is visible, as fractions of the image. The host holds the same three
+ * numbers and draws its own copy of this picture while a zoom is moving, so this is the whole of
+ * what the page is told about a zoom.
+ */
+let view = { ratio: 1, x: 0.5, y: 0.5 }
 
 /**
- * Magnification inside the window: 1 fits the image, larger zooms in. `at` is the point that keeps
- * its place, a fraction of the window; null holds its middle. The camera constraints keep the
- * image covering the window, so a zoom at an edge pushes that far and no further.
+ * Draws the view the host asked for and answers once it is painted. The host has already laid the
+ * window out at `width` by `height`; that resize crosses a process boundary, so the page waits for
+ * it to arrive rather than drawing this camera at the old size. The host takes its own copy of the
+ * picture away when this answers.
  */
-function setCanvasZoom(editor: Editor, ratio: number, at: ZoomAnchor | null) {
-  canvasRatio = ratio
-  const { x: cx, y: cy, z: cz } = editor.getCamera()
-  const z = editor.getBaseZoom() * ratio
+async function setView(editor: Editor, request: ViewRequest): Promise<ViewResult | null> {
+  // Five numbers from the host, checked before they reach the camera: a ratio below 1 would zoom
+  // the image out of a window sized to fit it, and one number that is not finite moves the camera
+  // where nothing can bring it back. The host keeps its stand-in up when this answers null.
+  const numbers = [request.ratio, request.x, request.y, request.width, request.height]
+  if (!numbers.every(Number.isFinite) || request.ratio < 1) return null
+  view = { ratio: request.ratio, x: request.x, y: request.y }
+  const container = editor.getContainer()
+  let waited = 0
+  for (; waited < VIEW_FRAMES; waited++) {
+    const box = container.getBoundingClientRect()
+    // Within a pixel: the host's frame is fractional and a layout viewport is whole pixels, so the
+    // size that arrives here can be one short of the size the host asked for.
+    if (Math.abs(box.width - request.width) <= 1 && Math.abs(box.height - request.height) <= 1) break
+    await new Promise((r) => requestAnimationFrame(r))
+  }
+  applyView(editor)
+  // Two frames: the first carries this camera into a paint, the second has been on screen.
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const box = container.getBoundingClientRect()
+  return { width: box.width, height: box.height, ratio: editor.getZoomLevel() / editor.getBaseZoom(), waited }
+}
+
+/**
+ * Puts the stored view on the camera: the image magnified by `ratio` with the point it names in
+ * the middle of the window. Idempotent, and the resize observer runs it too, so it does not matter
+ * whether the host's call or the resize reaches the page first.
+ */
+function applyView(editor: Editor) {
+  const bounds = editor.getShapePageBounds(IMAGE_ID)
+  if (!bounds) return
+  editor.updateViewportScreenBounds(editor.getContainer())
+  const z = editor.getBaseZoom() * view.ratio
   const { w, h } = editor.getViewportScreenBounds()
-  const sx = (at ? at.x : 0.5) * w
-  const sy = (at ? at.y : 0.5) * h
-  editor.setCamera({ x: cx + sx / z - sx / cz, y: cy + sy / z - sy / cz, z })
+  editor.setCamera({ x: w / 2 / z - (bounds.x + view.x * bounds.w), y: h / 2 / z - (bounds.y + view.y * bounds.h), z })
 }
 
 /// The screenshot on an empty canvas, or the draft the host stored for it, which carries the image
@@ -338,6 +489,7 @@ function lastAnnotation(editor: Editor): TLShapeId | null {
 }
 
 function clearCanvas(editor: Editor) {
+  unpicked.clear()
   silently(editor, () => removeAll(editor))
   editor.clearHistory()
 }
@@ -355,29 +507,39 @@ function removeAll(editor: Editor) {
 
 /// An agent's marks as ordinary shapes, in canvas points: the image is at the origin, `w` by `h`,
 /// and every mark number is a fraction of it. The host has already checked the numbers and the color.
-function createMarks(editor: Editor, marks: Mark[], w: number, h: number) {
+function createMarks(editor: Editor, marks: Mark[], w: number, h: number): TLShapeId[] {
+  const unnamed: TLShapeId[] = []
   for (const m of marks) {
     const x = m.x * w
     const y = m.y * h
-    const color = (m.color ?? COLORS[0].id) as ColorId
+    const color = (m.color ?? CANDIDATES[0].id) as ColorId
+    // A mark that names a colour keeps it; one that names none is the heuristic's to colour.
+    const meta = m.color ? { colorChosen: true } : {}
+    const id = createShapeId()
+    if (!m.color) unnamed.push(id)
     if (m.type === 'arrow') {
       editor.createShape({
+        id,
         type: 'arrow',
         x,
         y,
+        meta,
         props: { start: { x: 0, y: 0 }, end: { x: (m.x2! - m.x) * w, y: (m.y2! - m.y) * h }, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
       })
     } else if (m.type === 'text') {
-      editor.createShape({ type: 'text', x, y, props: { richText: toRichText(m.text!), color, size: DEFAULT_SIZE } })
+      editor.createShape({ id, type: 'text', x, y, meta, props: { richText: toRichText(m.text!), color, size: DEFAULT_SIZE } })
     } else {
       editor.createShape({
+        id,
         type: 'geo',
         x,
         y,
+        meta,
         props: { geo: m.type, w: m.w! * w, h: m.h! * h, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
       })
     }
   }
+  return unnamed
 }
 
 /// An agent's marks as a draft, with the editor never shown: the image and the marks go on the
@@ -392,10 +554,18 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
   const h = p.pixelHeight / ratio
   quiet = true
   try {
+    let unnamed: TLShapeId[] = []
     silently(editor, () => {
       placeImage(editor, p, w, h)
-      createMarks(editor, marks, w, h)
+      unnamed = createMarks(editor, marks, w, h)
     })
+    // The snapshot is stored as it stands, so the colours are picked before it is taken.
+    if (unnamed.length) {
+      // A screenshot that will not decode leaves no sample: the marks keep the colour they were
+      // given, and the draft is still stored. Losing an agent's marks over a colour is not a trade.
+      await prepareSample(p.key, fileUrl(p.key)).catch(() => {})
+      applyColors(editor, p.key, unnamed)
+    }
     const snapshot = getSnapshot(editor.store)
     const preview = await render(editor, Math.min(ratio, PREVIEW_MAX / Math.max(w, h)))
     return { snapshot, preview }
@@ -416,7 +586,19 @@ function selectTool(editor: Editor, id: ToolId) {
 
 function setColor(editor: Editor, id: ColorId) {
   editor.setStyleForNextShapes(DefaultColorStyle, id)
-  if (editor.getSelectedShapeIds().length) editor.setStyleForSelectedShapes(DefaultColorStyle, id)
+  const ids = editor.getSelectedShapeIds()
+  if (!ids.length) return
+  editor.setStyleForSelectedShapes(DefaultColorStyle, id)
+  // A colour the user picked is the user's: the heuristic never changes that mark again. The mark
+  // is outside undo history, like the colours the heuristic writes, so one undo cannot drop the
+  // guard and leave the colour to be picked again 300 ms later.
+  silently(editor, () => {
+    for (const shapeId of ids) {
+      const shape = editor.getShape(shapeId)
+      if (shape) editor.updateShape({ id: shapeId, type: shape.type, meta: { ...shape.meta, colorChosen: true } })
+      unpicked.delete(shapeId)
+    }
+  })
 }
 
 function activeTool(editor: Editor): ToolId | null {
@@ -435,6 +617,7 @@ function finish(editor: Editor, scale: number) {
 }
 
 async function renderDone(editor: Editor, scale: number) {
+  pickColors(editor)
   if (!hasAnnotations(editor)) {
     dirty = false
     postToNative({ type: 'done', png: null })
@@ -469,14 +652,40 @@ async function render(editor: Editor, scale: number) {
   canvas.height = height
   const ctx = canvas.getContext('2d')!
   ctx.drawImage(await decodeImage(src), 0, 0, width, height)
+  await drawAnnotations(editor, ctx, bounds, width, height, scale)
+  return canvas.toDataURL('image/png')
+}
+
+/// tldraw's SVG of the annotations alone, drawn over the whole image. False when nothing is drawn.
+async function drawAnnotations(editor: Editor, ctx: CanvasRenderingContext2D, bounds: Box, width: number, height: number, scale: number) {
   const ids = [...editor.getCurrentPageShapeIds()].filter((id) => id !== IMAGE_ID)
-  if (ids.length) {
-    const svg = await editor.getSvgString(ids, { bounds: Box.From(bounds), padding: 0, background: false, scale })
-    if (svg) {
-      const annotations = await decodeImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.svg))
-      await waitForEmbeddedFonts(svg.svg)
-      ctx.drawImage(annotations, 0, 0, width, height)
-    }
+  if (!ids.length) return false
+  const svg = await editor.getSvgString(ids, { bounds: Box.From(bounds), padding: 0, background: false, scale })
+  if (!svg) return false
+  const annotations = await decodeImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.svg))
+  await waitForEmbeddedFonts(svg.svg)
+  ctx.drawImage(annotations, 0, 0, width, height)
+  return true
+}
+
+/// The annotations alone on a transparent canvas, covering the image: what the host lays over the
+/// screenshot while a zoom is moving. Null when nothing is drawn. The selection is put back, since
+/// the user is editing this canvas.
+async function overlay(editor: Editor, maxPixel: number): Promise<string | null> {
+  const bounds = editor.getShapePageBounds(IMAGE_ID)
+  if (!bounds || !hasAnnotations(editor)) return null
+  const scale = Math.min(window.devicePixelRatio || 1, maxPixel / Math.max(bounds.w, bounds.h))
+  const width = Math.round(bounds.w * scale)
+  const height = Math.round(bounds.h * scale)
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const selected = editor.getSelectedShapeIds()
+  silently(editor, () => editor.selectNone())
+  try {
+    if (!(await drawAnnotations(editor, canvas.getContext('2d')!, bounds, width, height, scale))) return null
+  } finally {
+    silently(editor, () => editor.setSelectedShapes(selected))
   }
   return canvas.toDataURL('image/png')
 }
@@ -549,20 +758,11 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
   }, [tool, color])
 
   // Refit as soon as the window is laid out at a new size, before that frame paints, so the image
-  // never shows at the old fit. tldraw's own bounds update waits for the next frame. The reset
-  // drops any magnification, so it goes back on afterwards, over the same part of the image: a
-  // resize must not undo where a zoom at the cursor left the view.
+  // never shows at the old fit: tldraw's own bounds update waits for the next frame. The view the
+  // host asked for is what it refits to, so a resize cannot undo where a zoom left the camera.
   useEffect(() => {
     const container = editor.getContainer()
-    const observer = new ResizeObserver(() => {
-      const held = canvasRatio > 1 ? editor.getViewportPageBounds().center : null
-      editor.updateViewportScreenBounds(container)
-      editor.setCamera(editor.getCamera(), { reset: true })
-      if (held) {
-        setCanvasZoom(editor, canvasRatio, null)
-        editor.centerOnPoint(held)
-      }
-    })
+    const observer = new ResizeObserver(() => applyView(editor))
     observer.observe(container)
     return () => observer.disconnect()
   }, [editor])
@@ -644,7 +844,11 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
         }
         return
       }
-      if (!mod && !e.altKey) {
+      if (!mod && !e.altKey && /^[a-z]$/.test(e.key.toLowerCase())) {
+        // Tool keys are the page's. tldraw registers its own on the document body, which `hideUi`
+        // leaves in place, so a letter it binds would reach a tool the toolbar does not show: this
+        // capture-phase listener stops every plain letter before that.
+        e.stopPropagation()
         const t = TOOLS.find((t) => t.key === e.key.toLowerCase())
         if (t) {
           e.preventDefault()
