@@ -167,9 +167,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     func annotate(_ shots: [Screenshot]) {
-        guard let shot = shots.last else { Commands.error("annotate", .missingFile, "nothing selected"); return }
-        Commands.ok("annotate", shots.count > 1 ? "\(shot.url.lastPathComponent), the last of \(shots.count); the annotator holds one image" : shot.url.lastPathComponent)
-        thumbnail.annotate(shot)
+        guard let shot = shots.first else { Commands.error("annotate", .missingFile, "nothing selected"); return }
+        Commands.ok("annotate", shots.count > 1 ? "\(shot.url.lastPathComponent) 1 of \(shots.count)" : shot.url.lastPathComponent)
+        thumbnail.annotate(shots)
     }
 
     /// The newest screenshot in the watch folder goes into the annotator, on screen or not.

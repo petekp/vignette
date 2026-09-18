@@ -101,9 +101,16 @@ and closing it hands focus back to the app you came from.
   itself when a model resizes it to read it. Each badge is the number the card's circle showed. The
   selected cards fly together into the new card, which takes their place at the bottom of the
   stack, or opens in the annotator when Annotate New Captures is on.
+- The newest card has the focus as soon as the stack is up, and the focus follows the mouse: move
+  onto a card and keys act on that one. So Space over one card after another builds a selection
+  without clicking, and Return opens the card the mouse is on. A key runs on the selection when
+  there is one, else on the focused card.
 - Arrows move focus, Shift extends in the direction you travel (turning back drops the card it
-  added last), Space toggles, Cmd+A selects all, Return annotates the card you selected last,
-  Cmd+Delete trashes, Esc clears then dismisses.
+  added last), Space toggles, Cmd+A selects all, Return annotates, Cmd+Delete trashes, Esc clears
+  then dismisses.
+- Return on several selected cards annotates them one after another, in the order you picked them:
+  each Done sends that card home and opens the next. They stay selected the whole time, so Cmd+C or
+  Cmd+S afterwards still takes all of them. Esc, or closing the stack, drops the rest of the queue.
 - A card whose annotations you parked with Esc or a swap shows them in its thumbnail. That
   thumbnail is a preview PNG in `~/Library/Caches`; if macOS clears the folder, the next launch
   renders it again from the draft. Reopen the card and the annotations are back either way;

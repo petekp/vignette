@@ -101,8 +101,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
    `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; selection, focus,
-   the hovered card, feedback, panel, `strip`, the selection strip's frame or null, and
-   `stripHovered`),
+   the hovered card, `queue`, the files waiting for the annotator, feedback, panel, `strip`,
+   the selection strip's frame or null, and `stripHovered`),
    `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
@@ -265,6 +265,15 @@ the same driven sequence; a single run varies.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor.
+- Which card a key acts on is one variable, `model.focused`. The stack focuses the newest card the
+  moment it takes keys (`takeKeys`), so arrows, Space, and Return act on a card without a first
+  click or arrow press, and the pointer moves the focus too: moving onto a card focuses it, and
+  leaving the card leaves the focus there, so the card the mouse last named is the one a key acts
+  on. The pointer only moves it while the stack holds the keys; while the annotator has them
+  nothing moves. A shortcut runs on the selection when there is one, else on the focused card
+  (`targetCards`). The ring says where the focus is: the accent color on a selected card, white on
+  a focused one. So Space over one card after another builds a selection from the mouse alone, and
+  Return opens the card the mouse is on.
 - The panel widens to the left while cards are selected, to hold the selection strip
   (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:)` makes the room). Its
   right edge never moves, so the cards stay where they are. Only the column carries the hair of
@@ -298,6 +307,17 @@ the same driven sequence; a single run varies.
   `onClosed`, and the reducer decides. The flight image lifts once the annotator is visible and
   the page has reported `loaded`. Add a sequence to `AnnotatorTransitionTests` before changing
   the table; the random-sequence test checks the invariants.
+- Annotating a list is a queue (`ThumbnailController.queue`, `stack.queue` in the state report):
+  the first file opens and the rest wait, and finishing one opens the next until the list is done.
+  The controller takes the next file in the turn `parked` comes back, before the finished card's
+  effects run, and sends `annotate` after them, so the card flies home with its copied mark while
+  the next flies out — a swap's two flights. The reducer knows nothing of the queue; `returnCard`
+  only ends the session, hides the dim, and hands the focus back when nothing follows. Opening a
+  card no longer clears the selection, so after the last one the same cards are still selected and
+  Cmd+C or Cmd+S takes all of them. Esc, a dismissal, quick annotate, and a stack presented anew
+  empty the queue; a removed file drops out of it, and a run ends when the file in the annotator is
+  the one that went; a click on a card, or any other request to annotate, replaces it.
+  `docs/annotation-queue-2026-09-17.md` has the handover.
 - The annotator window is borderless and sized exactly to the image. Its toolbar is a native
   panel (`AnnotatorToolbar.swift`) placed under the window, never inside the page: the page
   sends its tools, its swatches, and every color a pushed mark may name in the `ready` message,
@@ -452,7 +472,9 @@ the same driven sequence; a single run varies.
   both; `key` gives it a shortcut inside the recent stack. It is a `shotnote://<id>` URL either
   way. Actions always receive a list of screenshots: in the order the cards were selected when the
   stack runs them, and in the order a URL names its `file=` parameters otherwise. `annotate` opens
-  the last of them, since the annotator holds one image, and says so in its `ok` line.
+  the first of them and queues the rest, since the annotator holds one image; its `ok` line says
+  which is opening and how many there are (`ok <name> 1 of 3`), and each later card logs one
+  `[annotate] next <name> 2 of 3`.
 - An editor tool or color: edit `web/src/config.ts`. A tool needs an SF Symbol name for the
   native toolbar; a color needs the hex the swatch shows, and shows only while `SHOW_COLORS` is on.
 - A new message across the bridge: add it to both bridge files, then handle it in
