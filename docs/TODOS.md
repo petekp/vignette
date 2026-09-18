@@ -255,6 +255,31 @@ the card shows it.
     the smart zoom (the page reports it, or the host sees it first), aimed at the click, with the
     same twofold step and the same return home from above the fitted size; a double-click on a
     shape keeps tldraw's meaning (a text shape edits) so drawing is not disturbed.
+## Queued by Pete, 2026-09-18 (afternoon, on the todo6/integration build 4d96079)
+
+26. The annotator's frame stops keeping the image's aspect ratio while zooming. Pete: "the
+    zooming feels great. one thing i'd like to change: instead of keeping the aspect ratio
+    locked, i'd prefer that we unlock it and allow the height or width to change to optimize
+    the visible surface area of the image, within the constraints of the space available to the
+    annotator. for example, if we're annotating a very tall and narrow image, right now if i zoom
+    in, it remains narrow, and large chunks of the left and right of the image are cropped. i'd
+    prefer the image width continue to grow up until the image is all the way zoomed in, or it
+    hits the boundaries." Today `Zoom.split` divides the level between one uniform window scale
+    and the camera, so the frame keeps the image's shape and stops growing when the first axis
+    reaches the room. Instead the picture is magnified uniformly by the level and each axis of
+    the frame grows with it until that axis reaches the room: width `min(fitted.width * level,
+    room.width)`, height `min(fitted.height * level, room.height)`, so a tall image's frame
+    widens to the room's width while the picture is still entirely inside it, and only then is
+    it cropped in that axis. Touches: `Zoom.split`, `Zoom.frame`, `Zoom.reach` and the anchor
+    arithmetic (a reach per axis; the room binds one axis at a time), the pull below the fitted
+    size, the stand-in's picture rect, `setView` and `page.visible` (the visible part is no
+    longer the same fraction in both axes; "zoom 1 = the image fills the window" has to be
+    restated), `fitBeforeHide` and the flight's start frame, `annotatorRoom` and the stack's
+    `widthScale(clearing:)`, the edge hold (a band in points still works), and the zoom doc.
+    Acceptance is a tall narrow screenshot and a wide short one on Pete's trackpad: zooming in
+    grows the frame in both directions until each hits the room, the picture is never stretched,
+    Cmd+0 comes home to the fitted frame, and the stand-in and the page agree at every rest.
+
 
 ## Feedback on the run-2 branch (Pete, 2026-09-17 afternoon, on `todo2/integration` c43304a)
 
