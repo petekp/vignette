@@ -82,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         else if settings.firstLaunch { thumbnail.showFeedback("\(Identity.name) is watching \(settings.data.screenshotsFolder). Launch at login is off; turn it on in Settings.") }
         // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
         LoginItem.apply(settings.data.launchAtLogin)
+        applyAgentSkill()
         // The contract for agents: after this line every command answers. The page reports `[web] ready` on its own.
         Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) port=\(annotator.port) watching=\(watchFolder.path)")
     }
@@ -119,6 +120,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
         if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
+        if new.agentSkill != old.agentSkill {
+            // Turning it on installs; turning it off removes. The offer's unasked -> off writes nothing.
+            if new.agentSkillChoice == .on { applyAgentSkill(.on) }
+            else if old.agentSkillChoice == .on { applyAgentSkill(.off) }
+        }
+    }
+
+    // MARK: The agent skill
+
+    /// Keeps the bundled skill in step with the setting: installed and current for this build while
+    /// it is on, gone when it goes off. `roots` is for `install-skill?root=`, which points a check
+    /// at one directory instead of the agent directories.
+    @discardableResult
+    private func applyAgentSkill(_ choice: AgentSkill? = nil, roots: [URL]? = nil) -> [SkillInstaller.Result] {
+        let choice = choice ?? settings.data.agentSkillChoice
+        let roots = roots ?? SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
+        var results: [SkillInstaller.Result] = []
+        switch choice {
+        case .on:
+            guard let source = SkillInstaller.bundled else {
+                Log.write("[skill] error missing-file \(SkillInstaller.skillName) is not in the bundle"); return []
+            }
+            results = SkillInstaller.install(source: source, into: roots, stamp: .current)
+        case .off:
+            results = SkillInstaller.remove(from: roots)
+        case .unasked:
+            offerAgentSkill()
+        }
+        // Only what changed something: a launch with the skill already current says nothing.
+        for result in results where ![.unchanged, .absent].contains(result.outcome) {
+            Log.write("[skill] \(result.outcome.rawValue) \(result.path.path)\(result.detail.isEmpty ? "" : " \(result.detail)")")
+        }
+        return results
+    }
+
+    /// The offer, once: the app has never asked and this Mac has an agent directory. The offer is
+    /// the Settings window, since the toast carries no button, and the answer is the toggle in it.
+    /// Recorded as `off` as it is made, so the question is asked once whatever the user does.
+    private func offerAgentSkill() {
+        let roots = SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
+        guard !roots.isEmpty else { return }
+        settings.update { $0.agentSkill = AgentSkill.off.rawValue }
+        Log.write("[skill] offered \(roots.map(\.lastPathComponent).joined(separator: " "))")
+        settingsWindow.show(scrollTo: SettingsView.agentsSection)
+    }
+
+    /// Where a copy this installer made is sitting right now, for the state report.
+    private func installedSkillPaths() -> [String] {
+        SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
+            .filter { SkillInstaller.state(of: $0).state == .ours }
+            .map { SkillInstaller.folder(in: $0).path }
+    }
+
+    /// `shotnote://install-skill`, for a script. With `root=` it installs there and leaves the
+    /// setting alone; without one it installs for every agent on this Mac and turns the setting on,
+    /// so later launches keep the copy current.
+    private func installSkill(_ request: CommandRequest) {
+        if let root = request.root, !settings.data.debug {
+            Commands.error("install-skill", .debugDisabled, "root=\(root.path) needs \"debug\": true in settings.json"); return
+        }
+        guard SkillInstaller.bundled != nil else {
+            Commands.error("install-skill", .missingFile, "\(SkillInstaller.skillName) is not in the bundle"); return
+        }
+        let roots = request.root.map { [$0] } ?? SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
+        guard !roots.isEmpty else {
+            Commands.error("install-skill", .noAgent, "no \(SkillInstaller.agentDirectories.joined(separator: " or ")) in this home folder"); return
+        }
+        let results = applyAgentSkill(.on, roots: roots)
+        let detail = results.map { "\($0.path.path)=\($0.outcome.rawValue)" }.joined(separator: " ")
+        if let bad = results.first(where: { $0.outcome == .notOurs || $0.outcome == .failed }) {
+            Commands.error("install-skill", bad.outcome == .notOurs ? .notOurs : .writeFailed, detail)
+            return
+        }
+        if request.root == nil, settings.data.agentSkillChoice != .on {
+            settings.update { $0.agentSkill = AgentSkill.on.rawValue }
+        }
+        Commands.ok("install-skill", detail)
     }
 
     private func registerHotKey() {
@@ -385,6 +463,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case "recent": toggleRecent()
         case "state": dumpState(tag: request.tag)
         case "settings": settingsWindow.show(); Commands.ok("settings", "window opened")
+        case "install-skill": installSkill(request)
         case "restore-apple-defaults": restoreAppleDefaults()
         case "send": sendToAgent(request)
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
@@ -439,6 +518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             "watchFolder": watchFolder.path, "settingsFile": Settings.fileURL.path, "readOnly": settings.readOnly,
             "appleThumbnail": settings.data.appleThumbnail, "recentCount": settings.data.recentCount, "hotkey": settings.data.recentHotkey, "debug": settings.data.debug,
             "launchAtLogin": settings.data.launchAtLogin, "loginItem": LoginItem.status,
+            "agentSkill": ["setting": settings.data.agentSkill, "installed": installedSkillPaths()] as [String: Any],
         ] as [String: Any]
         report.sections["annotator"] = annotator.stateJSON
         report.sections["drafts"] = drafts.keys.sorted()

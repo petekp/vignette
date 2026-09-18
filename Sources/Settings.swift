@@ -7,6 +7,15 @@ struct Screenshot: Sendable {
     let url: URL
 }
 
+/// Whether the bundled skill is installed for the coding agents on this Mac. Three values in one
+/// key, because "not asked yet" is a state of its own: writing into another tool's directory needs
+/// a yes, and the app asks once. A bool plus an `offered` flag could say two things at once.
+enum AgentSkill: String, CaseIterable {
+    case unasked
+    case on
+    case off
+}
+
 /// Everything a user changes per machine. Lives in ~/.config/shotnote/settings.json.
 /// Missing keys fall back to defaults, so a partial file is fine.
 struct SettingsData: Codable, Equatable {
@@ -24,10 +33,15 @@ struct SettingsData: Codable, Equatable {
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
     var debug = false                        // unlocks eval, show-editor, tweaks, and file= outside the watch folder
+    var agentSkill = AgentSkill.unasked.rawValue  // the skill for coding agents: unasked, on, off
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
     var appleOriginal: AppleOriginal?        // Apple's screencapture values before Shotnote changed them
 
     var folderURL: URL { URL(fileURLWithPath: (screenshotsFolder as NSString).expandingTildeInPath) }
+
+    /// `agentSkill` as the three states it holds. An unknown word reads as `unasked`, which
+    /// `validated()` then writes back.
+    var agentSkillChoice: AgentSkill { AgentSkill(rawValue: agentSkill) ?? .unasked }
 
     /// Clamps values that would crash or break layout math and reports each correction.
     /// Design limits live in the debug panel; these are only the bounds the code cannot survive.
@@ -40,6 +54,9 @@ struct SettingsData: Codable, Equatable {
         }
         if d.screenshotsFolder.trimmingCharacters(in: .whitespaces).isEmpty {
             notes.append("screenshotsFolder \"\" -> \"~/Desktop\""); d.screenshotsFolder = "~/Desktop"
+        }
+        if AgentSkill(rawValue: d.agentSkill) == nil {
+            notes.append("agentSkill \"\(d.agentSkill)\" -> \"\(AgentSkill.unasked.rawValue)\""); d.agentSkill = AgentSkill.unasked.rawValue
         }
         if !["spring", "easeOut", "easeInOut", "linear"].contains(d.ui.slideInCurve) {
             notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"
