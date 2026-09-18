@@ -101,8 +101,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
    `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; selection, focus,
-   the hovered card, `queue`, the files waiting for the annotator, feedback, panel, `strip`,
-   the selection strip's frame or null, and `stripHovered`),
+   the hovered card, `queue`, the files waiting for the annotator, feedback, panel, `widthScale`,
+   how wide the stack is drawn, `strip`, the selection strip's frame or null, and `stripHovered`),
    `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
@@ -286,6 +286,20 @@ the same driven sequence; a single run varies.
   box that wide and puts the strip against its leading edge. The strip is drawn after the column,
   so the grown side is above the cards and catches the mouse rather than falling through to one.
   `[state] stack.strip` is the grown frame and `stack.stripHovered` says whether the labels are out.
+- The recent stack narrows to make room for the annotator. One number says how wide it is drawn:
+  `StackLayout.widthScale`, 1 at rest and never below `ui.stackMinScale`. The cards are drawn at
+  that width (`drawn`) and the column with them; their right edge does not move, so a narrower
+  stack is the same stack in the same corner. The panel is always the size the stack needs at rest
+  — it is transparent outside the column, so nothing has to be resized while the stack narrows.
+  The rect the annotator fits and grows within is the visible frame less the strip the stack keeps
+  at its narrowest, `ui.stackGap` beside it (`annotatorRoom`), so the frame can never reach the
+  cards however far a zoom grows it. In between, every time the annotator's frame moves the stack
+  takes the widest value that still clears it by the gap (`widthScale(clearing:visibleFrame:)`).
+  Opening and closing spring it through `ui.relayoutDuration`; a zoom sets it straight, in the same
+  turn as the frame, so the two move together rather than the frame arriving where a card still is.
+  Only the recent stack does this: a lone thumbnail leaves the panel when the annotator opens, and
+  a `shotnote://annotate` with no stack showing gets the whole visible frame.
+  `docs/stack-room-2026-09-17.md` has the numbers.
 - A card's thumbnail fills the card, so a screenshot whose shape differs from the card's box hangs
   outside the card's frame, and the clip that hides it does not shrink the hit area. The
   `contentShape` in `CardView` holds each card's hover and clicks to its own frame; without it a
@@ -322,24 +336,23 @@ the same driven sequence; a single run varies.
   panel (`AnnotatorToolbar.swift`) placed under the window, never inside the page: the page
   sends its tools, its swatches, and every color a pushed mark may name in the `ready` message,
   reports the active tool, and takes `setTool`/`setColor`/`finish` calls. `SHOW_COLORS` in
-  `web/src/config.ts` is off, so the swatches are empty and the bar has no divider for them. Which colour a mark is drawn in is the
-  page's then, not the user's: `web/src/contrast.ts` samples the screenshot under the mark's bounds
-  and keeps the first colour in `CANDIDATES` whose CIELAB distance from those pixels is at least
-  `MIN_COLOR_DISTANCE`, so red gives way over a red or dark red region and nowhere else. It runs
-  when a mark is created and when the hand lets go, outside undo history, and before every park and
-  Done rendering; a colour the user picked or an agent named is kept (`meta.colorChosen`).
-  `docs/annotation-colour-2026-09-17.md` has the numbers and why the measure is not a WCAG ratio.
-  Keyboard shortcuts inside the editor (tool keys, undo, delete, Esc, Return) live in `Hotkeys` in
-  `App.tsx`. `hideUi` hides tldraw's UI but keeps its
-  shortcuts, which it registers on the document body, so `Hotkeys` stops every plain letter in
-  the capture phase: a key tldraw binds cannot reach a tool the toolbar does not show.
-  `TransitionLayer` flies a card between its stack slot and that frame, and the annotator loads
-  the image while hidden (`prepare`) so it can appear the moment the card lands (`show`). A swap
-  runs two of these at once. The stack keeps the slot, drawn
-  empty, so the card flies back to the same place. Which tool an image opens on is in
-  `web/src/config.ts`: `DEFAULT_TOOL` (rectangle) for a fresh image, `REOPEN_TOOL` (select) for one
-  that already has a draft. A reopen drops the selection the draft was parked with and picks up
-  the annotation drawn last instead (`lastAnnotation`: the top of the page's z-order, which is
+  `web/src/config.ts` is off, so the swatches are empty and the bar has no divider for them. Which
+  colour a mark is drawn in is the page's then, not the user's: `web/src/contrast.ts` samples the
+  screenshot under the mark's bounds and keeps the first colour in `CANDIDATES` whose CIELAB
+  distance from those pixels is at least `MIN_COLOR_DISTANCE`, so red gives way over a red or dark
+  red region and nowhere else. It runs when a mark is created and when the hand lets go, outside
+  undo history, and before every park and Done rendering; a colour the user picked or an agent named
+  is kept (`meta.colorChosen`). `docs/annotation-colour-2026-09-17.md` has the numbers and why the
+  measure is not a WCAG ratio. Keyboard shortcuts inside the editor (tool keys, undo, delete, Esc,
+  Return) live in `Hotkeys` in `App.tsx`. `hideUi` hides tldraw's UI but keeps its shortcuts, which
+  it registers on the document body, so `Hotkeys` stops every plain letter in the capture phase: a
+  key tldraw binds cannot reach a tool the toolbar does not show. `TransitionLayer` flies a card
+  between its stack slot and that frame, and the annotator loads the image while hidden (`prepare`)
+  so it can appear the moment the card lands (`show`). A swap runs two of these at once. The stack
+  keeps the slot, drawn empty, so the card flies back to the same place. Which tool an image opens
+  on is in `web/src/config.ts`: `DEFAULT_TOOL` (rectangle) for a fresh image, `REOPEN_TOOL` (select)
+  for one that already has a draft. A reopen drops the selection the draft was parked with and picks
+  up the annotation drawn last instead (`lastAnnotation`: the top of the page's z-order, which is
   where tldraw puts each new shape), so a drag or Delete acts on that mark.
 - Annotations in progress are drafts owned by the app (`DraftStore`), one JSON snapshot per
   screenshot under `~/Library/Application Support/<bundle id>/drafts/` keyed by the file path
@@ -376,13 +389,14 @@ the same driven sequence; a single run varies.
   `AnnotationController.zoom(by:at:as:)` moves one number, `zoomLevel`: how far the image is
   magnified past the frame it opened in. `Zoom.split` divides that level between the window's scale
   and the page's camera in one place, so `window * camera` is the level and the two cannot disagree:
-  the window grows up to the visible screen and the camera stays at exactly 1 until it cannot grow
-  further. Zooming out reverses that and stops at the fitted size with a short pull that springs
-  back. The toolbar stays where `prepare` placed it and sits above the window as a child.
-  One spring carries the level, ticked by the screen's display link, so nothing teleports and a
-  gesture, a key and a fit bend into each other; a gesture's spring is short (it follows the
-  fingers), a key's, a double tap's and a fit's is longer. What tells them apart is the cursor: a
-  gesture names the point it is over, a key names none.
+  the window grows to fill the room it was given (the visible screen, less the strip the recent
+  stack keeps for itself) and the camera stays at exactly 1 until it cannot grow further. Zooming
+  out reverses that and stops at the fitted size with a short pull that springs back. The toolbar
+  stays where `prepare` placed it and sits above the window as a child. One spring carries the
+  level, ticked by the screen's display link, so nothing teleports and a gesture, a key and a fit
+  bend into each other; a gesture's spring is short (it follows the fingers), a key's, a double
+  tap's and a fit's is longer. What tells them apart is the cursor: a gesture names the point it is
+  over, a key names none.
 
   While a zoom moves, what is on screen is the app's own picture, not the page: the page is drawn
   by WebKit's process and the frame by this one, and two drawers with no shared frame clock cannot
@@ -414,27 +428,28 @@ the same driven sequence; a single run varies.
   with nothing drawn on it has no overlay.
 
   Both phases hold the point under the cursor: `ZoomAim` for the window, `ZoomPan` for the
-  magnification, each read off what is on screen when the input arrives. The message carries the cursor as a fraction of the
-  window (`at`, y from the top), which the window growth and the page's camera each read in their
-  own space; a keyboard step sends none and zooms about the window's middle, as Preview does. A
-  two-finger double tap (`smartMagnify`) zooms twofold at the tap, or back to the fitted size from
-  anywhere above it. `Sources/Zoom.swift` is the geometry: the window grows away from the anchor,
-  at scale 1 it is the fitted frame again whatever the anchor, and against the screen edge the
-  frame slides and the anchor gives way, which is where magnification takes over. The anchor is
-  read off the frame on screen at each step, so a frame the edge nudged does not carry that error
-  forward, and a step aimed somewhere else mid-spring blends from the anchor it had to the new one
-  (`ZoomAim`) instead of stepping sideways. Zoom's springs are in code rather than the tweaks, but
-  the motion scale still shortens them, so `ui.motion: 0` and Reduce Motion land a step at once.
-  The state report's `page.zoom` is the in-window
-  magnification as tldraw sees it (1 = the image fills the window), `page.visible` is the part of
-  the image the window shows, `annotator.zoomLevel` is the one number, `annotator.zoom` and
-  `annotator.canvasZoom` are its two halves, `annotator.zoomAnchor` is the point the window is
-  growing away from, `annotator.zoomCenter` is the middle of the visible part of the image,
-  `annotator.standIn` says whether the app's own picture is up, and `annotator.overlay` is the
-  overlay's pixel size. `docs/zoom-2026-09-17.md` says why it is shaped this way.
-  "Copy Annotated" hands the stored snapshots to the live editor (`window.shotnote.export`),
-  which restores the canvas afterwards; it falls back to the original file for cards without a
-  draft, and answers `error export-failed` or `export-timeout` (15 s) instead of hanging.
+  magnification, each read off what is on screen when the input arrives. The message carries the
+  cursor as a fraction of the window (`at`, y from the top), which the window growth and the page's
+  camera each read in their own space; a keyboard step sends none and zooms about the window's
+  middle, as Preview does. A two-finger double tap (`smartMagnify`) zooms twofold at the tap, or
+  back to the fitted size from anywhere above it. `Sources/Zoom.swift` is the geometry: the window
+  grows away from the anchor, at scale 1 it is the fitted frame again whatever the anchor, and
+  against the edge of its room the frame slides and the anchor gives way, which is where
+  magnification takes over. The anchor is read off the frame on screen at each step, so a frame the
+  edge nudged does not carry that error forward, and a step aimed somewhere else mid-spring blends
+  from the anchor it had to the new one (`ZoomAim`) instead of stepping sideways. Zoom's springs are
+  in code rather than the tweaks, but the motion scale still shortens them, so `ui.motion: 0` and
+  Reduce Motion land a step at once. The state report's `page.zoom` is the in-window magnification
+  as tldraw sees it (1 = the image fills the window), `page.visible` is the part of the image the
+  window shows, `annotator.zoomLevel` is the one number, `annotator.zoom` and `annotator.canvasZoom`
+  are its two halves, `annotator.zoomAnchor` is the point the window is growing away from,
+  `annotator.zoomCenter` is the middle of the visible part of the image, `annotator.standIn` says
+  whether the app's own picture is up, `annotator.overlay` is the overlay's pixel size, and
+  `annotator.room` is the rect the frame may grow within. `docs/zoom-2026-09-17.md` says why it is
+  shaped this way. "Copy Annotated" hands the stored snapshots to the live editor
+  (`window.shotnote.export`), which restores the canvas afterwards; it falls back to the original
+  file for cards without a draft, and answers `error export-failed` or `export-timeout` (15 s)
+  instead of hanging.
 - Memory is bounded in three places. `Thumbnailer` keeps decoded images under `budgetBytes`
   (96 MB of RGBA), least recently used out first. Card previews never exceed
   `Config.previewMaxPixel` on the longest side: park previews are rendered at that size by the

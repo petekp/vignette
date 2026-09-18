@@ -33,7 +33,10 @@ final class StackModel: ObservableObject {
     @Published var focused: UUID? = nil        // keyboard focus ring
     @Published var isStack = false             // selection UI only exists in the recent stack
     @Published var scroll: CGFloat = 0         // how far the column is pulled down to show older cards
-    @Published var viewport: CGFloat = 0       // visible height of the column
+    @Published var viewport: CGFloat = 0       // visible height of the column, at the stack's full width
+    /// How wide the stack is drawn, 1 at rest. It narrows while the annotator's frame comes near
+    /// it; the column keeps its right edge, so the cards stay in their corner. See `StackLayout`.
+    @Published var widthScale: CGFloat = 1
 
     var inSelectionMode: Bool { !selection.isEmpty }
     /// The row under the column, shown only for a feedback toast.
@@ -74,7 +77,8 @@ final class StackModel: ObservableObject {
 final class ThumbnailController: NSObject {
     weak var actions: Actions?
     /// A card starts travelling to `frame`; the annotator loads the image there while hidden.
-    var onAnnotatorPrepare: ((Screenshot, NSRect) -> Void)?
+    /// `room` is the rect its frame may grow within, which a zoom may not leave.
+    var onAnnotatorPrepare: ((Screenshot, NSRect, NSRect) -> Void)?
     /// The card has arrived; the annotator becomes visible in its place.
     var onAnnotatorShow: (() -> Void)?
     /// A swap, return, or dismissal has started. The annotator parks its draft, hides, then calls back.
@@ -180,9 +184,10 @@ final class ThumbnailController: NSObject {
         relayout()
         if model.isStack { backdrop.refresh(on: screen) }
     }
-    private var cardSizes: [NSSize] { model.cards.map(\.size) }
+    /// The cards as they are drawn now: at the stack's full width, or narrowed for the annotator.
+    private var cardSizes: [NSSize] { model.cards.map { layout.drawn($0.size) } }
     private var ui: UITweaks { Settings.shared.motionUI }
-    private var layout: StackLayout { StackLayout(ui: ui) }
+    private var layout: StackLayout { StackLayout(ui: ui, widthScale: model.widthScale) }
     private var showsBar: Bool { model.showsBar }
     private var showsStrip: Bool { model.isStack && model.inSelectionMode }
 
@@ -214,7 +219,7 @@ final class ThumbnailController: NSObject {
                 "focused": model.cards.first { $0.id == model.focused }?.shot.url.path as Any,
                 "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.url.path as Any,
                 "feedback": model.feedback as Any, "key": panel.isKeyWindow,
-                "scroll": Int(model.scroll), "viewport": Int(model.viewport),
+                "scroll": Int(model.scroll), "viewport": Int(model.viewport), "widthScale": model.widthScale,
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h),
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
                 "stripHovered": model.stripHovered,
@@ -538,7 +543,17 @@ final class ThumbnailController: NSObject {
         // A queue hands over in the turn the finished card is sent home, so its flight back and the
         // next card's flight out run together, the way a swap's two flights do.
         if event == .parked, !transition.isActive { handover = takeNext() }
-        for effect in effects { perform(effect) }
+        // The stack's width is set before this batch's flights are aimed, so a swap's returning
+        // card and the card leaving are aimed at one column. The card leaving is still drawn at the
+        // width the stack had, so it flies from the slot it has now. A handover keeps the annotator
+        // open, so the room is made for the image the queue opens next instead of being given back.
+        let leaving = preparedCard(in: effects)
+        let slot = leaving.map { cardFrame(of: $0) }
+        let opening = leaving ?? handover.flatMap { shot in model.cards.first { $0.shot.url.path == shot.url.path } }
+        if opening != nil || (releasesRoom(effects) && handover == nil) {
+            makeRoom(besides: opening.map { targetFrame(for: $0) }, animated: true)
+        }
+        for effect in effects { perform(effect, leaving: slot) }
         if let next = handover {
             handover = nil
             annotate(next)
@@ -556,7 +571,23 @@ final class ThumbnailController: NSObject {
         return nil
     }
 
-    private func perform(_ effect: AnnotatorTransition.Effect) {
+    /// The card a `prepare` in this batch sends to the annotator, if the stack has it.
+    private func preparedCard(in effects: [AnnotatorTransition.Effect]) -> Card? {
+        for effect in effects {
+            if case .prepare(let key) = effect { return model.cards.first { $0.shot.url.path == key } }
+        }
+        return nil
+    }
+
+    /// Whether this batch takes the annotator off the screen, so nothing is beside the stack.
+    private func releasesRoom(_ effects: [AnnotatorTransition.Effect]) -> Bool {
+        effects.contains { effect in
+            if case .returnCard = effect { return true }
+            return effect == .hideAnnotator
+        }
+    }
+
+    private func perform(_ effect: AnnotatorTransition.Effect, leaving slot: NSRect?) {
         switch effect {
         case .prepare(let key):
             guard let card = model.cards.first(where: { $0.shot.url.path == key }) else { return }
@@ -570,8 +601,8 @@ final class ThumbnailController: NSObject {
             let target = targetFrame(for: card)
             annotationFrame = target
             dim.show(on: screen)
-            onAnnotatorPrepare?(card.shot, target)
-            var from = cardFrame(of: card)
+            onAnnotatorPrepare?(card.shot, target, annotatorRoom)
+            var from = slot ?? cardFrame(of: card)
             if model.offscreen.contains(card.id) { from.origin.x += layout.offscreenDistance(cardWidth: from.width) }
             // The annotator window appears only once the flight is exactly on the target frame.
             // It draws the same ring and shadow there, so a window put up while the spring still
@@ -649,7 +680,41 @@ final class ThumbnailController: NSObject {
     }
 
     private func targetFrame(for card: Card) -> NSRect {
-        layout.annotationFrame(for: card.pointSize, visibleFrame: screen.visibleFrame, below: annotatorBelow())
+        layout.annotationFrame(for: card.pointSize, visibleFrame: annotatorRoom, below: annotatorBelow())
+    }
+
+    /// The rect the annotator fits and grows within. The recent stack keeps a strip of the screen
+    /// on the right, so a wide image opens and zooms beside the cards instead of over them; a lone
+    /// thumbnail leaves the panel when the annotator opens and reserves nothing.
+    private var annotatorRoom: NSRect {
+        guard visible, model.isStack else { return screen.visibleFrame }
+        return layout.annotatorRoom(visibleFrame: screen.visibleFrame)
+    }
+
+    /// The annotator's frame moved: a zoom step, or the fit it makes on its way out. The stack
+    /// follows it straight rather than through a spring of its own, so the two move together and a
+    /// frame that has grown never reaches a card that has not narrowed yet.
+    func annotatorFrameMoved(_ frame: NSRect) {
+        makeRoom(besides: frame, animated: false)
+    }
+
+    /// How wide the stack is drawn: the widest that still clears the annotator's frame by the gap,
+    /// down to `ui.stackMinScale`, and back to full width when nothing is beside it.
+    private func makeRoom(besides frame: NSRect?, animated: Bool) {
+        guard visible, model.isStack else { return }
+        let wanted = frame.map { layout.widthScale(clearing: $0, visibleFrame: screen.visibleFrame) } ?? 1
+        // In hundredths: a zoom moves the frame at every display refresh, and a step under two
+        // points of a card's width is not worth laying the column out for. Rounded down, so the
+        // gap the stack keeps is never smaller than the one asked for.
+        let next = min(1, (wanted * 100).rounded(.down) / 100)
+        guard abs(next - model.widthScale) > 0.0001 else { return }
+        var transaction = Transaction(animation: animated ? Anim.spring(ui.relayoutDuration) : nil)
+        transaction.disablesAnimations = !animated
+        withTransaction(transaction) {
+            model.widthScale = next
+            // Narrower cards are a shorter column; the panel keeps the height it has at rest.
+            model.scroll = min(model.scroll, max(0, contentHeight - model.viewport))
+        }
     }
 
     /// The best image for the flight: the draft preview, a larger decode if hovering fetched one,
@@ -936,6 +1001,7 @@ final class ThumbnailController: NSObject {
         model.isStack = stack
         model.slidingOut = false
         model.scroll = 0
+        model.widthScale = 1
         if !stack { releaseKeys() }
         // A dismissal in progress is simply reversed: the same cards turn around. `visible` is
         // already false then; the panel stays up until the slide-out ends.
@@ -1001,7 +1067,9 @@ final class ThumbnailController: NSObject {
     /// entrance and bends their path, since the column frame's height and the slide land in the
     /// same transaction.
     private func layoutPanel(shrinkLater: Bool, animated: Bool) {
-        let content = layout.contentHeight(cards: cardSizes, showsBar: showsBar)
+        // At the stack's full width, so a stack narrowed for the annotator keeps the panel it will
+        // need when it comes back. The panel is transparent outside the column either way.
+        let content = layout.contentHeight(cards: model.cards.map(\.size), showsBar: showsBar)
         let viewport = layout.viewportHeight(content: content, visibleFrame: screen.visibleFrame)
         var transaction = Transaction(animation: animated ? Anim.spring(ui.relayoutDuration) : nil)
         transaction.disablesAnimations = !animated

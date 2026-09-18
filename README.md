@@ -92,6 +92,9 @@ and closing it hands focus back to the app you came from.
   It stays centered between the topmost and the bottommost selected card, and follows the selection.
   Put the cursor on it and it grows to the right to name each button. The icons stay where they
   are, so the button under the cursor is still the button you press.
+- Opening a card in the annotator narrows the stack to make room for it, down to half its width.
+  The cards keep their corner; only their size changes, and they come back when the annotator
+  closes. The annotator never grows into the width the stack keeps, however far you zoom in.
 - Drag a card out to drop it as a file on a chat window, Finder, or a terminal. A selected card
   drags the whole selection.
 - Cmd+C copies the selection as files, paths as text, and the first image's pixels, so chat apps
@@ -183,11 +186,11 @@ not depend on its pixel size:
 
 The types are `ellipse`, `rectangle`, `arrow`, and `text`; `ellipse` has no toolbar button, and an
 agent can still push one. A mark that names a `color` keeps it — any of `MARK_COLORS` in
-`web/src/config.ts` — and a mark that names none is coloured from what it covers, like your own.
-The marks become a draft before the card appears, so the card shows them, Copy Annotated has them,
-and opening the card puts them in the editor to move, retype, or delete like your own. The editor builds the draft on its own canvas, so a marked
-push is refused with `page-not-ready` from the moment the annotator takes an image until it has
-given it back, and while a Copy Annotated is rendering.
+`web/src/config.ts` — and a mark that names none is coloured from what it covers, like your own. The
+marks become a draft before the card appears, so the card shows them, Copy Annotated has them, and
+opening the card puts them in the editor to move, retype, or delete like your own. The editor builds
+the draft on its own canvas, so a marked push is refused with `page-not-ready` from the moment the
+annotator takes an image until it has given it back, and while a Copy Annotated is rendering.
 
 Every command answers with one line in `~/Library/Logs/Shotnote.log` (menu bar → Open Log):
 `[<command>] ok <detail>` or `[<command>] error <code> <detail>`. The codes are fixed:
@@ -243,12 +246,13 @@ An image that arrives through `add` skips both: a push from an agent is not a ca
 `settings.json.invalid` and replaced with defaults, with a toast saying so.
 
 The `ui` section holds the design numbers: card sizes, corners, shadows, hover buttons, animation
-durations and curves, how far a card bows and swells on its way to the annotator, how deep the
-drag-select's edge band is and how fast it scrolls there, backdrop blur and tint, annotator window
-limits. The defaults are the tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or
-`open -g shotnote://tweaks`) opens a floating panel of sliders that edits them live, with buttons
-to summon the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns
-every animation off; the system's Reduce Motion does the same.
+durations and curves, how far a card bows and swells on its way to the annotator, how narrow the
+stack goes to make room for it and how far it stays from it, how deep the drag-select's edge band is
+and how fast it scrolls there, backdrop blur and tint, annotator window limits. The defaults are the
+tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or `open -g
+shotnote://tweaks`) opens a floating panel of sliders that edits them live, with buttons to summon
+the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns every
+animation off; the system's Reduce Motion does the same.
 
 ## Forking
 

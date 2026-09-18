@@ -28,6 +28,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     var onDraftPreview: ((String, Data) -> Void)?
     /// The editor page is up and can take calls. Also after a web content process restart.
     var onPageReady: (() -> Void)?
+    /// The frame moved: it was placed, a zoom stepped it, or it came home on the way out. The
+    /// stack follows it, so it narrows as the frame grows towards it.
+    var onFrame: ((NSRect) -> Void)?
 
     /// Nil when the bundle has no page or the server did not start; every call then no-ops.
     private var webView: WKWebView?
@@ -165,11 +168,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// Sizes the hidden window to `frame` and loads the image, so the page has rendered by `show`.
-    func prepare(_ shot: Screenshot, in frame: NSRect) {
+    /// `room` is the rect the frame may grow within: the visible screen, less any strip its owner
+    /// keeps for itself.
+    func prepare(_ shot: Screenshot, in frame: NSRect, room: NSRect) {
         guard let webView else { return }
         current = shot
         let win = window ?? makeWindow(webView)
         fittedFrame = frame
+        self.room = room
         zoomTarget = 1
         zoomAim = .fitted
         zoomPan = .centered
@@ -188,7 +194,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// Decodes the screenshot the stand-in draws, off the main thread and in the thumbnail cache's
-    /// budget. Big enough for the frame at its largest, which is the whole visible screen: past
+    /// budget. Big enough for the frame at its largest, which is the visible screen at most: past
     /// that the picture is magnified rather than grown, and the page takes over crisp at rest.
     /// It is usually the decode the flight already asked for, so it costs nothing twice.
     private func loadStandInShot(_ shot: Screenshot) {
@@ -256,6 +262,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         container.frame = frameView.bounds
         let r = Settings.shared.data.ui.annotationCornerRadius
         frameView.layer?.shadowPath = CGPath(roundedRect: frameView.bounds, cornerWidth: r, cornerHeight: r, transform: nil)
+        onFrame?(frame)
     }
 
     /// The visible frame in screen coordinates.
@@ -317,9 +324,12 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         Zoom.split(level: level, maxWindow: maxZoom, maxCamera: maxCanvasZoom, pull: overpull)
     }
 
-    /// The rect the frame may grow within. The one place that says it, so anything that narrows it
-    /// reaches both how far the window may grow and where the frame ends up.
-    private var growthLimit: CGRect? { zoomScreen?.visibleFrame }
+    /// The room `prepare` was given, if any. `presentEmpty` has none.
+    private var room: NSRect?
+
+    /// The rect the frame may grow within. The one place that says it, so the strip the recent
+    /// stack keeps for itself reaches both how far the window may grow and where the frame ends up.
+    private var growthLimit: CGRect? { room ?? zoomScreen?.visibleFrame }
 
     /// The window may grow to the whole of that rect, past the fitted inset and the toolbar's room.
     private var maxZoom: CGFloat {
@@ -757,6 +767,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     func presentEmpty() {
         guard let webView else { return }
         let frame = StackLayout.current.annotationFrame(for: NSSize(width: 1200, height: 800), visibleFrame: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame)
+        room = nil
         let win = window ?? makeWindow(webView)
         place(win, frame: frame)
         resizeWebView()
@@ -864,6 +875,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             "zoomCenter": [zoomCenter.x, zoomCenter.y],
             "standIn": standIn != nil,
             "overlay": standInMarks.map { [$0.width, $0.height] } as Any,
+            "room": growthLimit.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "pageState": "\(pageState)",
             "tool": toolbar.model.tool as Any, "color": toolbar.model.color,
