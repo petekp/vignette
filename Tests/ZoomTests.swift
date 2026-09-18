@@ -229,6 +229,43 @@ final class ZoomTests: XCTestCase {
         }
     }
 
+    func testACursorNearAnEdgeKeepsThatEdgeInView() {
+        let band: CGFloat = 0.15, pull: CGFloat = 0.5
+        // Without the pull the corner beside the cursor goes as soon as the picture magnifies.
+        let plain = ZoomPan(center: Zoom.center, camera: 1, cursor: CGPoint(x: 0.95, y: 0.95))
+        XCTAssertLessThan(Zoom.visible(center: plain.center(at: 2), camera: 2).maxX, 1 - 1e-6)
+        XCTAssertLessThan(Zoom.visible(center: plain.center(at: 2), camera: 2).maxY, 1 - 1e-6)
+        // With it, the image's bottom right corner stays in view however far the zoom goes.
+        let aimed = Zoom.pulledToEdges(CGPoint(x: 0.95, y: 0.95), band: band, pull: pull)
+        let pan = ZoomPan(center: Zoom.center, camera: 1, cursor: aimed)
+        for camera in [1.5, 2, 4, 8] as [CGFloat] {
+            let v = Zoom.visible(center: pan.center(at: camera), camera: camera)
+            XCTAssertEqual(v.maxX, 1, accuracy: 1e-9, "camera \(camera)")
+            XCTAssertEqual(v.maxY, 1, accuracy: 1e-9, "camera \(camera)")
+        }
+        // And the top left corner the same way.
+        let corner = ZoomPan(center: Zoom.center, camera: 1,
+                             cursor: Zoom.pulledToEdges(CGPoint(x: 0.04, y: 0.06), band: band, pull: pull))
+        let v = Zoom.visible(center: corner.center(at: 4), camera: 4)
+        XCTAssertEqual(v.minX, 0, accuracy: 1e-9)
+        XCTAssertEqual(v.minY, 0, accuracy: 1e-9)
+    }
+
+    func testTheMiddleOfThePictureStillZoomsAboutItself() {
+        XCTAssertEqual(Zoom.pulledToEdges(Zoom.center, band: 0.15, pull: 0.5), Zoom.center)
+        // Outside the band, and at its inner edge, the cursor is its own anchor.
+        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.7, y: 0.3), band: 0.15, pull: 0.5), CGPoint(x: 0.7, y: 0.3))
+        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.85, y: 0.15), band: 0.15, pull: 0.5), CGPoint(x: 0.85, y: 0.15))
+        // Inside the band the pull eases in rather than snapping.
+        let eased = Zoom.pulledToEdges(CGPoint(x: 0.88, y: 0.12), band: 0.15, pull: 0.5)
+        XCTAssertGreaterThan(eased.x, 0.88)
+        XCTAssertLessThan(eased.x, 1)
+        XCTAssertLessThan(eased.y, 0.12)
+        XCTAssertGreaterThan(eased.y, 0)
+        // A band of nothing leaves every cursor where it is.
+        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.99, y: 0.01), band: 0, pull: 0.5), CGPoint(x: 0.99, y: 0.01))
+    }
+
     func testAPanComesHomeToTheWholeImage() {
         let pan = ZoomPan(center: CGPoint(x: 0.8, y: 0.2), camera: 4, cursor: CGPoint(x: 0.1, y: 0.1))
         XCTAssertEqual(pan.center(at: 1), Zoom.center, "zooming back out shows the whole image again")

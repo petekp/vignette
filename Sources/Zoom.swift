@@ -100,6 +100,31 @@ enum Zoom {
                        y: (held.y - grown.y) / (fitted.height * (scale - 1)))
     }
 
+    /// `cursor` pulled towards the edge of the picture it is near, so that magnifying about it
+    /// keeps that edge in view. Only the very edge of the window holds the image's own edge with
+    /// it: a point one per cent inside the window lets the image's edge slide out as soon as the
+    /// picture magnifies at all, so a cursor beside a corner has to be within a few points of it
+    /// before the corner survives a zoom.
+    ///
+    /// `band` is how far from each edge, as a fraction of the picture, the pull reaches. `pull` is
+    /// the part of that band in which the edge is taken outright; across the rest the pull eases
+    /// off to nothing at the band's inner edge, so the middle of the picture zooms about itself.
+    /// The point the zoom then holds is not the one under the cursor but the one the pull names,
+    /// which is what keeps the edge from being cropped.
+    static func pulledToEdges(_ cursor: CGPoint, band: CGFloat, pull: CGFloat) -> CGPoint {
+        CGPoint(x: pulledToEdge(cursor.x, band: band, pull: pull),
+                y: pulledToEdge(cursor.y, band: band, pull: pull))
+    }
+
+    private static func pulledToEdge(_ fraction: CGFloat, band: CGFloat, pull: CGFloat) -> CGFloat {
+        guard band > 0, band.isFinite, pull.isFinite, fraction.isFinite else { return fraction }
+        let edge: CGFloat = fraction > 0.5 ? 1 : 0
+        let depth = (band - abs(fraction - edge)) / band     // 0 at the band's inner edge, 1 at the edge
+        guard depth > 0 else { return fraction }
+        let taken = pull >= 1 ? 1 : min(1, depth / (1 - pull))
+        return fraction + (edge - fraction) * max(0, taken)
+    }
+
     /// A point the page or a gesture reported, kept inside the frame it is a fraction of.
     static func clamped(_ cursor: CGPoint) -> CGPoint {
         CGPoint(x: min(max(cursor.x, 0), 1), y: min(max(cursor.y, 0), 1))
