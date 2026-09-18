@@ -256,6 +256,14 @@ the same driven sequence; a single run varies.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor.
+- Which card a key acts on is one variable, `model.focused`. The stack focuses the newest card the
+  moment it takes keys (`takeKeys`), so arrows, Space, and Return act on a card without a first
+  click or arrow press, and the pointer moves the focus too: moving onto a card focuses it, and
+  leaving the card leaves the focus there, so the card the mouse last named is the one a key acts
+  on. The pointer only moves it while the stack holds the keys; while the annotator has them
+  nothing moves. A shortcut runs on the selection when there is one, else on the focused card
+  (`targetCards`). The ring says where the focus is: the accent color on a selected card, white on
+  a focused one.
 - The panel widens to the left while cards are selected, to hold the selection strip
   (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:)` makes the room). Its
   right edge never moves, so the cards stay where they are. Only the column carries the hair of

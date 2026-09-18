@@ -144,7 +144,14 @@ final class ThumbnailController: NSObject {
             self.endSweep()
             self.revealFocused()
         }
-        model.onHover = { [weak self] id in self?.prefetchFlightImage(id) }
+        model.onHover = { [weak self] id in
+            guard let self else { return }
+            self.prefetchFlightImage(id)
+            // Focus follows the pointer: one variable says where a key acts, and moving onto a card
+            // moves it there. Leaving a card leaves the focus behind, so keys still act on the card
+            // the pointer last named. Only while the stack holds keys; otherwise the annotator has them.
+            if let id, self.model.isStack, self.panel.acceptsKeys { self.model.focused = id }
+        }
     }
 
     /// The screen a presentation started on. `NSScreen.main` follows the active display, which is
@@ -251,8 +258,11 @@ final class ThumbnailController: NSObject {
     }
 
     /// The panel can refuse key status right after resigning it (a dismissal being reversed), so try twice.
+    /// The stack has a focused card from the moment it takes keys, so arrows, Space, and Return act
+    /// on the newest card without a click or a first arrow press.
     private func takeKeys() {
         panel.acceptsKeys = true
+        if model.focused == nil { model.focused = model.hoveredCard ?? model.cards.first?.id }
         panel.makeKey()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self, self.visible, self.model.isStack, !self.transition.isActive, !self.panel.isKeyWindow else { return }
@@ -330,6 +340,8 @@ final class ThumbnailController: NSObject {
         model.cards.removeAll { urls.contains($0.shot.url) }
         model.setSelection(model.selection.filter { id in model.cards.contains { $0.id == id } })
         if model.cards.isEmpty { dismiss(); return }
+        // The focused card is where keys act; when its file goes, the newest takes the focus.
+        if let focused = model.focused, !model.cards.contains(where: { $0.id == focused }) { model.focused = model.cards.first?.id }
         relayout()
     }
 
@@ -709,10 +721,11 @@ final class ThumbnailController: NSObject {
         action.run(cards.map(\.shot), actions)
     }
 
-    /// Cards a shortcut acts on: the selection, else the focused card, else the hovered one, else the newest.
+    /// Cards a shortcut acts on: the selection, else the focused card. The focus is the newest card
+    /// while the stack has keys and follows the pointer, so the card under the mouse is the target.
     private func targetCards() -> [Card] {
         if model.inSelectionMode { return model.selectedCards() }
-        if let id = model.focused ?? model.hoveredCard, let card = model.cards.first(where: { $0.id == id }) { return [card] }
+        if let id = model.focused, let card = model.cards.first(where: { $0.id == id }) { return [card] }
         return model.cards.first.map { [$0] } ?? []
     }
 
