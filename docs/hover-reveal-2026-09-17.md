@@ -1,8 +1,8 @@
 # The hover reveal
 
 An icon button says its name while the cursor is on it. The label comes out beside the icon and the
-button grows around it; the cursor leaves and it goes back. Copy among a card's hover buttons is the
-first of them.
+button grows around it; the cursor leaves and it goes back. Two places use it: Copy among a card's
+hover buttons, and every row of the selection strip.
 
 ## The mechanism
 
@@ -21,7 +21,8 @@ uncovered from the icon outwards rather than being squeezed. `contentShape` foll
 clipping hides a label, it does not stop it catching the mouse.
 
 `ButtonLabel.width` in `StackLayout.swift` measures the label with AppKit in the font the view draws
-it in. One measurement, so the room a button makes and the room the label needs are the same number.
+it in. One measurement, so the room a button makes and the room the label needs are the same number,
+and the strip's frame in `[state]` is the frame on screen.
 
 ## Which way it grows
 
@@ -32,6 +33,20 @@ against each other.
 
 A card puts Copy in the bottom-left corner and Delete in the bottom-right, so growing right also
 leaves the other button where it is. At rest Copy is the same circle as Delete.
+
+The strip is the harder case: it sits to the left of the cards, so its labels run toward them. The
+icons still cannot move, so the strip grows over the gap and the cards' edge rather than shifting
+left to make room. Two things make that work. The strip is drawn after the column, so it is above
+the cards: a click or a hover on a label reaches the label, not the card under it. And the strip's
+box is always the grown width, with the strip against its leading edge, so the panel's layout never
+moves when the labels come out. `StackLayout.stripReveal` caps the growth at the panel's right edge,
+because the panel is what would cut a label off.
+
+One hover drives the whole strip: the cursor anywhere on it brings out every row's label, and every
+label takes the same width, so the rows stay a column. A row's own hover keeps its fill and loses
+its scale (`TactileButtonStyle`'s `hoverScale`): the label coming out is the hover, and a scale on
+top of it would stretch the text and carry the icon out from under the cursor. A press still
+scales, so the click stays physical.
 
 ## The numbers
 

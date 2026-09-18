@@ -40,9 +40,20 @@ struct StackLayout {
     /// One column of button-sized rows, padded by the button spacing.
     var stripWidth: CGFloat { ui.buttonSize + ui.buttonSpacing * 2 }
     var stripGap: CGFloat { ui.selectionStripGap }
+    /// The size the strip's labels are drawn at. In code, like the size of the icons beside them.
+    static let stripLabelSize: CGFloat = 12
 
     func stripHeight(rows: Int) -> CGFloat {
         CGFloat(rows) * ui.buttonSize + CGFloat(max(0, rows - 1)) * ui.buttonSpacing + ui.buttonSpacing * 2
+    }
+
+    /// How far the strip grows to the right when the cursor is on it and the labels come out: the
+    /// widest label, plus the room the icons have on their own side. Never past the panel's right
+    /// edge — the labels run over the gap and the cards, and the panel is what would cut them off.
+    /// `right` is the placement's, so a narrow selected card leaves the labels less room.
+    func stripReveal(labels: [String], right: CGFloat) -> CGFloat {
+        guard let widest = labels.map({ ButtonLabel.width($0, size: Self.stripLabelSize) }).max(), widest > 0 else { return 0 }
+        return min(widest + ui.buttonSpacing * 2, max(0, right + inset))
     }
 
     func cardSize(for image: NSSize) -> NSSize {
@@ -145,10 +156,12 @@ struct StackLayout {
     }
 
     /// The strip's screen frame, for the state report. The view places it from the same numbers.
-    func stripFrame(_ strip: StripPlacement, panelFrame: NSRect, scroll: CGFloat) -> NSRect {
+    /// `reveal` is how far the labels are out: the icons keep their place and the strip grows to
+    /// the right, over the gap to the cards.
+    func stripFrame(_ strip: StripPlacement, panelFrame: NSRect, scroll: CGFloat, reveal: CGFloat = 0) -> NSRect {
         NSRect(x: panelFrame.maxX - inset - strip.right - strip.size.width,
                y: panelFrame.minY + inset + strip.bottom - scroll,
-               width: strip.size.width, height: strip.size.height)
+               width: strip.size.width + reveal, height: strip.size.height)
     }
 
     /// How far a card has to travel to the right to leave the screen.

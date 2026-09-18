@@ -27,8 +27,11 @@ struct StackView: View {
             } else {
                 column
                 if let strip = stripPlacement {
-                    SelectionStrip(model: model, size: strip.size)
-                        .offset(x: -(layout.inset + strip.right), y: -(layout.inset + strip.bottom))
+                    let reveal = layout.stripReveal(labels: Config.stripActions.map(\.label), right: strip.right)
+                    // The strip's box is always the grown width and the offset carries it, so the
+                    // icons sit where the placement put them whether the labels are out or not.
+                    SelectionStrip(model: model, size: strip.size, reveal: reveal)
+                        .offset(x: -(layout.inset + strip.right) + reveal, y: -(layout.inset + strip.bottom))
                         .animation(Anim.spring(settings.motionUI.relayoutDuration), value: strip)
                         // Scrolling moves it with the cards, at once; the slide-out carries it off screen.
                         .offset(x: stripSlide, y: model.scroll)
@@ -324,30 +327,46 @@ private struct AgentBadge: View {
 
 /// Beside the selected cards: the bulk actions, in one vertical strip. `StackLayout` places it
 /// and sizes it; the rows here fill that size exactly. The count is on the cards themselves.
+/// The cursor on the strip names every button: the icons cannot move, so it grows to the right,
+/// over the gap and the cards' edge. It is drawn after the column, so the grown side is above the
+/// cards and catches the mouse itself.
 private struct SelectionStrip: View {
     @ObservedObject var model: StackModel
-    let size: NSSize
+    let size: NSSize        // the icon column, as the placement sized it
+    let reveal: CGFloat     // how far the labels put the strip's right edge out
     private var ui: UITweaks { Settings.shared.motionUI }
 
     var body: some View {
         let cards = model.selectedCards()
+        let out = model.stripHovered ? reveal : 0
         VStack(spacing: ui.buttonSpacing) {
             ForEach(Config.stripActions, id: \.id) { action in
                 Button { model.onAction(action, cards) } label: {
-                    Image(systemName: action.symbol)
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: ui.buttonSize, height: ui.buttonSize)
+                    HStack(spacing: 0) {
+                        Image(systemName: action.symbol)
+                            .font(.system(size: 13, weight: .medium))
+                            .frame(width: ui.buttonSize, height: ui.buttonSize)
+                        RevealedLabel(text: action.label, size: StackLayout.stripLabelSize,
+                                      width: reveal, revealed: model.stripHovered)
+                    }
                 }
-                .buttonStyle(TactileButtonStyle(shape: .rounded))
+                .buttonStyle(TactileButtonStyle(shape: .rounded, hoverScale: 1))
                 .help(action.label + shortcutHint(action))
                 .disabled(cards.count < action.minimumCount)
                 .opacity(cards.count < action.minimumCount ? 0.35 : 1)
             }
         }
-        .frame(width: size.width, height: size.height)
+        .frame(width: size.width + out, height: size.height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+        .onHover { model.stripHovered = $0 }
+        .animation(Anim.spring(ui.hoverRevealDuration), value: model.stripHovered)
+        // A strip that goes while the cursor is on it gets no leaving hover.
+        .onDisappear { model.stripHovered = false }
+        // The box stays the grown width and the strip sits against its leading edge: growing to the
+        // right moves nothing else, and the labels are what the box makes room for.
+        .frame(width: size.width + reveal, alignment: .leading)
     }
 
     private func shortcutHint(_ action: ShotAction) -> String {
@@ -373,6 +392,9 @@ struct TactileButtonStyle: ButtonStyle {
     /// Where the hover scale grows from. A button that grows a label to the right scales from its
     /// leading edge, so the two motions pull the same way.
     var anchor: UnitPoint = .center
+    /// 1 for a button whose label coming out is its hover already: a scale on top of that would
+    /// stretch the label and move the icon out from under the cursor.
+    var hoverScale: CGFloat = 1.08
     @State private var hovered = false
     private var motion: Double { Settings.shared.motionScale }
 
@@ -387,7 +409,7 @@ struct TactileButtonStyle: ButtonStyle {
                 case .capsule: Capsule().fill(fill)
                 }
             }
-            .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? 1.08 : 1), anchor: anchor)
+            .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? hoverScale : 1), anchor: anchor)
             .animation(Anim.spring(0.2 * motion, bounce: 0.3), value: configuration.isPressed)
             .animation(Anim.spring(0.12 * motion), value: hovered)
             .onHover { hovered = $0 }

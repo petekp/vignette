@@ -25,6 +25,7 @@ final class StackModel: ObservableObject {
     @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
     @Published var pressedCard: UUID? = nil
     @Published var overControl = false         // the mouse is on a card's button or circle, where a click does not draw
+    @Published var stripHovered = false        // the mouse is on the selection strip, so its labels are out
     @Published var copied: Set<UUID> = []      // cards showing "Copied" over their image
     /// The selected cards, in the order they were selected. Every action, Stitch included, takes
     /// them in this order, and a card's circle shows its place here.
@@ -173,7 +174,8 @@ final class ThumbnailController: NSObject {
         guard showsStrip, let strip = layout.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
                                                             cards: cardSizes, showsBar: showsBar,
                                                             scroll: model.scroll, viewport: model.viewport) else { return nil }
-        return layout.stripFrame(strip, panelFrame: panel.frame, scroll: model.scroll)
+        let reveal = model.stripHovered ? layout.stripReveal(labels: Config.stripActions.map(\.label), right: strip.right) : 0
+        return layout.stripFrame(strip, panelFrame: panel.frame, scroll: model.scroll, reveal: reveal)
     }
 
 
@@ -197,6 +199,7 @@ final class ThumbnailController: NSObject {
                 "scroll": Int(model.scroll), "viewport": Int(model.viewport),
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h),
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
+                "stripHovered": model.stripHovered,
             ] as [String: Any],
             "transition": ["phase": "\(transition.phase)", "annotating": annotating?.shot.url.path as Any, "isActive": transition.isActive],
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
