@@ -510,9 +510,9 @@ the same driven sequence; a single run varies.
   instead of hanging.
 - Memory is bounded in three places. `Thumbnailer` keeps decoded images under `budgetBytes`
   (96 MB of RGBA), least recently used out first. Card previews never exceed
-  `Config.previewMaxPixel` on the longest side: park previews are rendered at that size by the
-  page, and the full-resolution Done rendering is downsampled before it reaches a card or the
-  disk. Screen-size flight decodes are dropped whenever the stack hides. Every image that reaches
+  `Config.previewMaxPixel` on the longest side: it rides to the page in the `load` payload and
+  park previews are rendered at that size there, and the full-resolution Done rendering is
+  downsampled before it reaches a card or the disk. Screen-size flight decodes are dropped whenever the stack hides. Every image that reaches
   a card is decoded before it gets there (`Thumbnailer`, draft previews through
   `Thumbnailer.decode`): an `NSImage(data:)` is decoded by Core Animation at its first commit, on
   the main thread, which cost the stack's first paint 40 ms for ten previews. The zoom stand-in

@@ -11,6 +11,8 @@ export interface LoadPayload {
   mimeType: string
   pixelWidth: number
   pixelHeight: number
+  /** Longest side, in pixels, of the preview this image's draft is rendered at. */
+  previewMaxPixel: number
   /** The image's draft as the host stored it, or null for a fresh canvas. */
   snapshot: TLEditorSnapshot | null
 }

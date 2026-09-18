@@ -48,8 +48,9 @@ let draftTimer: ReturnType<typeof setTimeout> | null = null
 /// Marks whose colour the heuristic has not picked for where they now are: drawn, moved, or
 /// resized since the last pick. Emptied when the hand lets go, before the draft goes to the host.
 let unpicked = new Set<TLShapeId>()
-/// Longest side, in pixels, of the preview returned with a parked draft.
-const PREVIEW_MAX = 1600
+/// Longest side, in pixels, of the preview returned with the parked draft of the image on the
+/// canvas. The host sends it with the image; `build` uses the one in its own payload.
+let previewMax = 0
 /// How long after the last change the draft snapshot goes to the host.
 const DRAFT_DELAY_MS = 300
 /// How many frames `setView` waits for the host's resize to reach this process before it draws.
@@ -219,7 +220,7 @@ async function park(editor: Editor, scale: number): Promise<ParkResult> {
   let preview: string | null = null
   if (dirty && annotated) {
     const bounds = editor.getShapePageBounds(IMAGE_ID)
-    const previewScale = bounds ? Math.min(scale, PREVIEW_MAX / Math.max(bounds.w, bounds.h)) : scale
+    const previewScale = bounds ? Math.min(scale, previewMax / Math.max(bounds.w, bounds.h)) : scale
     preview = await render(editor, previewScale)
   }
   dirty = false
@@ -346,6 +347,7 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
 
 function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: number }) {
   currentKey = p.key
+  previewMax = p.previewMaxPixel
   unpicked.clear()
   // The decode runs alongside the load: `loaded` must not wait for it, and a mark drawn before it
   // lands keeps the first candidate until the next pick.
@@ -566,7 +568,7 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
       applyColors(editor, p.key, unnamed)
     }
     const snapshot = getSnapshot(editor.store)
-    const preview = await render(editor, Math.min(ratio, PREVIEW_MAX / Math.max(w, h)))
+    const preview = await render(editor, Math.min(ratio, p.previewMaxPixel / Math.max(w, h)))
     return { snapshot, preview }
   } finally {
     silently(editor, () => {

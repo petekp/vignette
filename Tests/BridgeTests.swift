@@ -89,12 +89,13 @@ final class BridgeTests: XCTestCase {
         XCTAssertTrue(fresh.hasPrefix("window.shotnote && window.shotnote.load({\"snapshot\":null,\"key\":"), fresh)
         XCTAssertTrue(fresh.contains(#""key":"/Users/p/Shot \"one\".png""#), fresh)
         XCTAssertTrue(fresh.contains(#""pixelWidth":10"#) && fresh.contains(#""pixelHeight":20"#), fresh)
+        XCTAssertTrue(fresh.contains(#""previewMaxPixel":\#(Config.previewMaxPixel)"#), "the preview cap rides with the image; the page keeps no copy of it")
         let stored = PageAPI.load(payload, snapshot: Data(#"{"document":{"a":1}}"#.utf8)).script
         XCTAssertTrue(stored.hasPrefix(#"window.shotnote && window.shotnote.load({"snapshot":{"document":{"a":1}},"key":"#), stored)
         // The argument must be one JSON object: parse what the script passes to load().
         let start = stored.range(of: "load(")!.upperBound
         let object = try JSONSerialization.jsonObject(with: Data(stored[start...].dropLast(2).utf8)) as? [String: Any]
-        XCTAssertEqual(object?.keys.sorted(), ["key", "mimeType", "pixelHeight", "pixelWidth", "snapshot"])
+        XCTAssertEqual(object?.keys.sorted(), ["key", "mimeType", "pixelHeight", "pixelWidth", "previewMaxPixel", "snapshot"])
     }
 
     func testBuildScriptCarriesTheImageItsDraftAndTheMarks() throws {

@@ -12,6 +12,9 @@ struct LoadPayload: Encodable, Equatable {
     let mimeType: String
     let pixelWidth: Int
     let pixelHeight: Int
+    /// Longest side, in pixels, of the preview the page renders for this image's draft. It rides
+    /// with the image rather than being written on both sides, like `PageAPI.overlay(maxPixel:)`.
+    let previewMaxPixel: Int = Config.previewMaxPixel
 }
 
 /// The picture the page should draw when a zoom comes to rest: how far the image is magnified
