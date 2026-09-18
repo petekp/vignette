@@ -551,6 +551,18 @@ the same driven sequence; a single run varies.
   `[send]` line arrives when herdr answers. Without herdr the command is one `no-agent` error;
   nothing else in the app depends on it. `docs/send-to-agent-exploration-2026-09-17.md` has the
   routes that were measured and why the others were refused.
+- The agent skill (`skills/shotnote/SKILL.md`) ships in the bundle as a folder resource
+  (project.yml), and `SkillInstaller.swift` copies it out. A root is an agent's own directory,
+  `~/.claude` or `~/.codex`, and only one that exists; the skill lands in `<root>/skills/shotnote`.
+  Roots are parameters everywhere, so a test never reaches the real ones, and the live check is
+  `install-skill?root=<dir>` (debug only). The installer writes `.shotnote-skill.json` beside the
+  skill naming the build, and refuses anything at that path without it, a link included
+  (`not-ours`): it never touches a copy it did not make. `agentSkill` in settings.json is
+  `unasked`, `on`, or `off`; `on` installs and keeps the copy current at every launch, `off`
+  removes it, and `unasked` with an agent directory present makes the offer once, which is the
+  Settings window at the Agents section, since the toast carries no button. Making the offer
+  records `off`, so it happens once whatever the user does.
+  `docs/agent-skill-2026-09-18.md` has the reasons.
 
 ## Adding things
 

@@ -20,6 +20,7 @@ enum CommandError: String, CaseIterable {
     case invalidMarks = "invalid-marks"
     case noAgent = "no-agent"
     case sendFailed = "send-failed"
+    case notOurs = "not-ours"
 }
 
 /// What is wrong with an agent's `marks=`, in the words the error line uses.
@@ -46,6 +47,9 @@ struct CommandRequest: Equatable {
     /// `to=` and `text=` from the query: which agent `send` hands the image to, and the words with it.
     let to: String?
     let text: String?
+    /// `root=` from the query: the one directory `install-skill` writes into instead of the agent
+    /// directories. Needs `debug`, so a live check points it at a scratch directory.
+    let root: URL?
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -67,6 +71,7 @@ enum Commands {
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
         Fixed(name: "cancel", summary: "close the annotator without exporting, as Esc would"),
         Fixed(name: "settings", summary: "open the Settings window"),
+        Fixed(name: "install-skill", summary: "copy the bundled agent skill into ~/.claude/skills and ~/.codex/skills and turn the setting on; &root=<dir> installs into that directory instead and leaves the setting alone (needs \"debug\": true)"),
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Shotnote first recorded"),
         Fixed(name: "send", summary: "hand a screenshot's path to a coding agent herdr is running: \(Identity.urlScheme)://send?file=<path>&to=<agent or pane>&text=<words>; the focused pane's agent when no target is given", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
@@ -84,7 +89,8 @@ enum Commands {
                               tag: items.first { $0.name == "tag" }?.value, annotate: annotate,
                               agent: Agent.clean(items.first { $0.name == "agent" }.map { $0.value ?? "" }),
                               marks: items.first { $0.name == "marks" }?.value,
-                              to: items.first { $0.name == "to" }?.value, text: items.first { $0.name == "text" }?.value)
+                              to: items.first { $0.name == "to" }?.value, text: items.first { $0.name == "text" }?.value,
+                              root: items.first { $0.name == "root" }?.value.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) })
     }
 
     /// Where `add` copies `source` inside `folder`: its own name, or the name with a counter when
