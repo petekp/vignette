@@ -280,6 +280,22 @@ the card shows it.
     grows the frame in both directions until each hits the room, the picture is never stretched,
     Cmd+0 comes home to the fitted frame, and the stand-in and the page agree at every rest.
 
+27. The annotator's toolbar stays put across a swap and slides to the next image. Pete: "when in
+    the annotator, if the user switches between images, let's try to keep the tldraw controls
+    stable between images and just have it translate up or down depending on the height of the
+    incoming image, as opposed to rendering brand new control element each time." The controls
+    are the native toolbar panel (`AnnotatorToolbar.swift`), placed under the window by `prepare`
+    and taken down with the window, so a swap (a click on another card, or the queue moving on)
+    hides one toolbar and raises a new one with the next image. Instead, while one session
+    follows another with no gap, the toolbar panel stays on screen and its frame springs to the
+    next image's place (down or up with the height, sideways if the fitted frame's centre moves),
+    through the motion scale, timed with the two flights so it arrives as the window comes up.
+    It comes down only when the session ends (Esc, Done on the last image, a dismissal). Its
+    tool state follows the incoming image as today (the rectangle for a fresh image, select for
+    one with a draft). Touches `AnnotationController.prepare`/`show`/`hide`, the transition
+    reducer's swap effects (a sequence in `AnnotatorTransitionTests` before changing the table),
+    and the annotator's docs.
+
 
 ## Feedback on the run-2 branch (Pete, 2026-09-17 afternoon, on `todo2/integration` c43304a)
 
