@@ -106,6 +106,15 @@ final class ThumbnailController: NSObject {
     private var autoScrollTick: CFTimeInterval = 0
     /// The one owner of the annotation session. Only `send` writes it; see AnnotatorTransition.
     private var transition = AnnotatorTransition()
+    /// The annotation queue: the files still waiting, in the order they were given, and how many
+    /// the run started with, which the `[annotate] next` line counts against. Only the queue
+    /// continues itself; every other request to annotate replaces it.
+    private var queue: [String] = []
+    private var queueTotal = 0
+    /// The file the queue hands over to, held for the length of one `send`: it is taken before the
+    /// finished card's effects run, so `returnCard` knows another image follows and leaves the
+    /// session open.
+    private var handover: Screenshot?
     /// The card the session is about, kept here because a lone thumbnail leaves the model once the annotator shows.
     private var sessionCard: Card?
     private var annotating: Card? { transition.isActive ? sessionCard : nil }
@@ -134,7 +143,8 @@ final class ThumbnailController: NSObject {
         }
         model.onClickImage = { [weak self] card in
             guard let self else { return }
-            if self.transition.isActive { self.annotate(card); return }
+            // A click picks the next image by hand, so it replaces whatever the queue had left.
+            if self.transition.isActive { self.queue = []; self.annotate(card); return }
             if self.model.inSelectionMode { self.toggle(card) }
             else if let action = Config.actions.first(where: \.isDefault) { self.run(action, on: [card]) }
         }
@@ -198,6 +208,7 @@ final class ThumbnailController: NSObject {
                             "draft": model.drafts.contains(card.shot.url.path), "agent": card.agent as Any]
                 },
                 "selected": model.selectedCards().map(\.shot.url.path),
+                "queue": queue,
                 "focused": model.cards.first { $0.id == model.focused }?.shot.url.path as Any,
                 "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.url.path as Any,
                 "feedback": model.feedback as Any, "key": panel.isKeyWindow,
@@ -237,6 +248,7 @@ final class ThumbnailController: NSObject {
     func toggleRecent(_ shots: [Screenshot], detail: String = "") -> StackToggle {
         if visible && model.isStack { dismiss(); return .dismissed }
         if transition.isActive { send(.dismiss) }   // a lone annotation gives way to the stack
+        queue = []   // a stack presented anew starts with nothing queued
         let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
         guard !cards.isEmpty else { return .empty }
@@ -270,9 +282,19 @@ final class ThumbnailController: NSObject {
         }
     }
 
+    /// Opens the annotator on the first of `shots` and queues the rest: finishing one opens the
+    /// next, until the list is done. The selection is untouched by the whole run, so the same cards
+    /// can be copied or stitched after the last one.
+    func annotate(_ shots: [Screenshot]) {
+        guard let first = shots.first else { return }
+        queue = shots.dropFirst().map(\.url.path)
+        queueTotal = shots.count
+        annotate(first)
+    }
+
     /// Opens the annotator on `shot`, or swaps to it if the annotator is already open. Shows the
     /// card first if it is not on screen.
-    func annotate(_ shot: Screenshot) {
+    private func annotate(_ shot: Screenshot) {
         if visible {
             // A shot the panel does not have yet joins it; the flight starts from its offscreen slot.
             if card(for: shot) == nil, let card = makeCard(shot) { insert(card) }
@@ -288,6 +310,7 @@ final class ThumbnailController: NSObject {
     /// The page abandoned the session (Esc, click outside, Cmd+W). The reducer decides what returns.
     func annotationEnded() {
         restoreFocusOnEnd = true
+        queue = []   // ending one card ends the run; the rest of the list is dropped
         send(.close)
     }
 
@@ -296,6 +319,7 @@ final class ThumbnailController: NSObject {
     func annotationFinished(quick: Bool) {
         restoreFocusOnEnd = true
         if quick {
+            queue = []   // quick annotate closes everything; nothing follows it
             if visible { dismiss() } else { send(.dismiss) }
         } else {
             send(.finish)
@@ -334,6 +358,11 @@ final class ThumbnailController: NSObject {
     /// Drops cards whose files no longer exist.
     func remove(_ shots: [Screenshot]) {
         let urls = Set(shots.map(\.url))
+        let paths = Set(urls.map(\.path))
+        queue.removeAll { paths.contains($0) }
+        // The file in the annotator going ends the run: the annotator hides, and nothing should
+        // take its place in the same turn.
+        if let key = transition.key, paths.contains(key) { queue = [] }
         for url in urls { send(.remove(url.path)) }
         for card in model.cards where urls.contains(card.shot.url) { flights.end(id: card.id) }
         endSweep()
@@ -450,6 +479,7 @@ final class ThumbnailController: NSObject {
     func dismiss() {
         guard visible else { return }
         visible = false
+        queue = []
         dismissGeneration += 1
         let gen = dismissGeneration
         dismissTimer?.invalidate()
@@ -502,7 +532,25 @@ final class ThumbnailController: NSObject {
     private func send(_ event: AnnotatorTransition.Event) {
         let effects = transition.reduce(event)
         Log.write("[transition] \(event) -> \(transition.phase) effects=\(effects.map(\.description).joined(separator: " "))")
+        // A queue hands over in the turn the finished card is sent home, so its flight back and the
+        // next card's flight out run together, the way a swap's two flights do.
+        if event == .parked, !transition.isActive { handover = takeNext() }
         for effect in effects { perform(effect) }
+        if let next = handover {
+            handover = nil
+            annotate(next)
+        }
+    }
+
+    /// The next file the queue has for the annotator. Files that have gone since drop out.
+    private func takeNext() -> Screenshot? {
+        while !queue.isEmpty {
+            let key = queue.removeFirst()
+            guard FileManager.default.fileExists(atPath: key) else { continue }
+            Log.write("[annotate] next \((key as NSString).lastPathComponent) \(queueTotal - queue.count) of \(queueTotal)")
+            return Screenshot(url: URL(fileURLWithPath: key))
+        }
+        return nil
     }
 
     private func perform(_ effect: AnnotatorTransition.Effect) {
@@ -512,7 +560,8 @@ final class ThumbnailController: NSObject {
             sessionCard = card
             loadedKeys.remove(key)
             dismissTimer?.invalidate()
-            model.clearSelection()
+            // The selection stays: the card comes back to its slot, and a queued run needs the rest
+            // of it to still be there when the last card is done.
             releaseKeys()
             _ = model.outCards.insert(card.id)
             let target = targetFrame(for: card)
@@ -547,7 +596,9 @@ final class ThumbnailController: NSObject {
             onAnnotatorHide? { [weak self] in self?.send(.parked) }
         case .returnCard(let key):
             guard let card = sessionCard, card.shot.url.path == key else { return }
-            if !transition.isActive { sessionCard = nil; dim.hide(); endSession() }
+            // With another file coming from the queue the session is not over: the dim stays up and
+            // the user's app does not get the focus back between two cards.
+            if !transition.isActive, handover == nil { sessionCard = nil; dim.hide(); endSession() }
             returnCard(currentCard(card))
         case .hideAnnotator:
             // While the stack slides out, the image is flying to its slot's offscreen position

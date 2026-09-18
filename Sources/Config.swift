@@ -58,8 +58,8 @@ struct ShotAction: Sendable {
 protocol Actions: AnyObject {
     func copyToClipboard(_ shots: [Screenshot])
     func copyPaths(_ shots: [Screenshot])
-    /// Opens the last of `shots`: the card selected last, or the last file a URL named. The
-    /// annotator holds one image.
+    /// Opens the first of `shots` and queues the rest, since the annotator holds one image:
+    /// finishing one opens the next until the list is done.
     func annotate(_ shots: [Screenshot])
     /// Exports each screenshot's draft (or uses the file as is when it has none) and copies the set.
     func copyAnnotated(_ shots: [Screenshot])
