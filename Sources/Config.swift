@@ -7,6 +7,9 @@ enum Config {
     static let annotatedSuffix = "-annotated"
     /// Longest side of a card preview, in pixels. Matches PREVIEW_MAX in App.tsx for park previews.
     static let previewMaxPixel = 1600
+    /// Longest side, in pixels, of the annotations the page renders for the zoom stand-in. One at
+    /// a time, for the image in the annotator only, so this is what it costs to hold.
+    static let overlayMaxPixel = 2048
 
     /// Everything you can do to screenshots. Each action is a hover button on a card, an entry in the
     /// selection strip, a keyboard shortcut inside the recent stack, and a `shotnote://<id>` URL, according

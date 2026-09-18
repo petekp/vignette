@@ -61,6 +61,35 @@ enum Zoom {
         CGPoint(x: min(max(cursor.x, 0), 1), y: min(max(cursor.y, 0), 1))
     }
 
+    /// A visible middle kept far enough from the image's edges that the image still covers the
+    /// frame. At the fitted size the whole image is visible, so the middle is the image's own.
+    static func clamped(center: CGPoint, camera: CGFloat) -> CGPoint {
+        guard camera.isFinite, camera >= 1 else { return center }
+        let half = 0.5 / camera
+        return CGPoint(x: min(max(center.x, half), 1 - half), y: min(max(center.y, half), 1 - half))
+    }
+
+    /// The part of the image a magnification of `camera` about `center` leaves visible, as
+    /// fractions of the image with y from the top. The frame carries the image's own aspect, so
+    /// the visible part is the same fraction in both directions.
+    static func visible(center: CGPoint, camera: CGFloat) -> CGRect {
+        guard camera.isFinite, camera >= 1 else { return CGRect(x: 0, y: 0, width: 1, height: 1) }
+        let side = 1 / camera
+        let c = clamped(center: center, camera: camera)
+        return CGRect(x: c.x - side / 2, y: c.y - side / 2, width: side, height: side)
+    }
+
+    /// Where the whole picture sits inside the frame, in the frame's own coordinates, so that the
+    /// visible part of it fills the frame: the frame magnified by `camera` and slid under it. The
+    /// stand-in is laid out with this and the page is given the same `camera` and `center`, so the
+    /// two draw the same picture. y counts up, as a view's frame does.
+    static func picture(in bounds: CGRect, camera: CGFloat, center: CGPoint) -> CGRect {
+        let v = visible(center: center, camera: camera)
+        let scale = max(camera.isFinite ? camera : 1, 1)
+        let w = bounds.width * scale, h = bounds.height * scale
+        return CGRect(x: bounds.minX - v.minX * w, y: bounds.maxY + v.minY * h - h, width: w, height: h)
+    }
+
     /// How far the image is magnified, divided between the window and the page's camera. The
     /// window grows until it can grow no further and the camera takes what is left, so
     /// `window * camera` is the level asked for and the two sides cannot disagree about it. Below
@@ -71,6 +100,31 @@ enum Zoom {
         if level < 1 { return (1 - (1 - level) * pull, 1) }
         let window = min(maxWindow, level)
         return (window, min(maxCamera, level / window))
+    }
+}
+
+/// The magnification's side of a zoom step in flight: the visible middle when the input arrived,
+/// the magnification then, and the point the input named. The middle at any magnification follows
+/// from those three, so the point under the cursor stays under it all the way through the spring —
+/// what `ZoomAim` does for the window, for the part of the zoom the window cannot take.
+struct ZoomPan: Equatable {
+    var center: CGPoint
+    var camera: CGFloat
+    var cursor: CGPoint
+
+    /// The whole image, centred: what an image opens at and what a keyboard step comes home to.
+    static let centered = ZoomPan(center: Zoom.center, camera: 1, cursor: Zoom.center)
+
+    /// The middle of the visible part of the image once the magnification is `camera`.
+    func center(at camera: CGFloat) -> CGPoint {
+        guard self.camera.isFinite, camera.isFinite, self.camera >= 1, camera >= 1 else { return Zoom.center }
+        let was = 1 / self.camera, now = 1 / camera
+        let from = Zoom.clamped(center: center, camera: self.camera)
+        // The image's point under the cursor, and the middle that leaves it there once the
+        // visible part has shrunk (or grown) to `now`.
+        let held = CGPoint(x: from.x - was / 2 + cursor.x * was, y: from.y - was / 2 + cursor.y * was)
+        return Zoom.clamped(center: CGPoint(x: held.x - cursor.x * now + now / 2,
+                                            y: held.y - cursor.y * now + now / 2), camera: camera)
     }
 }
 

@@ -18,6 +18,29 @@ export interface LoadPayload {
 }
 
 /**
+ * The picture the page draws when a zoom comes to rest. `ratio` is how far the image is magnified
+ * inside the window (1 fits it); `x` and `y` are the middle of the visible part, as fractions of
+ * the image; `width` and `height` are the size the host has laid the window out at, which the page
+ * waits for before it applies the view.
+ */
+export interface ViewRequest {
+  ratio: number
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** What the page painted, once it has: the size it used, the magnification it ended up at, and
+ *  how many frames it waited for the host's resize to reach this process. */
+export interface ViewResult {
+  width: number
+  height: number
+  ratio: number
+  waited: number
+}
+
+/**
  * One annotation an agent supplied with `add?marks=`. Every number is a fraction of the image:
  * `x` and `y` from its top-left corner, `w` and `h` of its size, `x2` and `y2` where an arrow
  * points. `build` turns these into ordinary shapes, which the user then edits like their own.
@@ -92,13 +115,19 @@ declare global {
       build(payload: LoadPayload, marks: Mark[]): Promise<ParkResult>
       /** Renders each item's draft to PNG. */
       export(items: ExportItem[]): Promise<ExportResult>
+      /**
+       * The current image's annotations alone, on a transparent canvas covering the image, as a
+       * PNG data URL; null when nothing is drawn. `maxPixel` caps its longest side. The host lays
+       * it over the screenshot while a zoom is moving.
+       */
+      overlay(maxPixel: number): Promise<string | null>
       setTool(id: string): void
       setColor(id: string): void
       /**
-       * Magnifies the image inside the window once the window cannot grow; 1 fits the image.
-       * `at` is the point to keep in place; null magnifies about the window's middle.
+       * Draws the exact picture the host's zoom stand-in is showing, and answers once it has been
+       * painted: the host waits for that answer before it takes the stand-in away.
        */
-      setCanvasZoom(ratio: number, at: ZoomAnchor | null): void
+      setView(view: ViewRequest): Promise<ViewResult | null>
       /** Exports the current image and replies with `done`. */
       finish(): void
     }

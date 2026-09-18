@@ -16,6 +16,18 @@ struct LoadPayload: Encodable, Equatable {
     let viewHeight: Double
 }
 
+/// The picture the page should draw when a zoom comes to rest: how far the image is magnified
+/// inside the window (1 fits it), the middle of the visible part as a fraction of the image, and
+/// the size the host has laid the window out at. The page waits for that size, applies the view,
+/// and answers once it has painted it, which is when the stand-in may go.
+struct ViewRequest: Encodable, Equatable {
+    let ratio: Double
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+}
+
 /// One annotation an agent supplied with `add?marks=`. Every number is a fraction of the image:
 /// `x` and `y` from its top-left corner, `w` and `h` of its size, `x2` and `y2` where an arrow
 /// points, so a mark does not depend on the screenshot's pixel size. `Commands.marks(from:)`
@@ -58,14 +70,16 @@ enum PageAPI: Equatable {
     case build(LoadPayload, snapshot: Data?, marks: [Mark])
     /// Each item's stored draft JSON, by key.
     case export([(key: String, snapshot: Data)])
+    /// The current image's annotations alone, on a transparent canvas, no larger than this on the
+    /// longest side: what the zoom stand-in lays over the screenshot.
+    case overlay(maxPixel: Int)
     case setTool(String)
     case setColor(String)
-    /// Magnification inside the window; 1 fits the image. `at` is the point to keep in place, a
-    /// fraction of the window with y from the top; nil is its middle.
-    case setCanvasZoom(Double, at: CGPoint?)
+    /// The picture to draw at the end of a zoom, and the answer that says it has been painted.
+    case setView(ViewRequest)
     case finish
 
-    /// `park`, `build`, and `export` are async and return a value, so they run through
+    /// `park`, `build`, `export`, and `setView` are async and return a value, so they run through
     /// `callAsyncJavaScript`; the rest are fire-and-forget. All guard on `window.shotnote` so a
     /// call that lands before the page's script runs is a no-op rather than an exception.
     var script: String {
@@ -79,9 +93,11 @@ enum PageAPI: Equatable {
         case .export(let items):
             let list = items.map { "{\"key\":\(PageAPI.json($0.key)),\"snapshot\":\(String(data: $0.snapshot, encoding: .utf8) ?? "null")}" }
             return "return window.shotnote ? await window.shotnote.export([\(list.joined(separator: ","))]) : null;"
+        case .overlay(let maxPixel):
+            return "return window.shotnote ? await window.shotnote.overlay(\(maxPixel)) : null;"
         case .setTool(let id): return "window.shotnote && window.shotnote.setTool(\(PageAPI.json(id)));"
         case .setColor(let id): return "window.shotnote && window.shotnote.setColor(\(PageAPI.json(id)));"
-        case .setCanvasZoom(let ratio, let at): return "window.shotnote && window.shotnote.setCanvasZoom(\(PageAPI.json(ratio)),\(PageAPI.point(at)));"
+        case .setView(let view): return "return window.shotnote ? await window.shotnote.setView(\(PageAPI.json(view))) : null;"
         case .finish: return "window.shotnote && window.shotnote.finish();"
         }
     }
@@ -93,12 +109,6 @@ enum PageAPI: Equatable {
     static func payload(_ payload: LoadPayload, _ snapshot: Data?) -> String {
         let text = snapshot.flatMap { String(data: $0, encoding: .utf8) } ?? "null"
         return "{\"snapshot\":\(text),\(json(payload).dropFirst())"
-    }
-
-    /// A unit point as the page reads it, or `null`. CGPoint encodes as an array, not `{x, y}`.
-    static func point(_ p: CGPoint?) -> String {
-        guard let p else { return "null" }
-        return "{\"x\":\(json(Double(p.x))),\"y\":\(json(Double(p.y)))}"
     }
 
     /// JSON is valid JavaScript for objects, arrays, and strings; `withoutEscapingSlashes` keeps paths readable.

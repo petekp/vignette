@@ -128,8 +128,24 @@ final class BridgeTests: XCTestCase {
 
     func testParkAwaitsAndOthersGuard() {
         XCTAssertEqual(PageAPI.park.script, "return window.shotnote ? await window.shotnote.park() : null;")
+        XCTAssertEqual(PageAPI.overlay(maxPixel: 2048).script, "return window.shotnote ? await window.shotnote.overlay(2048) : null;")
         for api in [PageAPI.reset, .finish, .setColor("red")] {
             XCTAssertTrue(api.script.hasPrefix("window.shotnote && window.shotnote."), api.script)
         }
+    }
+
+    /// The host waits for the page's answer before it takes the stand-in away, so this one is
+    /// awaited too, and it carries the whole view: the magnification, the middle, and the size.
+    func testTheViewIsAwaitedAndCarriesTheWholePicture() throws {
+        let script = PageAPI.setView(ViewRequest(ratio: 2.5, x: 0.25, y: 0.75, width: 936.5, height: 872)).script
+        XCTAssertTrue(script.hasPrefix("return window.shotnote ? await window.shotnote.setView("), script)
+        let start = script.range(of: "setView(")!.upperBound
+        let end = script.range(of: ") : null;")!.lowerBound
+        let view = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(script[start..<end].utf8)) as? [String: Any])
+        XCTAssertEqual(view["ratio"] as? Double, 2.5)
+        XCTAssertEqual(view["x"] as? Double, 0.25)
+        XCTAssertEqual(view["y"] as? Double, 0.75)
+        XCTAssertEqual(view["width"] as? Double, 936.5)
+        XCTAssertEqual(view["height"] as? Double, 872)
     }
 }
