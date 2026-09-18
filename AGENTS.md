@@ -286,12 +286,14 @@ the same driven sequence; a single run varies.
   panel (`AnnotatorToolbar.swift`) placed under the window, never inside the page: the page
   sends its tool and color list in the `ready` message, reports the active tool, and takes
   `setTool`/`setColor`/`finish` calls. Keyboard shortcuts inside the editor (tool keys, undo,
-  delete, Esc, Return) live in `Hotkeys` in `App.tsx`, because tldraw's own shortcuts are part
-  of the UI that `hideUi` removes. `TransitionLayer` flies a card between its stack slot and that
-  frame, and the annotator loads the image while hidden (`prepare`) so it can appear the moment
-  the card lands (`show`). A swap runs two of these at once. The stack keeps the slot, drawn
+  delete, Esc, Return) live in `Hotkeys` in `App.tsx`. `hideUi` hides tldraw's UI but keeps its
+  shortcuts, which it registers on the document body, so `Hotkeys` stops every plain letter in
+  the capture phase: a key tldraw binds cannot reach a tool the toolbar does not show.
+  `TransitionLayer` flies a card between its stack slot and that frame, and the annotator loads
+  the image while hidden (`prepare`) so it can appear the moment the card lands (`show`). A swap
+  runs two of these at once. The stack keeps the slot, drawn
   empty, so the card flies back to the same place. Which tool an image opens on is in
-  `web/src/config.ts`: `DEFAULT_TOOL` (circle) for a fresh image, `REOPEN_TOOL` (select) for one
+  `web/src/config.ts`: `DEFAULT_TOOL` (rectangle) for a fresh image, `REOPEN_TOOL` (select) for one
   that already has a draft. A reopen drops the selection the draft was parked with and picks up
   the annotation drawn last instead (`lastAnnotation`: the top of the page's z-order, which is
   where tldraw puts each new shape), so a color press, a drag, or Delete acts on that mark.

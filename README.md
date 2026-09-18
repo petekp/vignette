@@ -107,7 +107,7 @@ and closing it hands focus back to the app you came from.
   Copy Annotated renders them without opening the editor.
 - Reopening a card that already has annotations starts on the selection tool with the mark you
   drew last already picked up, so a color, a drag, or Delete acts on it without a click first.
-  A fresh image starts on the circle tool.
+  A fresh image starts on the rectangle tool.
 - A card with a purple badge was pushed in by an agent (`add?agent=<name>`), not captured. Hover
   it to see which one. The name is stored on the file itself, so it survives a rename.
 
@@ -168,8 +168,9 @@ not depend on its pixel size:
 ```
 
 The types are `ellipse`, `rectangle`, `arrow`, and `text`; the colors are the editor's
-(`web/src/config.ts`), the first one by default. The marks become a draft before the card appears,
-so the card shows them, Copy Annotated has them, and opening the card puts them in the editor to
+(`web/src/config.ts`), the first one by default. `ellipse` has no toolbar button, and an agent
+can still push one. The marks become a draft before the card appears, so the card shows them,
+Copy Annotated has them, and opening the card puts them in the editor to
 move, retype, or delete like your own. The editor builds the draft on its own canvas, so a marked
 push is refused with `page-not-ready` from the moment the annotator takes an image until it has
 given it back, and while a Copy Annotated is rendering.

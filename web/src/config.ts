@@ -3,7 +3,6 @@
 
 export const TOOLS = [
   { id: 'select', label: 'Select', key: 'v', symbol: 'cursorarrow', tool: 'select' },
-  { id: 'ellipse', label: 'Circle', key: 'o', symbol: 'circle', tool: 'geo', geo: 'ellipse' },
   { id: 'rectangle', label: 'Rectangle', key: 'r', symbol: 'rectangle', tool: 'geo', geo: 'rectangle' },
   { id: 'arrow', label: 'Arrow', key: 'a', symbol: 'arrow.up.right', tool: 'arrow' },
   { id: 'text', label: 'Text', key: 't', symbol: 'textformat', tool: 'text' },
@@ -11,7 +10,7 @@ export const TOOLS = [
 export type ToolId = (typeof TOOLS)[number]['id']
 
 /// Tool active when an image opens for the first time.
-export const DEFAULT_TOOL: ToolId = 'ellipse'
+export const DEFAULT_TOOL: ToolId = 'rectangle'
 /// Tool active when an image that already has annotations reopens: the first click lands on the
 /// work that is there instead of drawing over it.
 export const REOPEN_TOOL: ToolId = 'select'

@@ -644,7 +644,11 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
         }
         return
       }
-      if (!mod && !e.altKey) {
+      if (!mod && !e.altKey && /^[a-z]$/.test(e.key.toLowerCase())) {
+        // Tool keys are the page's. tldraw registers its own on the document body, which `hideUi`
+        // leaves in place, so a letter it binds would reach a tool the toolbar does not show: this
+        // capture-phase listener stops every plain letter before that.
+        e.stopPropagation()
         const t = TOOLS.find((t) => t.key === e.key.toLowerCase())
         if (t) {
           e.preventDefault()
