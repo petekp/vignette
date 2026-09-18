@@ -251,8 +251,11 @@ An image that arrives through `add` skips both: a push from an agent is not a ca
 The `ui` section holds the design numbers: card sizes, corners, shadows, hover buttons, animation
 durations and curves, how far a card bows and swells on its way to the annotator, how narrow the
 stack goes to make room for it and how far it stays from it, how deep the drag-select's edge band is
-and how fast it scrolls there, backdrop blur and tint, annotator window limits. The defaults are the
-tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or `open -g
+and how fast it scrolls there, how near an edge of the image a zoom holds that edge, backdrop blur
+and tint, annotator window limits. The defaults are the
+tuned UI, so a fresh install looks the same. A key the app does not know is ignored and the number
+it names takes its default, so a renamed key leaves a dead line you can delete: `zoomEdgeBand`, a
+fraction of the picture, is now `zoomEdgeBandPoints`, in points. With `debug` on, menu bar → Tweak UI… (or `open -g
 shotnote://tweaks`) opens a floating panel of sliders that edits them live, with buttons to summon
 the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns every
 animation off; the system's Reduce Motion does the same.

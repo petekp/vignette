@@ -461,10 +461,13 @@ the same driven sequence; a single run varies.
 
   Both phases hold the point under the cursor: `ZoomAim` for the window, `ZoomPan` for the
   magnification, each read off what is on screen when the input arrives. A cursor near an edge of
-  the picture is pulled onto that edge first (`Zoom.pulledToEdges`, `ui.zoomEdgeBand` 0.15 of the
-  picture and `ui.zoomEdgePull` 0.5, the part of the band that pins outright), so the edge stays in
+  the picture is pulled onto that edge first (`Zoom.pulledToEdges`, `ui.zoomEdgeBandPoints` 120
+  points from each edge of the frame the cursor is over and `ui.zoomEdgePull` 0.5, the part of the
+  band that pins outright), so the edge stays in
   view: only the window's own edge holds the image's edge with it, so without the pull the corner
-  the cursor is beside is cropped by the first bit of magnification. The pull is in `ZoomPan` alone;
+  the cursor is beside is cropped by the first bit of magnification. The band is in points rather
+  than a fraction of each side, so its reach is the same on all four edges of a wide screenshot as
+  of a square one. The pull is in `ZoomPan` alone;
   the window's growth cannot crop anything, since the whole image is inside the window until the
   window can grow no further. The message carries the
   cursor as a fraction of the window (`at`, y from the top), which the window growth and the page's

@@ -269,13 +269,14 @@ final class ZoomTests: XCTestCase {
     }
 
     func testACursorNearAnEdgeKeepsThatEdgeInView() {
-        let band: CGFloat = 0.15, pull: CGFloat = 0.5
+        // A square picture, so a band of 150 points is 0.15 of either side.
+        let square = CGSize(width: 1000, height: 1000), band: CGFloat = 150, pull: CGFloat = 0.5
         // Without the pull the corner beside the cursor goes as soon as the picture magnifies.
         let plain = ZoomPan(center: Zoom.center, camera: 1, cursor: CGPoint(x: 0.95, y: 0.95))
         XCTAssertLessThan(Zoom.visible(center: plain.center(at: 2), camera: 2).maxX, 1 - 1e-6)
         XCTAssertLessThan(Zoom.visible(center: plain.center(at: 2), camera: 2).maxY, 1 - 1e-6)
         // With it, the image's bottom right corner stays in view however far the zoom goes.
-        let aimed = Zoom.pulledToEdges(CGPoint(x: 0.95, y: 0.95), band: band, pull: pull)
+        let aimed = Zoom.pulledToEdges(CGPoint(x: 0.95, y: 0.95), in: square, band: band, pull: pull)
         let pan = ZoomPan(center: Zoom.center, camera: 1, cursor: aimed)
         for camera in [1.5, 2, 4, 8] as [CGFloat] {
             let v = Zoom.visible(center: pan.center(at: camera), camera: camera)
@@ -284,25 +285,53 @@ final class ZoomTests: XCTestCase {
         }
         // And the top left corner the same way.
         let corner = ZoomPan(center: Zoom.center, camera: 1,
-                             cursor: Zoom.pulledToEdges(CGPoint(x: 0.04, y: 0.06), band: band, pull: pull))
+                             cursor: Zoom.pulledToEdges(CGPoint(x: 0.04, y: 0.06), in: square, band: band, pull: pull))
         let v = Zoom.visible(center: corner.center(at: 4), camera: 4)
         XCTAssertEqual(v.minX, 0, accuracy: 1e-9)
         XCTAssertEqual(v.minY, 0, accuracy: 1e-9)
     }
 
+    func testTheEdgeBandReachesAsFarFromEveryEdgeOfAWideFrame() {
+        // Three times as wide as it is tall: the band is 0.08 of the width and 0.24 of the height.
+        let wide = CGSize(width: 1500, height: 500), band: CGFloat = 120, pull: CGFloat = 0.5
+        // 30 points in from the left edge and 30 points down from the top: both are inside the
+        // half of the band that pins, so a zoom there holds both edges.
+        let held = Zoom.pulledToEdges(CGPoint(x: 30 / wide.width, y: 30 / wide.height),
+                                      in: wide, band: band, pull: pull)
+        XCTAssertEqual(held.x, 0)
+        XCTAssertEqual(held.y, 0)
+        let v = Zoom.visible(center: ZoomPan(center: Zoom.center, camera: 1, cursor: held).center(at: 4), camera: 4)
+        XCTAssertEqual(v.minX, 0, accuracy: 1e-9, "the left edge stays in view")
+        XCTAssertEqual(v.minY, 0, accuracy: 1e-9, "and the top edge with it")
+        // 90 points in from the right edge and from the bottom: the same way through the band, so
+        // the pull leaves the cursor the same number of points from either edge.
+        let eased = Zoom.pulledToEdges(CGPoint(x: 1 - 90 / wide.width, y: 1 - 90 / wide.height),
+                                       in: wide, band: band, pull: pull)
+        XCTAssertEqual((1 - eased.x) * wide.width, 45, accuracy: 1e-9)
+        XCTAssertEqual((1 - eased.y) * wide.height, 45, accuracy: 1e-9)
+        // And 200 points in from either edge is outside the band on both.
+        let inside = Zoom.pulledToEdges(CGPoint(x: 200 / wide.width, y: 200 / wide.height),
+                                        in: wide, band: band, pull: pull)
+        XCTAssertEqual(inside.x, 200 / wide.width)
+        XCTAssertEqual(inside.y, 200 / wide.height)
+    }
+
     func testTheMiddleOfThePictureStillZoomsAboutItself() {
-        XCTAssertEqual(Zoom.pulledToEdges(Zoom.center, band: 0.15, pull: 0.5), Zoom.center)
+        let square = CGSize(width: 1000, height: 1000)
+        XCTAssertEqual(Zoom.pulledToEdges(Zoom.center, in: square, band: 150, pull: 0.5), Zoom.center)
         // Outside the band, and at its inner edge, the cursor is its own anchor.
-        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.7, y: 0.3), band: 0.15, pull: 0.5), CGPoint(x: 0.7, y: 0.3))
-        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.85, y: 0.15), band: 0.15, pull: 0.5), CGPoint(x: 0.85, y: 0.15))
+        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.7, y: 0.3), in: square, band: 150, pull: 0.5), CGPoint(x: 0.7, y: 0.3))
+        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.85, y: 0.15), in: square, band: 150, pull: 0.5), CGPoint(x: 0.85, y: 0.15))
         // Inside the band the pull eases in rather than snapping.
-        let eased = Zoom.pulledToEdges(CGPoint(x: 0.88, y: 0.12), band: 0.15, pull: 0.5)
+        let eased = Zoom.pulledToEdges(CGPoint(x: 0.88, y: 0.12), in: square, band: 150, pull: 0.5)
         XCTAssertGreaterThan(eased.x, 0.88)
         XCTAssertLessThan(eased.x, 1)
         XCTAssertLessThan(eased.y, 0.12)
         XCTAssertGreaterThan(eased.y, 0)
-        // A band of nothing leaves every cursor where it is.
-        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.99, y: 0.01), band: 0, pull: 0.5), CGPoint(x: 0.99, y: 0.01))
+        // A band of nothing leaves every cursor where it is, and so does a band wider than the
+        // picture: it reaches half of each side, and the middle is exactly that far from both.
+        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.99, y: 0.01), in: square, band: 0, pull: 0.5), CGPoint(x: 0.99, y: 0.01))
+        XCTAssertEqual(Zoom.pulledToEdges(Zoom.center, in: square, band: 5000, pull: 0.5), Zoom.center)
     }
 
     func testAPanComesHomeToTheWholeImage() {

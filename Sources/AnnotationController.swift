@@ -314,14 +314,17 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// Points the magnification at `cursor`, from the part of the image that is visible now. Like
     /// `aim`, it starts from what is on screen, so a step aimed elsewhere mid-spring bends.
     ///
-    /// A cursor near an edge of the picture is pulled onto it first (`ui.zoomEdgeBand`,
+    /// A cursor near an edge of the picture is pulled onto it first (`ui.zoomEdgeBandPoints`,
     /// `ui.zoomEdgePull`): only the window's own edge holds the image's edge with it, so without
     /// the pull the corner the cursor is beside is cropped by the first bit of magnification. The
-    /// window's growth needs none of this — the whole image is inside the window until the window
-    /// can grow no further, so nothing can be cropped before the magnification starts.
+    /// band is measured in points of the frame the cursor is over, so its reach is the same on all
+    /// four edges however wide the screenshot is. The window's growth needs none of this — the
+    /// whole image is inside the window until the window can grow no further, so nothing can be
+    /// cropped before the magnification starts.
     private func aimPan(at cursor: CGPoint) {
         let ui = Settings.shared.data.ui
-        let aimed = Zoom.pulledToEdges(cursor, band: ui.zoomEdgeBand, pull: ui.zoomEdgePull)
+        let picture = frameOnScreen?.size ?? fittedFrame.size
+        let aimed = Zoom.pulledToEdges(cursor, in: picture, band: ui.zoomEdgeBandPoints, pull: ui.zoomEdgePull)
         let camera = split(zoomLevel).camera
         zoomPan = ZoomPan(center: zoomPan.center(at: camera), camera: camera, cursor: aimed)
     }
