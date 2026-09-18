@@ -88,7 +88,7 @@ and closing it hands focus back to the app you came from.
 - A selected circle carries the card's place in the selection, counting in the order you picked
   them. That is the order every action receives them; picking a card again puts it last. Cmd+A
   has nobody's order to follow, so it takes the column's: oldest first.
-- The selected cards get a control strip to their left: copy, copy annotated, stitch, delete.
+- The selected cards get a control strip to their left: copy, annotate, stitch, delete.
   It stays centered between the topmost and the bottommost selected card, and follows the selection.
   Put the cursor on it and it grows to the right to name each button. The icons stay where they
   are, so the button under the cursor is still the button you press.
@@ -109,11 +109,12 @@ and closing it hands focus back to the app you came from.
   without clicking, and Return opens the card the mouse is on. A key runs on the selection when
   there is one, else on the focused card.
 - Arrows move focus, Shift extends in the direction you travel (turning back drops the card it
-  added last), Space toggles, Cmd+A selects all, Return annotates, Cmd+Delete trashes, Esc clears
-  then dismisses.
-- Return on several selected cards annotates them one after another, in the order you picked them:
-  each Done sends that card home and opens the next. They stay selected the whole time, so Cmd+C or
-  Cmd+S afterwards still takes all of them. Esc, or closing the stack, drops the rest of the queue.
+  added last), Space toggles, Cmd+A selects all, Return annotates, Cmd+Shift+C copies with the
+  annotations rendered in, Cmd+Delete trashes, Esc clears then dismisses.
+- Return on several selected cards, or Annotate in the strip, annotates them one after another, in
+  the order you picked them: each Done sends that card home and opens the next. They stay selected
+  the whole time, so Cmd+C or Cmd+S afterwards still takes all of them. Esc, or closing the stack,
+  drops the rest of the queue.
 - A card whose annotations you parked with Esc or a swap shows them in its thumbnail. That
   thumbnail is a preview PNG in `~/Library/Caches`; if macOS clears the folder, the next launch
   renders it again from the draft. Reopen the card and the annotations are back either way;

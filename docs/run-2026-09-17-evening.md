@@ -104,14 +104,17 @@ Not verified: three digits (more than 99 cards), left to `minimumScaleFactor`.
 One `hovered` bool animates a label's frame from 0 to its measured width and its opacity from 0 to
 1, under `Anim.spring(ui.hoverRevealDuration)` — the tweak that already meant this, so no new
 number. The icons never move: Copy grows to the right from a fixed leading edge (27 → 62 pt), and
-the strip keeps a layout box the grown width (35 → 140 pt) with the strip against its leading edge,
-so nothing in the panel moves when the labels come out. `StackLayout.stripReveal` caps the growth at
-the panel's right edge. A strip row drops the 1.08 hover scale; a press still scales.
+the strip keeps a layout box the grown width with the strip against its leading edge, so nothing in
+the panel moves when the labels come out. The reveal is the widest label's own width, measured in
+the font the view draws, so it followed the strip's buttons changing without a line of code:
+35 → 140 pt while Copy Annotated was on it, 35 → 98 pt now that Annotate is.
+`StackLayout.stripReveal` caps the growth at the panel's right edge. A strip row drops the 1.08
+hover scale; a press still scales.
 
-Verified in my round: `stack.strip` `[1264, 574, 35, 128]` at rest → `[1264, 574, 140, 128]` with
-`stripHovered true`, the x unchanged; the crop shows Copy, Copy Annotated, Stitch and Delete beside
-their icons. The agent's 60 fps recordings show an interrupted reveal turning around at 58% and
-running back monotonically, and `ui.motion: 0` reaching full width in two frames (33 ms).
+Verified in my round: `stack.strip` `[1264, 574, 35, 128]` at rest → `[1264, 574, 98, 128]` with
+`stripHovered true`, the x unchanged; the crop shows Copy, Annotate, Stitch and Delete beside their
+icons. The agent's 60 fps recordings show an interrupted reveal turning around at 58% and running
+back monotonically, and `ui.motion: 0` reaching full width in two frames (33 ms).
 
 Not verified: a label clipped by the cap on a very narrow selected card (unit test only).
 
@@ -231,6 +234,20 @@ Verified on the merged branch: that file was deleted, `./scripts/build.sh --test
 
 ## 2. Decisions made without you, and open questions
 
+### Pete's answers
+
+Three of the questions below are settled, and the branch carries the answers.
+
+- **The strip's pencil is Annotate, not Copy Annotated.** `annotate` is a strip action with the
+  pencil the strip already showed; `copy-annotated` is a shortcut, so it keeps Cmd+Shift+C and
+  `shotnote://copy-annotated` and leaves the strip. The strip reads Copy, Annotate, Stitch, Delete.
+  Annotate runs the queue exactly as Return does.
+- **The annotator stays centred in the room**, so with the stack up it opens about 68 points left
+  of where it did.
+- **The test scheme keeps its own settings file** (`/tmp/shotnote-tests/settings.json`).
+
+Everything else in this section is still open.
+
 ### The page
 - **`SHOW_COLORS` is a source constant**, like the other editor knobs, so turning the palette back
   on needs a rebuild. Say if it should be a settings key.
@@ -252,9 +269,8 @@ Verified on the merged branch: that file was deleted, `./scripts/build.sh --test
   moves 1.0 pt. One argument turns it off.
 
 ### The stack's keys
-- **There is no annotate button** to press: `annotate` is a shortcut, so Return is the way in. A
-  one-line `Config.actions` change would add it to the strip, and the queue would run from it
-  unchanged.
+- **Annotate is in the strip now** (answered above), so a run starts from the button or from
+  Return. Both go through `Config.actions`, so the queue is the same.
 - **A single card annotated from a selection of one now stays selected.** That falls out of one
   rule — the selection survives a run — rather than a special case.
 
@@ -266,9 +282,8 @@ Verified on the merged branch: that file was deleted, `./scripts/build.sh --test
 
 ### The room
 - **The annotator is centred in the room, not on the screen**, so with the stack showing, every
-  annotation now opens about 68 points left of where it did — including small images that would
-  clear the stack anyway. The alternative is to centre on the screen and only push left when the
-  frame would enter the reserved strip. Your call; nothing was changed for it here.
+  annotation opens about 68 points left of where it did — including small images that would clear
+  the stack anyway. Answered: it stays as built.
 - **`ui.stackGap` is 24 and the annotator's frame shadow has radius 24**, so the shadow reaches into
   the gap. The frames never touch.
 - **Cmd+0 leaves the stack at the fit's width, not full width.** Full width would put the cards
@@ -327,6 +342,10 @@ Two things to know before the first run:
   project.yml fix, I patched the generated (gitignored) scheme to point the test action at
   `integration-scratch/test-settings.json`, and checked after each run that the file appeared there
   and that `~/.config/shotnote/settings.json` kept its mtime. It did, at every one of the five runs.
+- **A second round, 21:14 to 21:15**, drove the strip's new Annotate button on build
+  `586081b-dirty` (pid 6796), the same way: three fixtures, two selected, the labels read from a
+  crop, `[annotate] ok … 1 of 2` and `next … 2 of 2` from the button, `[copy-annotated] ok` from
+  Cmd+Shift+C. Fixtures deleted, clipboard cleared, your build back (pid 8709), lock released.
 - **My smoke round held the lock from 20:42 to 20:50** and drove only my own build
   (`5330015`, pid 94079) on `integration-scratch/settings.json`, watching
   `integration-scratch/shots`. Every action URL went through a guard that reads `[state]` and the
