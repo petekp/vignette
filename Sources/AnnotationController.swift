@@ -568,9 +568,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             finish()
         }
         pendingHide = done
-        // The page runs park, export, and build one at a time, so an Esc during a long Copy
-        // Annotated waits behind it. The window comes down on this deadline whatever the page does;
-        // a park that answers after it is dropped, because by then the canvas may hold another image.
+        // The page runs park, export, and build one at a time, so an Esc during a long
+        // Copy Drawing waits behind it. The window comes down on this deadline whatever the page
+        // does; a park that answers after it is dropped, because by then the canvas may hold
+        // another image.
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) {
             guard !answered else { return }
             Log.write("[web] error park timeout after \(Int(Self.exportTimeout)) s \(shot.url.lastPathComponent)")

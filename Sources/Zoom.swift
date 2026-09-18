@@ -35,7 +35,10 @@ enum Zoom {
     static func aim(at cursor: CGPoint, of shown: CGRect, fitted: CGRect, scale: CGFloat,
                     to target: CGFloat, within limit: CGRect?) -> ZoomAim {
         let wanted = anchor(holding: cursor, of: shown, fitted: fitted, at: target)
-        let now = anchor(wanted, fitting: fitted, within: limit)
+        // Below the fitted size the frame only shrinks, and a shrunk frame is inside `fitted`,
+        // which the room contains by construction. There is no growth for the room to divide, so
+        // it takes nothing: the pull shrinks about the cursor's own anchor, the middle for a key.
+        let now = target < 1 ? wanted : anchor(wanted, fitting: fitted, within: limit)
         // At the fitted size the frame is `fitted` whatever the anchor, so there is no growth for
         // an anchor to describe and nothing to blend from: a step from rest starts at `now`.
         // Blending from a made-up starting anchor bows the path instead.

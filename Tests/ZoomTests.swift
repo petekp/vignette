@@ -27,6 +27,9 @@ final class ZoomTests: XCTestCase {
         XCTAssertEqual(bottomRight.minY, fitted.minY)
     }
 
+    /// No room on purpose: whichever side of a room sets the reach has one allowed anchor, so with
+    /// any room the cursor cannot be held exactly in both directions. That is the contract
+    /// `testTheRoomOnlyTakesTheAnchorInTheDirectionItBinds` pins.
     func testThePointUnderTheCursorStaysUnderIt() {
         let cursors = [CGPoint(x: 0.1, y: 0.2), Zoom.center, CGPoint(x: 0.95, y: 0.9), CGPoint(x: 0, y: 1)]
         for cursor in cursors {
@@ -48,18 +51,32 @@ final class ZoomTests: XCTestCase {
 
     func testAimingSomewhereElseMidStepDoesNotMoveTheWindow() {
         // Grown away from the top left, then aimed at the bottom right part way through a spring.
-        let first = Zoom.aim(at: CGPoint(x: 0.08, y: 0.08), of: fitted, fitted: fitted, scale: 1, to: 1.6, within: nil)
-        let inFlight: CGFloat = 1.3
-        let shown = Zoom.frame(fitted: fitted, scale: inFlight, anchor: first.anchor(at: inFlight), within: nil)
-        let second = Zoom.aim(at: CGPoint(x: 0.9, y: 0.9), of: shown, fitted: fitted, scale: inFlight, to: 2, within: nil)
-        let redrawn = Zoom.frame(fitted: fitted, scale: inFlight, anchor: second.anchor(at: inFlight), within: nil)
-        XCTAssertEqual(redrawn.minX, shown.minX, accuracy: 0.001, "the frame must not step sideways")
-        XCTAssertEqual(redrawn.minY, shown.minY, accuracy: 0.001)
-        // And it still lands holding the point the new aim named.
-        let held = point(CGPoint(x: 0.9, y: 0.9), of: shown)
-        let landed = Zoom.frame(fitted: fitted, scale: 2, anchor: second.anchor(at: 2), within: nil)
-        XCTAssertEqual(point(CGPoint(x: 0.9, y: 0.9), of: landed).x, held.x, accuracy: 0.001)
-        XCTAssertEqual(point(CGPoint(x: 0.9, y: 0.9), of: landed).y, held.y, accuracy: 0.001)
+        // Once with no room, and once inside one that binds in height: the room moves the anchor
+        // the step ends at, so a mid-spring aim is where its clamp could step the frame sideways.
+        let room = CGRect(x: 0, y: 140, width: 1000, height: 440)
+        for limit in [nil, room] as [CGRect?] {
+            let end = limit.map { Zoom.reach(fitted: fitted, within: $0) } ?? 2
+            let inFlight = 1 + (end - 1) * 0.3
+            let first = Zoom.aim(at: CGPoint(x: 0.08, y: 0.08), of: fitted, fitted: fitted,
+                                 scale: 1, to: 1 + (end - 1) * 0.6, within: limit)
+            let shown = Zoom.frame(fitted: fitted, scale: inFlight, anchor: first.anchor(at: inFlight), within: limit)
+            let second = Zoom.aim(at: CGPoint(x: 0.9, y: 0.9), of: shown, fitted: fitted,
+                                  scale: inFlight, to: end, within: limit)
+            let redrawn = Zoom.frame(fitted: fitted, scale: inFlight, anchor: second.anchor(at: inFlight), within: limit)
+            XCTAssertEqual(redrawn.minX, shown.minX, accuracy: 0.001, "the frame must not step sideways")
+            XCTAssertEqual(redrawn.minY, shown.minY, accuracy: 0.001)
+            // It lands holding the point the new aim named, in every direction the room has slack.
+            let held = point(CGPoint(x: 0.9, y: 0.9), of: shown)
+            let landed = Zoom.frame(fitted: fitted, scale: end, anchor: second.anchor(at: end), within: limit)
+            XCTAssertEqual(point(CGPoint(x: 0.9, y: 0.9), of: landed).x, held.x, accuracy: 0.001)
+            guard let room = limit else {
+                XCTAssertEqual(point(CGPoint(x: 0.9, y: 0.9), of: landed).y, held.y, accuracy: 0.001)
+                continue
+            }
+            // The height binds, so there the one anchor the room allows grows into the whole of it.
+            XCTAssertEqual(landed.maxY, room.maxY, accuracy: 0.001)
+            XCTAssertEqual(landed.minY, room.minY, accuracy: 0.001)
+        }
     }
 
     func testAnAimHoldsItsEndsPastThem() {
@@ -108,6 +125,28 @@ final class ZoomTests: XCTestCase {
                 XCTAssertTrue(falling ? b <= a + 1e-9 : b >= a - 1e-9, "band \(band) turned around")
             }
         }
+    }
+
+    func testAPullBelowTheFittedSizeShrinksAboutTheCursorsOwnAnchor() {
+        // The same room, and a target under 1: the pull a zoom-out makes before it springs back.
+        // A shrunk frame is inside the fitted one, which is inside the room, so the room has no
+        // growth to divide and must leave the anchor alone. Clamping there slid the picture down
+        // while it shrank and back up on the way home.
+        let room = CGRect(x: 0, y: 140, width: 1000, height: 440)
+        for target in [0.95, 0.85, 0.5] as [CGFloat] {
+            let aim = Zoom.aim(at: Zoom.center, of: fitted, fitted: fitted, scale: 1, to: target, within: room)
+            XCTAssertEqual(aim.now.x, 0.5, accuracy: 1e-9, "a key names the middle and the room takes nothing")
+            XCTAssertEqual(aim.now.y, 0.5, accuracy: 1e-9, "a key names the middle and the room takes nothing")
+            let pulled = Zoom.frame(fitted: fitted, scale: target, anchor: aim.anchor(at: target), within: room)
+            XCTAssertEqual(fitted.maxY - pulled.maxY, pulled.minY - fitted.minY, accuracy: 1e-9,
+                           "the top and the bottom come in by the same amount")
+            XCTAssertEqual(fitted.midX, pulled.midX, accuracy: 1e-9)
+            XCTAssertEqual(fitted.midY, pulled.midY, accuracy: 1e-9)
+        }
+        // A cursor off the middle is still its own anchor: a pinch out shrinks about the fingers.
+        let corner = Zoom.aim(at: CGPoint(x: 0.9, y: 0.9), of: fitted, fitted: fitted, scale: 1, to: 0.8, within: room)
+        XCTAssertEqual(corner.now.x, 0.9, accuracy: 1e-9)
+        XCTAssertEqual(corner.now.y, 0.9, accuracy: 1e-9)
     }
 
     func testTheRoomOnlyTakesTheAnchorInTheDirectionItBinds() {

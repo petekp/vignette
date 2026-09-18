@@ -325,7 +325,7 @@ the same driven sequence; a single run varies.
   (prepare, show, park, returnCard, markCopied, hideAnnotator, join). Done sends `finish`: the card
   returns and takes the copied mark, and a lone thumbnail, which left the panel when the annotator
   opened, comes back to the corner for it. Esc sends `close`: a stack card returns, a lone
-  thumbnail's annotator just hides. Quick annotate sends `dismiss`. A `prepare` is never emitted while a
+  thumbnail's annotator just hides. Quick draw sends `dismiss`. A `prepare` is never emitted while a
   park is in flight, which is what serializes rapid swaps; a new screenshot during a lone
   annotation joins the panel instead of closing the editor. Every event logs one
   `[transition] <event> -> <phase> effects=…` line. The page never hides itself: it asks through
@@ -452,8 +452,8 @@ the same driven sequence; a single run varies.
   the window's growth cannot crop anything, since the whole image is inside the window until the
   window can grow no further. The message carries the
   cursor as a fraction of the window (`at`, y from the top), which the window growth and the page's
-  camera each read in their own space; a keyboard step sends none and zooms about the window's
-  middle, as Preview does. A two-finger double tap (`smartMagnify`) zooms twofold at the tap, or
+  camera each read in their own space; a keyboard step sends none, so it names the window's
+  middle, as Preview does, and the room then moves that anchor as it moves any other. A two-finger double tap (`smartMagnify`) zooms twofold at the tap, or
   back to the fitted size from anywhere above it. `Sources/Zoom.swift` is the geometry: the window
   grows away from the anchor, and at scale 1 it is the fitted frame again whatever the anchor. The
   room gives way once, when the aim is taken: `Zoom.anchor(_:fitting:within:)` moves the anchor as

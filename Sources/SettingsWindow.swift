@@ -81,7 +81,7 @@ struct SettingsView: View {
                 Toggle("Copy to the clipboard", isOn: binding(\.copyOnCapture))
                 Text("Every new screenshot is on the clipboard as soon as it lands: the image, plus its file for apps that take one.")
                     .font(.caption).foregroundStyle(.secondary)
-                Toggle("Open in the annotator", isOn: binding(\.annotateOnCapture))
+                Toggle("Draw on new captures", isOn: binding(\.annotateOnCapture))
                 Text("Every new screenshot opens in the annotator right away, instead of showing a thumbnail.")
                     .font(.caption).foregroundStyle(.secondary)
             }
