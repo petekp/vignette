@@ -292,8 +292,10 @@ private struct SelectionCircle: View {
             Circle().fill(number != nil ? Color.accentColor : Color.black.opacity(0.45))
             Circle().stroke(.white, lineWidth: 1.5)
             if let number {
+                // SF Rounded at proportional widths: monospaced digits pad a "1" to the width of a
+                // "0" and leave it floating, and two digits at the bold weight reach the ring.
                 Text("\(number)")
-                    .font(.system(size: size * 0.6, weight: .bold).monospacedDigit())
+                    .font(.system(size: size * 0.56, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
