@@ -91,18 +91,21 @@ private struct ToolbarView: View {
                 .buttonStyle(TactileButtonStyle(shape: .rounded))
                 .help("\(tool.label) (\(tool.key.uppercased()))")
             }
-            Divider().frame(height: 20).padding(.horizontal, 6)
-            ForEach(model.colors) { color in
-                Button { onColor(color.id) } label: {
-                    Circle()
-                        .fill(Color(hex: color.hex))
-                        .frame(width: 16, height: 16)
-                        .overlay(Circle().stroke(.white, lineWidth: model.color == color.id ? 2 : 0))
-                        .shadow(color: .black.opacity(model.color == color.id ? 0.4 : 0), radius: 2)
-                        .frame(width: 28, height: 30)
+            // No colors, no swatches and no divider of their own: the bar is tools, one divider, Done.
+            if !model.colors.isEmpty {
+                Divider().frame(height: 20).padding(.horizontal, 6)
+                ForEach(model.colors) { color in
+                    Button { onColor(color.id) } label: {
+                        Circle()
+                            .fill(Color(hex: color.hex))
+                            .frame(width: 16, height: 16)
+                            .overlay(Circle().stroke(.white, lineWidth: model.color == color.id ? 2 : 0))
+                            .shadow(color: .black.opacity(model.color == color.id ? 0.4 : 0), radius: 2)
+                            .frame(width: 28, height: 30)
+                    }
+                    .buttonStyle(TactileButtonStyle(shape: .circle))
+                    .help(color.id)
                 }
-                .buttonStyle(TactileButtonStyle(shape: .circle))
-                .help(color.id)
             }
             Divider().frame(height: 20).padding(.horizontal, 6)
             Button(action: onDone) {

@@ -8,10 +8,12 @@ import {
   DefaultSizeStyle,
   Editor,
   GeoShapeGeoStyle,
+  HistoryEntry,
   TLAssetStore,
   TLComponents,
   TLEditorSnapshot,
   TLImageShape,
+  TLRecord,
   TLShapeId,
   Tldraw,
   createShapeId,
@@ -28,7 +30,8 @@ import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, Zoom
 const ZOOM_STEP = 1.25
 /** Wheel and pinch: window scale per wheel unit; pinch-out (negative deltaY) grows the window. */
 const WHEEL_ZOOM_RATE = 0.01
-import { COLORS, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
+import { CANDIDATES, COLORS, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, MARK_COLORS, REOPEN_TOOL, SHOW_COLORS, TOOLS, ToolId } from './config'
+import { explain, hasSample, pickColor, prepareSample } from './contrast'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
 
@@ -40,6 +43,9 @@ let dirty = false
 /// True while `load` or `export` mutate the store, so those changes are not reported as drafts.
 let quiet = false
 let draftTimer: ReturnType<typeof setTimeout> | null = null
+/// Marks whose colour the heuristic has not picked for where they now are: drawn, moved, or
+/// resized since the last pick. Emptied when the hand lets go, before the draft goes to the host.
+let unpicked = new Set<TLShapeId>()
 /// Longest side, in pixels, of the preview returned with a parked draft.
 const PREVIEW_MAX = 1600
 /// How long after the last change the draft snapshot goes to the host.
@@ -98,9 +104,78 @@ function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
 function scheduleDraft(editor: Editor) {
   if (draftTimer) clearTimeout(draftTimer)
   draftTimer = setTimeout(() => {
+    // A drag is one motion, not its frames: the colours wait until the hand lets go.
+    if (editor.inputs.isPointing) return scheduleDraft(editor)
     draftTimer = null
+    pickColors(editor)
     if (currentKey) postToNative({ type: 'draft', key: currentKey, snapshot: hasAnnotations(editor) ? getSnapshot(editor.store) : null })
   }, DRAFT_DELAY_MS)
+}
+
+/// Notes the marks a change touched, so their colour is picked again for where they now sit.
+function noteChanged(entry: HistoryEntry<TLRecord>) {
+  const changes = entry.changes
+  for (const record of Object.values(changes.added)) noteShape(record)
+  for (const [, after] of Object.values(changes.updated)) noteShape(after)
+  for (const record of Object.values(changes.removed)) if (record.typeName === 'shape') unpicked.delete(record.id)
+}
+
+function noteShape(record: TLRecord) {
+  if (record.typeName === 'shape' && record.id !== IMAGE_ID) unpicked.add(record.id)
+}
+
+/// The colour of every mark that is waiting for one. Marks the decode has not caught up with stay
+/// in the set, so the next pick colours them.
+function pickColors(editor: Editor) {
+  if (!currentKey || !unpicked.size || !hasSample(currentKey)) return
+  const ids = [...unpicked]
+  unpicked.clear()
+  applyColors(editor, currentKey, ids)
+}
+
+/// Sets each mark's colour from the screenshot under it. The image shape is the frame every mark is
+/// measured against, so a mark's bounds become the fraction of the screenshot it covers.
+///
+/// The change is outside undo history: the colour belongs to where the mark is, not to an edit of
+/// its own, so one undo moves or removes the mark and the next pick colours it for where it lands.
+function applyColors(editor: Editor, key: string, ids: TLShapeId[]) {
+  const image = editor.getShapePageBounds(IMAGE_ID)
+  if (!image) return
+  const picked: { id: TLShapeId; color: ColorId }[] = []
+  for (const id of ids) {
+    const shape = editor.getShape(id)
+    const props = shape?.props as { color?: string } | undefined
+    if (!shape || shape.meta.colorChosen || props?.color === undefined) continue
+    const bounds = editor.getShapePageBounds(id)
+    if (!bounds) continue
+    const color = pickColor(key, {
+      x: (bounds.x - image.x) / image.w,
+      y: (bounds.y - image.y) / image.h,
+      w: bounds.w / image.w,
+      h: bounds.h / image.h,
+    })
+    if (color && color !== props.color) picked.push({ id, color })
+  }
+  if (!picked.length) return
+  const was = quiet
+  quiet = true // the caller reports the draft this belongs to
+  silently(editor, () => {
+    // One case per shape a mark can be: `updateShape` takes the shape's own type, not the union.
+    for (const { id, color } of picked) {
+      switch (editor.getShape(id)?.type) {
+        case 'geo':
+          editor.updateShape({ id, type: 'geo', props: { color } })
+          break
+        case 'arrow':
+          editor.updateShape({ id, type: 'arrow', props: { color } })
+          break
+        case 'text':
+          editor.updateShape({ id, type: 'text', props: { color } })
+          break
+      }
+    }
+  })
+  quiet = was
 }
 
 /// The draft as the host should store it, with a rendering when the user changed it since the last one.
@@ -110,6 +185,7 @@ async function park(editor: Editor, scale: number): Promise<ParkResult> {
     draftTimer = null
   }
   if (!currentKey) return { snapshot: null, preview: null }
+  pickColors(editor)
   const annotated = hasAnnotations(editor)
   let preview: string | null = null
   if (dirty && annotated) {
@@ -189,20 +265,23 @@ export function App() {
           ed.user.updateUserPreferences({ colorScheme: 'dark' })
           ed.updateInstanceState({ isDebugMode: false })
           ed.store.listen(
-            () => {
+            (entry) => {
               if (quiet) return
               dirty = true
+              noteChanged(entry)
               scheduleDraft(ed)
             },
             { scope: 'document', source: 'user' }
           )
           setEditor(ed)
           ;(window as unknown as { editor: Editor }).editor = ed // for `shotnote://eval` debugging
+          ;(window as unknown as { contrast: unknown }).contrast = { pick: pickColor, explain }
           postToNative({
             type: 'ready',
             protocol: PROTOCOL,
             tools: TOOLS.map(({ id, label, key, symbol }) => ({ id, label, key, symbol })),
-            colors: COLORS.map(({ id, hex }) => ({ id, hex })),
+            colors: SHOW_COLORS ? COLORS.map(({ id, hex }) => ({ id, hex })) : [],
+            markColors: MARK_COLORS.map(({ id, hex }) => ({ id, hex })),
           })
         }}
       />
@@ -233,6 +312,10 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
 
 function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: number }) {
   currentKey = p.key
+  unpicked.clear()
+  // The decode runs alongside the load: `loaded` must not wait for it, and a mark drawn before it
+  // lands keeps the first candidate until the next pick.
+  void prepareSample(p.key, fileUrl(p.key))
   // The shape is sized in points so the canvas matches the window; export scales back up to pixels.
   const ratio = window.devicePixelRatio || 1
   const w = p.pixelWidth / ratio
@@ -338,6 +421,7 @@ function lastAnnotation(editor: Editor): TLShapeId | null {
 }
 
 function clearCanvas(editor: Editor) {
+  unpicked.clear()
   silently(editor, () => removeAll(editor))
   editor.clearHistory()
 }
@@ -355,29 +439,39 @@ function removeAll(editor: Editor) {
 
 /// An agent's marks as ordinary shapes, in canvas points: the image is at the origin, `w` by `h`,
 /// and every mark number is a fraction of it. The host has already checked the numbers and the color.
-function createMarks(editor: Editor, marks: Mark[], w: number, h: number) {
+function createMarks(editor: Editor, marks: Mark[], w: number, h: number): TLShapeId[] {
+  const unnamed: TLShapeId[] = []
   for (const m of marks) {
     const x = m.x * w
     const y = m.y * h
-    const color = (m.color ?? COLORS[0].id) as ColorId
+    const color = (m.color ?? CANDIDATES[0].id) as ColorId
+    // A mark that names a colour keeps it; one that names none is the heuristic's to colour.
+    const meta = m.color ? { colorChosen: true } : {}
+    const id = createShapeId()
+    if (!m.color) unnamed.push(id)
     if (m.type === 'arrow') {
       editor.createShape({
+        id,
         type: 'arrow',
         x,
         y,
+        meta,
         props: { start: { x: 0, y: 0 }, end: { x: (m.x2! - m.x) * w, y: (m.y2! - m.y) * h }, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
       })
     } else if (m.type === 'text') {
-      editor.createShape({ type: 'text', x, y, props: { richText: toRichText(m.text!), color, size: DEFAULT_SIZE } })
+      editor.createShape({ id, type: 'text', x, y, meta, props: { richText: toRichText(m.text!), color, size: DEFAULT_SIZE } })
     } else {
       editor.createShape({
+        id,
         type: 'geo',
         x,
         y,
+        meta,
         props: { geo: m.type, w: m.w! * w, h: m.h! * h, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
       })
     }
   }
+  return unnamed
 }
 
 /// An agent's marks as a draft, with the editor never shown: the image and the marks go on the
@@ -392,10 +486,16 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
   const h = p.pixelHeight / ratio
   quiet = true
   try {
+    let unnamed: TLShapeId[] = []
     silently(editor, () => {
       placeImage(editor, p, w, h)
-      createMarks(editor, marks, w, h)
+      unnamed = createMarks(editor, marks, w, h)
     })
+    // The snapshot is stored as it stands, so the colours are picked before it is taken.
+    if (unnamed.length) {
+      await prepareSample(p.key, fileUrl(p.key))
+      applyColors(editor, p.key, unnamed)
+    }
     const snapshot = getSnapshot(editor.store)
     const preview = await render(editor, Math.min(ratio, PREVIEW_MAX / Math.max(w, h)))
     return { snapshot, preview }
@@ -416,7 +516,15 @@ function selectTool(editor: Editor, id: ToolId) {
 
 function setColor(editor: Editor, id: ColorId) {
   editor.setStyleForNextShapes(DefaultColorStyle, id)
-  if (editor.getSelectedShapeIds().length) editor.setStyleForSelectedShapes(DefaultColorStyle, id)
+  const ids = editor.getSelectedShapeIds()
+  if (!ids.length) return
+  editor.setStyleForSelectedShapes(DefaultColorStyle, id)
+  // A colour the user picked is the user's: the heuristic never changes that mark again.
+  for (const shapeId of ids) {
+    const shape = editor.getShape(shapeId)
+    if (shape) editor.updateShape({ id: shapeId, type: shape.type, meta: { ...shape.meta, colorChosen: true } })
+    unpicked.delete(shapeId)
+  }
 }
 
 function activeTool(editor: Editor): ToolId | null {
@@ -435,6 +543,7 @@ function finish(editor: Editor, scale: number) {
 }
 
 async function renderDone(editor: Editor, scale: number) {
+  pickColors(editor)
   if (!hasAnnotations(editor)) {
     dirty = false
     postToNative({ type: 'done', png: null })

@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 7
+export const PROTOCOL = 8
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
@@ -55,8 +55,11 @@ export interface ExportResult {
 }
 
 type NativeMessage =
-  /** The editor is mounted. Carries the protocol version and what the host's toolbar should offer. */
-  | { type: 'ready'; protocol: number; tools: ToolInfo[]; colors: ColorInfo[] }
+  /**
+   * The editor is mounted. Carries the protocol version, what the host's toolbar should offer
+   * (`colors` is empty when the palette is hidden), and every colour a pushed mark may name.
+   */
+  | { type: 'ready'; protocol: number; tools: ToolInfo[]; colors: ColorInfo[]; markColors: ColorInfo[] }
   /** The active tool or color changed. */
   | { type: 'tool'; tool: string | null; color: string }
   /** The image from `load` is on the canvas. */

@@ -284,9 +284,17 @@ the same driven sequence; a single run varies.
   the table; the random-sequence test checks the invariants.
 - The annotator window is borderless and sized exactly to the image. Its toolbar is a native
   panel (`AnnotatorToolbar.swift`) placed under the window, never inside the page: the page
-  sends its tool and color list in the `ready` message, reports the active tool, and takes
-  `setTool`/`setColor`/`finish` calls. Keyboard shortcuts inside the editor (tool keys, undo,
-  delete, Esc, Return) live in `Hotkeys` in `App.tsx`. `hideUi` hides tldraw's UI but keeps its
+  sends its tools, its swatches, and every color a pushed mark may name in the `ready` message,
+  reports the active tool, and takes `setTool`/`setColor`/`finish` calls. `SHOW_COLORS` in
+  `web/src/config.ts` is off, so the swatches are empty and the bar has no divider for them. Which colour a mark is drawn in is the
+  page's then, not the user's: `web/src/contrast.ts` samples the screenshot under the mark's bounds
+  and keeps the first colour in `CANDIDATES` whose CIELAB distance from those pixels is at least
+  `MIN_COLOR_DISTANCE`, so red gives way over a red or dark red region and nowhere else. It runs
+  when a mark is created and when the hand lets go, outside undo history, and before every park and
+  Done rendering; a colour the user picked or an agent named is kept (`meta.colorChosen`).
+  `docs/annotation-colour-2026-09-17.md` has the numbers and why the measure is not a WCAG ratio.
+  Keyboard shortcuts inside the editor (tool keys, undo, delete, Esc, Return) live in `Hotkeys` in
+  `App.tsx`. `hideUi` hides tldraw's UI but keeps its
   shortcuts, which it registers on the document body, so `Hotkeys` stops every plain letter in
   the capture phase: a key tldraw binds cannot reach a tool the toolbar does not show.
   `TransitionLayer` flies a card between its stack slot and that frame, and the annotator loads
@@ -296,7 +304,7 @@ the same driven sequence; a single run varies.
   `web/src/config.ts`: `DEFAULT_TOOL` (rectangle) for a fresh image, `REOPEN_TOOL` (select) for one
   that already has a draft. A reopen drops the selection the draft was parked with and picks up
   the annotation drawn last instead (`lastAnnotation`: the top of the page's z-order, which is
-  where tldraw puts each new shape), so a color press, a drag, or Delete acts on that mark.
+  where tldraw puts each new shape), so a drag or Delete acts on that mark.
 - Annotations in progress are drafts owned by the app (`DraftStore`), one JSON snapshot per
   screenshot under `~/Library/Application Support/<bundle id>/drafts/` keyed by the file path
   the app uses everywhere (`shot.url.path`), with a preview PNG under `~/Library/Caches/<bundle
@@ -430,6 +438,6 @@ the same driven sequence; a single run varies.
   stack runs them, and in the order a URL names its `file=` parameters otherwise. `annotate` opens
   the last of them, since the annotator holds one image, and says so in its `ok` line.
 - An editor tool or color: edit `web/src/config.ts`. A tool needs an SF Symbol name for the
-  native toolbar; a color needs the hex the swatch shows.
+  native toolbar; a color needs the hex the swatch shows, and shows only while `SHOW_COLORS` is on.
 - A new message across the bridge: add it to both bridge files, then handle it in
   `AnnotationController` and `App.tsx`.

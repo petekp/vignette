@@ -614,8 +614,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// answers, after the window is gone.
     private var holdsCanvas: Bool { current != nil || pendingHide != nil }
 
-    /// The colors the page offers, by id: what a mark's `color` may name.
-    var colorIDs: [String] { toolbar.model.colors.map(\.id) }
+    /// Every color the page can draw a mark in, by id: what a mark's `color` may name. Not the
+    /// toolbar's swatches, which are empty while the palette is hidden.
+    private(set) var colorIDs: [String] = []
 
     /// Why nothing may borrow the page's canvas right now, or nil when it is free. A marks build
     /// and a preview rendering both put their own image there for the length of one rendering, so
@@ -739,17 +740,18 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             return
         }
         switch msg {
-        case .ready(let version, let tools, let colors):
+        case .ready(let version, let tools, let colors, let markColors):
             guard version == bridgeProtocolVersion else {
                 pageFailed = true
                 Log.write("[web] error protocol-mismatch page=\(version) app=\(bridgeProtocolVersion); rebuild with scripts/build.sh")
                 onProblem?("The editor page is out of date; rebuild the app")
                 return
             }
-            Log.write("[web] ready protocol=\(version) tools=\(tools.count) colors=\(colors.count)")
+            Log.write("[web] ready protocol=\(version) tools=\(tools.count) colors=\(colors.count) markColors=\(markColors.count)")
             pageReady = true
             toolbar.model.tools = tools
             toolbar.model.colors = colors
+            colorIDs = markColors.map(\.id)
             if let call = pendingCall { self.call(call); pendingCall = nil }
             // After a web process restart the window is still up: put its image and stored draft back.
             else if let shot = current, let container { sendImage(shot, windowSize: container.bounds.size) }

@@ -3,7 +3,7 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 7
+let bridgeProtocolVersion = 8
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
@@ -112,8 +112,9 @@ enum PageAPI: Equatable {
 
 /// Received from the page via `window.webkit.messageHandlers.shotnote.postMessage(...)`.
 enum WebMessage {
-    /// The editor is mounted. Carries the page's protocol version and what the toolbar should offer.
-    case ready(protocol: Int, tools: [ToolInfo], colors: [ColorInfo])
+    /// The editor is mounted. Carries the page's protocol version, what the toolbar should offer
+    /// (`colors` is empty while the palette is hidden), and every color a pushed mark may name.
+    case ready(protocol: Int, tools: [ToolInfo], colors: [ColorInfo], markColors: [ColorInfo])
     /// The active tool or color changed.
     case tool(tool: String?, color: String)
     /// The image from `load` is on the canvas.
@@ -137,11 +138,13 @@ enum WebMessage {
                 guard let id = t["id"] as? String, let label = t["label"] as? String, let key = t["key"] as? String, let symbol = t["symbol"] as? String else { return nil }
                 return ToolInfo(id: id, label: label, key: key, symbol: symbol)
             }
-            let colors = (dict["colors"] as? [[String: Any]] ?? []).compactMap { c -> ColorInfo? in
-                guard let id = c["id"] as? String, let hex = c["hex"] as? String else { return nil }
-                return ColorInfo(id: id, hex: hex)
+            func colors(_ key: String) -> [ColorInfo] {
+                (dict[key] as? [[String: Any]] ?? []).compactMap { c -> ColorInfo? in
+                    guard let id = c["id"] as? String, let hex = c["hex"] as? String else { return nil }
+                    return ColorInfo(id: id, hex: hex)
+                }
             }
-            self = .ready(protocol: dict["protocol"] as? Int ?? 0, tools: tools, colors: colors)
+            self = .ready(protocol: dict["protocol"] as? Int ?? 0, tools: tools, colors: colors("colors"), markColors: colors("markColors"))
         case "tool":
             self = .tool(tool: dict["tool"] as? String, color: dict["color"] as? String ?? "")
         case "loaded":
