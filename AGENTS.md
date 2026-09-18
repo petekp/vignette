@@ -428,9 +428,12 @@ the same driven sequence; a single run varies.
 
   While a zoom moves, what is on screen is the app's own picture, not the page: the page is drawn
   by WebKit's process and the frame by this one, and two drawers with no shared frame clock cannot
-  be perfectly aligned. The first zoom input raises a **stand-in** (`Sources/StandIn.swift`) over
-  the web view inside the frame: the screenshot decoded through `Thumbnailer`, the annotations over
-  it as a transparent overlay the page rendered earlier, in the frame's own layer tree. Each tick
+  be perfectly aligned. The first zoom input raises a **stand-in** over the web view inside the
+  frame: the screenshot decoded through `Thumbnailer`, the annotations over it as a transparent
+  overlay the page rendered earlier, in the frame's own layer tree. `Sources/StandIn.swift` is all
+  of it: `StandIn` is the two layers, and `StandInController` owns them, the overlay rendering and
+  the hand-over below, so every call this leaves outstanding on the page is that one file's — the
+  annotator says only `pageRestarted()` and `forget()`. Each tick
   sets the frame's rect from `Zoom.frame` and the picture's rect inside it from `Zoom.picture`, in
   one run loop turn, so the frame and what is in it reach the window server in one Core Animation
   commit and the image's edges are the frame's edges by construction. `moveFrame` is the only place
@@ -458,7 +461,8 @@ the same driven sequence; a single run varies.
   capped at `Config.overlayMaxPixel` on the longest side. The host asks for one when the image
   loads and after every `draft` message, which is already debounced behind the last change; one
   render at a time, and the stand-in keeps the last finished one while a new one is out. An image
-  with nothing drawn on it has no overlay.
+  with nothing drawn on it has no overlay. A web process restart frees that throttle, so the
+  reloaded page is asked again.
 
   Both phases hold the point under the cursor: `ZoomAim` for the window, `ZoomPan` for the
   magnification, each read off what is on screen when the input arrives. A cursor near an edge of
