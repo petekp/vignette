@@ -75,8 +75,6 @@ final class TransitionLayer {
         panel.contentView = NSHostingView(rootView: FlightsView(model: model))
     }
 
-    var isFlying: Bool { !model.flights.isEmpty }
-
     /// Moves `id` to `to`. A new flight starts at `from`; an existing one turns from where it is.
     /// `arrived` runs when the spring has really settled on the target. Whatever takes the flight's
     /// place draws at the exact target, so it has to appear then or it steps by what the spring

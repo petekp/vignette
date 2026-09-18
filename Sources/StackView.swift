@@ -30,11 +30,12 @@ struct StackView: View {
             } else {
                 column
                 if let strip = stripPlacement {
-                    let reveal = layout.stripReveal(labels: Config.stripActions.map(\.label), right: strip.right)
-                    // The strip's box is always the grown width and the offset carries it, so the
-                    // icons sit where the placement put them whether the labels are out or not.
+                    let reveal = layout.stripReveal(labels: Config.stripActions.map(\.label))
+                    // The strip's box is always the grown width, with the strip against its
+                    // trailing edge, so the right edge sits where the placement put it whether the
+                    // labels are out or not and the growth goes left, away from the cards.
                     SelectionStrip(model: model, size: strip.size, reveal: reveal)
-                        .offset(x: -(layout.inset + strip.right) + reveal, y: -(layout.inset + strip.bottom))
+                        .offset(x: -(layout.inset + strip.right), y: -(layout.inset + strip.bottom))
                         .animation(Anim.spring(settings.motionUI.relayoutDuration), value: strip)
                         // Scrolling moves it with the cards, at once; the slide-out carries it off screen.
                         .offset(x: stripSlide, y: model.scroll)
@@ -70,9 +71,13 @@ struct StackView: View {
         model.slidingOut ? layout.offscreenDistance(cardWidth: layout.columnWidth) : 0
     }
 
-    /// The strip starts a column's width further left, so it needs that much more to clear the screen.
+    /// The strip starts a column's width further left, and its labels reach further still, so it
+    /// needs that much more to clear the screen.
     private var stripSlide: CGFloat {
-        model.slidingOut ? layout.offscreenDistance(cardWidth: layout.columnWidth + layout.stripGap + layout.stripWidth) : 0
+        guard model.slidingOut else { return 0 }
+        let reach = layout.columnWidth + layout.stripGap + layout.stripWidth
+            + layout.stripReveal(labels: Config.stripActions.map(\.label))
+        return layout.offscreenDistance(cardWidth: reach)
     }
 
     /// The cards, newest at the bottom, pulled down by `scroll`. What leaves the viewport fades
@@ -336,13 +341,14 @@ private struct AgentBadge: View {
 
 /// Beside the selected cards: the bulk actions, in one vertical strip. `StackLayout` places it
 /// and sizes it; the rows here fill that size exactly. The count is on the cards themselves.
-/// The cursor on the strip names every button: the icons cannot move, so it grows to the right,
-/// over the gap and the cards' edge. It is drawn after the column, so the grown side is above the
-/// cards and catches the mouse itself.
+/// The cursor on the strip names every button: the right edge stays put and the strip grows to the
+/// left, into the room the panel keeps for it, so a label never covers a card. The icons travel
+/// left with it; each row is one button, icon and label together, so the cursor is still on the row
+/// it was on when the label arrives under it.
 private struct SelectionStrip: View {
     @ObservedObject var model: StackModel
     let size: NSSize        // the icon column, as the placement sized it
-    let reveal: CGFloat     // how far the labels put the strip's right edge out
+    let reveal: CGFloat     // how far the labels put the strip's left edge out
     private var ui: UITweaks { Settings.shared.motionUI }
 
     var body: some View {
@@ -373,9 +379,9 @@ private struct SelectionStrip: View {
         .animation(Anim.spring(ui.hoverRevealDuration), value: model.stripHovered)
         // A strip that goes while the cursor is on it gets no leaving hover.
         .onDisappear { model.stripHovered = false }
-        // The box stays the grown width and the strip sits against its leading edge: growing to the
-        // right moves nothing else, and the labels are what the box makes room for.
-        .frame(width: size.width + reveal, alignment: .leading)
+        // The box stays the grown width and the strip sits against its trailing edge: the right
+        // edge never moves, and the labels grow into the room on the left that the box holds open.
+        .frame(width: size.width + reveal, alignment: .trailing)
     }
 
     private func shortcutHint(_ action: ShotAction) -> String {

@@ -18,11 +18,11 @@ enum Config {
     static let actions: [ShotAction] = [
         ShotAction(id: "copy", symbol: "doc.on.doc", label: "Copy", key: .init("c", [.command]),
                    placement: .everywhere) { shots, app in app.copyToClipboard(shots) },
-        ShotAction(id: "annotate", symbol: "pencil.line", label: "Annotate", key: .init("\r", []),
+        ShotAction(id: "annotate", symbol: "pencil.line", label: "Draw", key: .init("\r", []),
                    placement: .strip, isDefault: true) { shots, app in app.annotate(shots) },
         ShotAction(id: "paths", symbol: "text.quote", label: "Copy Paths", key: .init("c", [.command, .option]),
                    placement: .shortcut) { shots, app in app.copyPaths(shots) },
-        ShotAction(id: "copy-annotated", symbol: "doc.on.doc.fill", label: "Copy Annotated", key: .init("c", [.command, .shift]),
+        ShotAction(id: "copy-annotated", symbol: "doc.on.doc.fill", label: "Copy Drawing", key: .init("c", [.command, .shift]),
                    placement: .shortcut) { shots, app in app.copyAnnotated(shots) },
         ShotAction(id: "stitch", symbol: "rectangle.stack", label: "Stitch", key: .init("s", [.command]),
                    placement: .strip, minimumCount: 2) { shots, app in app.stitch(shots) },

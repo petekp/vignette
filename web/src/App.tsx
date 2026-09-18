@@ -544,7 +544,7 @@ function createMarks(editor: Editor, marks: Mark[], w: number, h: number): TLSha
 
 /// An agent's marks as a draft, with the editor never shown: the image and the marks go on the
 /// canvas, the snapshot and a rendering come back, and whatever the canvas held is put back. The
-/// host stores the result, so the card shows the marks and Copy Annotated has them before anyone
+/// host stores the result, so the card shows the marks and Copy Drawing has them before anyone
 /// opens the editor. `p.snapshot` is the image's existing draft, so marks add to it.
 async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<ParkResult> {
   const before = getSnapshot(editor.store)

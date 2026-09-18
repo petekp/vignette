@@ -70,7 +70,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private var pendingBuild: ((ParkResult?, String?) -> Void)?
     /// The hide waiting on the page's park, so a process restart still hides the window.
     private var pendingHide: (() -> Void)?
-    /// How long Copy Annotated waits for the page before giving up.
+    /// How long Copy Drawing waits for the page before giving up.
     static let exportTimeout: TimeInterval = 15
 
     /// Room the annotator needs below its window: the toolbar and its gap.
@@ -302,17 +302,28 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// Points the window's growth at `cursor`. The anchor it starts from is read off the frame on
     /// screen, so the step carries on from where the window is: a frame the screen edge has nudged
     /// does not carry that error forward, and a step aimed elsewhere mid-spring bends rather than
-    /// stepping sideways. The window standing still has nothing to aim.
+    /// stepping sideways. The anchor it ends at is the one the room allows at the target scale, so
+    /// the room gives way once, here, rather than the frame sliding part way through the spring.
+    /// The window standing still has nothing to aim.
     private func aim(at cursor: CGPoint, to target: CGFloat) {
         guard let onScreen = frameOnScreen, target != zoomScale else { return }
-        zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, scale: zoomScale, to: target)
+        zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, scale: zoomScale,
+                           to: target, within: growthLimit)
     }
 
     /// Points the magnification at `cursor`, from the part of the image that is visible now. Like
     /// `aim`, it starts from what is on screen, so a step aimed elsewhere mid-spring bends.
+    ///
+    /// A cursor near an edge of the picture is pulled onto it first (`ui.zoomEdgeBand`,
+    /// `ui.zoomEdgePull`): only the window's own edge holds the image's edge with it, so without
+    /// the pull the corner the cursor is beside is cropped by the first bit of magnification. The
+    /// window's growth needs none of this — the whole image is inside the window until the window
+    /// can grow no further, so nothing can be cropped before the magnification starts.
     private func aimPan(at cursor: CGPoint) {
+        let ui = Settings.shared.data.ui
+        let aimed = Zoom.pulledToEdges(cursor, band: ui.zoomEdgeBand, pull: ui.zoomEdgePull)
         let camera = split(zoomLevel).camera
-        zoomPan = ZoomPan(center: zoomPan.center(at: camera), camera: camera, cursor: cursor)
+        zoomPan = ZoomPan(center: zoomPan.center(at: camera), camera: camera, cursor: aimed)
     }
 
     /// Zoom's springs are in code rather than in the tweaks, but the motion scale still shortens
@@ -332,10 +343,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private var growthLimit: CGRect? { room ?? zoomScreen?.visibleFrame }
 
     /// The window may grow to the whole of that rect, past the fitted inset and the toolbar's room.
-    private var maxZoom: CGFloat {
-        guard let v = growthLimit, fittedFrame.width > 0, fittedFrame.height > 0 else { return 1 }
-        return max(1, min(v.width / fittedFrame.width, v.height / fittedFrame.height))
-    }
+    private var maxZoom: CGFloat { Zoom.reach(fitted: fittedFrame, within: growthLimit) }
     private var maxLevel: CGFloat { maxZoom * maxCanvasZoom }
     /// How far a gesture may pull below the fitted size before the level stops following it.
     private let minLevel: CGFloat = 0.5
@@ -401,7 +409,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let started = CACurrentMediaTime()
         var answered = false
         // The call takes its turn behind the other canvas calls, so the deadline is an export's:
-        // a hand-over behind a Copy Annotated is late, not lost. One retry, and then the picture
+        // a hand-over behind a Copy Drawing is late, not lost. One retry, and then the picture
         // comes down anyway; a stand-in left up covers an editor the user can draw in blind.
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) { [weak self] in
             guard let self, !answered, self.pageEpoch == epoch, self.standInGeneration == generation else { return }
@@ -416,11 +424,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             if case .failure(let error) = result {
                 Log.write("[web] error view failed: \(String(describing: error).replacingOccurrences(of: "\n", with: " "))")
             } else if let view = ViewResult(body: try? result.get()) {
-                Log.write("[annotate] view \(Int((CACurrentMediaTime() - started) * 1000))ms ratio=\(String(format: "%.4f", self.canvasZoom)) waited=\(view.waited)")
-                // The page paints at the size that reached its process. A gap wider than the
-                // layout's own rounding means its picture is not this frame's, so it gets a line.
-                if abs(view.width - Double(size.width)) > 1 || abs(view.height - Double(size.height)) > 1 {
-                    Log.write("[annotate] view mismatch page=\(Int(view.width))x\(Int(view.height)) host=\(Int(size.width))x\(Int(size.height))")
+                let asked = String(format: "%.4f", self.canvasZoom), painted = String(format: "%.4f", view.ratio)
+                Log.write("[annotate] view \(Int((CACurrentMediaTime() - started) * 1000))ms ratio=\(asked) painted=\(painted) waited=\(view.waited)")
+                // The page paints at the size and the magnification that reached its process. A gap
+                // wider than the layout's own rounding, or a magnification that is not the one
+                // asked for, means its picture is not this frame's, so it gets a line.
+                if abs(view.width - Double(size.width)) > 1 || abs(view.height - Double(size.height)) > 1
+                    || abs(view.ratio - Double(self.canvasZoom)) > 0.001 {
+                    Log.write("[annotate] view mismatch page=\(Int(view.width))x\(Int(view.height))@\(painted) host=\(Int(size.width))x\(Int(size.height))@\(asked)")
                 }
             } else {
                 // The page refused the numbers and left its camera where it was, so it is showing
@@ -560,9 +571,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             finish()
         }
         pendingHide = done
-        // The page runs park, export, and build one at a time, so an Esc during a long Copy
-        // Annotated waits behind it. The window comes down on this deadline whatever the page does;
-        // a park that answers after it is dropped, because by then the canvas may hold another image.
+        // The page runs park, export, and build one at a time, so an Esc during a long
+        // Copy Drawing waits behind it. The window comes down on this deadline whatever the page
+        // does; a park that answers after it is dropped, because by then the canvas may hold
+        // another image.
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) {
             guard !answered else { return }
             Log.write("[web] error park timeout after \(Int(Self.exportTimeout)) s \(shot.url.lastPathComponent)")
@@ -670,8 +682,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let payload = LoadPayload(
             key: shot.url.path,
             mimeType: LocalServer.mimeType(for: shot.url.pathExtension),
-            pixelWidth: size.width, pixelHeight: size.height,
-            viewWidth: windowSize.width, viewHeight: windowSize.height)
+            pixelWidth: size.width, pixelHeight: size.height)
         let load = PageAPI.load(payload, snapshot: draftSnapshot?(shot.url.path))
         if pageReady { call(load) } else { pendingCall = load }
     }
@@ -727,7 +738,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     var canvasRefusal: String? {
         if webView == nil || !pageReady { return "the editor page is not ready" }
         if holdsCanvas { return "an image is in the annotator" }
-        // Copy Annotated and a launch-time preview both run through `exportDrafts`, so this says
+        // Copy Drawing and a launch-time preview both run through `exportDrafts`, so this says
         // what is true of either rather than naming one of them.
         if pendingExport != nil { return "the page is rendering" }
         if pendingBuild != nil { return "another push is still building its marks" }
@@ -742,17 +753,12 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     func buildDraft(_ shot: Screenshot, marks: [Mark], completion: @escaping (ParkResult?, String?) -> Void) {
         if let refusal = canvasRefusal { completion(nil, refusal); return }
         guard let webView else { completion(nil, "the editor page is not ready"); return }
-        guard let pixels = Thumbnailer.pixelSize(of: shot.url), let points = Thumbnailer.pointSize(of: shot.url) else {
+        guard let pixels = Thumbnailer.pixelSize(of: shot.url) else {
             completion(nil, "could not read \(shot.url.lastPathComponent)"); return
         }
-        // The frame the image would open in: the page does not lay anything out for a build, but the
-        // payload says what a view of it looks like.
-        let frame = StackLayout.current.annotationFrame(
-            for: points, visibleFrame: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame, below: spaceBelow)
         let payload = LoadPayload(
             key: shot.url.path, mimeType: LocalServer.mimeType(for: shot.url.pathExtension),
-            pixelWidth: pixels.width, pixelHeight: pixels.height,
-            viewWidth: frame.width, viewHeight: frame.height)
+            pixelWidth: pixels.width, pixelHeight: pixels.height)
         let epoch = pageEpoch
         var answered = false
         let finish: (ParkResult?, String?) -> Void = { [weak self] parked, error in

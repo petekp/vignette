@@ -101,8 +101,7 @@ final class RenderTests: XCTestCase {
     }
 
     private var payload: LoadPayload {
-        LoadPayload(key: fixture.path, mimeType: "image/png", pixelWidth: pixelWidth, pixelHeight: pixelHeight,
-                    viewWidth: 800, viewHeight: 600)
+        LoadPayload(key: fixture.path, mimeType: "image/png", pixelWidth: pixelWidth, pixelHeight: pixelHeight)
     }
 
     func testExportKeepsTheScreenshotAndDrawsTheAnnotation() throws {

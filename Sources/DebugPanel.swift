@@ -162,6 +162,8 @@ struct DebugPanelView: View {
                     Tweak("Screen inset", \.annotationScreenInset, 0...200, step: 5)
                     Tweak("Corner radius", \.annotationCornerRadius, 0...30)
                     Tweak("Toolbar gap", \.annotationToolbarGap, 0...40)
+                    Tweak("Zoom edge band", \.zoomEdgeBand, 0...0.5, step: 0.01)
+                    Tweak("Zoom edge pull", \.zoomEdgePull, 0...1, step: 0.05)
                 }
                 Section("Stitch") {
                     Tweak("Long side", \.stitchLongSide, 512...8192, step: 128, unit: "px")

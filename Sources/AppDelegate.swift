@@ -302,7 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self else { return }
             if let error {
                 Commands.error("copy-annotated", error.hasPrefix("timeout") ? .exportTimeout : .exportFailed, error)
-                self.thumbnail.showFeedback("Could not render the annotations; see the log")
+                self.thumbnail.showFeedback("Could not render the drawing; see the log")
                 return
             }
             self.finishCopyAnnotated(shots, pngs: pngs)
@@ -500,11 +500,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.removeAllItems()
         menu.addItem(withTitle: "Open Last Screenshot", action: #selector(openLast), keyEquivalent: "")
         menu.addItem(withTitle: "Show Recent Screenshots  (\(settings.data.recentHotkey))", action: #selector(toggleRecent), keyEquivalent: "")
-        menu.addItem(withTitle: "Annotate Last Screenshot  (hold \(settings.data.recentHotkey))", action: #selector(annotateLast), keyEquivalent: "")
+        menu.addItem(withTitle: "Draw on Last Screenshot  (hold \(settings.data.recentHotkey))", action: #selector(annotateLast), keyEquivalent: "")
         let copyItem = NSMenuItem(title: "Copy New Captures", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
         copyItem.state = settings.data.copyOnCapture ? .on : .off
         menu.addItem(copyItem)
-        let captureItem = NSMenuItem(title: "Annotate New Captures", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
+        let captureItem = NSMenuItem(title: "Draw on New Captures", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
         captureItem.state = settings.data.annotateOnCapture ? .on : .off
         menu.addItem(captureItem)
         menu.addItem(.separator())

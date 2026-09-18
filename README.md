@@ -12,7 +12,7 @@ Cmd+Shift+4  ──►  ~/Dropbox/Screenshots/Screenshot ….png
                         │
                         ▼  ScreenshotWatcher (DispatchSource on the folder)
                   ThumbnailController  ── bottom-right panel: fresh shot, or recent stack
-                        │ Copy / Annotate / Delete
+                        │ Copy / Draw / Delete
                         ▼
                   AnnotationController ── window hosting web/ (tldraw) via LocalServer
                         │ "done" message with PNG
@@ -88,10 +88,10 @@ and closing it hands focus back to the app you came from.
 - A selected circle carries the card's place in the selection, counting in the order you picked
   them. That is the order every action receives them; picking a card again puts it last. Cmd+A
   has nobody's order to follow, so it takes the column's: oldest first.
-- The selected cards get a control strip to their left: copy, annotate, stitch, delete.
+- The selected cards get a control strip to their left: copy, draw, stitch, delete.
   It stays centered between the topmost and the bottommost selected card, and follows the selection.
-  Put the cursor on it and it grows to the right to name each button. The icons stay where they
-  are, so the button under the cursor is still the button you press. While you are annotating, the
+  Put the cursor on it and it grows to the left to name each button, so the names never cover a
+  thumbnail. The row under the cursor is still the button you press. While you are annotating, the
   strip steps out of the annotator's way; the cards stay selected and it comes back when you are done.
 - Opening a card in the annotator narrows the stack to make room for it, down to half its width.
   The cards keep their corner; only their size changes, and they come back when the annotator
@@ -104,23 +104,23 @@ and closing it hands focus back to the app you came from.
   and copied. Two or three pieces stack; more go in a grid, because a very tall image loses more of
   itself when a model resizes it to read it. Each badge is the number the card's circle showed. The
   selected cards fly together into the new card, which takes their place at the bottom of the
-  stack, or opens in the annotator when Annotate New Captures is on.
+  stack, or opens in the annotator when Draw on New Captures is on.
 - The newest card has the focus as soon as the stack is up, and the focus follows the mouse: move
   onto a card and keys act on that one. So Space over one card after another builds a selection
   without clicking, and Return opens the card the mouse is on. A key runs on the selection when
   there is one, else on the focused card.
 - Arrows move focus, Shift extends in the direction you travel (turning back drops the card it
-  added last), Space toggles, Cmd+A selects all, Return annotates, Cmd+Shift+C copies with the
-  annotations rendered in, Cmd+Delete trashes, Esc clears then dismisses.
-- Return on several selected cards, or Annotate in the strip, annotates them one after another, in
+  added last), Space toggles, Cmd+A selects all, Return opens the card to draw on, Cmd+Shift+C
+  copies with the drawing rendered in, Cmd+Delete trashes, Esc clears then dismisses.
+- Return on several selected cards, or Draw in the strip, opens them one after another, in
   the order you picked them: each Done sends that card home and opens the next. They stay selected
   the whole time, so Cmd+C or Cmd+S afterwards still takes all of them. Esc, or closing the stack,
   drops the rest of the queue.
-- A card whose annotations you parked with Esc or a swap shows them in its thumbnail. That
+- A card whose drawing you parked with Esc or a swap shows it in its thumbnail. That
   thumbnail is a preview PNG in `~/Library/Caches`; if macOS clears the folder, the next launch
-  renders it again from the draft. Reopen the card and the annotations are back either way;
-  Copy Annotated renders them without opening the editor.
-- Reopening a card that already has annotations starts on the selection tool with the mark you
+  renders it again from the draft. Reopen the card and the drawing is back either way;
+  Copy Drawing renders it without opening the editor.
+- Reopening a card you have already drawn on starts on the selection tool with the mark you
   drew last already picked up, so a drag or Delete acts on it without a click first.
   A fresh image starts on the rectangle tool.
 - A mark is drawn in red unless red is what it sits on. The editor measures the pixels under each
@@ -189,10 +189,10 @@ not depend on its pixel size:
 The types are `ellipse`, `rectangle`, `arrow`, and `text`; `ellipse` has no toolbar button, and an
 agent can still push one. A mark that names a `color` keeps it — any of `MARK_COLORS` in
 `web/src/config.ts` — and a mark that names none is coloured from what it covers, like your own. The
-marks become a draft before the card appears, so the card shows them, Copy Annotated has them, and
+marks become a draft before the card appears, so the card shows them, Copy Drawing has them, and
 opening the card puts them in the editor to move, retype, or delete like your own. The editor builds
 the draft on its own canvas, so a marked push is refused with `page-not-ready` from the moment the
-annotator takes an image until it has given it back, and while a Copy Annotated is rendering.
+annotator takes an image until it has given it back, and while a Copy Drawing is rendering.
 
 Every command answers with one line in `~/Library/Logs/Shotnote.log` (menu bar → Open Log):
 `[<command>] ok <detail>` or `[<command>] error <code> <detail>`. The codes are fixed:
@@ -237,11 +237,12 @@ The folder is one setting for two things: where Cmd+Shift+3/4/5 saves and what S
 `appleThumbnail`, `windowShadow`, and `format` are Apple's own screenshot defaults; Shotnote writes
 them for you. On first run the file mirrors what macOS is already doing, so nothing changes until
 you edit it; `appleOriginal` records those first values, and `restore-apple-defaults` puts them
-back. `launchAtLogin` adds Shotnote to your login items. `quickAnnotate` makes Done copy the
-annotated image and close the annotator and the stack at once, instead of returning to the stack.
-`copyOnCapture` puts every new screenshot on the clipboard as it lands (the image, plus its file
-URL and path for apps that take those), and is on by default. `annotateOnCapture` opens every new
-screenshot in the annotator right away, instead of showing a thumbnail. The menu bar toggles both.
+back. `launchAtLogin` adds Shotnote to your login items. `quickAnnotate` is Quick draw: Done
+copies the image you drew on and closes the annotator and the stack at once, instead of returning
+to the stack. `copyOnCapture` puts every new screenshot on the clipboard as it lands (the image,
+plus its file URL and path for apps that take those), and is on by default. `annotateOnCapture` is
+Draw on New Captures: it opens every new screenshot in the annotator right away, instead of showing
+a thumbnail. The menu bar toggles both.
 An image that arrives through `add` skips both: a push from an agent is not a capture.
 `debug` unlocks `eval`, `show-editor`,
 `tweaks`, `send`, and `file=` outside the watch folder. A file that does not parse is moved aside as

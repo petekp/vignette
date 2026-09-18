@@ -8,10 +8,13 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
 - `~/.config/shotnote/settings.json` holds per-machine settings (`Settings.swift` defines the keys).
   Its `ui` section (`UITweaks`) holds the layout, style, timing, flight, and backdrop numbers, and its
   defaults are the tuned UI, so a fresh install renders the same. `open -g shotnote://tweaks`
-  edits them live (needs `debug`). A few numbers stay in code on purpose: the toolbar's row and
-  button sizes (`AnnotatorToolbar.swift`), the card button size (`StackView.swift`), the
-  fly-back timing (`TransitionLayer.swift`), and the stitch's gap, padding, and badge, which are
-  fractions of the piece rather than fixed sizes (`Stitch.swift`).
+  edits them live (needs `debug`). Not every number is in there. A number stays in code when
+  changing it would mean changing the code around it, or when it is a fraction of something rather
+  than a size: the toolbar's rows and buttons (`AnnotatorToolbar.swift`), the card button size and
+  the strip's icon and label sizes (`StackView.swift`, `StackLayout.swift`), the fly-back timing and
+  the annotator's own shadow (`TransitionLayer.swift`), the zoom's springs and limits
+  (`AnnotationController.swift`), and the stitch's gap, padding, and badge (`Stitch.swift`). What a
+  user would tune belongs in `UITweaks` with a `Bound` and a slider; when in doubt, put it there.
   Editing the file is a supported way to change settings; the app reloads it within a second.
   It is the user's real config: never test against it. The tweak panel writes to whichever file
   the running instance was launched with, and a test launch replaces the user's instance, so copy
@@ -102,10 +105,12 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    and error lands there with a `[tag]`. `open -g "shotnote://state?tag=<id>"` writes one
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
-   `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; selection, focus,
-   the hovered card, `queue`, the files waiting for the annotator, feedback, panel, `widthScale`,
-   how wide the stack is drawn, `strip`, the selection strip's frame or null, and `stripHovered`),
-   `transition` (phase), `annotator` (current file, frame, pageState, port, webPid),
+   `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; `selected`, `focused`,
+   `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`, `scroll`,
+   `viewport`, feedback, panel, `widthScale`, how wide the stack is drawn, `strip`, the selection
+   strip's frame or null, and `stripHovered`),
+   `transition` (phase), `annotator` (`current`, `frame`, `pageState`, `port`, `webPid`,
+   `windowVisible`, `tool`, `color`, and the zoom's own keys, which the zoom bullet below names),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
    page does not answer within a second. Frames are `[x, y, w, h]` in global top-left points.
@@ -174,6 +179,12 @@ the same driven sequence; a single run varies.
   `annotate` instead of `show`.
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
+- Two vocabularies, and they do not mix. Every string a user reads says draw: the buttons, the menu
+  items, the toggles, the section headings, the toasts. Every name a script, a log reader or a
+  compiler reads says annotate: the URL ids (`shotnote://annotate`, `copy-annotated`), the log tags
+  (`[annotate]`), the settings keys (`quickAnnotate`, `annotateOnCapture`), the `-annotated.png`
+  suffix, and every identifier. A label is free to change; those are a contract. The editor window
+  is still the annotator in both, because it is a thing rather than an action.
 - Preload the web view at launch; the annotator must open instantly.
 - Every animation goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json scales
   every duration, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
@@ -277,16 +288,19 @@ the same driven sequence; a single run varies.
   a focused one. So Space over one card after another builds a selection from the mouse alone, and
   Return opens the card the mouse is on.
 - The panel widens to the left while cards are selected, to hold the selection strip
-  (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:)` makes the room). Its
-  right edge never moves, so the cards stay where they are. Only the column carries the hair of
+  (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:reveal:)` makes the room:
+  the icon column, the gap to the cards, and the room the labels grow into, whether they are out or
+  not). Its right edge never moves, so the cards stay where they are. Only the column carries the hair of
   alpha that catches clicks and scrolls; the strip's side of the panel stays clear, so a click
   there still reaches the window underneath.
 - The cursor on the strip brings a label out beside each icon, and Copy on a card does the same
-  (`docs/hover-reveal-2026-09-17.md`). The button under the cursor has to stay under it, so the
-  icons never move and the strip grows to the right instead, over the gap and the cards' edge:
-  `StackLayout.stripReveal` says how far, capped at the panel's right edge, and the view keeps its
-  box that wide and puts the strip against its leading edge. The strip is drawn after the column,
-  so the grown side is above the cards and catches the mouse rather than falling through to one.
+  (`docs/hover-reveal-2026-09-17.md`). A card's Copy grows to the right from an icon that does not
+  move. The strip is the other way round: it keeps its right edge and grows to the left, so a label
+  never covers a card, and the icons translate left by the reveal. `StackLayout.stripReveal` says
+  how far — the widest label plus the room beside the icons — and the view keeps its box that wide
+  and puts the strip against its trailing edge. The panel already holds that room, so nothing is
+  resized while the labels come out. The button under the cursor stays under it because a row is
+  one button, icon and label together, and the grown row contains the resting row.
   The strip stands aside while the annotator has an image: it hangs a column's width further left
   than the cards, which is inside the room the frame may grow into, so the two would overlap. The
   two places that ask for its placement refuse (`ThumbnailController.stripFrame` and
@@ -322,7 +336,7 @@ the same driven sequence; a single run varies.
   (prepare, show, park, returnCard, markCopied, hideAnnotator, join). Done sends `finish`: the card
   returns and takes the copied mark, and a lone thumbnail, which left the panel when the annotator
   opened, comes back to the corner for it. Esc sends `close`: a stack card returns, a lone
-  thumbnail's annotator just hides. Quick annotate sends `dismiss`. A `prepare` is never emitted while a
+  thumbnail's annotator just hides. Quick draw sends `dismiss`. A `prepare` is never emitted while a
   park is in flight, which is what serializes rapid swaps; a new screenshot during a lone
   annotation joins the panel instead of closing the editor. Every event logs one
   `[transition] <event> -> <phase> effects=…` line. The page never hides itself: it asks through
@@ -383,9 +397,12 @@ the same driven sequence; a single run varies.
   `history: 'ignore'`). That borrows the canvas for the length of one rendering, so a build is
   refused while anything else owns it (`AnnotationController.canvasRefusal`): the annotator owns it
   from `prepare`, half a second before its window appears, until `park` answers, and an export owns
-  it for as long as Copy Annotated runs. A refusal is one `page-not-ready` line and no file copied.
-  Every call that touches the canvas — `load`, `reset`, `park`, `export`, `build`, `overlay`,
-  `setView`, and `finish` — runs one at a time on the page, in the order the host called them: the
+  it for as long as Copy Drawing runs. A refusal is one `page-not-ready` line and no file copied.
+  Every call that takes a snapshot of the canvas and puts it back — `load`, `reset`, `park`,
+  `export`, `build`, `overlay`, `setView`, and `finish` — runs one at a time on the page, in the
+  order the host called them. The page's own edits do not queue: `setTool`, `setColor`, the
+  debounced colour pass, the hotkeys' undo, redo and delete, and the resize observer's refit all
+  touch the store directly, because none of them reads the canvas back. Of the queued ones, the
   rendering ones take their snapshot after an `await` and put the canvas back afterwards, so an
   image that landed in between would be stored under the wrong key or wiped. The camera is part of
   a snapshot, so `export` and `build` put it back as it was when they started: a `setView` that
@@ -428,7 +445,9 @@ the same driven sequence; a single run varies.
   `ui.motion: 0` swaps outright — but only while the zoom is still standing still: if the spring
   moved on while the answer was in the air, the stand-in stays and the next rest hands over again.
   The page is covered, never hidden: WebKit pauses a hidden view's frame callbacks and that answer
-  would never come. `[annotate] view <ms> ratio=… waited=…` reports each handover; `waited` is how
+  would never come. `[annotate] view <ms> ratio=… painted=… waited=…` reports each handover:
+  `ratio` is the magnification the host asked for and `painted` the one the page answered with, and
+  a gap between them, or between the sizes, is one `[annotate] view mismatch` line. `waited` is how
   many frames the page waited for the resize to reach it. A page that refuses the view (a number
   that is not finite, or a ratio under 1) logs `[web] error view refused`, and a hand-over with no
   answer inside an export's timeout logs `[annotate] view timeout` and is made once more; the
@@ -441,16 +460,29 @@ the same driven sequence; a single run varies.
   with nothing drawn on it has no overlay.
 
   Both phases hold the point under the cursor: `ZoomAim` for the window, `ZoomPan` for the
-  magnification, each read off what is on screen when the input arrives. The message carries the
+  magnification, each read off what is on screen when the input arrives. A cursor near an edge of
+  the picture is pulled onto that edge first (`Zoom.pulledToEdges`, `ui.zoomEdgeBand` 0.15 of the
+  picture and `ui.zoomEdgePull` 0.5, the part of the band that pins outright), so the edge stays in
+  view: only the window's own edge holds the image's edge with it, so without the pull the corner
+  the cursor is beside is cropped by the first bit of magnification. The pull is in `ZoomPan` alone;
+  the window's growth cannot crop anything, since the whole image is inside the window until the
+  window can grow no further. The message carries the
   cursor as a fraction of the window (`at`, y from the top), which the window growth and the page's
-  camera each read in their own space; a keyboard step sends none and zooms about the window's
-  middle, as Preview does. A two-finger double tap (`smartMagnify`) zooms twofold at the tap, or
+  camera each read in their own space; a keyboard step sends none, so it names the window's
+  middle, as Preview does, and the room then moves that anchor as it moves any other. A two-finger double tap (`smartMagnify`) zooms twofold at the tap, or
   back to the fitted size from anywhere above it. `Sources/Zoom.swift` is the geometry: the window
-  grows away from the anchor, at scale 1 it is the fitted frame again whatever the anchor, and
-  against the edge of its room the frame slides and the anchor gives way, which is where
-  magnification takes over. The anchor is read off the frame on screen at each step, so a frame the
-  edge nudged does not carry that error forward, and a step aimed somewhere else mid-spring blends
-  from the anchor it had to the new one (`ZoomAim`) instead of stepping sideways. Zoom's springs are
+  grows away from the anchor, and at scale 1 it is the fitted frame again whatever the anchor. The
+  room gives way once, when the aim is taken: `Zoom.anchor(_:fitting:within:)` moves the anchor as
+  little as the room allows, so that the window can grow all the way to the room (`Zoom.reach`)
+  without the frame ever reaching the room's edge. The frame's path is then one straight line and
+  the clamp in `Zoom.frame` never bites. In the direction the room binds there is one such anchor,
+  so the picture pans at a steady rate as it grows; in the other the cursor's point is held exactly.
+  Dividing the room per step instead left the picture still and then sliding — 2.5 points in one
+  refresh, with the picture turning around as it went, which is the arc Pete saw
+  (`docs/zoom-2026-09-17.md`). The anchor is read off the frame on screen at each step, so a frame
+  the edge nudged does not carry that error forward, and a step aimed somewhere else mid-spring
+  blends from the anchor it had to the new one (`ZoomAim`) instead of stepping sideways; a step from
+  the fitted size has no growth to blend from and starts at its own anchor. Zoom's springs are
   in code rather than the tweaks, but the motion scale still shortens them, so `ui.motion: 0` and
   Reduce Motion land a step at once. The state report's `page.zoom` is the in-window magnification
   as tldraw sees it (1 = the image fills the window), `page.visible` is the part of the image the
@@ -459,7 +491,7 @@ the same driven sequence; a single run varies.
   `annotator.zoomCenter` is the middle of the visible part of the image, `annotator.standIn` says
   whether the app's own picture is up, `annotator.overlay` is the overlay's pixel size, and
   `annotator.room` is the rect the frame may grow within. `docs/zoom-2026-09-17.md` says why it is
-  shaped this way. "Copy Annotated" hands the stored snapshots to the live editor
+  shaped this way. "Copy Drawing" hands the stored snapshots to the live editor
   (`window.shotnote.export`), which restores the canvas afterwards; it falls back to the original
   file for cards without a draft, and answers `error export-failed` or `export-timeout` (15 s)
   instead of hanging.

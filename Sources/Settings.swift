@@ -132,6 +132,8 @@ struct UITweaks: Codable, Equatable {
     var annotationCornerRadius = 10.0
     var annotationToolbarGap = 12.0
     var annotationScreenInset = 65.0
+    var zoomEdgeBand = 0.15          // how far from each edge of the picture a zoom holds that edge
+    var zoomEdgePull = 0.5           // the part of that band in which the edge is held exactly
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
 
@@ -191,6 +193,7 @@ struct UITweaks: Codable, Equatable {
         Bound("annotationMinWidth", \.annotationMinWidth, 1...100_000), Bound("annotationMinHeight", \.annotationMinHeight, 1...100_000),
         Bound("annotationCornerRadius", \.annotationCornerRadius, 0...1000), Bound("annotationToolbarGap", \.annotationToolbarGap, 0...1000),
         Bound("annotationScreenInset", \.annotationScreenInset, 0...10_000),
+        Bound("zoomEdgeBand", \.zoomEdgeBand, 0...0.5), Bound("zoomEdgePull", \.zoomEdgePull, 0...1),
         // The floor is the slider's, because below it a stitch is not a smaller picture but a
         // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
@@ -382,19 +385,13 @@ final class Settings: ObservableObject {
     }
 
     /// Brings a file's raw JSON up to `currentVersion`. Files with no `version` are version 0.
-    /// A file from a newer version is returned unchanged. Add a case here for each version bump.
+    /// A file from a newer version is returned unchanged. Version 1 only introduced the version
+    /// field, so there is nothing to rewrite yet; a bump that changes a key rewrites it here,
+    /// between the guard and the stamp, one step per version.
     static func migrate(_ raw: [String: Any]) -> (json: [String: Any], from: Int) {
         var json = raw
         let from = (json["version"] as? NSNumber)?.intValue ?? 0
         guard from < currentVersion else { return (json, from) }
-        var version = from
-        while version < currentVersion {
-            switch version {
-            case 0: break   // version 1 only introduced the version field
-            default: break
-            }
-            version += 1
-        }
         json["version"] = currentVersion
         return (json, from)
     }
@@ -596,15 +593,6 @@ enum AppleScreencapture {
 /// Animation helper honoring the tweakable curves.
 @MainActor
 enum Anim {
-    static func timing(_ curve: String) -> CAMediaTimingFunction {
-        switch curve {
-        case "easeOut": return CAMediaTimingFunction(name: .easeOut)
-        case "easeInOut": return CAMediaTimingFunction(name: .easeInEaseOut)
-        case "linear": return CAMediaTimingFunction(name: .linear)
-        default: return CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0)   // "spring"
-        }
-    }
-
     static func swiftUI(_ curve: String, duration: Double) -> Animation {
         switch curve {
         case "easeOut": return .easeOut(duration: duration)
@@ -635,14 +623,6 @@ enum Anim {
             t -= step
         }
         return 0
-    }
-
-    static func run(_ duration: Double, curve: String = "easeOut", _ body: @Sendable () -> Void, completion: (@Sendable () -> Void)? = nil) {
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = duration
-            ctx.timingFunction = timing(curve)
-            body()
-        }, completionHandler: completion)
     }
 }
 

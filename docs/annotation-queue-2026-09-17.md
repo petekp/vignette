@@ -9,7 +9,7 @@ Every action receives a list: the cards in the order they were picked in the sta
 the order a URL names them. `annotate` opens the first and keeps the rest. Finishing one (Done, or
 Return in the annotator) sends that card home and opens the next, until the list is done. The
 selection is untouched from beginning to end, so Cmd+C or Cmd+S after the last card acts on the
-same cards. Return, the strip's Annotate button, and a `shotnote://annotate` naming several files
+same cards. Return, the strip's Draw button, and a `shotnote://annotate` naming several files
 all start the same run: the queue is in the action, not in what pressed it.
 
 The `[annotate] ok` line names the file that is opening and how many there are
