@@ -26,6 +26,11 @@ final class StackModel: ObservableObject {
     @Published var pressedCard: UUID? = nil
     @Published var overControl = false         // the mouse is on a card's button or circle, where a click does not draw
     @Published var stripHovered = false        // the mouse is on the selection strip, so its labels are out
+    /// A card is in the annotator. The strip stands aside for it: the strip hangs to the left of
+    /// the column, which is further left than the room the annotator's frame is kept out of, so
+    /// the two would overlap. The selection is untouched and the strip comes back when the session
+    /// ends. Set from `send`, which is the one place the session changes.
+    @Published var annotating = false
     @Published var copied: Set<UUID> = []      // cards showing "Copied" over their image
     /// The selected cards, in the order they were selected. Every action, Stitch included, takes
     /// them in this order, and a card's circle shows its place here.
@@ -191,8 +196,11 @@ final class ThumbnailController: NSObject {
     private var showsBar: Bool { model.showsBar }
     private var showsStrip: Bool { model.isStack && model.inSelectionMode }
 
-    /// The selection strip's screen frame, or nil when nothing is selected.
+    /// The selection strip's screen frame, or nil when nothing is selected or the annotator has an
+    /// image. Asked here and in `StackView`, never in `showsStrip`: that one sizes the panel, and
+    /// the panel's window must not be resized while a session is running.
     private var stripFrame: NSRect? {
+        guard !model.annotating else { return nil }
         guard showsStrip, let strip = layout.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
                                                             cards: cardSizes, showsBar: showsBar,
                                                             scroll: model.scroll, viewport: model.viewport) else { return nil }
@@ -558,6 +566,7 @@ final class ThumbnailController: NSObject {
             handover = nil
             annotate(next)
         }
+        model.annotating = transition.isActive
     }
 
     /// The next file the queue has for the annotator. Files that have gone since drop out.

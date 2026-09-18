@@ -285,7 +285,13 @@ the same driven sequence; a single run varies.
   `StackLayout.stripReveal` says how far, capped at the panel's right edge, and the view keeps its
   box that wide and puts the strip against its leading edge. The strip is drawn after the column,
   so the grown side is above the cards and catches the mouse rather than falling through to one.
-  `[state] stack.strip` is the grown frame and `stack.stripHovered` says whether the labels are out.
+  The strip stands aside while the annotator has an image: it hangs a column's width further left
+  than the cards, which is inside the room the frame may grow into, so the two would overlap. The
+  two places that ask for its placement refuse (`ThumbnailController.stripFrame` and
+  `StackView.stripPlacement`), never `showsStrip`, which sizes the panel: the panel's window is not
+  resized while a session runs. The selection is untouched and the strip springs back when the
+  session ends. `[state] stack.strip` is the grown frame, null while a card is in the annotator,
+  and `stack.stripHovered` says whether the labels are out.
 - The recent stack narrows to make room for the annotator. One number says how wide it is drawn:
   `StackLayout.widthScale`, 1 at rest and never below `ui.stackMinScale`. The cards are drawn at
   that width (`drawn`) and the column with them; their right edge does not move, so a narrower

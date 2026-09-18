@@ -45,6 +45,7 @@ struct StackView: View {
         }
         .animation(layoutAnimation(0.2), value: model.cards.map(\.id))
         .animation(layoutAnimation(0.15), value: model.inSelectionMode)
+        .animation(layoutAnimation(0.15), value: model.annotating)
         .animation(layoutAnimation(0.15), value: model.feedback)
     }
 
@@ -55,7 +56,10 @@ struct StackView: View {
     }
 
     private var stripPlacement: StackLayout.StripPlacement? {
-        guard model.isStack, model.inSelectionMode else { return nil }
+        // The strip stands aside while the annotator has an image: it hangs to the left of the
+        // column, inside the room the frame may grow into. The selection stays; the strip is back
+        // when the session ends.
+        guard model.isStack, model.inSelectionMode, !model.annotating else { return nil }
         return layout.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
                                      cards: model.cards.map { layout.drawn($0.size) }, showsBar: model.showsBar,
                                      scroll: model.scroll, viewport: model.viewport)

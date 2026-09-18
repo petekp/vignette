@@ -35,8 +35,9 @@ out of the queue at that point instead of leaving the dim up with nothing behind
 
 Opening a card used to clear the selection. A queue needs the rest of it, and the card comes back
 to its slot when it is done, so there was nothing to clear: the cards a user picked stay picked
-until the user says otherwise. The selection strip stays out while the annotator is open, dimmed
-with the rest of the stack.
+until the user says otherwise. The selection strip itself stands aside while the annotator has an
+image, because it would sit inside the frame's room; the cards keep their numbers and the strip
+comes back when the run ends.
 
 ## What ends a queue
 
