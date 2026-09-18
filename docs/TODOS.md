@@ -195,6 +195,18 @@ queued that evening from Pete's first use of the todo4 build.
     "Draw". URL ids (`shotnote://annotate`), log tags (`[annotate]`), and code identifiers stay
     unless a rename is trivial and touches nothing an agent or script depends on.
 
+22. Zooming the annotator image looks like it arcs near the start. Pete, 2026-09-17 evening, on
+    the merged build: "when zooming the annotator image, it seems to be doing the arc motion near
+    the beginning of the transition. In this specific interaction we do not want any arc. If this
+    isn't the arc, then there's some kind of unexpected jerkiness near the beginning we need to
+    address." The flight arc (`FlightCurve`, `ui.flightArc`) is applied only to card flights in
+    `TransitionLayer`; the zoom's frame comes from `Zoom.frame` under one spring, so the cause is
+    somewhere else. Candidates: the anchor blend from the previous aim to the cursor on the first
+    step (`ZoomAim`), the stand-in going up on the first input (a mismatch between the page and the
+    stand-in for a frame), or the spring's start. Measure with the 60 fps method from
+    docs/zoom-2026-09-17.md (per-frame position of the frame's edge and of a stroke inside the
+    picture) before changing anything, then remove whatever moves sideways or steps.
+
 ## Feedback on the run-2 branch (Pete, 2026-09-17 afternoon, on `todo2/integration` c43304a)
 
 All four landed the same afternoon on `todo2/integration`, reviewed and fixed (tip f59cec8); the
