@@ -10,8 +10,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
   defaults are the tuned UI, so a fresh install renders the same. `open -g shotnote://tweaks`
   edits them live (needs `debug`). A few numbers stay in code on purpose: the toolbar's row and
   button sizes (`AnnotatorToolbar.swift`), the card button size (`StackView.swift`), the
-  fly-back timing (`TransitionLayer.swift`), and the stitch gap, padding, and badge
-  (`Stitch.swift`).
+  fly-back timing (`TransitionLayer.swift`), and the stitch's gap, padding, and badge, which are
+  fractions of the piece rather than fixed sizes (`Stitch.swift`).
   Editing the file is a supported way to change settings; the app reloads it within a second.
   It is the user's real config: never test against it. The tweak panel writes to whichever file
   the running instance was launched with, and a test launch replaces the user's instance, so copy
@@ -253,6 +253,14 @@ the same driven sequence; a single run varies.
   unchanged, and with the stack closed (a `shotnote://stitch` from a script) the toast is still the
   whole of it. Dismissing the stack mid-converge ends the pieces' flights with it and the stitch
   says so as a toast instead of marking a card that has gone, so it never finishes in silence.
+  `Stitch.compose` lays the pieces out for the model that will read the result: it tries every
+  column count and keeps the one whose composition survives a vision model's resize best
+  (`readerScale`, Anthropic's standard tier — a long edge of 1568 px and 1568 patches of 28 px), so
+  two or three screenshots stack and six go in two columns. The gap and the badges are fractions of
+  the piece they are on, `ui.stitchLongSide` caps the output, and `[stitch] ok` reports the composed
+  size and that scale. `docs/stitch-2026-09-17.md` has the numbers, and the first of them is that a
+  stitch of three screenshots reaches a reader at 45% of its size: separate images are better when
+  the model has to read the text.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor.
@@ -284,17 +292,27 @@ the same driven sequence; a single run varies.
   the table; the random-sequence test checks the invariants.
 - The annotator window is borderless and sized exactly to the image. Its toolbar is a native
   panel (`AnnotatorToolbar.swift`) placed under the window, never inside the page: the page
-  sends its tool and color list in the `ready` message, reports the active tool, and takes
-  `setTool`/`setColor`/`finish` calls. Keyboard shortcuts inside the editor (tool keys, undo,
-  delete, Esc, Return) live in `Hotkeys` in `App.tsx`, because tldraw's own shortcuts are part
-  of the UI that `hideUi` removes. `TransitionLayer` flies a card between its stack slot and that
-  frame, and the annotator loads the image while hidden (`prepare`) so it can appear the moment
-  the card lands (`show`). A swap runs two of these at once. The stack keeps the slot, drawn
+  sends its tools, its swatches, and every color a pushed mark may name in the `ready` message,
+  reports the active tool, and takes `setTool`/`setColor`/`finish` calls. `SHOW_COLORS` in
+  `web/src/config.ts` is off, so the swatches are empty and the bar has no divider for them. Which colour a mark is drawn in is the
+  page's then, not the user's: `web/src/contrast.ts` samples the screenshot under the mark's bounds
+  and keeps the first colour in `CANDIDATES` whose CIELAB distance from those pixels is at least
+  `MIN_COLOR_DISTANCE`, so red gives way over a red or dark red region and nowhere else. It runs
+  when a mark is created and when the hand lets go, outside undo history, and before every park and
+  Done rendering; a colour the user picked or an agent named is kept (`meta.colorChosen`).
+  `docs/annotation-colour-2026-09-17.md` has the numbers and why the measure is not a WCAG ratio.
+  Keyboard shortcuts inside the editor (tool keys, undo, delete, Esc, Return) live in `Hotkeys` in
+  `App.tsx`. `hideUi` hides tldraw's UI but keeps its
+  shortcuts, which it registers on the document body, so `Hotkeys` stops every plain letter in
+  the capture phase: a key tldraw binds cannot reach a tool the toolbar does not show.
+  `TransitionLayer` flies a card between its stack slot and that frame, and the annotator loads
+  the image while hidden (`prepare`) so it can appear the moment the card lands (`show`). A swap
+  runs two of these at once. The stack keeps the slot, drawn
   empty, so the card flies back to the same place. Which tool an image opens on is in
-  `web/src/config.ts`: `DEFAULT_TOOL` (circle) for a fresh image, `REOPEN_TOOL` (select) for one
+  `web/src/config.ts`: `DEFAULT_TOOL` (rectangle) for a fresh image, `REOPEN_TOOL` (select) for one
   that already has a draft. A reopen drops the selection the draft was parked with and picks up
   the annotation drawn last instead (`lastAnnotation`: the top of the page's z-order, which is
-  where tldraw puts each new shape), so a color press, a drag, or Delete acts on that mark.
+  where tldraw puts each new shape), so a drag or Delete acts on that mark.
 - Annotations in progress are drafts owned by the app (`DraftStore`), one JSON snapshot per
   screenshot under `~/Library/Application Support/<bundle id>/drafts/` keyed by the file path
   the app uses everywhere (`shot.url.path`), with a preview PNG under `~/Library/Caches/<bundle
@@ -428,6 +446,6 @@ the same driven sequence; a single run varies.
   stack runs them, and in the order a URL names its `file=` parameters otherwise. `annotate` opens
   the last of them, since the annotator holds one image, and says so in its `ok` line.
 - An editor tool or color: edit `web/src/config.ts`. A tool needs an SF Symbol name for the
-  native toolbar; a color needs the hex the swatch shows.
+  native toolbar; a color needs the hex the swatch shows, and shows only while `SHOW_COLORS` is on.
 - A new message across the bridge: add it to both bridge files, then handle it in
   `AnnotationController` and `App.tsx`.

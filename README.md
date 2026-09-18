@@ -94,10 +94,11 @@ and closing it hands focus back to the app you came from.
   drags the whole selection.
 - Cmd+C copies the selection as files, paths as text, and the first image's pixels, so chat apps
   attach all of them and terminals paste the paths. Option+Cmd+C copies only the paths.
-- Cmd+S stitches the selection into one tall image with numbered badges, saved next to the
-  originals and copied. Each badge is the number the card's circle showed. The selected cards fly
-  together into the new card, which takes their place at the bottom of the stack, or opens in the
-  annotator when Annotate New Captures is on.
+- Cmd+S stitches the selection into one image with numbered badges, saved next to the originals
+  and copied. Two or three pieces stack; more go in a grid, because a very tall image loses more of
+  itself when a model resizes it to read it. Each badge is the number the card's circle showed. The
+  selected cards fly together into the new card, which takes their place at the bottom of the
+  stack, or opens in the annotator when Annotate New Captures is on.
 - Arrows move focus, Shift extends in the direction you travel (turning back drops the card it
   added last), Space toggles, Cmd+A selects all, Return annotates the card you selected last,
   Cmd+Delete trashes, Esc clears then dismisses.
@@ -106,8 +107,11 @@ and closing it hands focus back to the app you came from.
   renders it again from the draft. Reopen the card and the annotations are back either way;
   Copy Annotated renders them without opening the editor.
 - Reopening a card that already has annotations starts on the selection tool with the mark you
-  drew last already picked up, so a color, a drag, or Delete acts on it without a click first.
-  A fresh image starts on the circle tool.
+  drew last already picked up, so a drag or Delete acts on it without a click first.
+  A fresh image starts on the rectangle tool.
+- A mark is drawn in red unless red is what it sits on. The editor measures the pixels under each
+  mark, when you draw it and when you let go of it, and moves to yellow, light blue, white, or
+  violet, whichever is far enough from them.
 - A card with a purple badge was pushed in by an agent (`add?agent=<name>`), not captured. Hover
   it to see which one. The name is stored on the file itself, so it survives a rename.
 
@@ -121,7 +125,8 @@ menu bar has the same command.
 
 - `~/.config/shotnote/settings.json`: folder, counts, timing, hotkey, backdrop. No rebuild.
 - `Sources/Config.swift`: the actions list.
-- `web/src/config.ts`: editor tools, the tool each image opens on, colors, stroke size.
+- `web/src/config.ts`: editor tools, the tool each image opens on, the colour palette (off by
+  default), stroke size.
 - `web/src/bridge.ts` and `Sources/Bridge.swift`: the only contract between the two sides.
 
 See `AGENTS.md` for the working loop.
@@ -167,10 +172,11 @@ not depend on its pixel size:
  {"type": "text", "x": 0.1, "y": 0.8, "text": "Header should not scroll"}]
 ```
 
-The types are `ellipse`, `rectangle`, `arrow`, and `text`; the colors are the editor's
-(`web/src/config.ts`), the first one by default. The marks become a draft before the card appears,
-so the card shows them, Copy Annotated has them, and opening the card puts them in the editor to
-move, retype, or delete like your own. The editor builds the draft on its own canvas, so a marked
+The types are `ellipse`, `rectangle`, `arrow`, and `text`; `ellipse` has no toolbar button, and an
+agent can still push one. A mark that names a `color` keeps it — any of `MARK_COLORS` in
+`web/src/config.ts` — and a mark that names none is coloured from what it covers, like your own.
+The marks become a draft before the card appears, so the card shows them, Copy Annotated has them,
+and opening the card puts them in the editor to move, retype, or delete like your own. The editor builds the draft on its own canvas, so a marked
 push is refused with `page-not-ready` from the moment the annotator takes an image until it has
 given it back, and while a Copy Annotated is rendering.
 

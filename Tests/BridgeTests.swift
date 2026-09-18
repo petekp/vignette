@@ -10,15 +10,17 @@ final class BridgeTests: XCTestCase {
             "type": "ready", "protocol": 3,
             "tools": [["id": "draw", "label": "Draw", "key": "d", "symbol": "pencil"], ["id": "bad"]],
             "colors": [["id": "red", "hex": "#f00"]],
+            "markColors": [["id": "red", "hex": "#f00"], ["id": "white", "hex": "#fff"]],
         ] as [String: Any])
-        guard case .ready(let version, let tools, let colors)? = msg else { return XCTFail("\(String(describing: msg))") }
+        guard case .ready(let version, let tools, let colors, let markColors)? = msg else { return XCTFail("\(String(describing: msg))") }
         XCTAssertEqual(version, 3)
         XCTAssertEqual(tools.map(\.id), ["draw"], "an incomplete tool is dropped, not fatal")
         XCTAssertEqual(colors.map(\.hex), ["#f00"])
+        XCTAssertEqual(markColors.map(\.id), ["red", "white"], "a mark may name a color the toolbar does not show")
     }
 
     func testReadyWithoutProtocolIsVersionZero() {
-        guard case .ready(let version, _, _)? = WebMessage(body: ["type": "ready"]) else { return XCTFail() }
+        guard case .ready(let version, _, _, _)? = WebMessage(body: ["type": "ready"]) else { return XCTFail() }
         XCTAssertEqual(version, 0, "a page built before versioning must never pass the version check")
     }
 
