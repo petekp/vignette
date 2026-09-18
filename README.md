@@ -99,8 +99,9 @@ and closing it hands focus back to the app you came from.
   together into the new card, which takes their place at the bottom of the stack, or opens in the
   annotator when Annotate New Captures is on.
 - The newest card has the focus as soon as the stack is up, and the focus follows the mouse: move
-  onto a card and keys act on that one. A key runs on the selection when there is one, else on the
-  focused card.
+  onto a card and keys act on that one. So Space over one card after another builds a selection
+  without clicking, and Return opens the card the mouse is on. A key runs on the selection when
+  there is one, else on the focused card.
 - Arrows move focus, Shift extends in the direction you travel (turning back drops the card it
   added last), Space toggles, Cmd+A selects all, Return annotates the card you selected last,
   Cmd+Delete trashes, Esc clears then dismisses.

@@ -263,7 +263,8 @@ the same driven sequence; a single run varies.
   on. The pointer only moves it while the stack holds the keys; while the annotator has them
   nothing moves. A shortcut runs on the selection when there is one, else on the focused card
   (`targetCards`). The ring says where the focus is: the accent color on a selected card, white on
-  a focused one.
+  a focused one. So Space over one card after another builds a selection from the mouse alone, and
+  Return opens the card the mouse is on.
 - The panel widens to the left while cards are selected, to hold the selection strip
   (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:)` makes the room). Its
   right edge never moves, so the cards stay where they are. Only the column carries the hair of
