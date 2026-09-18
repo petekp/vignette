@@ -367,8 +367,8 @@ the same driven sequence; a single run varies.
   screenshot under the mark's bounds and keeps the first colour in `CANDIDATES` whose CIELAB
   distance from those pixels is at least `MIN_COLOR_DISTANCE`, so red gives way over a red or dark
   red region and nowhere else. It runs when a mark is created and when the hand lets go, outside
-  undo history, and before every park and Done rendering; a colour the user picked or an agent named
-  is kept (`meta.colorChosen`). `docs/annotation-colour-2026-09-17.md` has the numbers and why the
+  undo history, and before every park and Done rendering; a colour an agent named is kept
+  (`meta.colorChosen`). `docs/annotation-colour-2026-09-17.md` has the numbers and why the
   measure is not a WCAG ratio. Keyboard shortcuts inside the editor (tool keys, undo, delete, Esc,
   Return) live in `Hotkeys` in `App.tsx`. `hideUi` hides tldraw's UI but keeps its shortcuts, which
   it registers on the document body, so `Hotkeys` stops every plain letter in the capture phase: a
@@ -435,8 +435,10 @@ the same driven sequence; a single run varies.
   frame: the screenshot decoded through `Thumbnailer`, the annotations over it as a transparent
   overlay the page rendered earlier, in the frame's own layer tree. `Sources/StandIn.swift` is all
   of it: `StandIn` is the two layers, and `StandInController` owns them, the overlay rendering and
-  the hand-over below, so every call this leaves outstanding on the page is that one file's — the
-  annotator says only `pageRestarted()` and `forget()`. Each tick
+  the hand-over below, so every call this leaves outstanding on the page is that one file's. The
+  annotator tells it three things: `sessionEnded()` where it lets the image go, which is what stops
+  a late `draft` starting an overlay for a canvas that is parking; `pageRestarted()` when the web
+  process dies; and `forget()` when the window has gone. Each tick
   sets the frame's rect from `Zoom.frame` and the picture's rect inside it from `Zoom.picture`, in
   one run loop turn, so the frame and what is in it reach the window server in one Core Animation
   commit and the image's edges are the frame's edges by construction. `moveFrame` is the only place
@@ -484,7 +486,11 @@ the same driven sequence; a single run varies.
   double tap (`smartMagnify`) zooms twofold at the tap, or back to the fitted size from anywhere
   above it, and a double-click with the select tool asks for the same step across the bridge
   (`smartZoom`): the page decides, because it is what knows the tool and whether a mark is under
-  the pointer, and a double-click on a mark still means what tldraw means. tldraw's own
+  the pointer, and a double-click on a mark still means what tldraw means. The page asks the three
+  things tldraw's own select tool asks, in its order — the hovered shape, then
+  `getSelectedShapeAtPoint`, then `getShapeAtPoint` with `hitInside: false` — because a selected
+  shape is hit anywhere inside it, hollow or not, and a reopened card comes back with its last mark
+  selected. Any hit and the page sends nothing, so the zoom and tldraw never both act. tldraw's own
   double-click on the canvas is off (`createTextOnCanvasDoubleClick`), so a zoom never leaves a
   text shape behind. `Sources/Zoom.swift` is the geometry: the window
   grows away from the anchor, and at scale 1 it is the fitted frame again whatever the anchor. The
@@ -575,10 +581,14 @@ the same driven sequence; a single run varies.
   Roots are parameters everywhere, so a test never reaches the real ones, and the live check is
   `install-skill?root=<dir>` (debug only). The installer writes `.shotnote-skill.json` beside the
   skill naming the build, and refuses anything at that path without it, a link included
-  (`not-ours`): it never touches a copy it did not make. `agentSkill` in settings.json is
+  (`not-ours`): it never touches a copy it did not make. A root whose `skills` is itself a link is
+  refused whole (`linked-root`), because the copy would land wherever the link points; `roots(home:)`
+  still lists it and `[state] app.agentSkill.linkedRoots` names it, so a skipped root is never
+  silent. `agentSkill` in settings.json is
   `unasked`, `on`, or `off`; `on` installs and keeps the copy current at every launch, `off`
   removes it, and `unasked` with an agent directory present makes the offer once, which is the
-  Settings window at the Agents section, since the toast carries no button. Making the offer
+  Settings window at the Agents section, since the toast carries no button. That window comes up
+  with `orderFront` and does not activate the app: the user did not ask for it. Making the offer
   records `off`, so it happens once whatever the user does.
   `docs/agent-skill-2026-09-18.md` has the reasons.
 

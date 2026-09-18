@@ -21,6 +21,7 @@ enum CommandError: String, CaseIterable {
     case noAgent = "no-agent"
     case sendFailed = "send-failed"
     case notOurs = "not-ours"
+    case linkedRoot = "linked-root"
 }
 
 /// What is wrong with an agent's `marks=`, in the words the error line uses.

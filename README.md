@@ -143,8 +143,8 @@ menu bar has the same command.
 
 - `~/.config/shotnote/settings.json`: folder, counts, timing, hotkey, backdrop. No rebuild.
 - `Sources/Config.swift`: the actions list.
-- `web/src/config.ts`: editor tools, the tool each image opens on, the colour palette (off by
-  default), stroke size.
+- `web/src/config.ts`: editor tools, the tool each image opens on, the colours a mark may be drawn
+  in, stroke size.
 - `web/src/bridge.ts` and `Sources/Bridge.swift`: the only contract between the two sides.
 
 See `AGENTS.md` for the working loop.
@@ -204,7 +204,7 @@ Every command answers with one line in `~/Library/Logs/Shotnote.log` (menu bar â
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`,
 `unreadable-image`, `page-not-ready`, `export-timeout`, `export-failed`, `settings-invalid`,
 `debug-disabled`, `no-apple-original`, `eval-failed`, `write-failed`, `unsupported-type`,
-`invalid-marks`, `no-agent`, `send-failed`, `not-ours`. The log has one event per
+`invalid-marks`, `no-agent`, `send-failed`, `not-ours`, `linked-root`. The log has one event per
 line, `HH:mm:ss.SSS [tag] key=value â€¦`, and rotates to `Shotnote.log.1` at 5 MB.
 
 For clicks, drags, and the hotkey itself, `scripts/input.sh` posts real input events (it needs
@@ -275,14 +275,18 @@ The app ships a skill that teaches a coding agent the `shotnote://` contract: pu
 is the only thing that knows which commands its version has.
 
 On the first launch that finds `~/.claude` or `~/.codex`, Shotnote opens Settings at the Agents
-section and asks once; the answer is recorded as `agentSkill` in settings.json and the question
-never comes back. Turning the toggle on copies the skill into `~/.claude/skills/shotnote` and
+section and asks once. The window comes up without taking the keyboard from what you are doing, the
+answer is recorded as `agentSkill` in settings.json, and the question never comes back. Turning the toggle on copies the skill into `~/.claude/skills/shotnote` and
 `~/.codex/skills/shotnote`; turning it off removes those copies. A later launch rewrites a copy
 that is older than the app. `open -g shotnote://install-skill` does the same from a script.
 
 The installer only ever touches a copy it made. It writes `.shotnote-skill.json` beside the skill
 naming the build that wrote it, and anything at that path without one, including a link to your own
 copy, is left alone and answered with `not-ours`.
+
+An agent directory whose `skills` is itself a link is skipped whole, with `linked-root`: writing
+through the link would put the skill inside whatever that link points at, which on this Mac is a git
+repository. Move the skill there by hand if you want it.
 
 ## Forking
 

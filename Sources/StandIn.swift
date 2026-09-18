@@ -171,6 +171,14 @@ final class StandInController {
         picture = nil
     }
 
+    /// The annotator has let this image go, while the window is still on its way down. Every
+    /// answer from the page is keyed on the image, so dropping the key here is what stops a
+    /// `draft` already in flight starting an overlay for a canvas that is being parked. The
+    /// picture and its images stay: they are what the fit-out is still drawing.
+    func sessionEnded() {
+        imageURL = nil
+    }
+
     /// The window has gone: the picture and both its images with it.
     func forget() {
         drop()

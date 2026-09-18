@@ -210,7 +210,9 @@ struct UITweaks: Codable, Equatable {
         Bound("annotationMinWidth", \.annotationMinWidth, 1...100_000), Bound("annotationMinHeight", \.annotationMinHeight, 1...100_000),
         Bound("annotationCornerRadius", \.annotationCornerRadius, 0...1000), Bound("annotationToolbarGap", \.annotationToolbarGap, 0...1000),
         Bound("annotationScreenInset", \.annotationScreenInset, 0...10_000),
-        Bound("zoomEdgeBandPoints", \.zoomEdgeBandPoints, 0...400), Bound("zoomEdgePull", \.zoomEdgePull, 0...1),
+        // `Zoom.pulledToEdges` caps the band at half a side, so any value past a frame's own size
+        // behaves the same; this is that, not a design limit. 0...400 is the slider's range.
+        Bound("zoomEdgeBandPoints", \.zoomEdgeBandPoints, 0...2000), Bound("zoomEdgePull", \.zoomEdgePull, 0...1),
         // The floor is the slider's, because below it a stitch is not a smaller picture but a
         // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),

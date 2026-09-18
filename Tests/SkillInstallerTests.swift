@@ -82,6 +82,22 @@ final class SkillInstallerTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: installed.path))
     }
 
+    func testARootWhoseSkillsDirectoryIsALinkIsNeverWrittenThrough() throws {
+        // What one agent's directory looks like on a real Mac: `skills` is a link into a
+        // repository of the user's, so a copy written through it lands somewhere they did not name.
+        let real = dir.appendingPathComponent("someone-elses-repo/skills")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("skills"), withDestinationURL: real)
+
+        XCTAssertTrue(SkillInstaller.skillsIsLink(in: root))
+        XCTAssertEqual(SkillInstaller.install(source: source, into: [root], stamp: stamp).map(\.outcome), [.linkedRoot])
+        XCTAssertEqual(SkillInstaller.remove(from: [root]).map(\.outcome), [.linkedRoot])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: real.path), [],
+                       "nothing was written through the link")
+        XCTAssertFalse(SkillInstaller.install(source: source, into: [root], stamp: stamp)[0].detail.isEmpty,
+                       "the refusal says why")
+    }
+
     func testRemoveTakesOurCopyAndReportsWhenThereIsNone() {
         XCTAssertEqual(SkillInstaller.remove(from: [root]).map(\.outcome), [.absent])
         _ = SkillInstaller.install(source: source, into: [root], stamp: stamp)

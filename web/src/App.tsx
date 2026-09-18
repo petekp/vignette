@@ -793,13 +793,16 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
   useEffect(() => {
     const onDoubleClick = (e: MouseEvent) => {
       if (editor.getCurrentToolId() !== 'select' || editor.getEditingShapeId() !== null) return
-      // The screenshot is locked and a locked shape is not hit-tested, so anything here is a mark.
-      // The same margin and the same hollow-shape rule as tldraw's own double click, so the two
-      // never both act and never both do nothing.
-      const mark = editor.getShapeAtPoint(editor.screenToPage({ x: e.clientX, y: e.clientY }), {
-        margin: editor.getHitTestMargin(),
-        hitInside: false,
-      })
+      // The select tool's own double click asks these three in this order, so asking the same
+      // three is the only way the page and tldraw never both act. A selected shape is hit
+      // anywhere inside it, hollow or not, which is why the middle one cannot be left out: a
+      // reopened card comes back with its last mark selected. The screenshot is locked and a
+      // locked shape is not hit-tested, so anything here is a mark.
+      const point = editor.screenToPage({ x: e.clientX, y: e.clientY })
+      const hovered = editor.getHoveredShape()
+      const mark = (hovered && !editor.isShapeOfType(hovered, 'group') ? hovered : null)
+        ?? editor.getSelectedShapeAtPoint(point)
+        ?? editor.getShapeAtPoint(point, { margin: editor.getHitTestMargin(), hitInside: false })
       if (mark) return
       postToNative({ type: 'smartZoom', at: cursorAnchor(editor, e) })
     }

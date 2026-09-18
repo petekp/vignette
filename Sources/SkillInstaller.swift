@@ -43,6 +43,7 @@ enum SkillInstaller {
         case removed
         case absent                 // nothing of ours to remove
         case notOurs = "not-ours"
+        case linkedRoot = "linked-root"   // the root's `skills` is a link: the copy would land elsewhere
         case failed
     }
 
@@ -68,6 +69,16 @@ enum SkillInstaller {
         }
     }
 
+    /// True when `<root>/skills` is itself a link. Writing through it puts the skill somewhere the
+    /// user did not name — on this Mac one agent's `skills` links into a git repository of theirs —
+    /// so the installer neither writes nor removes through a linked root. `attributesOfItem` is
+    /// `lstat`, so it reports the link rather than what it points at.
+    static func skillsIsLink(in root: URL) -> Bool {
+        let skills = root.appendingPathComponent("skills")
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: skills.path) else { return false }
+        return attributes[.type] as? FileAttributeType == .typeSymbolicLink
+    }
+
     /// Reads the marker. `attributesOfItem` does not follow links, so a symlink at the skill's
     /// path is foreign rather than whatever it points at.
     static func state(of root: URL) -> (state: State, stamp: Stamp?) {
@@ -83,6 +94,7 @@ enum SkillInstaller {
     static func install(source: URL, into roots: [URL], stamp: Stamp) -> [Result] {
         roots.map { root in
             let folder = folder(in: root)
+            if skillsIsLink(in: root) { return linkedRootResult(root) }
             let found = state(of: root)
             switch found.state {
             case .foreign:
@@ -107,6 +119,7 @@ enum SkillInstaller {
     static func remove(from roots: [URL]) -> [Result] {
         roots.map { root in
             let folder = folder(in: root)
+            if skillsIsLink(in: root) { return linkedRootResult(root) }
             switch state(of: root).state {
             case .none:
                 return Result(root: root, path: folder, outcome: .absent)
@@ -128,6 +141,12 @@ enum SkillInstaller {
     static func matches(source: URL, installed: URL) -> Bool {
         let wanted = files(under: source), found = files(under: installed)
         return Set(wanted.keys) == Set(found.keys) && wanted.allSatisfy { found[$0.key] == $0.value }
+    }
+
+    private static func linkedRootResult(_ root: URL) -> Result {
+        let skills = root.appendingPathComponent("skills")
+        return Result(root: root, path: folder(in: root), outcome: .linkedRoot,
+                      detail: "\(skills.path) is a link, so the skill would land somewhere else")
     }
 
     private static func marker(_ stamp: Stamp) throws -> Data {

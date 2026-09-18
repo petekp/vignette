@@ -8,11 +8,17 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let focus = SettingsFocus()
 
     /// `section` is a section id to bring into view, for a window opened to ask something.
-    func show(scrollTo section: String? = nil) {
+    /// `activating` is false for a window the user did not ask for: it comes up where they can see
+    /// it without taking the keyboard from what they are doing.
+    func show(scrollTo section: String? = nil, activating: Bool = true) {
         let win = window ?? makeWindow()
         win.center()
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if activating {
+            win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            win.orderFront(nil)
+        }
         focus.section = section
     }
 

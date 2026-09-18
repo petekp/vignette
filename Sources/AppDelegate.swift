@@ -148,8 +148,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case .unasked:
             offerAgentSkill()
         }
-        // Only what changed something: a launch with the skill already current says nothing.
-        for result in results where ![.unchanged, .absent].contains(result.outcome) {
+        // Only what changed something: a launch with the skill already current says nothing. A
+        // root refused for its link is worth one line when the user asked for an install and did
+        // not get one, and nothing at all on the removal every later launch runs.
+        let quiet: [SkillInstaller.Outcome] = choice == .off ? [.unchanged, .absent, .linkedRoot] : [.unchanged, .absent]
+        for result in results where !quiet.contains(result.outcome) {
             Log.write("[skill] \(result.outcome.rawValue) \(result.path.path)\(result.detail.isEmpty ? "" : " \(result.detail)")")
         }
         return results
@@ -163,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard !roots.isEmpty else { return }
         settings.update { $0.agentSkill = AgentSkill.off.rawValue }
         Log.write("[skill] offered \(roots.map(\.lastPathComponent).joined(separator: " "))")
-        settingsWindow.show(scrollTo: SettingsView.agentsSection)
+        settingsWindow.show(scrollTo: SettingsView.agentsSection, activating: false)
     }
 
     /// Where a copy this installer made is sitting right now, for the state report.
@@ -171,6 +174,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
             .filter { SkillInstaller.state(of: $0).state == .ours }
             .map { SkillInstaller.folder(in: $0).path }
+    }
+
+    /// Agent directories the installer will not write to, and why, for the state report: a root is
+    /// listed as usual, so silence would be the only sign it was skipped.
+    private func linkedSkillRoots() -> [String] {
+        SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
+            .filter(SkillInstaller.skillsIsLink(in:))
+            .map { $0.appendingPathComponent("skills").path }
     }
 
     /// `shotnote://install-skill`, for a script. With `root=` it installs there and leaves the
@@ -189,8 +200,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         let results = applyAgentSkill(.on, roots: roots)
         let detail = results.map { "\($0.path.path)=\($0.outcome.rawValue)" }.joined(separator: " ")
-        if let bad = results.first(where: { $0.outcome == .notOurs || $0.outcome == .failed }) {
-            Commands.error("install-skill", bad.outcome == .notOurs ? .notOurs : .writeFailed, detail)
+        if let bad = results.first(where: { [.notOurs, .linkedRoot, .failed].contains($0.outcome) }) {
+            let code: CommandError = bad.outcome == .notOurs ? .notOurs : (bad.outcome == .linkedRoot ? .linkedRoot : .writeFailed)
+            Commands.error("install-skill", code, bad.detail.isEmpty ? detail : "\(detail) \(bad.detail)")
             return
         }
         if request.root == nil, settings.data.agentSkillChoice != .on {
@@ -518,7 +530,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             "watchFolder": watchFolder.path, "settingsFile": Settings.fileURL.path, "readOnly": settings.readOnly,
             "appleThumbnail": settings.data.appleThumbnail, "recentCount": settings.data.recentCount, "hotkey": settings.data.recentHotkey, "debug": settings.data.debug,
             "launchAtLogin": settings.data.launchAtLogin, "loginItem": LoginItem.status,
-            "agentSkill": ["setting": settings.data.agentSkill, "installed": installedSkillPaths()] as [String: Any],
+            "agentSkill": ["setting": settings.data.agentSkill, "installed": installedSkillPaths(),
+                           "linkedRoots": linkedSkillRoots()] as [String: Any],
         ] as [String: Any]
         report.sections["annotator"] = annotator.stateJSON
         report.sections["drafts"] = drafts.keys.sorted()

@@ -420,8 +420,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             completion?()
         }
         fitBeforeHide { fitted = true; finish() }
-        guard let shot = current, let webView, pageReady else { answered = true; finish(); return }
+        guard let shot = current, let webView, pageReady else { standIn.sessionEnded(); answered = true; finish(); return }
         current = nil
+        standIn.sessionEnded()
         let epoch = pageEpoch
         let done: () -> Void = {
             guard !answered else { return }
