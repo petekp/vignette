@@ -740,8 +740,7 @@ final class ThumbnailController: NSObject {
         guard let id, let card = model.cards.first(where: { $0.id == id }) else { return }
         let path = card.shot.url.path
         guard flightImages[path] == nil, previews[path] == nil else { return }
-        let maxPixel = Int(ceil(max(screen.visibleFrame.width, screen.visibleFrame.height) * (screen.backingScaleFactor)))
-        Thumbnailer.load(at: card.shot.url, maxPixel: maxPixel) { [weak self] image in
+        Thumbnailer.load(at: card.shot.url, maxPixel: Thumbnailer.screenPixels(on: screen)) { [weak self] image in
             // `visible`: a decode that lands after the stack hid must not refill the cache it cleared.
             guard let self, let image, self.visible, self.previews[path] == nil else { return }
             self.flightImages[path] = image

@@ -513,8 +513,10 @@ the same driven sequence; a single run varies.
   the main thread, which cost the stack's first paint 40 ms for ten previews. The zoom stand-in
   holds two images for the image in the annotator: the screenshot, decoded no larger than the
   visible screen in device pixels, which is the same decode a flight asks for and is counted in the
-  thumbnail cache's budget; and the annotation overlay, capped at `Config.overlayMaxPixel` on the
-  longest side (about 11 MB of RGBA at 2048). Both are freed when the annotator hides.
+  thumbnail cache's budget — both ask `Thumbnailer.screenPixels(on:)`, and the cache is keyed on
+  that number, so one decode serves the two; and the annotation overlay, capped at
+  `Config.overlayMaxPixel` on the longest side (about 11 MB of RGBA at 2048). Both are freed when
+  the annotator hides.
 - Bumping tldraw (`web/package.json` pins the version; `LICENSE-tldraw.md` must be the matching
   license text) is a checklist, and `Tests/RenderTests.swift` is the gate:
   1. License: read the new version's LICENSE and its `LicenseProvider`; confirm an unlicensed

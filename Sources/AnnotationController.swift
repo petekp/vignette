@@ -243,8 +243,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     private var standInPixels: Int {
-        let screen = zoomScreen ?? NSScreen.main ?? NSScreen.screens[0]
-        return Int(ceil(max(screen.visibleFrame.width, screen.visibleFrame.height) * screen.backingScaleFactor))
+        Thumbnailer.screenPixels(on: zoomScreen ?? NSScreen.main ?? NSScreen.screens[0])
     }
 
     private func place(_ win: NSWindow, frame: NSRect) {
