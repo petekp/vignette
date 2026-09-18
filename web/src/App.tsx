@@ -32,7 +32,7 @@ import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, View
 const ZOOM_STEP = 1.25
 /** Wheel and pinch: window scale per wheel unit; pinch-out (negative deltaY) grows the window. */
 const WHEEL_ZOOM_RATE = 0.01
-import { CANDIDATES, COLORS, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, MARK_COLORS, REOPEN_TOOL, SHOW_COLORS, TOOLS, ToolId } from './config'
+import { CANDIDATES, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
 import { Area, explain, hasSample, pickColor, prepareSample } from './contrast'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
@@ -262,9 +262,6 @@ export function App() {
       setTool(id) {
         if (editor && TOOLS.some((t) => t.id === id)) selectTool(editor, id as ToolId)
       },
-      setColor(id) {
-        if (editor && COLORS.some((c) => c.id === id)) setColor(editor, id as ColorId)
-      },
       async setView(request) {
         // In the queue like every other canvas call: `export` and `build` put the camera back when
         // they restore their snapshot, so a view applied in the middle of one is undone behind the
@@ -318,8 +315,7 @@ export function App() {
             type: 'ready',
             protocol: PROTOCOL,
             tools: TOOLS.map(({ id, label, key, symbol }) => ({ id, label, key, symbol })),
-            colors: SHOW_COLORS ? COLORS.map(({ id, hex }) => ({ id, hex })) : [],
-            markColors: MARK_COLORS.map(({ id, hex }) => ({ id, hex })),
+            markColors: CANDIDATES.map(({ id, hex }) => ({ id, hex })),
           })
         }}
       />
@@ -370,7 +366,7 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
   })
   fitCamera(editor, w, h)
 
-  editor.setStyleForNextShapes(DefaultColorStyle, COLORS[0].id)
+  editor.setStyleForNextShapes(DefaultColorStyle, CANDIDATES[0].id)
   editor.setStyleForNextShapes(DefaultSizeStyle, DEFAULT_SIZE)
   editor.setStyleForNextShapes(DefaultDashStyle, 'solid')
   editor.setStyleForNextShapes(DefaultFillStyle, 'none')
@@ -585,23 +581,6 @@ function selectTool(editor: Editor, id: ToolId) {
   const t = TOOLS.find((t) => t.id === id)!
   if ('geo' in t) editor.setStyleForNextShapes(GeoShapeGeoStyle, t.geo)
   editor.setCurrentTool(t.tool)
-}
-
-function setColor(editor: Editor, id: ColorId) {
-  editor.setStyleForNextShapes(DefaultColorStyle, id)
-  const ids = editor.getSelectedShapeIds()
-  if (!ids.length) return
-  editor.setStyleForSelectedShapes(DefaultColorStyle, id)
-  // A colour the user picked is the user's: the heuristic never changes that mark again. The mark
-  // is outside undo history, like the colours the heuristic writes, so one undo cannot drop the
-  // guard and leave the colour to be picked again 300 ms later.
-  silently(editor, () => {
-    for (const shapeId of ids) {
-      const shape = editor.getShape(shapeId)
-      if (shape) editor.updateShape({ id: shapeId, type: shape.type, meta: { ...shape.meta, colorChosen: true } })
-      unpicked.delete(shapeId)
-    }
-  })
 }
 
 function activeTool(editor: Editor): ToolId | null {

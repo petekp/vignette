@@ -139,7 +139,6 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     func preload() {
         _ = FocusReturn.shared
         toolbar.onTool = { [weak self] id in self?.call(.setTool(id)) }
-        toolbar.onColor = { [weak self] id in self?.call(.setColor(id)) }
         toolbar.onDone = { [weak self] in self?.call(.finish) }
         guard let dist = Bundle.main.url(forResource: "dist", withExtension: nil) else {
             Log.write("[web] web/dist missing from bundle")
@@ -734,8 +733,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// answers, after the window is gone.
     private var holdsCanvas: Bool { current != nil || pendingHide != nil }
 
-    /// Every color the page can draw a mark in, by id: what a mark's `color` may name. Not the
-    /// toolbar's swatches, which are empty while the palette is hidden.
+    /// Every color the page can draw a mark in, by id: what an agent's `marks=` may name.
     private(set) var colorIDs: [String] = []
 
     /// Why nothing may borrow the page's canvas right now, or nil when it is free. A marks build
@@ -856,17 +854,16 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             return
         }
         switch msg {
-        case .ready(let version, let tools, let colors, let markColors):
+        case .ready(let version, let tools, let markColors):
             guard version == bridgeProtocolVersion else {
                 pageFailed = true
                 Log.write("[web] error protocol-mismatch page=\(version) app=\(bridgeProtocolVersion); rebuild with scripts/build.sh")
                 onProblem?("The editor page is out of date; rebuild the app")
                 return
             }
-            Log.write("[web] ready protocol=\(version) tools=\(tools.count) colors=\(colors.count) markColors=\(markColors.count)")
+            Log.write("[web] ready protocol=\(version) tools=\(tools.count) markColors=\(markColors.count)")
             pageReady = true
             toolbar.model.tools = tools
-            toolbar.model.colors = colors
             colorIDs = markColors.map(\.id)
             if let call = pendingCall { self.call(call); pendingCall = nil }
             // After a web process restart the window is still up: put its image and stored draft back.

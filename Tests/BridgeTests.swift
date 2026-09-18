@@ -5,22 +5,20 @@ final class BridgeTests: XCTestCase {
 
     // MARK: WebMessage decoding
 
-    func testReadyCarriesProtocolToolsAndColors() throws {
+    func testReadyCarriesProtocolToolsAndMarkColors() throws {
         let msg = WebMessage(body: [
             "type": "ready", "protocol": 3,
             "tools": [["id": "draw", "label": "Draw", "key": "d", "symbol": "pencil"], ["id": "bad"]],
-            "colors": [["id": "red", "hex": "#f00"]],
             "markColors": [["id": "red", "hex": "#f00"], ["id": "white", "hex": "#fff"]],
         ] as [String: Any])
-        guard case .ready(let version, let tools, let colors, let markColors)? = msg else { return XCTFail("\(String(describing: msg))") }
+        guard case .ready(let version, let tools, let markColors)? = msg else { return XCTFail("\(String(describing: msg))") }
         XCTAssertEqual(version, 3)
         XCTAssertEqual(tools.map(\.id), ["draw"], "an incomplete tool is dropped, not fatal")
-        XCTAssertEqual(colors.map(\.hex), ["#f00"])
-        XCTAssertEqual(markColors.map(\.id), ["red", "white"], "a mark may name a color the toolbar does not show")
+        XCTAssertEqual(markColors.map(\.id), ["red", "white"], "every color an agent's marks may name")
     }
 
     func testReadyWithoutProtocolIsVersionZero() {
-        guard case .ready(let version, _, _, _)? = WebMessage(body: ["type": "ready"]) else { return XCTFail() }
+        guard case .ready(let version, _, _)? = WebMessage(body: ["type": "ready"]) else { return XCTFail() }
         XCTAssertEqual(version, 0, "a page built before versioning must never pass the version check")
     }
 
@@ -126,13 +124,13 @@ final class BridgeTests: XCTestCase {
 
     func testStringArgumentsAreEscapedForJavaScript() {
         XCTAssertEqual(PageAPI.setTool("dr\"aw').x</script>").script, #"window.shotnote && window.shotnote.setTool("dr\"aw').x</script>");"#)
-        XCTAssertEqual(PageAPI.setColor("line\nbreak").script, #"window.shotnote && window.shotnote.setColor("line\nbreak");"#)
+        XCTAssertEqual(PageAPI.setTool("line\nbreak").script, #"window.shotnote && window.shotnote.setTool("line\nbreak");"#)
     }
 
     func testParkAwaitsAndOthersGuard() {
         XCTAssertEqual(PageAPI.park.script, "return window.shotnote ? await window.shotnote.park() : null;")
         XCTAssertEqual(PageAPI.overlay(maxPixel: 2048).script, "return window.shotnote ? await window.shotnote.overlay(2048) : null;")
-        for api in [PageAPI.reset, .finish, .setColor("red")] {
+        for api in [PageAPI.reset, .finish, .setTool("select")] {
             XCTAssertTrue(api.script.hasPrefix("window.shotnote && window.shotnote."), api.script)
         }
     }

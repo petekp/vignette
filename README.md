@@ -191,7 +191,7 @@ not depend on its pixel size:
 ```
 
 The types are `ellipse`, `rectangle`, `arrow`, and `text`; `ellipse` has no toolbar button, and an
-agent can still push one. A mark that names a `color` keeps it — any of `MARK_COLORS` in
+agent can still push one. A mark that names a `color` keeps it — any of `CANDIDATES` in
 `web/src/config.ts` — and a mark that names none is coloured from what it covers, like your own. The
 marks become a draft before the card appears, so the card shows them, Copy Drawing has them, and
 opening the card puts them in the editor to move, retype, or delete like your own. The editor builds

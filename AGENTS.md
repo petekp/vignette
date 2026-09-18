@@ -356,10 +356,10 @@ the same driven sequence; a single run varies.
   `docs/annotation-queue-2026-09-17.md` has the handover.
 - The annotator window is borderless and sized exactly to the image. Its toolbar is a native
   panel (`AnnotatorToolbar.swift`) placed under the window, never inside the page: the page
-  sends its tools, its swatches, and every color a pushed mark may name in the `ready` message,
-  reports the active tool, and takes `setTool`/`setColor`/`finish` calls. `SHOW_COLORS` in
-  `web/src/config.ts` is off, so the swatches are empty and the bar has no divider for them. Which
-  colour a mark is drawn in is the page's then, not the user's: `web/src/contrast.ts` samples the
+  sends its tools in the `ready` message, along with every color a mark may be drawn in, reports
+  the active tool, and takes `setTool`/`finish` calls. The bar is tools, one divider, Done: there
+  is no palette, so which colour a mark is drawn in is the page's, not the user's.
+  `web/src/contrast.ts` samples the
   screenshot under the mark's bounds and keeps the first colour in `CANDIDATES` whose CIELAB
   distance from those pixels is at least `MIN_COLOR_DISTANCE`, so red gives way over a red or dark
   red region and nowhere else. It runs when a mark is created and when the hand lets go, outside
@@ -400,7 +400,7 @@ the same driven sequence; a single run varies.
   it for as long as Copy Drawing runs. A refusal is one `page-not-ready` line and no file copied.
   Every call that takes a snapshot of the canvas and puts it back — `load`, `reset`, `park`,
   `export`, `build`, `overlay`, `setView`, and `finish` — runs one at a time on the page, in the
-  order the host called them. The page's own edits do not queue: `setTool`, `setColor`, the
+  order the host called them. The page's own edits do not queue: `setTool`, the
   debounced colour pass, the hotkeys' undo, redo and delete, and the resize observer's refit all
   touch the store directly, because none of them reads the canvas back. Of the queued ones, the
   rendering ones take their snapshot after an `await` and put the canvas back afterwards, so an
@@ -571,6 +571,7 @@ the same driven sequence; a single run varies.
   which is opening and how many there are (`ok <name> 1 of 3`), and each later card logs one
   `[annotate] next <name> 2 of 3`.
 - An editor tool or color: edit `web/src/config.ts`. A tool needs an SF Symbol name for the
-  native toolbar; a color needs the hex the swatch shows, and shows only while `SHOW_COLORS` is on.
+  native toolbar; a color needs its tldraw id and the hex that id is drawn in, and joins both the
+  heuristic's order and what an agent's `marks=` may name. There is no palette in the toolbar.
 - A new message across the bridge: add it to both bridge files, then handle it in
   `AnnotationController` and `App.tsx`.
