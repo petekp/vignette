@@ -50,7 +50,8 @@ its version supports. So the app is the source of the skill.
 
 ## Queued by Pete, 2026-09-16 (before sleep)
 
-Handed to agents overnight; each item's branch and verification are in the overnight report.
+All nine landed on 2026-09-17 and are merged; docs/overnight-2026-09-17.md has the verification
+and the open questions.
 
 1. Remove the dotted outline placeholder when an image leaves the stack. A blank space is fine.
 2. Add nuance to the spatial transitions: arc and depth, so a card does not move on a single
@@ -71,6 +72,136 @@ Handed to agents overnight; each item's branch and verification are in the overn
 9. A way to send an image to Claude or Codex automatically instead of copy and paste: in the
    annotator, a call to action to send it to an agent the app detects. Explore how to do this
    robustly, with high confidence, before building.
+
+## Queued by Pete, 2026-09-17
+
+Items 1 to 6 landed on 2026-09-17 on branch `todo2/integration` (worktrees under
+`~/Code/shotnote-todo/`), reviewed, not yet merged; docs/run-2026-09-17-daytime.md on that branch
+has the verification, the open questions, and the review. Items 7 onward are queued, not started.
+
+1. Drag-selecting in the stack should auto-scroll when the drag nears the top or bottom edge of
+   the column, so cards that are off screen can be selected in one gesture, the way iOS does it.
+2. Transition imperfections. Thumbnail shadows appear suddenly after a card returns from the
+   annotator to the stack. If the cursor is over a thumbnail when a card lands in the stack, it
+   flickers or flashes. On the way into the annotator, the shadow under the annotation image's
+   frame flickers.
+3. Selection numbers should count in the order the cards were selected, not top to bottom. Today
+   the number is the card's position oldest-first so it matches the stitch badge; decide whether
+   stitch order follows selection order as well.
+4. A strange sweeping blur element appears to the left of the stack and sweeps to the right. To
+   reproduce: summon the stack, hover over some thumbnails, dismiss it, summon it again, keeping
+   the cursor inside the stack area throughout; sometimes it takes one more dismiss and summon.
+5. Zoom in the annotator should zoom toward the cursor, not always the image's center: with the
+   cursor near the top left, the image should zoom into that area. Look for other zoom nuances
+   worth matching too; the goal is to feel like macOS's native image zooming.
+6. After annotating an image, dismissing it, and reopening it, be more deliberate about which
+   tldraw tool starts active. Proposal: always default back to the selection cursor. Today
+   `REOPEN_TOOL` in `web/src/config.ts` is the arrow.
+
+7. Summoning the stack should focus the newest card at once, so keyboard navigation works
+   immediately without a first click or arrow press.
+8. The number inside a selected card's circular badge looks too heavy and too widely spaced.
+   Use a tighter, crisper numeric style (a font designed for integers, with tabular or
+   proportional digits as appropriate) so the digit reads cleanly at that size.
+9. While annotating, the stack should shrink to make room when the annotation image's frame
+   grows far enough to touch it. The stack has a minimum width of about half its default width
+   so it never shrinks too far, and the image frame never grows into that minimum.
+10. Annotation queue. Selecting several cards and pressing Return, or clicking the annotate
+    button, queues them: finishing one moves on to the next in the list until all are done. The
+    cards stay selected throughout so the user can copy or stitch them afterwards.
+11. Pressing Space while hovering a card selects it, and Space over each further card adds that
+    card to the selection, so a selection can be built from the mouse position without clicking.
+12. Hovering the vertical selection strip (the toolbar beside the selected cards) grows it to the
+    right to show a label next to each icon. The button under the cursor must stay under the
+    cursor while the strip grows: hover Copy, and Copy is still under the mouse once the labels
+    are out. Open question: the strip sits to the left of the cards, so labels to the right of the
+    icons run toward the column; decide whether the icons shift left to make room or the labels
+    overlay the gap.
+13. The Copy button among a card's hover actions shows only its icon; its label appears on hover.
+    The reveal must be refined and additive, per the product's motion principles (a spring that
+    keeps its velocity when interrupted and blends into the new target, through the motion
+    scale), so a cursor that passes over and leaves mid-reveal never jumps.
+14. Remove the circle (ellipse) tool. It is redundant with the rectangle: on software
+    screenshots most things are boxes, so there is no reason to reach for a circle. The tool list
+    is `web/src/config.ts`; the native toolbar takes its tools from the page's `ready` message.
+15. Hide the colour palette by default and draw in red only. Then look into a heuristic that picks
+    a different colour from the background under the drawn shape, so a minimum contrast ratio is
+    always met (red on a red or dark-red region would switch), without the user choosing.
+16. Look into the most legible way to compose a stitched image for an LLM (vertical or grid
+    layout, gap and padding, badge size and placement, separators, downscaling limits, whether a
+    label per piece helps) and let that inform how `Stitch.swift` composes the output. Today the
+    gap, padding, and badge are fixed numbers in code.
+17. Zoom the annotator the way Photos and Quick Look do: a native stand-in during the gesture,
+    the page only at rest. Decided 2026-09-17 after three passes on the current design (window
+    frame in Swift, picture in WebKit's process, stretched bitmap between relayouts) left it
+    janky; those two drawers have no shared frame clock, so they can never be perfectly aligned.
+    Design:
+    - At rest the page is what is seen and edited, as now, with its web view sized to the frame.
+    - The first zoom input covers the page with a native stand-in inside the frame: the screenshot
+      at its native pixels, the annotations as a transparent overlay the page exported earlier,
+      the frame's rounded mask and shadow. One Core Animation layer tree, scaled by the existing
+      zoom spring at the display's rate, so frame and picture are one thing.
+    - `Zoom.split` stays the single mapping from level to (frame scale, picture scale); the
+      stand-in and the page both render from it. The pull below the fitted size stays.
+    - When the spring arrives, the web view is resized to the frame and the page is given the
+      exact camera; when it confirms the paint, the stand-in crossfades out (short, motion
+      scaled; a hard swap with motion off). The page is covered, never hidden, so its frame
+      callbacks keep running.
+    - The overlay is the existing export's "annotations alone on a transparent canvas", at a
+      capped pixel size, re-exported after each change and at load; the last one is used if a
+      new one is still rendering; with no annotations there is no overlay.
+    - Esc, Done, and a swap from a zoomed state spring home first, then fly, as today.
+    Deleted: the web view's transform scaling, the relayout cover and its deadline. Kept: the
+    transition reducer, `OutsideClick` against the frame, `[state]` keys, protocol bump on both
+    sides for the new page calls. Acceptance is Pete's own trackpad: pinch and Cmd+scroll track
+    the fingers with no lag, no misalignment, crisp throughout, and an invisible swap at rest.
+    The agent brief is `~/Code/shotnote-todo/items/zoom4.md`.
+
+## Feedback on the run-2 branch (Pete, 2026-09-17 afternoon, on `todo2/integration` c43304a)
+
+All four landed the same afternoon on `todo2/integration`, reviewed and fixed (tip f59cec8); the
+Round 3 section of docs/run-2026-09-17-daytime.md on that branch has the measurements, the
+review, and the open questions. Pete runs that build from `~/Code/shotnote-todo/pete-build/Shotnote.app`.
+
+1. Reopening an annotated image should start on the select tool and also select the last shape
+   that was added, so the next colour press or delete acts on it.
+2. Zooming the annotator is still janky: the image inside the frame is often out of sync with
+   the frame, the layout jumps and skips while zooming, and it sometimes sticks at a position or
+   size that does not match the frame. Re-evaluate how zoom is done from the bottom up.
+3. The transition glitches are still there: thumbnail shadows flicker once the annotator
+   transitions back into a thumbnail, and on the way in the shadow under the annotator flickers.
+   Direction: keep the same shadow across states and give each state its own shadow values,
+   instead of handing the shadow from one thing to another.
+4. In selection mode a card under a selected card does not respond to hover or clicks. Repro:
+   select the second most recent card, then hover or try to select the most recent one.
+
+## Open review findings from the overnight run, with the suggested fix (2026-09-17)
+
+The reviewer's reasoning is in docs/overnight-2026-09-17.md, section 5. In priority order.
+Findings 1 to 3 landed on `todo2/integration` on 2026-09-17 (1 and 2 through the page item, 3
+through the transitions item); 4 stays as written.
+
+1. The annotator can take the canvas while a `marks=` build is running. The page's `load` is
+   fire-and-forget and sits outside the `oneAtATime` queue that `park`, `export`, and `build`
+   share, so a `load` landing inside a build's render is undone when the build restores the
+   canvas. Fix: queue `load` through `oneAtATime` too. It then runs after the build has put the
+   canvas back, and `loaded` arrives a little later, which the flight already waits for before it
+   lifts. Page only; no Swift or reducer change; the wait is bounded by the build's 15 s watchdog.
+2. A draft whose preview PNG was purged from `~/Library/Caches` is invisible on its card now that
+   the badge is gone. Fix: regenerate, do not restore the badge. At launch, after `[web] ready`
+   and while the annotator is idle, run the headless export Copy Annotated already uses for every
+   draft with no preview file, at preview size, and store the result. Normally that is zero
+   renders. The preview stays a cache in Caches; the draft in Application Support stays the source.
+3. Dismissing the stack mid-stitch leaves the pieces flying over the next app and suppresses both
+   the Copied mark and the toast, so a successful stitch shows nothing. Fix: when the stack is
+   dismissed while cards are converging, end those flights with it; and in the converge's
+   completion, when the stack is no longer visible, show the existing "Stitched N images, copied"
+   toast instead of skipping the Copied mark.
+4. One `getxattr` per card on the main thread at stack open (`Agent.of`), about 4 µs each on APFS.
+   Leave it. The card already stats each file for its pixel size on the same path. Measure on the
+   real Dropbox folder before touching it; if online-only placeholders at a large `recentCount`
+   ever make it show, read the attribute where the thumbnail decodes, off the main thread, and let
+   the badge appear with the image.
 
 ## Appendix: skill draft (2026-09-16)
 
