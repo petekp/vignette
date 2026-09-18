@@ -223,7 +223,7 @@ its outline).
 All three landed on 2026-09-18 on branch `todo6/integration` (tip 4d96079), with the agent
 skill above, the architecture sweep's refactors R1 to R4, the palette removal (D6), and the
 preview cap (D3); docs/run-2026-09-18.md on that branch has the verification, the review, and
-the open questions. Not yet merged. Still open from the sweep: D1 (after a park timeout the app
+the open questions; merged into `foundation` that afternoon (f57c330). Still open from the sweep: D1 (after a park timeout the app
 believes the canvas is free while the page still holds the image; two lines) and D5 (AGENTS.md's
 length). Discussed, not decided: folding Copy Drawing into Copy, so one Copy gives the image as
 the card shows it.
