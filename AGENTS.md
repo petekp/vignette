@@ -446,11 +446,18 @@ the same driven sequence; a single run varies.
   camera each read in their own space; a keyboard step sends none and zooms about the window's
   middle, as Preview does. A two-finger double tap (`smartMagnify`) zooms twofold at the tap, or
   back to the fitted size from anywhere above it. `Sources/Zoom.swift` is the geometry: the window
-  grows away from the anchor, at scale 1 it is the fitted frame again whatever the anchor, and
-  against the edge of its room the frame slides and the anchor gives way, which is where
-  magnification takes over. The anchor is read off the frame on screen at each step, so a frame the
-  edge nudged does not carry that error forward, and a step aimed somewhere else mid-spring blends
-  from the anchor it had to the new one (`ZoomAim`) instead of stepping sideways. Zoom's springs are
+  grows away from the anchor, and at scale 1 it is the fitted frame again whatever the anchor. The
+  room gives way once, when the aim is taken: `Zoom.anchor(_:fitting:within:)` moves the anchor as
+  little as the room allows, so that the window can grow all the way to the room (`Zoom.reach`)
+  without the frame ever reaching the room's edge. The frame's path is then one straight line and
+  the clamp in `Zoom.frame` never bites. In the direction the room binds there is one such anchor,
+  so the picture pans at a steady rate as it grows; in the other the cursor's point is held exactly.
+  Dividing the room per step instead left the picture still and then sliding — 2.5 points in one
+  refresh, with the picture turning around as it went, which is the arc Pete saw
+  (`docs/zoom-2026-09-17.md`). The anchor is read off the frame on screen at each step, so a frame
+  the edge nudged does not carry that error forward, and a step aimed somewhere else mid-spring
+  blends from the anchor it had to the new one (`ZoomAim`) instead of stepping sideways; a step from
+  the fitted size has no growth to blend from and starts at its own anchor. Zoom's springs are
   in code rather than the tweaks, but the motion scale still shortens them, so `ui.motion: 0` and
   Reduce Motion land a step at once. The state report's `page.zoom` is the in-window magnification
   as tldraw sees it (1 = the image fills the window), `page.visible` is the part of the image the

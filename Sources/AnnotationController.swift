@@ -302,10 +302,13 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// Points the window's growth at `cursor`. The anchor it starts from is read off the frame on
     /// screen, so the step carries on from where the window is: a frame the screen edge has nudged
     /// does not carry that error forward, and a step aimed elsewhere mid-spring bends rather than
-    /// stepping sideways. The window standing still has nothing to aim.
+    /// stepping sideways. The anchor it ends at is the one the room allows at the target scale, so
+    /// the room gives way once, here, rather than the frame sliding part way through the spring.
+    /// The window standing still has nothing to aim.
     private func aim(at cursor: CGPoint, to target: CGFloat) {
         guard let onScreen = frameOnScreen, target != zoomScale else { return }
-        zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, scale: zoomScale, to: target)
+        zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, scale: zoomScale,
+                           to: target, within: growthLimit)
     }
 
     /// Points the magnification at `cursor`, from the part of the image that is visible now. Like
@@ -332,10 +335,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private var growthLimit: CGRect? { room ?? zoomScreen?.visibleFrame }
 
     /// The window may grow to the whole of that rect, past the fitted inset and the toolbar's room.
-    private var maxZoom: CGFloat {
-        guard let v = growthLimit, fittedFrame.width > 0, fittedFrame.height > 0 else { return 1 }
-        return max(1, min(v.width / fittedFrame.width, v.height / fittedFrame.height))
-    }
+    private var maxZoom: CGFloat { Zoom.reach(fitted: fittedFrame, within: growthLimit) }
     private var maxLevel: CGFloat { maxZoom * maxCanvasZoom }
     /// How far a gesture may pull below the fitted size before the level stops following it.
     private let minLevel: CGFloat = 0.5
