@@ -52,11 +52,13 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    That same command relaunches your build when its instance has gone, and the relaunch carries
    no `SHOTNOTE_SETTINGS`, so it runs on the user's real settings and folder: a driving script
    reads `[state]` first and stops unless `app.settingsFile` is its scratch file, and only then
-   sends an action. Several agents working in parallel (a worktree each) share one Mac and one
-   running instance, so they launch one at a time behind a lock held only around a launch and a
-   look, and put the user's own build back after every round. A build the user runs from a
-   worktree's build folder is copied to a path no build touches before that worktree is rebuilt;
-   a rebuild rewrites the bundle under the running process.
+   sends an action. `state` is no exception: sent without `-a` it launches whichever copy
+   LaunchServices has, on the user's file, and that launch fills in every settings key the copy's
+   schema has and the user's file does not. Several agents working in parallel (a worktree each)
+   share one Mac and one running instance, so they launch one at a time behind a lock held only
+   around a launch and a look, and put the user's own build back after every round. A build the
+   user runs from a worktree's build folder is copied to a path no build touches before that
+   worktree is rebuilt; a rebuild rewrites the bundle under the running process.
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
    folder, and `eval`, `show-editor`, `tweaks`, and `send` are refused, unless settings.json has
