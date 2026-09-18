@@ -14,8 +14,9 @@ enum Zoom {
 
     /// `fitted` scaled by `scale`, with the point at `anchor` left where it is at scale 1. At
     /// scale 1 the result is `fitted` whatever the anchor, so the window always comes home to
-    /// where it opened. `limit` is the screen the window may not leave: against its edge the frame
-    /// slides and the anchor gives way, which is where in-window magnification takes over.
+    /// where it opened. `limit` is the screen the window may not leave. An anchor the room allows
+    /// (`anchor(_:fitting:within:)`) never reaches that limit, so the clamp here is the last
+    /// guard, for a scale past the room or an anchor read off a frame something else placed.
     static func frame(fitted: CGRect, scale: CGFloat, anchor: CGPoint, within limit: CGRect?) -> CGRect {
         let width = fitted.width * scale, height = fitted.height * scale
         var f = CGRect(x: fitted.minX - anchor.x * (width - fitted.width),
@@ -29,12 +30,55 @@ enum Zoom {
     }
 
     /// Aims a zoom at `cursor`, a fraction of `shown`, the frame drawn at `scale`: the window ends
-    /// up at `target` with the point under the cursor still under it. The anchor it starts from
-    /// reproduces `shown`, so the step begins where the window already is.
-    static func aim(at cursor: CGPoint, of shown: CGRect, fitted: CGRect, scale: CGFloat, to target: CGFloat) -> ZoomAim {
-        ZoomAim(was: anchor(holding: cursor, of: shown, fitted: fitted, at: scale),
-                now: anchor(holding: cursor, of: shown, fitted: fitted, at: target),
-                from: scale, to: target)
+    /// up at `target` with the point under the cursor still under it, as far as `limit` allows. The
+    /// anchor it starts from reproduces `shown`, so the step begins where the window already is.
+    static func aim(at cursor: CGPoint, of shown: CGRect, fitted: CGRect, scale: CGFloat,
+                    to target: CGFloat, within limit: CGRect?) -> ZoomAim {
+        let wanted = anchor(holding: cursor, of: shown, fitted: fitted, at: target)
+        let now = anchor(wanted, fitting: fitted, within: limit)
+        // At the fitted size the frame is `fitted` whatever the anchor, so there is no growth for
+        // an anchor to describe and nothing to blend from: a step from rest starts at `now`.
+        // Blending from a made-up starting anchor bows the path instead.
+        let was = abs(scale - 1) > 1e-6 ? anchor(holding: cursor, of: shown, fitted: fitted, at: scale) : now
+        return ZoomAim(was: was, now: now, from: scale, to: target)
+    }
+
+    /// How far the window can grow before it fills the room: the scale at which one side of the
+    /// frame reaches the room's own. 1 when the frame already fills the room.
+    static func reach(fitted: CGRect, within limit: CGRect?) -> CGFloat {
+        guard let limit, fitted.width > 0, fitted.height > 0 else { return 1 }
+        return max(1, min(limit.width / fitted.width, limit.height / fitted.height))
+    }
+
+    /// `wanted` moved as little as the room allows, so that the window can grow all the way to the
+    /// room about it and the frame still never reaches the room's edge. Each edge of the frame
+    /// moves one way as the window grows, so an anchor that fits the whole growth fits every scale
+    /// on the way to it: the frame's path from the fitted size to the room is one straight line at
+    /// one set of proportions.
+    ///
+    /// This is where the room gives way, and it gives way once, for the whole growth, rather than
+    /// per step. Holding the cursor's point exactly and letting the frame slide when it reaches
+    /// the room left the picture still for most of a zoom and then sliding — measured at 2.5 points
+    /// in one refresh, out of nothing, with the picture turning around as it went. In the direction
+    /// the room binds there is exactly one anchor and the cursor cannot be held; in the other the
+    /// room has slack and the cursor is held exactly.
+    static func anchor(_ wanted: CGPoint, fitting fitted: CGRect, within limit: CGRect?) -> CGPoint {
+        guard let limit, fitted.width > 0, fitted.height > 0 else { return wanted }
+        let growth = reach(fitted: fitted, within: limit) - 1
+        return CGPoint(x: share(wanted.x, of: fitted.width * growth,
+                                near: fitted.minX - limit.minX, far: limit.maxX - fitted.maxX),
+                       y: share(wanted.y, of: fitted.height * growth,
+                                near: limit.maxY - fitted.maxY, far: fitted.minY - limit.minY))
+    }
+
+    /// The share of `growth` an anchor of `wanted` may put on the side it counts from. `near` is
+    /// the room on that side and `far` the room on the other; the anchor keeps the growth inside
+    /// both. With less room than the growth needs there is no such share, and `wanted` stands.
+    private static func share(_ wanted: CGFloat, of growth: CGFloat, near: CGFloat, far: CGFloat) -> CGFloat {
+        guard growth > 0 else { return wanted }
+        let lowest = 1 - far / growth, highest = near / growth
+        guard lowest <= highest else { return wanted }
+        return min(max(wanted, lowest), highest)
     }
 
     /// The anchor that leaves the point at `cursor` on screen where it is when `shown`, the frame
@@ -54,6 +98,31 @@ enum Zoom {
                             y: fitted.maxY - cursor.y * fitted.height * scale)
         return CGPoint(x: (grown.x - held.x) / (fitted.width * (scale - 1)),
                        y: (held.y - grown.y) / (fitted.height * (scale - 1)))
+    }
+
+    /// `cursor` pulled towards the edge of the picture it is near, so that magnifying about it
+    /// keeps that edge in view. Only the very edge of the window holds the image's own edge with
+    /// it: a point one per cent inside the window lets the image's edge slide out as soon as the
+    /// picture magnifies at all, so a cursor beside a corner has to be within a few points of it
+    /// before the corner survives a zoom.
+    ///
+    /// `band` is how far from each edge, as a fraction of the picture, the pull reaches. `pull` is
+    /// the part of that band in which the edge is taken outright; across the rest the pull eases
+    /// off to nothing at the band's inner edge, so the middle of the picture zooms about itself.
+    /// The point the zoom then holds is not the one under the cursor but the one the pull names,
+    /// which is what keeps the edge from being cropped.
+    static func pulledToEdges(_ cursor: CGPoint, band: CGFloat, pull: CGFloat) -> CGPoint {
+        CGPoint(x: pulledToEdge(cursor.x, band: band, pull: pull),
+                y: pulledToEdge(cursor.y, band: band, pull: pull))
+    }
+
+    private static func pulledToEdge(_ fraction: CGFloat, band: CGFloat, pull: CGFloat) -> CGFloat {
+        guard band > 0, band.isFinite, pull.isFinite, fraction.isFinite else { return fraction }
+        let edge: CGFloat = fraction > 0.5 ? 1 : 0
+        let depth = (band - abs(fraction - edge)) / band     // 0 at the band's inner edge, 1 at the edge
+        guard depth > 0 else { return fraction }
+        let taken = pull >= 1 ? 1 : min(1, depth / (1 - pull))
+        return fraction + (edge - fraction) * max(0, taken)
     }
 
     /// A point the page or a gesture reported, kept inside the frame it is a fraction of.

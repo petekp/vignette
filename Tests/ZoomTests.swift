@@ -36,7 +36,7 @@ final class ZoomTests: XCTestCase {
             for step in [1.2, 1.2, 1.2, 0.8, 0.9] as [CGFloat] {
                 let was = point(cursor, of: shown)
                 let target = scale * step
-                let aim = Zoom.aim(at: cursor, of: shown, fitted: fitted, scale: scale, to: target)
+                let aim = Zoom.aim(at: cursor, of: shown, fitted: fitted, scale: scale, to: target, within: nil)
                 scale = target
                 shown = Zoom.frame(fitted: fitted, scale: scale, anchor: aim.anchor(at: scale), within: nil)
                 let now = point(cursor, of: shown)
@@ -48,10 +48,10 @@ final class ZoomTests: XCTestCase {
 
     func testAimingSomewhereElseMidStepDoesNotMoveTheWindow() {
         // Grown away from the top left, then aimed at the bottom right part way through a spring.
-        let first = Zoom.aim(at: CGPoint(x: 0.08, y: 0.08), of: fitted, fitted: fitted, scale: 1, to: 1.6)
+        let first = Zoom.aim(at: CGPoint(x: 0.08, y: 0.08), of: fitted, fitted: fitted, scale: 1, to: 1.6, within: nil)
         let inFlight: CGFloat = 1.3
         let shown = Zoom.frame(fitted: fitted, scale: inFlight, anchor: first.anchor(at: inFlight), within: nil)
-        let second = Zoom.aim(at: CGPoint(x: 0.9, y: 0.9), of: shown, fitted: fitted, scale: inFlight, to: 2)
+        let second = Zoom.aim(at: CGPoint(x: 0.9, y: 0.9), of: shown, fitted: fitted, scale: inFlight, to: 2, within: nil)
         let redrawn = Zoom.frame(fitted: fitted, scale: inFlight, anchor: second.anchor(at: inFlight), within: nil)
         XCTAssertEqual(redrawn.minX, shown.minX, accuracy: 0.001, "the frame must not step sideways")
         XCTAssertEqual(redrawn.minY, shown.minY, accuracy: 0.001)
@@ -80,6 +80,48 @@ final class ZoomTests: XCTestCase {
         let cursor = CGPoint(x: 0.3, y: 0.7)
         let anchor = Zoom.anchor(holding: cursor, of: nudged, fitted: fitted, at: 2.4)
         XCTAssertEqual(Zoom.frame(fitted: fitted, scale: 2.4, anchor: anchor, within: screen), nudged)
+    }
+
+    func testTheRoomGivesWayWhenTheZoomIsAimedAndNotPartWayThroughIt() {
+        // A fitted frame with 30 points of room above it and 110 below: growing about the middle
+        // runs out at the top. The picture must not hold still and then slide when it does.
+        let room = CGRect(x: 0, y: 140, width: 1000, height: 440)
+        let reach = Zoom.reach(fitted: fitted, within: room)
+        let aim = Zoom.aim(at: Zoom.center, of: fitted, fitted: fitted, scale: 1, to: reach, within: room)
+        var walked: [CGRect] = []
+        for i in 0...200 {
+            let scale = 1 + (reach - 1) * CGFloat(i) / 200
+            let anchor = aim.anchor(at: scale)
+            let free = Zoom.frame(fitted: fitted, scale: scale, anchor: anchor, within: nil)
+            let kept = Zoom.frame(fitted: fitted, scale: scale, anchor: anchor, within: room)
+            XCTAssertEqual(kept.minX, free.minX, accuracy: 1e-6, "the room moved the frame at scale \(scale)")
+            XCTAssertEqual(kept.minY, free.minY, accuracy: 1e-6, "the room moved the frame at scale \(scale)")
+            walked.append(kept)
+        }
+        XCTAssertEqual(walked.last!.maxY, room.maxY, accuracy: 1e-6, "and it still grows into the whole room")
+        XCTAssertEqual(walked.last!.minY, room.minY, accuracy: 1e-6)
+        // Every band of the picture moves one way for the whole growth: no point turns around.
+        for band in stride(from: 0.0, through: 1.0, by: 0.05) {
+            let line = walked.map { $0.maxY - CGFloat(band) * $0.height }
+            let falling = line.last! < line.first!
+            for (a, b) in zip(line, line.dropFirst()) {
+                XCTAssertTrue(falling ? b <= a + 1e-9 : b >= a - 1e-9, "band \(band) turned around")
+            }
+        }
+    }
+
+    func testTheRoomOnlyTakesTheAnchorInTheDirectionItBinds() {
+        let room = CGRect(x: 0, y: 140, width: 1000, height: 440)
+        // The height binds: 30 points above and 110 below, against 140 of growth, leaves one anchor.
+        let allowed = Zoom.anchor(Zoom.center, fitting: fitted, within: room)
+        XCTAssertEqual(allowed.y, 30.0 / 140, accuracy: 1e-9, "the room says where the growth goes")
+        XCTAssertEqual(allowed.x, 0.5, "the width has room to spare, so the cursor keeps x")
+        XCTAssertEqual(Zoom.anchor(CGPoint(x: 0.1, y: 0.9), fitting: fitted, within: room).x, 0.1)
+        // A room the frame already fills has no growth to divide, and neither has no room at all.
+        XCTAssertEqual(Zoom.anchor(Zoom.center, fitting: fitted, within: fitted), Zoom.center)
+        XCTAssertEqual(Zoom.anchor(Zoom.center, fitting: fitted, within: nil), Zoom.center)
+        XCTAssertEqual(Zoom.reach(fitted: fitted, within: room), 440.0 / 300, accuracy: 1e-9)
+        XCTAssertEqual(Zoom.reach(fitted: fitted, within: fitted), 1)
     }
 
     func testTheFrameStaysOnTheScreenItIsGiven() {
@@ -185,6 +227,43 @@ final class ZoomTests: XCTestCase {
                 camera = next
             }
         }
+    }
+
+    func testACursorNearAnEdgeKeepsThatEdgeInView() {
+        let band: CGFloat = 0.15, pull: CGFloat = 0.5
+        // Without the pull the corner beside the cursor goes as soon as the picture magnifies.
+        let plain = ZoomPan(center: Zoom.center, camera: 1, cursor: CGPoint(x: 0.95, y: 0.95))
+        XCTAssertLessThan(Zoom.visible(center: plain.center(at: 2), camera: 2).maxX, 1 - 1e-6)
+        XCTAssertLessThan(Zoom.visible(center: plain.center(at: 2), camera: 2).maxY, 1 - 1e-6)
+        // With it, the image's bottom right corner stays in view however far the zoom goes.
+        let aimed = Zoom.pulledToEdges(CGPoint(x: 0.95, y: 0.95), band: band, pull: pull)
+        let pan = ZoomPan(center: Zoom.center, camera: 1, cursor: aimed)
+        for camera in [1.5, 2, 4, 8] as [CGFloat] {
+            let v = Zoom.visible(center: pan.center(at: camera), camera: camera)
+            XCTAssertEqual(v.maxX, 1, accuracy: 1e-9, "camera \(camera)")
+            XCTAssertEqual(v.maxY, 1, accuracy: 1e-9, "camera \(camera)")
+        }
+        // And the top left corner the same way.
+        let corner = ZoomPan(center: Zoom.center, camera: 1,
+                             cursor: Zoom.pulledToEdges(CGPoint(x: 0.04, y: 0.06), band: band, pull: pull))
+        let v = Zoom.visible(center: corner.center(at: 4), camera: 4)
+        XCTAssertEqual(v.minX, 0, accuracy: 1e-9)
+        XCTAssertEqual(v.minY, 0, accuracy: 1e-9)
+    }
+
+    func testTheMiddleOfThePictureStillZoomsAboutItself() {
+        XCTAssertEqual(Zoom.pulledToEdges(Zoom.center, band: 0.15, pull: 0.5), Zoom.center)
+        // Outside the band, and at its inner edge, the cursor is its own anchor.
+        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.7, y: 0.3), band: 0.15, pull: 0.5), CGPoint(x: 0.7, y: 0.3))
+        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.85, y: 0.15), band: 0.15, pull: 0.5), CGPoint(x: 0.85, y: 0.15))
+        // Inside the band the pull eases in rather than snapping.
+        let eased = Zoom.pulledToEdges(CGPoint(x: 0.88, y: 0.12), band: 0.15, pull: 0.5)
+        XCTAssertGreaterThan(eased.x, 0.88)
+        XCTAssertLessThan(eased.x, 1)
+        XCTAssertLessThan(eased.y, 0.12)
+        XCTAssertGreaterThan(eased.y, 0)
+        // A band of nothing leaves every cursor where it is.
+        XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.99, y: 0.01), band: 0, pull: 0.5), CGPoint(x: 0.99, y: 0.01))
     }
 
     func testAPanComesHomeToTheWholeImage() {
