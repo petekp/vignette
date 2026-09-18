@@ -1,5 +1,17 @@
 import AppKit
 
+/// A button label that comes out on hover. Measured here with AppKit, in the font the view draws it
+/// in, so the room a button makes for its label is the room the label needs.
+enum ButtonLabel {
+    private static func font(size: CGFloat) -> NSFont { .systemFont(ofSize: size, weight: .semibold) }
+
+    /// Rounded up, with a point of slack: a width a hair under what the text needs would clip its
+    /// last column of pixels.
+    static func width(_ text: String, size: CGFloat) -> CGFloat {
+        ((text as NSString).size(withAttributes: [.font: font(size: size)]).width + 1).rounded(.up)
+    }
+}
+
 /// Geometry shared by the SwiftUI cards, the transition layer, and the sweep gesture, so all agree
 /// on where each card sits. A value over one `UITweaks`, so the math is testable without settings;
 /// `StackLayout.current` reads the live tweaks for the debug panel's sliders.

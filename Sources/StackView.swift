@@ -177,11 +177,11 @@ private struct CardView: View {
                     .allowsHitTesting(false)
             }
         }
-        // Copy in the bottom-left corner with its name, delete in the bottom-right as an icon; a
-        // click anywhere else on the card draws.
+        // Copy in the bottom-left corner, delete in the bottom-right, both as icons; Copy says its
+        // name while the cursor is on it. A click anywhere else on the card draws.
         .overlay(alignment: .bottomLeading) {
             if showsButtons, let copy = Config.action(id: "copy") {
-                PillButton(symbol: copy.symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
+                RevealButton(symbol: copy.symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
                     .onHover { model.overControl = $0 }
                     .padding(6)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
@@ -370,6 +370,9 @@ private struct SelectionStrip: View {
 struct TactileButtonStyle: ButtonStyle {
     enum Shape { case circle, rounded, capsule }
     let shape: Shape
+    /// Where the hover scale grows from. A button that grows a label to the right scales from its
+    /// leading edge, so the two motions pull the same way.
+    var anchor: UnitPoint = .center
     @State private var hovered = false
     private var motion: Double { Settings.shared.motionScale }
 
@@ -384,7 +387,7 @@ struct TactileButtonStyle: ButtonStyle {
                 case .capsule: Capsule().fill(fill)
                 }
             }
-            .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? 1.08 : 1))
+            .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? 1.08 : 1), anchor: anchor)
             .animation(Anim.spring(0.2 * motion, bounce: 0.3), value: configuration.isPressed)
             .animation(Anim.spring(0.12 * motion), value: hovered)
             .onHover { hovered = $0 }
@@ -453,26 +456,58 @@ private struct DrawHint: View {
     }
 }
 
-private struct PillButton: View {
+/// A label beside an icon, out while `revealed`. The width and the opacity are animated from that
+/// one bool by whatever animation the caller puts around it; the label is never inserted or
+/// removed, because a removal transition starts again from nothing and jumps when the cursor leaves
+/// halfway. `width` is what `ButtonLabel.width` measured, plus the room the label keeps on its right.
+private struct RevealedLabel: View {
+    let text: String
+    let size: CGFloat
+    let width: CGFloat
+    let revealed: Bool
+
+    var body: some View {
+        // The same font ButtonLabel measured; the text keeps its own width and the frame around it
+        // is what grows, so the label is uncovered from the icon outwards.
+        Text(text)
+            .font(.system(size: size, weight: .semibold))
+            .fixedSize()
+            .frame(width: revealed ? width : 0, alignment: .leading)
+            .opacity(revealed ? 1 : 0)
+            .clipped()
+            .contentShape(Rectangle())   // clipping hides the text; the hit area has to shrink with it
+    }
+}
+
+/// An icon button whose label comes out beside it while the cursor is on it. At rest it is the same
+/// circle as the other icon buttons. It grows to the right, from a leading edge that never moves,
+/// so the icon stays under the cursor and the buttons around it stay where they are.
+private struct RevealButton: View {
     let symbol: String
     let label: String
     let ui: UITweaks
     let action: () -> Void
+    @State private var hovered = false
+
+    private var labelSize: CGFloat { ui.buttonIconSize - 1 }
+    private var revealWidth: CGFloat { ButtonLabel.width(label, size: labelSize) + ui.buttonSpacing * 2 }
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: symbol).font(.system(size: ui.buttonIconSize - 1, weight: .semibold))
-                Text(label).font(.system(size: ui.buttonIconSize - 1, weight: .semibold))
+            HStack(spacing: 0) {
+                Image(systemName: symbol).font(.system(size: ui.buttonIconSize, weight: .semibold))
+                    .frame(width: ui.buttonSize, height: ui.buttonSize)
+                RevealedLabel(text: label, size: labelSize, width: revealWidth, revealed: hovered)
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 9)
             .frame(height: ui.buttonSize)
             .background(Capsule().fill(.regularMaterial))
             .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
         }
-        .buttonStyle(TactileButtonStyle(shape: .capsule))
+        .buttonStyle(TactileButtonStyle(shape: .capsule, anchor: .leading))
+        .onHover { hovered = $0 }
+        .animation(Anim.spring(ui.hoverRevealDuration), value: hovered)
     }
 }
 
