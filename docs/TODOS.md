@@ -233,6 +233,14 @@ its outline).
     narrow one has more. Raise the default, or measure the gap from the widest card in the
     column rather than the widest selected one, so the strip does not step sideways when the
     selection changes; say which in the doc.
+25. Double-click with the select tool zooms into that part of the image. Pete: "enable double
+    tapping with the selection arrow tool in the annotator to zoom into that part of the image."
+    Today a two-finger double tap (`smartMagnify`) zooms twofold at the tap or back to the fitted
+    size; a mouse double-click reaches tldraw, which on empty canvas does nothing useful with
+    the tools the toolbar shows. Send a double-click on the select tool through the same path as
+    the smart zoom (the page reports it, or the host sees it first), aimed at the click, with the
+    same twofold step and the same return home from above the fitted size; a double-click on a
+    shape keeps tldraw's meaning (a text shape edits) so drawing is not disturbed.
 
 ## Feedback on the run-2 branch (Pete, 2026-09-17 afternoon, on `todo2/integration` c43304a)
 
