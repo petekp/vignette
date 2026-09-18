@@ -53,7 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         updateStatusItem()
         annotator.preload()
         thumbnail.actions = self
-        thumbnail.onAnnotatorPrepare = { [weak self] shot, frame in self?.annotator.prepare(shot, in: frame) }
+        thumbnail.onAnnotatorPrepare = { [weak self] shot, frame, room in self?.annotator.prepare(shot, in: frame, room: room) }
+        annotator.onFrame = { [weak self] frame in self?.thumbnail.annotatorFrameMoved(frame) }
         thumbnail.onAnnotatorShow = { [weak self] in self?.annotator.show() }
         thumbnail.annotatorBelow = { [weak self] in self?.annotator.spaceBelow ?? 0 }
         thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide(then: hidden) }

@@ -10,8 +10,11 @@ struct StackView: View {
     @ObservedObject var model: StackModel
     @ObservedObject private var settings = Settings.shared
 
+    /// The layout at the stack's current width; `StackLayout.current` is the same at rest.
+    private var layout: StackLayout { StackLayout(ui: settings.data.ui, widthScale: model.widthScale) }
+
     var body: some View {
-        let layout = StackLayout.current
+        let layout = self.layout
         return ZStack(alignment: .bottomTrailing) {
             // Fully transparent pixels let events fall through to the window below, so the stack
             // would only scroll over a card; a hair of alpha makes the column catch them. The
@@ -19,7 +22,7 @@ struct StackView: View {
             // so the column stays against its right edge; the strip's side catches nothing.
             Color.clear
             Color.black.opacity(model.isStack ? 0.01 : 0)
-                .frame(width: layout.maxCardWidth + layout.inset * 2)
+                .frame(width: layout.columnWidth + layout.inset * 2)
             if !model.isStack, let text = model.feedback {
                 FeedbackToast(text: text)
                     .padding(layout.inset)
@@ -50,35 +53,34 @@ struct StackView: View {
 
     private var stripPlacement: StackLayout.StripPlacement? {
         guard model.isStack, model.inSelectionMode else { return nil }
-        return StackLayout.current.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
-                                                  cards: model.cards.map(\.size), showsBar: model.showsBar,
-                                                  scroll: model.scroll, viewport: model.viewport)
+        return layout.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
+                                     cards: model.cards.map { layout.drawn($0.size) }, showsBar: model.showsBar,
+                                     scroll: model.scroll, viewport: model.viewport)
     }
 
     /// The toast leaves with the bottom card instead of vanishing under it.
     private var barSlide: CGFloat {
-        model.slidingOut ? StackLayout.current.offscreenDistance(cardWidth: StackLayout.current.maxCardWidth) : 0
+        model.slidingOut ? layout.offscreenDistance(cardWidth: layout.columnWidth) : 0
     }
 
     /// The strip starts a column's width further left, so it needs that much more to clear the screen.
     private var stripSlide: CGFloat {
-        let layout = StackLayout.current
-        return model.slidingOut ? layout.offscreenDistance(cardWidth: layout.maxCardWidth + layout.stripGap + layout.stripWidth) : 0
+        model.slidingOut ? layout.offscreenDistance(cardWidth: layout.columnWidth + layout.stripGap + layout.stripWidth) : 0
     }
 
     /// The cards, newest at the bottom, pulled down by `scroll`. What leaves the viewport fades
     /// out over the panel's inset instead of being cut.
     private var column: some View {
-        let inset = StackLayout.current.inset
-        let shadowRoom = StackLayout.current.cardShadowRoom
-        return VStack(alignment: .trailing, spacing: StackLayout.current.spacing) {
+        let inset = layout.inset
+        let shadowRoom = layout.cardShadowRoom
+        return VStack(alignment: .trailing, spacing: layout.spacing) {
             ForEach(Array(model.cards.enumerated().reversed()), id: \.element.id) { index, card in
                 CardView(card: card, index: index, model: model)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
             if model.isStack, let text = model.feedback {
                 FeedbackToast(text: text)
-                    .frame(width: StackLayout.current.maxCardWidth, height: StackLayout.current.barHeight)
+                    .frame(width: layout.columnWidth, height: layout.barHeight)
                     .transition(.opacity)
                     .offset(x: barSlide)
                     .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
@@ -88,7 +90,7 @@ struct StackView: View {
         .offset(y: model.scroll)
         .padding(inset)
         // Trailing, not centered: a lone card narrower than the widest must rest where the stack will put it.
-        .frame(width: StackLayout.current.maxCardWidth + inset * 2, height: model.viewport + inset * 2, alignment: .bottomTrailing)
+        .frame(width: layout.columnWidth + inset * 2, height: model.viewport + inset * 2, alignment: .bottomTrailing)
         .mask(
             VStack(spacing: 0) {
                 LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: inset)
@@ -127,7 +129,10 @@ private struct CardView: View {
     private var showsButtons: Bool { showsHover && !model.inSelectionMode && !copied }
     private var showsDrawHint: Bool { showsButtons && !model.overControl && !pressed && !inButtonRow }
     /// The strip along the bottom that holds the buttons, gaps included: a click there is not a draw.
-    private var inButtonRow: Bool { pointer.map { $0.y >= card.size.height - 6 - ui.buttonSize } ?? true }
+    private var inButtonRow: Bool { pointer.map { $0.y >= size.height - 6 - ui.buttonSize } ?? true }
+    /// The card on screen. `Card.size` is its size at rest; the stack narrows while the annotator
+    /// is beside it, and every card narrows with it.
+    private var size: NSSize { StackLayout(ui: ui, widthScale: model.widthScale).drawn(card.size) }
 
     var body: some View {
         ZStack {
@@ -144,12 +149,12 @@ private struct CardView: View {
                         Color(white: 0.16)   // thumbnail still decoding
                     }
                 }
-                    .frame(width: card.size.width, height: card.size.height)
+                    .frame(width: size.width, height: size.height)
                     .clipShape(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous))
                     .shadow(color: .black.opacity(ui.cardShadowOpacity), radius: ui.cardShadowRadius, y: ui.cardShadowY)
                     .overlay(
                         // Drag out as files; a plain click goes to the model (annotate, or toggle in selection mode).
-                        DragSource(urls: { dragURLs() }, image: card.image ?? NSImage(size: card.size),
+                        DragSource(urls: { dragURLs() }, image: card.image ?? NSImage(size: size),
                                    onPress: { down in model.pressedCard = down ? card.id : (model.pressedCard == card.id ? nil : model.pressedCard) },
                                    onClick: { model.onClickImage(card) })
                     )
@@ -216,7 +221,7 @@ private struct CardView: View {
                     )
             }
         }
-        .frame(width: card.size.width, height: card.size.height)
+        .frame(width: size.width, height: size.height)
         // The thumbnail fills the card, so an image whose shape differs from the card's box hangs
         // outside it, and the clip that hides it does not shrink the hit area. Without this the
         // card takes hover and clicks everywhere its image reaches, over its neighbours.
@@ -242,7 +247,7 @@ private struct CardView: View {
         .animation(Anim.spring(ui.hoverRevealDuration), value: showsHover)
         .animation(Anim.spring(ui.hoverRevealDuration), value: showsButtons)
         // Past the panel's right edge, which sits just beyond the screen edge, so the card slides off screen.
-        .offset(x: offscreen ? StackLayout.current.offscreenDistance(cardWidth: card.size.width) : 0)
+        .offset(x: offscreen ? StackLayout.current.offscreenDistance(cardWidth: size.width) : 0)
         .animation(slideAnimation.delay(slideDelay), value: offscreen)
         .onHover { inside in
             model.hoveredCard = inside ? card.id : (model.hoveredCard == card.id ? nil : model.hoveredCard)

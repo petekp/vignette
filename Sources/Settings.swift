@@ -76,6 +76,8 @@ struct UITweaks: Codable, Equatable {
     var cardSpacing = 10.0
     var panelInset = 19.0            // room for shadows inside the panel
     var screenMargin = 17.0          // distance from the screen corner
+    var stackMinScale = 0.5          // how narrow the stack goes to make room for the annotator
+    var stackGap = 24.0              // the stack keeps this much between itself and the annotator
     var cardCornerRadius = 12.0
     var cardBorderWidth = 2.0
     var cardBorderOpacity = 0.35
@@ -162,6 +164,7 @@ struct UITweaks: Codable, Equatable {
         Bound("cardMaxWidth", \.cardMaxWidth, 1...10_000), Bound("cardMaxHeight", \.cardMaxHeight, 1...10_000),
         Bound("cardMinSide", \.cardMinSide, 1...10_000), Bound("cardSpacing", \.cardSpacing, 0...1000),
         Bound("panelInset", \.panelInset, 0...1000), Bound("screenMargin", \.screenMargin, 0...10_000),
+        Bound("stackMinScale", \.stackMinScale, 0.3...1), Bound("stackGap", \.stackGap, 0...1000),
         Bound("cardCornerRadius", \.cardCornerRadius, 0...1000), Bound("cardBorderWidth", \.cardBorderWidth, 0...100),
         Bound("cardBorderOpacity", \.cardBorderOpacity, 0...1), Bound("cardShadowRadius", \.cardShadowRadius, 0...1000),
         Bound("cardShadowOpacity", \.cardShadowOpacity, 0...1), Bound("cardShadowY", \.cardShadowY, -1000...1000),

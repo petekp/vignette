@@ -90,6 +90,9 @@ and closing it hands focus back to the app you came from.
   has nobody's order to follow, so it takes the column's: oldest first.
 - The selected cards get a control strip to their left: copy, copy annotated, stitch, delete.
   It stays centered between the topmost and the bottommost selected card, and follows the selection.
+- Opening a card in the annotator narrows the stack to make room for it, down to half its width.
+  The cards keep their corner; only their size changes, and they come back when the annotator
+  closes. The annotator never grows into the width the stack keeps, however far you zoom in.
 - Drag a card out to drop it as a file on a chat window, Finder, or a terminal. A selected card
   drags the whole selection.
 - Cmd+C copies the selection as files, paths as text, and the first image's pixels, so chat apps
@@ -228,9 +231,9 @@ An image that arrives through `add` skips both: a push from an agent is not a ca
 `settings.json.invalid` and replaced with defaults, with a toast saying so.
 
 The `ui` section holds the design numbers: card sizes, corners, shadows, hover buttons, animation
-durations and curves, how far a card bows and swells on its way to the annotator, how deep the
-drag-select's edge band is and how fast it scrolls there, backdrop blur and tint, annotator window
-limits. The defaults are the tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or
+durations and curves, how far a card bows and swells on its way to the annotator, how narrow the
+stack goes to make room for it and how far it stays from it, how deep the drag-select's edge band
+is and how fast it scrolls there, backdrop blur and tint, annotator window limits. The defaults are the tuned UI, so a fresh install looks the same. With `debug` on, menu bar → Tweak UI… (or
 `open -g shotnote://tweaks`) opens a floating panel of sliders that edits them live, with buttons
 to summon the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns
 every animation off; the system's Reduce Motion does the same.

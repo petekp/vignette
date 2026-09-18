@@ -9,6 +9,7 @@ final class StackLayoutTests: XCTestCase {
         // is 19, under the 20 below, which is what the frames in these tests are written against.
         u.cardShadowY = 4; u.cardShadowRadius = 4
         u.annotationScreenInset = 60; u.annotationMinWidth = 480; u.annotationMinHeight = 140
+        u.stackMinScale = 0.5; u.stackGap = 20
         return u
     }
     private var layout: StackLayout { StackLayout(ui: ui) }
@@ -136,10 +137,51 @@ final class StackLayoutTests: XCTestCase {
     func testAnnotationFrameKeepsAspectAndCentersOnTheScreen() {
         let frame = layout.annotationFrame(for: NSSize(width: 1600, height: 800), visibleFrame: screen, below: 60)
         XCTAssertEqual(frame.width / frame.height, 2, accuracy: 0.01)
-        XCTAssertEqual(frame.midX, screen.midX, accuracy: 1, "centered on the screen, not on the space left of the stack")
+        XCTAssertEqual(frame.midX, screen.midX, accuracy: 1, "centered in the rect it is given")
         XCTAssertLessThanOrEqual(frame.maxX, 1512 - 60)
         XCTAssertGreaterThanOrEqual(frame.minY, 60 + 60)
         let small = layout.annotationFrame(for: NSSize(width: 100, height: 100), visibleFrame: screen)
         XCTAssertEqual(small.width, 480, "a small crop scales up to the minimum width")
+    }
+
+    func testTheAnnotatorsRoomLeavesTheStackItsNarrowestWidth() {
+        let room = layout.annotatorRoom(visibleFrame: screen)
+        XCTAssertEqual(room.maxX, screen.maxX - 16 - 100 - 20, "the margin, the stack at half width, and the gap")
+        XCTAssertEqual(room.minX, screen.minX)
+        XCTAssertEqual(room.height, screen.height, "only the right edge moves")
+        // A frame filling the room leaves the narrowest stack exactly a gap of clear screen.
+        let narrowest = StackLayout(ui: ui, widthScale: layout.minWidthScale)
+        let panel = narrowest.panelFrame(viewport: 100, visibleFrame: screen, showsStrip: false)
+        let card = narrowest.cardFrame(index: 0, cards: [narrowest.drawn(NSSize(width: 200, height: 100))],
+                                       panelFrame: panel, showsBar: false, scroll: 0)
+        XCTAssertEqual(card.minX, room.maxX + 20, accuracy: 0.001)
+        XCTAssertEqual(card.size, NSSize(width: 100, height: 50), "a card at half width")
+        XCTAssertEqual(card.maxX, screen.maxX - 16, "the cards keep their right edge, whatever the width")
+    }
+
+    func testTheStackIsAsWideAsTheAnnotatorsFrameLeavesIt() {
+        func scale(frameMaxX: CGFloat) -> CGFloat {
+            layout.widthScale(clearing: NSRect(x: 0, y: 100, width: frameMaxX, height: 400), visibleFrame: screen)
+        }
+        XCTAssertEqual(scale(frameMaxX: 1000), 1, "a frame that is nowhere near leaves the stack at its full width")
+        XCTAssertEqual(scale(frameMaxX: layout.annotatorRoom(visibleFrame: screen).maxX), 0.5, "at the edge of the room, the narrowest")
+        XCTAssertEqual(scale(frameMaxX: 2000), 0.5, "and never narrower, whatever is beside it")
+        XCTAssertEqual(scale(frameMaxX: 1300), 0.88, accuracy: 0.0001)
+        // In between, the column's left edge sits exactly a gap from the frame.
+        let narrowed = StackLayout(ui: ui, widthScale: scale(frameMaxX: 1300))
+        let panel = narrowed.panelFrame(viewport: 100, visibleFrame: screen, showsStrip: false)
+        let card = narrowed.cardFrame(index: 0, cards: [narrowed.drawn(NSSize(width: 200, height: 100))],
+                                      panelFrame: panel, showsBar: false, scroll: 0)
+        XCTAssertEqual(card.minX, 1300 + 20, accuracy: 0.001)
+    }
+
+    func testThePanelIsSizedForTheStackAtItsFullWidth() {
+        let narrowed = StackLayout(ui: ui, widthScale: 0.5)
+        XCTAssertEqual(narrowed.panelSize(viewport: 100, showsStrip: false),
+                       layout.panelSize(viewport: 100, showsStrip: false),
+                       "so a stack that narrows for the annotator does not resize its panel")
+        XCTAssertEqual(narrowed.columnWidth, 100, "only the column inside it narrows")
+        XCTAssertEqual(narrowed.cardSize(for: NSSize(width: 2000, height: 1000)), NSSize(width: 200, height: 100),
+                       "a card is measured at rest, so narrowing and coming back does not re-measure it")
     }
 }
