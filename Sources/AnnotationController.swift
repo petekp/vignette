@@ -60,7 +60,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         return .loading
     }
     var port: UInt16 { server?.port ?? 0 }
-    private var outsideClickMonitor: Any?
+    private let outsideClick = OutsideClick()
     /// Bumped when the web process restarts, so an answer from the old page is ignored.
     private var pageEpoch = 0
     /// The export waiting on the page, if any. Called exactly once: by the page's answer, the
@@ -548,13 +548,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
         toolbar.show()
         NSApp.activate(ignoringOtherApps: true)
-        installOutsideClickMonitor()
+        // A click outside this app's windows ends the session.
+        outsideClick.start { [weak self] in self?.cancel() }
     }
 
     /// Parks the draft, then removes the window. `then` runs once the page has answered, so a
     /// transition that starts there shows the annotations. Called once per `prepare`, by the reducer.
     func hide(then completion: (() -> Void)? = nil) {
-        removeOutsideClickMonitor()
+        outsideClick.stop()
         // The window comes home to the fitted frame before it goes. The card flies back from that
         // frame, and a zoomed window is not only somewhere else: it shows a crop of the image where
         // the flight image is the whole picture, so handing over from it would swap the content too.
@@ -832,17 +833,6 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         guard current != nil else { return }
         Log.write("[annotate] cancelled")
         onClosed?()
-    }
-
-    /// A click outside this app's windows ends the session.
-    private func installOutsideClickMonitor() {
-        removeOutsideClickMonitor()
-        outsideClickMonitor = OutsideClick.monitor { [weak self] in self?.cancel() }
-    }
-
-    private func removeOutsideClickMonitor() {
-        if let m = outsideClickMonitor { NSEvent.removeMonitor(m) }
-        outsideClickMonitor = nil
     }
 
     // MARK: WKScriptMessageHandler

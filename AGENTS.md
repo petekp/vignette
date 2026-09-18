@@ -329,7 +329,8 @@ the same driven sequence; a single run varies.
   takes them from the card below.
 - "Click outside" detection goes through `OutsideClick`. A plain global mouse monitor also
   reports clicks on this app's own floating windows (verified: a click inside the annotator
-  closed it), so the topmost window under the cursor is checked first.
+  closed it), so the topmost window under the cursor is checked first. The stack and the
+  annotator each own one; the monitor's token never leaves that file.
 - Which image is in the annotator, where it came from, and what is in flight has one owner:
   `AnnotatorTransition` (a pure reducer) held by `ThumbnailController`. Controllers send events
   (annotate, shown, parked, close, finish, newShot, dismiss, remove) and run the effects it returns
