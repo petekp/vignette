@@ -157,6 +157,20 @@ has the verification, the open questions, and the review. Items 7 onward are que
     the fingers with no lag, no misalignment, crisp throughout, and an invisible swap at rest.
     The working brief, with the order of work and the acceptance bar, is
     docs/zoom-native-brief.md.
+18. A skill that automates the multi-agent run used on 2026-09-16 and 2026-09-17: Fable plans,
+    briefs, orchestrates, and reviews; Opus subagents do the code and the verification. The skill
+    takes a base branch and a list of TODO items, groups them by the files they touch, creates a
+    folder outside the checkout with one worktree and one scratch settings file per agent (seeded
+    from the real settings, own shots folder, debug on, Apple sync off), writes the shared brief
+    and the item files from templates carrying the rules now in AGENTS.md (one launch at a time
+    behind a lock, address URLs to your own build, check the settings file in the state line
+    before any action, restore the user's build after every round), spawns the agents, then an
+    integrator (merge in order, build and tests after each merge, smoke round), then an
+    adversarial reviewer, routes confirmed findings back as review-fix commits, commits a run
+    report under docs/, hands the branch over, and prunes worktrees and branches once merged.
+    Shared between Codex and Claude Code through the setup repository's manifest, with the
+    Claude-only launcher scoped to Claude. Bootstrap prompt from 2026-09-17 is the first draft of
+    its instructions.
 
 ## Feedback on the run-2 branch (Pete, 2026-09-17 afternoon, on `todo2/integration` c43304a)
 
