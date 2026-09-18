@@ -192,7 +192,7 @@ final class ThumbnailController: NSObject {
     /// The cards as they are drawn now: at the stack's full width, or narrowed for the annotator.
     private var cardSizes: [NSSize] { model.cards.map { layout.drawn($0.size) } }
     private var ui: UITweaks { Settings.shared.motionUI }
-    private var layout: StackLayout { StackLayout(ui: ui, widthScale: model.widthScale) }
+    private var layout: StackLayout { StackLayout.current.at(widthScale: model.widthScale) }
     private var showsBar: Bool { model.showsBar }
     private var showsStrip: Bool { model.isStack && model.inSelectionMode }
 

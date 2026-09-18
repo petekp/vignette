@@ -13,9 +13,12 @@ enum ButtonLabel {
 }
 
 /// Geometry shared by the SwiftUI cards, the transition layer, and the sweep gesture, so all agree
-/// on where each card sits. A value over one `UITweaks`, so the math is testable without settings;
-/// `StackLayout.current` is that value at the stack's resting width, for the two callers that
-/// need the geometry without holding a layout: a card's slide-out and the annotator's fitted frame.
+/// on where each card sits. A value over one `UITweaks`, so the math is testable without settings.
+/// `StackLayout.current` is the only place outside the tests that reads the settings, so the panel,
+/// the cards and the state report cannot be laid out from different numbers. It takes the
+/// motion-scaled tweaks (`Settings.motionUI`), which is what every animation is built from: no
+/// layout function reads a duration or an arc today, and one that did would otherwise disagree with
+/// the animation beside it, by the whole of it under Reduce Motion, where the scale is 0.
 struct StackLayout {
     let ui: UITweaks
     /// How wide the stack is drawn, 1 at rest: the recent stack narrows to make room for the
@@ -24,7 +27,11 @@ struct StackLayout {
     /// card casts the same shadow at any width and the panel never has to be resized for it.
     var widthScale: CGFloat = 1
 
-    @MainActor static var current: StackLayout { StackLayout(ui: Settings.shared.data.ui) }
+    @MainActor static var current: StackLayout { StackLayout(ui: Settings.shared.motionUI) }
+
+    /// The same tweaks with the stack drawn at `widthScale`, for the callers that lay out the
+    /// column while it is narrowed for the annotator.
+    func at(widthScale: CGFloat) -> StackLayout { StackLayout(ui: ui, widthScale: widthScale) }
 
     /// The card box at rest. `Card.size` is measured against this, whatever the stack's width.
     var maxCardWidth: CGFloat { ui.cardMaxWidth }
