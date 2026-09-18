@@ -123,6 +123,10 @@ and closing it hands focus back to the app you came from.
 - Reopening a card you have already drawn on starts on the selection tool with the mark you
   drew last already picked up, so a drag or Delete acts on it without a click first.
   A fresh image starts on the rectangle tool.
+- Pinch, Cmd+scroll, or Cmd+plus and Cmd+minus zoom the image in the annotator; Cmd+0 fits it
+  again. A two-finger double tap, or a double-click with the selection tool, zooms in twice on the
+  point you are on and comes home to the fitted size from anywhere above it. A double-click on a
+  mark is the editor's, not the zoom's.
 - A mark is drawn in red unless red is what it sits on. The editor measures the pixels under each
   mark, when you draw it and when you let go of it, and moves to yellow, light blue, white, or
   violet, whichever is far enough from them.

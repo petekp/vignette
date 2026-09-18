@@ -293,6 +293,9 @@ export function App() {
     <div className="editor">
       <Tldraw
         hideUi
+        // A double click on the canvas is the zoom's (see `Hotkeys`), so it must not also leave a
+        // text shape behind. The text tool is how text is drawn here.
+        options={{ createTextOnCanvasDoubleClick: false }}
         licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}
         assets={assets}
         components={components}
@@ -742,7 +745,7 @@ async function exportDraftsQuietly(editor: Editor, items: ExportItem[], scale: n
 
 /// Where the cursor is as a fraction of the window: what the host and the camera both hold in
 /// place while zooming. The viewport is the window, so the same fraction reads in either space.
-function cursorAnchor(editor: Editor, e: WheelEvent): ZoomAnchor {
+function cursorAnchor(editor: Editor, e: MouseEvent): ZoomAnchor {
   const { x, y, w, h } = editor.getViewportScreenBounds()
   return { x: (e.clientX - x) / w, y: (e.clientY - y) / h }
 }
@@ -800,6 +803,27 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
       window.removeEventListener('wheel', onWheel, { capture: true })
       for (const g of gestures) window.removeEventListener(g, swallow, { capture: true })
     }
+  }, [editor])
+
+  // A double-click with the select tool zooms in on the point clicked, the same step the
+  // trackpad's two-finger double tap takes, and comes home from above the fitted size. The page
+  // decides, because it knows the tool and what is under the pointer; the host owns the zoom.
+  // Over a mark, or while a mark's text is being edited, tldraw's own meaning stands.
+  useEffect(() => {
+    const onDoubleClick = (e: MouseEvent) => {
+      if (editor.getCurrentToolId() !== 'select' || editor.getEditingShapeId() !== null) return
+      // The screenshot is locked and a locked shape is not hit-tested, so anything here is a mark.
+      // The same margin and the same hollow-shape rule as tldraw's own double click, so the two
+      // never both act and never both do nothing.
+      const mark = editor.getShapeAtPoint(editor.screenToPage({ x: e.clientX, y: e.clientY }), {
+        margin: editor.getHitTestMargin(),
+        hitInside: false,
+      })
+      if (mark) return
+      postToNative({ type: 'smartZoom', at: cursorAnchor(editor, e) })
+    }
+    window.addEventListener('dblclick', onDoubleClick, true)
+    return () => window.removeEventListener('dblclick', onDoubleClick, true)
   }, [editor])
 
   useEffect(() => {

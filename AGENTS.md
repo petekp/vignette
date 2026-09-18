@@ -472,8 +472,13 @@ the same driven sequence; a single run varies.
   window can grow no further. The message carries the
   cursor as a fraction of the window (`at`, y from the top), which the window growth and the page's
   camera each read in their own space; a keyboard step sends none, so it names the window's
-  middle, as Preview does, and the room then moves that anchor as it moves any other. A two-finger double tap (`smartMagnify`) zooms twofold at the tap, or
-  back to the fitted size from anywhere above it. `Sources/Zoom.swift` is the geometry: the window
+  middle, as Preview does, and the room then moves that anchor as it moves any other. A two-finger
+  double tap (`smartMagnify`) zooms twofold at the tap, or back to the fitted size from anywhere
+  above it, and a double-click with the select tool asks for the same step across the bridge
+  (`smartZoom`): the page decides, because it is what knows the tool and whether a mark is under
+  the pointer, and a double-click on a mark still means what tldraw means. tldraw's own
+  double-click on the canvas is off (`createTextOnCanvasDoubleClick`), so a zoom never leaves a
+  text shape behind. `Sources/Zoom.swift` is the geometry: the window
   grows away from the anchor, and at scale 1 it is the fitted frame again whatever the anchor. The
   room gives way once, when the aim is taken: `Zoom.anchor(_:fitting:within:)` moves the anchor as
   little as the room allows, so that the window can grow all the way to the room (`Zoom.reach`)

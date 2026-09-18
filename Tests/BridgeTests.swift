@@ -48,6 +48,9 @@ final class BridgeTests: XCTestCase {
         guard case .zoom(_, nil)? = WebMessage(body: ["type": "zoom", "factor": 1.25, "at": ["x": 0.5]] as [String: Any]) else { return XCTFail("half an anchor is no anchor") }
         XCTAssertNil(WebMessage(body: ["type": "zoom", "factor": 0, "at": NSNull()]), "a zero or negative factor would collapse the window")
         XCTAssertNil(WebMessage(body: ["type": "zoom"]))
+        guard case .smartZoom(let tap)? = WebMessage(body: ["type": "smartZoom", "at": ["x": 0.4, "y": 0.6]] as [String: Any]) else { return XCTFail() }
+        XCTAssertEqual(tap, CGPoint(x: 0.4, y: 0.6))
+        XCTAssertNil(WebMessage(body: ["type": "smartZoom"]), "a double click zooms about the point it names, so half a point is no message")
     }
 
     func testParkAndExportResultsDecode() {

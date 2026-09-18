@@ -3,7 +3,7 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 9
+let bridgeProtocolVersion = 10
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
@@ -137,6 +137,10 @@ enum WebMessage {
     /// fraction of the window with y from the top, whose point zoom keeps in place; nil (the
     /// keyboard) means the window's middle.
     case zoom(factor: Double?, at: CGPoint?)
+    /// A double-click with the select tool over the picture: zoom in on the point it names, or
+    /// back to the fitted size from anywhere above it. The trackpad's two-finger double tap asks
+    /// for the same thing, straight from AppKit.
+    case smartZoom(at: CGPoint)
 
     init?(body: Any) {
         guard let dict = body as? [String: Any], let type = dict["type"] as? String else { return nil }
@@ -175,6 +179,9 @@ enum WebMessage {
             if raw is NSNull { self = .zoom(factor: nil, at: at) }
             else if let n = raw as? NSNumber, n.doubleValue.isFinite, n.doubleValue > 0 { self = .zoom(factor: n.doubleValue, at: at) }
             else { return nil }
+        case "smartZoom":
+            guard let at = Self.point(dict["at"]) else { return nil }
+            self = .smartZoom(at: at)
         default: return nil
         }
     }

@@ -154,7 +154,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let webView = AnnotationWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
         webView.navigationDelegate = self
         webView.onMagnify = { [weak self] magnification, phase, location in self?.pinch(magnification, phase: phase, at: location) }
-        webView.onSmartMagnify = { [weak self] location in self?.smartZoom(at: location) }
+        webView.onSmartMagnify = { [weak self] location in
+            guard let self else { return }
+            smartZoom(at: cursorFraction(location))
+        }
         webView.setValue(false, forKey: "drawsBackground")
         webView.load(URLRequest(url: server.indexURL))
         self.webView = webView
@@ -521,12 +524,13 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         zoom(by: nil, at: nil, as: .step)
     }
 
-    /// The trackpad's two-finger double tap, as Preview and Safari use it: in on the point tapped,
-    /// or back to the fitted size from anywhere above it.
-    private func smartZoom(at locationInWindow: NSPoint) {
+    /// A two-finger double tap on the trackpad, or a double-click with the select tool, as Preview
+    /// and Safari use it: in on the point named, or back to the fitted size from anywhere above it.
+    /// `cursor` is a fraction of the window; nil zooms about its middle.
+    private func smartZoom(at cursor: CGPoint?) {
         guard window?.isVisible == true else { return }
         let zoomedIn = zoomTarget > 1.001
-        zoom(by: zoomedIn ? nil : smartZoomFactor, at: zoomedIn ? nil : cursorFraction(locationInWindow), as: .step)
+        zoom(by: zoomedIn ? nil : smartZoomFactor, at: zoomedIn ? nil : cursor, as: .step)
     }
 
     /// A point in the window's coordinates as a fraction of the visible frame, x from the left and
@@ -896,6 +900,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             // A cursor names a gesture: the wheel and the pinch send the point they are over, a
             // key sends none. The two differ only in how long their spring is.
             zoom(by: factor, at: at, as: at == nil ? .step : .gesture)
+        case .smartZoom(let at):
+            // The page has decided this double-click is not tldraw's: the tool is select and the
+            // pointer is over the picture rather than over a mark.
+            smartZoom(at: at)
         }
     }
 
