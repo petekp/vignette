@@ -77,11 +77,16 @@ and the open questions.
 
 Items 1 to 6 landed on 2026-09-17 on `todo2/integration` and were merged into `foundation` that
 evening; docs/run-2026-09-17-daytime.md has the verification, the open questions, and the review.
-Items 7 to 17 landed on the evening of 2026-09-17 on branch `todo4/integration` (tip 6bf6337,
-worktrees under `~/Code/shotnote-todo/`), reviewed and fixed, not yet merged;
-docs/run-2026-09-17-evening.md on that branch has what landed, how it was driven, the decisions,
-the open questions, the incidents, and the review. Item 18 is not started. Items 19 to 21 were
-queued that evening from Pete's first use of the todo4 build.
+Items 7 to 17 landed on the evening of 2026-09-17 on `todo4/integration` and were merged into
+`foundation` that night; docs/run-2026-09-17-evening.md has what landed, how it was driven, the
+decisions, the open questions, the incidents, and the review. Items 19 to 22 landed in the night
+of 2026-09-17 to 18 on branch `todo5/integration` (tip d1870d3, worktrees under
+`~/Code/shotnote-todo/`), reviewed and fixed, with an architecture sweep of everything since the
+foundation review, not yet merged; docs/run-2026-09-17-night.md on that branch has the
+verification, the open questions, the review, and the sweep's refactors and design questions
+for Pete. Item 18 is written as a draft skill, `shotnote-todo-run`, in the setup repository
+(`~/Code/claude-code-setup/skills/shotnote-todo-run`, uncommitted, awaiting Pete's review of
+its outline).
 
 1. Drag-selecting in the stack should auto-scroll when the drag nears the top or bottom edge of
    the column, so cards that are off screen can be selected in one gesture, the way iOS does it.
