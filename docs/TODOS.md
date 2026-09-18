@@ -75,9 +75,13 @@ and the open questions.
 
 ## Queued by Pete, 2026-09-17
 
-Items 1 to 6 landed on 2026-09-17 on branch `todo2/integration` (worktrees under
-`~/Code/shotnote-todo/`), reviewed, not yet merged; docs/run-2026-09-17-daytime.md on that branch
-has the verification, the open questions, and the review. Items 7 onward are queued, not started.
+Items 1 to 6 landed on 2026-09-17 on `todo2/integration` and were merged into `foundation` that
+evening; docs/run-2026-09-17-daytime.md has the verification, the open questions, and the review.
+Items 7 to 17 landed on the evening of 2026-09-17 on branch `todo4/integration` (tip 6bf6337,
+worktrees under `~/Code/shotnote-todo/`), reviewed and fixed, not yet merged;
+docs/run-2026-09-17-evening.md on that branch has what landed, how it was driven, the decisions,
+the open questions, the incidents, and the review. Item 18 is not started. Items 19 to 21 were
+queued that evening from Pete's first use of the todo4 build.
 
 1. Drag-selecting in the stack should auto-scroll when the drag nears the top or bottom edge of
    the column, so cards that are off screen can be selected in one gesture, the way iOS does it.
@@ -171,6 +175,25 @@ has the verification, the open questions, and the review. Items 7 onward are que
     Shared between Codex and Claude Code through the setup repository's manifest, with the
     Claude-only launcher scoped to Claude. Bootstrap prompt from 2026-09-17 is the first draft of
     its instructions.
+
+19. Zoom should keep the edge or corner under the cursor in view. Pete, 2026-09-17 evening, on
+    the todo4 build: "even when putting my cursor near a corner and zooming, the corner of the
+    image I'm hovering still gets pushed out of frame; I'd probably need my mouse to be within a
+    few pixels of the corner to keep the corner from getting cropped. Can we somehow bias towards
+    keeping the edges/corners anchored so it's harder for them to get cropped?" Today the anchor
+    is the cursor's fraction of the window (`ZoomAim`, `ZoomPan` in `Sources/Zoom.swift`), so a
+    cursor near a corner but not on it lets the corner slide out once the picture magnifies past
+    the window. Bias the anchor toward the nearest edge or corner when the cursor is within a band
+    of it, so the edge stays in view; the band and the pull are numbers a user would tune.
+20. The selection strip's hover reveal slides left as it grows. Pete: "the hover transition is
+    great. The only change we need is that it also translates to the left in tandem with the width
+    increase, so that it doesn't overlap the thumbnails." The strip keeps its right edge where it
+    is and extends to the left, so the labels never cover a card. The icons move left by the reveal,
+    and the row under the cursor is still the same button because the label is part of it.
+21. "Draw" replaces "Annotate" in user-facing language: the strip's button, the settings window,
+    the menu, the README's user-facing lines, and any toast. The card's hover hint already says
+    "Draw". URL ids (`shotnote://annotate`), log tags (`[annotate]`), and code identifiers stay
+    unless a rename is trivial and touches nothing an agent or script depends on.
 
 ## Feedback on the run-2 branch (Pete, 2026-09-17 afternoon, on `todo2/integration` c43304a)
 
