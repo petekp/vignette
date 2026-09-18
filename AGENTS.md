@@ -49,6 +49,14 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    Every checkout builds the same bundle id, so with more than one build on the Mac LaunchServices
    sends `shotnote://` to whichever copy it registered last, and that copy's launch replaces the
    instance you started: `open -g -a <your build>/Shotnote.app "shotnote://…"` aims at yours.
+   That same command relaunches your build when its instance has gone, and the relaunch carries
+   no `SHOTNOTE_SETTINGS`, so it runs on the user's real settings and folder: a driving script
+   reads `[state]` first and stops unless `app.settingsFile` is its scratch file, and only then
+   sends an action. Several agents working in parallel (a worktree each) share one Mac and one
+   running instance, so they launch one at a time behind a lock held only around a launch and a
+   look, and put the user's own build back after every round. A build the user runs from a
+   worktree's build folder is copied to a path no build touches before that worktree is rebuilt;
+   a rebuild rewrites the bundle under the running process.
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
    folder, and `eval`, `show-editor`, `tweaks`, and `send` are refused, unless settings.json has
@@ -81,6 +89,10 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    Never send Escape that way to close the stack: if the stack is not key, the keystroke reaches
    the frontmost app, and in a terminal running an agent that is the interrupt key. Use
    `open -g shotnote://dismiss` for the stack and `open -g shotnote://cancel` for the annotator.
+   Before any key or click, read `[state]` and confirm the stack or annotator is up and key: a
+   synthetic key reaches whatever is frontmost otherwise, and a click lands in whatever window is
+   there. A single `move` does not fire hover; walk the cursor in several steps and confirm
+   `stack.hovered` (or the focus) in `[state]` before trusting a capture.
    `scripts/input.sh pasteboard` prints the pasteboard's item count and types.
    Inside the editor page, `open 'shotnote://eval?<javascript>'` runs the code (async, `window.editor`
    is the tldraw editor) and logs the returned value.
@@ -109,6 +121,12 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
 Delete test files afterwards; the watch folder is the user's real screenshot folder.
+
+Measuring a handoff or a flicker: a burst of `screencapture -x -R x,y,w,h` reaches about 12 frames a
+second; `screencapture -x -v` records the region at 60, and the frames read back with AVFoundation
+give a per-frame position of an edge or the mean brightness of a band, which is how a one-frame
+step, a doubled shadow, or a mismatch between a frame and its picture is proven or ruled out.
+Compare before and after on the same driven sequence.
 
 Measuring a stutter: launch the app under Instruments and drive it as above.
 `xcrun xctrace record --template 'Time Profiler' --instrument 'Core Animation Commits' --env

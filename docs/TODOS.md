@@ -155,7 +155,8 @@ has the verification, the open questions, and the review. Items 7 onward are que
     transition reducer, `OutsideClick` against the frame, `[state]` keys, protocol bump on both
     sides for the new page calls. Acceptance is Pete's own trackpad: pinch and Cmd+scroll track
     the fingers with no lag, no misalignment, crisp throughout, and an invisible swap at rest.
-    The agent brief is `~/Code/shotnote-todo/items/zoom4.md`.
+    The working brief, with the order of work and the acceptance bar, is
+    docs/zoom-native-brief.md.
 
 ## Feedback on the run-2 branch (Pete, 2026-09-17 afternoon, on `todo2/integration` c43304a)
 
