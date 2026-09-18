@@ -153,7 +153,7 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(layout.stripReveal(labels: [], right: strip.right), 0, "no labels, no growth")
     }
 
-    func testAnnotationFrameKeepsAspectAndCentersOnTheScreen() {
+    func testAnnotationFrameKeepsAspectAndCentersInTheRectItIsGiven() {
         let frame = layout.annotationFrame(for: NSSize(width: 1600, height: 800), visibleFrame: screen, below: 60)
         XCTAssertEqual(frame.width / frame.height, 2, accuracy: 0.01)
         XCTAssertEqual(frame.midX, screen.midX, accuracy: 1, "centered in the rect it is given")

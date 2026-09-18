@@ -191,9 +191,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         do { try composed.png.write(to: out) } catch { Commands.error("stitch", .writeFailed, "\(out.path): \(error.localizedDescription)"); return }
         Clipboard.copyFiles([out])
         // readerScale is what a vision model's resize leaves of the composition; see Stitch.swift.
-        Commands.ok("stitch", "\(out.path) from \(shots.count) images, \(Int(composed.size.width))x\(Int(composed.size.height)) columns=\(composed.columns) readerScale=\(String(format: "%.2f", composed.readerScale)) \(composed.png.count) bytes, copied")
+        Commands.ok("stitch", "\(out.path) from \(composed.pieces) images, \(Int(composed.size.width))x\(Int(composed.size.height)) columns=\(composed.columns) readerScale=\(String(format: "%.2f", composed.readerScale)) \(composed.png.count) bytes, copied")
         // The cards conjoin into the new one when the stack is showing them; otherwise say so.
-        if !thumbnail.stitched(shots, into: out) { thumbnail.showFeedback("Stitched \(shots.count) images, copied") }
+        if !thumbnail.stitched(shots, into: out) { thumbnail.showFeedback("Stitched \(composed.pieces) images, copied") }
     }
 
     // MARK: Drafts

@@ -21,6 +21,10 @@ enum Stitch {
     /// the height of the UI text beside it however the reader resizes the composition.
     static let badgeFraction: CGFloat = 0.06
     static let badgeRange: ClosedRange<CGFloat> = 32...128
+    /// The floor is bigger than a small piece, so the diameter is capped at this share of the
+    /// piece's short side as well: a badge is inset by a quarter of itself, and one wider than its
+    /// own piece would hang into the gap and land on the neighbouring screenshot.
+    static let badgeMaxOfPiece: CGFloat = 0.8
 
     /// Where every piece goes, at full size. `frames` are in the composition's own space, top-left
     /// origin with y down, in the order the pieces were given.
@@ -38,6 +42,10 @@ enum Stitch {
         let png: Data
         let size: CGSize
         let columns: Int
+        /// How many of the files given are in the picture: one that will not decode is dropped, and
+        /// a caller that reported the number it asked for would be reporting a piece nobody can see.
+        let pieces: Int
+        /// What a reader's resize leaves of the original screenshots, `ui.stitchLongSide` included.
         let readerScale: CGFloat
     }
 
@@ -80,7 +88,12 @@ enum Stitch {
         guard let image = ctx.makeImage(),
               let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { return nil }
         let size = CGSize(width: width, height: height)
-        return Composition(png: png, size: size, columns: plan.columns, readerScale: readerScale(size))
+        // What the reader's resize leaves of the screenshots themselves, which is what the layout
+        // was chosen for: the cap this drawing applied and then the reader's own resize of it.
+        // Reporting the second alone said a six-piece 5K stitch arrived at 0.38 when it arrived at
+        // 0.29, because the cap had already taken a quarter of it.
+        return Composition(png: png, size: size, columns: plan.columns, pieces: reps.count,
+                           readerScale: scale * readerScale(size))
     }
 
     /// The layout that survives a reader's resize best: every column count is tried and the one
@@ -122,7 +135,8 @@ enum Stitch {
     }
 
     static func badgeDiameter(for size: CGSize) -> CGFloat {
-        clamp((badgeFraction * min(size.width, size.height)).rounded(), to: badgeRange)
+        let short = min(size.width, size.height)
+        return min(clamp((badgeFraction * short).rounded(), to: badgeRange), (badgeMaxOfPiece * short).rounded())
     }
 
     /// Pieces in reading order, row by row. A column is as wide as its widest piece and a row as

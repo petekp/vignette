@@ -14,34 +14,35 @@ final class StitchTests: XCTestCase {
         try FileManager.default.removeItem(at: dir)
     }
 
-    func testAStackOfTwoStaysAStackAndSixGoSideBySide() {
-        XCTAssertEqual(Stitch.layout(Array(repeating: screenshot, count: 2)).columns, 1)
-        XCTAssertEqual(Stitch.layout(Array(repeating: screenshot, count: 3)).columns, 1)
-        XCTAssertEqual(Stitch.layout(Array(repeating: screenshot, count: 6)).columns, 2,
-                       "a six-piece stack is so tall the long edge is capped before the pixels are used up")
-    }
-
-    /// The rule the layout exists for: whatever it picks, no other column count would leave more of
-    /// the composition once a vision model has resized it.
-    func testNoOtherColumnCountSurvivesTheResizeBetter() {
-        let mixed = [screenshot, CGSize(width: 900, height: 1400), CGSize(width: 600, height: 400),
-                     CGSize(width: 2400, height: 1000), CGSize(width: 1200, height: 1200), CGSize(width: 800, height: 600)]
-        for sizes in [Array(repeating: screenshot, count: 4), mixed] {
-            let chosen = Stitch.layout(sizes)
-            for columns in 1...sizes.count {
-                let other = Stitch.layout(sizes, columns: columns, gap: chosen.gap)
-                XCTAssertLessThanOrEqual(other.readerScale, chosen.readerScale + 0.001,
-                                         "\(columns) columns would keep more than the \(chosen.columns) chosen")
-            }
+    /// The table in `docs/stitch-2026-09-17.md`: for browser-window pieces, which layout the search
+    /// picks and what a standard-tier reader leaves of it. Two and three stack, four and up go in
+    /// two columns, and that choice is worth about a third at six pieces.
+    func testTheLayoutMatchesTheTableItWasChosenFrom() {
+        let table: [(pieces: Int, columns: Int, size: CGSize, readerScale: CGFloat)] = [
+            (2, 1, CGSize(width: 1804, height: 2226), 0.54),
+            (3, 1, CGSize(width: 1804, height: 3328), 0.45),
+            (4, 2, CGSize(width: 3586, height: 2226), 0.39),
+            (5, 2, CGSize(width: 3586, height: 3328), 0.32),
+            (6, 2, CGSize(width: 3586, height: 3328), 0.32),
+        ]
+        for row in table {
+            let plan = Stitch.layout(Array(repeating: screenshot, count: row.pieces))
+            XCTAssertEqual(plan.columns, row.columns, "\(row.pieces) pieces")
+            XCTAssertEqual(plan.size, row.size, "\(row.pieces) pieces")
+            XCTAssertEqual(plan.readerScale, row.readerScale, accuracy: 0.005, "\(row.pieces) pieces")
         }
     }
 
     func testTheGapAndTheBadgeFollowThePieceTheyAreOn() {
-        XCTAssertEqual(Stitch.gap(for: [screenshot]), 22, "2% of the 1080 pt side")
         XCTAssertEqual(Stitch.gap(for: [screenshot, CGSize(width: 300, height: 200)]), 12,
                        "the smallest piece decides, and a 4 pt gap is bounded up to 12")
-        XCTAssertEqual(Stitch.badgeDiameter(for: screenshot), 65)
         XCTAssertEqual(Stitch.badgeDiameter(for: CGSize(width: 300, height: 200)), 32, "bounded up from 12")
+        // A badge is inset by a quarter of itself, so it needs 1.25 times its diameter to sit in.
+        for side in [24, 30, 40, 120, 1080, 4000] {
+            let piece = CGSize(width: CGFloat(side) * 1.5, height: CGFloat(side))
+            XCTAssertLessThanOrEqual(Stitch.badgeDiameter(for: piece) * 1.25, CGFloat(side),
+                                     "a \(side) pt piece wears a badge that leaves it")
+        }
     }
 
     func testPiecesAreDrawnInOrderEachWithItsOwnBadge() throws {

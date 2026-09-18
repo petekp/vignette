@@ -191,7 +191,9 @@ struct UITweaks: Codable, Equatable {
         Bound("annotationMinWidth", \.annotationMinWidth, 1...100_000), Bound("annotationMinHeight", \.annotationMinHeight, 1...100_000),
         Bound("annotationCornerRadius", \.annotationCornerRadius, 0...1000), Bound("annotationToolbarGap", \.annotationToolbarGap, 0...1000),
         Bound("annotationScreenInset", \.annotationScreenInset, 0...10_000),
-        Bound("stitchLongSide", \.stitchLongSide, 64...20_000),
+        // The floor is the slider's, because below it a stitch is not a smaller picture but a
+        // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
+        Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
     ]
 }
 
@@ -223,6 +225,14 @@ final class Settings: ObservableObject {
     static let fileURL: URL = {
         if let path = ProcessInfo.processInfo.environment["SHOTNOTE_SETTINGS"], !path.isEmpty {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        }
+        // A test process never writes the user's file, whoever launched it. The scheme in
+        // project.yml sets `SHOTNOTE_SETTINGS`, but `xcrun xctest`, a hand-written `.xctestrun`,
+        // and CI running the bundle do not go through a scheme, and reading `Settings.shared` from
+        // a test bootstraps whatever path this returns. The pid keeps parallel runs apart.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            return URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("shotnote-test-\(ProcessInfo.processInfo.processIdentifier)/settings.json")
         }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/shotnote/settings.json")
     }()
