@@ -151,9 +151,20 @@ private struct CardView: View {
     private var showsCircle: Bool { model.isStack && !isOut && !isForming && (hovered || model.inSelectionMode || focused) }
     private var copied: Bool { model.copied.contains(card.id) }
     private var showsButtons: Bool { showsHover && !model.inSelectionMode && !copied }
-    private var showsDrawHint: Bool { showsButtons && !model.overControl && !pressed && !inButtonRow }
-    /// The strip along the bottom that holds the buttons, gaps included: a click there is not a draw.
-    private var inButtonRow: Bool { pointer.map { $0.y >= size.height - 6 - ui.buttonSize } ?? true }
+    private var showsDrawHint: Bool { showsButtons && !model.overControl && !pressed && !overCornerButton }
+    /// The pointer is over one of the card's two corner buttons, each button's own padding included:
+    /// a click there is the button's, not a draw. Only those two rects, so the hint stays up across
+    /// the middle of the card's bottom edge, which holds no button. Copy's label only comes out once
+    /// the button itself is hovered, and a hovered control hides the hint anyway, so the resting
+    /// width is the rect that matters here.
+    private var overCornerButton: Bool {
+        guard let p = pointer else { return true }   // no pointer, no hint
+        guard p.y >= size.height - CardView.buttonPad - ui.buttonSize else { return false }
+        let corner = ui.buttonSize + CardView.buttonPad * 2
+        return p.x <= corner || p.x >= size.width - corner
+    }
+    /// The padding every corner control is given, so the dead zone is the button plus it.
+    static let buttonPad: CGFloat = 6
     /// The card on screen. `Card.size` is its size at rest; the stack narrows while the annotator
     /// is beside it, and every card narrows with it.
     private var size: NSSize { StackLayout.current.at(widthScale: model.widthScale).drawn(card.size) }
@@ -212,7 +223,7 @@ private struct CardView: View {
             if showsButtons, let copy = Config.action(id: "copy") {
                 RevealButton(symbol: copy.symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
                     .onHover { model.overControl = $0 }
-                    .padding(6)
+                    .padding(CardView.buttonPad)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
@@ -220,14 +231,14 @@ private struct CardView: View {
             if showsButtons, let trash = Config.action(id: "trash") {
                 RoundButton(symbol: trash.symbol, help: trash.label, ui: ui) { model.onAction(trash, [card]) }
                     .onHover { model.overControl = $0 }
-                    .padding(6)
+                    .padding(CardView.buttonPad)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
         .overlay(alignment: .topTrailing) {
             if let agent = card.agent, !isOut, !isForming {
                 AgentBadge(agent: agent, size: ui.selectionCircleSize)
-                    .padding(6)
+                    .padding(CardView.buttonPad)
                     .transition(.opacity)
             }
         }
@@ -235,7 +246,7 @@ private struct CardView: View {
             if showsCircle {
                 SelectionCircle(number: model.selectionNumber(of: card.id), size: ui.selectionCircleSize)
                     .onHover { model.overControl = $0 }
-                    .padding(6)
+                    .padding(CardView.buttonPad)
                     .transition(.opacity)
                     // A press toggles; dragging from here sweeps selection down or up the column.
                     .gesture(

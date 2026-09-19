@@ -345,6 +345,11 @@ the same driven sequence; a single run varies.
   Only the recent stack does this: a lone thumbnail leaves the panel when the annotator opens, and
   a `shotnote://annotate` with no stack showing gets the whole visible frame.
   `docs/stack-room-2026-09-17.md` has the numbers.
+- The Draw hint goes out over the card's two corner buttons and nowhere else
+  (`CardView.overCornerButton`): each button's frame plus its padding, not the whole band along the
+  bottom. The middle of that band holds no button, so the hint stays up there and a click still
+  draws. Copy's grown label needs no rect of its own, since it is only out while the button is
+  hovered and `model.overControl` hides the hint then.
 - A card's thumbnail fills the card, so a screenshot whose shape differs from the card's box hangs
   outside the card's frame, and the clip that hides it does not shrink the hit area. The
   `contentShape` in `CardView` holds each card's hover and clicks to its own frame; without it a

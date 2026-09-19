@@ -98,3 +98,18 @@ they came out. One reveal width then serves both, and the panel's room is right 
 that to the panel while the strip shows, so the labels still never resize the panel's window.
 `stripLabelBox(reveal:)` is the box a row's label and shortcut share — the reveal less the icons'
 room — and every row uses it, so the shortcuts line up in a column against its trailing edge.
+
+## The card's hint, and where it steps aside (2026-09-18)
+
+The Draw hint used to go out over the whole band along the card's bottom edge, `ui.buttonSize` plus
+the padding tall and the card's full width. On a short card that is a third of the picture, and the
+middle of it holds no button.
+
+`CardView.overCornerButton` (was `inButtonRow`) is the two corner rects instead: each button's frame
+plus its `CardView.buttonPad` of padding, bottom left for Copy and bottom right for Delete. The hint
+now shows across the middle of that band, and a click there draws, as it always did.
+
+The rects are the buttons at rest. Copy's label only comes out once the button itself is hovered,
+and `model.overControl` hides the hint for as long as it is — so the grown Copy needs no rect of its
+own. The band's job was only ever to cover the moment before that hover lands, and the label is not
+out then.
