@@ -74,7 +74,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    the page turns them into a draft before the card appears, so the human edits them like their own,
    and the command answers once that draft is stored. That JSON file may also be anywhere; it is
    read on the main thread, so it is capped at 256 KB, and an error line names the mark and the
-   field without quoting what the file said.
+   field without quoting what the file said. A text mark wraps inside the image and is sized from
+   the image's width (`docs/pushed-text-2026-09-19.md`).
    `[annotate] loaded <ms>` reports when the page has the image; it is posted
    from a `requestAnimationFrame`, which WebKit pauses while the screen is locked or the
    window is hidden, so the line never arrives in that state. The canvas work itself is
@@ -627,6 +628,9 @@ the same driven sequence; a single run varies.
   6. Protocol: any change to `bridge.ts` bumps `PROTOCOL` and `bridgeProtocolVersion` together.
   7. `editor.run(fn, { history: 'ignore' })` must still keep snapshot loads out of undo history
      (the render test checks `getCanUndo()` after an export).
+  8. Text size: `DEFAULT_TEXT_POINTS` in `web/src/config.ts` is what tldraw draws a text shape at
+     for `DEFAULT_SIZE`, and tldraw keeps that number private. A pushed text's `scale` is measured
+     against it, so check it: a wrong value makes every pushed text uniformly too big or too small.
 - Exports do not use tldraw's `toImage`. In WKWebView an SVG that embeds the screenshot
   rasterizes blank (WebKit loads the inner raster image asynchronously; tldraw only sleeps
   250ms for browsers it detects as Safari, which WKWebView is not). `render()` in `App.tsx`

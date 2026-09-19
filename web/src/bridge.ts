@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 12
+export const PROTOCOL = 13
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
@@ -46,6 +46,9 @@ export interface ViewResult {
  * One annotation an agent supplied with `add?marks=`. Every number is a fraction of the image:
  * `x` and `y` from its top-left corner, `w` and `h` of its size, `x2` and `y2` where an arrow
  * points. `build` turns these into ordinary shapes, which the user then edits like their own.
+ *
+ * On a text mark `w` is the box the words wrap in, and it is optional: without it the box is the
+ * room between `x` and the right edge. `h` is the wrap's, never the mark's.
  */
 export interface Mark {
   type: 'ellipse' | 'rectangle' | 'arrow' | 'text'

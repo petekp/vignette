@@ -3,7 +3,7 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 12
+let bridgeProtocolVersion = 13
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
@@ -36,6 +36,9 @@ struct ViewRequest: Encodable, Equatable {
 /// `x` and `y` from its top-left corner, `w` and `h` of its size, `x2` and `y2` where an arrow
 /// points, so a mark does not depend on the screenshot's pixel size. `Commands.marks(from:)`
 /// checks them; the page turns them into ordinary shapes the user then edits like their own.
+///
+/// On a text mark `w` is the box the words wrap in, and it is optional: without it the box is the
+/// room between `x` and the right edge. `h` is the wrap's, never the mark's.
 struct Mark: Encodable, Equatable {
     enum Kind: String, Encodable, CaseIterable { case ellipse, rectangle, arrow, text }
 
