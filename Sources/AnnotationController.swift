@@ -266,9 +266,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// `ui.zoomEdgePull`): only the window's own edge holds the image's edge with it, so without
     /// the pull the corner the cursor is beside is cropped by the first bit of magnification. The
     /// band is measured in points of the frame the cursor is over, so its reach is the same on all
-    /// four edges however wide the screenshot is. The window's growth needs none of this — the
-    /// whole image is inside the window until the window can grow no further, so nothing can be
-    /// cropped before the magnification starts.
+    /// four edges however wide the screenshot is.
+    ///
+    /// The frame's growth is not aimed and needs none of this, but "still growing" and "nothing
+    /// cropped yet" are no longer the same state: each side reaches the room at its own level, so
+    /// the picture is already cropped in the side that got there first while the other is still
+    /// growing. The pull is applied in both directions on every input for that reason. A side that
+    /// is still growing shows the whole image in that direction, so the pull has nothing to hold
+    /// there and `Zoom.clamped(center:camera:)` pins it.
     private func aimPan(at cursor: CGPoint) {
         let ui = Settings.shared.data.ui
         let picture = frameOnScreen?.size ?? fittedFrame.size

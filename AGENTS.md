@@ -561,9 +561,11 @@ the same driven sequence; a single run varies.
   view: only the window's own edge holds the image's edge with it, so without the pull the corner
   the cursor is beside is cropped by the first bit of magnification. The band is in points rather
   than a fraction of each side, so its reach is the same on all four edges of a wide screenshot as
-  of a square one. The pull is in `ZoomPan` alone;
-  the window's growth cannot crop anything, since the whole image is inside the window until the
-  window can grow no further. The message carries the
+  of a square one. The pull is in `ZoomPan` alone; the frame's growth is not aimed, and it crops
+  nothing in a side that is still growing, because the whole image is in view in that direction
+  until that side reaches the room. The two sides reach it at different levels, so a picture can be
+  cropped in one direction while the frame is still growing in the other, which is why the pull
+  runs in both directions on every input. The message carries the
   cursor as a fraction of the window (`at`, y from the top), which the window growth and the page's
   camera each read in their own space; a keyboard step sends none, so it names the window's
   middle, as Preview does, and the room then moves that anchor as it moves any other. A two-finger
