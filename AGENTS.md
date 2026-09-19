@@ -77,7 +77,11 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    field without quoting what the file said.
    `[annotate] loaded <ms>` reports when the page has the image; it is posted
    from a `requestAnimationFrame`, which WebKit pauses while the screen is locked or the
-   window is hidden, so the line never arrives in that state.
+   window is hidden, so the line never arrives in that state. The canvas work itself is
+   synchronous and happens where `load` is called, so for an image loaded into the hidden window
+   by `prepare` the line says when the window came up, not when the page was ready to draw
+   (measured: `[eval]` of a `requestAnimationFrame` with the annotator hidden answers
+   `NO raf within 1500ms, hidden=true`).
 4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.
    Send keys with `osascript -e 'tell application "System Events" to key code 36 using command down'`
    (Return finishes annotating, Cmd+Return too while typing, key code 53 is Esc). The recent stack takes key focus, so
@@ -216,18 +220,26 @@ the same driven sequence; a single run varies.
   shadow from the same `Look.annotator`, so the two ends cannot drift apart. `dropShadow(id:)`
   zeroes a flight's shadow in the same run-loop turn the card appears or the annotator window
   comes up, so the shadow is never drawn twice and never missing for a frame.
-- Nothing takes a flight's place until it has arrived. A spring's tail runs well past its nominal
-  duration: at `expandDuration * 1.15` it is still a few points short, and a card or a window put
-  at the exact target then steps by that much, shadow included. `fly` therefore answers on
-  `arrived`, at `Anim.settle` (when the spring is within half a point of the target, with the
-  flight put exactly on it in that turn): the card retakes its slot there, the annotator window
-  comes up there, and `lift(id:)` removes the flight image then or later, when the page reports the
-  shot. The annotator draws the same ring and shadow as the flight, so a window put up earlier
-  would step against the picture the flight is still showing; the cost is the toolbar, which is
-  outside the flight image and appears with it. The window is at the fitted frame by then whatever
+- Nothing takes a flight's place until it has arrived; the annotator hides behind it before then.
+  A spring's tail runs well past its nominal duration: at `expandDuration * 1.15` it is still a few
+  points short, and a card or a window put at the exact target then steps by that much, shadow
+  included. `fly` therefore answers the picture on `arrived`, at `Anim.settle` (when the spring is
+  within half a point of the target, with the flight put exactly on it in that turn): the card
+  retakes its slot there, the annotator takes the shadow back (`AnnotationController.landed`), and
+  `lift(id:)` removes the flight image then or later, when the page reports the shot.
+  `fly` answers a second time, earlier, at `Anim.passesTarget`: a spring with bounce goes past its
+  target and comes back, so from the moment it first reaches it the flight's rect contains the
+  target on every side. The annotator's window comes up there, with its own shadow off
+  (`AnnotationController.show`), and is hidden behind the flight image until `arrived` turns the
+  shadow on and takes the image away. That is what makes the editor usable the moment the card has
+  travelled its path rather than a third of a second later: the key window, the toolbar and the
+  outside-click monitor all start with the window. A shadow is the one thing that would show,
+  because it falls outside the frame it is cast from.
+  The window is at the fitted frame by then whatever
   the zoom was: `hide` springs the level back to 1 first and comes down once that has arrived, so
   the flight starts where the picture is (`AnnotationController.fitBeforeHide`).
-  `docs/shadow-2026-09-17.md` has the frames.
+  `docs/shadow-2026-09-17.md` has the frames of the picture and the shadow changing hands;
+  `docs/handover-2026-09-18.md` has the two moments and what each one cost.
 - A card in the stack and the same card in flight have to cast the same shadow. The column is
   masked with a fade over the panel's inset at each end (`StackView.column`), and the newest card
   rests on the viewport's bottom edge, so the bottom fade starts below its shadow rather than
@@ -344,8 +356,9 @@ the same driven sequence; a single run varies.
   park is in flight, which is what serializes rapid swaps; a new screenshot during a lone
   annotation joins the panel instead of closing the editor. Every event logs one
   `[transition] <event> -> <phase> effects=…` line. The page never hides itself: it asks through
-  `onClosed`, and the reducer decides. The flight image lifts once the annotator is visible and
-  the page has reported `loaded`. Add a sequence to `AnnotatorTransitionTests` before changing
+  `onClosed`, and the reducer decides. `show` is the window coming up behind the flight, which is
+  also when the page starts answering: the flight image lifts once the page has reported `loaded`
+  and the flight has arrived. Add a sequence to `AnnotatorTransitionTests` before changing
   the table; the random-sequence test checks the invariants.
 - The flight to the annotator can be interrupted. In `flyingOut` the window has not come up, so
   nobody has seen that image and nobody could draw on it: a `close` or an `annotate` of another key

@@ -76,17 +76,22 @@ final class TransitionLayer {
     }
 
     /// Moves `id` to `to`. A new flight starts at `from`; an existing one turns from where it is.
-    /// `arrived` runs when the spring has really settled on the target. Whatever takes the flight's
-    /// place draws at the exact target, so it has to appear then or it steps by what the spring
-    /// still had to go.
+    ///
+    /// `covered` runs when the flight first reaches the target: it has travelled the whole path by
+    /// then, and from there to the end of the spring it is on the far side of the target, so it
+    /// covers the target rect on every side and something put there without a shadow is hidden
+    /// behind it. `arrived` runs when the spring has really settled on the target; whatever takes
+    /// the flight's place draws at the exact target, so it has to appear then or it steps by what
+    /// the spring still had to go.
     func fly(id: UUID, image: NSImage, from: NSRect, to: NSRect, lookFrom: Look, lookTo: Look,
-             on screen: NSScreen, arrived: @escaping () -> Void = {}) {
+             on screen: NSScreen, covered: @escaping () -> Void = {}, arrived: @escaping () -> Void = {}) {
         let ui = Settings.shared.motionUI
         showPanel(on: screen)
         let gen = start(id: id, image: image, from: from, to: to, look: lookFrom, ui: ui)
         let travel = max(abs(to.minX - from.minX), abs(to.minY - from.minY),
                          abs(to.width - from.width), abs(to.height - from.height))
         let settleTime = Anim.settle(ui.expandDuration, bounce: 0.15, distance: travel, within: Self.arrivalTolerance)
+        let coverTime = min(settleTime, Anim.passesTarget(ui.expandDuration, bounce: 0.15))
         // The starting state has to be committed before the animated change, or it starts at `to`.
         DispatchQueue.main.async { [weak self] in
             guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
@@ -97,6 +102,11 @@ final class TransitionLayer {
                 self.model.flights[i].look = lookTo
                 self.model.flights[i].opacity = 1
                 self.model.flights[i].blend = 1
+            }
+            // Scheduled before the arrival, so a duration of 0 runs the two in this order.
+            DispatchQueue.main.asyncAfter(deadline: .now() + coverTime) { [weak self] in
+                guard let self, self.isCurrent(id, gen) else { return }
+                covered()
             }
             // The spring's tail runs on past its nominal duration. By here
             // it is inside `arrivalTolerance`, so putting it exactly on the target is a sub-pixel

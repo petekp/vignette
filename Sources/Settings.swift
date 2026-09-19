@@ -628,6 +628,23 @@ enum Anim {
         duration > 0 ? .spring(duration: duration, bounce: bounce) : .linear(duration: 0)
     }
 
+    /// When the same spring first reaches its target. From there until it settles it is on the far
+    /// side of it, coming back, so a rect animated by it contains the target on every side and
+    /// covers anything drawn there. A spring that does not overshoot never reaches its target;
+    /// this is then its whole settling time, and a caller that takes the earlier of this and
+    /// `settle` gets no early cover, which is the right answer for one.
+    static func passesTarget(_ duration: Double, bounce: Double = 0) -> Double {
+        guard duration > 0 else { return 0 }
+        let spring = Spring(duration: duration, bounce: bounce)
+        let step = duration / 64
+        var t = 0.0
+        while t <= spring.settlingDuration {
+            if spring.value(target: 1.0, time: t) >= 1 { return t }
+            t += step
+        }
+        return spring.settlingDuration
+    }
+
     /// When the same spring is within `within` points of a target `distance` points away. Its tail
     /// runs well past its nominal duration: at 1.15 times it is still about 0.4% short, which is
     /// several points across a screen. Uses SwiftUI's own spring, so it matches what it animates.

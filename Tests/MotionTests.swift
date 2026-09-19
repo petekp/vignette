@@ -44,6 +44,25 @@ final class MotionTests: XCTestCase {
                        "motion off hands over in the same turn")
     }
 
+    /// The annotator's window comes up at `passesTarget`, behind the flight image. What makes that
+    /// safe is that the flight is on the far side of the frame from then until it settles, so the
+    /// window is covered on every side.
+    @MainActor func testAFlightCoversItsTargetFromTheMomentItReachesIt() {
+        let duration = 0.4, bounce = 0.15
+        let spring = Spring(duration: duration, bounce: bounce)
+        let covers = Anim.passesTarget(duration, bounce: bounce)
+        let settled = Anim.settle(duration, bounce: bounce, distance: 1138, within: 0.5)
+        XCTAssertLessThan(covers, settled, "the window comes up well before the spring is done")
+        for t in stride(from: covers, through: settled, by: duration / 32) {
+            XCTAssertGreaterThanOrEqual(spring.value(target: 1.0, time: t), 1,
+                                        "past the target at \(t) s, so the frame drawn there is behind the flight")
+        }
+        XCTAssertGreaterThanOrEqual(Anim.passesTarget(duration, bounce: 0),
+                                    Anim.settle(duration, bounce: 0, distance: 1138, within: 0.5),
+                                    "a spring that does not overshoot never covers early")
+        XCTAssertEqual(Anim.passesTarget(0, bounce: bounce), 0, "motion off covers and arrives in the same turn")
+    }
+
     // MARK: The flight curve
 
     private let leg = FlightCurve(arc: 0.2, arcMax: 1000, depth: 0.5)
