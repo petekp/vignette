@@ -32,25 +32,32 @@ enum Dock {
 
     private static var cached: (pid: pid_t, element: AXUIElement)?
 
+    /// A wedged Dock must not stall a layout pass; the caller treats no answer as no Dock. Set on
+    /// every element this file reads, not once on the application: the timeout belongs to the
+    /// object it is set on and is not inherited by the children that come back from it, so the
+    /// child reads below would otherwise wait the process-wide default on the main thread.
+    private static let readTimeout: Float = 0.25
+
     @MainActor
     private static func element() -> AXUIElement? {
         guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return nil }
         let pid = dock.processIdentifier
         if let cached, cached.pid == pid { return cached.element }
         let element = AXUIElementCreateApplication(pid)
-        // A wedged Dock must not stall a layout pass; the caller treats no answer as no Dock.
-        AXUIElementSetMessagingTimeout(element, 0.25)
+        AXUIElementSetMessagingTimeout(element, readTimeout)
         cached = (pid, element)
         return element
     }
 
     private static func role(of element: AXUIElement) -> String? {
+        AXUIElementSetMessagingTimeout(element, readTimeout)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value) == .success else { return nil }
         return value as? String
     }
 
     private static func frame(of element: AXUIElement) -> CGRect? {
+        AXUIElementSetMessagingTimeout(element, readTimeout)
         var position: CFTypeRef?, size: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &position) == .success,
               AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &size) == .success else { return nil }

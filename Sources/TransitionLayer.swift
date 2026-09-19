@@ -45,8 +45,11 @@ final class TransitionLayer {
         /// the bow comes from both paths, so a retarget bends instead of stepping sideways.
         var blend: CGFloat = 1
         var generation = 0
-        /// Runs if this flight is removed before it arrives, so whatever it was covering can take
-        /// over. Aiming the flight again replaces it; arriving clears it.
+        /// Runs when `end(id:)` or `endAll()` removes this flight before it arrived, so whatever it
+        /// was covering can take over. Aiming the flight again replaces it; arriving clears it.
+        /// `converge` removes its pieces without running it, which nothing can notice today: only
+        /// the annotator's outbound flight sets a handler, and `ThumbnailController.stitched`
+        /// refuses to start a stitch while the annotator has anything in flight.
         var dropped: (() -> Void)?
     }
 
