@@ -91,6 +91,9 @@ final class CommandsTests: XCTestCase {
                        [Mark(type: .arrow, x: 0.5, y: 0.5, x2: 0.7, y2: 0.6)])
         XCTAssertEqual(try Commands.marks(from: #"[{"type":"text","x":0.1,"y":0.8,"text":"Header should not scroll"}]"#),
                        [Mark(type: .text, x: 0.1, y: 0.8, text: "Header should not scroll")])
+        // A text mark may name the box its words wrap in; without one the page uses the room to the edge.
+        XCTAssertEqual(try Commands.marks(from: #"[{"type":"text","x":0.1,"y":0.8,"w":0.4,"text":"Header should not scroll"}]"#),
+                       [Mark(type: .text, x: 0.1, y: 0.8, w: 0.4, text: "Header should not scroll")])
     }
 
     func testMarksNameTheOneThingWrong() throws {
@@ -106,6 +109,8 @@ final class CommandsTests: XCTestCase {
             (#"[{"type":"ellipse","x":0,"y":0,"w":0,"h":0.1}]"#, "w must be more than 0"),
             (#"[{"type":"arrow","x":0.1,"y":0.1,"x2":0.1,"y2":0.1}]"#, "ends where it starts"),
             (#"[{"type":"text","x":0.1,"y":0.1}]"#, "text is missing"),
+            (#"[{"type":"text","x":0.1,"y":0.1,"w":1.4,"text":"x"}]"#, "w must be a number from 0 to 1"),
+            (#"[{"type":"text","x":0.1,"y":0.1,"w":0,"text":"x"}]"#, "w must be more than 0"),
         ]
         for (value, expected) in cases {
             XCTAssertThrowsError(try Commands.marks(from: value), value) { error in

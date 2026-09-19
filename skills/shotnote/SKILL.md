@@ -39,10 +39,13 @@ fraction of the image: `x`,`y` is a shape's top-left corner or an arrow's tail, 
 ```json
 [{"type": "ellipse", "x": 0.12, "y": 0.30, "w": 0.20, "h": 0.10},
  {"type": "arrow", "x": 0.50, "y": 0.50, "x2": 0.70, "y2": 0.60},
- {"type": "text", "x": 0.10, "y": 0.80, "text": "This header should not scroll"}]
+ {"type": "text", "x": 0.10, "y": 0.80, "w": 0.50, "text": "This header should not scroll"}]
 ```
 
 - Types: `ellipse`, `rectangle`, `arrow`, `text`. At most 100 marks and 256 KB.
+- A text mark's `w` is the box its words wrap in, and it is optional: the default is the room
+  between `x` and the right edge. Write the sentence you mean; it is sized for the image and wrapped,
+  and a box that would run off the image is pulled back inside, so nothing you push is cut off.
 - A mark with no `color` is coloured from the pixels it covers. To choose: `red`, `yellow`,
   `light-blue`, `white`, `violet`.
 - `[add] ok <name> … marks=<n>` says they landed. `invalid-marks` names the mark and the field.

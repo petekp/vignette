@@ -32,7 +32,19 @@ import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, View
 const ZOOM_STEP = 1.25
 /** Wheel and pinch: window scale per wheel unit; pinch-out (negative deltaY) grows the window. */
 const WHEEL_ZOOM_RATE = 0.01
-import { CANDIDATES, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
+import {
+  CANDIDATES,
+  ColorId,
+  DEFAULT_SIZE,
+  DEFAULT_TEXT_POINTS,
+  DEFAULT_TOOL,
+  PUSHED_TEXT_MARGIN,
+  PUSHED_TEXT_MIN_WIDTH,
+  PUSHED_TEXT_SIZE,
+  REOPEN_TOOL,
+  TOOLS,
+  ToolId,
+} from './config'
 import { Area, explain, hasSample, pickColor, prepareSample } from './contrast'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
@@ -506,13 +518,16 @@ function removeAll(editor: Editor) {
   if (assets.length) editor.deleteAssets(assets)
 }
 
-/// An agent's marks as ordinary shapes, in canvas points: the image is at the origin, `w` by `h`,
-/// and every mark number is a fraction of it. The host has already checked the numbers and the color.
-function createMarks(editor: Editor, marks: Mark[], w: number, h: number): TLShapeId[] {
+/// An agent's marks as ordinary shapes, in canvas points: `image` is the box the screenshot
+/// occupies, and every mark number is a fraction of it. The host has already checked the numbers
+/// and the color.
+function createMarks(editor: Editor, marks: Mark[], image: Box): { unnamed: TLShapeId[]; texts: TLShapeId[] } {
   const unnamed: TLShapeId[] = []
+  const texts: TLShapeId[] = []
+  const margin = PUSHED_TEXT_MARGIN * image.w
   for (const m of marks) {
-    const x = m.x * w
-    const y = m.y * h
+    const x = image.x + m.x * image.w
+    const y = image.y + m.y * image.h
     const color = (m.color ?? CANDIDATES[0].id) as ColorId
     // A mark that names a colour keeps it; one that names none is the heuristic's to colour.
     const meta = m.color ? { colorChosen: true } : {}
@@ -525,10 +540,32 @@ function createMarks(editor: Editor, marks: Mark[], w: number, h: number): TLSha
         x,
         y,
         meta,
-        props: { start: { x: 0, y: 0 }, end: { x: (m.x2! - m.x) * w, y: (m.y2! - m.y) * h }, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
+        props: {
+          start: { x: 0, y: 0 },
+          end: { x: (m.x2! - m.x) * image.w, y: (m.y2! - m.y) * image.h },
+          color,
+          size: DEFAULT_SIZE,
+          dash: 'solid',
+          fill: 'none',
+        },
       })
     } else if (m.type === 'text') {
-      editor.createShape({ id, type: 'text', x, y, meta, props: { richText: toRichText(m.text!), color, size: DEFAULT_SIZE } })
+      // A pushed text is drawn at a size the image gives it and wrapped in a box, so a sentence is
+      // neither huge on a crop nor one line that runs off the edge. `scale` multiplies both the
+      // font and `w`, so the box on the canvas is `w * scale`: dividing here is what makes the
+      // wrap land where the mark asked for it.
+      const scale = (PUSHED_TEXT_SIZE * image.w) / DEFAULT_TEXT_POINTS
+      const room = image.x + image.w - margin - x
+      const box = m.w === undefined ? Math.max(PUSHED_TEXT_MIN_WIDTH * image.w, room) : m.w * image.w
+      editor.createShape({
+        id,
+        type: 'text',
+        x,
+        y,
+        meta,
+        props: { richText: toRichText(m.text!), color, size: DEFAULT_SIZE, scale, autoSize: false, w: box / scale },
+      })
+      texts.push(id)
     } else {
       editor.createShape({
         id,
@@ -536,11 +573,40 @@ function createMarks(editor: Editor, marks: Mark[], w: number, h: number): TLSha
         x,
         y,
         meta,
-        props: { geo: m.type, w: m.w! * w, h: m.h! * h, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
+        props: { geo: m.type, w: m.w! * image.w, h: m.h! * image.h, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
       })
     }
   }
-  return unnamed
+  return { unnamed, texts }
+}
+
+/// Moves pushed text marks back inside the image. How tall a box is depends on where the text
+/// wraps and how wide the font draws it, neither of which the agent that sent the mark can know,
+/// so each box is measured once it exists. A box with no room to spare rests against the top left
+/// margin: the start of the text is what has to show.
+///
+/// The measure needs the font the text is drawn in. A page that has not drawn text yet has not
+/// loaded it, and measures the fallback instead, so the wait comes first: it is the font already
+/// in `web/dist`, and every later push finds it loaded.
+async function pullTextsInside(editor: Editor, texts: TLShapeId[], image: Box) {
+  await editor.fonts.loadRequiredFontsForCurrentPage()
+  const margin = PUSHED_TEXT_MARGIN * image.w
+  silently(editor, () => {
+    for (const id of texts) {
+      const bounds = editor.getShapePageBounds(id)
+      const shape = editor.getShape(id)
+      if (!bounds || !shape) continue
+      const x = within(bounds.x, image.x + margin, image.x + image.w - margin - bounds.w)
+      const y = within(bounds.y, image.y + margin, image.y + image.h - margin - bounds.h)
+      if (x === bounds.x && y === bounds.y) continue
+      editor.updateShape({ id, type: 'text', x: shape.x + (x - bounds.x), y: shape.y + (y - bounds.y) })
+    }
+  })
+}
+
+/// `value` between the two, `low` winning when the box is bigger than the room between them.
+function within(value: number, low: number, high: number) {
+  return Math.min(Math.max(value, low), Math.max(low, high))
 }
 
 /// An agent's marks as a draft, with the editor never shown: the image and the marks go on the
@@ -555,11 +621,19 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
   const h = p.pixelHeight / ratio
   quiet = true
   try {
-    let unnamed: TLShapeId[] = []
+    let made: { unnamed: TLShapeId[]; texts: TLShapeId[] } = { unnamed: [], texts: [] }
+    // The image's own box, not the payload's: a stored draft carries the image shape it was made
+    // with, and every mark is a fraction of the box the screenshot is actually drawn in.
+    let image = new Box(0, 0, w, h)
     silently(editor, () => {
       placeImage(editor, p, w, h)
-      unnamed = createMarks(editor, marks, w, h)
+      image = editor.getShapePageBounds(IMAGE_ID) ?? image
+      made = createMarks(editor, marks, image)
     })
+    const { unnamed, texts } = made
+    // Before the colours: the heuristic samples what a mark covers, so a text has to be where it
+    // will be drawn first.
+    if (texts.length) await pullTextsInside(editor, texts, image)
     // The snapshot is stored as it stands, so the colours are picked before it is taken.
     if (unnamed.length) {
       // A screenshot that will not decode leaves no sample: the marks keep the colour they were

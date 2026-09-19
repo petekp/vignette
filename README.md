@@ -197,12 +197,16 @@ not depend on its pixel size:
 ```json
 [{"type": "ellipse", "x": 0.12, "y": 0.30, "w": 0.20, "h": 0.10, "color": "red"},
  {"type": "arrow", "x": 0.5, "y": 0.5, "x2": 0.7, "y2": 0.6},
- {"type": "text", "x": 0.1, "y": 0.8, "text": "Header should not scroll"}]
+ {"type": "text", "x": 0.1, "y": 0.8, "w": 0.5, "text": "Header should not scroll"}]
 ```
 
 The types are `ellipse`, `rectangle`, `arrow`, and `text`; `ellipse` has no toolbar button, and an
-agent can still push one. A mark that names a `color` keeps it — any of `CANDIDATES` in
-`web/src/config.ts` — and a mark that names none is coloured from what it covers, like your own. The
+agent can still push one. On a text mark `w` is the box the words wrap in, and it is optional: the
+default is the room between `x` and the right edge. The text is drawn at a size the image gives it,
+so one sentence covers the same part of a 900-pixel crop and a 5120-pixel capture, and a box that
+would run off the image is pulled back inside rather than cut off (`docs/pushed-text-2026-09-19.md`
+has the numbers). A mark that names a `color` keeps it — any of `CANDIDATES` in `web/src/config.ts`
+— and a mark that names none is coloured from what it covers, like your own. The
 marks become a draft before the card appears, so the card shows them, Copy Drawing has them, and
 opening the card puts them in the editor to move, retype, or delete like your own. The editor builds
 the draft on its own canvas, so a marked push is refused with `page-not-ready` from the moment the
