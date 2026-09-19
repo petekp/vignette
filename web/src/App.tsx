@@ -520,14 +520,29 @@ function removeAll(editor: Editor) {
   if (assets.length) editor.deleteAssets(assets)
 }
 
+/// A pushed text mark on the canvas: the shape, which mark it came from (counted from 1, the way
+/// `invalid-marks` counts them), and the scale its box is drawn at, which turns a width in canvas
+/// points into the `w` the shape carries.
+type PushedText = { id: TLShapeId; mark: number; scale: number }
+
+/// The room a pushed text has to sit in: the image less `PUSHED_TEXT_MARGIN` on every side. The
+/// margin is a fraction of the image's width on all four edges, so the inset is the same number of
+/// points all round rather than the same fraction of two sides of different lengths. On an image
+/// wider than it is tall that leaves less of the height than of the width, which is why a box is
+/// measured against this rather than against the image.
+function textRoom(image: Box): Box {
+  const margin = PUSHED_TEXT_MARGIN * image.w
+  return new Box(image.x + margin, image.y + margin, image.w - 2 * margin, image.h - 2 * margin)
+}
+
 /// An agent's marks as ordinary shapes, in canvas points: `image` is the box the screenshot
 /// occupies, and every mark number is a fraction of it. The host has already checked the numbers
 /// and the color.
-function createMarks(editor: Editor, marks: Mark[], image: Box): { unnamed: TLShapeId[]; texts: TLShapeId[] } {
+function createMarks(editor: Editor, marks: Mark[], image: Box): { unnamed: TLShapeId[]; texts: PushedText[] } {
   const unnamed: TLShapeId[] = []
-  const texts: TLShapeId[] = []
+  const texts: PushedText[] = []
   const margin = PUSHED_TEXT_MARGIN * image.w
-  for (const m of marks) {
+  for (const [index, m] of marks.entries()) {
     const x = image.x + m.x * image.w
     const y = image.y + m.y * image.h
     const color = (m.color ?? CANDIDATES[0].id) as ColorId
@@ -567,7 +582,7 @@ function createMarks(editor: Editor, marks: Mark[], image: Box): { unnamed: TLSh
         meta,
         props: { richText: toRichText(m.text!), color, size: DEFAULT_SIZE, scale, autoSize: false, w: box / scale },
       })
-      texts.push(id)
+      texts.push({ id, mark: index + 1, scale })
     } else {
       editor.createShape({
         id,
@@ -584,24 +599,31 @@ function createMarks(editor: Editor, marks: Mark[], image: Box): { unnamed: TLSh
 
 /// Moves pushed text marks back inside the image. How tall a box is depends on where the text
 /// wraps and how wide the font draws it, neither of which the agent that sent the mark can know,
-/// so each box is measured once it exists. A box with no room to spare rests against the top left
-/// margin: the start of the text is what has to show.
+/// so each box is measured once it exists.
 ///
 /// The measure needs the font the text is drawn in. A page that has not drawn text yet has not
 /// loaded it, and measures the fallback instead, so the wait comes first: it is the font already
 /// in `web/dist`, and every later push finds it loaded.
-async function pullTextsInside(editor: Editor, texts: TLShapeId[], image: Box) {
+async function pullTextsInside(editor: Editor, texts: PushedText[], image: Box) {
   await editor.fonts.loadRequiredFontsForCurrentPage()
+  const room = textRoom(image)
   const margin = PUSHED_TEXT_MARGIN * image.w
   silently(editor, () => {
-    for (const id of texts) {
-      const bounds = editor.getShapePageBounds(id)
-      const shape = editor.getShape(id)
+    for (const text of texts) {
+      const bounds = editor.getShapePageBounds(text.id)
+      const shape = editor.getShape(text.id)
       if (!bounds || !shape) continue
-      const x = within(bounds.x, image.x + margin, image.x + image.w - margin - bounds.w)
-      const y = within(bounds.y, image.y + margin, image.y + image.h - margin - bounds.h)
+      // A box with no room to spare in a direction is put against the image's own edge in that
+      // direction rather than the margin's: the margin is room to spare, and a box that already
+      // fitted the image exactly — a caption asked for at the full width — must not be pushed out
+      // of it by being given room it has not got. A box bigger than the image itself keeps its
+      // start showing, which is what the low bound wins.
+      const insetX = bounds.w <= room.w ? margin : 0
+      const insetY = bounds.h <= room.h ? margin : 0
+      const x = within(bounds.x, image.x + insetX, image.x + image.w - insetX - bounds.w)
+      const y = within(bounds.y, image.y + insetY, image.y + image.h - insetY - bounds.h)
       if (x === bounds.x && y === bounds.y) continue
-      editor.updateShape({ id, type: 'text', x: shape.x + (x - bounds.x), y: shape.y + (y - bounds.y) })
+      editor.updateShape({ id: text.id, type: 'text', x: shape.x + (x - bounds.x), y: shape.y + (y - bounds.y) })
     }
   })
 }
@@ -623,7 +645,7 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
   const h = p.pixelHeight / ratio
   quiet = true
   try {
-    let made: { unnamed: TLShapeId[]; texts: TLShapeId[] } = { unnamed: [], texts: [] }
+    let made: { unnamed: TLShapeId[]; texts: PushedText[] } = { unnamed: [], texts: [] }
     // The image's own box, not the payload's: a stored draft carries the image shape it was made
     // with, and every mark is a fraction of the box the screenshot is actually drawn in.
     let image = new Box(0, 0, w, h)
