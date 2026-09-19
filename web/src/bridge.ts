@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 11
+export const PROTOCOL = 12
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
