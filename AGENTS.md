@@ -107,7 +107,8 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
    `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; `selected`, `focused`,
    `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`, `scroll`,
-   `viewport`, feedback, panel, `widthScale`, how wide the stack is drawn, `strip`, the selection
+   `viewport`, `safeBottom`, the room the Dock keeps under the column, feedback, panel,
+   `widthScale`, how wide the stack is drawn, `strip`, the selection
    strip's frame or null, and `stripHovered`),
    `transition` (phase), `annotator` (`current`, `frame`, `pageState`, `port`, `webPid`,
    `windowVisible`, `tool`, `color`, and the zoom's own keys, which the zoom bullet below names),
@@ -228,9 +229,23 @@ the same driven sequence; a single run varies.
   the zoom was: `hide` springs the level back to 1 first and comes down once that has arrived, so
   the flight starts where the picture is (`AnnotationController.fitBeforeHide`).
   `docs/shadow-2026-09-17.md` has the frames.
+- The stack runs to the bottom of the screen and steps around the Dock. `StackLayout.area` builds
+  one `StackArea` from the screen: `bounds` takes its sides and top from `visibleFrame`, so the menu
+  bar and a Dock on either side keep their room, and its bottom from the screen's own `frame`;
+  `safeBottom` is the height AppKit reserves for a bottom Dock, but only when the Dock's tiles reach
+  into the column's strip of the screen. The panel runs down to the screen's edge, the column sits
+  in the part of it above the Dock, and the newest card rests `ui.screenMargin` above the Dock's top
+  edge the way it rests that far above the screen's edge without one. The mask, and the hair of
+  alpha that catches clicks, are lifted by the same number, so a card scrolled down fades out at the
+  Dock's top edge and a click on a Dock icon under the column still reaches the Dock. The tiles'
+  rect is Accessibility's (`Dock.tiles`, the Dock process's one `AXList`): `CGWindowListCopyWindowInfo`
+  reports the Dock's window as the whole screen on macOS 15. Untrusted for Accessibility, the Dock
+  is taken to span the whole edge, which is the old layout. `annotatorRoom` and `annotationFrame`
+  keep reading `visibleFrame`: the annotator must not go under the Dock.
+  `docs/stack-dock-2026-09-18.md` has the numbers.
 - A card in the stack and the same card in flight have to cast the same shadow. The column is
   masked with a fade over the panel's inset at each end (`StackView.column`), and the newest card
-  rests on the viewport's bottom edge, so the bottom fade starts below its shadow rather than
+  rests on the column's bottom edge, so the bottom fade starts below its shadow rather than
   through it: solid for `StackLayout.cardShadowRoom` and fading over what is left of the inset.
   `StackLayout.inset` is therefore at least that room plus `shadowFade`, so a shadow bigger than
   `ui.panelInset` grows the panel around the column instead of being cut off; the cards do not

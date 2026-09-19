@@ -93,6 +93,9 @@ and closing it hands focus back to the app you came from.
   Put the cursor on it and it grows to the left to name each button, so the names never cover a
   thumbnail. The row under the cursor is still the button you press. While you are annotating, the
   strip steps out of the annotator's way; the cards stay selected and it comes back when you are done.
+- The column runs down to the bottom of the screen. Where the Dock is under it, the bottom card
+  rests above the Dock instead, and a card scrolled down past it fades out at the Dock's top edge.
+  A Dock the column does not reach over, on a side, or hidden, costs the stack nothing.
 - Opening a card in the annotator narrows the stack to make room for it, down to half its width.
   The cards keep their corner; only their size changes, and they come back when the annotator
   closes. The annotator never grows into the width the stack keeps, however far you zoom in.

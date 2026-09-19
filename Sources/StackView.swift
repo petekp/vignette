@@ -23,9 +23,13 @@ struct StackView: View {
             Color.clear
             Color.black.opacity(model.isStack ? 0.01 : 0)
                 .frame(width: layout.columnWidth + layout.inset * 2)
+                // The panel runs down to the screen's edge; the Dock's room at the bottom of it
+                // stays clear, so a click on a Dock icon under the column still reaches the Dock.
+                .padding(.bottom, model.safeBottom)
             if !model.isStack, let text = model.feedback {
                 FeedbackToast(text: text)
                     .padding(layout.inset)
+                    .padding(.bottom, model.safeBottom)   // above the Dock, like the cards
                     .transition(.opacity)
             } else {
                 column
@@ -35,7 +39,7 @@ struct StackView: View {
                     // trailing edge, so the right edge sits where the placement put it whether the
                     // labels are out or not and the growth goes left, away from the cards.
                     SelectionStrip(model: model, size: strip.size, reveal: reveal)
-                        .offset(x: -(layout.inset + strip.right), y: -(layout.inset + strip.bottom))
+                        .offset(x: -(layout.inset + strip.right), y: -(layout.inset + model.safeBottom + strip.bottom))
                         .animation(Anim.spring(settings.motionUI.relayoutDuration), value: strip)
                         // Scrolling moves it with the cards, at once; the slide-out carries it off screen.
                         .offset(x: stripSlide, y: model.scroll)
@@ -85,6 +89,7 @@ struct StackView: View {
     private var column: some View {
         let inset = layout.inset
         let shadowRoom = layout.cardShadowRoom
+        let safeBottom = model.safeBottom
         return VStack(alignment: .trailing, spacing: layout.spacing) {
             ForEach(Array(model.cards.enumerated().reversed()), id: \.element.id) { index, card in
                 CardView(card: card, index: index, model: model)
@@ -101,8 +106,10 @@ struct StackView: View {
         .coordinateSpace(name: "stack")
         .offset(y: model.scroll)
         .padding(inset)
+        // The Dock's room, so the newest card rests above the Dock rather than on it.
+        .padding(.bottom, safeBottom)
         // Trailing, not centered: a lone card narrower than the widest must rest where the stack will put it.
-        .frame(width: layout.columnWidth + inset * 2, height: model.viewport + inset * 2, alignment: .bottomTrailing)
+        .frame(width: layout.columnWidth + inset * 2, height: model.viewport + safeBottom + inset * 2, alignment: .bottomTrailing)
         .mask(
             VStack(spacing: 0) {
                 LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: inset)
@@ -114,6 +121,11 @@ struct StackView: View {
                 // reaches one and keeps the whole inset.
                 LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
                     .frame(height: max(0, inset - shadowRoom))
+                // The Dock's room draws nothing: a card scrolled down fades out at the Dock's top
+                // edge instead of covering it. The whole mask is lifted by the safe area, so the
+                // fade's tail reaches the same two points past that edge (the inset less the
+                // margin) by which the panel hangs past the screen's edge without a Dock.
+                Color.clear.frame(height: safeBottom)
             }
         )
     }

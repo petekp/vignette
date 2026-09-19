@@ -14,6 +14,8 @@ final class StackLayoutTests: XCTestCase {
     }
     private var layout: StackLayout { StackLayout(ui: ui) }
     private let screen = NSRect(x: 0, y: 0, width: 1512, height: 944)
+    /// The whole screen, with no Dock under the column.
+    private var area: StackArea { StackArea(bounds: screen) }
 
     func testCardSizeFitsTheBoxAndKeepsAMinimumSide() {
         XCTAssertEqual(layout.cardSize(for: NSSize(width: 2000, height: 1000)), NSSize(width: 200, height: 100))
@@ -31,8 +33,8 @@ final class StackLayoutTests: XCTestCase {
                                     "the column always keeps a soft edge below the shadow")
         // The cards stay where they are: the panel grows around them.
         let cards = [NSSize(width: 200, height: 100)]
-        let panel = layout.panelFrame(viewport: 100, visibleFrame: screen, showsStrip: false)
-        let card = layout.cardFrame(index: 0, cards: cards, panelFrame: panel, showsBar: false, scroll: 0)
+        let panel = layout.panelFrame(viewport: 100, area: area, showsStrip: false)
+        let card = layout.cardFrame(index: 0, cards: cards, panelFrame: panel, showsBar: false, scroll: 0, safeBottom: 0)
         XCTAssertEqual(card.maxX, screen.maxX - big.screenMargin)
         XCTAssertEqual(card.minY, screen.minY + big.screenMargin)
     }
@@ -41,22 +43,68 @@ final class StackLayoutTests: XCTestCase {
         let cards = [NSSize(width: 200, height: 100), NSSize(width: 100, height: 50)]
         XCTAssertEqual(layout.contentHeight(cards: cards, showsBar: false), 160)
         XCTAssertEqual(layout.contentHeight(cards: cards, showsBar: true), 210)
-        let panel = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: false)
+        let panel = layout.panelFrame(viewport: 160, area: area, showsStrip: false)
         XCTAssertEqual(panel, NSRect(x: 1512 - 240 - 16 + 20, y: 16 - 20, width: 240, height: 200))
-        let wide = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true)
+        let wide = layout.panelFrame(viewport: 160, area: area, showsStrip: true)
         XCTAssertEqual(wide.width, 240 + layout.stripWidth + layout.stripGap, "the strip widens the panel")
         XCTAssertEqual(wide.maxX, panel.maxX, "the right edge stays put, so the cards do not move")
-        let newest = layout.cardFrame(index: 0, cards: cards, panelFrame: panel, showsBar: false, scroll: 0)
-        let older = layout.cardFrame(index: 1, cards: cards, panelFrame: panel, showsBar: false, scroll: 0)
+        let newest = layout.cardFrame(index: 0, cards: cards, panelFrame: panel, showsBar: false, scroll: 0, safeBottom: 0)
+        let older = layout.cardFrame(index: 1, cards: cards, panelFrame: panel, showsBar: false, scroll: 0, safeBottom: 0)
         XCTAssertEqual(newest, NSRect(x: panel.maxX - 20 - 200, y: panel.minY + 20, width: 200, height: 100))
         XCTAssertEqual(older.minY, newest.maxY + 10, "the older card sits above the newest")
         XCTAssertEqual(older.maxX, newest.maxX, "cards are right-aligned")
-        XCTAssertEqual(layout.cardFrame(index: 0, cards: cards, panelFrame: panel, showsBar: true, scroll: 5).minY, panel.minY + 20 + 50 - 5)
+        XCTAssertEqual(layout.cardFrame(index: 0, cards: cards, panelFrame: panel, showsBar: true, scroll: 5, safeBottom: 0).minY, panel.minY + 20 + 50 - 5)
     }
 
     func testViewportIsCappedByTheScreen() {
-        XCTAssertEqual(layout.viewportHeight(content: 100, visibleFrame: screen), 100)
-        XCTAssertEqual(layout.viewportHeight(content: 5000, visibleFrame: screen), 944 - 32)
+        XCTAssertEqual(layout.viewportHeight(content: 100, area: area), 100)
+        XCTAssertEqual(layout.viewportHeight(content: 5000, area: area), 944 - 32)
+    }
+
+    /// A 1512 x 982 screen with a 38-point menu bar and a 72-point Dock along the bottom. The
+    /// column is the 200-wide card box inside the 16-point margin, so it spans x 1296 to 1496.
+    func testTheColumnRunsToTheScreenEdgeAndStepsAroundADockUnderIt() {
+        let full = NSRect(x: 0, y: 0, width: 1512, height: 982)
+        let noDock = NSRect(x: 0, y: 0, width: 1512, height: 944)
+        let bottomDock = NSRect(x: 0, y: 72, width: 1512, height: 872)
+        let cards = [NSSize(width: 200, height: 100)]
+        func newestCard(_ area: StackArea) -> NSRect {
+            let viewport = layout.viewportHeight(content: 100, area: area)
+            let panel = layout.panelFrame(viewport: viewport, area: area, showsStrip: false)
+            return layout.cardFrame(index: 0, cards: cards, panelFrame: panel, showsBar: false, scroll: 0, safeBottom: area.safeBottom)
+        }
+
+        let bare = layout.area(visibleFrame: noDock, screenFrame: full, dock: nil)
+        XCTAssertEqual(bare.safeBottom, 0, "no Dock along the bottom edge, no safe area")
+        XCTAssertEqual(newestCard(bare).minY, 16, "the newest card rests on the screen's bottom edge plus the margin")
+
+        // The Dock's tiles, in AppKit points: 66 tall, sitting on the screen's bottom edge.
+        let wide = layout.area(visibleFrame: bottomDock, screenFrame: full, dock: NSRect(x: 273, y: 6, width: 1200, height: 66))
+        XCTAssertEqual(wide.safeBottom, 72, "the Dock reaches under the column, so it keeps its room")
+        XCTAssertEqual(newestCard(wide).minY, 72 + 16, "the newest card rests on the Dock's top edge plus the margin")
+        XCTAssertEqual(layout.viewportHeight(content: 5000, area: wide), 944 - 72 - 32, "the safe area is not part of the column")
+
+        let missed = layout.area(visibleFrame: bottomDock, screenFrame: full, dock: NSRect(x: 273, y: 6, width: 966, height: 66))
+        XCTAssertEqual(missed.safeBottom, 0, "the tiles end at 1239, left of the column")
+        XCTAssertEqual(newestCard(missed).minY, 16, "so the column runs to the bottom of the screen")
+        XCTAssertEqual(layout.viewportHeight(content: 5000, area: missed), 944 - 32,
+                       "and it is the Dock's height taller than it would be inside the visible frame")
+
+        let unknown = layout.area(visibleFrame: bottomDock, screenFrame: full, dock: nil)
+        XCTAssertEqual(unknown.safeBottom, 72, "a Dock that cannot be read is taken to span the whole edge")
+
+        let sideDock = layout.area(visibleFrame: NSRect(x: 80, y: 0, width: 1432, height: 944), screenFrame: full, dock: nil)
+        XCTAssertEqual(sideDock.safeBottom, 0, "a Dock on a side keeps no room at the bottom")
+        XCTAssertEqual(sideDock.bounds.minX, 80, "and the column stays out of its way, as the visible frame says")
+
+        // The panel runs down to the screen's edge; the column sits in the part of it above the Dock.
+        let viewport = layout.viewportHeight(content: 400, area: wide)
+        let panel = layout.panelFrame(viewport: viewport, area: wide, showsStrip: true)
+        XCTAssertEqual(panel.minY, 16 - 20, "the panel's bottom is the screen's, less the inset")
+        XCTAssertEqual(panel.height, viewport + 72 + 40)
+        let strip = layout.stripPlacement(rows: 2, selection: [0], cards: cards, showsBar: false, scroll: 0, viewport: viewport)!
+        XCTAssertGreaterThanOrEqual(layout.stripFrame(strip, panelFrame: panel, scroll: 0, safeBottom: wide.safeBottom).minY, 72,
+                                    "the strip stays out of the Dock too")
     }
 
     func testCardIndexFromTheTopOfTheColumn() {
@@ -125,10 +173,10 @@ final class StackLayoutTests: XCTestCase {
 
     func testSelectionStripFrameSitsLeftOfTheSelectedCard() {
         let layout = stripLayout
-        let panel = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true)
+        let panel = layout.panelFrame(viewport: 160, area: area, showsStrip: true)
         let strip = layout.stripPlacement(rows: 2, selection: [0], cards: stripCards, showsBar: false, scroll: 0, viewport: 160)!
-        let frame = layout.stripFrame(strip, panelFrame: panel, scroll: 0)
-        let card = layout.cardFrame(index: 0, cards: stripCards, panelFrame: panel, showsBar: false, scroll: 0)
+        let frame = layout.stripFrame(strip, panelFrame: panel, scroll: 0, safeBottom: 0)
+        let card = layout.cardFrame(index: 0, cards: stripCards, panelFrame: panel, showsBar: false, scroll: 0, safeBottom: 0)
         XCTAssertEqual(frame.maxX, card.minX - layout.stripGap, "the gap separates the strip from the card")
         XCTAssertEqual(frame.midY, card.midY, "and it is centered on the card")
         XCTAssertGreaterThanOrEqual(frame.minX, panel.minX, "inside the panel")
@@ -141,14 +189,14 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertGreaterThan(reveal, ButtonLabel.width("Copy Drawing", size: StackLayout.stripLabelSize),
                              "the widest label, and room beside it")
         XCTAssertEqual(layout.stripReveal(labels: []), 0, "no labels, no growth")
-        let panel = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true, reveal: reveal)
+        let panel = layout.panelFrame(viewport: 160, area: area, showsStrip: true, reveal: reveal)
         let strip = layout.stripPlacement(rows: 2, selection: [0], cards: stripCards, showsBar: false, scroll: 0, viewport: 160)!
-        let rest = layout.stripFrame(strip, panelFrame: panel, scroll: 0)
-        let grown = layout.stripFrame(strip, panelFrame: panel, scroll: 0, reveal: reveal)
+        let rest = layout.stripFrame(strip, panelFrame: panel, scroll: 0, safeBottom: 0)
+        let grown = layout.stripFrame(strip, panelFrame: panel, scroll: 0, reveal: reveal, safeBottom: 0)
         XCTAssertEqual(grown.maxX, rest.maxX, "the right edge does not move")
         XCTAssertEqual(grown.minX, rest.minX - reveal, "the icons travel left with the labels")
         XCTAssertEqual(grown.width, rest.width + reveal)
-        let card = layout.cardFrame(index: 0, cards: stripCards, panelFrame: panel, showsBar: false, scroll: 0)
+        let card = layout.cardFrame(index: 0, cards: stripCards, panelFrame: panel, showsBar: false, scroll: 0, safeBottom: 0)
         XCTAssertLessThanOrEqual(grown.maxX, card.minX - layout.stripGap, "the labels never reach a card")
         XCTAssertGreaterThanOrEqual(grown.minX, panel.minX, "and the grown strip stays inside the panel")
     }
@@ -156,13 +204,13 @@ final class StackLayoutTests: XCTestCase {
     func testThePanelHoldsTheRevealSoTheLabelsNeverResizeIt() {
         let layout = stripLayout
         let reveal = layout.stripReveal(labels: ["Copy", "Copy Drawing"])
-        let panel = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true, reveal: reveal)
-        let plain = layout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true)
+        let panel = layout.panelFrame(viewport: 160, area: area, showsStrip: true, reveal: reveal)
+        let plain = layout.panelFrame(viewport: 160, area: area, showsStrip: true)
         XCTAssertEqual(panel.width, plain.width + reveal, "the room is there before the labels come out")
         XCTAssertEqual(panel.maxX, plain.maxX, "and it is added on the left, so the cards do not move")
         // The widest selected card pushes the strip furthest left; it still has the room.
         let strip = layout.stripPlacement(rows: 2, selection: [0], cards: stripCards, showsBar: false, scroll: 0, viewport: 160)!
-        let grown = layout.stripFrame(strip, panelFrame: panel, scroll: 0, reveal: reveal)
+        let grown = layout.stripFrame(strip, panelFrame: panel, scroll: 0, reveal: reveal, safeBottom: 0)
         XCTAssertGreaterThanOrEqual(grown.minX, panel.minX)
     }
 
@@ -171,13 +219,13 @@ final class StackLayoutTests: XCTestCase {
         wider.selectionStripGap += 16
         let widened = StackLayout(ui: wider)
         let reveal = widened.stripReveal(labels: ["Copy", "Copy Drawing"])
-        let panel = stripLayout.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true, reveal: reveal)
-        let wide = widened.panelFrame(viewport: 160, visibleFrame: screen, showsStrip: true, reveal: reveal)
+        let panel = stripLayout.panelFrame(viewport: 160, area: area, showsStrip: true, reveal: reveal)
+        let wide = widened.panelFrame(viewport: 160, area: area, showsStrip: true, reveal: reveal)
         XCTAssertEqual(wide.width, panel.width + 16, "the panel holds the gap it is asked for")
         XCTAssertEqual(wide.maxX, panel.maxX, "on the left, so the cards do not move")
         let strip = widened.stripPlacement(rows: 2, selection: [0], cards: stripCards, showsBar: false, scroll: 0, viewport: 160)!
-        let card = widened.cardFrame(index: 0, cards: stripCards, panelFrame: wide, showsBar: false, scroll: 0)
-        let grown = widened.stripFrame(strip, panelFrame: wide, scroll: 0, reveal: reveal)
+        let card = widened.cardFrame(index: 0, cards: stripCards, panelFrame: wide, showsBar: false, scroll: 0, safeBottom: 0)
+        let grown = widened.stripFrame(strip, panelFrame: wide, scroll: 0, reveal: reveal, safeBottom: 0)
         XCTAssertEqual(grown.maxX, card.minX - widened.stripGap, "the widest selected card keeps the whole gap")
         XCTAssertGreaterThanOrEqual(grown.minX, wide.minX, "and the labels still have room inside the panel")
     }
@@ -199,9 +247,9 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(room.height, screen.height, "only the right edge moves")
         // A frame filling the room leaves the narrowest stack exactly a gap of clear screen.
         let narrowest = StackLayout(ui: ui, widthScale: layout.minWidthScale)
-        let panel = narrowest.panelFrame(viewport: 100, visibleFrame: screen, showsStrip: false)
+        let panel = narrowest.panelFrame(viewport: 100, area: area, showsStrip: false)
         let card = narrowest.cardFrame(index: 0, cards: [narrowest.drawn(NSSize(width: 200, height: 100))],
-                                       panelFrame: panel, showsBar: false, scroll: 0)
+                                       panelFrame: panel, showsBar: false, scroll: 0, safeBottom: 0)
         XCTAssertEqual(card.minX, room.maxX + 20, accuracy: 0.001)
         XCTAssertEqual(card.size, NSSize(width: 100, height: 50), "a card at half width")
         XCTAssertEqual(card.maxX, screen.maxX - 16, "the cards keep their right edge, whatever the width")
@@ -217,9 +265,9 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(scale(frameMaxX: 1300), 0.88, accuracy: 0.0001)
         // In between, the column's left edge sits exactly a gap from the frame.
         let narrowed = StackLayout(ui: ui, widthScale: scale(frameMaxX: 1300))
-        let panel = narrowed.panelFrame(viewport: 100, visibleFrame: screen, showsStrip: false)
+        let panel = narrowed.panelFrame(viewport: 100, area: area, showsStrip: false)
         let card = narrowed.cardFrame(index: 0, cards: [narrowed.drawn(NSSize(width: 200, height: 100))],
-                                      panelFrame: panel, showsBar: false, scroll: 0)
+                                      panelFrame: panel, showsBar: false, scroll: 0, safeBottom: 0)
         XCTAssertEqual(card.minX, 1300 + 20, accuracy: 0.001)
     }
 

@@ -39,6 +39,9 @@ final class StackModel: ObservableObject {
     @Published var isStack = false             // selection UI only exists in the recent stack
     @Published var scroll: CGFloat = 0         // how far the column is pulled down to show older cards
     @Published var viewport: CGFloat = 0       // visible height of the column, at the stack's full width
+    /// The room the Dock keeps at the bottom of the panel when the column is over it. The column
+    /// sits this far above the panel's bottom edge, and its mask ends there. See `StackArea`.
+    @Published var safeBottom: CGFloat = 0
     /// How wide the stack is drawn, 1 at rest. It narrows while the annotator's frame comes near
     /// it; the column keeps its right edge, so the cards stay in their corner. See `StackLayout`.
     @Published var widthScale: CGFloat = 1
@@ -189,6 +192,16 @@ final class ThumbnailController: NSObject {
         relayout()
         if model.isStack { backdrop.refresh(on: screen) }
     }
+
+    /// Where the stack is laid out on its screen, and the room a Dock under the column keeps. Read
+    /// when the panel is laid out, so the panel, the cards and the strip are placed from one
+    /// reading of the screen and the Dock.
+    private var area = StackArea(bounds: .zero)
+    private func readArea() {
+        let s = screen
+        area = layout.area(visibleFrame: s.visibleFrame, screenFrame: s.frame, dock: Dock.tiles())
+    }
+
     /// The cards as they are drawn now: at the stack's full width, or narrowed for the annotator.
     private var cardSizes: [NSSize] { model.cards.map { layout.drawn($0.size) } }
     private var ui: UITweaks { Settings.shared.motionUI }
@@ -205,7 +218,7 @@ final class ThumbnailController: NSObject {
                                                             cards: cardSizes, showsBar: showsBar,
                                                             scroll: model.scroll, viewport: model.viewport) else { return nil }
         let reveal = model.stripHovered ? layout.stripReveal(labels: Config.stripActions.map(\.label)) : 0
-        return layout.stripFrame(strip, panelFrame: panel.frame, scroll: model.scroll, reveal: reveal)
+        return layout.stripFrame(strip, panelFrame: panel.frame, scroll: model.scroll, reveal: reveal, safeBottom: area.safeBottom)
     }
 
 
@@ -227,7 +240,8 @@ final class ThumbnailController: NSObject {
                 "focused": model.cards.first { $0.id == model.focused }?.shot.url.path as Any,
                 "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.url.path as Any,
                 "feedback": model.feedback as Any, "key": panel.isKeyWindow,
-                "scroll": Int(model.scroll), "viewport": Int(model.viewport), "widthScale": model.widthScale,
+                "scroll": Int(model.scroll), "viewport": Int(model.viewport), "safeBottom": Int(area.safeBottom),
+                "widthScale": model.widthScale,
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h),
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
                 "stripHovered": model.stripHovered,
@@ -757,7 +771,8 @@ final class ThumbnailController: NSObject {
     }
 
     private func cardFrame(_ index: Int) -> NSRect {
-        layout.cardFrame(index: index, cards: cardSizes, panelFrame: panel.frame, showsBar: showsBar, scroll: model.scroll)
+        layout.cardFrame(index: index, cards: cardSizes, panelFrame: panel.frame, showsBar: showsBar,
+                         scroll: model.scroll, safeBottom: area.safeBottom)
     }
 
     // MARK: Selection
@@ -1043,7 +1058,9 @@ final class ThumbnailController: NSObject {
         model.scroll = 0
         visible = true
         model.viewport = 40
-        panel.setFrame(layout.panelFrame(viewport: 40, visibleFrame: screen.visibleFrame, showsStrip: false), display: false)
+        readArea()
+        model.safeBottom = area.safeBottom
+        panel.setFrame(layout.panelFrame(viewport: 40, area: area, showsStrip: false), display: false)
         panel.orderFrontRegardless()
     }
 
@@ -1079,15 +1096,17 @@ final class ThumbnailController: NSObject {
         // At the stack's full width, so a stack narrowed for the annotator keeps the panel it will
         // need when it comes back. The panel is transparent outside the column either way.
         let content = layout.contentHeight(cards: model.cards.map(\.size), showsBar: showsBar)
-        let viewport = layout.viewportHeight(content: content, visibleFrame: screen.visibleFrame)
+        readArea()
+        let viewport = layout.viewportHeight(content: content, area: area)
         var transaction = Transaction(animation: animated ? Anim.spring(ui.relayoutDuration) : nil)
         transaction.disablesAnimations = !animated
         withTransaction(transaction) {
             model.viewport = viewport
+            model.safeBottom = area.safeBottom
             model.scroll = min(model.scroll, max(0, content - viewport))
         }
         // The strip's room includes the reveal, so the labels coming out never resize the window.
-        let target = layout.panelFrame(viewport: viewport, visibleFrame: screen.visibleFrame, showsStrip: showsStrip,
+        let target = layout.panelFrame(viewport: viewport, area: area, showsStrip: showsStrip,
                                        reveal: layout.stripReveal(labels: Config.stripActions.map(\.label)))
         shrinkGeneration += 1
         let grows = target.height >= panel.frame.height && target.width >= panel.frame.width
