@@ -314,6 +314,136 @@ the card shows it.
     agent=claude marks=3`, text at x 0.30 on a 900x1087 image).
 
 
+## Queued by Pete, 2026-09-18 (evening, on the foundation build f57c330)
+
+29. The card-to-annotator transition can be interrupted. Pete: "make the thumbnail -> annotator
+    transition interruptible." Today `prepare` flies the card and the reducer sits in
+    `flyingOut` until the flight's `arrived` sends `shown`; an Esc, a click on another card, or a
+    click outside during the flight still goes through `park` on a page whose window has not
+    come up, so the card finishes its outbound flight before anything turns it around. Instead a
+    `close` or an `annotate(other)` in `flyingOut` turns the flight around where it is: the same
+    `fly(id:to:)` re-aim the zoom already uses (the `Bow` blend keeps the curve continuous), the
+    dim comes down with it, and the page's `load` is either cancelled or left to finish and
+    parked with nothing drawn. A swap mid-flight sends the second card out while the first flies
+    home, the same two flights as a queue swap. Touches the reducer's `flyingOut` branch (a
+    sequence in `AnnotatorTransitionTests` before changing the table: `annotate, close` with no
+    `shown` between them, and `annotate a, annotate b` likewise), `perform(.prepare)`, the
+    `arrived` guard, `loadedKeys`, and `AnnotationController.hide` (a park for a page that never
+    showed answers at once). Acceptance is Esc pressed halfway through the flight on Pete's
+    machine: the card comes straight back with no pause at the annotator's frame, and the window
+    never flashes up.
+
+30. The wait between the card landing and the image being editable is shorter. Pete: "see what we
+    can do to decrease the time between the thumbnail -> annotator transition coming to a rest
+    and being able to draw/manipulate the image; there's a noticeable delay here possibly due to
+    our easing transition and gating interaction." Two gates today: the window comes up at
+    `Anim.settle` (the spring within half a point of the target), which for `expandDuration`
+    0.4 is well past the visible motion, and the flight image stays on top until the page
+    reports `loaded` (`show` lifts it only when `loadedKeys` has the key, else `pageLoaded`
+    does). Until the lift the flight image sits over the web view, and the key window and the
+    outside-click monitor start only in `show`. First measure it: on the driven sequence, the
+    gap from the last frame the card moved to `[annotate] loaded` and to the first pointer event
+    the page accepts (an `eval` that reads a hovered shape, or a `drag` from `scripts/input.sh`
+    followed by `page.shapes`), and the `settle` time against the frame at which the eye sees
+    the card stop (`screencapture -v` and the edge position per frame, as in the shadow doc).
+    Then whichever is the larger part: put the window up and hand the keys over earlier,
+    accepting the sub-point step, or make the step invisible by having the window take the
+    flight's exact last frame; send `load` earlier (it is sent in `prepare`, so the page's own
+    decode is the floor); or tighten the spring's tail (`bounce` 0.15 and the tolerance in
+    `TransitionLayer.arrivalTolerance`) so `settle` comes sooner. Report the before and after
+    numbers in the doc. Acceptance is that a rectangle dragged the moment the card looks still
+    lands on the page.
+
+31. The stack runs to the bottom of the screen and the newest card steps around the Dock. Pete:
+    "see if we can avoid cutting off the thumbnail stack near the top edge of the dock and
+    instead have it continue all the way down to the bottom of the screen; if it collides with
+    the dock, the bottom most thumbnail should 'avoid' the dock as if there were a safe area."
+    Today `StackLayout.panelFrame` and `viewportHeight` are measured from the screen's
+    `visibleFrame`, which stops at the Dock's top edge, so with the Dock at the bottom the
+    column ends `screenMargin` above it and the cards below that line are simply not there.
+    Instead the column is measured from the screen's full `frame` (the menu bar still excluded),
+    so the viewport and the column mask run to the bottom of the screen, and the cards keep a
+    safe area around the Dock: the newest card rests above the Dock by the margin when the
+    column's right edge is over the Dock, the way it rests on the viewport's bottom edge today,
+    and the older cards scroll behind the Dock's top edge rather than stopping at it. A Dock on
+    the left or right, or hidden, changes nothing (the column is not over it). The bottom fade
+    in `StackView.column` and `cardShadowRoom` move with the newest card, so its shadow is still
+    whole. Touches `panelFrame`, `viewportHeight`, the strip and the annotator's room
+    (`annotatorRoom` and `annotationFrame` keep using `visibleFrame`, since the annotator must
+    not go under the Dock), `TransitionLayer`'s slot frames, and the backdrop strip's height.
+    Verify with the Dock at the bottom, magnified and not, and with it hidden, and with a stack
+    long enough to scroll; the `[state] stack.viewport` and the card frames say where the
+    column ends.
+
+32. Selecting cards from the keyboard brings the strip's labels out, with each action's shortcut
+    beside its label. Pete: "when selecting thumbnails in stack mode with a keyboard using
+    directional arrows, we should auto-expand the selection toolbar to show the labels along
+    with keyboard shortcuts to perform the particular functions." Today the labels come out on
+    hover only (`model.stripHovered`, set by `onHover` in `StackView`'s strip), and the shortcut
+    is a tooltip (`shortcutHint`), so someone building a selection with Shift+arrows or Space
+    sees six icons and no hint of what a key would do. Instead a selection made from the
+    keyboard (`moveFocus(toward:extend:)` and the Space branch of the key handler) reveals the
+    labels the way the hover does, and each row shows its shortcut after the label in the
+    tooltip's glyphs (⌘C, ↩, ⌥⌘C, ⇧⌘C, ⌘S, ⌘⌫), dimmer than the label. The reveal stays
+    while the stack holds the keys and the selection came from them; the mouse moving onto a
+    card or the strip takes over as today. One state says why the labels are out (`stripRevealed`
+    with a reason, hover or keyboard, replacing the bool), and `[state] stack.stripHovered`
+    becomes that. `stripReveal(labels:)` measures the widest label plus its shortcut, so the
+    panel already holds the room and nothing is resized. Touches the strip in `StackView`,
+    `StackLayout.stripReveal`, `stripPlacement`, the key handler in `ThumbnailController`, and
+    docs/hover-reveal-2026-09-17.md. Acceptance: open the stack, press Shift+Up twice, and the
+    strip's labels and shortcuts are out without the mouse moving; press ⌘C and the copy runs.
+
+33. The card's Draw hint stays up except over the corner buttons themselves. Pete: "change the
+    thumbnail tooltip deadzone so that it only affects the buttons in the corners and not the
+    entire bottom third of the thumbnail." Today `inButtonRow` in `CardView` (`StackView.swift`)
+    hides the hint whenever the pointer is in the band along the card's bottom, `buttonSize` plus
+    the 6-point padding tall and the card's full width; on a short card that band is a third of
+    the picture, and the middle of it holds no button. `overControl` already goes true on the
+    buttons' own hover, so the band's only job is to cover the moment before that hover lands.
+    Instead the dead zone is the two corner rects (each button's frame plus its padding, bottom
+    left for Copy and bottom right for Delete, and the grown Copy while its label is out), so
+    the hint shows across the middle of the band and a click there still draws as it does today.
+    Touches `inButtonRow` (renamed for what it is), `showsDrawHint`, and the hover-reveal doc.
+    Acceptance: on the shortest card in the stack, walk the cursor along the bottom edge from
+    left to right; the hint goes only over the two buttons.
+
+34. A one-page static site for the app. Pete: "create a stupid simple static site to advertise
+    this app that enumerates the features and provides a link to download as well as a link to
+    the github." And: "the static site should be like one font size, very very simple and low
+    key. no silly frills." One HTML page, hand-written, no framework and no build step. One font
+    size throughout, no headings larger than the text, no hero, no gradients, no icons, no
+    animation, one column of text at a readable measure. The name, one sentence, one picture
+    (the stack beside the annotator), the features as a list in the README's user vocabulary
+    (draw, not annotate: the stack, draw and copy, stitch, the queue, zoom, drafts that survive
+    a relaunch, the agent skill and `add?marks=`), a Download link, and a GitHub link, both as
+    plain links in the text. It lives in the repo (`site/`) so GitHub Pages can serve it from the
+    public repo with nothing else to host. What it waits on: the GitHub link needs the public
+    repo, and the Download link needs a binary release, which needs the tldraw Hobby key
+    (docs/foundation-review-2026-09-15.md, step 1: no binary release before the key lands) and
+    a notarized build (the hardened runtime is already on, so notarizing is a signing step, not a
+    code change). Until then the page can be written and previewed locally with both links
+    pointing at placeholders, and the Download link says what it waits on rather than 404ing.
+
+35. A demo video of the app. Pete: "create a well edited video for the app that shows off many
+    of the features along with nicely done transitions, mock example photos, and a mock back and
+    forth between the human and agent." Under two minutes, no narration needed, captions at
+    most. The screenshots in it are mock: staged windows made for the video (a terminal, a
+    browser page, a design), never Pete's real folder, so the run happens on a scratch watch
+    folder and a scratch settings file (`SHOTNOTE_SETTINGS`), with the real folder untouched.
+    The beats: a capture landing as a thumbnail; the double tap opening the stack; drawing and
+    Return copying; a selection, the strip's labels coming out, and Stitch; the queue moving
+    through three cards; a zoom; and the exchange with the agent, which the app can already
+    stage on its own: the human draws on a screenshot and sends it, and the agent's answer
+    arrives through `add?file=&agent=claude&marks=` so its purple badge and its own marks land in
+    the stack as a draft the human then edits. Both halves are real app behaviour driven from a
+    script, so the video shows nothing the app cannot do. Record with `screencapture -v` on a
+    region at 60 fps, or the whole display, and cut in a video editor; the transitions between
+    beats are the editor's, the motion inside a beat is the app's own. Waits on the mock
+    screenshots and on the site (34) for a place to put it; it is also the clip the site's
+    picture can be a still from.
+
+
 ## Feedback on the run-2 branch (Pete, 2026-09-17 afternoon, on `todo2/integration` c43304a)
 
 All four landed the same afternoon on `todo2/integration`, reviewed and fixed (tip f59cec8); the
