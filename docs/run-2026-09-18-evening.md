@@ -505,3 +505,198 @@ twice. The one problem is the Esc half of transition's bullet, in section 2.
   `Tests/MotionTests.swift` (transition) do not overlap. 194 tests pass on the merged tree.
 - `project.yml` and `scripts/` are untouched by `todo7/site`, and the built bundle carries no `site`
   folder.
+
+---
+
+## 6. Review
+
+An adversarial review of `foundation..fa842ce` found seven things, and an architecture sweep added
+its own list. Six changes landed, one commit each, on top of `fa842ce`. `./scripts/build.sh --test`
+passes before each: **194 tests**, the same count — one assertion went and none was added.
+`stat -f %m /Users/petepetrash/.config/shotnote/settings.json` read **1789794952** before and after
+every build and at every point of the round.
+
+| commit | what it does |
+| --- | --- |
+| `0bec673` | a failed Dock read no longer decides where the column sits |
+| `6b11e8f` | Esc turns a card around while it is still flying |
+| `b8bc69a` | the bridge protocol goes to 12 |
+| `aaa054b` | the site's Download line is one line |
+| `114acdd` | the Dock's timeout covers every read it makes; two claims match their code |
+| `813d653` | the annotator ignores clicks for the first moments after its window appears |
+
+### What was found and fixed
+
+**R1 (high): a Dock restart moved the whole column and it stayed moved.** `Dock.tiles()` returns nil
+on any failure and `StackLayout.area` then takes the Dock to span the whole bottom edge; `readArea`
+runs only on a layout pass, so the bad reading was sticky. The reviewer drove it 3 of 3 on Pete's own
+Dock: `killall Dock`, open the stack, `safeBottom 72` and the newest card at `[1307, 767, …]` instead
+of `[1307, 839, …]`. My own smoke round missed it because I had widened the Dock to `tilesize 72`,
+where the fallback and the true reading agree.
+
+A standalone probe of the same four Accessibility calls shows the failure exactly: after a
+`killall Dock` the read answers `kAXChildren` with `kAXErrorCannotComplete` for about 180 ms, then
+comes back. (It also shows the Dock's tiles animating up — y 982 settling to 906 over 1.3 s — while
+their x extent never moves, which is why only the horizontal reading is Accessibility's.)
+
+`readArea` now keeps the tiles from the last read that answered and builds the area from those, and
+`scheduleDockRead` asks again every half second, up to eight times, laying out once the Dock answers.
+Both halves are needed and both were driven, at Pete's own `tilesize 51`:
+
+| | before | after |
+| --- | --- | --- |
+| `killall Dock`, open the stack, read at ~150 ms (3 tries) | `safeBottom 72`, card `[1307, 767, …]` | `safeBottom 0`, card `[1365, 812, …]` — 3 of 3, no visible move at all |
+| the app's **first** read fails (Dock suspended, nothing remembered) | — | `safeBottom 72`, card `[1365, 740, …]`: the conservative fallback, as designed |
+| the Dock is resumed, **no further interaction** | — | `safeBottom 0`, card `[1365, 812, …]`: the retry corrected it on its own |
+
+So the fallback still applies when nothing is known — which is right, and what the unit test covers —
+and it can no longer outlive the failure that caused it. An app untrusted for Accessibility never
+gets an answer and settles on that fallback, which is the correct layout for it.
+
+The retry cadence is in code, not `UITweaks`: it is a retry for a failed system read, not a number a
+user would tune. No test was added — the layout function is unchanged, and a test of
+`Dock.tiles() ?? lastGood` would mirror the implementation, which is what R6 is about.
+
+**R2 (high): Esc could not turn a card around, though the README said it could.** Pete's acceptance
+for item 29 was "Esc pressed halfway through the flight", and the reviewer confirmed with measured
+timestamps over four runs — including one with the app already active — that nothing happened.
+`perform(.prepare)` called `releaseKeys()`, so through the whole of `flyingOut` no window of this app
+could take a key.
+
+Pete chose the real fix over a README edit. `releaseKeys()` moves to `perform(.show)`, after
+`onAnnotatorShow?()` has put the window up and taken the key, so the keys pass from the stack to the
+annotator instead of being nobody's for the length of the flight. In `handleKey`, Esc while the
+reducer is in `flyingOut` means `annotationEnded()`.
+
+Driven with a real synthetic Escape, never `shotnote://cancel`, with `[state]` read first to confirm
+the stack was key:
+
+- **Seven runs turned the card around**, at +58, +62, +58, +58 ms (CGEvent) and +223, +245, +285 ms
+  (System Events, past halfway). Every one logged
+  `close -> idle effects=abandon(…) returnCard(…)`, no park, no `show`.
+- **The keys pass cleanly.** During `flyingOut`: `stack.key True`, `windowVisible False`. After
+  `show`: `stack.key False`, `windowVisible True`. Never both, never neither. An Escape after `show`
+  is an ordinary close of a visible editor and parks, as before.
+- **A turnaround leaves the stack usable.** `key True`, focused, the selection untouched
+  (`['Screenshot f3.png', 'Screenshot f2.png']` before and after), the strip back at its grown width,
+  nothing in `out`. A second Escape then dismissed the stack, so `takeKeys()` after `returnCard` is
+  still right when the keys were never released.
+- **What the other keys do now that they reach the stack mid-flight**, all driven: a second
+  `annotate` of the same key is a no-op (`effects=` and nothing else); Return opens the focused card,
+  which is the swap that clicking another card already gave
+  (`abandon(f1) returnCard(f1) prepare(f3)`); Space toggles the focused card's selection; an arrow
+  moves the focus, which `releaseKeys` at `.show` then clears. None of them disturbs the flight.
+- **`ui.motion: 0`:** `flyingOut` → `show` in 6 ms, `stack.key False` with the window up, and Escape
+  there is an ordinary close after which the stack takes the keys back. Nothing is left holding them.
+
+One deliberate consequence: a keyboard reveal of the strip's labels now survives the flight, because
+`releaseKeys` is what clears it and it runs later. The labels go in when the annotator's window
+appears rather than when the card leaves.
+
+This is the recent stack only. `handleKey` guards on `model.isStack` and a lone thumbnail's panel
+never takes keys, which matches Pete's acceptance; the README bullet now says so.
+
+**R3 (medium): the bridge protocol was 11 on both sides though `LoadPayload` had changed.**
+Both sides go to 12. Verified both ways: the happy path logs
+`[web] ready protocol=12 tools=4 markColors=5`, and a build made with a deliberately stale page
+(`PROTOCOL = 11`, app at 12) logs
+
+```
+00:57:06.666 [web] error protocol-mismatch page=11 app=12; rebuild with scripts/build.sh
+00:57:06.863 [eval] error page-not-ready the editor page is unavailable; see the [web] lines
+```
+
+with `page: unavailable` in the state report. The tree was put back and rebuilt afterwards; the
+working copy is clean and the bundled page is 12. No cross-side test was added: Pete declined that
+version.
+
+**R4 (medium): the site's Download paragraph explained the licence chain.** It is now
+"Download Shotnote — not released yet." The replacement anchor stays in the comment beside it and the
+GitHub paragraph is unchanged. Re-rendered headlessly and read back.
+
+**R5 (low–medium): `Dock.swift`'s timeout covered one of its four Accessibility calls.** A messaging
+timeout belongs to the object it is set on and is not inherited by children that come back from it,
+so the three child reads — each candidate's role, then the list's position and size — used the
+process-wide default on the main thread, in the layout path. I extended the protection rather than
+weakening the comment: the read is on the main thread on every stack open, so a wedged Dock stalling
+it is exactly what the comment was written to prevent. It is now set from one named constant on every
+element the file reads. The Dock still reads correctly afterwards (`safeBottom 0`, card
+`[1365, 812, 130, 153]`).
+
+**R6 (low): two assertions restated the source expression.** The `stripLabelBox` one is gone. The
+other becomes the behaviour it was reaching for — a row with a shortcut needs more room than the same
+row without one — which cannot be satisfied by an implementation that ignores shortcuts and does not
+recompute the formula. The five-Dock-configuration block was left alone.
+
+**R7 (low): a click in the first moments after the annotator's window appeared ended the session.**
+Pre-existing, but item 30 moved that window 310 ms earlier and put the race where a fast hand now is:
+the user draws as the card lands and loses the drawing. The coordinator's judgement, taken for Pete:
+fix it narrowly, in the annotator's own monitor only, as a fixed interval.
+
+`OutsideClick.start(settling:)` ignores clicks for that long after it is called. Only the annotator
+passes one, 0.15 s; the stack's instance keeps the default of none and its call site is unchanged.
+The interval is a race with the window server rather than an animation, so it is a constant in code
+and the motion scale does not touch it.
+
+Measured on one driven sequence, a click aimed by the log at the flight's start plus a fixed offset,
+so it lands a few milliseconds after `show`:
+
+| | clicks landing 12–25 ms after `show` | sessions lost |
+| --- | --- | --- |
+| before | 4 | **3** |
+| after | 20 | **0** |
+
+And the guard is narrow: an outside click at `show` + 190 ms — 40 ms past the interval — still closes
+the annotator, 3 of 3, and a settled outside click seconds later logs `[annotate] cancelled` →
+`close -> parking` → `parked -> idle effects=hideAnnotator` as it always did.
+
+An alternative I considered and did not take: the annotator could ask whether the click is inside its
+own frame, which needs no interval at all. It does not cover the toolbar, which is a separate child
+window with its own rect, and the coordinator specified the interval with its reasoning. Worth
+raising if the interval ever proves awkward.
+
+### Left for Pete, with the evidence intact
+
+Both are pre-existing, neither is this run's doing, and the standing rule is that a small unrelated
+fix still needs his approval.
+
+- **`copyAnnotated` has no `canvasRefusal` guard** (`AppDelegate.swift:390`). Its two siblings have
+  one, and `exportDrafts` only checks `pendingExport == nil`. The reviewer drove it: with a card in
+  the annotator and its window up, `shotnote://copy-annotated` on another file answered
+  `[copy-annotated] ok … 1 with annotations` — no refusal — while the live session owned the canvas.
+  It breaks the rule AGENTS.md states about who owns the canvas. One line, matching its siblings.
+- **The page's `quiet` flag is released outside the queue** (`web/src/App.tsx:336`, `:381`,
+  `:89-93`). `quietly`'s `finally` sets the flag flat rather than restoring it, unlike the colour
+  pass, so an export landing in the two frames after a load can have its canvas changes reported as a
+  draft under the wrong key. Read-only finding: the window is about two frames and the reviewer's
+  harness could not land in it. Its only reachable caller is the missing guard above.
+
+### Refuted, and left as it was
+
+`converge` removing a flight without running its `dropped` handler cannot be reached:
+`ThumbnailController.stitched` refuses while the annotator has anything in flight, and `converge`'s
+result card is a fresh `UUID`. The comment claimed the invariant anyway, so the comment was corrected
+(`114acdd`) and the code was not.
+
+### Incidents in the review round
+
+- **Pete's settings file was never written.** `stat -f %m` read **1789794952** before and after all
+  eight `./scripts/build.sh --test` runs of this pass, before and after the round, and at the
+  restore.
+- **The Dock was suspended for about fifteen seconds** (`killall -STOP Dock`, then `-CONT`) to hold a
+  failed read open long enough to test the first-open case, and restarted four times with
+  `killall Dock`. It is back at Pete's values — `orientation=bottom autohide=0 tilesize=51
+  magnification=0 largesize=16` — and reads `(273, 906, 966, 66)` again. His Dock was not widened
+  this round: R1 had to be verified at his own size.
+- **The clipboard** held a Done rendering of my own fixture; cleared with `pbcopy < /dev/null` and it
+  now reports one empty text item. Note that the reviewer's round replaced a `public.url` item of
+  Pete's with plain text, which is recorded in their report.
+- **Fixtures.** Three in `integration-scratch/shots`, plus one `-annotated.png` output and one draft
+  created by the race probes' clicks landing inside the editor. All deleted; `[watcher] removed`,
+  `[draft] forgot Screenshot f1.png`, `[drafts] 20` — Pete's count, none of mine left.
+- **The lock.** Taken at 23:46:45, released at 00:15:56. One round. Pete's build (pid 57473) was
+  killed only while I held it.
+- **The state of the Mac.** Pete's build (`f57c330`, pid 71603) running on
+  `/Users/petepetrash/.config/shotnote/settings.json`, watching `~/Dropbox/Screenshots`,
+  `[app] ready` at 00:15:56. No instance of mine. The lock is released. The probes
+  (`dockprobe`, `raceprobe`, `raceround.py`) are in `integration-scratch/captures`.
