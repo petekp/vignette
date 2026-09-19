@@ -219,8 +219,8 @@ the same driven sequence; a single run varies.
   animated from `.annotator(ui)` to `.card(ui)`, so its shadow shrinks along the path instead of
   swapping for the card's at the end; `AnnotationController` reads the annotator window's frame
   shadow from the same `Look.annotator`, so the two ends cannot drift apart. `dropShadow(id:)`
-  zeroes a flight's shadow in the same run-loop turn the card appears or the annotator window
-  comes up, so the shadow is never drawn twice and never missing for a frame.
+  zeroes a flight's shadow in the same run-loop turn the card appears or the annotator turns its
+  own shadow on, so the shadow is never drawn twice and never missing for a frame.
 - Nothing takes a flight's place until it has arrived; the annotator hides behind it before then.
   A spring's tail runs well past its nominal duration: at `expandDuration * 1.15` it is still a few
   points short, and a card or a window put at the exact target then steps by that much, shadow
@@ -335,7 +335,7 @@ the same driven sequence; a single run varies.
   way (`docs/hover-reveal-2026-09-17.md`). A card's Copy grows to the right from an icon that does not
   move. The strip is the other way round: it keeps its right edge and grows to the left, so a label
   never covers a card, and the icons translate left by the reveal. `StackLayout.stripReveal` says
-  how far — the widest label plus the room beside the icons — and the view keeps its box that wide
+  how far — the widest label and shortcut plus the room beside the icons — and the view keeps its box that wide
   and puts the strip against its trailing edge. The panel already holds that room, so nothing is
   resized while the labels come out. The button under the cursor stays under it because a row is
   one button, icon and label together, and the grown row contains the resting row.
@@ -345,7 +345,7 @@ the same driven sequence; a single run varies.
   `StackView.stripPlacement`), never `showsStrip`, which sizes the panel: the panel's window is not
   resized while a session runs. The selection is untouched and the strip springs back when the
   session ends. `[state] stack.strip` is the grown frame, null while a card is in the annotator,
-  and `stack.stripHovered` says whether the labels are out.
+  and `stack.stripRevealed` says whether the labels are out and why.
 - The recent stack narrows to make room for the annotator. One number says how wide it is drawn:
   `StackLayout.widthScale`, 1 at rest and never below `ui.stackMinScale`. The cards are drawn at
   that width (`drawn`) and the column with them; their right edge does not move, so a narrower
