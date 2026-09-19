@@ -42,6 +42,10 @@ its version supports. So the app is the source of the skill.
 
 ## Discussed, not decided
 
+- Drawing on the live screen, both directions: an agent pointing at a window, an element, or a
+  phrase on the real screen (demoed 2026-09-18, source in docs/live-screen-demo/), and a person
+  drawing on the live screen so the agent gets a crop plus what the mark is on.
+  docs/live-screen-2026-09-18.md has the demos, the three anchors, the limits, and the tradeoffs.
 - `shotnote://marks?file=`: print the stored draft's shapes as markdown, one line per shape with
   its type and percent position, and put the same block on the pasteboard beside the PNG in Copy
   Annotated. Verified by hand on 2026-09-16 with `jq` over a draft: one ellipse, center x 26%,
