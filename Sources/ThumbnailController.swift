@@ -113,8 +113,12 @@ final class ThumbnailController: NSObject {
     private var dismissTimer: Timer?
     private let outsideClick = OutsideClick()
     private var visible = false {
-        // Flight decodes are screen-sized; they are only worth keeping while the stack is up.
-        didSet { if !visible { flightImages.removeAll(); flightOrder.removeAll() } }
+        didSet {
+            // Flight decodes are screen-sized; they are only worth keeping while the stack is up.
+            if !visible { flightImages.removeAll(); flightOrder.removeAll() }
+            // A presentation asks the Dock afresh: one that did not answer last time may answer now.
+            else { dockReadsLeft = Self.dockReadAttempts }
+        }
     }
     private var dismissGeneration = 0
     private var shrinkGeneration = 0
@@ -209,9 +213,48 @@ final class ThumbnailController: NSObject {
     /// when the panel is laid out, so the panel, the cards and the strip are placed from one
     /// reading of the screen and the Dock.
     private var area = StackArea(bounds: .zero)
+    /// The tiles from the last read that answered. A read fails while the Dock is restarting — a
+    /// crash, some display changes, login before it is up — and for that moment the process is
+    /// there but its Accessibility tree is not. Taking a failed read as "the Dock spans the whole
+    /// edge" lifts the whole column by the Dock's reserved height, and the area is only read on a
+    /// layout pass, so it would stay lifted until something unrelated laid the panel out again. The
+    /// last rect is the better guess: a restart puts the same Dock back.
+    private var dockTiles: NSRect?
+    private var dockRetry: DispatchWorkItem?
+    private var dockReadsLeft = ThumbnailController.dockReadAttempts
+    /// How often, and how many times, a failed Dock read is tried again. In code: a cadence for a
+    /// system read that has failed, not a number a user would tune. Eight at half a second covers a
+    /// `killall Dock`, which is back inside two.
+    private static let dockReadDelay: TimeInterval = 0.5
+    private static let dockReadAttempts = 8
+
     private func readArea() {
         let s = screen
-        area = layout.area(visibleFrame: s.visibleFrame, screenFrame: s.frame, dock: Dock.tiles())
+        if let tiles = Dock.tiles() {
+            dockTiles = tiles
+            dockRetry?.cancel()
+            dockRetry = nil
+        } else {
+            scheduleDockRead()
+        }
+        area = layout.area(visibleFrame: s.visibleFrame, screenFrame: s.frame, dock: dockTiles)
+    }
+
+    /// Asks again after a failed read, and lays out once the Dock answers, so a stack opened while
+    /// the Dock was restarting is not left in the place that reading gave it. Bounded: an app
+    /// untrusted for Accessibility never gets an answer, and its layout — the Dock taken to span the
+    /// whole edge — is the right one to settle on.
+    private func scheduleDockRead() {
+        guard dockRetry == nil, dockReadsLeft > 0 else { return }
+        dockReadsLeft -= 1
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.dockRetry = nil
+            guard self.visible else { return }
+            if Dock.tiles() != nil { self.relayout() } else { self.scheduleDockRead() }
+        }
+        dockRetry = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.dockReadDelay, execute: work)
     }
 
     /// The cards as they are drawn now: at the stack's full width, or narrowed for the annotator.
