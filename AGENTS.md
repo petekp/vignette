@@ -234,7 +234,10 @@ the same driven sequence; a single run varies.
   shadow on and takes the image away. That is what makes the editor usable the moment the card has
   travelled its path rather than a third of a second later: the key window, the toolbar and the
   outside-click monitor all start with the window. A shadow is the one thing that would show,
-  because it falls outside the frame it is cast from.
+  because it falls outside the frame it is cast from. A flight can also go without arriving, and a
+  third callback, `dropped`, runs then, so the window never keeps a shadow that is switched off:
+  a lone thumbnail's panel empties when the annotator opens, so a screenshot landing in the next
+  third of a second presents the panel anew and `present` takes the whole layer down.
   The window is at the fitted frame by then whatever
   the zoom was: `hide` springs the level back to 1 first and comes down once that has arrived, so
   the flight starts where the picture is (`AnnotationController.fitBeforeHide`).

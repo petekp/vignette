@@ -633,6 +633,10 @@ final class ThumbnailController: NSObject {
                 self.onAnnotatorLanded?()
                 self.flights.dropShadow(id: card.id)
                 if self.loadedKeys.contains(key) { self.flights.lift(id: card.id) }   // else pageLoaded lifts it
+            }, dropped: { [weak self] in
+                // The layer went down between the two moments — a new capture presenting the panel
+                // anew while a lone thumbnail is being annotated. Nothing covers the window now.
+                self?.onAnnotatorLanded?()
             })
         case .show:
             onAnnotatorShow?()
