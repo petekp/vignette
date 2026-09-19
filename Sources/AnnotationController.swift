@@ -517,8 +517,11 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         zoomTween.stop()
         pageLayoutPending = false
         standIn.forget()
+        // The panel stops being this window's child before the window goes, or AppKit would order
+        // it out with its parent; `hideSoon` then takes it down only if no other image has asked
+        // for it by the next turn of the run loop, and `show` makes it a child of the new window.
         if let win = window, toolbar.panel.parent === win { win.removeChildWindow(toolbar.panel) }
-        toolbar.hide()
+        toolbar.hideSoon()
         window?.orderOut(nil)
     }
 
@@ -798,6 +801,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             "overlay": standIn.overlayPixels as Any,
             "room": growthLimit.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
+            "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.panel.frame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
             "pageState": "\(pageState)",
             "tool": toolbar.model.tool as Any, "color": toolbar.model.color,
             "port": Int(port),

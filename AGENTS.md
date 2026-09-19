@@ -114,7 +114,7 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `viewport`, `safeBottom`, the room the Dock keeps under the column, feedback, panel,
    `widthScale`, how wide the stack is drawn, `strip`, the selection
    strip's frame or null, and `stripRevealed`, why its labels are out: `hover`, `keyboard`, or null),
-   `transition` (phase), `annotator` (`current`, `frame`, `pageState`, `port`, `webPid`,
+   `transition` (phase), `annotator` (`current`, `frame`, `toolbar`, `pageState`, `port`, `webPid`,
    `windowVisible`, `tool`, `color`, and the zoom's own keys, which the zoom bullet below names),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
    `page` (what the editor page reports: shapes, canUndo, hidden) or `"unavailable"` when the
@@ -421,6 +421,16 @@ the same driven sequence; a single run varies.
   sends its tools in the `ready` message, along with every color a mark may be drawn in, reports
   the active tool, and takes `setTool`/`finish` calls. The bar is tools, one divider, Done: there
   is no palette, so which colour a mark is drawn in is the page's, not the user's.
+  While one image follows another with no gap — a click on another card, or the queue moving on —
+  the bar stays on screen and springs to the next image's place instead of being taken down and
+  raised again: `place(below:gap:)` slides the panel when it is already up, one spring per
+  direction (`Tween`), over `Anim.passesTarget(ui.expandDuration)`, which is when the next image's
+  window comes up. `hideWindows` asks for the exit through `hideSoon`, which waits one turn of the
+  run loop and is cancelled by the next `place`; a swap's park answer and the next `prepare` are in
+  that same turn, so the reducer says nothing about this and does not have to. The bar comes down
+  only when nothing follows: Esc, Done on the last image, a dismissal, a removal, an abandoned
+  flight. `[state] annotator.toolbar` is the panel's frame, or null when it is off screen.
+  `docs/annotator-toolbar-2026-09-19.md` has the numbers.
   `web/src/contrast.ts` samples the
   screenshot under the mark's bounds and keeps the first colour in `CANDIDATES` whose CIELAB
   distance from those pixels is at least `MIN_COLOR_DISTANCE`, so red gives way over a red or dark
