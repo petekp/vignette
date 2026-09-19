@@ -387,7 +387,9 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
 
 function fitCamera(editor: Editor, w: number, h: number) {
   view = { ratio: 1, x: 0.5, y: 0.5 }
-  // The host sizes the window to the image's aspect, so 'fit' makes the image flush with the window.
+  // An image opens in a window of its own aspect, so 'fit' makes it flush with the window there.
+  // A zoom grows each side of the window on its own, and `setView` then asks for the magnification
+  // past this fit; 'fit-max' keeps that fit the side the window has grown least in.
   editor.setCameraOptions({
     // No step below the fit: nothing tldraw does on its own can zoom the image out of the window.
     zoomSteps: [1, 2, 4, 8],

@@ -19,9 +19,11 @@ export interface LoadPayload {
 
 /**
  * The picture the page draws when a zoom comes to rest. `ratio` is how far the image is magnified
- * inside the window (1 fits it); `x` and `y` are the middle of the visible part, as fractions of
+ * past the size at which the whole of it fits the window, which is tldraw's own base zoom (1 puts
+ * the whole image in the window); `x` and `y` are the middle of the visible part, as fractions of
  * the image; `width` and `height` are the size the host has laid the window out at, which the page
- * waits for before it applies the view.
+ * waits for before it applies the view. The window does not carry the image's shape while a zoom
+ * has grown it, so above 1 the visible part is a different fraction of the image in each direction.
  */
 export interface ViewRequest {
   ratio: number

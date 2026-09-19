@@ -17,10 +17,13 @@ struct LoadPayload: Encodable, Equatable {
     let previewMaxPixel: Int = Config.previewMaxPixel
 }
 
-/// The picture the page should draw when a zoom comes to rest: how far the image is magnified
-/// inside the window (1 fits it), the middle of the visible part as a fraction of the image, and
-/// the size the host has laid the window out at. The page waits for that size, applies the view,
-/// and answers once it has painted it, which is when the stand-in may go.
+/// The picture the page should draw when a zoom comes to rest: how far the image is magnified past
+/// the size at which the whole of it fits the window (1 puts the whole image in it), the middle of
+/// the visible part as a fraction of the image, and the size the host has laid the window out at.
+/// The page waits for that size, applies the view, and answers once it has painted it, which is
+/// when the stand-in may go. The window no longer carries the image's shape, so the fit the ratio
+/// is measured against is the side the window has grown least in; `Zoom.pageRatio` is where the
+/// host works it out.
 struct ViewRequest: Encodable, Equatable {
     let ratio: Double
     let x: Double
