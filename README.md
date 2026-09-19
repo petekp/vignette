@@ -91,11 +91,20 @@ and closing it hands focus back to the app you came from.
 - The selected cards get a control strip to their left: copy, draw, stitch, delete.
   It stays centered between the topmost and the bottommost selected card, and follows the selection.
   Put the cursor on it and it grows to the left to name each button, so the names never cover a
-  thumbnail. The row under the cursor is still the button you press. While you are annotating, the
+  thumbnail. The row under the cursor is still the button you press. Selecting with the keyboard —
+  Shift+arrow, Space, Cmd+A — brings the names out too, each with its shortcut beside it, and the
+  mouse takes over as soon as it moves onto a card or the strip. While you are annotating, the
   strip steps out of the annotator's way; the cards stay selected and it comes back when you are done.
+- The column runs down to the bottom of the screen. Where the Dock is under it, the bottom card
+  rests above the Dock instead, and a card scrolled down past it fades out at the Dock's top edge.
+  A Dock the column does not reach over, on a side, or hidden, costs the stack nothing.
 - Opening a card in the annotator narrows the stack to make room for it, down to half its width.
   The cards keep their corner; only their size changes, and they come back when the annotator
   closes. The annotator never grows into the width the stack keeps, however far you zoom in.
+- A card on its way to the annotator can be turned around. In the recent stack, Esc — or clicking
+  another card — sends it straight home from wherever it is and the editor never appears. Nothing is
+  lost: nobody could draw on an image that was never on screen, and a drawing you parked earlier
+  stays as it was.
 - Drag a card out to drop it as a file on a chat window, Finder, or a terminal. A selected card
   drags the whole selection.
 - Cmd+C copies the selection as files, paths as text, and the first image's pixels, so chat apps
@@ -124,7 +133,10 @@ and closing it hands focus back to the app you came from.
   drew last already picked up, so a drag or Delete acts on it without a click first.
   A fresh image starts on the rectangle tool.
 - Pinch, Cmd+scroll, or Cmd+plus and Cmd+minus zoom the image in the annotator; Cmd+0 fits it
-  again. A two-finger double tap, or a double-click with the selection tool, zooms in twice on the
+  again. The window grows with the image and does not keep its shape: each side widens or
+  heightens until it reaches the edge of the space the annotator has, so zooming into a tall
+  narrow screenshot keeps the whole width of it in view until the window is as wide as the screen.
+  A two-finger double tap, or a double-click with the selection tool, zooms in twice on the
   point you are on and comes home to the fitted size from anywhere above it. A double-click on a
   mark is the editor's, not the zoom's.
 - A mark is drawn in red unless red is what it sits on. The editor measures the pixels under each
@@ -188,12 +200,19 @@ not depend on its pixel size:
 ```json
 [{"type": "ellipse", "x": 0.12, "y": 0.30, "w": 0.20, "h": 0.10, "color": "red"},
  {"type": "arrow", "x": 0.5, "y": 0.5, "x2": 0.7, "y2": 0.6},
- {"type": "text", "x": 0.1, "y": 0.8, "text": "Header should not scroll"}]
+ {"type": "text", "x": 0.1, "y": 0.8, "w": 0.5, "text": "Header should not scroll"}]
 ```
 
 The types are `ellipse`, `rectangle`, `arrow`, and `text`; `ellipse` has no toolbar button, and an
-agent can still push one. A mark that names a `color` keeps it — any of `CANDIDATES` in
-`web/src/config.ts` — and a mark that names none is coloured from what it covers, like your own. The
+agent can still push one. On a text mark `w` is the box the words wrap in, and it is optional: the
+default is the room between `x` and the right edge. The text is drawn at a size the image gives it,
+so one sentence covers the same part of a 900-pixel crop and a 5120-pixel capture. A box that would
+run off the image is widened until the words fit its height and then moved inside, so a long
+sentence becomes a wide block rather than a column running off the bottom; one too long to fit even
+across the whole picture is left as wide as it goes and named in a `[web] pushed text too long`
+line, since the log is the only place that can say so (`docs/pushed-text-2026-09-19.md` has the
+numbers). A mark that names a `color` keeps it — any of `CANDIDATES` in `web/src/config.ts`
+— and a mark that names none is coloured from what it covers, like your own. The
 marks become a draft before the card appears, so the card shows them, Copy Drawing has them, and
 opening the card puts them in the editor to move, retype, or delete like your own. The editor builds
 the draft on its own canvas, so a marked push is refused with `page-not-ready` from the moment the

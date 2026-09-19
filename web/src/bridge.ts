@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 11
+export const PROTOCOL = 13
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
@@ -19,9 +19,11 @@ export interface LoadPayload {
 
 /**
  * The picture the page draws when a zoom comes to rest. `ratio` is how far the image is magnified
- * inside the window (1 fits it); `x` and `y` are the middle of the visible part, as fractions of
+ * past the size at which the whole of it fits the window, which is tldraw's own base zoom (1 puts
+ * the whole image in the window); `x` and `y` are the middle of the visible part, as fractions of
  * the image; `width` and `height` are the size the host has laid the window out at, which the page
- * waits for before it applies the view.
+ * waits for before it applies the view. The window does not carry the image's shape while a zoom
+ * has grown it, so above 1 the visible part is a different fraction of the image in each direction.
  */
 export interface ViewRequest {
   ratio: number
@@ -44,6 +46,9 @@ export interface ViewResult {
  * One annotation an agent supplied with `add?marks=`. Every number is a fraction of the image:
  * `x` and `y` from its top-left corner, `w` and `h` of its size, `x2` and `y2` where an arrow
  * points. `build` turns these into ordinary shapes, which the user then edits like their own.
+ *
+ * On a text mark `w` is the box the words wrap in, and it is optional: without it the box is the
+ * room between `x` and the right edge. `h` is the wrap's, never the mark's.
  */
 export interface Mark {
   type: 'ellipse' | 'rectangle' | 'arrow' | 'text'

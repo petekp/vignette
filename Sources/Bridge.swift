@@ -3,7 +3,7 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 11
+let bridgeProtocolVersion = 13
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
@@ -17,10 +17,13 @@ struct LoadPayload: Encodable, Equatable {
     let previewMaxPixel: Int = Config.previewMaxPixel
 }
 
-/// The picture the page should draw when a zoom comes to rest: how far the image is magnified
-/// inside the window (1 fits it), the middle of the visible part as a fraction of the image, and
-/// the size the host has laid the window out at. The page waits for that size, applies the view,
-/// and answers once it has painted it, which is when the stand-in may go.
+/// The picture the page should draw when a zoom comes to rest: how far the image is magnified past
+/// the size at which the whole of it fits the window (1 puts the whole image in it), the middle of
+/// the visible part as a fraction of the image, and the size the host has laid the window out at.
+/// The page waits for that size, applies the view, and answers once it has painted it, which is
+/// when the stand-in may go. The window no longer carries the image's shape, so the fit the ratio
+/// is measured against is the side the window has grown least in; `Zoom.pageRatio` is where the
+/// host works it out.
 struct ViewRequest: Encodable, Equatable {
     let ratio: Double
     let x: Double
@@ -33,6 +36,9 @@ struct ViewRequest: Encodable, Equatable {
 /// `x` and `y` from its top-left corner, `w` and `h` of its size, `x2` and `y2` where an arrow
 /// points, so a mark does not depend on the screenshot's pixel size. `Commands.marks(from:)`
 /// checks them; the page turns them into ordinary shapes the user then edits like their own.
+///
+/// On a text mark `w` is the box the words wrap in, and it is optional: without it the box is the
+/// room between `x` and the right edge. `h` is the wrap's, never the mark's.
 struct Mark: Encodable, Equatable {
     enum Kind: String, Encodable, CaseIterable { case ellipse, rectangle, arrow, text }
 

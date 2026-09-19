@@ -179,6 +179,8 @@ enum Commands {
         case .text:
             guard let text = item["text"] as? String, !text.isEmpty else { throw MarkProblem("text is missing") }
             mark.text = text
+            // The box the words wrap in, optional: the page uses the room to the right edge without it.
+            if item["w"] != nil { mark.w = try side("w") }
         }
         return mark
     }

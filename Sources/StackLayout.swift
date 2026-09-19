@@ -12,6 +12,19 @@ enum ButtonLabel {
     }
 }
 
+/// Where the stack is laid out on a screen. `StackLayout.area(visibleFrame:screenFrame:dock:)` is
+/// the only place it is built, so the panel, the cards and the strip are placed from one reading.
+///
+/// `bounds` takes its sides and its top from the screen's visible frame — the menu bar and a Dock on
+/// either side keep their room — and its bottom from the screen's own bottom edge, so the column
+/// runs past a Dock that is not under it. `safeBottom` is the room a Dock under the column keeps at
+/// that edge: the newest card rests `screenMargin` above it, and the column's mask ends there, so a
+/// card scrolled down fades out at the Dock's top edge instead of covering it.
+struct StackArea: Equatable {
+    var bounds: NSRect
+    var safeBottom: CGFloat = 0
+}
+
 /// Geometry shared by the SwiftUI cards, the transition layer, and the sweep gesture, so all agree
 /// on where each card sits. A value over one `UITweaks`, so the math is testable without settings.
 /// `StackLayout.current` is the only place outside the tests that reads the settings, so the panel,
@@ -60,19 +73,37 @@ struct StackLayout {
     var stripGap: CGFloat { ui.selectionStripGap }
     /// The size the strip's labels are drawn at. In code, like the size of the icons beside them.
     static let stripLabelSize: CGFloat = 12
+    /// The room between a row's label and its shortcut. In code, like the label's own size.
+    static let stripShortcutGap: CGFloat = 12
+
+    /// One row of the selection strip: what the button says and the glyphs of its shortcut. The
+    /// layout measures these and `SelectionStrip` draws them, so the room and the text are one list.
+    struct StripRow: Equatable {
+        var label: String
+        var shortcut: String
+    }
+
+    static var stripRows: [StripRow] {
+        Config.stripActions.map { StripRow(label: $0.label, shortcut: $0.key?.glyphs ?? "") }
+    }
 
     func stripHeight(rows: Int) -> CGFloat {
         CGFloat(rows) * ui.buttonSize + CGFloat(max(0, rows - 1)) * ui.buttonSpacing + ui.buttonSpacing * 2
     }
 
-    /// How far the strip grows to the left when the cursor is on it and the labels come out: the
-    /// widest label, plus the room the icons have on their own side. The strip's right edge stays
-    /// where it is, so a label never reaches a card. The panel reserves this room whenever the
+    /// How far the strip grows to the left when its labels come out: the widest label, the widest
+    /// shortcut beside it, and the room the icons have on their own side. The strip's right edge
+    /// stays where it is, so a label never reaches a card. The panel reserves this room whenever the
     /// strip shows (`panelSize`), so the labels always have somewhere to go.
-    func stripReveal(labels: [String]) -> CGFloat {
-        guard let widest = labels.map({ ButtonLabel.width($0, size: Self.stripLabelSize) }).max(), widest > 0 else { return 0 }
-        return widest + ui.buttonSpacing * 2
+    func stripReveal(rows: [StripRow]) -> CGFloat {
+        guard let label = rows.map({ ButtonLabel.width($0.label, size: Self.stripLabelSize) }).max(), label > 0 else { return 0 }
+        let shortcut = rows.map { $0.shortcut.isEmpty ? 0 : ButtonLabel.width($0.shortcut, size: Self.stripLabelSize) }.max() ?? 0
+        return label + (shortcut > 0 ? Self.stripShortcutGap + shortcut : 0) + ui.buttonSpacing * 2
     }
+
+    /// The box a row's label and its shortcut share, inside the reveal. The same for every row, so
+    /// the shortcuts line up in a column against its trailing edge.
+    func stripLabelBox(reveal: CGFloat) -> CGFloat { max(0, reveal - ui.buttonSpacing * 2) }
 
     func cardSize(for image: NSSize) -> NSSize {
         guard image.width > 0, image.height > 0 else { return NSSize(width: maxCardWidth, height: maxCardHeight) }
@@ -95,9 +126,32 @@ struct StackLayout {
         return cardsHeight + (showsBar ? barHeight + spacing : 0)
     }
 
-    /// How much of the column fits on screen. The rest is reached by scrolling.
-    func viewportHeight(content: CGFloat, visibleFrame: NSRect) -> CGFloat {
-        min(content, visibleFrame.height - margin * 2)
+    /// Where the column sits on a screen, and how far a Dock under it reaches up. `dock` is the
+    /// Dock's tiles in AppKit points, or nil when they cannot be read (see `Dock.tiles`), in which
+    /// case the Dock is taken to span the whole bottom edge — the room AppKit reserves anyway.
+    /// Only a Dock along this screen's bottom edge is in the way: one on a side, or hidden, leaves
+    /// the visible frame's bottom on the screen's own edge, so it keeps no room here.
+    func area(visibleFrame v: NSRect, screenFrame f: NSRect, dock: NSRect?) -> StackArea {
+        let bounds = NSRect(x: v.minX, y: f.minY, width: v.width, height: v.maxY - f.minY)
+        let room = v.minY - f.minY
+        guard room > 0 else { return StackArea(bounds: bounds) }
+        guard let dock else { return StackArea(bounds: bounds, safeBottom: room) }
+        let column = columnX(in: bounds)
+        let under = dock.maxX > column.lowerBound && dock.minX < column.upperBound
+        return StackArea(bounds: bounds, safeBottom: under ? room : 0)
+    }
+
+    /// The column's own strip of the area, left to right. Always the card box at rest: the stack
+    /// narrows for the annotator, and the safe area must not move the cards while it does.
+    func columnX(in bounds: NSRect) -> ClosedRange<CGFloat> {
+        let right = bounds.maxX - margin
+        return (right - maxCardWidth)...right
+    }
+
+    /// How much of the column fits on screen. The rest is reached by scrolling. The Dock's safe
+    /// area is not part of it: no card ever rests there.
+    func viewportHeight(content: CGFloat, area: StackArea) -> CGFloat {
+        min(content, max(0, area.bounds.height - area.safeBottom - margin * 2))
     }
 
     /// The panel makes room for the selection strip on its left while cards are selected: the icon
@@ -111,16 +165,22 @@ struct StackLayout {
         return NSSize(width: maxCardWidth + strip + inset * 2, height: viewport + inset * 2)
     }
 
-    /// Panel frame anchored to the bottom-right corner of the screen's visible area.
-    func panelFrame(viewport: CGFloat, visibleFrame v: NSRect, showsStrip: Bool, reveal: CGFloat = 0) -> NSRect {
+    /// Panel frame anchored to the bottom-right corner of the stack's area. Its bottom edge is the
+    /// screen's, and the Dock's safe area is height on top of the column box: the panel runs down to
+    /// the screen's edge and the column sits in the part of it above the Dock.
+    func panelFrame(viewport: CGFloat, area: StackArea, showsStrip: Bool, reveal: CGFloat = 0) -> NSRect {
         let size = panelSize(viewport: viewport, showsStrip: showsStrip, reveal: reveal)
-        return NSRect(x: v.maxX - size.width - margin + inset, y: v.minY + margin - inset, width: size.width, height: size.height)
+        let v = area.bounds
+        return NSRect(x: v.maxX - size.width - margin + inset, y: v.minY + margin - inset,
+                      width: size.width, height: size.height + area.safeBottom)
     }
 
     /// Screen frame of card `index` (0 = newest, bottom). `scroll` is how far the column has been
-    /// pulled down to reveal older cards.
-    func cardFrame(index: Int, cards: [NSSize], panelFrame: NSRect, showsBar: Bool, scroll: CGFloat) -> NSRect {
-        var y = panelFrame.minY + inset + (showsBar ? barHeight + spacing : 0) - scroll
+    /// pulled down to reveal older cards. `safeBottom` is the area's, and it lifts the whole column:
+    /// the newest card rests on the Dock's top edge plus the margin, the way it rests on the
+    /// screen's bottom edge plus the margin without one.
+    func cardFrame(index: Int, cards: [NSSize], panelFrame: NSRect, showsBar: Bool, scroll: CGFloat, safeBottom: CGFloat) -> NSRect {
+        var y = panelFrame.minY + inset + safeBottom + (showsBar ? barHeight + spacing : 0) - scroll
         for i in 0..<index { y += cards[i].height + spacing }
         let size = cards[index]
         return NSRect(x: panelFrame.maxX - inset - size.width, y: y, width: size.width, height: size.height)
@@ -187,9 +247,9 @@ struct StackLayout {
     /// The strip's screen frame, for the state report. The view places it from the same numbers.
     /// `reveal` is how far the labels are out: the right edge stays where it is and the strip
     /// grows to the left, into the room the panel keeps for it, so the labels never cover a card.
-    func stripFrame(_ strip: StripPlacement, panelFrame: NSRect, scroll: CGFloat, reveal: CGFloat = 0) -> NSRect {
+    func stripFrame(_ strip: StripPlacement, panelFrame: NSRect, scroll: CGFloat, reveal: CGFloat = 0, safeBottom: CGFloat) -> NSRect {
         NSRect(x: panelFrame.maxX - inset - strip.right - strip.size.width - reveal,
-               y: panelFrame.minY + inset + strip.bottom - scroll,
+               y: panelFrame.minY + inset + safeBottom + strip.bottom - scroll,
                width: strip.size.width + reveal, height: strip.size.height)
     }
 

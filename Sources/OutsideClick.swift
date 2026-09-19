@@ -13,9 +13,17 @@ final class OutsideClick {
     private var monitor: Any?
 
     /// Starts watching, replacing whatever this holder was watching.
-    func start(_ handler: @escaping () -> Void) {
+    ///
+    /// `settling` ignores clicks for that long after this call. The check below asks the window
+    /// server which window is under the cursor, and a window ordered in a moment ago is not in that
+    /// answer yet, so a press on it reads as a press on whatever was behind it. A caller that starts
+    /// watching in the same turn as it orders its window in has to wait out that gap; a caller whose
+    /// window has been up for a while passes nothing.
+    func start(settling: TimeInterval = 0, _ handler: @escaping () -> Void) {
         stop()
+        let watching = Date().addingTimeInterval(settling)
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in
+            if Date() < watching { return }
             let number = NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0)
             if NSApp.window(withWindowNumber: number) != nil { return }
             handler()

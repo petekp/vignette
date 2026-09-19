@@ -79,16 +79,18 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// The frame `prepare` fitted the image into; zoom grows the window from here.
     private var fittedFrame: NSRect = .zero
     /// How far the image is magnified past the fitted frame. One number: `Zoom.split` divides it
-    /// between the window's scale and the page's camera, so those two can never disagree about it.
+    /// between the frame's growth and the magnification inside it, one division per side, so those
+    /// two can never disagree about it. The picture itself is magnified uniformly by this level.
     private(set) var zoomLevel: CGFloat = 1
     /// Where the level is heading. Every input moves this; one spring carries the level to it, so
     /// a gesture, a key and a fit bend into each other instead of stepping.
     private var zoomTarget: CGFloat = 1
     private lazy var zoomTween = Tween(initial: 1) { [weak self] v in self?.applyZoom(v) }
-    /// The window's scale on screen. 1 is the fitted frame.
-    var zoomScale: CGFloat { split(zoomLevel).window }
-    /// Magnification inside a window that can grow no further, as the page was last told it; 1 fits.
-    private(set) var canvasZoom: CGFloat = 1
+    /// How far each side of the frame has grown past the fitted frame. 1 by 1 is the fitted frame.
+    var zoomWindow: CGSize { split(zoomLevel).window }
+    /// Magnification inside a frame that can grow no further on that side, per side; 1 by 1 shows
+    /// the whole image.
+    private(set) var canvasZoom = Zoom.none
     /// The point the window grows away from, as a fraction of the window: the cursor's own point,
     /// so what is under it stays under it, or the middle for a key. See `Zoom`.
     private var zoomAim = ZoomAim.fitted
@@ -98,8 +100,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// The middle of the visible part of the image, as a fraction of it. The stand-in draws from
     /// this and the page is given it at rest, so the two show the same part of the image.
     private(set) var zoomCenter = Zoom.center
-    /// The anchor in effect at the scale on screen.
-    var zoomAnchor: CGPoint { zoomAim.anchor(at: zoomScale) }
+    /// The anchor in effect at the level on screen.
+    var zoomAnchor: CGPoint { zoomAim.anchor(at: zoomLevel) }
     /// How much of a pull below the fitted size the window shows before springing back.
     private let overpull: CGFloat = 0.3
     private let maxCanvasZoom: CGFloat = 8
@@ -170,7 +172,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         zoomAim = .fitted
         zoomPan = .centered
         zoomCenter = Zoom.center
-        canvasZoom = 1
+        canvasZoom = Zoom.none
         zoomTween.set(1)
         place(win, frame: frame)
         standIn.prepare(for: shot.url, maxPixel: standInPixels)
@@ -220,9 +222,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// What asked for a zoom: the fingers on a trackpad, or a key, a two-finger double tap, or a fit.
     enum ZoomInput { case gesture, step }
 
-    /// Zoom in grows the window until it fills the screen, then magnifies the image inside it.
-    /// Zoom out reverses that and stops at the fitted size: pulling further shrinks the window a
-    /// little and it springs back once the gesture ends. The toolbar stays where it is.
+    /// Zoom in grows each side of the window until that side fills the room, then magnifies the
+    /// image past it. Zoom out reverses that and stops at the fitted size: pulling further shrinks
+    /// the window a little and it springs back once the gesture ends. The toolbar stays where it is.
     ///
     /// `factor` multiplies the zoom level; nil asks for the fitted size. `cursor` is the point to
     /// keep in place, a fraction of the window with y from the top; nil means its middle, which is
@@ -239,7 +241,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         } else {
             zoomTarget = 1
         }
-        aim(at: cursor, to: split(zoomTarget).window)
+        aim(at: cursor, to: zoomTarget)
         aimPan(at: cursor)
         zoomTween.animate(to: zoomTarget, duration: motionScaled(input == .gesture ? trackingSeconds : stepSeconds),
                           curve: "spring") { [weak self] in self?.arrived() }
@@ -248,13 +250,13 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// Points the window's growth at `cursor`. The anchor it starts from is read off the frame on
     /// screen, so the step carries on from where the window is: a frame the screen edge has nudged
     /// does not carry that error forward, and a step aimed elsewhere mid-spring bends rather than
-    /// stepping sideways. The anchor it ends at is the one the room allows at the target scale, so
-    /// the room gives way once, here, rather than the frame sliding part way through the spring.
-    /// The window standing still has nothing to aim.
+    /// stepping sideways. The anchor it ends at is the one the room allows, so the room gives way
+    /// once, here, rather than the frame sliding part way through the spring. The window standing
+    /// still has nothing to aim.
     private func aim(at cursor: CGPoint, to target: CGFloat) {
-        guard let onScreen = frameOnScreen, target != zoomScale else { return }
-        zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, scale: zoomScale,
-                           to: target, within: growthLimit)
+        guard let onScreen = frameOnScreen, target != zoomLevel else { return }
+        zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, window: split(target).window,
+                           from: zoomLevel, to: target, within: growthLimit)
     }
 
     /// Points the magnification at `cursor`, from the part of the image that is visible now. Like
@@ -264,9 +266,14 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// `ui.zoomEdgePull`): only the window's own edge holds the image's edge with it, so without
     /// the pull the corner the cursor is beside is cropped by the first bit of magnification. The
     /// band is measured in points of the frame the cursor is over, so its reach is the same on all
-    /// four edges however wide the screenshot is. The window's growth needs none of this — the
-    /// whole image is inside the window until the window can grow no further, so nothing can be
-    /// cropped before the magnification starts.
+    /// four edges however wide the screenshot is.
+    ///
+    /// The frame's growth is not aimed and needs none of this, but "still growing" and "nothing
+    /// cropped yet" are no longer the same state: each side reaches the room at its own level, so
+    /// the picture is already cropped in the side that got there first while the other is still
+    /// growing. The pull is applied in both directions on every input for that reason. A side that
+    /// is still growing shows the whole image in that direction, so the pull has nothing to hold
+    /// there and `Zoom.clamped(center:camera:)` pins it.
     private func aimPan(at cursor: CGPoint) {
         let ui = Settings.shared.data.ui
         let picture = frameOnScreen?.size ?? fittedFrame.size
@@ -279,9 +286,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// them, so `ui.motion: 0` and Reduce Motion land a zoom step at once.
     private func motionScaled(_ seconds: Double) -> Double { seconds * Settings.shared.motionScale }
 
-    /// How a level divides between the window and the page's camera on this screen.
-    private func split(_ level: CGFloat) -> (window: CGFloat, camera: CGFloat) {
-        Zoom.split(level: level, maxWindow: maxZoom, maxCamera: maxCanvasZoom, pull: overpull)
+    /// How a level divides between the frame's growth and the magnification inside it, per side.
+    private func split(_ level: CGFloat) -> (window: CGSize, camera: CGSize) {
+        Zoom.split(level: level, reach: reach, pull: overpull)
     }
 
     /// The room `prepare` was given, if any. `presentEmpty` has none.
@@ -291,15 +298,18 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// stack keeps for itself reaches both how far the window may grow and where the frame ends up.
     private var growthLimit: CGRect? { room ?? zoomScreen?.visibleFrame }
 
-    /// The window may grow to the whole of that rect, past the fitted inset and the toolbar's room.
-    private var maxZoom: CGFloat { Zoom.reach(fitted: fittedFrame, within: growthLimit) }
-    private var maxLevel: CGFloat { maxZoom * maxCanvasZoom }
+    /// How far each side of the window may grow: to the whole of that rect, past the fitted inset
+    /// and the toolbar's room.
+    private var reach: CGSize { Zoom.reach(fitted: fittedFrame, within: growthLimit) }
+    /// The level stops where the side that fills the room first has been magnified `maxCanvasZoom`
+    /// past it. That side is the one magnified most, so this is the cap on the whole picture.
+    private var maxLevel: CGFloat { min(reach.width, reach.height) * maxCanvasZoom }
     /// How far a gesture may pull below the fitted size before the level stops following it.
     private let minLevel: CGFloat = 0.5
 
-    /// One tick. The frame's rect and the picture inside it both come from this level: the window
-    /// grows until it can grow no further and the magnification takes the rest. Both are set here,
-    /// in one run loop turn, so they reach the window server in one Core Animation commit.
+    /// One tick. The frame's rect and the picture inside it both come from this level: each side of
+    /// the frame grows until it can grow no further and the magnification takes the rest. Both are
+    /// set here, in one run loop turn, so they reach the window server in one Core Animation commit.
     private func applyZoom(_ level: CGFloat) {
         guard window != nil, fittedFrame.width > 0 else { return }
         zoomLevel = level
@@ -308,7 +318,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         zoomCenter = zoomPan.center(at: step.camera)
         // Kept on screen: a frame grown to the screen's height slides rather than clips.
         moveFrame(to: Zoom.frame(fitted: fittedFrame, scale: step.window,
-                                 anchor: zoomAim.anchor(at: step.window), within: growthLimit))
+                                 anchor: zoomAim.anchor(at: level), within: growthLimit))
         if let container { standIn.layout(in: container.bounds, camera: step.camera, center: zoomCenter) }
     }
 
@@ -322,8 +332,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// Hands the picture back to the page at the view it is showing; see `StandInController`.
     private func handOverToPage() {
         guard let webView else { return }
-        standIn.handOver(to: webView, size: pageSize, camera: canvasZoom, center: zoomCenter,
-                         pageReady: pageReady)
+        standIn.handOver(to: webView, size: pageSize, ratio: Zoom.pageRatio(level: zoomLevel, window: zoomWindow),
+                         center: zoomCenter, pageReady: pageReady)
     }
 
     /// The size the page is laid out at: the frame's own size rounded up to whole points. A page's
@@ -393,15 +403,50 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         return Zoom.clamped(CGPoint(x: p.x / frameView.bounds.width, y: 1 - p.y / frameView.bounds.height))
     }
 
+    /// Puts the window up behind the flight image, which is past this frame on every side and so
+    /// covers it — except for a shadow, which falls outside the frame it is cast from. The flight
+    /// carries the shadow until it lands; `landed` hands it over. Everything else the annotator
+    /// needs to be usable happens here, so a drag lands on the page as soon as the card looks still.
     func show() {
         guard let win = window, current != nil else { return }
         win.alphaValue = 1
+        frameView?.layer?.shadowOpacity = 0
         win.makeKeyAndOrderFront(nil)
         if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
         toolbar.show()
         NSApp.activate(ignoringOtherApps: true)
-        // A click outside this app's windows ends the session.
-        outsideClick.start { [weak self] in self?.cancel() }
+        // A click outside this app's windows ends the session. The window was ordered in a line ago
+        // and the window server does not report it under the cursor yet, so a press inside this
+        // frame in the first few milliseconds would be read as outside and throw the session away
+        // (measured: 3 of 4 presses landing 14 to 19 ms after this call). Nothing is ignored for
+        // long enough to swallow a press that answers the window: it is not on screen until the
+        // flight lands on it, and a hand cannot react inside `outsideClickSettling`.
+        outsideClick.start(settling: Self.outsideClickSettling) { [weak self] in self?.cancel() }
+    }
+
+    /// How long the annotator ignores clicks after its window is ordered in. A race with the window
+    /// server, not an animation: fixed, in code, and the motion scale does not touch it.
+    private static let outsideClickSettling: TimeInterval = 0.15
+
+    /// The flight is exactly on this frame and is going. The window draws the shadow from here on,
+    /// in the same run loop turn the flight drops its own, so it is never drawn twice or missing.
+    func landed() {
+        frameView?.layer?.shadowOpacity = Float(TransitionLayer.Look.annotator(Settings.shared.data.ui).shadowOpacity)
+    }
+
+    /// Lets the prepared image go without asking the page for anything. Called instead of `hide`
+    /// when the session ends before the window came up: nobody saw that image and nobody could
+    /// draw on it, so there is nothing to store, and the stored draft the page was told to load
+    /// stays as it is. A park here would be a round trip that can sit behind an export, with the
+    /// card hanging in the air until it answers.
+    func abandon() {
+        guard current != nil else { return }
+        outsideClick.stop()
+        current = nil
+        pendingHide = nil
+        standIn.sessionEnded()
+        call(.reset)
+        hideWindows()
     }
 
     /// Parks the draft, then removes the window. `then` runs once the page has answered, so a
@@ -465,7 +510,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let once = { if !answered { answered = true; done() } }
         raiseStandIn()
         zoomTarget = 1
-        aim(at: Zoom.center, to: split(1).window)
+        aim(at: Zoom.center, to: 1)
         aimPan(at: Zoom.center)
         zoomTween.animate(to: 1, duration: motionScaled(fitToCloseSeconds), curve: "spring", completion: once)
         DispatchQueue.main.asyncAfter(deadline: .now() + motionScaled(fitToCloseSeconds) + 0.3) { once() }
@@ -477,8 +522,11 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         zoomTween.stop()
         pageLayoutPending = false
         standIn.forget()
+        // The panel stops being this window's child before the window goes, or AppKit would order
+        // it out with its parent; `hideSoon` then takes it down only if no other image has asked
+        // for it by the next turn of the run loop, and `show` makes it a child of the new window.
         if let win = window, toolbar.panel.parent === win { win.removeChildWindow(toolbar.panel) }
-        toolbar.hide()
+        toolbar.hideSoon()
         window?.orderOut(nil)
     }
 
@@ -662,6 +710,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         win.makeKeyAndOrderFront(nil)
+        landed()   // no flight to hand over from: this window is the whole of it
         if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
         toolbar.show()
         NSApp.activate(ignoringOtherApps: true)
@@ -748,15 +797,16 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         [
             "current": current?.url.path as Any,
             "windowVisible": window?.isVisible ?? false,
-            "zoom": zoomScale,
+            "zoom": [zoomWindow.width, zoomWindow.height],
             "zoomLevel": zoomLevel,
-            "canvasZoom": canvasZoom,
+            "canvasZoom": [canvasZoom.width, canvasZoom.height],
             "zoomAnchor": [zoomAnchor.x, zoomAnchor.y],
             "zoomCenter": [zoomCenter.x, zoomCenter.y],
             "standIn": standIn.isUp,
             "overlay": standIn.overlayPixels as Any,
             "room": growthLimit.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
+            "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.panel.frame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
             "pageState": "\(pageState)",
             "tool": toolbar.model.tool as Any, "color": toolbar.model.color,
             "port": Int(port),
@@ -808,6 +858,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         pendingBuild?(nil, "web process terminated")
         pendingHide?()
         standIn.pageRestarted()
+        // The reloaded page fits the image to the frame it finds, and a zoomed frame is not the
+        // image's shape any more, so it would fit the whole image inside it with a gap down one
+        // side. The window comes home instead, which is the view that page will draw.
+        if abs(zoomTarget - 1) > 0.001 { zoom(by: nil, at: nil, as: .step) }
         onProblem?("The editor restarted")
         webView.reload()
     }

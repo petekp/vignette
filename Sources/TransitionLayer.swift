@@ -45,6 +45,12 @@ final class TransitionLayer {
         /// the bow comes from both paths, so a retarget bends instead of stepping sideways.
         var blend: CGFloat = 1
         var generation = 0
+        /// Runs when `end(id:)` or `endAll()` removes this flight before it arrived, so whatever it
+        /// was covering can take over. Aiming the flight again replaces it; arriving clears it.
+        /// `converge` removes its pieces without running it, which nothing can notice today: only
+        /// the annotator's outbound flight sets a handler, and `ThumbnailController.stitched`
+        /// refuses to start a stitch while the annotator has anything in flight.
+        var dropped: (() -> Void)?
     }
 
     final class Model: ObservableObject {
@@ -76,17 +82,23 @@ final class TransitionLayer {
     }
 
     /// Moves `id` to `to`. A new flight starts at `from`; an existing one turns from where it is.
-    /// `arrived` runs when the spring has really settled on the target. Whatever takes the flight's
-    /// place draws at the exact target, so it has to appear then or it steps by what the spring
-    /// still had to go.
+    ///
+    /// `covered` runs when the flight first reaches the target: it has travelled the whole path by
+    /// then, and from there to the end of the spring it is on the far side of the target, so it
+    /// covers the target rect on every side and something put there without a shadow is hidden
+    /// behind it. `arrived` runs when the spring has really settled on the target; whatever takes
+    /// the flight's place draws at the exact target, so it has to appear then or it steps by what
+    /// the spring still had to go.
     func fly(id: UUID, image: NSImage, from: NSRect, to: NSRect, lookFrom: Look, lookTo: Look,
-             on screen: NSScreen, arrived: @escaping () -> Void = {}) {
+             on screen: NSScreen, covered: @escaping () -> Void = {}, arrived: @escaping () -> Void = {},
+             dropped: (() -> Void)? = nil) {
         let ui = Settings.shared.motionUI
         showPanel(on: screen)
-        let gen = start(id: id, image: image, from: from, to: to, look: lookFrom, ui: ui)
+        let gen = start(id: id, image: image, from: from, to: to, look: lookFrom, ui: ui, dropped: dropped)
         let travel = max(abs(to.minX - from.minX), abs(to.minY - from.minY),
                          abs(to.width - from.width), abs(to.height - from.height))
         let settleTime = Anim.settle(ui.expandDuration, bounce: 0.15, distance: travel, within: Self.arrivalTolerance)
+        let coverTime = min(settleTime, Anim.passesTarget(ui.expandDuration, bounce: 0.15))
         // The starting state has to be committed before the animated change, or it starts at `to`.
         DispatchQueue.main.async { [weak self] in
             guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
@@ -97,6 +109,11 @@ final class TransitionLayer {
                 self.model.flights[i].look = lookTo
                 self.model.flights[i].opacity = 1
                 self.model.flights[i].blend = 1
+            }
+            // Scheduled before the arrival, so a duration of 0 runs the two in this order.
+            DispatchQueue.main.asyncAfter(deadline: .now() + coverTime) { [weak self] in
+                guard let self, self.isCurrent(id, gen) else { return }
+                covered()
             }
             // The spring's tail runs on past its nominal duration. By here
             // it is inside `arrivalTolerance`, so putting it exactly on the target is a sub-pixel
@@ -109,6 +126,7 @@ final class TransitionLayer {
                     self.model.flights[i].blend = 1
                 }
                 self.arrivedFlights.insert(id)
+                self.model.flights[i].dropped = nil
                 arrived()
                 if self.pendingLift.remove(id) != nil { self.end(id: id) }
             }
@@ -170,7 +188,8 @@ final class TransitionLayer {
     /// Adds the flight, or aims an existing one down a new path, and returns its generation.
     /// The curve is fixed when the path is, so a flight keeps the motion scale it started with.
     /// Aiming again keeps the old path and resets `blend`, which `fly` then animates back to 1.
-    private func start(id: UUID, image: NSImage, from: NSRect, to: NSRect, look: Look, ui: UITweaks) -> Int {
+    private func start(id: UUID, image: NSImage, from: NSRect, to: NSRect, look: Look, ui: UITweaks,
+                       dropped: (() -> Void)? = nil) -> Int {
         let path = Path(from: center(local(from)), to: center(local(to)), curve: FlightCurve(ui: ui))
         // It is going somewhere else now, so it has not arrived and any lift waits for the new end.
         arrivedFlights.remove(id)
@@ -185,10 +204,11 @@ final class TransitionLayer {
             model.flights[i].previousPath = model.flights[i].path
             model.flights[i].path = path
             model.flights[i].blend = 0
+            model.flights[i].dropped = dropped
             return gen
         }
         model.flights.append(Flight(id: id, image: image, frame: local(from), look: look,
-                                    path: path, previousPath: path, generation: gen))
+                                    path: path, previousPath: path, generation: gen, dropped: dropped))
         return gen
     }
 
@@ -214,17 +234,21 @@ final class TransitionLayer {
 
     /// Removes the flight. Call once whatever it was flying toward is drawn.
     func end(id: UUID) {
+        let dropped = model.flights.first { $0.id == id && !arrivedFlights.contains($0.id) }?.dropped
         model.flights.removeAll { $0.id == id }
         arrivedFlights.remove(id)
         pendingLift.remove(id)
         if model.flights.isEmpty { panel.orderOut(nil) }
+        dropped?()
     }
 
     func endAll() {
+        let dropped = model.flights.filter { !arrivedFlights.contains($0.id) }.compactMap(\.dropped)
         model.flights = []
         arrivedFlights = []
         pendingLift = []
         panel.orderOut(nil)
+        for handler in dropped { handler() }
     }
 
     private func showPanel(on screen: NSScreen) {

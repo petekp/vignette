@@ -242,6 +242,77 @@ final class RenderTests: XCTestCase {
                        "the canvas holds the image the host loaded, not the one the build put back")
     }
 
+    /// A pushed text is wrapped inside the image and sized for it. Three sentences an agent could
+    /// send: one with no width from a third of the way across, one that names its own box, and one
+    /// from the far corner, where the box has to move to fit. None of them may leave the image, or
+    /// the export and the card's preview cut it off. The same sentence on an image twice the size
+    /// must cover the same part of it, which is what makes a crop and a full capture read alike.
+    /// The one text shape on the page, as fractions of the image it is drawn on.
+    private let oneTextBox = """
+        const image = window.editor.getShapePageBounds('shape:screenshot');
+        const s = window.editor.getCurrentPageShapesSorted().find((s) => s.type === 'text');
+        const b = window.editor.getShapePageBounds(s.id);
+        return { x: (b.x - image.x) / image.w, y: (b.y - image.y) / image.h, w: b.w / image.w, h: b.h / image.h };
+        """
+
+    func testAPushedTextWrapsInsideTheImageAndIsSizedForIt() throws {
+        waitFor("ready")
+        let words = "16 pt between strip and card now. Enough? Circle what to change."
+        let marks = [
+            Mark(type: .text, x: 0.3, y: 0.55, text: words, color: "red"),
+            Mark(type: .text, x: 0.1, y: 0.1, w: 0.4, text: words, color: "red"),
+            Mark(type: .text, x: 0.92, y: 0.9, text: words, color: "red"),
+        ]
+        let built = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(payload, snapshot: nil, marks: marks).script)))
+        try loadFixture(snapshot: try JSONSerialization.data(withJSONObject: try XCTUnwrap(built.snapshot)))
+        let boxes = try XCTUnwrap(eval("""
+            const image = window.editor.getShapePageBounds('shape:screenshot');
+            return window.editor.getCurrentPageShapesSorted().filter((s) => s.type === 'text').map((s) => {
+              const b = window.editor.getShapePageBounds(s.id);
+              return { x: (b.x - image.x) / image.w, y: (b.y - image.y) / image.h, w: b.w / image.w, h: b.h / image.h };
+            });
+            """) as? [[String: Double]])
+        XCTAssertEqual(boxes.count, marks.count)
+        for box in boxes {
+            XCTAssertGreaterThanOrEqual(box["x"]!, 0, "a pushed text starts inside the image: \(box)")
+            XCTAssertGreaterThanOrEqual(box["y"]!, 0, "\(box)")
+            XCTAssertLessThanOrEqual(box["x"]! + box["w"]!, 1, "and ends inside it: \(box)")
+            XCTAssertLessThanOrEqual(box["y"]! + box["h"]!, 1, "\(box)")
+        }
+        XCTAssertEqual(boxes[1]["w"]!, 0.4, accuracy: 0.01, "a text mark that names its box gets it")
+
+        // A caption asked for at the image's full width already fits it exactly, so the pull-back
+        // has no room to give it and must leave it where it is rather than move it in by the margin.
+        let full = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(payload, snapshot: nil,
+            marks: [Mark(type: .text, x: 0, y: 0.1, w: 1, text: words, color: "red")]).script)))
+        try loadFixture(snapshot: try JSONSerialization.data(withJSONObject: try XCTUnwrap(full.snapshot)))
+        let spanning = try XCTUnwrap(eval(oneTextBox) as? [String: Double])
+        XCTAssertGreaterThanOrEqual(spanning["x"]!, 0, "a full-width caption stays inside: \(spanning)")
+        XCTAssertLessThanOrEqual(spanning["x"]! + spanning["w"]!, 1, "\(spanning)")
+
+        // A long sentence in a narrow default box wraps into a column taller than the image. The
+        // box is widened until the words fit the height, so the whole of it is still on the picture
+        // rather than cut off below it — which is what this mark is for.
+        let wide = LoadPayload(key: fixture.path, mimeType: "image/png", pixelWidth: pixelWidth * 7, pixelHeight: pixelHeight * 2)
+        let long = String(repeating: "the header should not scroll with the rest of the page, ", count: 4)
+        let tall = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(wide, snapshot: nil,
+            marks: [Mark(type: .text, x: 0.88, y: 0.2, text: long, color: "red")]).script)))
+        try loadFixture(snapshot: try JSONSerialization.data(withJSONObject: try XCTUnwrap(tall.snapshot)))
+        let column = try XCTUnwrap(eval(oneTextBox) as? [String: Double])
+        XCTAssertLessThanOrEqual(column["h"]!, 1, "a long sentence is widened until it fits the image's height: \(column)")
+        XCTAssertLessThanOrEqual(column["y"]! + column["h"]!, 1, "so its bottom is on the image: \(column)")
+        XCTAssertLessThanOrEqual(column["x"]! + column["w"]!, 1, "\(column)")
+
+        // The same sentence on an image twice as wide: the font follows the image, so the wrapped
+        // box covers the same fraction of it. The payload is what tells the page the image's size.
+        let bigger = LoadPayload(key: fixture.path, mimeType: "image/png", pixelWidth: pixelWidth * 2, pixelHeight: pixelHeight * 2)
+        let onBigger = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(bigger, snapshot: nil, marks: [marks[0]]).script)))
+        try loadFixture(snapshot: try JSONSerialization.data(withJSONObject: try XCTUnwrap(onBigger.snapshot)))
+        let box = try XCTUnwrap(eval(oneTextBox) as? [String: Double])
+        XCTAssertEqual(box["w"]!, boxes[0]["w"]!, accuracy: 0.02, "the box covers the same part of either image")
+        XCTAssertEqual(box["h"]!, boxes[0]["h"]!, accuracy: 0.02, "so the sentence wraps into the same number of lines")
+    }
+
     /// The first thing this page ever draws is a text mark, on a canvas nobody has seen: the font
     /// it needs has not been used yet, and the rendering must wait for it rather than come back
     /// blank. The second text mark must be drawn too: `render` waits once per font and then trusts

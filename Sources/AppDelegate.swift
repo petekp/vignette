@@ -56,8 +56,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.onAnnotatorPrepare = { [weak self] shot, frame, room in self?.annotator.prepare(shot, in: frame, room: room) }
         annotator.onFrame = { [weak self] frame in self?.thumbnail.annotatorFrameMoved(frame) }
         thumbnail.onAnnotatorShow = { [weak self] in self?.annotator.show() }
+        thumbnail.onAnnotatorLanded = { [weak self] in self?.annotator.landed() }
         thumbnail.annotatorBelow = { [weak self] in self?.annotator.spaceBelow ?? 0 }
         thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide(then: hidden) }
+        thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }
         annotator.onFinished = { [weak self] shot, pngData in self?.finishAnnotation(shot, pngData) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
         annotator.onLoaded = { [weak self] key in self?.thumbnail.pageLoaded(key) }

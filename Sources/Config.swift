@@ -43,6 +43,21 @@ struct ShotAction: Sendable {
         let character: String
         let modifiers: NSEvent.ModifierFlags
         init(_ character: String, _ modifiers: NSEvent.ModifierFlags) { self.character = character; self.modifiers = modifiers }
+
+        /// The shortcut as a user reads it: ⌘C, ⌥⌘C, ↩, ⌘⌫. The one renderer; the selection
+        /// strip's rows and their tooltips both read it, so a row and its tooltip cannot differ.
+        var glyphs: String {
+            var s = ""
+            if modifiers.contains(.control) { s += "⌃" }
+            if modifiers.contains(.option) { s += "⌥" }
+            if modifiers.contains(.shift) { s += "⇧" }
+            if modifiers.contains(.command) { s += "⌘" }
+            switch character {
+            case "\r": return s + "↩"
+            case "\u{7f}": return s + "⌫"
+            default: return s + character.uppercased()
+            }
+        }
     }
 
     let id: String

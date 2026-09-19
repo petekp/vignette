@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Shotnote</title>
+<meta name="description" content="A macOS menu bar app for what happens after the screenshot: copy it, keep the recent ones in a stack, draw on any of them.">
+<style>
+  :root {
+    --ink: 28 28 28;
+    --paper: 252 252 252;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: 219 219 219;
+      --paper: 20 20 20;
+    }
+  }
+  html {
+    font-size: 16px;
+  }
+  body {
+    margin: 0;
+    padding: 3.5rem 1rem 5rem;
+    background: rgb(var(--paper));
+    color: rgb(var(--ink));
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 1rem;
+    line-height: 1.55;
+    -webkit-text-size-adjust: 100%;
+  }
+  main {
+    max-width: 34rem;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0 0 1.4rem;
+  }
+  p {
+    margin: 0 0 1.4rem;
+  }
+  ul {
+    margin: 0 0 1.4rem;
+    padding-left: 1.2rem;
+  }
+  li {
+    margin-bottom: 1.4rem;
+  }
+  b {
+    font-weight: 700;
+  }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1em;
+  }
+  a {
+    color: inherit;
+    text-underline-offset: 0.2em;
+  }
+  figure {
+    margin: 0 0 1.4rem;
+  }
+  img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid rgb(var(--ink) / 0.15);
+    border-radius: 4px;
+  }
+  figcaption {
+    margin-top: 0.6rem;
+    opacity: 0.65;
+  }
+  footer {
+    margin-top: 2.8rem;
+    opacity: 0.65;
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Shotnote</h1>
+
+<p>Shotnote is a macOS menu bar app for what happens after the screenshot: Cmd+Shift+3, 4 and 5
+still take it, and Shotnote copies it, keeps the recent ones in a stack in the corner of the
+screen, and opens any of them in an editor to draw on.</p>
+
+<figure>
+  <img src="stack-and-editor.png" width="1200" height="668" alt="A Mac screen with recent screenshots stacked as cards down the right edge and one of them open in the editor beside them, a red rectangle drawn on it.">
+  <figcaption>The recent stack, and one of its screenshots open in the editor.</figcaption>
+</figure>
+
+<ul>
+
+<li><b>The stack.</b> A shortcut puts your recent screenshots in the corner of the screen, over
+whatever you are working in. It takes the keyboard without taking your app's focus: arrows move,
+Space selects, Return opens, and the focus follows the mouse, so a key acts on the card you are
+pointing at. Drag a card out to drop it as a file on a chat window, Finder, or a terminal.</li>
+
+<li><b>Draw and copy.</b> Return opens a screenshot in an editor sized to the image: rectangle,
+arrow, text. A mark is drawn in red unless red is what it sits on: the editor measures the
+pixels under each mark and moves to a colour that stands out from them. Done copies
+the result and sends the card back to the stack.</li>
+
+<li><b>Stitch.</b> Select several cards and Cmd+S joins them into one image with numbered badges,
+saved next to the originals and copied. Two or three stack; more go in a grid, because a very tall
+image loses more of itself when a model resizes it to read.</li>
+
+<li><b>A queue.</b> Open several cards at once and they come one after another, in the order you
+picked them. Each Done sends that one home and opens the next. They stay selected, so Cmd+C or
+Cmd+S afterwards still takes all of them.</li>
+
+<li><b>Zoom.</b> Pinch, Cmd+scroll, or Cmd+plus magnifies the image you are drawing on, and Cmd+0
+fits it again; a two-finger double tap zooms in on the point you are over. The window grows into
+the room it has first, and the stack narrows to make way for it rather than being covered.</li>
+
+<li><b>Drawings that survive a relaunch.</b> Leave a drawing with Esc and it is kept on disk, not
+in the editor's memory. The card shows it, Copy Drawing renders it without opening the editor, and
+it is still there after a restart.</li>
+
+<li><b>A skill for coding agents.</b> Turn it on and Shotnote copies a skill into
+<code>~/.claude</code> and <code>~/.codex</code> that teaches a coding agent its URL commands. The agent hands you an image
+with <code>add</code>, draws its own marks on it with <code>marks=</code>, and reads back what you
+drew; the card carries a badge naming which agent pushed it.</li>
+
+</ul>
+
+<p>
+<!-- Download link. To make it live, replace the text below with exactly:
+     <a href="https://github.com/petekp/shotnote/releases/latest">Download Shotnote</a> for macOS 14 or later. -->
+Download Shotnote &mdash; not released yet.
+</p>
+
+<p>
+<!-- GitHub link. To make it live, replace the text below with exactly:
+     <a href="https://github.com/petekp/shotnote">Shotnote on GitHub</a> &mdash; the source, and how to build it. -->
+Shotnote on GitHub &mdash; the repository is not public yet.
+</p>
+
+<footer>macOS 14 or later. Shotnote is MIT licensed; the editor is tldraw, under its own license.</footer>
+
+</main>
+</body>
+</html>

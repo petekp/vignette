@@ -32,7 +32,19 @@ import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, View
 const ZOOM_STEP = 1.25
 /** Wheel and pinch: window scale per wheel unit; pinch-out (negative deltaY) grows the window. */
 const WHEEL_ZOOM_RATE = 0.01
-import { CANDIDATES, ColorId, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
+import {
+  CANDIDATES,
+  ColorId,
+  DEFAULT_SIZE,
+  DEFAULT_TEXT_POINTS,
+  DEFAULT_TOOL,
+  PUSHED_TEXT_MARGIN,
+  PUSHED_TEXT_MIN_WIDTH,
+  PUSHED_TEXT_SIZE,
+  REOPEN_TOOL,
+  TOOLS,
+  ToolId,
+} from './config'
 import { Area, explain, hasSample, pickColor, prepareSample } from './contrast'
 
 const IMAGE_ID: TLShapeId = createShapeId('screenshot')
@@ -387,7 +399,9 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
 
 function fitCamera(editor: Editor, w: number, h: number) {
   view = { ratio: 1, x: 0.5, y: 0.5 }
-  // The host sizes the window to the image's aspect, so 'fit' makes the image flush with the window.
+  // An image opens in a window of its own aspect, so 'fit' makes it flush with the window there.
+  // A zoom grows each side of the window on its own, and `setView` then asks for the magnification
+  // past this fit; 'fit-max' keeps that fit the side the window has grown least in.
   editor.setCameraOptions({
     // No step below the fit: nothing tldraw does on its own can zoom the image out of the window.
     zoomSteps: [1, 2, 4, 8],
@@ -506,13 +520,31 @@ function removeAll(editor: Editor) {
   if (assets.length) editor.deleteAssets(assets)
 }
 
-/// An agent's marks as ordinary shapes, in canvas points: the image is at the origin, `w` by `h`,
-/// and every mark number is a fraction of it. The host has already checked the numbers and the color.
-function createMarks(editor: Editor, marks: Mark[], w: number, h: number): TLShapeId[] {
+/// A pushed text mark on the canvas: the shape, which mark it came from (counted from 1, the way
+/// `invalid-marks` counts them), and the scale its box is drawn at, which turns a width in canvas
+/// points into the `w` the shape carries.
+type PushedText = { id: TLShapeId; mark: number; scale: number }
+
+/// The room a pushed text has to sit in: the image less `PUSHED_TEXT_MARGIN` on every side. The
+/// margin is a fraction of the image's width on all four edges, so the inset is the same number of
+/// points all round rather than the same fraction of two sides of different lengths. On an image
+/// wider than it is tall that leaves less of the height than of the width, which is why a box is
+/// measured against this rather than against the image.
+function textRoom(image: Box): Box {
+  const margin = PUSHED_TEXT_MARGIN * image.w
+  return new Box(image.x + margin, image.y + margin, image.w - 2 * margin, image.h - 2 * margin)
+}
+
+/// An agent's marks as ordinary shapes, in canvas points: `image` is the box the screenshot
+/// occupies, and every mark number is a fraction of it. The host has already checked the numbers
+/// and the color.
+function createMarks(editor: Editor, marks: Mark[], image: Box): { unnamed: TLShapeId[]; texts: PushedText[] } {
   const unnamed: TLShapeId[] = []
-  for (const m of marks) {
-    const x = m.x * w
-    const y = m.y * h
+  const texts: PushedText[] = []
+  const margin = PUSHED_TEXT_MARGIN * image.w
+  for (const [index, m] of marks.entries()) {
+    const x = image.x + m.x * image.w
+    const y = image.y + m.y * image.h
     const color = (m.color ?? CANDIDATES[0].id) as ColorId
     // A mark that names a colour keeps it; one that names none is the heuristic's to colour.
     const meta = m.color ? { colorChosen: true } : {}
@@ -525,10 +557,32 @@ function createMarks(editor: Editor, marks: Mark[], w: number, h: number): TLSha
         x,
         y,
         meta,
-        props: { start: { x: 0, y: 0 }, end: { x: (m.x2! - m.x) * w, y: (m.y2! - m.y) * h }, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
+        props: {
+          start: { x: 0, y: 0 },
+          end: { x: (m.x2! - m.x) * image.w, y: (m.y2! - m.y) * image.h },
+          color,
+          size: DEFAULT_SIZE,
+          dash: 'solid',
+          fill: 'none',
+        },
       })
     } else if (m.type === 'text') {
-      editor.createShape({ id, type: 'text', x, y, meta, props: { richText: toRichText(m.text!), color, size: DEFAULT_SIZE } })
+      // A pushed text is drawn at a size the image gives it and wrapped in a box, so a sentence is
+      // neither huge on a crop nor one line that runs off the edge. `scale` multiplies both the
+      // font and `w`, so the box on the canvas is `w * scale`: dividing here is what makes the
+      // wrap land where the mark asked for it.
+      const scale = (PUSHED_TEXT_SIZE * image.w) / DEFAULT_TEXT_POINTS
+      const room = image.x + image.w - margin - x
+      const box = m.w === undefined ? Math.max(PUSHED_TEXT_MIN_WIDTH * image.w, room) : m.w * image.w
+      editor.createShape({
+        id,
+        type: 'text',
+        x,
+        y,
+        meta,
+        props: { richText: toRichText(m.text!), color, size: DEFAULT_SIZE, scale, autoSize: false, w: box / scale },
+      })
+      texts.push({ id, mark: index + 1, scale })
     } else {
       editor.createShape({
         id,
@@ -536,11 +590,82 @@ function createMarks(editor: Editor, marks: Mark[], w: number, h: number): TLSha
         x,
         y,
         meta,
-        props: { geo: m.type, w: m.w! * w, h: m.h! * h, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
+        props: { geo: m.type, w: m.w! * image.w, h: m.h! * image.h, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
       })
     }
   }
-  return unnamed
+  return { unnamed, texts }
+}
+
+/// How many times a box is widened and measured again. Wrapping is discrete — a pass can land a
+/// word short of the line it aimed for — so the first estimate is checked rather than trusted.
+/// Each pass costs one measurement, and four reach the room's width from any box this can make.
+const TEXT_FIT_PASSES = 4
+
+/// Widens one text box until its words wrap short enough to fit the room's height, so a long
+/// sentence becomes a wide block rather than a column running off the bottom edge. The box's area
+/// is roughly what the sentence needs at its font size, so the width the height wants is about
+/// `w * h / room.h`; wrapping makes that an estimate, which is what the passes are for. The width
+/// stops at the room's own, the widest a box can be and still sit inside the image.
+///
+/// A box still too tall at that width is a sentence this image has no room for. Nothing here can
+/// fix that, so it is left as wide as it can be — the most of it that can show — and the caller
+/// reports it rather than letting `[add] ok` stand for a mark the picture cut in half.
+function widenToFit(editor: Editor, text: PushedText, room: Box) {
+  if (room.w <= 0 || room.h <= 0) return
+  for (let pass = 0; pass < TEXT_FIT_PASSES; pass++) {
+    const bounds = editor.getShapePageBounds(text.id)
+    if (!bounds || bounds.h <= room.h) return
+    const wanted = Math.min(room.w, (bounds.w * bounds.h) / room.h)
+    // Within a point of the width it already has: no later pass can widen it either, because the
+    // room is the limit or the estimate has converged.
+    if (wanted <= bounds.w + 1) return
+    editor.updateShape({ id: text.id, type: 'text', props: { w: wanted / text.scale } })
+  }
+}
+
+/// Fits pushed text marks inside the image: each box is first widened until its wrapped height has
+/// room, then moved so the whole of it is inside. How wide the font draws a sentence and where it
+/// wraps are neither of them things the agent that sent the mark can know, so every box is measured
+/// once it exists rather than predicted.
+///
+/// Returns the marks whose box still reaches past the image after both — a sentence too long for
+/// this picture at this font size.
+///
+/// The measure needs the font the text is drawn in. A page that has not drawn text yet has not
+/// loaded it, and measures the fallback instead, so the wait comes first: it is the font already
+/// in `web/dist`, and every later push finds it loaded.
+async function fitTextsInside(editor: Editor, texts: PushedText[], image: Box): Promise<number[]> {
+  await editor.fonts.loadRequiredFontsForCurrentPage()
+  const room = textRoom(image)
+  const margin = PUSHED_TEXT_MARGIN * image.w
+  const overflowing: number[] = []
+  silently(editor, () => {
+    for (const text of texts) {
+      widenToFit(editor, text, room)
+      const bounds = editor.getShapePageBounds(text.id)
+      const shape = editor.getShape(text.id)
+      if (!bounds || !shape) continue
+      if (bounds.w > image.w || bounds.h > image.h) overflowing.push(text.mark)
+      // A box with no room to spare in a direction is put against the image's own edge in that
+      // direction rather than the margin's: the margin is room to spare, and a box that already
+      // fitted the image exactly — a caption asked for at the full width — must not be pushed out
+      // of it by being given room it has not got. A box bigger than the image itself keeps its
+      // start showing, which is what the low bound wins.
+      const insetX = bounds.w <= room.w ? margin : 0
+      const insetY = bounds.h <= room.h ? margin : 0
+      const x = within(bounds.x, image.x + insetX, image.x + image.w - insetX - bounds.w)
+      const y = within(bounds.y, image.y + insetY, image.y + image.h - insetY - bounds.h)
+      if (x === bounds.x && y === bounds.y) continue
+      editor.updateShape({ id: text.id, type: 'text', x: shape.x + (x - bounds.x), y: shape.y + (y - bounds.y) })
+    }
+  })
+  return overflowing
+}
+
+/// `value` between the two, `low` winning when the box is bigger than the room between them.
+function within(value: number, low: number, high: number) {
+  return Math.min(Math.max(value, low), Math.max(low, high))
 }
 
 /// An agent's marks as a draft, with the editor never shown: the image and the marks go on the
@@ -555,11 +680,28 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
   const h = p.pixelHeight / ratio
   quiet = true
   try {
-    let unnamed: TLShapeId[] = []
+    let made: { unnamed: TLShapeId[]; texts: PushedText[] } = { unnamed: [], texts: [] }
+    // The image's own box, not the payload's: a stored draft carries the image shape it was made
+    // with, and every mark is a fraction of the box the screenshot is actually drawn in.
+    let image = new Box(0, 0, w, h)
     silently(editor, () => {
       placeImage(editor, p, w, h)
-      unnamed = createMarks(editor, marks, w, h)
+      image = editor.getShapePageBounds(IMAGE_ID) ?? image
+      made = createMarks(editor, marks, image)
     })
+    const { unnamed, texts } = made
+    // Before the colours: the heuristic samples what a mark covers, so a text has to be where it
+    // will be drawn first.
+    const overflowing = texts.length ? await fitTextsInside(editor, texts, image) : []
+    // The export and the card's preview both take tldraw's SVG within the image's bounds, so a box
+    // that reaches past it is cut everywhere the mark is seen. The host cannot tell from `ok` that
+    // it happened, and the agent that sent the mark cannot either, so it is said here.
+    if (overflowing.length) {
+      postToNative({
+        type: 'log',
+        message: `pushed text too long for this image: mark ${overflowing.join(', ')} is cut off at its edge`,
+      })
+    }
     // The snapshot is stored as it stands, so the colours are picked before it is taken.
     if (unnamed.length) {
       // A screenshot that will not decode leaves no sample: the marks keep the colour they were
