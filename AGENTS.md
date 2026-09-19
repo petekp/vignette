@@ -307,7 +307,10 @@ the same driven sequence; a single run varies.
   the model has to read the text.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
-  annotator the panel gives up key status so typing reaches the editor.
+  annotator the panel gives up key status so typing reaches the editor. It gives it up in
+  `perform(.show)`, after the annotator's window has taken it, not when the flight starts: the keys
+  pass from one to the other instead of being nobody's for the length of the flight, which is what
+  lets Esc turn a card around mid-air.
 - Which card a key acts on is one variable, `model.focused`. The stack focuses the newest card the
   moment it takes keys (`takeKeys`), so arrows, Space, and Return act on a card without a first
   click or arrow press, and the pointer moves the focus too: moving onto a card focuses it, and
@@ -397,6 +400,10 @@ the same driven sequence; a single run varies.
   and nothing is stored, so the draft the page was told to load is untouched. `dismiss` and `remove`
   still park from `flyingOut`, because the panel aims that same flight offscreen before the event
   arrives and the card has to stay in the layer until it is out of sight.
+  Esc is the user's way in: the stack still holds the keys through the flight, so `handleKey` sees
+  it, and in `flyingOut` it means `annotationEnded()` rather than clearing the selection or
+  dismissing the stack. That is the recent stack only — `handleKey` guards on `model.isStack`, and a
+  lone thumbnail's panel never takes keys.
   `docs/flight-interrupt-2026-09-18.md` has the frames.
 - Annotating a list is a queue (`ThumbnailController.queue`, `stack.queue` in the state report):
   the first file opens and the rest wait, and finishing one opens the next until the list is done.

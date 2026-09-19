@@ -673,9 +673,10 @@ final class ThumbnailController: NSObject {
             sessionCard = card
             loadedKeys.remove(key)
             dismissTimer?.invalidate()
-            // The selection stays: the card comes back to its slot, and a queued run needs the rest
-            // of it to still be there when the last card is done.
-            releaseKeys()
+            // The keys stay with the stack until the annotator's window is up (see `.show`), so Esc
+            // during the flight reaches `handleKey` and turns the card around. The selection stays
+            // too: the card comes back to its slot, and a queued run needs the rest of it to still
+            // be there when the last card is done.
             _ = model.outCards.insert(card.id)
             let target = targetFrame(for: card)
             annotationFrame = target
@@ -705,6 +706,9 @@ final class ThumbnailController: NSObject {
             })
         case .show:
             onAnnotatorShow?()
+            // After the window has taken the keys, so they pass from one to the other rather than
+            // being nobody's for the length of the flight. Typing now reaches the editor.
+            releaseKeys()
             guard let card = sessionCard else { return }
             if !model.isStack {
                 // A lone thumbnail has nothing to keep open behind the annotator; cards that joined stay.
@@ -950,6 +954,11 @@ final class ThumbnailController: NSObject {
         let isDelete = code == 51 || code == 117
 
         if code == 53 {
+            // A card on its way to the annotator turns around. The stack still holds the keys —
+            // they pass to the annotator's window at `.show` — so this is the one Esc that is
+            // neither the editor's nor the stack's own, and it must not clear the selection the
+            // card comes back to or take the stack down with it.
+            if case .flyingOut = transition.phase { annotationEnded(); return true }
             if model.inSelectionMode { model.clearSelection(); relayout() }
             else { dismiss() }
             return true
