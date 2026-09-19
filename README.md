@@ -206,9 +206,12 @@ not depend on its pixel size:
 The types are `ellipse`, `rectangle`, `arrow`, and `text`; `ellipse` has no toolbar button, and an
 agent can still push one. On a text mark `w` is the box the words wrap in, and it is optional: the
 default is the room between `x` and the right edge. The text is drawn at a size the image gives it,
-so one sentence covers the same part of a 900-pixel crop and a 5120-pixel capture, and a box that
-would run off the image is pulled back inside rather than cut off (`docs/pushed-text-2026-09-19.md`
-has the numbers). A mark that names a `color` keeps it — any of `CANDIDATES` in `web/src/config.ts`
+so one sentence covers the same part of a 900-pixel crop and a 5120-pixel capture. A box that would
+run off the image is widened until the words fit its height and then moved inside, so a long
+sentence becomes a wide block rather than a column running off the bottom; one too long to fit even
+across the whole picture is left as wide as it goes and named in a `[web] pushed text too long`
+line, since the log is the only place that can say so (`docs/pushed-text-2026-09-19.md` has the
+numbers). A mark that names a `color` keeps it — any of `CANDIDATES` in `web/src/config.ts`
 — and a mark that names none is coloured from what it covers, like your own. The
 marks become a draft before the card appears, so the card shows them, Copy Drawing has them, and
 opening the card puts them in the editor to move, retype, or delete like your own. The editor builds

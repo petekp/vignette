@@ -290,6 +290,19 @@ final class RenderTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(spanning["x"]!, 0, "a full-width caption stays inside: \(spanning)")
         XCTAssertLessThanOrEqual(spanning["x"]! + spanning["w"]!, 1, "\(spanning)")
 
+        // A long sentence in a narrow default box wraps into a column taller than the image. The
+        // box is widened until the words fit the height, so the whole of it is still on the picture
+        // rather than cut off below it — which is what this mark is for.
+        let wide = LoadPayload(key: fixture.path, mimeType: "image/png", pixelWidth: pixelWidth * 7, pixelHeight: pixelHeight * 2)
+        let long = String(repeating: "the header should not scroll with the rest of the page, ", count: 4)
+        let tall = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(wide, snapshot: nil,
+            marks: [Mark(type: .text, x: 0.88, y: 0.2, text: long, color: "red")]).script)))
+        try loadFixture(snapshot: try JSONSerialization.data(withJSONObject: try XCTUnwrap(tall.snapshot)))
+        let column = try XCTUnwrap(eval(oneTextBox) as? [String: Double])
+        XCTAssertLessThanOrEqual(column["h"]!, 1, "a long sentence is widened until it fits the image's height: \(column)")
+        XCTAssertLessThanOrEqual(column["y"]! + column["h"]!, 1, "so its bottom is on the image: \(column)")
+        XCTAssertLessThanOrEqual(column["x"]! + column["w"]!, 1, "\(column)")
+
         // The same sentence on an image twice as wide: the font follows the image, so the wrapped
         // box covers the same fraction of it. The payload is what tells the page the image's size.
         let bigger = LoadPayload(key: fixture.path, mimeType: "image/png", pixelWidth: pixelWidth * 2, pixelHeight: pixelHeight * 2)

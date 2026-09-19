@@ -44,8 +44,12 @@ fraction of the image: `x`,`y` is a shape's top-left corner or an arrow's tail, 
 
 - Types: `ellipse`, `rectangle`, `arrow`, `text`. At most 100 marks and 256 KB.
 - A text mark's `w` is the box its words wrap in, and it is optional: the default is the room
-  between `x` and the right edge. Write the sentence you mean; it is sized for the image and wrapped,
-  and a box that would run off the image is pulled back inside, so nothing you push is cut off.
+  between `x` and the right edge. Write the sentence you mean; it is sized for the image, wrapped,
+  widened until the words fit the image's height, and moved inside it.
+- A sentence too long to fit even across the whole picture **is cut off at the edge**, and `[add]`
+  still answers `ok`. The log says which one: `[web] pushed text too long for this image: mark N is
+  cut off at its edge`. Short marks on a wide image are the safe case; a paragraph on a short one is
+  not. Keep a pushed text to a sentence, and check the log if it mattered.
 - A mark with no `color` is coloured from the pixels it covers. To choose: `red`, `yellow`,
   `light-blue`, `white`, `violet`.
 - `[add] ok <name> … marks=<n>` says they landed. `invalid-marks` names the mark and the field.

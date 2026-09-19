@@ -74,8 +74,11 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    the page turns them into a draft before the card appears, so the human edits them like their own,
    and the command answers once that draft is stored. That JSON file may also be anywhere; it is
    read on the main thread, so it is capped at 256 KB, and an error line names the mark and the
-   field without quoting what the file said. A text mark wraps inside the image and is sized from
-   the image's width (`docs/pushed-text-2026-09-19.md`).
+   field without quoting what the file said. A text mark is sized from the image's width, wrapped,
+   widened until the words fit the image's height, and moved inside it; one too long to fit even
+   across the whole picture is cut at the edge and named in a `[web] pushed text too long` line,
+   which is the only thing that says so, since `[add]` still answers `ok`
+   (`docs/pushed-text-2026-09-19.md`).
    `[annotate] loaded <ms>` reports when the page has the image; it is posted
    from a `requestAnimationFrame`, which WebKit pauses while the screen is locked or the
    window is hidden, so the line never arrives in that state. The canvas work itself is

@@ -597,22 +597,56 @@ function createMarks(editor: Editor, marks: Mark[], image: Box): { unnamed: TLSh
   return { unnamed, texts }
 }
 
-/// Moves pushed text marks back inside the image. How tall a box is depends on where the text
-/// wraps and how wide the font draws it, neither of which the agent that sent the mark can know,
-/// so each box is measured once it exists.
+/// How many times a box is widened and measured again. Wrapping is discrete — a pass can land a
+/// word short of the line it aimed for — so the first estimate is checked rather than trusted.
+/// Each pass costs one measurement, and four reach the room's width from any box this can make.
+const TEXT_FIT_PASSES = 4
+
+/// Widens one text box until its words wrap short enough to fit the room's height, so a long
+/// sentence becomes a wide block rather than a column running off the bottom edge. The box's area
+/// is roughly what the sentence needs at its font size, so the width the height wants is about
+/// `w * h / room.h`; wrapping makes that an estimate, which is what the passes are for. The width
+/// stops at the room's own, the widest a box can be and still sit inside the image.
+///
+/// A box still too tall at that width is a sentence this image has no room for. Nothing here can
+/// fix that, so it is left as wide as it can be — the most of it that can show — and the caller
+/// reports it rather than letting `[add] ok` stand for a mark the picture cut in half.
+function widenToFit(editor: Editor, text: PushedText, room: Box) {
+  if (room.w <= 0 || room.h <= 0) return
+  for (let pass = 0; pass < TEXT_FIT_PASSES; pass++) {
+    const bounds = editor.getShapePageBounds(text.id)
+    if (!bounds || bounds.h <= room.h) return
+    const wanted = Math.min(room.w, (bounds.w * bounds.h) / room.h)
+    // Within a point of the width it already has: no later pass can widen it either, because the
+    // room is the limit or the estimate has converged.
+    if (wanted <= bounds.w + 1) return
+    editor.updateShape({ id: text.id, type: 'text', props: { w: wanted / text.scale } })
+  }
+}
+
+/// Fits pushed text marks inside the image: each box is first widened until its wrapped height has
+/// room, then moved so the whole of it is inside. How wide the font draws a sentence and where it
+/// wraps are neither of them things the agent that sent the mark can know, so every box is measured
+/// once it exists rather than predicted.
+///
+/// Returns the marks whose box still reaches past the image after both — a sentence too long for
+/// this picture at this font size.
 ///
 /// The measure needs the font the text is drawn in. A page that has not drawn text yet has not
 /// loaded it, and measures the fallback instead, so the wait comes first: it is the font already
 /// in `web/dist`, and every later push finds it loaded.
-async function pullTextsInside(editor: Editor, texts: PushedText[], image: Box) {
+async function fitTextsInside(editor: Editor, texts: PushedText[], image: Box): Promise<number[]> {
   await editor.fonts.loadRequiredFontsForCurrentPage()
   const room = textRoom(image)
   const margin = PUSHED_TEXT_MARGIN * image.w
+  const overflowing: number[] = []
   silently(editor, () => {
     for (const text of texts) {
+      widenToFit(editor, text, room)
       const bounds = editor.getShapePageBounds(text.id)
       const shape = editor.getShape(text.id)
       if (!bounds || !shape) continue
+      if (bounds.w > image.w || bounds.h > image.h) overflowing.push(text.mark)
       // A box with no room to spare in a direction is put against the image's own edge in that
       // direction rather than the margin's: the margin is room to spare, and a box that already
       // fitted the image exactly — a caption asked for at the full width — must not be pushed out
@@ -626,6 +660,7 @@ async function pullTextsInside(editor: Editor, texts: PushedText[], image: Box) 
       editor.updateShape({ id: text.id, type: 'text', x: shape.x + (x - bounds.x), y: shape.y + (y - bounds.y) })
     }
   })
+  return overflowing
 }
 
 /// `value` between the two, `low` winning when the box is bigger than the room between them.
@@ -657,7 +692,16 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
     const { unnamed, texts } = made
     // Before the colours: the heuristic samples what a mark covers, so a text has to be where it
     // will be drawn first.
-    if (texts.length) await pullTextsInside(editor, texts, image)
+    const overflowing = texts.length ? await fitTextsInside(editor, texts, image) : []
+    // The export and the card's preview both take tldraw's SVG within the image's bounds, so a box
+    // that reaches past it is cut everywhere the mark is seen. The host cannot tell from `ok` that
+    // it happened, and the agent that sent the mark cannot either, so it is said here.
+    if (overflowing.length) {
+      postToNative({
+        type: 'log',
+        message: `pushed text too long for this image: mark ${overflowing.join(', ')} is cut off at its edge`,
+      })
+    }
     // The snapshot is stored as it stands, so the colours are picked before it is taken.
     if (unnamed.length) {
       // A screenshot that will not decode leaves no sample: the marks keep the colour they were

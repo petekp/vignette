@@ -61,13 +61,36 @@ and it is optional. Without it the box is the room between `x` and the right edg
 the width): a mark at `x` 0.92 would otherwise wrap into a column too narrow to hold a word. A `w`
 the mark does name is used as it stands.
 
-The box is then pulled back inside the image, to the same margin on every side. How tall it is
-depends on where the words wrap and how wide the font draws them, neither of which the agent that
-sent the mark can know, so the box is measured after it exists rather than predicted. A box with no
-room to spare rests against the top left margin: the start of the text is what has to show. A mark
-at `x` 0.92, `y` 0.90 lands at 0.831, 0.765, with its bottom edge on the margin at 0.983.
+How tall the box turns out depends on where the words wrap and how wide the font draws them,
+neither of which the agent that sent the mark can know, so the box is measured after it exists
+rather than predicted, and then fitted in two steps.
 
-Only text is pulled. An agent chooses a rectangle's or an arrow's box itself and may mean it to sit
+**Widened until the height fits.** A narrow box and a long sentence make a column taller than the
+picture, which the margin cannot cure by moving it. The box's area is roughly what the sentence
+needs at its font size, so the width the height wants is about `w * h / room height`; wrapping is
+discrete, so that estimate is measured again and repeated, up to `TEXT_FIT_PASSES` (4) times. The
+width stops at the room's own — the widest a box can be and still sit inside the image.
+
+**Then moved inside.** To the margin on every side where there is room to spare. Where there is
+not, the box goes against the image's own edge in that direction instead: a caption asked for at
+`w` 1.0 already fits the image exactly, and moving it in by the margin would push its far end out.
+Each direction decides on its own. A mark at `x` 0.92, `y` 0.90 lands at 0.831, 0.765, with its
+bottom edge on the margin at 0.983.
+
+**A sentence with no room even at the full width** is a real limit of the picture, not something
+the page can fix. The box is left as wide as it can be, so the most of it shows, and the page writes
+one `[web] pushed text too long for this image: mark N is cut off at its edge` line. `[add]` still
+answers `ok`, because the marks did land; the log line is what says one of them is cut. Without it
+the agent that pushed the mark has no way to know, and that was the defect: a 205-character
+sentence at `x` 0.88 on a 2800 x 600 image made a column **2.6 times the image's height**, ending at
+2.69 of it, and the command said `ok`.
+
+The margin is `PUSHED_TEXT_MARGIN` of the image's **width** on all four edges, so the inset is the
+same number of points all round rather than the same fraction of two sides of different lengths.
+On a wide short image that leaves proportionally less of the height, which is exactly why the
+height is bounded rather than trusted.
+
+Only text is fitted. An agent chooses a rectangle's or an arrow's box itself and may mean it to sit
 against an edge; a text mark's box is the page's to compute.
 
 ## The measurement needs the font
