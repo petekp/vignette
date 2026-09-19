@@ -405,9 +405,18 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
         toolbar.show()
         NSApp.activate(ignoringOtherApps: true)
-        // A click outside this app's windows ends the session.
-        outsideClick.start { [weak self] in self?.cancel() }
+        // A click outside this app's windows ends the session. The window was ordered in a line ago
+        // and the window server does not report it under the cursor yet, so a press inside this
+        // frame in the first few milliseconds would be read as outside and throw the session away
+        // (measured: 3 of 4 presses landing 14 to 19 ms after this call). Nothing is ignored for
+        // long enough to swallow a press that answers the window: it is not on screen until the
+        // flight lands on it, and a hand cannot react inside `outsideClickSettling`.
+        outsideClick.start(settling: Self.outsideClickSettling) { [weak self] in self?.cancel() }
     }
+
+    /// How long the annotator ignores clicks after its window is ordered in. A race with the window
+    /// server, not an animation: fixed, in code, and the motion scale does not touch it.
+    private static let outsideClickSettling: TimeInterval = 0.15
 
     /// The flight is exactly on this frame and is going. The window draws the shadow from here on,
     /// in the same run loop turn the flight drops its own, so it is never drawn twice or missing.
