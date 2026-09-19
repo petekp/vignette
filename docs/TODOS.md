@@ -296,6 +296,19 @@ the card shows it.
     reducer's swap effects (a sequence in `AnnotatorTransitionTests` before changing the table),
     and the annotator's docs.
 
+28. A pushed text mark wraps inside the image and is sized for it. Pete, on the first real
+    push from an agent (2026-09-18): "your text got cut off. how can we avoid that?" `build` in
+    `web/src/App.tsx` creates a text shape with no width, so tldraw auto-sizes it as one line
+    that grows to the right and runs off the image, and with `DEFAULT_SIZE` whatever the image's
+    pixel size, so a sentence on a 900-px crop is huge and on a 5K capture is tiny. Fix: a text
+    mark takes `w` (a fraction of the image, like the shapes; the README and the skill say so),
+    defaulting to the room between `x` and the right edge less a margin, created with
+    `autoSize: false` so it wraps, and its font size chosen from the image's pixel width so it
+    reads the same on a crop and a full capture; a mark whose box would leave the image is
+    pulled back inside. The export and the preview then never crop a pushed text. Verify with
+    the exact marks that produced the cut-off (`[add] ok Agent strip labels, gap to the card.png
+    agent=claude marks=3`, text at x 0.30 on a 900x1087 image).
+
 
 ## Feedback on the run-2 branch (Pete, 2026-09-17 afternoon, on `todo2/integration` c43304a)
 
