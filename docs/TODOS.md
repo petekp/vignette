@@ -261,6 +261,11 @@ the card shows it.
     shape keeps tldraw's meaning (a text shape edits) so drawing is not disturbed.
 ## Queued by Pete, 2026-09-18 (afternoon, on the todo6/integration build 4d96079)
 
+Items 26 to 28 landed overnight on 2026-09-19 on `todo8/integration` and were merged into
+`foundation` that night (merge 6e0d622); docs/run-2026-09-19.md has what landed, how it was driven,
+the decisions, the open questions, the incidents, and the Review section with the three findings the
+reviewer confirmed and the integrator fixed.
+
 26. The annotator's frame stops keeping the image's aspect ratio while zooming. Pete: "the
     zooming feels great. one thing i'd like to change: instead of keeping the aspect ratio
     locked, i'd prefer that we unlock it and allow the height or width to change to optimize
@@ -315,6 +320,13 @@ the card shows it.
 
 
 ## Queued by Pete, 2026-09-18 (evening, on the foundation build f57c330)
+
+Items 29 to 34 landed on the night of 2026-09-18 on `todo7/integration` and were merged into
+`foundation` on 2026-09-19 (merge 6e0d622); docs/run-2026-09-18-evening.md has what landed, how it
+was driven, the decisions, the open questions, the incidents, and the Review section with the six
+fixes that followed the review. Item 35 is not landed: the video was cut on the merged build and
+lives outside the repository, with its notes, because a video file is not something to commit
+without Pete's say.
 
 29. The card-to-annotator transition can be interrupted. Pete: "make the thumbnail -> annotator
     transition interruptible." Today `prepare` flies the card and the reducer sits in
