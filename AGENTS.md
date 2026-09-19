@@ -476,11 +476,18 @@ the same driven sequence; a single run varies.
 - Zoom belongs to the app, not the page. A pinch, cmd+wheel, or cmd+plus/minus/0 sends a
   `zoom` message (tldraw never sees those wheels; a plain wheel still pans a magnified image) and
   `AnnotationController.zoom(by:at:as:)` moves one number, `zoomLevel`: how far the image is
-  magnified past the frame it opened in. `Zoom.split` divides that level between the window's scale
-  and the page's camera in one place, so `window * camera` is the level and the two cannot disagree:
-  the window grows to fill the room it was given (the visible screen, less the strip the recent
-  stack keeps for itself) and the camera stays at exactly 1 until it cannot grow further. Zooming
-  out reverses that and stops at the fitted size with a short pull that springs back. The toolbar
+  magnified past the frame it opened in. The picture is magnified uniformly by that level, so the
+  image is never stretched; the frame is not, and each of its sides grows with the level until that
+  side fills the room it was given (the visible screen, less the strip the recent stack keeps for
+  itself). A tall narrow screenshot's frame therefore widens to the room's width while the whole
+  width of the picture is still inside it, and only then is the picture cropped sideways.
+  `Zoom.split` divides the level in one place, one division per side, so `window * camera` is the
+  level in each direction and the two cannot disagree: a side's growth is `min(level, reach)` and
+  the magnification in that direction takes what is left, which is exactly 1 until that side can
+  grow no further. The two sides reach the room at different levels, so between them the frame does
+  not carry the image's shape and the visible part of the image is a different fraction in each
+  direction. Zooming out reverses that and stops at the fitted size with a short pull that springs
+  back; the pull shrinks the frame evenly, so nothing is cropped below the fitted size. The toolbar
   stays where `prepare` placed it and sits above the window as a child. One spring carries the
   level, ticked by the screen's display link, so nothing teleports and a gesture, a key and a fit
   bend into each other; a gesture's spring is short (it follows the fingers), a key's, a double
@@ -512,7 +519,11 @@ the same driven sequence; a single run varies.
   `ui.motion: 0` swaps outright — but only while the zoom is still standing still: if the spring
   moved on while the answer was in the air, the stand-in stays and the next rest hands over again.
   The page is covered, never hidden: WebKit pauses a hidden view's frame callbacks and that answer
-  would never come. `[annotate] view <ms> ratio=… painted=… waited=…` reports each handover:
+  would never come. `ratio` is how far the image is magnified past the size at which the whole of it
+  fits the window, which is tldraw's own base zoom, so 1 means the whole image is in the window;
+  with a frame that no longer carries the image's shape that fit is set by the side the frame has
+  grown least in, and `Zoom.pageRatio` is the one place the host works it out.
+  `[annotate] view <ms> ratio=… painted=… waited=…` reports each handover:
   `ratio` is the magnification the host asked for and `painted` the one the page answered with, and
   a gap between them, or between the sizes, is one `[annotate] view mismatch` line. `waited` is how
   many frames the page waited for the resize to reach it. A page that refuses the view (a number
@@ -527,8 +538,9 @@ the same driven sequence; a single run varies.
   with nothing drawn on it has no overlay. A web process restart frees that throttle, so the
   reloaded page is asked again.
 
-  Both phases hold the point under the cursor: `ZoomAim` for the window, `ZoomPan` for the
-  magnification, each read off what is on screen when the input arrives. A cursor near an edge of
+  The cursor names which part of the image is magnified, in `ZoomPan`, read off what is on screen
+  when the input arrives. It does not aim the frame's growth: each side grows into the room beside
+  it, which leaves one anchor per direction and no choice in it. A cursor near an edge of
   the picture is pulled onto that edge first (`Zoom.pulledToEdges`, `ui.zoomEdgeBandPoints` 120
   points from each edge of the frame the cursor is over and `ui.zoomEdgePull` 0.5, the part of the
   band that pins outright), so the edge stays in
@@ -551,23 +563,23 @@ the same driven sequence; a single run varies.
   selected. Any hit and the page sends nothing, so the zoom and tldraw never both act. tldraw's own
   double-click on the canvas is off (`createTextOnCanvasDoubleClick`), so a zoom never leaves a
   text shape behind. `Sources/Zoom.swift` is the geometry: the window
-  grows away from the anchor, and at scale 1 it is the fitted frame again whatever the anchor. The
-  room gives way once, when the aim is taken: `Zoom.anchor(_:fitting:within:)` moves the anchor as
-  little as the room allows, so that the window can grow all the way to the room (`Zoom.reach`)
-  without the frame ever reaching the room's edge. The frame's path is then one straight line and
-  the clamp in `Zoom.frame` never bites. In the direction the room binds there is one such anchor,
-  so the picture pans at a steady rate as it grows; in the other the cursor's point is held exactly.
-  Dividing the room per step instead left the picture still and then sliding — 2.5 points in one
-  refresh, with the picture turning around as it went, which is the arc Pete saw
-  (`docs/zoom-2026-09-17.md`). The anchor is read off the frame on screen at each step, so a frame
-  the edge nudged does not carry that error forward, and a step aimed somewhere else mid-spring
-  blends from the anchor it had to the new one (`ZoomAim`) instead of stepping sideways; a step from
-  the fitted size has no growth to blend from and starts at its own anchor. Zoom's springs are
+  grows away from the anchor, and at the fitted size it is the fitted frame again whatever the
+  anchor. `Zoom.anchor(fitted:within:)` is the anchor the room allows: each side grows all the way
+  to the room, so the share of that growth on each side is the room that is already beside the
+  frame, and there is exactly one such anchor per direction. It holds for every level on the way,
+  so each edge of the frame runs in a straight line to the room's own and the clamp in `Zoom.frame`
+  never bites. `Zoom.reach` is how far each side may grow. Dividing the room per step instead left
+  the picture still and then sliding — 2.5 points in one refresh, with the picture turning around as
+  it went, which is the arc Pete saw (`docs/zoom-2026-09-17.md`). The anchor a step starts from is
+  read off the frame on screen (`Zoom.anchor(reproducing:fitting:or:)`), so a frame the edge nudged
+  does not carry that error forward, and a step aimed somewhere else mid-spring blends from the
+  anchor it had to the new one (`ZoomAim`) instead of stepping sideways. Zoom's springs are
   in code rather than the tweaks, but the motion scale still shortens them, so `ui.motion: 0` and
-  Reduce Motion land a step at once. The state report's `page.zoom` is the in-window magnification
-  as tldraw sees it (1 = the image fills the window), `page.visible` is the part of the image the
-  window shows, `annotator.zoomLevel` is the one number, `annotator.zoom` and `annotator.canvasZoom`
-  are its two halves, `annotator.zoomAnchor` is the point the window is growing away from,
+  Reduce Motion land a step at once. The state report's `page.zoom` is how far tldraw has magnified
+  the image past the size at which the whole of it fits the window (1 = the whole image is in the
+  window), `page.visible` is the part of the image the window shows, `annotator.zoomLevel` is the
+  one number, `annotator.zoom` and `annotator.canvasZoom` are its two halves, each a pair for the
+  two directions, `annotator.zoomAnchor` is the point the window is growing away from,
   `annotator.zoomCenter` is the middle of the visible part of the image, `annotator.standIn` says
   whether the app's own picture is up, `annotator.overlay` is the overlay's pixel size, and
   `annotator.room` is the rect the frame may grow within. `docs/zoom-2026-09-17.md` says why it is
