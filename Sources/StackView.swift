@@ -34,7 +34,7 @@ struct StackView: View {
             } else {
                 column
                 if let strip = stripPlacement {
-                    let reveal = layout.stripReveal(labels: Config.stripActions.map(\.label))
+                    let reveal = layout.stripReveal(rows: StackLayout.stripRows)
                     // The strip's box is always the grown width, with the strip against its
                     // trailing edge, so the right edge sits where the placement put it whether the
                     // labels are out or not and the growth goes left, away from the cards.
@@ -80,7 +80,7 @@ struct StackView: View {
     private var stripSlide: CGFloat {
         guard model.slidingOut else { return 0 }
         let reach = layout.columnWidth + layout.stripGap + layout.stripWidth
-            + layout.stripReveal(labels: Config.stripActions.map(\.label))
+            + layout.stripReveal(rows: StackLayout.stripRows)
         return layout.offscreenDistance(cardWidth: reach)
     }
 
@@ -365,7 +365,9 @@ private struct SelectionStrip: View {
 
     var body: some View {
         let cards = model.selectedCards()
-        let out = model.stripHovered ? reveal : 0
+        let revealed = model.stripRevealed != nil
+        let out = revealed ? reveal : 0
+        let labelBox = StackLayout.current.stripLabelBox(reveal: reveal)
         VStack(spacing: ui.buttonSpacing) {
             ForEach(Config.stripActions, id: \.id) { action in
                 Button { model.onAction(action, cards) } label: {
@@ -373,8 +375,9 @@ private struct SelectionStrip: View {
                         Image(systemName: action.symbol)
                             .font(.system(size: 13, weight: .medium))
                             .frame(width: ui.buttonSize, height: ui.buttonSize)
-                        RevealedLabel(text: action.label, size: StackLayout.stripLabelSize,
-                                      width: reveal, revealed: model.stripHovered)
+                        RevealedLabel(text: action.label, shortcut: action.key?.glyphs ?? "",
+                                      size: StackLayout.stripLabelSize,
+                                      width: reveal, box: labelBox, revealed: revealed)
                     }
                 }
                 .buttonStyle(TactileButtonStyle(shape: .rounded, hoverScale: 1))
@@ -387,28 +390,19 @@ private struct SelectionStrip: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
-        .onHover { model.stripHovered = $0 }
-        .animation(Anim.spring(ui.hoverRevealDuration), value: model.stripHovered)
+        // The pointer on the strip takes the reveal over from the keys, and takes it away on the
+        // way out: from here on the mouse is driving.
+        .onHover { model.stripRevealed = $0 ? .hover : nil }
+        .animation(Anim.spring(ui.hoverRevealDuration), value: model.stripRevealed)
         // A strip that goes while the cursor is on it gets no leaving hover.
-        .onDisappear { model.stripHovered = false }
+        .onDisappear { model.stripRevealed = nil }
         // The box stays the grown width and the strip sits against its trailing edge: the right
         // edge never moves, and the labels grow into the room on the left that the box holds open.
         .frame(width: size.width + reveal, alignment: .trailing)
     }
 
     private func shortcutHint(_ action: ShotAction) -> String {
-        guard let key = action.key else { return "" }
-        var s = " ("
-        if key.modifiers.contains(.control) { s += "⌃" }
-        if key.modifiers.contains(.option) { s += "⌥" }
-        if key.modifiers.contains(.shift) { s += "⇧" }
-        if key.modifiers.contains(.command) { s += "⌘" }
-        switch key.character {
-        case "\r": s += "↩"
-        case "\u{7f}": s += "⌫"
-        default: s += key.character.uppercased()
-        }
-        return s + ")"
+        action.key.map { " (\($0.glyphs))" } ?? ""
     }
 }
 
@@ -505,26 +499,36 @@ private struct DrawHint: View {
     }
 }
 
-/// A label beside an icon, out while `revealed`. The width and the opacity are animated from that
-/// one bool by whatever animation the caller puts around it; the label is never inserted or
-/// removed, because a removal transition starts again from nothing and jumps when the cursor leaves
-/// halfway. `width` is what `ButtonLabel.width` measured, plus the room the label keeps on its right.
+/// A label beside an icon, out while `revealed`, with its shortcut after it. The width and the
+/// opacity are animated from that one bool by whatever animation the caller puts around it; the
+/// label is never inserted or removed, because a removal transition starts again from nothing and
+/// jumps when the cursor leaves halfway. `width` is the room `stripReveal` measured; `box` is the
+/// part of it the text sits in, the same for every row, so the shortcuts line up in a column.
 private struct RevealedLabel: View {
     let text: String
+    var shortcut: String = ""
     let size: CGFloat
     let width: CGFloat
+    var box: CGFloat = 0
     let revealed: Bool
 
     var body: some View {
         // The same font ButtonLabel measured; the text keeps its own width and the frame around it
         // is what grows, so the label is uncovered from the icon outwards.
-        Text(text)
-            .font(.system(size: size, weight: .semibold))
-            .fixedSize()
-            .frame(width: revealed ? width : 0, alignment: .leading)
-            .opacity(revealed ? 1 : 0)
-            .clipped()
-            .contentShape(Rectangle())   // clipping hides the text; the hit area has to shrink with it
+        HStack(spacing: 0) {
+            Text(text).font(.system(size: size, weight: .semibold))
+            if !shortcut.isEmpty {
+                Spacer(minLength: StackLayout.stripShortcutGap)
+                // Dimmer than the label: the name is what you read, the keys are what you use.
+                Text(shortcut).font(.system(size: size, weight: .semibold)).opacity(0.55)
+            }
+        }
+        .frame(width: shortcut.isEmpty ? nil : box, alignment: .leading)
+        .fixedSize()
+        .frame(width: revealed ? width : 0, alignment: .leading)
+        .opacity(revealed ? 1 : 0)
+        .clipped()
+        .contentShape(Rectangle())   // clipping hides the text; the hit area has to shrink with it
     }
 }
 

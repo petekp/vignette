@@ -73,19 +73,37 @@ struct StackLayout {
     var stripGap: CGFloat { ui.selectionStripGap }
     /// The size the strip's labels are drawn at. In code, like the size of the icons beside them.
     static let stripLabelSize: CGFloat = 12
+    /// The room between a row's label and its shortcut. In code, like the label's own size.
+    static let stripShortcutGap: CGFloat = 12
+
+    /// One row of the selection strip: what the button says and the glyphs of its shortcut. The
+    /// layout measures these and `SelectionStrip` draws them, so the room and the text are one list.
+    struct StripRow: Equatable {
+        var label: String
+        var shortcut: String
+    }
+
+    static var stripRows: [StripRow] {
+        Config.stripActions.map { StripRow(label: $0.label, shortcut: $0.key?.glyphs ?? "") }
+    }
 
     func stripHeight(rows: Int) -> CGFloat {
         CGFloat(rows) * ui.buttonSize + CGFloat(max(0, rows - 1)) * ui.buttonSpacing + ui.buttonSpacing * 2
     }
 
-    /// How far the strip grows to the left when the cursor is on it and the labels come out: the
-    /// widest label, plus the room the icons have on their own side. The strip's right edge stays
-    /// where it is, so a label never reaches a card. The panel reserves this room whenever the
+    /// How far the strip grows to the left when its labels come out: the widest label, the widest
+    /// shortcut beside it, and the room the icons have on their own side. The strip's right edge
+    /// stays where it is, so a label never reaches a card. The panel reserves this room whenever the
     /// strip shows (`panelSize`), so the labels always have somewhere to go.
-    func stripReveal(labels: [String]) -> CGFloat {
-        guard let widest = labels.map({ ButtonLabel.width($0, size: Self.stripLabelSize) }).max(), widest > 0 else { return 0 }
-        return widest + ui.buttonSpacing * 2
+    func stripReveal(rows: [StripRow]) -> CGFloat {
+        guard let label = rows.map({ ButtonLabel.width($0.label, size: Self.stripLabelSize) }).max(), label > 0 else { return 0 }
+        let shortcut = rows.map { $0.shortcut.isEmpty ? 0 : ButtonLabel.width($0.shortcut, size: Self.stripLabelSize) }.max() ?? 0
+        return label + (shortcut > 0 ? Self.stripShortcutGap + shortcut : 0) + ui.buttonSpacing * 2
     }
+
+    /// The box a row's label and its shortcut share, inside the reveal. The same for every row, so
+    /// the shortcuts line up in a column against its trailing edge.
+    func stripLabelBox(reveal: CGFloat) -> CGFloat { max(0, reveal - ui.buttonSpacing * 2) }
 
     func cardSize(for image: NSSize) -> NSSize {
         guard image.width > 0, image.height > 0 else { return NSSize(width: maxCardWidth, height: maxCardHeight) }

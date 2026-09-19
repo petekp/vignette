@@ -109,7 +109,7 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`, `scroll`,
    `viewport`, `safeBottom`, the room the Dock keeps under the column, feedback, panel,
    `widthScale`, how wide the stack is drawn, `strip`, the selection
-   strip's frame or null, and `stripHovered`),
+   strip's frame or null, and `stripRevealed`, why its labels are out: `hover`, `keyboard`, or null),
    `transition` (phase), `annotator` (`current`, `frame`, `pageState`, `port`, `webPid`,
    `windowVisible`, `tool`, `color`, and the zoom's own keys, which the zoom bullet below names),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
@@ -311,8 +311,13 @@ the same driven sequence; a single run varies.
   (`docs/selection-strip-2026-09-18.md`). Only the column carries the hair of
   alpha that catches clicks and scrolls; the strip's side of the panel stays clear, so a click
   there still reaches the window underneath.
-- The cursor on the strip brings a label out beside each icon, and Copy on a card does the same
-  (`docs/hover-reveal-2026-09-17.md`). A card's Copy grows to the right from an icon that does not
+- The cursor on the strip brings a label out beside each icon, and so does a selection built from
+  the keys — Shift+arrow, Space, Cmd+A — which is the case where nobody is going to move the mouse.
+  One value says why they are out, `model.stripRevealed` (`hover`, `keyboard`, nil), and the pointer
+  takes it over the way it takes the focus. Each row draws its own shortcut after the label, dimmer,
+  from `ShotAction.Key.glyphs`, which is also what the tooltip reads; `stripReveal(rows:)` measures
+  the label and the shortcut, so the panel's room still holds both. Copy on a card reveals the same
+  way (`docs/hover-reveal-2026-09-17.md`). A card's Copy grows to the right from an icon that does not
   move. The strip is the other way round: it keeps its right edge and grows to the left, so a label
   never covers a card, and the icons translate left by the reveal. `StackLayout.stripReveal` says
   how far — the widest label plus the room beside the icons — and the view keeps its box that wide

@@ -64,3 +64,37 @@ second duration: the width, the opacity and the scale settle together.
 The label's font size and the room it keeps on its right are in code, like the button sizes around
 them: `ui.buttonIconSize - 1`, and `ui.buttonSpacing * 2` of room on the right, which is about what
 the icon has on its left.
+
+## Out from the keyboard too, with the shortcuts (2026-09-18)
+
+The labels used to come out on hover only. Someone building a selection with Shift+arrows or Space
+never moves the mouse, so they saw four icons and no hint of what a key would do; the shortcut was
+in a tooltip, which needs the cursor.
+
+`model.stripRevealed` replaces the old `stripHovered` bool. It is `nil`, `.hover` or `.keyboard`,
+and the labels are out whenever it is not nil. `[state] stack.stripHovered` becomes
+`stack.stripRevealed`, with those names or null.
+
+**What sets it.** The keys that build a selection: `moveFocus(toward:extend:)` with Shift, Space on
+the focused card, and Cmd+A. A plain arrow only moves the focus, so it sets nothing and clears
+nothing — there may be no strip to reveal, and a reveal already up belongs to the selection that is
+still there.
+
+**What takes it away.** The pointer, as it does with the focus: moving onto a card clears a
+`.keyboard` reveal, and the strip's own hover sets `.hover` on the way in and nil on the way out.
+`releaseKeys` clears a `.keyboard` reveal, and a strip that goes clears it in `onDisappear`.
+
+**The shortcut.** Each row draws its own after the label, dimmer (0.55), in the same font and size,
+so one measurement covers both. `ShotAction.Key.glyphs` is the only renderer of ⌘C, ↩ and ⌘⌫; the
+tooltip reads it too, so a row and its tooltip cannot disagree. The strip has four rows — Copy,
+Draw, Stitch, Delete — and each shows its own key. Copy Paths and Copy Drawing are `.shortcut`
+actions and stay out of the strip, so their keys are not shown; adding rows for them is Pete's call.
+
+The shortcut is part of the label, not of the keyboard: it is out whenever the labels are, however
+they came out. One reveal width then serves both, and the panel's room is right in either case.
+
+**The room.** `stripReveal(rows:)` measures the widest label, the gap to the shortcut
+(`stripShortcutGap`, 12 points) and the widest shortcut, plus the icons' own room. `panelSize` adds
+that to the panel while the strip shows, so the labels still never resize the panel's window.
+`stripLabelBox(reveal:)` is the box a row's label and shortcut share — the reveal less the icons'
+room — and every row uses it, so the shortcuts line up in a column against its trailing edge.

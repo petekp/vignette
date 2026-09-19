@@ -182,13 +182,21 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(frame.minX, panel.minX, "inside the panel")
     }
 
+    private let stripRows = [StackLayout.StripRow(label: "Copy", shortcut: "⌘C"),
+                             StackLayout.StripRow(label: "Copy Drawing", shortcut: "⇧⌘C")]
+
     func testTheStripGrowsToTheLeftWhenItsLabelsComeOut() {
         let layout = stripLayout
-        let labels = ["Copy", "Copy Drawing"]
-        let reveal = layout.stripReveal(labels: labels)
+        let reveal = layout.stripReveal(rows: stripRows)
         XCTAssertGreaterThan(reveal, ButtonLabel.width("Copy Drawing", size: StackLayout.stripLabelSize),
                              "the widest label, and room beside it")
-        XCTAssertEqual(layout.stripReveal(labels: []), 0, "no labels, no growth")
+        XCTAssertEqual(layout.stripReveal(rows: []), 0, "no labels, no growth")
+        // The shortcut is drawn after the label, so the room the panel holds covers both.
+        let plain = layout.stripReveal(rows: stripRows.map { StackLayout.StripRow(label: $0.label, shortcut: "") })
+        XCTAssertEqual(reveal, plain + StackLayout.stripShortcutGap + ButtonLabel.width("⇧⌘C", size: StackLayout.stripLabelSize),
+                       "the widest shortcut and the gap to it")
+        XCTAssertEqual(layout.stripLabelBox(reveal: reveal), reveal - layout.ui.buttonSpacing * 2,
+                       "the rows share one box inside that room, so the shortcuts line up")
         let panel = layout.panelFrame(viewport: 160, area: area, showsStrip: true, reveal: reveal)
         let strip = layout.stripPlacement(rows: 2, selection: [0], cards: stripCards, showsBar: false, scroll: 0, viewport: 160)!
         let rest = layout.stripFrame(strip, panelFrame: panel, scroll: 0, safeBottom: 0)
@@ -203,7 +211,7 @@ final class StackLayoutTests: XCTestCase {
 
     func testThePanelHoldsTheRevealSoTheLabelsNeverResizeIt() {
         let layout = stripLayout
-        let reveal = layout.stripReveal(labels: ["Copy", "Copy Drawing"])
+        let reveal = layout.stripReveal(rows: stripRows)
         let panel = layout.panelFrame(viewport: 160, area: area, showsStrip: true, reveal: reveal)
         let plain = layout.panelFrame(viewport: 160, area: area, showsStrip: true)
         XCTAssertEqual(panel.width, plain.width + reveal, "the room is there before the labels come out")
@@ -218,7 +226,7 @@ final class StackLayoutTests: XCTestCase {
         var wider = stripLayout.ui
         wider.selectionStripGap += 16
         let widened = StackLayout(ui: wider)
-        let reveal = widened.stripReveal(labels: ["Copy", "Copy Drawing"])
+        let reveal = widened.stripReveal(rows: stripRows)
         let panel = stripLayout.panelFrame(viewport: 160, area: area, showsStrip: true, reveal: reveal)
         let wide = widened.panelFrame(viewport: 160, area: area, showsStrip: true, reveal: reveal)
         XCTAssertEqual(wide.width, panel.width + 16, "the panel holds the gap it is asked for")
