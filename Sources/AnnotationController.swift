@@ -393,15 +393,41 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         return Zoom.clamped(CGPoint(x: p.x / frameView.bounds.width, y: 1 - p.y / frameView.bounds.height))
     }
 
+    /// Puts the window up behind the flight image, which is past this frame on every side and so
+    /// covers it — except for a shadow, which falls outside the frame it is cast from. The flight
+    /// carries the shadow until it lands; `landed` hands it over. Everything else the annotator
+    /// needs to be usable happens here, so a drag lands on the page as soon as the card looks still.
     func show() {
         guard let win = window, current != nil else { return }
         win.alphaValue = 1
+        frameView?.layer?.shadowOpacity = 0
         win.makeKeyAndOrderFront(nil)
         if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
         toolbar.show()
         NSApp.activate(ignoringOtherApps: true)
         // A click outside this app's windows ends the session.
         outsideClick.start { [weak self] in self?.cancel() }
+    }
+
+    /// The flight is exactly on this frame and is going. The window draws the shadow from here on,
+    /// in the same run loop turn the flight drops its own, so it is never drawn twice or missing.
+    func landed() {
+        frameView?.layer?.shadowOpacity = Float(TransitionLayer.Look.annotator(Settings.shared.data.ui).shadowOpacity)
+    }
+
+    /// Lets the prepared image go without asking the page for anything. Called instead of `hide`
+    /// when the session ends before the window came up: nobody saw that image and nobody could
+    /// draw on it, so there is nothing to store, and the stored draft the page was told to load
+    /// stays as it is. A park here would be a round trip that can sit behind an export, with the
+    /// card hanging in the air until it answers.
+    func abandon() {
+        guard current != nil else { return }
+        outsideClick.stop()
+        current = nil
+        pendingHide = nil
+        standIn.sessionEnded()
+        call(.reset)
+        hideWindows()
     }
 
     /// Parks the draft, then removes the window. `then` runs once the page has answered, so a
@@ -662,6 +688,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         win.makeKeyAndOrderFront(nil)
+        landed()   // no flight to hand over from: this window is the whole of it
         if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
         toolbar.show()
         NSApp.activate(ignoringOtherApps: true)

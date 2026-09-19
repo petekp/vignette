@@ -93,10 +93,14 @@ final class ThumbnailController: NSObject {
     /// A card starts travelling to `frame`; the annotator loads the image there while hidden.
     /// `room` is the rect its frame may grow within, which a zoom may not leave.
     var onAnnotatorPrepare: ((Screenshot, NSRect, NSRect) -> Void)?
-    /// The card has arrived; the annotator becomes visible in its place.
+    /// The flight covers the annotator's frame; the window comes up behind it and takes the keys.
     var onAnnotatorShow: (() -> Void)?
+    /// The flight is exactly on the frame; the annotator draws the shadow itself from here on.
+    var onAnnotatorLanded: (() -> Void)?
     /// A swap, return, or dismissal has started. The annotator parks its draft, hides, then calls back.
     var onAnnotatorHide: ((_ hidden: @escaping () -> Void) -> Void)?
+    /// The session ends before the window came up. The annotator lets the image go and stores nothing.
+    var onAnnotatorAbandon: (() -> Void)?
     /// Space the annotator needs below its window, for the toolbar.
     var annotatorBelow: () -> CGFloat = { 0 }
 
@@ -636,22 +640,29 @@ final class ThumbnailController: NSObject {
             onAnnotatorPrepare?(card.shot, target, annotatorRoom)
             var from = slot ?? cardFrame(of: card)
             if model.offscreen.contains(card.id) { from.origin.x += layout.offscreenDistance(cardWidth: from.width) }
-            // The annotator window appears only once the flight is exactly on the target frame.
-            // It draws the same ring and shadow there, so a window put up while the spring still
-            // had a few points to go would step against the picture the flight is still showing.
+            // Two moments. The window comes up at `covered`, where the flight is past the frame and
+            // covers it, so it can take the keys and the pointer while the eye already reads the
+            // card as still. The shadow and the picture change hands at `arrived`, on the exact
+            // frame: the window draws the same ring and shadow there, so handing either over while
+            // the spring still had a few points to go would step against the picture the flight is
+            // showing.
             flights.fly(id: card.id, image: flightImage(for: card), from: from, to: target,
-                        lookFrom: .card(ui), lookTo: .annotator(ui), on: screen, arrived: { [weak self] in
+                        lookFrom: .card(ui), lookTo: .annotator(ui), on: screen, covered: { [weak self] in
                 guard let self, self.transition.phase == .flyingOut(key) else { return }
                 self.send(.shown)
+            }, arrived: { [weak self] in
+                guard let self, self.transition.phase == .annotating(key), let card = self.sessionCard else { return }
+                self.onAnnotatorLanded?()
+                self.flights.dropShadow(id: card.id)
+                if self.loadedKeys.contains(key) { self.flights.lift(id: card.id) }   // else pageLoaded lifts it
+            }, dropped: { [weak self] in
+                // The layer went down between the two moments — a new capture presenting the panel
+                // anew while a lone thumbnail is being annotated. Nothing covers the window now.
+                self?.onAnnotatorLanded?()
             })
         case .show:
             onAnnotatorShow?()
             guard let card = sessionCard else { return }
-            // The window is up and draws the frame's shadow itself; a second shadow would darken the
-            // edge. The flight image stays on top until the page reports the image and the flight
-            // has settled on the frame, so neither the shadow nor the picture steps.
-            flights.dropShadow(id: card.id)
-            if loadedKeys.contains(card.shot.url.path) { flights.lift(id: card.id) }   // else pageLoaded lifts it
             if !model.isStack {
                 // A lone thumbnail has nothing to keep open behind the annotator; cards that joined stay.
                 model.cards.removeAll { $0.id == card.id }
@@ -660,6 +671,11 @@ final class ThumbnailController: NSObject {
             }
         case .park:
             onAnnotatorHide? { [weak self] in self?.send(.parked) }
+        case .abandon(let key):
+            // Nothing was loaded on screen, so nothing reported `loaded`; the next annotate of this
+            // key has to wait for its own report rather than lifting its flight straight away.
+            loadedKeys.remove(key)
+            onAnnotatorAbandon?()
         case .returnCard(let key):
             guard let card = sessionCard, card.shot.url.path == key else { return }
             // With another file coming from the queue the session is not over: the dim stays up and

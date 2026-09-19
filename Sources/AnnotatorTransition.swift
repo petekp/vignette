@@ -42,6 +42,7 @@ struct AnnotatorTransition: Equatable {
         case prepare(String)     // load this key in the hidden annotator and fly its card out
         case show                // reveal the annotator in place of the landed card
         case park(String)        // ask the page to park; answer with `.parked`
+        case abandon(String)     // the page holds this key and nobody saw it: let it go, store nothing
         case returnCard(String)  // fly the card back to its slot
         case hideAnnotator       // the annotator is done; nothing returns
         case markCopied(String)  // the returned card shows the copied mark when it lands
@@ -68,12 +69,47 @@ struct AnnotatorTransition: Equatable {
             phase = .flyingOut(k); origin = from
             return [.prepare(k)]
 
-        case .flyingOut(let k), .annotating(let k):
+        case .flyingOut(let k):
+            // The window has not come up, so nobody has seen this image and nobody could draw on
+            // it. A request to close it or to open another one turns the flight around in this
+            // turn: there is nothing to store, and a park is a round trip that can be queued
+            // behind an export, which would leave the card hanging in the air until it answers.
             switch event {
             case .shown:
-                guard case .flyingOut = phase else { return [] }
                 phase = .annotating(k)
                 return [.show]
+            case .close:
+                phase = .idle
+                return origin == .stack ? [.abandon(k), .returnCard(k)] : [.abandon(k), .hideAnnotator]
+            case .annotate(let k2, _):
+                if k2 == k { return [] }
+                phase = .flyingOut(k2)
+                return [.abandon(k), .returnCard(k), .prepare(k2)]
+            case .finish:
+                // Done renders on the page, so it cannot come from a window that never appeared;
+                // if it does, the rendering exists and the draft behind it is parked as usual.
+                phase = .parking(k, then: .finish)
+                return [.park(k)]
+            case .dismiss:
+                // The panel takes the image with it (see `ThumbnailController.dismiss`), which
+                // aims this flight offscreen before the event arrives. The park keeps the card in
+                // the layer until it is out of sight.
+                phase = .parking(k, then: .dismiss)
+                return [.park(k)]
+            case .remove(let r):
+                guard r == k else { return [] }
+                phase = .parking(k, then: .remove)
+                return [.park(k)]
+            case .newShot(let n):
+                return [.join(n)]
+            case .parked:
+                return []
+            }
+
+        case .annotating(let k):
+            switch event {
+            case .shown:
+                return []
             case .annotate(let k2, _):
                 if k2 == k { return [] }
                 phase = .parking(k, then: .annotate(k2))
@@ -190,6 +226,7 @@ extension AnnotatorTransition.Effect: CustomStringConvertible {
         case .prepare(let k): return "prepare(\(short(k)))"
         case .show: return "show"
         case .park(let k): return "park(\(short(k)))"
+        case .abandon(let k): return "abandon(\(short(k)))"
         case .returnCard(let k): return "returnCard(\(short(k)))"
         case .hideAnnotator: return "hideAnnotator"
         case .markCopied(let k): return "markCopied(\(short(k)))"
