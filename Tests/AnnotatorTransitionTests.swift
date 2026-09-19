@@ -18,6 +18,40 @@ final class AnnotatorTransitionTests: XCTestCase {
         XCTAssertEqual(t.phase, .annotating("3"))
     }
 
+    func testClosingDuringTheFlightTurnsTheCardAroundWithoutAPark() {
+        var t = T()
+        XCTAssertEqual(t.reduce(.annotate("a", from: .stack)), [.prepare("a")])
+        XCTAssertEqual(t.reduce(.close), [.abandon("a"), .returnCard("a")], "no park: the window never came up")
+        XCTAssertEqual(t.phase, .idle)
+        XCTAssertEqual(t.reduce(.parked), [], "a park that was never asked for answers nothing")
+    }
+
+    func testClosingALoneThumbnailDuringTheFlightJustHides() {
+        var t = T()
+        _ = t.reduce(.annotate("a", from: .thumbnail))
+        XCTAssertEqual(t.reduce(.close), [.abandon("a"), .hideAnnotator])
+        XCTAssertEqual(t.phase, .idle)
+    }
+
+    func testAnnotatingAnotherCardDuringTheFlightSwapsAtOnce() {
+        var t = T()
+        _ = t.reduce(.annotate("a", from: .stack))
+        XCTAssertEqual(t.reduce(.annotate("b", from: .stack)), [.abandon("a"), .returnCard("a"), .prepare("b")])
+        XCTAssertEqual(t.phase, .flyingOut("b"))
+        XCTAssertEqual(t.reduce(.annotate("b", from: .stack)), [], "the key already flying out")
+        XCTAssertEqual(t.reduce(.shown), [.show])
+        XCTAssertEqual(t.phase, .annotating("b"))
+    }
+
+    func testDismissingDuringTheFlightStillParks() {
+        // The panel aims the flight offscreen before this arrives, so the card stays in the layer
+        // until the park answers rather than being dropped mid-slide.
+        var t = T()
+        _ = t.reduce(.annotate("a", from: .stack))
+        XCTAssertEqual(t.reduce(.dismiss), [.park("a")])
+        XCTAssertEqual(t.reduce(.parked), [.hideAnnotator])
+    }
+
     func testNewShotDuringALoneAnnotationJoinsInsteadOfClosing() {
         // Finding 4.
         var t = T()
@@ -139,6 +173,9 @@ final class AnnotatorTransitionTests: XCTestCase {
                             pending.append((step + Int.random(in: 0...3, using: &rng), .shown))
                         case .show:
                             XCTAssertEqual(preparedKey, t.key, "a visible annotator shows the prepared image (seed \(seed))")
+                        case .abandon(let k):
+                            XCTAssertEqual(k, preparedKey, "abandon is for the key that was prepared (seed \(seed))")
+                            preparedKey = nil
                         case .returnCard, .hideAnnotator:
                             preparedKey = nil
                         case .join, .markCopied:

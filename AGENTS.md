@@ -337,7 +337,7 @@ the same driven sequence; a single run varies.
 - Which image is in the annotator, where it came from, and what is in flight has one owner:
   `AnnotatorTransition` (a pure reducer) held by `ThumbnailController`. Controllers send events
   (annotate, shown, parked, close, finish, newShot, dismiss, remove) and run the effects it returns
-  (prepare, show, park, returnCard, markCopied, hideAnnotator, join). Done sends `finish`: the card
+  (prepare, show, park, abandon, returnCard, markCopied, hideAnnotator, join). Done sends `finish`: the card
   returns and takes the copied mark, and a lone thumbnail, which left the panel when the annotator
   opened, comes back to the corner for it. Esc sends `close`: a stack card returns, a lone
   thumbnail's annotator just hides. Quick draw sends `dismiss`. A `prepare` is never emitted while a
@@ -347,6 +347,16 @@ the same driven sequence; a single run varies.
   `onClosed`, and the reducer decides. The flight image lifts once the annotator is visible and
   the page has reported `loaded`. Add a sequence to `AnnotatorTransitionTests` before changing
   the table; the random-sequence test checks the invariants.
+- The flight to the annotator can be interrupted. In `flyingOut` the window has not come up, so
+  nobody has seen that image and nobody could draw on it: a `close` or an `annotate` of another key
+  answers in the same turn with `abandon` and `returnCard`, and the flight turns around from where
+  it is (`fly` on an id already flying keeps the frame and blends the bow). No park: a park is a
+  round trip that can sit behind an export, and the card would hang in the air until it answers.
+  `abandon` is `AnnotationController.abandon()` — the page lets the image go, the canvas is reset,
+  and nothing is stored, so the draft the page was told to load is untouched. `dismiss` and `remove`
+  still park from `flyingOut`, because the panel aims that same flight offscreen before the event
+  arrives and the card has to stay in the layer until it is out of sight.
+  `docs/flight-interrupt-2026-09-18.md` has the frames.
 - Annotating a list is a queue (`ThumbnailController.queue`, `stack.queue` in the state report):
   the first file opens and the rest wait, and finishing one opens the next until the list is done.
   The controller takes the next file in the turn `parked` comes back, before the finished card's

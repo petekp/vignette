@@ -88,6 +88,8 @@ final class ThumbnailController: NSObject {
     var onAnnotatorShow: (() -> Void)?
     /// A swap, return, or dismissal has started. The annotator parks its draft, hides, then calls back.
     var onAnnotatorHide: ((_ hidden: @escaping () -> Void) -> Void)?
+    /// The session ends before the window came up. The annotator lets the image go and stores nothing.
+    var onAnnotatorAbandon: (() -> Void)?
     /// Space the annotator needs below its window, for the toolbar.
     var annotatorBelow: () -> CGFloat = { 0 }
 
@@ -638,6 +640,11 @@ final class ThumbnailController: NSObject {
             }
         case .park:
             onAnnotatorHide? { [weak self] in self?.send(.parked) }
+        case .abandon(let key):
+            // Nothing was loaded on screen, so nothing reported `loaded`; the next annotate of this
+            // key has to wait for its own report rather than lifting its flight straight away.
+            loadedKeys.remove(key)
+            onAnnotatorAbandon?()
         case .returnCard(let key):
             guard let card = sessionCard, card.shot.url.path == key else { return }
             // With another file coming from the queue the session is not over: the dim stays up and

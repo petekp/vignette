@@ -96,6 +96,9 @@ and closing it hands focus back to the app you came from.
 - Opening a card in the annotator narrows the stack to make room for it, down to half its width.
   The cards keep their corner; only their size changes, and they come back when the annotator
   closes. The annotator never grows into the width the stack keeps, however far you zoom in.
+- A card on its way to the annotator can be turned around. Esc, or clicking another card, sends it
+  straight home from wherever it is and the editor never appears. Nothing is lost: nobody could
+  draw on an image that was never on screen, and a drawing you parked earlier stays as it was.
 - Drag a card out to drop it as a file on a chat window, Finder, or a terminal. A selected card
   drags the whole selection.
 - Cmd+C copies the selection as files, paths as text, and the first image's pixels, so chat apps

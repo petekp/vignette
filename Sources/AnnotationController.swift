@@ -404,6 +404,21 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         outsideClick.start { [weak self] in self?.cancel() }
     }
 
+    /// Lets the prepared image go without asking the page for anything. Called instead of `hide`
+    /// when the session ends before the window came up: nobody saw that image and nobody could
+    /// draw on it, so there is nothing to store, and the stored draft the page was told to load
+    /// stays as it is. A park here would be a round trip that can sit behind an export, with the
+    /// card hanging in the air until it answers.
+    func abandon() {
+        guard current != nil else { return }
+        outsideClick.stop()
+        current = nil
+        pendingHide = nil
+        standIn.sessionEnded()
+        call(.reset)
+        hideWindows()
+    }
+
     /// Parks the draft, then removes the window. `then` runs once the page has answered, so a
     /// transition that starts there shows the annotations. Called once per `prepare`, by the reducer.
     func hide(then completion: (() -> Void)? = nil) {
