@@ -107,8 +107,9 @@ Shotnote is meant to be modified. This file is the onboarding for a person or an
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
    `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; `selected`, `focused`,
    `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`, `scroll`,
-   `viewport`, feedback, panel, `widthScale`, how wide the stack is drawn, `strip`, the selection
-   strip's frame or null, and `stripHovered`),
+   `viewport`, `safeBottom`, the room the Dock keeps under the column, feedback, panel,
+   `widthScale`, how wide the stack is drawn, `strip`, the selection
+   strip's frame or null, and `stripRevealed`, why its labels are out: `hover`, `keyboard`, or null),
    `transition` (phase), `annotator` (`current`, `frame`, `pageState`, `port`, `webPid`,
    `windowVisible`, `tool`, `color`, and the zoom's own keys, which the zoom bullet below names),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
@@ -228,9 +229,23 @@ the same driven sequence; a single run varies.
   the zoom was: `hide` springs the level back to 1 first and comes down once that has arrived, so
   the flight starts where the picture is (`AnnotationController.fitBeforeHide`).
   `docs/shadow-2026-09-17.md` has the frames.
+- The stack runs to the bottom of the screen and steps around the Dock. `StackLayout.area` builds
+  one `StackArea` from the screen: `bounds` takes its sides and top from `visibleFrame`, so the menu
+  bar and a Dock on either side keep their room, and its bottom from the screen's own `frame`;
+  `safeBottom` is the height AppKit reserves for a bottom Dock, but only when the Dock's tiles reach
+  into the column's strip of the screen. The panel runs down to the screen's edge, the column sits
+  in the part of it above the Dock, and the newest card rests `ui.screenMargin` above the Dock's top
+  edge the way it rests that far above the screen's edge without one. The mask, and the hair of
+  alpha that catches clicks, are lifted by the same number, so a card scrolled down fades out at the
+  Dock's top edge and a click on a Dock icon under the column still reaches the Dock. The tiles'
+  rect is Accessibility's (`Dock.tiles`, the Dock process's one `AXList`): `CGWindowListCopyWindowInfo`
+  reports the Dock's window as the whole screen on macOS 15. Untrusted for Accessibility, the Dock
+  is taken to span the whole edge, which is the old layout. `annotatorRoom` and `annotationFrame`
+  keep reading `visibleFrame`: the annotator must not go under the Dock.
+  `docs/stack-dock-2026-09-18.md` has the numbers.
 - A card in the stack and the same card in flight have to cast the same shadow. The column is
   masked with a fade over the panel's inset at each end (`StackView.column`), and the newest card
-  rests on the viewport's bottom edge, so the bottom fade starts below its shadow rather than
+  rests on the column's bottom edge, so the bottom fade starts below its shadow rather than
   through it: solid for `StackLayout.cardShadowRoom` and fading over what is left of the inset.
   `StackLayout.inset` is therefore at least that room plus `shadowFade`, so a shadow bigger than
   `ui.panelInset` grows the panel around the column instead of being cut off; the cards do not
@@ -296,8 +311,13 @@ the same driven sequence; a single run varies.
   (`docs/selection-strip-2026-09-18.md`). Only the column carries the hair of
   alpha that catches clicks and scrolls; the strip's side of the panel stays clear, so a click
   there still reaches the window underneath.
-- The cursor on the strip brings a label out beside each icon, and Copy on a card does the same
-  (`docs/hover-reveal-2026-09-17.md`). A card's Copy grows to the right from an icon that does not
+- The cursor on the strip brings a label out beside each icon, and so does a selection built from
+  the keys — Shift+arrow, Space, Cmd+A — which is the case where nobody is going to move the mouse.
+  One value says why they are out, `model.stripRevealed` (`hover`, `keyboard`, nil), and the pointer
+  takes it over the way it takes the focus. Each row draws its own shortcut after the label, dimmer,
+  from `ShotAction.Key.glyphs`, which is also what the tooltip reads; `stripReveal(rows:)` measures
+  the label and the shortcut, so the panel's room still holds both. Copy on a card reveals the same
+  way (`docs/hover-reveal-2026-09-17.md`). A card's Copy grows to the right from an icon that does not
   move. The strip is the other way round: it keeps its right edge and grows to the left, so a label
   never covers a card, and the icons translate left by the reveal. `StackLayout.stripReveal` says
   how far — the widest label plus the room beside the icons — and the view keeps its box that wide
@@ -325,6 +345,11 @@ the same driven sequence; a single run varies.
   Only the recent stack does this: a lone thumbnail leaves the panel when the annotator opens, and
   a `shotnote://annotate` with no stack showing gets the whole visible frame.
   `docs/stack-room-2026-09-17.md` has the numbers.
+- The Draw hint goes out over the card's two corner buttons and nowhere else
+  (`CardView.overCornerButton`): each button's frame plus its padding, not the whole band along the
+  bottom. The middle of that band holds no button, so the hint stays up there and a click still
+  draws. Copy's grown label needs no rect of its own, since it is only out while the button is
+  hovered and `model.overControl` hides the hint then.
 - A card's thumbnail fills the card, so a screenshot whose shape differs from the card's box hangs
   outside the card's frame, and the clip that hides it does not shrink the hit area. The
   `contentShape` in `CardView` holds each card's hover and clicks to its own frame; without it a
