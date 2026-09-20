@@ -87,9 +87,8 @@ the measurements and the reasoning; a rule here points at its note.
    (`docs/pushed-text-2026-09-19.md`).
    `[annotate] loaded <ms>` reports when the page has the image; it is posted from a
    `requestAnimationFrame`, which WebKit pauses while the screen is locked or the window is hidden,
-   so the line never arrives in that state. The canvas work itself is synchronous and happens where
-   `load` is called, so for an image loaded into the hidden window by `prepare` the line says when
-   the window came up, not when the page was ready to draw.
+   so the line never arrives in that state. `prepare` orders the window in invisible, so during a
+   flight the page's frames run and the line says when the page was ready to draw.
 4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.
    Send keys with `osascript -e 'tell application "System Events" to key code 36 using command down'`
    (Return finishes annotating, Cmd+Return too while typing, key code 53 is Esc). The recent stack
@@ -232,10 +231,11 @@ the same driven sequence; a single run varies.
   page reports the shot. `fly` answers a second time, earlier, at `Anim.passesTarget`: from the
   moment a bouncing spring first reaches its target the flight's rect contains the target on every
   side, so the annotator's window comes up there, with its own shadow off (`AnnotationController.show`),
-  hidden behind the flight image until `arrived`. That is what makes the editor usable the moment
-  the card looks still: the key window, the toolbar and the outside-click monitor all start with
-  the window, and a shadow is the one thing that would show, because it falls outside the frame it
-  is cast from. Done or Esc is accepted between the two moments, so the `arrived` callback is
+  hidden behind the flight image until `arrived`. That is what makes the editor take the pointer
+  the moment the card looks still: the toolbar and the outside-click monitor start with the window,
+  and a shadow is the one thing that would show, because it falls outside the frame it is cast
+  from. The keys come earlier: `prepare` orders the window in invisible and ignoring the mouse and
+  makes it key, so a tool key or Esc pressed during the flight already reaches the page. Done or Esc is accepted between the two moments, so the `arrived` callback is
   guarded on the key, not the phase. A flight can also go without arriving, and a third callback,
   `dropped`, runs then, so the window never keeps a shadow that is switched off. The window is at
   the fitted frame by then whatever the zoom was: `hide` springs the level back to 1 first and
@@ -296,9 +296,8 @@ the same driven sequence; a single run varies.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor. It gives it up in
-  `perform(.show)`, after the annotator's window has taken it, not when the flight starts, so the
-  keys pass from one to the other instead of being nobody's for the length of the flight, which is
-  what lets Esc turn a card around mid-air.
+  `perform(.prepare)`, right after the annotator's window has taken it, so the keys pass from one
+  to the other instead of being nobody's for the length of the flight.
 - Which card a key acts on is one variable, `model.focused`. The stack focuses the newest card the
   moment it takes keys (`takeKeys`), so arrows, Space, and Return act on a card without a first
   click, and the pointer moves the focus too: moving onto a card focuses it, and leaving it leaves
@@ -378,9 +377,8 @@ the same driven sequence; a single run varies.
   `AnnotationController.abandon()`: the page lets the image go, the canvas is reset, nothing is
   stored, and the draft the page was told to load is untouched. `dismiss` and `remove` still park
   from `flyingOut`, because the panel aims that same flight offscreen before the event arrives.
-  Esc is the user's way in: the stack still holds the keys through the flight, so `handleKey` sees
-  it, and in `flyingOut` it means `annotationEnded()`. That is the recent stack only (`handleKey`
-  guards on `model.isStack`; a lone thumbnail's panel never takes keys).
+  Esc is the user's way in: the annotator's window holds the keys from `prepare`, so the page sees
+  it and sends `cancel`, which comes back through `onClosed` as `close`.
   `docs/flight-interrupt-2026-09-18.md` has the frames.
 - Annotating a list is a queue (`ThumbnailController.queue`, `stack.queue` in the state report):
   the first file opens and the rest wait, and finishing one opens the next until the list is done.

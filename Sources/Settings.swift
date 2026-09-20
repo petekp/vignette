@@ -122,7 +122,7 @@ struct UITweaks: Codable, Equatable {
     var staggerDelay = 0.05
     var staggerTotalMax = 0.3        // the last card never starts later than this
     var relayoutDuration = 0.2
-    var expandDuration = 0.4
+    var expandDuration = 0.25
     var hoverRevealDuration = 0.15
     // A flight between a stack slot and the annotator, bowed and swelled by FlightCurve
     var flightArc = 0.08             // how far the path bows, as a fraction of its length

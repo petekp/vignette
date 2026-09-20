@@ -159,9 +159,11 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         return (webView.value(forKey: "_webProcessIdentifier") as? NSNumber)?.int32Value
     }
 
-    /// Sizes the hidden window to `frame` and loads the image, so the page has rendered by `show`.
-    /// `room` is the rect the frame may grow within: the visible screen, less any strip its owner
-    /// keeps for itself.
+    /// Sizes the window to `frame`, loads the image, and takes the keys, so the page has rendered
+    /// by `show` and a key pressed during the flight already reaches it. The window is ordered in
+    /// invisible and ignoring the mouse until `show`: a press still lands on the flight image, whose
+    /// picture is not where the page is yet. `room` is the rect the frame may grow within: the
+    /// visible screen, less any strip its owner keeps for itself.
     func prepare(_ shot: Screenshot, in frame: NSRect, room: NSRect) {
         guard let webView else { return }
         current = shot
@@ -180,6 +182,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         webView.layoutSubtreeIfNeeded()
+        win.alphaValue = 0
+        win.ignoresMouseEvents = true
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
         sendImage(shot, windowSize: frame.size)
     }
 
@@ -405,11 +411,12 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
 
     /// Puts the window up behind the flight image, which is past this frame on every side and so
     /// covers it — except for a shadow, which falls outside the frame it is cast from. The flight
-    /// carries the shadow until it lands; `landed` hands it over. Everything else the annotator
-    /// needs to be usable happens here, so a drag lands on the page as soon as the card looks still.
+    /// carries the shadow until it lands; `landed` hands it over. The keys came with `prepare`; the
+    /// pointer comes here, so a drag lands on the page as soon as the card looks still.
     func show() {
         guard let win = window, current != nil else { return }
         win.alphaValue = 1
+        win.ignoresMouseEvents = false
         frameView?.layer?.shadowOpacity = 0
         win.makeKeyAndOrderFront(nil)
         if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
