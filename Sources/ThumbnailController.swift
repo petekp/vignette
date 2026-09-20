@@ -60,6 +60,9 @@ final class StackModel: ObservableObject {
     var onSweepEnd: () -> Void = {}
     var onClickImage: (Card) -> Void = { _ in }
     var onHover: (UUID?) -> Void = { _ in }
+    /// The selection changed: the cards that joined it, in the order they were picked, and the
+    /// cards that left it.
+    var onSelectionChanged: (_ added: [UUID], _ removed: [UUID]) -> Void = { _, _ in }
 
     /// Cards for a bulk action, in the order they were selected.
     func selectedCards() -> [Card] { selection.compactMap { id in cards.first { $0.id == id } } }
@@ -80,7 +83,10 @@ final class StackModel: ObservableObject {
     /// Replaces the selection, keeping the given order. A card named twice keeps its first place.
     func setSelection(_ ids: [UUID]) {
         var seen = Set<UUID>()
+        let was = selection
         selection = ids.filter { seen.insert($0).inserted }
+        let added = selection.filter { !was.contains($0) }, removed = was.filter { !selection.contains($0) }
+        if !added.isEmpty || !removed.isEmpty { onSelectionChanged(added, removed) }
     }
 }
 
@@ -194,6 +200,7 @@ final class ThumbnailController: NSObject {
             // A card under the pointer means the mouse is driving; the keyboard's reveal ends with it.
             if id != nil, self.model.stripRevealed == .keyboard { self.model.stripRevealed = nil }
         }
+        model.onSelectionChanged = { [weak self] added, removed in self?.queueFromSelection(added: added, removed: removed) }
     }
 
     /// The screen a presentation started on. `NSScreen.main` follows the active display, which is
@@ -644,6 +651,25 @@ final class ThumbnailController: NSObject {
     }
 
     /// Ends the run: nothing waits, and the next run counts from its own first image.
+    /// While a card is in the annotator, a card selected in the stack is queued to be annotated
+    /// next, in the order picked, and one deselected leaves the queue: the same run a selection
+    /// starts when Draw is pressed on it. The card in the annotator itself is not "next".
+    private func queueFromSelection(added: [UUID], removed: [UUID]) {
+        guard transition.isActive else { return }
+        let gone = Set(removed.compactMap { id in model.cards.first { $0.id == id }?.shot.url.path })
+        let before = queue.count
+        queue.removeAll { gone.contains($0) }
+        queueTotal -= before - queue.count
+        for id in added {
+            guard let card = model.cards.first(where: { $0.id == id }) else { continue }
+            let key = card.shot.url.path
+            guard key != transition.key, !queue.contains(key) else { continue }
+            queue.append(key)
+            queueTotal += 1
+            Log.write("[annotate] queued \((key as NSString).lastPathComponent) \(queueOpened + queue.count) of \(queueTotal)")
+        }
+    }
+
     private func endQueue() {
         queue = []
         queueTotal = 0

@@ -36,4 +36,17 @@ final class StackModelTests: XCTestCase {
         model.toggleSelection(of: model.cards[0].id)
         XCTAssertEqual(model.selectionNumber(of: model.cards[0].id), 3, "back on, at the end")
     }
+
+    /// The controller queues cards for the annotator from what joins the selection, in the order
+    /// picked, and drops what leaves it; a change that changes nothing is not reported.
+    func testSelectionChangesReportWhatJoinedInOrderAndWhatLeft() {
+        let model = model(cards: 4)
+        var reports: [(added: [UUID], removed: [UUID])] = []
+        model.onSelectionChanged = { reports.append((added: $0, removed: $1)) }
+        model.select([model.cards[2].id, model.cards[0].id])
+        model.select([model.cards[0].id])
+        model.setSelection([model.cards[0].id, model.cards[3].id])
+        XCTAssertEqual(reports.map(\.added), [[model.cards[2].id, model.cards[0].id], [model.cards[3].id]])
+        XCTAssertEqual(reports.map(\.removed), [[], [model.cards[2].id]])
+    }
 }

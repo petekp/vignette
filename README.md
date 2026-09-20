@@ -123,8 +123,9 @@ and closing it hands focus back to the app you came from.
   copies with the drawing rendered in, Cmd+Delete trashes, Esc clears then dismisses.
 - Return on several selected cards, or Draw in the strip, opens them one after another, in
   the order you picked them: each Done sends that card home and opens the next. They stay selected
-  the whole time, so Cmd+C or Cmd+S afterwards still takes all of them. Esc, or closing the stack,
-  drops the rest of the queue.
+  the whole time, so Cmd+C or Cmd+S afterwards still takes all of them. Selecting another card
+  while one is open adds it to the end of that run, and deselecting it takes it out. Esc, or
+  closing the stack, drops the rest of the queue.
 - A card whose drawing you parked with Esc or a swap shows it in its thumbnail. That
   thumbnail is a preview PNG in `~/Library/Caches`; if macOS clears the folder, the next launch
   renders it again from the draft. Reopen the card and the drawing is back either way;

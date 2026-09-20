@@ -386,10 +386,13 @@ the same driven sequence; a single run varies.
   finished card's effects, so the card flies home with its copied mark while the next flies out,
   which is a swap's two flights. The reducer knows nothing of the queue; `returnCard` only ends the
   session, hides the dim, and hands the focus back when nothing follows. Opening a card does not
-  clear the selection, so after the last one Cmd+C or Cmd+S still takes all of them. Esc, a
-  dismissal, quick annotate, and a stack presented anew empty the queue; a removed file drops out
-  of it, and a run ends when the file in the annotator is the one that went; any other request to
-  annotate replaces it. `docs/annotation-queue-2026-09-17.md` has the handover.
+  clear the selection, so after the last one Cmd+C or Cmd+S still takes all of them. While a card
+  is in the annotator, selecting another card in the stack queues it next, in the order picked
+  (`[annotate] queued <name> 3 of 3`), and deselecting it takes it back out
+  (`queueFromSelection`, from the model's `onSelectionChanged`). Esc, a dismissal, quick
+  annotate, and a stack presented anew empty the queue; a removed file drops out of it, and a run
+  ends when the file in the annotator is the one that went; any other request to annotate
+  replaces it. `docs/annotation-queue-2026-09-17.md` has the handover.
 - The annotator window is borderless and sized exactly to the image. Its toolbar is a native
   panel (`AnnotatorToolbar.swift`) placed under the window, never inside the page: the page
   sends its tools in the `ready` message, along with every color a mark may be drawn in, reports
