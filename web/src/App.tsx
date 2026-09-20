@@ -27,11 +27,6 @@ import {
 } from 'tldraw'
 import 'tldraw/tldraw.css'
 import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, ViewRequest, ViewResult, ZoomAnchor, postToNative } from './bridge'
-
-/** One keyboard zoom step (cmd+plus / cmd+minus). */
-const ZOOM_STEP = 1.25
-/** Wheel and pinch: window scale per wheel unit; pinch-out (negative deltaY) grows the window. */
-const WHEEL_ZOOM_RATE = 0.01
 import {
   CANDIDATES,
   ColorId,
@@ -44,6 +39,8 @@ import {
   REOPEN_TOOL,
   TOOLS,
   ToolId,
+  WHEEL_ZOOM_RATE,
+  ZOOM_STEP,
 } from './config'
 import { Area, explain, hasSample, pickColor, prepareSample } from './contrast'
 
