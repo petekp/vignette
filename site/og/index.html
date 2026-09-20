@@ -1,0 +1,91 @@
+<!doctype html>
+<!-- The source of site/og.png, the 1200 x 630 link preview. The cards are mock UI; the marks are
+     what a user (red), Claude (coral) and Codex (green) draw. To re-render after a change:
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu \
+       --hide-scrollbars --window-size=1200,630 --virtual-time-budget=6000 --screenshot=site/og.png \
+       file://$PWD/site/og/index.html
+     The fonts come from Google Fonts, so the render needs the network. -->
+<html lang="en"><head><meta charset="utf-8"><title>Vignette link preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Inter:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#F6F1E8;--ink:#1C1917;--ink2:#141210;--red:#E03131;--mute:#6F675E;--mute2:#A39B90}
+body{margin:0;background:#fff}
+.og{width:1200px;height:630px;position:relative;overflow:hidden;font-family:Inter}
+.wm{font-family:Caveat,cursive;font-weight:600;line-height:.9;font-size:96px}
+.tag{font:500 44px/1.25 Inter;letter-spacing:-.015em;color:var(--mute)}
+.sub{font:500 28px Inter;color:#948C80;letter-spacing:.01em}
+.paper{background:var(--paper);color:var(--ink)}
+svg.doodle{position:absolute;overflow:visible} svg.doodle path{fill:none;stroke:var(--ink);stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+svg.stroke{position:absolute;overflow:visible} svg.stroke path{fill:none;stroke:var(--red);stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+.col{position:absolute;top:0;width:300px;height:630px}
+.band{position:absolute;top:0;bottom:0;left:800px;width:420px;background:linear-gradient(90deg,rgba(28,25,23,0) 0,rgba(28,25,23,.05) 18%,rgba(28,25,23,.07) 100%)}
+.th{position:absolute;left:0;width:300px;border-radius:14px;overflow:hidden;box-shadow:0 14px 34px rgba(0,0,0,.28)}
+.th.light{background:#FAFAF7;outline:1px solid rgba(0,0,0,.06)} .th.dk{background:#1F1F24;outline:1px solid rgba(255,255,255,.08)}
+.side{position:absolute;left:0;top:0;bottom:0;width:54px;background:#ECE9E1}
+.side::before{content:"";position:absolute;left:12px;top:14px;width:30px;height:30px;border-radius:8px;background:#5B8DEF}
+.side::after{content:"";position:absolute;left:12px;top:58px;width:30px;height:90px;background:repeating-linear-gradient(#D9D4C8 0 8px,transparent 8px 20px)}
+.stat{position:absolute;width:64px;height:48px;border-radius:8px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.stat b{position:absolute;left:8px;bottom:8px;height:8px;border-radius:4px}
+.stat::before{content:"";position:absolute;left:8px;top:8px;width:28px;height:6px;border-radius:3px;background:#DDD8CE}
+.chart{position:absolute}
+.row{position:absolute;left:18px;right:18px;height:24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #EAE6DE}
+.row span{height:8px;border-radius:4px;background:#D9D4C8;display:block}
+.tog{width:34px;height:18px;border-radius:9px;background:#D9D4C8;position:relative;display:block} .tog::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+.tog.on{background:#59C3A5} .tog.on::after{left:18px}
+.bub{position:absolute;height:26px;border-radius:13px} .bub.l{left:16px;background:#33333A} .bub.r{right:16px;background:#5B8DEF}
+.hdr{position:absolute;left:0;right:0;top:0;height:46px;background:#5B8DEF}
+.hdr::after{content:"";position:absolute;left:18px;top:18px;width:80px;height:10px;border-radius:5px;background:rgba(255,255,255,.7)}
+.pc{position:absolute;top:66px;width:74px;height:104px;border-radius:10px;background:#fff;border:2px solid #E6E2D9}
+.pc::before{content:"";position:absolute;left:10px;top:12px;width:34px;height:8px;border-radius:4px;background:#D9D4C8}
+.pc::after{content:"";position:absolute;left:10px;right:10px;bottom:12px;height:18px;border-radius:6px;background:#F0B45B}
+.mk{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.mk path,.mk rect{fill:none;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+.mk.red path,.mk.red rect{stroke:var(--red)} .mk.red text{fill:var(--red)}
+.mk.claude path{stroke:#D97757} .mk.claude text{fill:#D97757}
+.mk.codex path{stroke:#10A37F} .mk.codex text{fill:#10A37F}
+.hand{font-family:Caveat;font-weight:600;font-size:26px}
+.chip{position:absolute;right:10px;top:10px;display:inline-flex;align-items:center;gap:7px;background:#fff;color:#111;border-radius:999px;padding:7px 15px 7px 11px;font:600 22px Inter;box-shadow:0 3px 10px rgba(0,0,0,.25);outline:1px solid rgba(0,0,0,.12)}
+.chip img{width:20px;height:20px;object-fit:contain} .chip i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.chip .ic{width:15px;height:15px;fill:none;stroke:#555;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;margin-right:-2px}
+</style></head>
+<body><div class="og paper"><div class="wm" style="position:absolute;left:84px;top:256px">vignette</div>
+  <div class="tag" style="position:absolute;left:92px;top:350px;width:640px">an easier way to annotate and share screenshots with agents.</div>
+  <div class="sub" style="position:absolute;left:94px;top:472px">for macOS</div>
+  <svg class="doodle" style="left:392px;top:262px" width="170" height="80" viewBox="0 0 170 80"><path d="M6 44 C 18 10, 40 8, 46 36 C 52 66, 22 70, 24 44 C 26 18, 64 6, 88 28 C 106 46, 122 50, 138 32 C 150 18, 160 22, 164 34"/></svg>
+<div class="band"></div><div class="col" style="left:860px">
+  <!-- 1 dashboard, light, user mark -->
+  <div class="th light" style="top:-6px;height:190px">
+    <div class="side"></div>
+    <div class="stat" style="left:70px;top:16px"><b style="background:#5B8DEF;width:60%"></b></div>
+    <div class="stat" style="left:150px;top:16px"><b style="background:#59C3A5;width:40%"></b></div>
+    <div class="stat" style="left:230px;top:16px"><b style="background:#F0B45B;width:75%"></b></div>
+    <svg class="chart" style="left:70px;top:78px" width="216" height="96" viewBox="0 0 216 96"><polyline points="0,80 30,62 60,70 90,40 120,48 150,24 180,30 216,12" fill="none" stroke="#5B8DEF" stroke-width="3" stroke-linejoin="round"/><line x1="0" y1="90" x2="216" y2="90" stroke="#DDD8CE"/></svg>
+    <svg class="mk red"><rect x="224" y="10" width="76" height="60" rx="5"/></svg>
+  </div>
+  <!-- 2 settings, light, claude -->
+  <div class="th light" style="top:200px;height:196px">
+    <div class="row" style="top:56px"><span style="width:110px"></span><i class="tog on"></i></div>
+    <div class="row" style="top:92px"><span style="width:80px"></span><i class="tog"></i></div>
+    <div class="row" style="top:128px"><span style="width:130px"></span><i class="tog on"></i></div>
+    <div class="row" style="top:164px"><span style="width:96px"></span><i class="tog"></i></div>
+    <div class="chip"><img src="../../Resources/agents/claude.svg">from claude</div>
+    <svg class="mk claude"><path d="M120 184 C 170 184, 226 168, 254 146"/><path d="M234 142 L 256 140 L 256 162"/></svg>
+  </div>
+  <!-- 3 chat, dark, user mark -->
+  <div class="th dk" style="top:412px;height:156px">
+    <div class="bub l" style="top:16px;width:150px"></div>
+    <div class="bub r" style="top:52px;width:120px"></div>
+    <div class="bub l" style="top:88px;width:190px"></div>
+    <div class="bub r" style="top:124px;width:90px"></div>
+    <svg class="mk red" style="top:-4px"><path d="M186 56 C 130 50, 88 66, 90 88 C 92 112, 150 124, 210 118 C 262 112, 290 92, 282 74 C 274 58, 236 52, 200 56"/></svg>
+  </div>
+  <!-- 4 pricing, light, codex -->
+  <div class="th light" style="top:584px;height:190px">
+    <div class="hdr"></div>
+    <div class="pc" style="left:18px"></div><div class="pc" style="left:113px;border-color:#59C3A5"></div><div class="pc" style="left:208px"></div>
+    <div class="chip"><img src="chatgpt.svg">from codex</div>
+    <svg class="mk codex"><path d="M40 156 C 80 128, 160 118, 240 112"/><path d="M222 100 L 244 112 L 226 130"/></svg>
+  </div>
+</div>
+</body></html>
