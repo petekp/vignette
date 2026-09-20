@@ -30,7 +30,7 @@ struct MarkProblem: Error, CustomStringConvertible {
     init(_ description: String) { self.description = description }
 }
 
-/// A `shotnote://<name>?file=…&file=…` URL, decoded once.
+/// A `vignette://<name>?file=…&file=…` URL, decoded once.
 struct CommandRequest: Equatable {
     let name: String
     let files: [URL]
@@ -73,7 +73,7 @@ enum Commands {
         Fixed(name: "cancel", summary: "close the annotator without exporting, as Esc would"),
         Fixed(name: "settings", summary: "open the Settings window"),
         Fixed(name: "install-skill", summary: "copy the bundled agent skill into ~/.claude/skills and ~/.codex/skills and turn the setting on; &root=<dir> installs into that directory instead and leaves the setting alone (needs \"debug\": true)"),
-        Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Shotnote first recorded"),
+        Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Vignette first recorded"),
         Fixed(name: "send", summary: "hand a screenshot's path to a coding agent herdr is running: \(Identity.urlScheme)://send?file=<path>&to=<agent or pane>&text=<words>; the focused pane's agent when no target is given", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "show-editor", summary: "open the editor window without an image", needsDebug: true),
@@ -227,7 +227,7 @@ enum Commands {
         return CGImageSourceGetType(source) != nil && CGImageSourceGetCount(source) > 0
     }
 
-    /// One line per command, for `shotnote://help`.
+    /// One line per command, for `vignette://help`.
     static func helpLines() -> [String] {
         let commands = fixed.map { "\($0.name): \($0.summary)\($0.needsDebug ? " (needs \"debug\": true in settings.json)" : "")" }
         let actions = Config.actions.map { action -> String in

@@ -10,9 +10,9 @@ import Foundation
 /// file someone put there by hand is left exactly as it is.
 enum SkillInstaller {
     /// The skill's folder, in the bundle and under `<root>/skills`.
-    static let skillName = "shotnote"
+    static let skillName = "vignette"
     /// Names the build that wrote this copy. A directory without it is not ours.
-    static let markerName = ".shotnote-skill.json"
+    static let markerName = ".vignette-skill.json"
     /// Where Claude Code and Codex keep their skills. A directory that is not there means that
     /// agent is not installed on this Mac.
     static let agentDirectories = [".claude", ".codex"]

@@ -6,16 +6,16 @@ final class SkillInstallerTests: XCTestCase {
     private var dir: URL!
     private var source: URL!
     private var root: URL!
-    private let stamp = SkillInstaller.Stamp(app: "Shotnote", version: "0.1.0", build: "aaaa111")
+    private let stamp = SkillInstaller.Stamp(app: "Vignette", version: "0.1.0", build: "aaaa111")
     private var installed: URL { SkillInstaller.folder(in: root) }
 
     override func setUpWithError() throws {
-        dir = FileManager.default.temporaryDirectory.appendingPathComponent("shotnote-skill-\(UUID().uuidString)")
-        source = dir.appendingPathComponent("bundle/shotnote")
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-skill-\(UUID().uuidString)")
+        source = dir.appendingPathComponent("bundle/vignette")
         root = dir.appendingPathComponent("root")
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try write("---\nname: shotnote\n---\n\nShow the user an image.\n")
+        try write("---\nname: vignette\n---\n\nShow the user an image.\n")
     }
 
     override func tearDownWithError() throws {
@@ -46,8 +46,8 @@ final class SkillInstallerTests: XCTestCase {
 
     func testANewerBuildRewritesOurCopy() throws {
         _ = SkillInstaller.install(source: source, into: [root], stamp: stamp)
-        try write("---\nname: shotnote\n---\n\nShow the user an image, and read back their marks.\n")
-        let newer = SkillInstaller.Stamp(app: "Shotnote", version: "0.2.0", build: "bbbb222")
+        try write("---\nname: vignette\n---\n\nShow the user an image, and read back their marks.\n")
+        let newer = SkillInstaller.Stamp(app: "Vignette", version: "0.2.0", build: "bbbb222")
         XCTAssertEqual(SkillInstaller.install(source: source, into: [root], stamp: newer).map(\.outcome), [.updated])
         XCTAssertEqual(try text(at: installed), try text(at: source))
         XCTAssertEqual(SkillInstaller.state(of: root).stamp, newer)

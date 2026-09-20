@@ -4,22 +4,22 @@ Things decided or raised but not built. Each entry says what, why, and what it w
 
 ## Ship the agent skill with the app (decided 2026-09-16)
 
-Built on 2026-09-18 on branch `todo6/integration` (`skills/shotnote/SKILL.md` bundled, the
-`agentSkill` setting with the Agents section, `shotnote://install-skill`, the ownership marker,
+Built on 2026-09-18 on branch `todo6/integration` (`skills/vignette/SKILL.md` bundled, the
+`agentSkill` setting with the Agents section, `vignette://install-skill`, the ownership marker,
 a root whose `skills` directory is a link refused); docs/agent-skill-2026-09-18.md has the
 design as built and docs/run-2026-09-18.md the verification. Publishing on skills.sh still
 waits on the public repo.
 
-Someone who downloads the app needs their agent to learn the `shotnote://` contract, and the
+Someone who downloads the app needs their agent to learn the `vignette://` contract, and the
 app is the only thing they are guaranteed to have and the only thing that knows which commands
 its version supports. So the app is the source of the skill.
 
-- Bundle `skills/shotnote/SKILL.md` in the app the way `LICENSE-tldraw.md` is bundled (project.yml).
-  The draft is in the appendix below; its repo home is `skills/shotnote/SKILL.md`.
+- Bundle `skills/vignette/SKILL.md` in the app the way `LICENSE-tldraw.md` is bundled (project.yml).
+  The draft is in the appendix below; its repo home is `skills/vignette/SKILL.md`.
 - Offer it once. On first launch, when `~/.claude` or `~/.codex` exists, the first-launch toast
   offers the skill. A toggle in Settings, in a new "Agents" section, does the work: copy the skill
-  into `~/.claude/skills/shotnote` and `~/.codex/skills/shotnote`, rewrite it on launch when the
-  app is newer, remove it when the toggle goes off. `shotnote://install-skill` does the same for
+  into `~/.claude/skills/vignette` and `~/.codex/skills/vignette`, rewrite it on launch when the
+  app is newer, remove it when the toggle goes off. `vignette://install-skill` does the same for
   scripts and answers with one `[install-skill] ok|error` line.
 - The installer never touches a skill directory it did not create. Mark its own copies (a
   sidecar version file) so a hand-linked copy is left alone.
@@ -30,12 +30,12 @@ its version supports. So the app is the source of the skill.
 - Not doing: an MCP server (a config step in every agent and a second protocol beside the URLs;
   revisit if a non-Claude, non-Codex user asks) and writing into anyone's CLAUDE.md.
 - On this machine the installer replaces the manual link. Until it exists, link
-  `claude-code-setup/skills/shotnote` to `~/Code/shotnote/skills/shotnote` and run
+  `claude-code-setup/skills/vignette` to `~/Code/vignette/skills/vignette` and run
   `gen-skills-manifest.sh`; the agent-browser skill is owned by skills.sh and must not carry this.
 
 ## Open from the same session
 
-- `shotnote://add?file=<path>[&annotate]` is built, unit-tested, and verified live, and not yet
+- `vignette://add?file=<path>[&annotate]` is built, unit-tested, and verified live, and not yet
   committed (Commands.swift, AppDelegate.swift, CommandsTests.swift, README.md, AGENTS.md).
 - The skill checks the `help` list for `add` and falls back to saving into the watch folder, so a
   newer skill on an older app still works.
@@ -46,7 +46,7 @@ its version supports. So the app is the source of the skill.
   phrase on the real screen (demoed 2026-09-18, source in docs/live-screen-demo/), and a person
   drawing on the live screen so the agent gets a crop plus what the mark is on.
   docs/live-screen-2026-09-18.md has the demos, the three anchors, the limits, and the tradeoffs.
-- `shotnote://marks?file=`: print the stored draft's shapes as markdown, one line per shape with
+- `vignette://marks?file=`: print the stored draft's shapes as markdown, one line per shape with
   its type and percent position, and put the same block on the pasteboard beside the PNG in Copy
   Annotated. Verified by hand on 2026-09-16 with `jq` over a draft: one ellipse, center x 26%,
   y 30%, enough to crop the marked region from the original. Per-mark crops are the follow-on.
@@ -91,11 +91,11 @@ Items 7 to 17 landed on the evening of 2026-09-17 on `todo4/integration` and wer
 `foundation` that night; docs/run-2026-09-17-evening.md has what landed, how it was driven, the
 decisions, the open questions, the incidents, and the review. Items 19 to 22 landed in the night
 of 2026-09-17 to 18 on branch `todo5/integration` (tip d1870d3, worktrees under
-`~/Code/shotnote-todo/`), reviewed and fixed, with an architecture sweep of everything since the
+`~/Code/vignette-todo/`), reviewed and fixed, with an architecture sweep of everything since the
 foundation review, not yet merged; docs/run-2026-09-17-night.md on that branch has the
 verification, the open questions, the review, and the sweep's refactors and design questions
-for Pete. Item 18 is written as a draft skill, `shotnote-todo-run`, in the setup repository
-(`~/Code/claude-code-setup/skills/shotnote-todo-run`, uncommitted, awaiting Pete's review of
+for Pete. Item 18 is written as a draft skill, `vignette-todo-run`, in the setup repository
+(`~/Code/claude-code-setup/skills/vignette-todo-run`, uncommitted, awaiting Pete's review of
 its outline).
 
 1. Drag-selecting in the stack should auto-scroll when the drag nears the top or bottom edge of
@@ -207,7 +207,7 @@ its outline).
     and the row under the cursor is still the same button because the label is part of it.
 21. "Draw" replaces "Annotate" in user-facing language: the strip's button, the settings window,
     the menu, the README's user-facing lines, and any toast. The card's hover hint already says
-    "Draw". URL ids (`shotnote://annotate`), log tags (`[annotate]`), and code identifiers stay
+    "Draw". URL ids (`vignette://annotate`), log tags (`[annotate]`), and code identifiers stay
     unless a rename is trivial and touches nothing an agent or script depends on.
 
 22. Zooming the annotator image looks like it arcs near the start. Pete, 2026-09-17 evening, on
@@ -242,7 +242,7 @@ the card shows it.
     the band a fraction of the shorter side, or a number of points, so the reach is the same on
     every edge; measure `page.visible` at the top and bottom edges on a wide fixture before and
     after. The parameters exist as `ui.zoomEdgeBand` and `ui.zoomEdgePull` with sliders in the
-    tweak panel (`open -g shotnote://tweaks`, needs `"debug": true`), and in settings.json; if the
+    tweak panel (`open -g vignette://tweaks`, needs `"debug": true`), and in settings.json; if the
     band changes unit, rename the key and its slider to say the unit.
 24. More space between the selection strip and the thumbnail column, specifically beside the
     wider thumbnails. Pete: "add a bit more space between the thumbnail select toolbar and the
@@ -442,7 +442,7 @@ without Pete's say.
     forth between the human and agent." Under two minutes, no narration needed, captions at
     most. The screenshots in it are mock: staged windows made for the video (a terminal, a
     browser page, a design), never Pete's real folder, so the run happens on a scratch watch
-    folder and a scratch settings file (`SHOTNOTE_SETTINGS`), with the real folder untouched.
+    folder and a scratch settings file (`VIGNETTE_SETTINGS`), with the real folder untouched.
     The beats: a capture landing as a thumbnail; the double tap opening the stack; drawing and
     Return copying; a selection, the strip's labels coming out, and Stitch; the queue moving
     through three cards; a zoom; and the exchange with the agent, which the app can already
@@ -460,7 +460,7 @@ without Pete's say.
 
 All four landed the same afternoon on `todo2/integration`, reviewed and fixed (tip f59cec8); the
 Round 3 section of docs/run-2026-09-17-daytime.md on that branch has the measurements, the
-review, and the open questions. Pete runs that build from `~/Code/shotnote-todo/pete-build/Shotnote.app`.
+review, and the open questions. Pete runs that build from `~/Code/vignette-todo/pete-build/Vignette.app`.
 
 1. Reopening an annotated image should start on the select tool and also select the last shape
    that was added, so the next colour press or delete acts on it.
@@ -505,20 +505,20 @@ through the transitions item); 4 stays as written.
 ## Appendix: skill draft (2026-09-16)
 
     ---
-    name: shotnote
-    description: Show the user an image through Shotnote, the screenshot tool on this Mac, and read back what they marked on it. Use when you want the user to see a screenshot or rendering you produced (agent-browser, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Not for images the user captured themselves; Shotnote already shows those.
+    name: vignette
+    description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they marked on it. Use when you want the user to see a screenshot or rendering you produced (agent-browser, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Not for images the user captured themselves; Vignette already shows those.
     ---
     
-    # Shotnote
+    # Vignette
     
-    Shotnote watches the screenshots folder, shows each new image as a thumbnail in the corner,
+    Vignette watches the screenshots folder, shows each new image as a thumbnail in the corner,
     keeps the last thirty in a stack, and lets the user circle things and press Return. Every command
-    is a `shotnote://` URL that answers with one line in `~/Library/Logs/Shotnote.log`.
+    is a `vignette://` URL that answers with one line in `~/Library/Logs/Vignette.log`.
     
     ## Show the user an image
     
     ```sh
-    open -g "shotnote://add?file=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "/abs/path/Agent checkout 390px.png")"
+    open -g "vignette://add?file=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "/abs/path/Agent checkout 390px.png")"
     ```
     
     - `add` copies the file into the watch folder and shows its thumbnail. It leaves the clipboard
@@ -533,13 +533,13 @@ through the transitions item); 4 stays as written.
     
     ## Read back what they marked
     
-    When the user annotates the image and presses Return, Shotnote writes `<name>-annotated.png`
+    When the user annotates the image and presses Return, Vignette writes `<name>-annotated.png`
     beside the copy in the watch folder and logs `[annotate] done <name>-annotated.png`. Read that
-    file. The folder is `screenshotsFolder` in `~/.config/shotnote/settings.json`.
+    file. The folder is `screenshotsFolder` in `~/.config/vignette/settings.json`.
     
-    ## Is Shotnote running, and does it have `add`
+    ## Is Vignette running, and does it have `add`
     
-    `open -g shotnote://help` logs a `[help]` line per command; none within a second means it is not
+    `open -g vignette://help` logs a `[help]` line per command; none within a second means it is not
     running. If the list has no `add`, the app predates this skill: save the file straight into
     `screenshotsFolder` instead, which any version shows as a capture. `open -g
-    "shotnote://state?tag=<id>"` logs one `[state] {json}` line carrying the tag.
+    "vignette://state?tag=<id>"` logs one `[state] {json}` line carrying the tag.

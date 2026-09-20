@@ -1,7 +1,7 @@
 import AppKit
 
 /// Floating, non-activating panel. It can take key focus for the recent stack without activating
-/// Shotnote, so the app you are working in keeps its menu bar and gets focus back when we close.
+/// Vignette, so the app you are working in keeps its menu bar and gets focus back when we close.
 @MainActor
 final class ThumbnailPanel: NSPanel {
     var acceptsKeys = false

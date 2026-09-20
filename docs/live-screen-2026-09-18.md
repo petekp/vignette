@@ -54,7 +54,7 @@ Limits, so nobody rediscovers them:
 - Click-through is per window. A mark that is itself clickable needs the alpha-hit trick the
   stack panel uses.
 
-The command, roughly: `shotnote://point?app=Safari&window=<title>&marks=<json>`, the marks in
+The command, roughly: `vignette://point?app=Safari&window=<title>&marks=<json>`, the marks in
 fractions of the window, or anchored to an element or a phrase, drawn until Esc or a timeout,
 clipped to what is visible. If the window is covered, the same command captures it and pushes
 the card with the marks. The marks format is unchanged; the anchor is new. Effort: overlay and

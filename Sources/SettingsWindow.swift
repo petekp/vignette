@@ -24,7 +24,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private func makeWindow() -> NSWindow {
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        win.title = "Shotnote Settings"
+        win.title = "Vignette Settings"
         let hosting = NSHostingView(rootView: SettingsView(focus: focus))
         win.contentView = hosting
         // The form is taller than a laptop screen, and the window has no resize control, so the
@@ -100,7 +100,7 @@ struct SettingsView: View {
                 }
                 Toggle("Tell macOS to save screenshots here", isOn: binding(\.syncAppleSaveLocation))
                 Toggle("Show Apple's floating thumbnail", isOn: binding(\.appleThumbnail))
-                Text("Off means the file lands immediately and Shotnote's thumbnail is the only one.")
+                Text("Off means the file lands immediately and Vignette's thumbnail is the only one.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Window capture shadow", isOn: binding(\.windowShadow))
                 Picker("Format", selection: binding(\.format)) {
@@ -141,22 +141,22 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Agents") {
-                Toggle("Install the Shotnote skill", isOn: agentSkill)
+                Toggle("Install the Vignette skill", isOn: agentSkill)
                     .id(SettingsView.agentsSection)
-                Text("Copies a skill into ~/.claude/skills and ~/.codex/skills, so Claude Code and Codex know how to show you an image and read back what you drew on it. Off removes the copies Shotnote made; a skill you put there yourself is left alone.")
+                Text("Copies a skill into ~/.claude/skills and ~/.codex/skills, so Claude Code and Codex know how to show you an image and read back what you drew on it. Off removes the copies Vignette made; a skill you put there yourself is left alone.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Startup") {
                 Toggle("Launch at login", isOn: binding(\.launchAtLogin))
-                Text("Adds Shotnote to System Settings > General > Login Items.").font(.caption).foregroundStyle(.secondary)
+                Text("Adds Vignette to System Settings > General > Login Items.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Advanced") {
                 Toggle("Hide menu bar icon", isOn: binding(\.hideMenuBarIcon))
-                Text("Reopen settings with: open shotnote://settings").font(.caption).foregroundStyle(.secondary)
+                Text("Reopen settings with: open vignette://settings").font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button("Reveal settings.json") { NSWorkspace.shared.activateFileViewerSelecting([Settings.fileURL]) }
                     Button("Open Log") { NSWorkspace.shared.open(Log.url) }
-                    Button("Debug Panel…") { NSWorkspace.shared.open(URL(string: "shotnote://tweaks")!) }
+                    Button("Debug Panel…") { NSWorkspace.shared.open(URL(string: "vignette://tweaks")!) }
                 }
             }
         }

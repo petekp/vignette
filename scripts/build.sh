@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Builds the web bundle, regenerates the Xcode project, and builds the app.
-# `--test` also runs the ShotnoteTests unit tests after the build and names any that fail.
+# `--test` also runs the VignetteTests unit tests after the build and names any that fail.
 set -e
 cd "$(dirname "$0")/.."
 run_tests=false
@@ -13,7 +13,7 @@ done
 scheme=$(sed -n 's/^name: *//p' project.yml)
 (cd web && pnpm build)
 xcodegen generate >/dev/null   # also writes Info.plist; web/dist must exist first
-# The git stamp (CFBundleVersion, ShotnoteBuild) is a build phase in project.yml.
+# The git stamp (CFBundleVersion, VignetteBuild) is a build phase in project.yml.
 build=$(git describe --always --dirty 2>/dev/null || echo local)
 # scripts/signing.env (gitignored) names a certificate; without it the build is ad-hoc signed.
 signing_args=()

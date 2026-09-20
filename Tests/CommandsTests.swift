@@ -5,7 +5,7 @@ final class CommandsTests: XCTestCase {
     private var dir: URL!
 
     override func setUpWithError() throws {
-        dir = FileManager.default.temporaryDirectory.appendingPathComponent("shotnote-commands-\(UUID().uuidString)")
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-commands-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 
@@ -16,57 +16,57 @@ final class CommandsTests: XCTestCase {
     // MARK: parse
 
     func testParsesNameAndFilesWithOneDecode() {
-        let r = Commands.parse(URL(string: "shotnote://annotate?file=/tmp/a%20b.png&file=/tmp/100%25.png")!)
+        let r = Commands.parse(URL(string: "vignette://annotate?file=/tmp/a%20b.png&file=/tmp/100%25.png")!)
         XCTAssertEqual(r.name, "annotate")
         XCTAssertEqual(r.files.map(\.path), ["/tmp/a b.png", "/tmp/100%.png"])
     }
 
     func testExpandsTildeAndIgnoresOtherQueryItems() {
-        let r = Commands.parse(URL(string: "shotnote://copy?tag=x&file=~/Desktop/s.png")!)
+        let r = Commands.parse(URL(string: "vignette://copy?tag=x&file=~/Desktop/s.png")!)
         XCTAssertEqual(r.files, [URL(fileURLWithPath: NSHomeDirectory() + "/Desktop/s.png")])
     }
 
     func testEvalKeepsTheDecodedQuery() {
-        let r = Commands.parse(URL(string: "shotnote://eval?return%201%2B1")!)
+        let r = Commands.parse(URL(string: "vignette://eval?return%201%2B1")!)
         XCTAssertEqual(r.name, "eval")
         XCTAssertEqual(r.query, "return 1+1")
         XCTAssertEqual(r.files, [])
     }
 
     func testTagIsReadFromTheQuery() {
-        XCTAssertEqual(Commands.parse(URL(string: "shotnote://state?tag=t%201")!).tag, "t 1")
-        XCTAssertNil(Commands.parse(URL(string: "shotnote://state")!).tag)
+        XCTAssertEqual(Commands.parse(URL(string: "vignette://state?tag=t%201")!).tag, "t 1")
+        XCTAssertNil(Commands.parse(URL(string: "vignette://state")!).tag)
     }
 
     func testAddParsesTheAnnotateFlag() {
-        XCTAssertTrue(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&annotate")!).annotate)
-        XCTAssertTrue(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&annotate=1")!).annotate)
-        XCTAssertFalse(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&annotate=0")!).annotate)
-        XCTAssertFalse(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png")!).annotate)
+        XCTAssertTrue(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&annotate")!).annotate)
+        XCTAssertTrue(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&annotate=1")!).annotate)
+        XCTAssertFalse(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&annotate=0")!).annotate)
+        XCTAssertFalse(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png")!).annotate)
     }
 
     func testAddParsesTheAgentName() {
-        XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&agent=claude")!).agent, "claude")
-        XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&agent")!).agent, "",
+        XCTAssertEqual(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&agent=claude")!).agent, "claude")
+        XCTAssertEqual(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&agent")!).agent, "",
                        "the parameter without a name still means an agent added it")
-        XCTAssertNil(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png")!).agent)
-        XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?agent=%20claude%20code%0A")!).agent, "claude code",
+        XCTAssertNil(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png")!).agent)
+        XCTAssertEqual(Commands.parse(URL(string: "vignette://add?agent=%20claude%20code%0A")!).agent, "claude code",
                        "a name is one trimmed line: the log and the state report are one line each")
-        XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?agent=\(String(repeating: "x", count: 200))")!).agent?.count, Agent.maxLength)
+        XCTAssertEqual(Commands.parse(URL(string: "vignette://add?agent=\(String(repeating: "x", count: 200))")!).agent?.count, Agent.maxLength)
     }
 
     func testSendParsesItsTargetAndWords() {
-        let r = Commands.parse(URL(string: "shotnote://send?file=/tmp/x.png&to=reviewer&text=the%20header%20scrolls")!)
+        let r = Commands.parse(URL(string: "vignette://send?file=/tmp/x.png&to=reviewer&text=the%20header%20scrolls")!)
         XCTAssertEqual(r.to, "reviewer")
         XCTAssertEqual(r.text, "the header scrolls")
-        XCTAssertNil(Commands.parse(URL(string: "shotnote://send?file=/tmp/x.png")!).to)
+        XCTAssertNil(Commands.parse(URL(string: "vignette://send?file=/tmp/x.png")!).to)
         XCTAssertTrue(Commands.needsDebug("send"))
     }
 
     func testInstallSkillParsesItsRoot() {
-        XCTAssertEqual(Commands.parse(URL(string: "shotnote://install-skill?root=/tmp/agent%20home")!).root,
+        XCTAssertEqual(Commands.parse(URL(string: "vignette://install-skill?root=/tmp/agent%20home")!).root,
                        URL(fileURLWithPath: "/tmp/agent home"))
-        XCTAssertNil(Commands.parse(URL(string: "shotnote://install-skill")!).root)
+        XCTAssertNil(Commands.parse(URL(string: "vignette://install-skill")!).root)
         XCTAssertTrue(Commands.isKnown("install-skill"))
         XCTAssertFalse(Commands.needsDebug("install-skill"), "a script installs the skill without debug; only root= needs it")
     }
@@ -85,7 +85,7 @@ final class CommandsTests: XCTestCase {
     func testMarksComeFromAFileOrFromTheURLItself() throws {
         let file = dir.appendingPathComponent("marks.json")
         try Data(#"[{"type":"ellipse","x":0.1,"y":0.2,"w":0.3,"h":0.4,"color":"red"}]"#.utf8).write(to: file)
-        XCTAssertEqual(Commands.parse(URL(string: "shotnote://add?file=/tmp/x.png&marks=/tmp/m.json")!).marks, "/tmp/m.json")
+        XCTAssertEqual(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&marks=/tmp/m.json")!).marks, "/tmp/m.json")
         XCTAssertEqual(try Commands.marks(from: file.path), [Mark(type: .ellipse, x: 0.1, y: 0.2, w: 0.3, h: 0.4, color: "red")])
         XCTAssertEqual(try Commands.marks(from: #"[{"type":"arrow","x":0.5,"y":0.5,"x2":0.7,"y2":0.6}]"#),
                        [Mark(type: .arrow, x: 0.5, y: 0.5, x2: 0.7, y2: 0.6)])
@@ -202,7 +202,7 @@ final class AgentTests: XCTestCase {
     private var dir: URL!
 
     override func setUpWithError() throws {
-        dir = FileManager.default.temporaryDirectory.appendingPathComponent("shotnote-agent-\(UUID().uuidString)")
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-agent-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 

@@ -130,7 +130,7 @@ the listener notes, so the mark is coloured again for where it lands.
 
 Fixture `Screenshot quadrants.png`, 1200 x 800: white top left, red `#e03131` top right, dark grey
 `#3c3c3c` bottom left, dark red `#7a1212` bottom right. Four rectangles created through
-`shotnote://eval`, one over each quadrant, every one of them created `red`. What came back, with
+`vignette://eval`, one over each quadrant, every one of them created `red`. What came back, with
 each candidate's distance from the pixels under the mark:
 
 ```

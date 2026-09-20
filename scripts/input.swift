@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 import Carbon
 
-// Synthetic input for driving Shotnote from the terminal; run through scripts/input.sh.
+// Synthetic input for driving Vignette from the terminal; run through scripts/input.sh.
 // System Events keystrokes do not trigger Carbon hotkeys and only reach the frontmost app;
 // CGEvent does both. Coordinates are global Core Graphics points: origin at the top-left of the
 // main display, y growing downward, so a display above the main one has negative y.

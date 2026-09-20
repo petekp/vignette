@@ -62,12 +62,12 @@ output carried red badges 1, 2, 3 on the same three images in the same order.
 ### A purple badge for an image an agent pushed (item 8)
 
 `add?file=…&agent=<name>` records the name on the copied file as the
-`com.petepetrash.shotnote.agent` extended attribute, so it survives a rename or a move on the same
+`com.petepetrash.vignette.agent` extended attribute, so it survives a rename or a move on the same
 volume. The card shows a purple `cpu` badge in its top-right corner, and `[state]` reports `agent`
 per card. `todo/agent-marks` commit `9566bd6`, `Sources/Agent.swift`.
 
 Verified: `[add] ok Agent push.png agent=claude marks=3`,
-`xattr -p com.petepetrash.shotnote.agent` returned `claude`, `[state]` had `agent: claude`, and the
+`xattr -p com.petepetrash.vignette.agent` returned `claude`, `[state]` had `agent: claude`, and the
 crop shows the purple chip badge in the corner.
 
 Vendor logos (Claude, ChatGPT) are not bundled. `Agent.symbol(for:)` is the lookup and it is empty
@@ -79,7 +79,7 @@ assets you have to review.
 `add?file=…&marks=<json file or inline json>` turns an agent's marks into a real draft before the
 card appears. The marks are fractions of the image, so they do not depend on its pixel size. Types
 are ellipse, rectangle, arrow, and text; colors come from `web/src/config.ts`. The page builds the
-draft on its own canvas through a new `PageAPI.build` (`window.shotnote.build`), so the snapshot is
+draft on its own canvas through a new `PageAPI.build` (`window.vignette.build`), so the snapshot is
 tldraw's own schema and not hand-written Swift. Protocol 5 became 6 on both sides. A bad `marks`
 value answers with the new `invalid-marks` code. `todo/agent-marks` commit `11c359d`.
 
@@ -96,10 +96,10 @@ you have an image open in the annotator. That is by design and is in the README.
 
 The research is `docs/send-to-agent-exploration-2026-09-17.md`: what Claude Code and Codex accept
 today, herdr, the desktop apps, the Accessibility last resort, and what an image costs in tokens.
-The recommendation is herdr, because it is the only route where Shotnote knows which agent it is
+The recommendation is herdr, because it is the only route where Vignette knows which agent it is
 talking to, aims the delivery at that pane, and gets told when it fails.
 
-The prototype is behind `debug`: `shotnote://send?file=…&to=<agent or pane>&text=<words>` runs
+The prototype is behind `debug`: `vignette://send?file=…&to=<agent or pane>&text=<words>` runs
 `herdr agent list`, picks the target by name or pane id (the focused pane's agent without `to=`),
 and submits one line with the path. Codes `no-agent` and `send-failed`. `Sources/Send.swift`,
 `Tests/SendTests.swift`. `todo/send-to-agent` commit `eafd79b`.
@@ -218,7 +218,7 @@ Open questions, from the exploration:
 - Does a send carry the annotated export or the original? The prototype takes `file=` explicitly.
 - Should the send wait for the agent to settle (`herdr agent prompt --wait`) so a toast can say
   "answered" or "asked for permission"? It blocks for as long as the agent thinks.
-- Should Shotnote only offer agents you have named in herdr? Names are what make the list readable;
+- Should Vignette only offer agents you have named in herdr? Names are what make the list readable;
   there were seventeen agents running tonight.
 - Is the focused pane the right default, or the most recently idle agent?
 
@@ -254,7 +254,7 @@ Your checkout has the `add` change uncommitted. It is identical to commit `79774
 so it is already in the merge. Clear it, then merge:
 
 ```sh
-cd ~/Code/shotnote
+cd ~/Code/vignette
 git stash                       # or: git checkout -- . && rm docs/TODOS.md
 git merge todo/integration
 ./scripts/run.sh
@@ -270,14 +270,14 @@ resolved in, and out of order they conflict differently.
 When you are done:
 
 ```sh
-git worktree remove ~/Code/shotnote-todo/<each>
+git worktree remove ~/Code/vignette-todo/<each>
 git branch -d todo/<each branch you do not keep>
 ```
 
 ## 4. Incidents
 
 **Worktree builds ran against your real settings file.** Four worktrees build the same bundle id,
-so a bare `open -g shotnote://…` goes to whichever copy LaunchServices registered last, and that
+so a bare `open -g vignette://…` goes to whichever copy LaunchServices registered last, and that
 copy's launch replaces the running instance. Two agents hit this: roughly 23:35 to 23:54, and once
 at 00:14:56. The builds involved were the stack and motion worktrees.
 
@@ -288,7 +288,7 @@ no `[settings] wrote ui.…` line for it. The three keys are `ui.flightArc`, `ui
 `ui.flightDepth`. Nobody removed them. To remove them:
 
 ```sh
-jq 'del(.ui.flightArc, .ui.flightArcMax, .ui.flightDepth)' ~/.config/shotnote/settings.json > /tmp/s.json && mv /tmp/s.json ~/.config/shotnote/settings.json
+jq 'del(.ui.flightArc, .ui.flightArcMax, .ui.flightDepth)' ~/.config/vignette/settings.json > /tmp/s.json && mv /tmp/s.json ~/.config/vignette/settings.json
 ```
 
 Worth knowing: once you merge `todo/motion` and relaunch your real build, those three keys come back
@@ -307,8 +307,8 @@ launch-time sweep removed it (`[draft] swept Agent push.png`), and the store is 
 real drafts. Earlier agents may have left similar entries; any draft whose file is gone is dropped at
 the next launch.
 
-Nothing was written to `~/Dropbox/Screenshots` or `~/.config/shotnote/` by me. Every fixture I made
-is in `~/Code/shotnote-todo/integration-scratch/`.
+Nothing was written to `~/Dropbox/Screenshots` or `~/.config/vignette/` by me. Every fixture I made
+is in `~/Code/vignette-todo/integration-scratch/`.
 
 ## 5. Review
 

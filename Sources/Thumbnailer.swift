@@ -22,7 +22,7 @@ enum Thumbnailer: @unchecked Sendable {
     /// Decoded pixels the cache may hold, as RGBA bytes. About 30 cards at Retina card size plus a few
     /// screen-size flight decodes fit; beyond that the oldest go.
     nonisolated(unsafe) private static var budget = 96 << 20
-    private static let queue = DispatchQueue(label: "shotnote.thumbnails", qos: .userInitiated, attributes: .concurrent)
+    private static let queue = DispatchQueue(label: "vignette.thumbnails", qos: .userInitiated, attributes: .concurrent)
 
     static var budgetBytes: Int {
         get { lock.lock(); defer { lock.unlock() }; return budget }

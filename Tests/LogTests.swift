@@ -4,7 +4,7 @@ final class LogTests: XCTestCase {
     private var dir: URL!
 
     override func setUpWithError() throws {
-        dir = FileManager.default.temporaryDirectory.appendingPathComponent("shotnote-log-\(UUID().uuidString)")
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-log-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 

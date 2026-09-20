@@ -1,7 +1,7 @@
 import AppKit
 
 /// Product behavior that lives in code. Per-machine knobs (folder, counts, hotkey, backdrop) live in
-/// ~/.config/shotnote/settings.json; see Settings.swift.
+/// ~/.config/vignette/settings.json; see Settings.swift.
 enum Config {
     /// Appended to the original file name when an annotated copy is saved next to it.
     static let annotatedSuffix = "-annotated"
@@ -13,7 +13,7 @@ enum Config {
     static let overlayMaxPixel = 2048
 
     /// Everything you can do to screenshots. Each action is a hover button on a card, an entry in the
-    /// selection strip, a keyboard shortcut inside the recent stack, and a `shotnote://<id>` URL, according
+    /// selection strip, a keyboard shortcut inside the recent stack, and a `vignette://<id>` URL, according
     /// to its `placement` and `key`. Actions always receive a list: the cards in the order they were
     /// selected when the stack runs them, and the files in the order a URL names them.
     static let actions: [ShotAction] = [

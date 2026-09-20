@@ -138,7 +138,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         do { try server.start() } catch { Log.write("LocalServer start failed: \(error)"); return }
         self.server = server
         let config = WKWebViewConfiguration()
-        config.userContentController.add(self, name: "shotnote")
+        config.userContentController.add(self, name: "vignette")
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         let webView = AnnotationWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
         webView.navigationDelegate = self
@@ -737,7 +737,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// When each image's `load` was sent, by key, for the `[annotate] loaded` line. A swap can have two in flight.
     private var loadStarted: [String: CFTimeInterval] = [:]
 
-    /// Debug: runs JavaScript in the page and logs the result. `open 'shotnote://eval?<code>'`.
+    /// Debug: runs JavaScript in the page and logs the result. `open 'vignette://eval?<code>'`.
     func evalForDebug(_ code: String) {
         guard let webView else { Commands.error("eval", .pageNotReady, "no page"); return }
         webView.callAsyncJavaScript(code, arguments: [:], in: nil, in: .page) { result in
@@ -766,7 +766,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// Ends the session as Esc would, or closes the empty editor from `show-editor`.
-    /// `open shotnote://cancel`. False when nothing was open.
+    /// `open vignette://cancel`. False when nothing was open.
     @discardableResult
     func cancelForDebug() -> Bool {
         if current == nil {
@@ -864,7 +864,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// What the page has rendered, or nil when it does not answer in time (no page, a page that is
-    /// loading, or a dead web process). Driven by shotnote://state.
+    /// loading, or a dead web process). Driven by vignette://state.
     func queryPage(timeout: TimeInterval, completion: @escaping (Any?) -> Void) {
         guard let webView, pageReady else { completion(nil); return }
         var answered = false
@@ -874,7 +874,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             completion(value)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish(nil) }
-        let script = "const vb = window.editor ? window.editor.getViewportPageBounds() : null; return {title: document.title, root: document.getElementById('root')?.children.length, api: typeof window.shotnote, canvas: document.querySelector('.tl-canvas') != null, images: document.querySelectorAll('.tl-image').length, shapes: window.editor ? window.editor.getCurrentPageShapeIds().size : null, canUndo: window.editor ? window.editor.getCanUndo() : null, zoom: window.editor ? window.editor.getZoomLevel() / window.editor.getBaseZoom() : null, visible: vb ? [Math.round(vb.x), Math.round(vb.y), Math.round(vb.w), Math.round(vb.h)] : null, inner: [innerWidth, innerHeight], hidden: document.hidden, page: location.pathname.split('/').pop()};"
+        let script = "const vb = window.editor ? window.editor.getViewportPageBounds() : null; return {title: document.title, root: document.getElementById('root')?.children.length, api: typeof window.vignette, canvas: document.querySelector('.tl-canvas') != null, images: document.querySelectorAll('.tl-image').length, shapes: window.editor ? window.editor.getCurrentPageShapeIds().size : null, canUndo: window.editor ? window.editor.getCanUndo() : null, zoom: window.editor ? window.editor.getZoomLevel() / window.editor.getBaseZoom() : null, visible: vb ? [Math.round(vb.x), Math.round(vb.y), Math.round(vb.w), Math.round(vb.h)] : null, inner: [innerWidth, innerHeight], hidden: document.hidden, page: location.pathname.split('/').pop()};"
         webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { result in
             if case .success(let value) = result { finish(value) } else { finish(nil) }
         }

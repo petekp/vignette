@@ -1,7 +1,7 @@
 import AppKit
 
-/// Remembers the last app other than Shotnote that was active, so windows we open can hand focus back.
-/// Tracked continuously because opening via URL activates Shotnote before any window appears.
+/// Remembers the last app other than Vignette that was active, so windows we open can hand focus back.
+/// Tracked continuously because opening via URL activates Vignette before any window appears.
 @MainActor
 final class FocusReturn {
     static let shared = FocusReturn()
@@ -20,7 +20,7 @@ final class FocusReturn {
         }
     }
 
-    /// Activates the previous app if Shotnote is currently the active one.
+    /// Activates the previous app if Vignette is currently the active one.
     func restore(reason: String) {
         guard NSApp.isActive, let app = previousApp, !app.isTerminated else { return }
         app.activate()

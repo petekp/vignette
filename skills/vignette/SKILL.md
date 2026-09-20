@@ -1,20 +1,20 @@
 ---
-name: shotnote
-description: Show the user an image through Shotnote, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Not for images the user captured themselves; Shotnote already shows those.
+name: vignette
+description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Not for images the user captured themselves; Vignette already shows those.
 ---
 
-# Shotnote
+# Vignette
 
-Shotnote watches the user's screenshots folder, shows each new image as a thumbnail in the
+Vignette watches the user's screenshots folder, shows each new image as a thumbnail in the
 corner, keeps the recent ones in a stack, and lets the user draw on one and press Return. Every
-command is a `shotnote://` URL. Each one answers with one line in `~/Library/Logs/Shotnote.log`:
+command is a `vignette://` URL. Each one answers with one line in `~/Library/Logs/Vignette.log`:
 `[<command>] ok <detail>` or `[<command>] error <code> <detail>`.
 
 ## Show the user an image
 
 ```sh
 path=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "/abs/path/Checkout at 390px.png")
-open -g "shotnote://add?file=$path&agent=claude"
+open -g "vignette://add?file=$path&agent=claude"
 ```
 
 - `add` copies the file into the watch folder and shows its thumbnail. It leaves the clipboard
@@ -57,18 +57,18 @@ fraction of the image: `x`,`y` is a shape's top-left corner or an arrow's tail, 
 
 ## Read back what they drew
 
-The user draws and presses Return. Shotnote writes `<name>-annotated.png` beside the copy in the
+The user draws and presses Return. Vignette writes `<name>-annotated.png` beside the copy in the
 watch folder and logs `[annotate] done <name>-annotated.png …`. Read that file. The folder is
-`screenshotsFolder` in `~/.config/shotnote/settings.json`.
+`screenshotsFolder` in `~/.config/vignette/settings.json`.
 
 Nothing arrives if the user ignores the thumbnail, so do not block on it. Ask for the drawing when
 you need it, then carry on and look for the file.
 
-## Is Shotnote running, and does it have `add`
+## Is Vignette running, and does it have `add`
 
-`open -g shotnote://help` logs one `[help]` line per command and one `[help] ok` line; nothing
+`open -g vignette://help` logs one `[help]` line per command and one `[help] ok` line; nothing
 within a second means it is not running. If the list has no `add`, the app is older than this
 skill: write your file straight into `screenshotsFolder`, which any version shows as a capture.
 
-`open -g "shotnote://state?tag=<id>"` logs one `[state] {json}` line carrying your tag, with the
+`open -g "vignette://state?tag=<id>"` logs one `[state] {json}` line carrying your tag, with the
 watch folder, the stack, and what is in the editor.

@@ -8,7 +8,7 @@ import Foundation
 enum Log {
     static let url = Identity.logURL
     static let rotateAtBytes = 5 << 20
-    private static let queue = DispatchQueue(label: "shotnote.log")
+    private static let queue = DispatchQueue(label: "vignette.log")
     private static let stamp: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f }()
     private static let dateStamp: DateFormatter = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f }()
 

@@ -3,9 +3,9 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 14
+let bridgeProtocolVersion = 15
 
-/// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
+/// Sent to the page as `window.vignette.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
     /// The file path. Also the asset `src` the page resolves to a served URL.
     let key: String
@@ -94,24 +94,24 @@ enum PageAPI: Equatable {
     case finish
 
     /// `park`, `build`, `export`, and `setView` are async and return a value, so they run through
-    /// `callAsyncJavaScript`; the rest are fire-and-forget. All guard on `window.shotnote` so a
+    /// `callAsyncJavaScript`; the rest are fire-and-forget. All guard on `window.vignette` so a
     /// call that lands before the page's script runs is a no-op rather than an exception.
     var script: String {
         switch self {
         case .load(let payload, let snapshot):
-            return "window.shotnote && window.shotnote.load(\(PageAPI.payload(payload, snapshot)));"
-        case .park: return "return window.shotnote ? await window.shotnote.park() : null;"
-        case .reset: return "window.shotnote && window.shotnote.reset();"
+            return "window.vignette && window.vignette.load(\(PageAPI.payload(payload, snapshot)));"
+        case .park: return "return window.vignette ? await window.vignette.park() : null;"
+        case .reset: return "window.vignette && window.vignette.reset();"
         case .build(let payload, let snapshot, let marks):
-            return "return window.shotnote ? await window.shotnote.build(\(PageAPI.payload(payload, snapshot)),\(PageAPI.json(marks))) : null;"
+            return "return window.vignette ? await window.vignette.build(\(PageAPI.payload(payload, snapshot)),\(PageAPI.json(marks))) : null;"
         case .export(let items):
             let list = items.map { "{\"key\":\(PageAPI.json($0.key)),\"snapshot\":\(String(data: $0.snapshot, encoding: .utf8) ?? "null")}" }
-            return "return window.shotnote ? await window.shotnote.export([\(list.joined(separator: ","))]) : null;"
+            return "return window.vignette ? await window.vignette.export([\(list.joined(separator: ","))]) : null;"
         case .overlay(let maxPixel):
-            return "return window.shotnote ? await window.shotnote.overlay(\(maxPixel)) : null;"
-        case .setTool(let id): return "window.shotnote && window.shotnote.setTool(\(PageAPI.json(id)));"
-        case .setView(let view): return "return window.shotnote ? await window.shotnote.setView(\(PageAPI.json(view))) : null;"
-        case .finish: return "window.shotnote && window.shotnote.finish();"
+            return "return window.vignette ? await window.vignette.overlay(\(maxPixel)) : null;"
+        case .setTool(let id): return "window.vignette && window.vignette.setTool(\(PageAPI.json(id)));"
+        case .setView(let view): return "return window.vignette ? await window.vignette.setView(\(PageAPI.json(view))) : null;"
+        case .finish: return "window.vignette && window.vignette.finish();"
         }
     }
 
@@ -133,7 +133,7 @@ enum PageAPI: Equatable {
     }
 }
 
-/// Received from the page via `window.webkit.messageHandlers.shotnote.postMessage(...)`.
+/// Received from the page via `window.webkit.messageHandlers.vignette.postMessage(...)`.
 enum WebMessage {
     /// The editor is mounted. Carries the page's protocol version, what the toolbar should offer,
     /// and every color a mark may be drawn in.

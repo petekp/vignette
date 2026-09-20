@@ -223,11 +223,11 @@ the per-frame relayout.
 
 Any test that reaches `Settings.shared` bootstraps it, and a bootstrap fills in the keys the file
 lacks. Without an override that file is the user's own — which is how `ui.stackGap` and
-`ui.stackMinScale` were written into `~/.config/shotnote/settings.json` at 20:05 today.
-`project.yml` now gives the scheme's test action `SHOTNOTE_SETTINGS=/tmp/shotnote-tests/settings.json`.
+`ui.stackMinScale` were written into `~/.config/vignette/settings.json` at 20:05 today.
+`project.yml` now gives the scheme's test action `VIGNETTE_SETTINGS=/tmp/vignette-tests/settings.json`.
 
 Verified on the merged branch: that file was deleted, `./scripts/build.sh --test` recreated it
-(2154 bytes, 20:40) and `~/.config/shotnote/settings.json` kept the mtime it had before the run
+(2154 bytes, 20:40) and `~/.config/vignette/settings.json` kept the mtime it had before the run
 (1789701474, 20:17:54). It has that mtime now.
 
 ---
@@ -240,11 +240,11 @@ Three of the questions below are settled, and the branch carries the answers.
 
 - **The strip's pencil is Annotate, not Copy Annotated.** `annotate` is a strip action with the
   pencil the strip already showed; `copy-annotated` is a shortcut, so it keeps Cmd+Shift+C and
-  `shotnote://copy-annotated` and leaves the strip. The strip reads Copy, Annotate, Stitch, Delete.
+  `vignette://copy-annotated` and leaves the strip. The strip reads Copy, Annotate, Stitch, Delete.
   Annotate runs the queue exactly as Return does.
 - **The annotator stays centred in the room**, so with the stack up it opens about 68 points left
   of where it did.
-- **The test scheme keeps its own settings file** (`/tmp/shotnote-tests/settings.json`).
+- **The test scheme keeps its own settings file** (`/tmp/vignette-tests/settings.json`).
 
 Everything else in this section is still open.
 
@@ -312,12 +312,12 @@ Everything else in this section is still open.
 ## 3. How to take it
 
 ```
-cd ~/Code/shotnote
+cd ~/Code/vignette
 git merge todo4/integration       # on foundation
 ./scripts/run.sh
 ```
 
-`docs/TODOS.md` is untouched by every branch. The five worktrees under `~/Code/shotnote-todo` and
+`docs/TODOS.md` is untouched by every branch. The five worktrees under `~/Code/vignette-todo` and
 their `todo4/*` branches can go once you have merged.
 
 Two things to know before the first run:
@@ -341,7 +341,7 @@ Two things to know before the first run:
 - **Every test run of mine was pinned away from that file.** Until the `room` merge carried the
   project.yml fix, I patched the generated (gitignored) scheme to point the test action at
   `integration-scratch/test-settings.json`, and checked after each run that the file appeared there
-  and that `~/.config/shotnote/settings.json` kept its mtime. It did, at every one of the five runs.
+  and that `~/.config/vignette/settings.json` kept its mtime. It did, at every one of the five runs.
 - **A second round, 21:14 to 21:15**, drove the strip's new Annotate button on build
   `586081b-dirty` (pid 6796), the same way: three fixtures, two selected, the labels read from a
   crop, `[annotate] ok … 1 of 2` and `next … 2 of 2` from the button, `[copy-annotated] ok` from
@@ -349,7 +349,7 @@ Two things to know before the first run:
 - **My smoke round held the lock from 20:42 to 20:50** and drove only my own build
   (`5330015`, pid 94079) on `integration-scratch/settings.json`, watching
   `integration-scratch/shots`. Every action URL went through a guard that reads `[state]` and the
-  running process's own environment (`ps -wwEp <pid> | grep SHOTNOTE_SETTINGS=…`); it never tripped.
+  running process's own environment (`ps -wwEp <pid> | grep VIGNETTE_SETTINGS=…`); it never tripped.
 - **Your build was killed once, to launch mine.** `open --env` is ignored when a build with that
   bundle id is already running, so the running instance has to go first. Your build (`83cae53`) is
   running again on your real settings and folder, pid 95231, and the lock is released.
@@ -507,7 +507,7 @@ smaller picture but a useless one: the review's own example is four wide capture
 compose to a 64 x 1 PNG the app still calls ok.
 
 **No test process can reach the user's settings file.** `project.yml`'s scheme covers
-`xcodebuild -scheme Shotnote test` and Xcode's Product ▸ Test, but not `xcrun xctest`, a
+`xcodebuild -scheme Vignette test` and Xcode's Product ▸ Test, but not `xcrun xctest`, a
 hand-written `.xctestrun`, or CI running the bundle, and any of those reading `Settings.shared`
 would bootstrap whatever path `Settings.fileURL` returns — the user's own. It now refuses that path
 whenever `XCTestConfigurationFilePath` is in the environment and uses a per-process file under
@@ -521,7 +521,7 @@ invariant that a badge fits its piece. The floor assertions stay. `StackLayoutTe
 the annotator centres on the screen, which it has not done since the room landed.
 
 **F8 is not reachable, and nothing changed for it.** The annotator's room is a snapshot taken at
-`prepare` and never widened, so a `shotnote://dismiss` that took the stack away while the annotator
+`prepare` and never widened, so a `vignette://dismiss` that took the stack away while the annotator
 was open would leave the room narrowed around a stack that has gone. It cannot happen: every phase
 answers `dismiss` with `parking(… then dismiss)`, whose effect is `hideAnnotator`. Driven below.
 
@@ -541,7 +541,7 @@ settings, guarded by `[state] app.settingsFile` and the running pid's own enviro
   back at `[1264, 569, 35, 128]` with the same two cards selected (`rev2-strip-after.png`). The
   annotator's frame was `[134, 103, 1109, 689]`, whose right edge is 1243 against the panel's 1245:
   no overlap left even in the frame the review measured.
-- **F8, driven.** `shotnote://dismiss` with `Screenshot halves.png` in the annotator gave
+- **F8, driven.** `vignette://dismiss` with `Screenshot halves.png` in the annotator gave
   `[transition] dismiss -> parking(…) effects=park(…)`, `[draft] parked`, and
   `[transition] parked -> idle effects=hideAnnotator`. The annotator went with the stack, so the
   frozen room is never read with the stack gone. Nothing changed.
@@ -555,7 +555,7 @@ settings, guarded by `[state] app.settingsFile` and the running pid's own enviro
   later, which the eval confirms happened (`["geo","yellow","none"]`, drawn red). The arrow, whose
   colour the heuristic kept, gave exactly one. One save per change, not two per change — the
   review's unconfirmed doubling does not reproduce, and `quiet` is left as it is.
-- **Copy Annotated while the annotator holds the canvas.** `shotnote://copy-annotated` answered
+- **Copy Annotated while the annotator holds the canvas.** `vignette://copy-annotated` answered
   `ok Screenshot corner-annotated.png; 1 with annotations` in 30 ms with the annotator open and a
   live draft, as it did before. Three keyboard zoom steps each handed over cleanly
   (`[annotate] view 21ms/29ms/30ms ratio=… waited=0`), with no timeout, no refusal and no mismatch,
@@ -566,8 +566,8 @@ settings, guarded by `[state] app.settingsFile` and the running pid's own enviro
   `from 6 images, 4096x1906 columns=3 readerScale=0.29` — the third was 0.38 before the fix, and
   the first two are unchanged because nothing capped them. The same six with a file that is not an
   image among them reported `from 2 images`.
-- **The settings guard.** The tests were run once with the scheme's `SHOTNOTE_SETTINGS` disabled:
-  the settings file appeared at `…/T/shotnote-test-25420/settings.json` and the user's file kept its
+- **The settings guard.** The tests were run once with the scheme's `VIGNETTE_SETTINGS` disabled:
+  the settings file appeared at `…/T/vignette-test-25420/settings.json` and the user's file kept its
   mtime. The temporary check that proved it was removed and the scheme restored.
 
 ### What is left, and what is not proven
@@ -607,9 +607,9 @@ came back up on `[drafts] 15`, the same count it had before. `integration-scratc
 again and the launch lock is released.
 
 **Your settings file was written, three times, and not by me driving anything.** After the round I
-sent one plain `open -g shotnote://state` to find out which copy LaunchServices would route a URL
+sent one plain `open -g vignette://state` to find out which copy LaunchServices would route a URL
 to — the hazard AGENTS.md describes — and that launched the copy it had registered, with no
-`SHOTNOTE_SETTINGS`, so it came up on your real settings and your real folder and replaced your
+`VIGNETTE_SETTINGS`, so it came up on your real settings and your real folder and replaced your
 build. Three copies took a turn before I stopped: mine, `todo4/page`'s, and the `zoom-scratch`
 stable copy. Each one bootstrapped the keys its own schema has and your file's mtime moved. What
 that adds is the merged branch's three new tweaks at their defaults — `stackGap` 24,
@@ -619,8 +619,8 @@ valid JSON with 55 `ui` keys and `com.apple.screencapture` is untouched. Say the
 the three keys taken out again.
 
 **LaunchServices now points at your build.** It was pointing at `zoom-scratch/before`, which is why
-a bare `shotnote://` reached the wrong app at all. Every `shotnote-todo` worktree copy and that one
+a bare `vignette://` reached the wrong app at all. Every `vignette-todo` worktree copy and that one
 stable copy are unregistered — the files are all still there, and a rebuild or a launch registers
-one again — and your build at `~/Code/shotnote/build/…` is registered and is what
+one again — and your build at `~/Code/vignette/build/…` is registered and is what
 `NSWorkspace.urlForApplication(toOpen:)` answers for the scheme. Your build is running from it, on
-`~/.config/shotnote/settings.json` and `~/Dropbox/Screenshots`.
+`~/.config/vignette/settings.json` and `~/Dropbox/Screenshots`.

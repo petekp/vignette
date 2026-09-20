@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         replaceOlderInstances()
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppDelegate.makeMainMenu()
-        let settingsSource = Settings.isOverridden ? " (SHOTNOTE_SETTINGS)" : ""
+        let settingsSource = Settings.isOverridden ? " (VIGNETTE_SETTINGS)" : ""
         Log.writeLaunch("[app] launched \(BuildInfo.current.description) watching \(watchFolder.path) settings \(Settings.fileURL.path)\(settingsSource)")
         if let type = AppleScreencapture.string("type"), !ScreenshotWatcher.isCandidate("screenshot.\(type)") {
             Log.write("[settings] warning Apple screencapture type=\(type) is a format the watcher ignores")
@@ -191,7 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             .compactMap { SkillInstaller.linkedPath(in: $0)?.path }
     }
 
-    /// `shotnote://install-skill`, for a script. With `root=` it installs there and leaves the
+    /// `vignette://install-skill`, for a script. With `root=` it installs there and leaves the
     /// setting alone; without one it installs for every agent on this Mac and turns the setting on,
     /// so later launches keep the copy current.
     private func installSkill(_ request: CommandRequest) {
@@ -454,7 +454,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
     }
 
-    // MARK: URL commands: shotnote://<command>[?file=/path&file=/other]. See Commands.swift.
+    // MARK: URL commands: vignette://<command>[?file=/path&file=/other]. See Commands.swift.
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
@@ -561,7 +561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let main = NSMenu()
         let app = NSMenuItem(); main.addItem(app)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit Shotnote", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit Vignette", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         app.submenu = appMenu
         let file = NSMenuItem(); main.addItem(file)
         let fileMenu = NSMenu(title: "File")
@@ -622,7 +622,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.addItem(withTitle: "Tweak UI…", action: #selector(openTweaks), keyEquivalent: "")
         menu.addItem(withTitle: "Open Log", action: #selector(openLog), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Shotnote", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Vignette", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
     }
 

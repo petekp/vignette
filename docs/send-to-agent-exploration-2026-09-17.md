@@ -30,11 +30,11 @@ front, which is the natural default target.
 Return to that pane atomically, wrapping in bracketed paste when the pane app asked for it
 (`src/app/api_helpers.rs`). No focus changes, no synthetic keyboard, no Accessibility.
 
-**The CLI works from an app.** Shotnote is launched by LaunchServices and inherits no shell PATH.
+**The CLI works from an app.** Vignette is launched by LaunchServices and inherits no shell PATH.
 Verified: `env -i HOME=… PATH=/usr/bin:/bin ~/.local/bin/herdr agent list` exits 0 with the full
 list, so shelling out to an absolute path is enough.
 
-**Verified end to end.** A throwaway pane, a throwaway Claude Code, and the exact line Shotnote
+**Verified end to end.** A throwaway pane, a throwaway Claude Code, and the exact line Vignette
 would send:
 
 ```
@@ -64,7 +64,7 @@ prompt. The same file at `/private/tmp/…` produced:
 
 ```
  Read file
-   Read(/private/tmp/shotnote-send-probe.png)
+   Read(/private/tmp/vignette-send-probe.png)
  Do you want to proceed?
  ❯ 1. Yes   2. Yes, allow reading from /private/tmp during this session   3. No
 ```
@@ -168,7 +168,7 @@ Put the PNG on the pasteboard, then post Ctrl+V with CGEvent, the way `scripts/i
 already posts clicks and hotkeys. It needs no herdr. It is also the least trustworthy thing in this
 document:
 
-- It goes to whatever is frontmost. At the moment of a send, that is Shotnote's own annotator, so
+- It goes to whatever is frontmost. At the moment of a send, that is Vignette's own annotator, so
   the app would have to activate the terminal first and wait for it to come up.
 - "The terminal" is not enough. The keystroke lands in the focused split, which may be a different
   pane than the one Pete means.
@@ -190,7 +190,7 @@ This display is 3024 × 1964. A full-screen capture therefore lands at 1568 × 1
 tokens**. A crop around the marked region, say 900 × 600, is **720**. Roughly a third, and the
 agent's attention goes to the part that was marked instead of the whole desktop.
 
-Shotnote already has what a crop needs. The draft on disk is the tldraw snapshot, one per
+Vignette already has what a crop needs. The draft on disk is the tldraw snapshot, one per
 screenshot, and it carries every shape's geometry; the page knows the bounding box exactly. The
 change is small and mechanical: `park` and `export` return `bounds` in image pixels next to the
 PNG, `ParkResult`/`ExportResult` gain the field, and `bridgeProtocolVersion` / `PROTOCOL` go up
@@ -202,7 +202,7 @@ the screenshot legible.
 
 ## Recommendation
 
-**Send through herdr, with the image as a path.** It is the only route where Shotnote knows which
+**Send through herdr, with the image as a path.** It is the only route where Vignette knows which
 agent it is talking to, the delivery is aimed at that pane, the failure is reported, and the same
 code covers Claude Code, Codex, and the twenty other kinds herdr recognizes. It needs no private
 protocol and no Accessibility grant.
@@ -213,15 +213,15 @@ on the machine can change it between the send and the read.
 
 The honest limit: this works when the agent lives in a herdr pane. An agent in a plain terminal tab
 has no target, and there is no reliable way to find one — that is exactly the gap herdr fills. When
-there is no herdr, Shotnote already does the right thing: Copy puts the image on the pasteboard and
+there is no herdr, Vignette already does the right thing: Copy puts the image on the pasteboard and
 Pete pastes it himself.
 
 ## What is built
 
-`shotnote://send` — behind `debug`, one URL command, no UI.
+`vignette://send` — behind `debug`, one URL command, no UI.
 
 ```
-open -g "shotnote://send?file=<path>&to=<agent or pane>&text=<words>"
+open -g "vignette://send?file=<path>&to=<agent or pane>&text=<words>"
 ```
 
 - `file=` is the image; without it, the newest screenshot.
@@ -277,7 +277,7 @@ can go to an agent without opening the editor.
   never the annotated one. The prototype takes `file=` explicitly.
 - Should the send wait? `herdr agent prompt --wait` returns when the agent settles, which would let
   a toast say "answered" or "asked for permission". It also blocks for as long as the agent thinks.
-- Should an unnamed agent be sent to at all, or should Shotnote only offer agents Pete has named in
+- Should an unnamed agent be sent to at all, or should Vignette only offer agents Pete has named in
   herdr? Names are what make the target list readable.
 - Is the focused pane the right default, or the most recently idle agent?
 
@@ -287,7 +287,7 @@ can go to an agent without opening the editor.
   with `herdr agent prompt` and check that `view_image` fires — that is the recommended route's
   Codex half. Then read the thread id from `codex agents` and run
   `codex queue --thread <id> --message "what is the code word" -i <fixture.png>`, which settles
-  whether Shotnote can hand Codex an image with no keystrokes at all. Both need a directory Codex
+  whether Vignette can hand Codex an image with no keystrokes at all. Both need a directory Codex
   already trusts, or a trust entry in `~/.codex/config.toml`, which is why neither is answered here.
 - **The Claude Code inbox with an image block** (15 minutes): against a throwaway session's own
   socket, send `{"type":"user","message":{"role":"user","content":[{"type":"text",…},

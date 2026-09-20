@@ -7,7 +7,7 @@ final class ThumbnailerTests: XCTestCase {
     private var savedBudget = 0
 
     override func setUpWithError() throws {
-        dir = FileManager.default.temporaryDirectory.appendingPathComponent("shotnote-thumbs-\(UUID().uuidString)")
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-thumbs-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         savedBudget = Thumbnailer.budgetBytes
     }

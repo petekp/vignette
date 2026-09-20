@@ -87,7 +87,7 @@ export function pickColor(key: string, area: Area): ColorId | null {
   return furthest!.id
 }
 
-/// Every candidate with its distance from the pixels under `area`, for `shotnote://eval`.
+/// Every candidate with its distance from the pixels under `area`, for `vignette://eval`.
 export function explain(key: string, area: Area) {
   const under = pixelsUnder(key, area)
   // Nothing to measure: a distance from no pixels is NaN, and `pickColor` answers null here.

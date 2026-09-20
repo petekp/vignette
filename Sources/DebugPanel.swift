@@ -33,7 +33,7 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
     private func make() -> NSPanel {
         let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 760),
                         styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
-        p.title = "Shotnote Tweaks"
+        p.title = "Vignette Tweaks"
         p.isFloatingPanel = true
         p.level = .floating
         p.hidesOnDeactivate = false

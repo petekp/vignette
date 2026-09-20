@@ -94,7 +94,7 @@ export function App() {
 
   // Expose the host API as soon as the page runs, even before the editor mounts.
   useEffect(() => {
-    window.shotnote = {
+    window.vignette = {
       load(payload) {
         if (editor) loadImage(editor, payload, scaleRef)
         else pendingLoad.current = payload
@@ -170,7 +170,7 @@ export function App() {
             { scope: 'document', source: 'user' }
           )
           setEditor(ed)
-          ;(window as unknown as { editor: Editor }).editor = ed // for `shotnote://eval` debugging
+          ;(window as unknown as { editor: Editor }).editor = ed // for `vignette://eval` debugging
           ;(window as unknown as { contrast: unknown }).contrast = { pick: pickColor, explain }
           postToNative({
             type: 'ready',

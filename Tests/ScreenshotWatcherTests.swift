@@ -5,7 +5,7 @@ final class ScreenshotWatcherTests: XCTestCase {
     private var dir: URL!
 
     override func setUpWithError() throws {
-        dir = FileManager.default.temporaryDirectory.appendingPathComponent("shotnote-watcher-\(UUID().uuidString)")
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-watcher-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 

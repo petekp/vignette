@@ -1,5 +1,5 @@
 build/
-Shotnote.xcodeproj/
+Vignette.xcodeproj/
 web/node_modules/
 web/dist/
 .DS_Store

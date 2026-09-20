@@ -1,7 +1,7 @@
-# Shotnote
+# Vignette
 
 A macOS screenshot companion you can reshape. Apple's Cmd+Shift+3/4/5 still take the
-screenshot. Shotnote watches the save folder and handles everything after: a floating
+screenshot. Vignette watches the save folder and handles everything after: a floating
 thumbnail, a recent-screenshots stack, and a tldraw annotator that copies the result to
 your clipboard.
 
@@ -30,7 +30,7 @@ Cmd+Shift+4  ──►  ~/Dropbox/Screenshots/Screenshot ….png
   The page reports a protocol version in `ready`; a stale page is refused with a log line and a
   toast instead of failing quietly.
 - Annotations in progress are drafts the app keeps on disk (`~/Library/Application Support/
-  com.petepetrash.shotnote/drafts/`), so they survive relaunches and a crashed web process.
+  com.petepetrash.vignette/drafts/`), so they survive relaunches and a crashed web process.
 
 ## Build and run
 
@@ -78,7 +78,7 @@ bundle verbatim, as the license requires.
 ## The recent stack
 
 Cmd+Shift+6 shows your recent screenshots in the corner (30 by default). The stack takes
-keyboard focus without stealing your app's focus. Opening the annotator does activate Shotnote,
+keyboard focus without stealing your app's focus. Opening the annotator does activate Vignette,
 and closing it hands focus back to the app you came from.
 
 - Hover a card for a selection circle. Click it, or drag from it down the column, to select.
@@ -147,14 +147,14 @@ and closing it hands focus back to the app you came from.
   it to see which one. The name is stored on the file itself, so it survives a rename.
 
 The hotkey is either a key combination (no permission needed) or `double-rshift`, a double tap
-of right Shift, which needs Shotnote trusted for Accessibility (System Settings → Privacy &
+of right Shift, which needs Vignette trusted for Accessibility (System Settings → Privacy &
 Security → Accessibility); the app asks the first time. Hold the key, or the second tap, and the
 newest screenshot lifts out of the stack into the annotator: capture, tap-tap-hold, draw. The
 menu bar has the same command.
 
 ## Make it yours
 
-- `~/.config/shotnote/settings.json`: folder, counts, timing, hotkey, backdrop. No rebuild.
+- `~/.config/vignette/settings.json`: folder, counts, timing, hotkey, backdrop. No rebuild.
 - `Sources/Config.swift`: the actions list.
 - `web/src/config.ts`: editor tools, the tool each image opens on, the colours a mark may be drawn
   in, stroke size.
@@ -165,33 +165,33 @@ See `AGENTS.md` for the working loop.
 ## Drive it from the terminal
 
 Every action is a URL. Use `open -g` so the terminal keeps focus (plain `open` activates
-Shotnote). Without `?file=`, an action acts on the newest screenshot. Repeat `file=` for several.
+Vignette). Without `?file=`, an action acts on the newest screenshot. Repeat `file=` for several.
 Paths must be percent-encoded and inside the watch folder, except for `add`, which copies a file in
 from anywhere.
 
 ```
-open -g shotnote://copy                       # copy to clipboard
-open -g shotnote://annotate                   # open the annotator
-open -g shotnote://copy-annotated             # copy with the draft rendered in, if there is one
-open -g shotnote://paths                      # copy the path as text
-open -g "shotnote://trash?file=~/Dropbox/Screenshots/x.png"
-open -g "shotnote://stitch?file=/a.png&file=/b.png"
-open -g shotnote://last                       # show the thumbnail for the newest screenshot
-open -g "shotnote://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
-open -g "shotnote://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a purple badge on the card
-open -g "shotnote://add?file=/tmp/agent/x.png&marks=/tmp/agent/marks.json"  # the same, with the agent's drawing on it
-open -g shotnote://recent                     # toggle the recent stack (same as the hotkey)
-open -g shotnote://dismiss                    # close the thumbnail or the stack
-open -g shotnote://cancel                     # close the annotator without exporting, as Esc would
-open -g "shotnote://state?tag=t1"             # one [state] {json} line in the log, tag echoed
-open -g shotnote://help                       # list every command in the log
-open -g shotnote://settings                   # open the Settings window
-open -g shotnote://install-skill              # install the agent skill for Claude Code and Codex
-open -g shotnote://restore-apple-defaults     # put Apple's screencapture defaults back
-open -g "shotnote://send?to=reviewer&text=why%20is%20this%20clipped"  # hand the path to an agent herdr is running (needs "debug": true)
-open -g shotnote://tweaks                     # live UI tweaks panel (needs "debug": true)
-open -g shotnote://show-editor                # the editor window without an image (needs "debug": true)
-open -g "shotnote://eval?return%201%2B1"      # JavaScript in the editor page (needs "debug": true)
+open -g vignette://copy                       # copy to clipboard
+open -g vignette://annotate                   # open the annotator
+open -g vignette://copy-annotated             # copy with the draft rendered in, if there is one
+open -g vignette://paths                      # copy the path as text
+open -g "vignette://trash?file=~/Dropbox/Screenshots/x.png"
+open -g "vignette://stitch?file=/a.png&file=/b.png"
+open -g vignette://last                       # show the thumbnail for the newest screenshot
+open -g "vignette://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
+open -g "vignette://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a purple badge on the card
+open -g "vignette://add?file=/tmp/agent/x.png&marks=/tmp/agent/marks.json"  # the same, with the agent's drawing on it
+open -g vignette://recent                     # toggle the recent stack (same as the hotkey)
+open -g vignette://dismiss                    # close the thumbnail or the stack
+open -g vignette://cancel                     # close the annotator without exporting, as Esc would
+open -g "vignette://state?tag=t1"             # one [state] {json} line in the log, tag echoed
+open -g vignette://help                       # list every command in the log
+open -g vignette://settings                   # open the Settings window
+open -g vignette://install-skill              # install the agent skill for Claude Code and Codex
+open -g vignette://restore-apple-defaults     # put Apple's screencapture defaults back
+open -g "vignette://send?to=reviewer&text=why%20is%20this%20clipped"  # hand the path to an agent herdr is running (needs "debug": true)
+open -g vignette://tweaks                     # live UI tweaks panel (needs "debug": true)
+open -g vignette://show-editor                # the editor window without an image (needs "debug": true)
+open -g "vignette://eval?return%201%2B1"      # JavaScript in the editor page (needs "debug": true)
 ```
 
 An agent can push its own annotations with the image. `marks=` takes the path to a JSON file, or
@@ -219,13 +219,13 @@ opening the card puts them in the editor to move, retype, or delete like your ow
 the draft on its own canvas, so a marked push is refused with `page-not-ready` from the moment the
 annotator takes an image until it has given it back, and while a Copy Drawing is rendering.
 
-Every command answers with one line in `~/Library/Logs/Shotnote.log` (menu bar → Open Log):
+Every command answers with one line in `~/Library/Logs/Vignette.log` (menu bar → Open Log):
 `[<command>] ok <detail>` or `[<command>] error <code> <detail>`. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`,
 `unreadable-image`, `page-not-ready`, `export-timeout`, `export-failed`, `settings-invalid`,
 `debug-disabled`, `no-apple-original`, `eval-failed`, `write-failed`, `unsupported-type`,
 `invalid-marks`, `no-agent`, `send-failed`, `not-ours`, `linked-root`. The log has one event per
-line, `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Shotnote.log.1` at 5 MB.
+line, `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
 For clicks, drags, and the hotkey itself, `scripts/input.sh` posts real input events (it needs
 the terminal trusted for Accessibility). Its coordinates, and every frame in the `[state]` line,
@@ -233,9 +233,9 @@ are global points with the origin at the top-left of the primary display, y down
 
 ## Settings
 
-`~/.config/shotnote/settings.json` is the source of truth. The Settings window (menu bar → Settings…,
-or `open -g shotnote://settings`) edits it; so can you or your agent. The app reloads it within a
-second of a save. `SHOTNOTE_SETTINGS=<path>` in the environment points a launch at another file,
+`~/.config/vignette/settings.json` is the source of truth. The Settings window (menu bar → Settings…,
+or `open -g vignette://settings`) edits it; so can you or your agent. The app reloads it within a
+second of a save. `VIGNETTE_SETTINGS=<path>` in the environment points a launch at another file,
 which is how tests and agents keep away from the real one.
 
 ```json
@@ -259,11 +259,11 @@ which is how tests and agents keep away from the real one.
 }
 ```
 
-The folder is one setting for two things: where Cmd+Shift+3/4/5 saves and what Shotnote watches.
-`appleThumbnail`, `windowShadow`, and `format` are Apple's own screenshot defaults; Shotnote writes
+The folder is one setting for two things: where Cmd+Shift+3/4/5 saves and what Vignette watches.
+`appleThumbnail`, `windowShadow`, and `format` are Apple's own screenshot defaults; Vignette writes
 them for you. On first run the file mirrors what macOS is already doing, so nothing changes until
 you edit it; `appleOriginal` records those first values, and `restore-apple-defaults` puts them
-back. `launchAtLogin` adds Shotnote to your login items. `quickAnnotate` is Quick draw: Done
+back. `launchAtLogin` adds Vignette to your login items. `quickAnnotate` is Quick draw: Done
 copies the image you drew on and closes the annotator and the stack at once, instead of returning
 to the stack. `copyOnCapture` puts every new screenshot on the clipboard as it lands (the image,
 plus its file URL and path for apps that take those), and is on by default. `annotateOnCapture` is
@@ -283,24 +283,24 @@ and tint, annotator window limits. The defaults are the
 tuned UI, so a fresh install looks the same. A key the app does not know is ignored and the number
 it names takes its default, so a renamed key leaves a dead line you can delete: `zoomEdgeBand`, a
 fraction of the picture, is now `zoomEdgeBandPoints`, in points. With `debug` on, menu bar → Tweak UI… (or `open -g
-shotnote://tweaks`) opens a floating panel of sliders that edits them live, with buttons to summon
+vignette://tweaks`) opens a floating panel of sliders that edits them live, with buttons to summon
 the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns every
 animation off; the system's Reduce Motion does the same.
 
 ## For agents
 
-The app ships a skill that teaches a coding agent the `shotnote://` contract: push an image with
+The app ships a skill that teaches a coding agent the `vignette://` contract: push an image with
 `add`, draw on it with `marks=`, read `<name>-annotated.png` back. It lives in
-`skills/shotnote/SKILL.md`, ships in the bundle, and the app is what installs it, because the app
+`skills/vignette/SKILL.md`, ships in the bundle, and the app is what installs it, because the app
 is the only thing that knows which commands its version has.
 
-On the first launch that finds `~/.claude` or `~/.codex`, Shotnote opens Settings at the Agents
+On the first launch that finds `~/.claude` or `~/.codex`, Vignette opens Settings at the Agents
 section and asks once. The window comes up without taking the keyboard from what you are doing, the
-answer is recorded as `agentSkill` in settings.json, and the question never comes back. Turning the toggle on copies the skill into `~/.claude/skills/shotnote` and
-`~/.codex/skills/shotnote`; turning it off removes those copies. A later launch rewrites a copy
-that is older than the app. `open -g shotnote://install-skill` does the same from a script.
+answer is recorded as `agentSkill` in settings.json, and the question never comes back. Turning the toggle on copies the skill into `~/.claude/skills/vignette` and
+`~/.codex/skills/vignette`; turning it off removes those copies. A later launch rewrites a copy
+that is older than the app. `open -g vignette://install-skill` does the same from a script.
 
-The installer only ever touches a copy it made. It writes `.shotnote-skill.json` beside the skill
+The installer only ever touches a copy it made. It writes `.vignette-skill.json` beside the skill
 naming the build that wrote it, and anything at that path without one, including a link to your own
 copy, is left alone and answered with `not-ours`.
 

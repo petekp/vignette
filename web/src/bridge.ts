@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 14
+export const PROTOCOL = 15
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
@@ -120,7 +120,7 @@ type NativeMessage =
 
 declare global {
   interface Window {
-    shotnote?: {
+    vignette?: {
       load(payload: LoadPayload): void
       /** The current draft for the host to store, with a preview when it changed. Does not clear the canvas. */
       park(): Promise<ParkResult>
@@ -148,12 +148,12 @@ declare global {
       /** Exports the current image and replies with `done`. */
       finish(): void
     }
-    webkit?: { messageHandlers?: { shotnote?: { postMessage(msg: NativeMessage): void } } }
+    webkit?: { messageHandlers?: { vignette?: { postMessage(msg: NativeMessage): void } } }
   }
 }
 
 export function postToNative(msg: NativeMessage) {
-  const handler = window.webkit?.messageHandlers?.shotnote
+  const handler = window.webkit?.messageHandlers?.vignette
   if (handler) handler.postMessage(msg)
-  else console.log('[shotnote → native]', msg)
+  else console.log('[vignette → native]', msg)
 }

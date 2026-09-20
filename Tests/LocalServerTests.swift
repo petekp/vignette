@@ -7,7 +7,7 @@ final class LocalServerTests: XCTestCase {
     private let access = LocalServer.FileAccess()
 
     override func setUpWithError() throws {
-        let base = FileManager.default.temporaryDirectory.appendingPathComponent("shotnote-server-\(UUID().uuidString)")
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-server-\(UUID().uuidString)")
         root = base.appendingPathComponent("dist"); shots = base.appendingPathComponent("shots")
         try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: shots, withIntermediateDirectories: true)

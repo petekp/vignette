@@ -1,12 +1,12 @@
 # Shipping the agent skill with the app (2026-09-18)
 
-Someone who downloads Shotnote needs their coding agent to learn the `shotnote://` contract. The
+Someone who downloads Vignette needs their coding agent to learn the `vignette://` contract. The
 app is the only thing they are guaranteed to have, and the only thing that knows which commands its
 version supports. So the app carries the skill and installs it.
 
 ## What ships
 
-`skills/shotnote/SKILL.md` is the skill's home in the repo and a folder resource in the bundle
+`skills/vignette/SKILL.md` is the skill's home in the repo and a folder resource in the bundle
 (project.yml), beside `LICENSE-tldraw.md`. A folder, not a single file, so a second file can join it
 without touching the installer. `SkillInstaller.bundled` finds it; `Bundle.main` has no such folder
 in the test bundle, which is why every function takes its source and roots as parameters.
@@ -14,16 +14,16 @@ in the test bundle, which is why every function takes its source and roots as pa
 ## Roots and the marker
 
 A root is a coding agent's own directory: `~/.claude`, `~/.codex`. A root that is not there means
-that agent is not installed. The skill lands in `<root>/skills/shotnote`, which is where both read
+that agent is not installed. The skill lands in `<root>/skills/vignette`, which is where both read
 skills from.
 
 Writing into another tool's directory is the whole risk, so the installer only ever touches a copy
-it made. It writes `.shotnote-skill.json` beside the skill, holding the app name, version, and
+it made. It writes `.vignette-skill.json` beside the skill, holding the app name, version, and
 build. Anything at the skill's path without that marker is `not-ours`: never written, never removed.
 `state(of:)` reads the path with `attributesOfItem`, which does not follow links, so a symlink to
 someone's own copy is foreign even when the copy at the other end has a marker. That is the case on
 the machine this was written on: `~/.claude/skills` is a link into a git repository, and a hand-made
-`skills/shotnote` link inside it is what the rule protects.
+`skills/vignette` link inside it is what the rule protects.
 
 A copy of ours is rewritten when the marker's build differs or the files differ from the bundle's,
 so a newer app refreshes the skill at launch and an edited copy is put back. Equal on both counts is
@@ -46,12 +46,12 @@ no room for a control and no time to click one; giving it a button is a change t
 layout, not to this feature. Making the offer records `off` straight away, so the question is asked
 once whatever the user does with the window, and the toggle in front of them is the answer.
 
-The offer costs one `NSApp.activate`, which is the app taking focus — the one place in Shotnote that
+The offer costs one `NSApp.activate`, which is the app taking focus — the one place in Vignette that
 does so deliberately outside the annotator. It happens at most once per machine.
 
 ## The command
 
-`shotnote://install-skill` installs into every agent directory and sets `agentSkill` to `on`, so
+`vignette://install-skill` installs into every agent directory and sets `agentSkill` to `on`, so
 later launches keep the copy current. It needs no `debug`: a script on a fresh machine is exactly
 who it is for. `&root=<dir>` installs into that one directory and leaves the setting alone; that
 needs `debug`, and it is how this was verified live without writing into the real `~/.claude` or

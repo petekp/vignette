@@ -197,7 +197,7 @@ synthetic (four generated HTML pages rendered headlessly), so nothing of yours i
 watermark is kept on purpose.
 
 My checks on the merged build: `project.yml` and `scripts/` are untouched by the branch, and the
-built bundle's `Contents/Resources` holds `dist`, `LICENSE`, `LICENSE-tldraw.md` and `shotnote` and
+built bundle's `Contents/Resources` holds `dist`, `LICENSE`, `LICENSE-tldraw.md` and `vignette` and
 nothing else — `find` for `site` or `stack-and-editor` in the bundle returns nothing. The page
 renders from the merged checkout in headless Chrome 153: one column, one font size, the picture and
 its caption, the seven bullets, the two placeholder paragraphs and the footer, image loaded from its
@@ -280,7 +280,7 @@ viewport (Chrome clamps a headless window to 500 CSS px); only Chrome.
   binary, so a live href would 404. Each paragraph carries, in an HTML comment directly above, the
   exact line that replaces it. **Do not "fix" them.**
 - **The owner in those URLs is a guess.** The checkout has no git remote; `gh api user` says
-  `petekp`, so the placeholders say `petekp/shotnote`. **Open:** correct them if the repo lands
+  `petekp`, so the placeholders say `petekp/vignette`. **Open:** correct them if the repo lands
   elsewhere.
 - **No Pages route was configured and no workflow was written.** Pages' "Deploy from a branch" offers
   only `/ (root)` or `/docs`, so `site/` cannot be served as named. The route that needs no approval
@@ -305,9 +305,9 @@ viewport (Chrome clamps a headless window to 500 CSS px); only Chrome.
   another card, sends it straight home from wherever it is". Clicking another card does exactly
   that — I drove it. **A physical Esc does not reach the app during the flight at all.** `prepare`
   calls `releaseKeys`, and the annotator's window is not up yet, so in `flyingOut` the state reads
-  `stack.key False`, `annotator.windowVisible False`, `app.isActive False`: no Shotnote window can
+  `stack.key False`, `annotator.windowVisible False`, `app.isActive False`: no Vignette window can
   receive the key, and it goes to whatever you are in front of. The reducer branch is reached by a
-  click on another card, by `shotnote://cancel`, or by an Esc that arrives after the window is up —
+  click on another card, by `vignette://cancel`, or by an Esc that arrives after the window is up —
   which is then an ordinary close and parks. **I left both the wording and the behaviour alone**,
   because the fix is either a README edit or a real change (keeping the panel's keys through the
   flight) and that is your call.
@@ -317,7 +317,7 @@ viewport (Chrome clamps a headless window to 500 CSS px); only Chrome.
 One launch round, 22:55 to 23:06, my build `aecbc5f` on
 `integration-scratch/settings.json`, five fixtures, the Dock widened so its tiles reach under the
 column (`safeBottom 93`). Every URL went through a wrapper that refuses unless `pgrep` finds my
-worktree's binary, `ps -wwE` on that pid shows my `SHOTNOTE_SETTINGS`, and a tagged `[state]` answer
+worktree's binary, `ps -wwE` on that pid shows my `VIGNETTE_SETTINGS`, and a tagged `[state]` answer
 names my settings file.
 
 1. **A card annotated out of a Dock-adjacent stack, and back.** Cursor walked onto the newest card
@@ -369,11 +369,11 @@ explained.
 ## 3. How to take it
 
 ```
-git -C ~/Code/shotnote checkout todo7/integration
+git -C ~/Code/vignette checkout todo7/integration
 ./scripts/run.sh
 ```
 
-Nothing in your `~/.config/shotnote/settings.json` goes stale: no branch added, removed or renamed a
+Nothing in your `~/.config/vignette/settings.json` goes stale: no branch added, removed or renamed a
 settings key, and no new `UITweaks` number was introduced. `Anim.passesTarget` is code, not a tweak.
 
 Two things to know before you drive it:
@@ -389,7 +389,7 @@ Two things to know before you drive it:
 
 ## 4. Incidents
 
-**Your settings file was never written.** `stat -f %m /Users/petepetrash/.config/shotnote/settings.json`
+**Your settings file was never written.** `stat -f %m /Users/petepetrash/.config/vignette/settings.json`
 read **1789794952** at every check: before and after each of my four `./scripts/build.sh --test`
 runs, before and after seeding my scratch file, before and after the smoke round, and at the
 restore. That timestamp is 22:15:52, from before I started — your own build relaunching at the end
@@ -421,8 +421,8 @@ not cause, apart from the single unexplained early dismissal in section 2. The o
 were finished before I started.
 
 **The state of the Mac.** Your build (`f57c330`, pid 45284) is running on
-`/Users/petepetrash/.config/shotnote/settings.json`, watching `~/Dropbox/Screenshots`, `[app] ready`
-at 23:06:24. `pgrep -f shotnote-todo/integration/build` prints nothing. The lock is released. The
+`/Users/petepetrash/.config/vignette/settings.json`, watching `~/Dropbox/Screenshots`, `[app] ready`
+at 23:06:24. `pgrep -f vignette-todo/integration/build` prints nothing. The lock is released. The
 scratch shots folder is empty. My scratch `settings.json` is back at `ui.motion: 1` after the
 motion-off runs. Captures and the two driving wrappers are in `integration-scratch/captures`.
 
@@ -493,7 +493,7 @@ twice. The one problem is the Esc half of transition's bullet, in section 2.
   `Sources/ThumbnailController.swift` (two sites) and `Tests/StackLayoutTests.swift` all pass
   `rows:`, and the only definition takes `[StripRow]`.
 - `grep -rn stripHovered` over `Sources/`, `Tests/`, `web/` and `skills/` returns nothing.
-  `skills/shotnote/SKILL.md` names no individual state key, so the rename does not reach it.
+  `skills/vignette/SKILL.md` names no individual state key, so the rename does not reach it.
 - `Sources/Settings.swift` — only `todo7/transition` touched it, adding `Anim.passesTarget` and no
   `ui` key. `Sources/DebugPanel.swift` is untouched by every branch, which is consistent: no new
   tweak was added, so no slider is missing.
@@ -513,7 +513,7 @@ twice. The one problem is the Esc half of transition's bullet, in section 2.
 An adversarial review of `foundation..fa842ce` found seven things, and an architecture sweep added
 its own list. Six changes landed, one commit each, on top of `fa842ce`. `./scripts/build.sh --test`
 passes before each: **194 tests**, the same count — one assertion went and none was added.
-`stat -f %m /Users/petepetrash/.config/shotnote/settings.json` read **1789794952** before and after
+`stat -f %m /Users/petepetrash/.config/vignette/settings.json` read **1789794952** before and after
 every build and at every point of the round.
 
 | commit | what it does |
@@ -568,7 +568,7 @@ Pete chose the real fix over a README edit. `releaseKeys()` moves to `perform(.s
 annotator instead of being nobody's for the length of the flight. In `handleKey`, Esc while the
 reducer is in `flyingOut` means `annotationEnded()`.
 
-Driven with a real synthetic Escape, never `shotnote://cancel`, with `[state]` read first to confirm
+Driven with a real synthetic Escape, never `vignette://cancel`, with `[state]` read first to confirm
 the stack was key:
 
 - **Seven runs turned the card around**, at +58, +62, +58, +58 ms (CGEvent) and +223, +245, +285 ms
@@ -611,7 +611,7 @@ working copy is clean and the bundled page is 12. No cross-side test was added: 
 version.
 
 **R4 (medium): the site's Download paragraph explained the licence chain.** It is now
-"Download Shotnote — not released yet." The replacement anchor stays in the comment beside it and the
+"Download Vignette — not released yet." The replacement anchor stays in the comment beside it and the
 GitHub paragraph is unchanged. Re-rendered headlessly and read back.
 
 **R5 (low–medium): `Dock.swift`'s timeout covered one of its four Accessibility calls.** A messaging
@@ -662,7 +662,7 @@ fix still needs his approval.
 
 - **`copyAnnotated` has no `canvasRefusal` guard** (`AppDelegate.swift:390`). Its two siblings have
   one, and `exportDrafts` only checks `pendingExport == nil`. The reviewer drove it: with a card in
-  the annotator and its window up, `shotnote://copy-annotated` on another file answered
+  the annotator and its window up, `vignette://copy-annotated` on another file answered
   `[copy-annotated] ok … 1 with annotations` — no refusal — while the live session owned the canvas.
   It breaks the rule AGENTS.md states about who owns the canvas. One line, matching its siblings.
 - **The page's `quiet` flag is released outside the queue** (`web/src/App.tsx:336`, `:381`,
@@ -697,6 +697,6 @@ result card is a fresh `UUID`. The comment claimed the invariant anyway, so the 
 - **The lock.** Taken at 23:46:45, released at 00:15:56. One round. Pete's build (pid 57473) was
   killed only while I held it.
 - **The state of the Mac.** Pete's build (`f57c330`, pid 71603) running on
-  `/Users/petepetrash/.config/shotnote/settings.json`, watching `~/Dropbox/Screenshots`,
+  `/Users/petepetrash/.config/vignette/settings.json`, watching `~/Dropbox/Screenshots`,
   `[app] ready` at 00:15:56. No instance of mine. The lock is released. The probes
   (`dockprobe`, `raceprobe`, `raceround.py`) are in `integration-scratch/captures`.

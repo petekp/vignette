@@ -1,15 +1,15 @@
-# Working on Shotnote
+# Working on Vignette
 
-Shotnote is meant to be modified. This file is the onboarding for a person or an agent: the
+Vignette is meant to be modified. This file is the onboarding for a person or an agent: the
 rules, the contracts, and where the numbers behind them live. The dated notes in `docs/` hold
 the measurements and the reasoning; a rule here points at its note.
 
 ## Layout
 
 - `Sources/` Swift menu bar app. `AppDelegate.swift` wires everything; `Config.swift` holds the actions.
-- `~/.config/shotnote/settings.json` holds per-machine settings (`Settings.swift` defines the keys).
+- `~/.config/vignette/settings.json` holds per-machine settings (`Settings.swift` defines the keys).
   Its `ui` section (`UITweaks`) holds the layout, style, timing, flight, and backdrop numbers, and its
-  defaults are the tuned UI, so a fresh install renders the same. `open -g shotnote://tweaks`
+  defaults are the tuned UI, so a fresh install renders the same. `open -g vignette://tweaks`
   edits them live (needs `debug`). A number stays in code when changing it would mean changing the
   code around it, or when it is a fraction of something rather than a size: the toolbar's rows and
   buttons (`AnnotatorToolbar.swift`), the card button size and the strip's icon and label sizes
@@ -18,17 +18,17 @@ the measurements and the reasoning; a rule here points at its note.
   stitch's gap, padding, and badge (`Stitch.swift`). What a user would tune belongs in `UITweaks`
   with a `Bound` and a slider; when in doubt, put it there. Editing the file is a supported way to
   change settings; the app reloads it within a second. It is the user's real config: never test
-  against it. `SHOTNOTE_SETTINGS=<path>` in the environment
-  (`open -g --env SHOTNOTE_SETTINGS=/tmp/x/settings.json <app>`) points a launch at another file,
+  against it. `VIGNETTE_SETTINGS=<path>` in the environment
+  (`open -g --env VIGNETTE_SETTINGS=/tmp/x/settings.json <app>`) points a launch at another file,
   and the launch line names it. The tweak panel writes to whichever file the instance was launched
   with, so copy the real file over the scratch copy before a test round and, before relaunching the
   real build, merge back any `ui` keys that changed (`[settings] wrote ui.…` in the log lists them).
   A file that does not parse is moved to `settings.json.invalid` and replaced with defaults; bad
   numbers are clamped in memory and logged as `[settings] warning clamped`. `appleOriginal` records
-  Apple's screencapture values before Shotnote changed them; `open -g shotnote://restore-apple-defaults`
+  Apple's screencapture values before Vignette changed them; `open -g vignette://restore-apple-defaults`
   puts them back.
 - `web/` React + tldraw editor page. `web/src/config.ts` holds the editor knobs. `App.tsx` is the
-  component, the `window.shotnote` surface, the draft lifecycle, and `Hotkeys`; `canvas.ts` owns
+  component, the `window.vignette` surface, the draft lifecycle, and `Hotkeys`; `canvas.ts` owns
   the canvas queue and the quiet count; `render.ts` holds everything that borrows the canvas for
   a rendering (export, build, overlay, pushed text); `view.ts` the camera, the editor's place in the page, and the zoom keys;
   `colors.ts` the colour pass over marks; `contrast.ts` the sampling behind it.
@@ -40,7 +40,7 @@ the measurements and the reasoning; a rule here points at its note.
   `PageAPI` case rendered to JavaScript; every page->host message is a `WebMessage` case.
 - `scripts/build.sh` builds web, regenerates the Xcode project, builds the app.
   `scripts/run.sh` does that, waits for the old process to exit, and relaunches. `scripts/build.sh
-  --test` also runs the unit tests in `Tests/` (the `ShotnoteTests` target compiles `Sources/`
+  --test` also runs the unit tests in `Tests/` (the `VignetteTests` target compiles `Sources/`
   itself; it never launches the app). A build into another `-derivedDataPath` leaves `build/`,
   and an instance running from it, untouched.
 - `Sources/Identity.swift` reads the bundle id, name, and URL scheme from the bundle and derives
@@ -52,14 +52,14 @@ the measurements and the reasoning; a rule here points at its note.
 
 1. Change code.
 2. `./scripts/run.sh`
-3. Drive the app: `open -g shotnote://annotate` (or `copy`, `trash`, `last`, `recent`, `state`;
-   `open -g shotnote://help` logs every command). Plain `open` activates Shotnote; `-g` does not.
+3. Drive the app: `open -g vignette://annotate` (or `copy`, `trash`, `last`, `recent`, `state`;
+   `open -g vignette://help` logs every command). Plain `open` activates Vignette; `-g` does not.
    Every checkout builds the same bundle id, so with more than one build on the Mac LaunchServices
-   sends `shotnote://` to whichever copy it registered last, and that copy's launch replaces the
-   instance you started: `open -g -a <your build>/Shotnote.app "shotnote://…"` aims at yours.
-   A relaunch from `open` carries no `SHOTNOTE_SETTINGS`, so it runs on the user's real settings
+   sends `vignette://` to whichever copy it registered last, and that copy's launch replaces the
+   instance you started: `open -g -a <your build>/Vignette.app "vignette://…"` aims at yours.
+   A relaunch from `open` carries no `VIGNETTE_SETTINGS`, so it runs on the user's real settings
    and folder, and when another copy of the bundle id is running `open -a <path>` can launch that
-   copy instead of the path given; running `<app>/Contents/MacOS/Shotnote` directly always lands on
+   copy instead of the path given; running `<app>/Contents/MacOS/Vignette` directly always lands on
    the path given. A driving script reads `[state]` first and stops unless `app.settingsFile` is its
    scratch file, and only then sends an action. `state` is no exception: sent without `-a` it
    launches whichever copy LaunchServices has, on the user's file, and that launch fills in every
@@ -74,7 +74,7 @@ the measurements and the reasoning; a rule here points at its note.
    `"debug": true`. `add` is the exception, and it takes two paths the folder rule does not cover.
    `add?file=` copies an image in from anywhere and the watcher then reports it like a capture,
    minus the copy and annotate toggles (`&annotate` opens the editor). `&agent=<name>` says which
-   agent is pushing it: the name is recorded on the copy as the `com.petepetrash.shotnote.agent`
+   agent is pushing it: the name is recorded on the copy as the `com.petepetrash.vignette.agent`
    extended attribute (`Agent.swift`, `xattr -l` shows it) and the card gets a purple badge.
    `&marks=<json file>` pushes the agent's own annotations with the image (README has the format):
    the page turns them into a draft before the card appears, so the human edits them like their own,
@@ -92,7 +92,7 @@ the measurements and the reasoning; a rule here points at its note.
 4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.
    Send keys with `osascript -e 'tell application "System Events" to key code 36 using command down'`
    (Return finishes annotating, Cmd+Return too while typing, key code 53 is Esc). The recent stack
-   takes key focus, so `keystroke "a" using command down` after `open shotnote://recent` selects all.
+   takes key focus, so `keystroke "a" using command down` after `open vignette://recent` selects all.
    For the global hotkey, the sweep gesture, or drag-out, System Events is not enough: use
    `scripts/input.sh` (CGEvent; `hotkey double-rshift`, `hotkey cmd+shift+6`, `click X Y`,
    `drag X1 Y1 X2 Y2 [seconds]`, which holds the button at the end that long and posts nothing
@@ -104,16 +104,16 @@ the measurements and the reasoning; a rule here points at its note.
    the same convention, so a card or annotator frame from there can be clicked as is.
    Never send Escape that way to close the stack: if the stack is not key, the keystroke reaches
    the frontmost app, and in a terminal running an agent that is the interrupt key. Use
-   `open -g shotnote://dismiss` for the stack and `open -g shotnote://cancel` for the annotator.
+   `open -g vignette://dismiss` for the stack and `open -g vignette://cancel` for the annotator.
    Before any key or click, read `[state]` and confirm the stack or annotator is up and key: a
    synthetic key reaches whatever is frontmost otherwise, and a click lands in whatever window is
    there. A single `move` does not fire hover; walk the cursor in several steps and confirm
    `stack.hovered` (or the focus) in `[state]` before trusting a capture.
    `scripts/input.sh pasteboard` prints the pasteboard's item count and types.
-   Inside the editor page, `open 'shotnote://eval?<javascript>'` runs the code (async, `window.editor`
+   Inside the editor page, `open 'vignette://eval?<javascript>'` runs the code (async, `window.editor`
    is the tldraw editor) and logs the returned value.
-5. Read `~/Library/Logs/Shotnote.log`. Every action, URL command, watcher event, web message,
-   and error lands there with a `[tag]`. `open -g "shotnote://state?tag=<id>"` writes one
+5. Read `~/Library/Logs/Vignette.log`. Every action, URL command, watcher event, web message,
+   and error lands there with a `[tag]`. `open -g "vignette://state?tag=<id>"` writes one
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
    `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; `selected`, `focused`,
@@ -134,7 +134,7 @@ the measurements and the reasoning; a rule here points at its note.
    build from Xcode carries it too.
    Log grammar (`Log.swift`): one event per line, `HH:mm:ss.SSS [tag] …`, details as
    `key=value` pairs, never an embedded newline (the logger flattens them); the launch line ends
-   with `date=YYYY-MM-DD`; at 5 MB the file rotates to `Shotnote.log.1`, replacing the previous
+   with `date=YYYY-MM-DD`; at 5 MB the file rotates to `Vignette.log.1`, replacing the previous
    one. Draft events: `[draft] saved|parked|built|preview|forgot|swept <file>` and `[drafts] <n>`
    after every change to the set. `[stack] shown cards=… files=… shown=…ms decoding=…` counts the
    watch folder from the watcher's index.
@@ -150,12 +150,12 @@ Compare before and after on the same driven sequence.
 
 Measuring a stutter: launch the app under Instruments and drive it as above.
 `xcrun xctrace record --template 'Time Profiler' --instrument 'Core Animation Commits' --env
-SHOTNOTE_SETTINGS=<scratch> --time-limit 75s --output perf.trace --launch -- <app>` (a
+VIGNETTE_SETTINGS=<scratch> --time-limit 75s --output perf.trace --launch -- <app>` (a
 `--launch` also replaces the running instance; the Animation Hitches template attached to a
 running process records no commits or samples on macOS). `xctrace export --xpath
 '/trace-toc/run[@number="1"]/data/table[@schema="coreanimation-commit-interval"]'` gives every
 commit with its duration; a commit over 8.3 ms dropped a frame at 120 Hz. `time-profile` samples
-on the main thread that run without a gap are a stall; the frames from the `Shotnote` binary name
+on the main thread that run without a gap are a stall; the frames from the `Vignette` binary name
 the code. Trace time zero is about `[app] launched` minus the first sample inside
 `applicationDidFinishLaunching`, which lines the trace up with the log. Compare before and after on
 the same driven sequence; a single run varies.
@@ -193,7 +193,7 @@ the same driven sequence; a single run varies.
   those hotkeys.
 - Two vocabularies, and they do not mix. Every string a user reads says draw: the buttons, the menu
   items, the toggles, the section headings, the toasts. Every name a script, a log reader or a
-  compiler reads says annotate: the URL ids (`shotnote://annotate`, `copy-annotated`), the log tags
+  compiler reads says annotate: the URL ids (`vignette://annotate`, `copy-annotated`), the log tags
   (`[annotate]`), the settings keys (`quickAnnotate`, `annotateOnCapture`), the `-annotated.png`
   suffix, and every identifier. A label is free to change; those are a contract. The editor window
   is still the annotator in both, because it is a thing rather than an action.
@@ -284,7 +284,7 @@ the same driven sequence; a single run varies.
   in the transition layer, so a slot keeps its place and draws nothing, and the image is never on
   screen twice. The watcher reports the file a moment later as usual; the card is already there, so
   `insert` ignores it, and with `annotateOnCapture` on that same report flies the new card into the
-  annotator. With the stack closed (a `shotnote://stitch` from a script) the toast is the whole of
+  annotator. With the stack closed (a `vignette://stitch` from a script) the toast is the whole of
   it. Dismissing the stack mid-converge ends the pieces' flights with it and the stitch says so as a
   toast, so it never finishes in silence. `Stitch.compose` lays the pieces out for the model that
   will read the result: it tries every column count and keeps the one that survives a vision
@@ -339,7 +339,7 @@ the same driven sequence; a single run varies.
   the gap (`widthScale(clearing:visibleFrame:)`). Opening and closing spring it through
   `ui.relayoutDuration`; a zoom sets it straight, in the same turn as the frame. Only the recent
   stack does this: a lone thumbnail leaves the panel when the annotator opens, and a
-  `shotnote://annotate` with no stack showing gets the whole visible frame.
+  `vignette://annotate` with no stack showing gets the whole visible frame.
   `docs/stack-room-2026-09-17.md` has the numbers.
 - The Draw hint goes out over the card's two corner buttons and nowhere else
   (`CardView.overCornerButton`): each button's frame plus its padding, not the whole band along the
@@ -436,7 +436,7 @@ the same driven sequence; a single run varies.
   contains a token. Loading a snapshot inside `editor.run(fn, { history: 'ignore' })` keeps it
   out of undo history.
 - A draft can arrive without anyone opening the editor: `add?marks=` sends the image and the marks
-  to `window.shotnote.build`, which puts them on the page's canvas, takes the snapshot and a
+  to `window.vignette.build`, which puts them on the page's canvas, takes the snapshot and a
   preview, and puts the canvas back the way it was (like `export`, and inside the same
   `history: 'ignore'`). That borrows the canvas for the length of one rendering, so a build is
   refused while anything else owns it (`AnnotationController.canvasRefusal`): the annotator owns it
@@ -525,14 +525,14 @@ the same driven sequence; a single run varies.
   refuses the view logs `[web] error view refused`, and a hand-over with no answer inside an
   export's timeout logs `[annotate] view timeout` and is made once more; the stand-in comes down
   either way, since a picture that never leaves covers a live editor. The overlay is
-  `window.shotnote.overlay`, capped at `Config.overlayMaxPixel`; the host asks for one when the
+  `window.vignette.overlay`, capped at `Config.overlayMaxPixel`; the host asks for one when the
   image loads and after every `draft` message, one render at a time, keeping the last finished one
   while a new one is out. The state report's `page.zoom` and `page.visible` are the page's view,
   `annotator.zoomLevel` the one number, `annotator.zoom` and `annotator.canvasZoom` its two halves
   per direction, `annotator.zoomAnchor` the point the window grows away from, `annotator.zoomCenter`
   the middle of the visible part, `annotator.standIn` whether the app's own picture is up,
   `annotator.overlay` the overlay's pixel size, and `annotator.room` the rect the frame may grow
-  within. "Copy Drawing" hands the stored snapshots to the live editor (`window.shotnote.export`),
+  within. "Copy Drawing" hands the stored snapshots to the live editor (`window.vignette.export`),
   which restores the canvas afterwards; it falls back to the original file for cards without a
   draft, and answers `error export-failed` or `export-timeout` instead of hanging.
 - Memory is bounded in three places. `Thumbnailer` keeps decoded images under `budgetBytes`,
@@ -578,7 +578,7 @@ the same driven sequence; a single run varies.
   certificate. Keep it that way here: Accessibility trust is tied to the signature's designated
   requirement, and an ad-hoc signature changes on every build (README has the details).
   `ENABLE_DEBUG_DYLIB` is off in project.yml: with it on, a Debug build loads its code from
-  `Shotnote.debug.dylib`, which the hardened runtime rejects for a signer without a team ID, so a
+  `Vignette.debug.dylib`, which the hardened runtime rejects for a signer without a team ID, so a
   self-signed build crashed at launch. macOS keys Accessibility by bundle id: a second copy of
   the app with the same bundle id and a different signature shares the row and stays untrusted,
   so a test build that must be trusted needs its own bundle id.
@@ -594,11 +594,11 @@ the same driven sequence; a single run varies.
   `[send]` line arrives when herdr answers. Without herdr the command is one `no-agent` error;
   nothing else in the app depends on it. `docs/send-to-agent-exploration-2026-09-17.md` has the
   routes that were measured and why the others were refused.
-- The agent skill (`skills/shotnote/SKILL.md`) ships in the bundle as a folder resource
+- The agent skill (`skills/vignette/SKILL.md`) ships in the bundle as a folder resource
   (project.yml), and `SkillInstaller.swift` copies it out. A root is an agent's own directory,
-  `~/.claude` or `~/.codex`, and only one that exists; the skill lands in `<root>/skills/shotnote`.
+  `~/.claude` or `~/.codex`, and only one that exists; the skill lands in `<root>/skills/vignette`.
   Roots are parameters everywhere, so a test never reaches the real ones, and the live check is
-  `install-skill?root=<dir>` (debug only). The installer writes `.shotnote-skill.json` beside the
+  `install-skill?root=<dir>` (debug only). The installer writes `.vignette-skill.json` beside the
   skill naming the build, and refuses anything at that path without it, a link included
   (`not-ours`): it never touches a copy it did not make. The copy is staged beside the folder with
   its marker and moved into place, so a failed install leaves nothing there. A root that is itself a
@@ -615,7 +615,7 @@ the same driven sequence; a single run varies.
 
 - An action: add a `ShotAction` to `Config.actions` and a method on the `Actions` protocol. Its
   `placement` decides whether it is a hover button on a card, a button in the selection strip, or
-  both; `key` gives it a shortcut inside the recent stack. It is a `shotnote://<id>` URL either
+  both; `key` gives it a shortcut inside the recent stack. It is a `vignette://<id>` URL either
   way. Actions always receive a list of screenshots: in the order the cards were selected when the
   stack runs them, and in the order a URL names its `file=` parameters otherwise. `annotate` opens
   the first of them and queues the rest, since the annotator holds one image; its `ok` line says

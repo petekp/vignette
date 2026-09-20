@@ -13,7 +13,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
     private let onNew: (URL) -> Void
     private let onRemoved: ([URL]) -> Void
     private var source: DispatchSourceFileSystemObject?
-    private let queue = DispatchQueue(label: "shotnote.watcher")
+    private let queue = DispatchQueue(label: "vignette.watcher")
 
     private struct State {
         var files: [String: Date] = [:]   // candidate name -> modification date

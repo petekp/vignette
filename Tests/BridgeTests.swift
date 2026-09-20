@@ -86,12 +86,12 @@ final class BridgeTests: XCTestCase {
         let payload = LoadPayload(key: "/Users/p/Shot \"one\".png", mimeType: "image/png",
                                   pixelWidth: 10, pixelHeight: 20)
         let fresh = PageAPI.load(payload, snapshot: nil).script
-        XCTAssertTrue(fresh.hasPrefix("window.shotnote && window.shotnote.load({\"snapshot\":null,\"key\":"), fresh)
+        XCTAssertTrue(fresh.hasPrefix("window.vignette && window.vignette.load({\"snapshot\":null,\"key\":"), fresh)
         XCTAssertTrue(fresh.contains(#""key":"/Users/p/Shot \"one\".png""#), fresh)
         XCTAssertTrue(fresh.contains(#""pixelWidth":10"#) && fresh.contains(#""pixelHeight":20"#), fresh)
         XCTAssertTrue(fresh.contains(#""previewMaxPixel":\#(Config.previewMaxPixel)"#), "the preview cap rides with the image; the page keeps no copy of it")
         let stored = PageAPI.load(payload, snapshot: Data(#"{"document":{"a":1}}"#.utf8)).script
-        XCTAssertTrue(stored.hasPrefix(#"window.shotnote && window.shotnote.load({"snapshot":{"document":{"a":1}},"key":"#), stored)
+        XCTAssertTrue(stored.hasPrefix(#"window.vignette && window.vignette.load({"snapshot":{"document":{"a":1}},"key":"#), stored)
         // The argument must be one JSON object: parse what the script passes to load().
         let start = stored.range(of: "load(")!.upperBound
         let object = try JSONSerialization.jsonObject(with: Data(stored[start...].dropLast(2).utf8)) as? [String: Any]
@@ -107,7 +107,7 @@ final class BridgeTests: XCTestCase {
         let marks = [Mark(type: .ellipse, x: 0.1, y: 0.2, w: 0.3, h: 0.4, color: "red"),
                      Mark(type: .text, x: 0, y: 0, text: "say \"hi\"")]
         let script = PageAPI.build(payload, snapshot: Data(#"{"document":1}"#.utf8), marks: marks).script
-        XCTAssertTrue(script.hasPrefix(#"return window.shotnote ? await window.shotnote.build({"snapshot":{"document":1},"key":"/a b.png""#), script)
+        XCTAssertTrue(script.hasPrefix(#"return window.vignette ? await window.vignette.build({"snapshot":{"document":1},"key":"/a b.png""#), script)
         // Both arguments must be JSON the page can take as they are: read them back as a pair.
         let start = script.range(of: "build(")!.upperBound
         let end = script.range(of: ") : null;")!.lowerBound
@@ -123,20 +123,20 @@ final class BridgeTests: XCTestCase {
 
     func testExportScriptCarriesEachSnapshot() throws {
         let script = PageAPI.export([(key: "/a b.png", snapshot: Data(#"{"d":1}"#.utf8)), (key: "/c.png", snapshot: Data(#"{"d":2}"#.utf8))]).script
-        XCTAssertEqual(script, #"return window.shotnote ? await window.shotnote.export([{"key":"/a b.png","snapshot":{"d":1}},{"key":"/c.png","snapshot":{"d":2}}]) : null;"#)
-        XCTAssertEqual(PageAPI.export([]).script, "return window.shotnote ? await window.shotnote.export([]) : null;")
+        XCTAssertEqual(script, #"return window.vignette ? await window.vignette.export([{"key":"/a b.png","snapshot":{"d":1}},{"key":"/c.png","snapshot":{"d":2}}]) : null;"#)
+        XCTAssertEqual(PageAPI.export([]).script, "return window.vignette ? await window.vignette.export([]) : null;")
     }
 
     func testStringArgumentsAreEscapedForJavaScript() {
-        XCTAssertEqual(PageAPI.setTool("dr\"aw').x</script>").script, #"window.shotnote && window.shotnote.setTool("dr\"aw').x</script>");"#)
-        XCTAssertEqual(PageAPI.setTool("line\nbreak").script, #"window.shotnote && window.shotnote.setTool("line\nbreak");"#)
+        XCTAssertEqual(PageAPI.setTool("dr\"aw').x</script>").script, #"window.vignette && window.vignette.setTool("dr\"aw').x</script>");"#)
+        XCTAssertEqual(PageAPI.setTool("line\nbreak").script, #"window.vignette && window.vignette.setTool("line\nbreak");"#)
     }
 
     func testParkAwaitsAndOthersGuard() {
-        XCTAssertEqual(PageAPI.park.script, "return window.shotnote ? await window.shotnote.park() : null;")
-        XCTAssertEqual(PageAPI.overlay(maxPixel: 2048).script, "return window.shotnote ? await window.shotnote.overlay(2048) : null;")
+        XCTAssertEqual(PageAPI.park.script, "return window.vignette ? await window.vignette.park() : null;")
+        XCTAssertEqual(PageAPI.overlay(maxPixel: 2048).script, "return window.vignette ? await window.vignette.overlay(2048) : null;")
         for api in [PageAPI.reset, .finish, .setTool("select")] {
-            XCTAssertTrue(api.script.hasPrefix("window.shotnote && window.shotnote."), api.script)
+            XCTAssertTrue(api.script.hasPrefix("window.vignette && window.vignette."), api.script)
         }
     }
 
@@ -145,7 +145,7 @@ final class BridgeTests: XCTestCase {
     func testTheViewIsAwaitedAndCarriesTheWholePicture() throws {
         let script = PageAPI.setView(ViewRequest(frame: PageRect(x: 306, y: 129, width: 936.5, height: 872),
                                                  image: PageRect(x: -100, y: 29, width: 1200, height: 1072))).script
-        XCTAssertTrue(script.hasPrefix("return window.shotnote ? await window.shotnote.setView("), script)
+        XCTAssertTrue(script.hasPrefix("return window.vignette ? await window.vignette.setView("), script)
         let start = script.range(of: "setView(")!.upperBound
         let end = script.range(of: ") : null;")!.lowerBound
         let view = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(script[start..<end].utf8)) as? [String: Any])

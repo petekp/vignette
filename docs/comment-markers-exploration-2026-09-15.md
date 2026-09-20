@@ -26,7 +26,7 @@ Sources: the Codex issue asking for preview annotation
 (<https://github.com/openai/codex/issues/35502>), OpenAI's Codex app introduction
 (<https://openai.com/index/introducing-the-codex-app/>), and the CLI source above.
 
-## What Shotnote would add
+## What Vignette would add
 
 A fourth kind of mark next to shapes, arrows, and text: a **comment**. Placing one is one click.
 The click drops a numbered pin; a small text field opens next to it; Return commits; Escape
@@ -71,7 +71,7 @@ side does. The block ends with a line the user did not write, so the request sta
    it takes; most take both. This is the same shape as today's Copy Annotated, plus text.
 2. A sidecar file next to the annotated PNG: `<name>-annotated.md`. Agents that read the
    screenshot folder get the comments with the image, and `Copy Paths` already hands over paths.
-3. A URL command, `shotnote://comments?file=<path>`, printing the block to the log for agents
+3. A URL command, `vignette://comments?file=<path>`, printing the block to the log for agents
    that drive the app without the clipboard.
 
 The Codex convention suggests one refinement for the clipboard text: put the block first and end

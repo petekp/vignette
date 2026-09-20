@@ -5,7 +5,7 @@ final class DraftStoreTests: XCTestCase {
     private var store: DraftStore!
 
     override func setUpWithError() throws {
-        base = FileManager.default.temporaryDirectory.appendingPathComponent("shotnote-drafts-\(UUID().uuidString)")
+        base = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-drafts-\(UUID().uuidString)")
         store = DraftStore(directory: base.appendingPathComponent("drafts"), previewDirectory: base.appendingPathComponent("cache"))
     }
 

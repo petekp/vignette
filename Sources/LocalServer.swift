@@ -13,7 +13,7 @@ final class LocalServer {
     private let access: FileAccess
     private var listener: NWListener?
     private(set) var port: UInt16 = 0
-    private let queue = DispatchQueue(label: "shotnote.server")
+    private let queue = DispatchQueue(label: "vignette.server")
 
     /// Which files outside the bundle may be served. Read on the server queue, written from the
     /// main thread when settings change, so it carries its own lock.

@@ -2,13 +2,13 @@
 # PRODUCT_BUNDLE_IDENTIFIER values, and the URL scheme below.
 # The log name, status item, Application Support folder, and hotkey registration follow the
 # bundle at runtime (Sources/Identity.swift); build.sh and run.sh read `name` for the scheme.
-name: Shotnote
+name: Vignette
 options:
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
 targets:
-  Shotnote:
+  Vignette:
     type: application
     platform: macOS
     sources:
@@ -22,7 +22,7 @@ targets:
       - path: LICENSE-tldraw.md
         buildPhase: resources
       # The agent skill the app offers to install; SkillInstaller copies this folder out.
-      - path: skills/shotnote
+      - path: skills/vignette
         type: folder
         buildPhase: resources
     info:
@@ -32,21 +32,21 @@ targets:
         CFBundleDisplayName: $(PRODUCT_NAME)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        ShotnoteBuild: $(SHOTNOTE_BUILD)
+        VignetteBuild: $(VIGNETTE_BUILD)
         LSUIElement: true
         NSHighResolutionCapable: true
         CFBundleURLTypes:
           - CFBundleURLName: $(PRODUCT_BUNDLE_IDENTIFIER)
-            CFBundleURLSchemes: [shotnote]
+            CFBundleURLSchemes: [vignette]
     settings:
       base:
         SWIFT_VERSION: "5.10"
         SWIFT_STRICT_CONCURRENCY: complete
-        PRODUCT_BUNDLE_IDENTIFIER: com.petepetrash.shotnote
+        PRODUCT_BUNDLE_IDENTIFIER: com.petepetrash.vignette
         MARKETING_VERSION: "0.1.0"
         # Placeholders: the stamp script below writes the git state into the built Info.plist.
         CURRENT_PROJECT_VERSION: "0"
-        SHOTNOTE_BUILD: "local"
+        VIGNETTE_BUILD: "local"
         # Ad-hoc by default so any clone builds. build.sh overrides the identity and team from the
         # gitignored scripts/signing.env; a real certificate keeps the signature stable across
         # builds, which is what lets Accessibility trust survive a rebuild (see README).
@@ -54,7 +54,7 @@ targets:
         CODE_SIGN_STYLE: Manual
         # Hardened runtime from the start, so notarizing later is a certificate and not a redesign.
         ENABLE_HARDENED_RUNTIME: true
-        # Xcode's Debug builds otherwise put the app in Shotnote.debug.dylib for previews, which the
+        # Xcode's Debug builds otherwise put the app in Vignette.debug.dylib for previews, which the
         # hardened runtime refuses to load when the signer has no team ID (a self-signed certificate).
         ENABLE_DEBUG_DYLIB: false
         # No sandbox: the app writes Apple's com.apple.screencapture defaults, watches a folder the
@@ -62,7 +62,7 @@ targets:
         ENABLE_APP_SANDBOX: false
     postBuildScripts:
       # The bundle carries the git state: commit count as CFBundleVersion, describe as
-      # ShotnoteBuild. A build phase, not a build.sh argument, so a build from Xcode or a bare
+      # VignetteBuild. A build phase, not a build.sh argument, so a build from Xcode or a bare
       # xcodebuild is stamped the same way. Run script phases precede code signing.
       - name: Stamp git state
         basedOnDependencyAnalysis: false
@@ -71,12 +71,12 @@ targets:
           number=$(git rev-list --count HEAD 2>/dev/null || echo 0)
           build=$(git describe --always --dirty 2>/dev/null || echo local)
           plist="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $number" -c "Set :ShotnoteBuild $build" "$plist"
-  ShotnoteTests:
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $number" -c "Set :VignetteBuild $build" "$plist"
+  VignetteTests:
     type: bundle.unit-test
     platform: macOS
     # Compiles the app sources into the test bundle instead of loading the app as a test host,
-    # so a test run never launches a second Shotnote against the real settings and watch folder.
+    # so a test run never launches a second Vignette against the real settings and watch folder.
     sources:
       - path: Tests
       - path: Sources
@@ -89,23 +89,23 @@ targets:
       base:
         SWIFT_VERSION: "5.10"
         SWIFT_STRICT_CONCURRENCY: complete
-        PRODUCT_BUNDLE_IDENTIFIER: com.petepetrash.shotnote.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.petepetrash.vignette.tests
         GENERATE_INFOPLIST_FILE: true
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
 schemes:
-  Shotnote:
+  Vignette:
     build:
       targets:
-        Shotnote: all
-        ShotnoteTests: [test]
+        Vignette: all
+        VignetteTests: [test]
     run:
       config: Debug
     test:
       config: Debug
-      targets: [ShotnoteTests]
+      targets: [VignetteTests]
       # A test that reaches Settings.shared bootstraps it, and a bootstrap fills in any keys the
       # file lacks. Without this the file it fills in is the user's own, so a test run rewrites it
       # the moment a build adds a tweak.
       environmentVariables:
-        SHOTNOTE_SETTINGS: /tmp/shotnote-tests/settings.json
+        VIGNETTE_SETTINGS: /tmp/vignette-tests/settings.json

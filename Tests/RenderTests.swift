@@ -19,7 +19,7 @@ final class RenderTests: XCTestCase {
     private let pixelWidth = 400, pixelHeight = 300
 
     override func setUpWithError() throws {
-        dir = FileManager.default.temporaryDirectory.appendingPathComponent("shotnote-render-\(UUID().uuidString)")
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-render-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixelWidth, pixelsHigh: pixelHeight, bitsPerSample: 8, samplesPerPixel: 4,
                                    hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -33,13 +33,13 @@ final class RenderTests: XCTestCase {
         try server.start()
         XCTAssertNotEqual(server.port, 0)
         let config = WKWebViewConfiguration()
-        config.userContentController.add(Handler(owner: self), name: "shotnote")
+        config.userContentController.add(Handler(owner: self), name: "vignette")
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
         webView.load(URLRequest(url: server.indexURL))
     }
 
     override func tearDownWithError() throws {
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "shotnote")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "vignette")
         try FileManager.default.removeItem(at: dir)
     }
 
@@ -223,7 +223,7 @@ final class RenderTests: XCTestCase {
         // The build is not awaited. The load goes in once its mark is on the canvas, which is the
         // build waiting on its rendering: the moment a load used to be thrown away.
         _ = try eval("""
-            window.buildInFlight = window.shotnote.build(\(PageAPI.payload(payload, nil)),\(PageAPI.json(marks)));
+            window.buildInFlight = window.vignette.build(\(PageAPI.payload(payload, nil)),\(PageAPI.json(marks)));
             for (let i = 0; i < 200; i++) {
               const shapes = [...window.editor.getCurrentPageShapeIds()].map((id) => window.editor.getShape(id));
               if (shapes.some((s) => s.type === 'geo' && s.props.geo === 'ellipse')) break;

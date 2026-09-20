@@ -16,18 +16,18 @@ enum AgentSkill: String {
     case off
 }
 
-/// Everything a user changes per machine. Lives in ~/.config/shotnote/settings.json.
+/// Everything a user changes per machine. Lives in ~/.config/vignette/settings.json.
 /// Missing keys fall back to defaults, so a partial file is fine.
 struct SettingsData: Codable, Equatable {
     var version = Settings.currentVersion    // file format version; `Settings.migrate` brings older files up
-    var screenshotsFolder = "~/Desktop"      // where Cmd+Shift+3/4/5 saves and what Shotnote watches
+    var screenshotsFolder = "~/Desktop"      // where Cmd+Shift+3/4/5 saves and what Vignette watches
     var syncAppleSaveLocation = true         // write screenshotsFolder to Apple's screencapture location
     var appleThumbnail = true                // Apple's floating thumbnail; off means the file lands immediately
     var windowShadow = true                  // Apple's window-capture shadow
     var format = "png"                       // png or jpg
     var recentCount = 30                      // cards in the recent stack
     var recentHotkey = "cmd+shift+6"         // opens the recent stack
-    var hideMenuBarIcon = false              // shotnote://settings still opens the window
+    var hideMenuBarIcon = false              // vignette://settings still opens the window
     var launchAtLogin = false                // registers the app as a login item (System Settings > Login Items)
     var quickAnnotate = false                // Done copies the result and closes the annotator and the stack at once
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
@@ -35,7 +35,7 @@ struct SettingsData: Codable, Equatable {
     var debug = false                        // unlocks eval, show-editor, tweaks, and file= outside the watch folder
     var agentSkill = AgentSkill.unasked.rawValue  // the skill for coding agents: unasked, on, off
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
-    var appleOriginal: AppleOriginal?        // Apple's screencapture values before Shotnote changed them
+    var appleOriginal: AppleOriginal?        // Apple's screencapture values before Vignette changed them
 
     var folderURL: URL { URL(fileURLWithPath: (screenshotsFolder as NSString).expandingTildeInPath) }
 
@@ -219,8 +219,8 @@ struct UITweaks: Codable, Equatable {
     ]
 }
 
-/// The `com.apple.screencapture` values Shotnote found before it wrote any of its own, so
-/// `shotnote://restore-apple-defaults` can put them back. nil means the key was not set.
+/// The `com.apple.screencapture` values Vignette found before it wrote any of its own, so
+/// `vignette://restore-apple-defaults` can put them back. nil means the key was not set.
 struct AppleOriginal: Codable, Equatable {
     var location: String?
     var showThumbnail: Bool?
@@ -237,26 +237,26 @@ struct AppleOriginal: Codable, Equatable {
 
 /// The settings file is the source of truth. The Settings window, the debug panel, agents, and
 /// dotfiles all edit it; the app reloads it when it changes on disk and pushes the relevant keys to
-/// Apple's defaults. `SHOTNOTE_SETTINGS=<path>` in the environment points the app at another file,
+/// Apple's defaults. `VIGNETTE_SETTINGS=<path>` in the environment points the app at another file,
 /// so a test run never touches the real one.
 @MainActor
 final class Settings: ObservableObject {
     static let shared = Settings()
     nonisolated static let currentVersion = 1
-    static let isOverridden = ProcessInfo.processInfo.environment["SHOTNOTE_SETTINGS"].map { !$0.isEmpty } ?? false
+    static let isOverridden = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false
     static let fileURL: URL = {
-        if let path = ProcessInfo.processInfo.environment["SHOTNOTE_SETTINGS"], !path.isEmpty {
+        if let path = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"], !path.isEmpty {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         }
         // A test process never writes the user's file, whoever launched it. The scheme in
-        // project.yml sets `SHOTNOTE_SETTINGS`, but `xcrun xctest`, a hand-written `.xctestrun`,
+        // project.yml sets `VIGNETTE_SETTINGS`, but `xcrun xctest`, a hand-written `.xctestrun`,
         // and CI running the bundle do not go through a scheme, and reading `Settings.shared` from
         // a test bootstraps whatever path this returns. The pid keeps parallel runs apart.
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
             return URL(fileURLWithPath: NSTemporaryDirectory())
-                .appendingPathComponent("shotnote-test-\(ProcessInfo.processInfo.processIdentifier)/settings.json")
+                .appendingPathComponent("vignette-test-\(ProcessInfo.processInfo.processIdentifier)/settings.json")
         }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/shotnote/settings.json")
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/vignette/settings.json")
     }()
     static var directory: URL { fileURL.deletingLastPathComponent() }
 
@@ -272,7 +272,7 @@ final class Settings: ObservableObject {
     var motionUI: UITweaks { data.ui.scaledForMotion(motionScale) }
     /// One sentence for a toast at launch when the file had to be set aside. nil when all was well.
     let startupNotice: String?
-    /// True when the file was written by a newer Shotnote. Writes would drop its keys, so none happen.
+    /// True when the file was written by a newer Vignette. Writes would drop its keys, so none happen.
     private(set) var readOnly = false
     /// True when this launch created the settings file: the app has never run on this machine.
     let firstLaunch: Bool

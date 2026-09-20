@@ -264,15 +264,15 @@ disturb it.
 Then, when you are happy with it:
 
 ```
-git worktree remove /Users/petepetrash/Code/shotnote-todo/page
-git worktree remove /Users/petepetrash/Code/shotnote-todo/zoom
-git worktree remove /Users/petepetrash/Code/shotnote-todo/select
-git worktree remove /Users/petepetrash/Code/shotnote-todo/transitions
-git worktree remove /Users/petepetrash/Code/shotnote-todo/integration2
+git worktree remove /Users/petepetrash/Code/vignette-todo/page
+git worktree remove /Users/petepetrash/Code/vignette-todo/zoom
+git worktree remove /Users/petepetrash/Code/vignette-todo/select
+git worktree remove /Users/petepetrash/Code/vignette-todo/transitions
+git worktree remove /Users/petepetrash/Code/vignette-todo/integration2
 git branch -d todo2/page todo2/zoom todo2/select todo2/transitions todo2/integration
 ```
 
-The scratch folders under `shotnote-todo/*-scratch` hold each agent's fixtures, captures and
+The scratch folders under `vignette-todo/*-scratch` hold each agent's fixtures, captures and
 scripts. They are outside the repository and can go whenever you like.
 
 ---
@@ -302,7 +302,7 @@ overlaps I checked rather than trusted:
 Only zoom changed the bridge, so the protocol is 7, one bump, on both sides.
 
 **Your build was replaced for eleven minutes** (11:34 to 11:45) and is back on
-`~/.config/shotnote/settings.json`, watching `~/Dropbox/Screenshots`. One launch round covered the
+`~/.config/vignette/settings.json`, watching `~/Dropbox/Screenshots`. One launch round covered the
 whole smoke test.
 
 **Your clipboard held three screenshots of your own screen** for a few minutes: stitching in the
@@ -313,12 +313,12 @@ the log at those moments. I treated it as yours and re-ran. The drag-select test
 failure twice for that reason and passed cleanly on the third run.
 
 **Nothing of mine is left behind.** Fixtures were only ever in
-`shotnote-todo/integration2-scratch/shots`, and that folder is now empty. My two drafts were
+`vignette-todo/integration2-scratch/shots`, and that folder is now empty. My two drafts were
 forgotten when their files went (`[draft] forgot push.png`,
 `[draft] forgot Screenshot test 8.png`), and the store is back to the same 12 keys it had before I
-started. Nothing was written to `~/Dropbox/Screenshots` or `~/.config/shotnote/`.
+started. Nothing was written to `~/Dropbox/Screenshots` or `~/.config/vignette/`.
 
-**One pre-existing oddity, not from this run:** `~/Library/Caches/com.petepetrash.shotnote/drafts/`
+**One pre-existing oddity, not from this run:** `~/Library/Caches/com.petepetrash.vignette/drafts/`
 holds one orphan PNG from 2026-09-15 (`e357b1b9…`) whose draft no longer exists. Nothing reads it.
 Deleting it is safe.
 
@@ -428,7 +428,7 @@ Stitching in the repro copied its result, so your clipboard holds a stitched ima
 screenshots of your own screen; Done in the queue check copied its annotated PNG before that. I left
 the clipboard alone afterwards. Fixtures were only in `integration2-scratch/shots`, which is empty
 again, and my one draft was dropped when its file went (`[draft] forgot Screenshot test 5.png`).
-Your build is back on `~/.config/shotnote/settings.json` and the lock is released.
+Your build is back on `~/.config/vignette/settings.json` and the lock is released.
 
 ---
 
@@ -588,9 +588,9 @@ Display, and the screen-edge give-way on a second display.
 
 - Two agents contended for the launch lock during the round.
 - Twice a build ran against the real settings for about fifteen seconds. Nothing was written to
-  `~/.config/shotnote/settings.json` either time.
+  `~/.config/vignette/settings.json` either time.
 - Before anything was rebuilt, the app Pete was running was copied out of
-  `integration2/build` to `shotnote-todo/pete-build/Shotnote.app` and relaunched from there, because
+  `integration2/build` to `vignette-todo/pete-build/Vignette.app` and relaunched from there, because
   a rebuild rewrites a bundle under its own running process. Every restore this round went to that
   copy, and at the end the copy was replaced with the merged build.
 - My smoke round held the lock from 15:21 to 15:32 and drove nothing but its own build on its own
@@ -689,5 +689,5 @@ nothing.
 
 Unchanged from section 3 above: `git merge todo2/integration` on `foundation` in your own checkout,
 then `./scripts/run.sh`. Your `docs/TODOS.md` is uncommitted and no branch touches it. The worktrees
-and `todo3/*` branches can go the same way as the `todo2/*` ones, and `shotnote-todo/pete-build` is
+and `todo3/*` branches can go the same way as the `todo2/*` ones, and `vignette-todo/pete-build` is
 a throwaway copy you can delete once `run.sh` has built your own.

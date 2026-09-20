@@ -2,8 +2,8 @@ import XCTest
 
 final class IdentityTests: XCTestCase {
     func testSignatureIsStableAndDistinguishesBundleIds() {
-        XCTAssertEqual(Identity.hotKeySignature(for: "com.petepetrash.shotnote"), Identity.hotKeySignature(for: "com.petepetrash.shotnote"))
-        XCTAssertNotEqual(Identity.hotKeySignature(for: "com.petepetrash.shotnote"), Identity.hotKeySignature(for: "com.example.shotnote"))
+        XCTAssertEqual(Identity.hotKeySignature(for: "com.petepetrash.vignette"), Identity.hotKeySignature(for: "com.petepetrash.vignette"))
+        XCTAssertNotEqual(Identity.hotKeySignature(for: "com.petepetrash.vignette"), Identity.hotKeySignature(for: "com.example.vignette"))
     }
 
     func testReadsTheFirstUrlScheme() {

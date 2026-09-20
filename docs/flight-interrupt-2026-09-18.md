@@ -86,7 +86,7 @@ spring had carried it, without stopping there.
 lines carry no `show` in any of these runs; `annotator.windowVisible` read `false` in the `[state]`
 taken after each.
 
-**A swap 173 ms in** (`shotnote://annotate` of a second fixture):
+**A swap 173 ms in** (`vignette://annotate` of a second fixture):
 
 ```
 21:51:16.573 [transition] annotate(Screenshot t1.png from stack) -> flyingOut(…) effects=prepare(…)
