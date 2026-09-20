@@ -20,6 +20,7 @@ struct Card: Identifiable {
 final class StackModel: ObservableObject {
     @Published var cards: [Card] = []          // index 0 is newest, drawn at the bottom
     @Published var offscreen: Set<UUID> = []   // cards parked past the right screen edge
+    @Published var entering: UUID? = nil       // the one card joining a visible column, for the length of its entrance
     var slidingOut = false                     // picks the exit stagger order and curve for `offscreen`
     @Published var outCards: Set<UUID> = []    // cards currently in the annotator; their slots stay empty
     @Published var forming: Set<UUID> = []     // cards whose image is in the transition layer, mid-stitch; drawn as nothing
@@ -1125,6 +1126,7 @@ final class ThumbnailController: NSObject {
         dismissGeneration += 1
         flights.endAll()
         model.feedback = nil
+        model.entering = nil
         model.hoveredCard = nil
         model.clearSelection()
         model.outCards = []
@@ -1182,14 +1184,25 @@ final class ThumbnailController: NSObject {
         if model.feedback != nil && !model.isStack { model.feedback = nil; model.cards = [] }
         if entrance != .inPlace { _ = model.offscreen.insert(card.id) }
         model.slidingOut = false
+        // One card joining a visible column moves through `ui.insertDuration`, the card and the room
+        // the others make alike, which is slower than a relayout: it is an arrival, not a shuffle.
+        let joining = visible && !model.cards.isEmpty && entrance == .slide
+        let duration = joining ? ui.insertDuration : ui.relayoutDuration
+        if joining { model.entering = card.id }
         model.cards.insert(card, at: 0)
         if model.cards.count > Settings.shared.data.recentCount, let last = model.cards.last {
             model.cards.removeLast()
             model.deselect([last.id])
         }
-        withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
-        layoutPanel(shrinkLater: false, animated: true)
+        withAnimation(Anim.spring(duration)) { model.scroll = 0 }
+        layoutPanel(shrinkLater: false, animated: true, duration: duration)
         DispatchQueue.main.async { [weak self] in self?.model.offscreen.remove(card.id) }
+        if joining {
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+                guard let self, self.model.entering == card.id else { return }
+                self.model.entering = nil
+            }
+        }
     }
 
     private func relayout() {
@@ -1202,13 +1215,13 @@ final class ThumbnailController: NSObject {
     /// A fresh presentation applies the viewport at once: animated, its change overlaps the cards'
     /// entrance and bends their path, since the column frame's height and the slide land in the
     /// same transaction.
-    private func layoutPanel(shrinkLater: Bool, animated: Bool) {
+    private func layoutPanel(shrinkLater: Bool, animated: Bool, duration: Double? = nil) {
         // At the stack's full width, so a stack narrowed for the annotator keeps the panel it will
         // need when it comes back. The panel is transparent outside the column either way.
         let content = layout.contentHeight(cards: model.cards.map(\.size), showsBar: showsBar)
         readArea()
         let viewport = layout.viewportHeight(content: content, area: area)
-        var transaction = Transaction(animation: animated ? Anim.spring(ui.relayoutDuration) : nil)
+        var transaction = Transaction(animation: animated ? Anim.spring(duration ?? ui.relayoutDuration) : nil)
         transaction.disablesAnimations = !animated
         withTransaction(transaction) {
             model.viewport = viewport

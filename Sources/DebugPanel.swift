@@ -131,6 +131,7 @@ struct DebugPanelView: View {
                     Tweak("Stagger per card", \.staggerDelay, 0...0.3, step: 0.01, unit: "s")
                     Tweak("Stagger total max", \.staggerTotalMax, 0...1.5, step: 0.05, unit: "s")
                     Tweak("Relayout", \.relayoutDuration, 0...1, step: 0.05, unit: "s")
+                    Tweak("Card entering", \.insertDuration, 0...2, step: 0.05, unit: "s")
                     Tweak("Hover reveal", \.hoverRevealDuration, 0...0.6, step: 0.05, unit: "s")
                 }
                 Section("Flights") {

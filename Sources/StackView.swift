@@ -54,10 +54,15 @@ struct StackView: View {
         .animation(layoutAnimation(0.15), value: model.feedback)
     }
 
-    /// Layout changes animate only while the cards are on screen. While they are offscreen, in
-    /// or out, a toast or strip leaving the column would otherwise shift them as they slide in.
+    /// Layout changes animate only while cards are on screen. While the whole column is offscreen,
+    /// in or out, a toast or strip leaving the column would otherwise shift the cards as they slide
+    /// in. One card entering a visible column is offscreen too, and the others must make room for
+    /// it with a spring rather than a jump, so the test is whether any card is still on screen.
     private func layoutAnimation(_ duration: Double) -> Animation? {
-        model.offscreen.isEmpty ? Anim.spring(duration * settings.motionScale) : nil
+        let anyOnScreen = model.cards.contains { !model.offscreen.contains($0.id) }
+        guard anyOnScreen else { return nil }
+        let seconds = model.entering == nil ? duration * settings.motionScale : settings.motionUI.insertDuration
+        return Anim.spring(seconds)
     }
 
     private var stripPlacement: StackLayout.StripPlacement? {
@@ -312,7 +317,10 @@ private struct CardView: View {
     }
 
     private var slideAnimation: Animation {
-        model.slidingOut ? Anim.spring(ui.slideOutDuration) : Anim.swiftUI(ui.slideInCurve, duration: ui.slideInDuration)
+        if model.slidingOut { return Anim.spring(ui.slideOutDuration) }
+        // A card joining a visible column arrives at the pace the others make room for it.
+        if model.entering == card.id { return Anim.spring(ui.insertDuration) }
+        return Anim.swiftUI(ui.slideInCurve, duration: ui.slideInDuration)
     }
 
     /// Dragging a selected card carries the whole selection, in the order it was selected.

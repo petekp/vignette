@@ -122,6 +122,7 @@ struct UITweaks: Codable, Equatable {
     var staggerDelay = 0.05
     var staggerTotalMax = 0.3        // the last card never starts later than this
     var relayoutDuration = 0.2
+    var insertDuration = 0.5         // one card joining a visible stack: its slide and the room the others make
     var expandDuration = 0.25
     var hoverRevealDuration = 0.15
     // A flight between a stack slot and the annotator, bowed and swelled by FlightCurve
@@ -173,7 +174,7 @@ struct UITweaks: Codable, Equatable {
         var u = self
         u.slideInDuration *= scale; u.slideOutDuration *= scale
         u.staggerDelay *= scale; u.staggerTotalMax *= scale
-        u.relayoutDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
+        u.relayoutDuration *= scale; u.insertDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
         u.flightArc *= scale; u.flightDepth *= scale
@@ -198,7 +199,8 @@ struct UITweaks: Codable, Equatable {
         Bound("thumbnailSeconds", \.thumbnailSeconds, 0...3600), Bound("toastSeconds", \.toastSeconds, 0...3600),
         Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
         Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
-        Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("expandDuration", \.expandDuration, 0...60),
+        Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("insertDuration", \.insertDuration, 0...60),
+        Bound("expandDuration", \.expandDuration, 0...60),
         Bound("hoverRevealDuration", \.hoverRevealDuration, 0...60), Bound("motion", \.motion, 0...1),
         Bound("flightArc", \.flightArc, 0...1), Bound("flightArcMax", \.flightArcMax, 0...2000),
         Bound("flightDepth", \.flightDepth, 0...1),
