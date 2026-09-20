@@ -5,6 +5,22 @@ screenshot. Vignette watches the save folder and handles everything after: a flo
 thumbnail, a recent-screenshots stack, and a tldraw annotator that copies the result to
 your clipboard.
 
+## Get it
+
+The source is at [github.com/petekp/vignette](https://github.com/petekp/vignette), MIT licensed.
+There is no download yet: the editor is tldraw, whose license requires a key to ship, and the
+key waits on the repository being public, which it now is. Until then, build it yourself:
+
+```
+git clone https://github.com/petekp/vignette.git
+cd vignette/web && pnpm install && cd ..
+./scripts/run.sh
+```
+
+That needs Xcode, `xcodegen`, and `pnpm`; the Building section below has the details, and the
+Signing section says why a build of your own has to be re-trusted for Accessibility after each
+rebuild. macOS 14 or later.
+
 ## How it works
 
 ```

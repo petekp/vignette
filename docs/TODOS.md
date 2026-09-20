@@ -2,6 +2,25 @@
 
 Things decided or raised but not built. Each entry says what, why, and what it waits on.
 
+## Public release (raised 2026-09-19)
+
+The repository went public on 2026-09-19 at github.com/petekp/vignette, renamed from Shotnote the
+same day. A downloadable build waits on three things, in order:
+
+- The tldraw key. The app ships only with one (AGENTS.md, the first rule), and the Hobby key is
+  applied for at tldraw.dev against the public repo. It reaches the build as
+  `VITE_TLDRAW_LICENSE_KEY` in the environment of `scripts/build.sh`; it must never be committed.
+- Notarization. `scripts/signing.env` names the Developer ID certificate, so a Release build is
+  signed, but a download is refused by Gatekeeper until it is notarized: `xcrun notarytool submit`
+  with a keychain profile for the App Store Connect API key, then `xcrun stapler staple`. No profile
+  exists on this Mac yet.
+- The release itself: a Release configuration build, zipped with `ditto -c -k --keepParent`, and a
+  GitHub Release carrying the zip, with the README's Get it section and the site's download line
+  pointing at it. Whether that is a script or a workflow is a separate decision; nothing is
+  committed for it yet.
+
+Publishing the skill on skills.sh (the entry below) waits on the same release.
+
 ## Ship the agent skill with the app (decided 2026-09-16)
 
 Built on 2026-09-18 on branch `todo6/integration` (`skills/vignette/SKILL.md` bundled, the
