@@ -402,11 +402,12 @@ private struct SelectionStrip: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
         // The pointer on the strip takes the reveal over from the keys, and takes it away on the
-        // way out: from here on the mouse is driving.
-        .onHover { model.stripRevealed = $0 ? .hover : nil }
+        // way out. Only its own: a strip that steps aside for the annotator and comes back keeps
+        // the labels a keyboard selection put out.
+        .onHover { if $0 { model.stripRevealed = .hover } else if model.stripRevealed == .hover { model.stripRevealed = nil } }
         .animation(Anim.spring(ui.hoverRevealDuration), value: model.stripRevealed)
         // A strip that goes while the cursor is on it gets no leaving hover.
-        .onDisappear { model.stripRevealed = nil }
+        .onDisappear { if model.stripRevealed == .hover { model.stripRevealed = nil } }
         // The box stays the grown width and the strip sits against its trailing edge: the right
         // edge never moves, and the labels grow into the room on the left that the box holds open.
         .frame(width: size.width + reveal, alignment: .trailing)
