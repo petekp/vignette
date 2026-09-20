@@ -119,8 +119,7 @@ the measurements and the reasoning; a rule here points at its note.
    `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; `selected`, `focused`,
    `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`, `scroll`,
    `viewport`, `safeBottom`, the room the Dock keeps under the column, feedback, panel,
-   `widthScale`, how wide the stack is drawn, `strip`, the selection strip's frame or null, and
-   `stripRevealed`, why its labels are out: `hover`, `keyboard`, or null),
+   `widthScale`, how wide the stack is drawn, and `strip`, the selection strip's frame or null),
    `transition` (phase), `annotator` (`current`, `frame`, `toolbar`, `pageState`, `port`, `webPid`,
    `windowVisible`, `tool`, `color`, and the zoom's own keys, which the zoom bullet below names),
    `drafts` (keys), `previews`, `memory` (rss and thumbnail cache in bytes), `backdrop`, and
@@ -312,16 +311,14 @@ the same driven sequence; a single run varies.
   `ui.selectionStripGap`, measured from the widest selected card (`docs/selection-strip-2026-09-18.md`).
   Only the column carries the hair of alpha that catches clicks and scrolls; the strip's side of
   the panel stays clear, so a click there still reaches the window underneath.
-- The cursor on the strip brings a label out beside each icon, and so does a selection built from
-  the keys (Shift+arrow, Space, Cmd+A), which is the case where nobody is going to move the mouse.
-  One value says why they are out, `model.stripRevealed` (`hover`, `keyboard`, nil); the pointer
-  takes it over the way it takes the focus, and the view only clears a reveal it set. Each row draws
-  its shortcut after the label from `ShotAction.Key.glyphs`, and `stripReveal(rows:)` measures both,
-  so the panel's room holds them. Copy on a card reveals the same way (`docs/hover-reveal-2026-09-17.md`)
-  and grows to the right from an icon that does not move; the strip keeps its right edge and grows
-  to the left, so a label never covers a card. The panel already holds that room, so nothing is
-  resized while the labels come out, and a row is one button, icon and label together, so the
-  button under the cursor stays under it. The strip stands aside while the annotator has an image,
+- The strip's labels are out for as long as a selection exists, whichever hand built it: a
+  selection is the moment the rows' names and shortcuts are wanted, and a strip that folded back to
+  icons when the pointer moved onto a card read as the strip losing interest (it used to reveal on
+  hover and on a keyboard selection, `docs/hover-reveal-2026-09-17.md`). Each row draws its shortcut
+  after the label from `ShotAction.Key.glyphs`, and `stripReveal(rows:)` measures both, so the
+  panel's room holds them. Copy on a card still reveals on hover and grows to the right from an
+  icon that does not move; the strip keeps its right edge and grows to the left, so a label never
+  covers a card. A row is one button, icon and label together. The strip stands aside while the annotator has an image,
   since it hangs inside the room the frame may grow into: the two places that ask for its placement
   refuse (`ThumbnailController.stripFrame` and `StackView.stripPlacement`), never `showsStrip`,
   which sizes the panel, because the panel's window is not resized while a session runs. The

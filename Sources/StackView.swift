@@ -376,8 +376,10 @@ private struct SelectionStrip: View {
 
     var body: some View {
         let cards = model.selectedCards()
-        let revealed = model.stripRevealed != nil
-        let out = revealed ? reveal : 0
+        // The labels are always out while the strip is up: a selection is the moment the rows'
+        // names and shortcuts are wanted, whichever hand built it.
+        let revealed = true
+        let out = reveal
         let labelBox = StackLayout.current.stripLabelBox(reveal: reveal)
         VStack(spacing: ui.buttonSpacing) {
             ForEach(Config.stripActions, id: \.id) { action in
@@ -403,13 +405,6 @@ private struct SelectionStrip: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
-        // The pointer on the strip takes the reveal over from the keys, and takes it away on the
-        // way out. Only its own: a strip that steps aside for the annotator and comes back keeps
-        // the labels a keyboard selection put out.
-        .onHover { if $0 { model.stripRevealed = .hover } else if model.stripRevealed == .hover { model.stripRevealed = nil } }
-        .animation(Anim.spring(ui.hoverRevealDuration), value: model.stripRevealed)
-        // A strip that goes while the cursor is on it gets no leaving hover.
-        .onDisappear { if model.stripRevealed == .hover { model.stripRevealed = nil } }
         // The box stays the grown width and the strip sits against its trailing edge: the right
         // edge never moves, and the labels grow into the room on the left that the box holds open.
         .frame(width: size.width + reveal, alignment: .trailing)

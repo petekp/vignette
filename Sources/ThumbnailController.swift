@@ -16,8 +16,6 @@ struct Card: Identifiable {
 /// Why the selection strip's labels are out. The cursor on the strip brings them out; so does a
 /// selection built from the keyboard, where the shortcuts beside the labels are what a hand on the
 /// keys needs. The mouse takes over when it moves onto a card or the strip, as the focus does.
-enum StripReveal: String { case hover, keyboard }
-
 @MainActor
 final class StackModel: ObservableObject {
     @Published var cards: [Card] = []          // index 0 is newest, drawn at the bottom
@@ -30,8 +28,6 @@ final class StackModel: ObservableObject {
     @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
     @Published var pressedCard: UUID? = nil
     @Published var overControl = false         // the mouse is on a card's button or circle, where a click does not draw
-    /// Why the selection strip's labels are out, or nil while they are in. See `StripReveal`.
-    @Published var stripRevealed: StripReveal? = nil
     /// A card is in the annotator. The strip stands aside for it: the strip hangs to the left of
     /// the column, which is further left than the room the annotator's frame is kept out of, so
     /// the two would overlap. The selection is untouched and the strip comes back when the session
@@ -197,8 +193,6 @@ final class ThumbnailController: NSObject {
             // annotator: the stack keeps them through the flight out, and a key there is about the
             // card that is flying, not the one the cursor happens to be over.
             if let id, self.model.isStack, self.panel.acceptsKeys, !self.transition.isActive { self.model.focused = id }
-            // A card under the pointer means the mouse is driving; the keyboard's reveal ends with it.
-            if id != nil, self.model.stripRevealed == .keyboard { self.model.stripRevealed = nil }
         }
         model.onSelectionChanged = { [weak self] added, removed in self?.queueFromSelection(added: added, removed: removed) }
     }
@@ -282,7 +276,7 @@ final class ThumbnailController: NSObject {
         guard showsStrip, let strip = layout.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
                                                             cards: cardSizes, showsBar: showsBar,
                                                             scroll: model.scroll, viewport: model.viewport) else { return nil }
-        let reveal = model.stripRevealed != nil ? layout.stripReveal(rows: StackLayout.stripRows) : 0
+        let reveal = layout.stripReveal(rows: StackLayout.stripRows)
         return layout.stripFrame(strip, panelFrame: panel.frame, scroll: model.scroll, reveal: reveal, safeBottom: area.safeBottom)
     }
 
@@ -309,7 +303,6 @@ final class ThumbnailController: NSObject {
                 "widthScale": model.widthScale,
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h),
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
-                "stripRevealed": model.stripRevealed?.rawValue as Any,
             ] as [String: Any],
             "transition": ["phase": "\(transition.phase)", "annotating": annotating?.shot.url.path as Any, "isActive": transition.isActive],
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
@@ -1007,16 +1000,12 @@ final class ThumbnailController: NSObject {
             return true
         }
         if chars == " " {
-            if let id = model.focused, let card = model.cards.first(where: { $0.id == id }) {
-                model.stripRevealed = .keyboard
-                toggle(card)
-            }
+            if let id = model.focused, let card = model.cards.first(where: { $0.id == id }) { toggle(card) }
             return true
         }
         if chars == "a" && mods == [.command] {
             // Nobody picked an order, so the column's own is the answer: oldest first, top to bottom.
             model.setSelection(model.cards.reversed().map(\.id))
-            model.stripRevealed = .keyboard
             relayout()
             return true
         }
@@ -1045,9 +1034,6 @@ final class ThumbnailController: NSObject {
         let next: Int
         if let current { next = max(0, min(model.cards.count - 1, current + delta)) } else { next = delta < 0 ? model.cards.count - 1 : 0 }
         if extend {
-            // The selection is being built from the keys, so the strip names its rows and their
-            // shortcuts without the mouse.
-            model.stripRevealed = .keyboard
             let here = current.map { model.cards[$0].id }
             if let here, model.selection.last == here, model.selection.dropLast().last == model.cards[next].id {
                 model.deselect([here])
@@ -1064,7 +1050,6 @@ final class ThumbnailController: NSObject {
         panel.acceptsKeys = false
         if panel.isKeyWindow { panel.resignKey() }
         model.focused = nil
-        if model.stripRevealed == .keyboard { model.stripRevealed = nil }
     }
 
     // MARK: Scrolling
