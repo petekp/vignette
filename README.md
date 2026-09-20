@@ -5,6 +5,16 @@ screenshot. Vignette watches the save folder and handles everything after: a flo
 thumbnail, a recent-screenshots stack, and a tldraw annotator that copies the result to
 your clipboard.
 
+## See it
+
+[![A minute of Vignette: a screenshot marked up and handed to Claude Code, the page changing in place, the recent stack, a stitch, and Claude's own screenshot arriving with a question drawn on it](docs/demo/vignette-demo.jpg)](docs/demo/vignette-demo.mp4)
+
+One minute, real footage, one take: grab a corner of a page, box the gap and name what goes
+there, paste the drawing into Claude Code, and the page changes in place. Then the recent stack,
+three shots stitched into one, and a screenshot from Claude landing in the stack with a
+question drawn on it, answered with one arrow. [Watch it](docs/demo/vignette-demo.mp4) (59 s, no
+sound).
+
 ## Get it
 
 The source is at [github.com/petekp/vignette](https://github.com/petekp/vignette), MIT licensed.
