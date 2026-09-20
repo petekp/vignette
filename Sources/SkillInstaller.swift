@@ -102,13 +102,21 @@ enum SkillInstaller {
             case .ours where found.stamp == stamp && matches(source: source, installed: folder):
                 return Result(root: root, path: folder, outcome: .unchanged)
             case .ours, .none:
+                // Staged beside the folder, marker included, and moved into place in one step. A
+                // copy that failed part way would otherwise leave a folder without its marker, which
+                // reads as foreign: neither install nor remove would touch it again.
+                let skills = folder.deletingLastPathComponent()
+                let staging = skills.appendingPathComponent(".\(skillName)-incoming")
                 do {
+                    try FileManager.default.createDirectory(at: skills, withIntermediateDirectories: true)
+                    try? FileManager.default.removeItem(at: staging)
+                    try FileManager.default.copyItem(at: source, to: staging)
+                    try marker(stamp).write(to: staging.appendingPathComponent(markerName), options: .atomic)
                     if found.state == .ours { try FileManager.default.removeItem(at: folder) }
-                    try FileManager.default.createDirectory(at: folder.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try FileManager.default.copyItem(at: source, to: folder)
-                    try marker(stamp).write(to: folder.appendingPathComponent(markerName), options: .atomic)
+                    try FileManager.default.moveItem(at: staging, to: folder)
                     return Result(root: root, path: folder, outcome: found.state == .ours ? .updated : .installed)
                 } catch {
+                    try? FileManager.default.removeItem(at: staging)
                     return Result(root: root, path: folder, outcome: .failed, detail: error.localizedDescription)
                 }
             }

@@ -54,8 +54,11 @@ const IMAGE_ID: TLShapeId = createShapeId('screenshot')
 let currentKey: string | null = null
 /// True when the user changed the canvas since the host last saw a rendering of it.
 let dirty = false
-/// True while `load` or `export` mutate the store, so those changes are not reported as drafts.
-let quiet = false
+/// Above zero while `load`, `export`, `build` or the colour pass mutate the store, so those
+/// changes are not reported as drafts. A count rather than a flag: `load` stays quiet for two
+/// frames after its queue slot ends, and an export queued behind it must not be unquieted when
+/// those frames pass.
+let quietDepth = 0
 let draftTimer: ReturnType<typeof setTimeout> | null = null
 /// Marks whose colour the heuristic has not picked for where they now are: drawn, moved, or
 /// resized since the last pick. Emptied when the hand lets go, before the draft goes to the host.
@@ -67,6 +70,10 @@ let previewMax = 0
 const DRAFT_DELAY_MS = 300
 /// How many frames `setView` waits for the host's resize to reach this process before it draws.
 const VIEW_FRAMES = 20
+/// How long one of those frames may take before `setView` stops waiting for it. WebKit pauses
+/// frame callbacks while the window is hidden or the screen is locked, and `setView` runs in the
+/// canvas queue: a wait that never ends there would hold every later load, park and build.
+const VIEW_FRAME_TIMEOUT_MS = 100
 /// How long a rendering waits for a font it embeds the first time; see `waitForEmbeddedFonts`.
 const FONT_RASTER_MS = 250
 
@@ -98,12 +105,26 @@ function silently(editor: Editor, fn: () => void) {
 /// mutating calls: tldraw delivers a snapshot load's changes to listeners on the next transaction,
 /// which for `load` is the camera fit one frame later.
 async function quietly<T>(fn: () => Promise<T>): Promise<T> {
-  quiet = true
+  quietDepth++
   try {
     return await fn()
   } finally {
-    quiet = false
+    quietDepth--
   }
+}
+
+/// The next frame, or `timeoutMs` later when frames are paused (a hidden window, a locked screen).
+function nextFrame(timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false
+    const once = () => {
+      if (done) return
+      done = true
+      resolve()
+    }
+    requestAnimationFrame(once)
+    setTimeout(once, timeoutMs)
+  })
 }
 
 /// The operations that stand the canvas on its head run one at a time, in the order the host
@@ -199,8 +220,7 @@ function applyColors(editor: Editor, key: string, ids: TLShapeId[]) {
     if (color && color !== props.color) picked.push({ id, color })
   }
   if (!picked.length) return
-  const was = quiet
-  quiet = true // the caller reports the draft this belongs to
+  quietDepth++ // the caller reports the draft this belongs to
   silently(editor, () => {
     // One case per shape a mark can be: `updateShape` takes the shape's own type, not the union.
     for (const { id, color } of picked) {
@@ -217,7 +237,7 @@ function applyColors(editor: Editor, key: string, ids: TLShapeId[]) {
       }
     }
   })
-  quiet = was
+  quietDepth--
 }
 
 /// The draft as the host should store it, with a rendering when the user changed it since the last one.
@@ -314,7 +334,7 @@ export function App() {
           ed.updateInstanceState({ isDebugMode: false })
           ed.store.listen(
             (entry) => {
-              if (quiet) return
+              if (quietDepth > 0) return
               dirty = true
               noteChanged(entry)
               scheduleDraft(ed)
@@ -345,11 +365,11 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
       clearTimeout(draftTimer)
       draftTimer = null
     }
-    quiet = true
+    quietDepth++
     try {
       loadImageQuietly(editor, p, scaleRef)
     } catch (err) {
-      quiet = false
+      quietDepth--
       // The message only. A WebKit stack names the bundle's served URL, and every served URL
       // starts with the per-launch token, which must never reach the log.
       postToNative({ type: 'log', message: 'load failed: ' + (err instanceof Error ? err.message : String(err)) })
@@ -390,7 +410,7 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
   // The load's store changes reach the listener during that first frame; drafts report from here on.
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      quiet = false
+      quietDepth--
       dirty = false
       postToNative({ type: 'loaded', key: p.key })
     })
@@ -451,11 +471,12 @@ async function setView(editor: Editor, request: ViewRequest): Promise<ViewResult
     // Within a pixel: the host's frame is fractional and a layout viewport is whole pixels, so the
     // size that arrives here can be one short of the size the host asked for.
     if (Math.abs(box.width - request.width) <= 1 && Math.abs(box.height - request.height) <= 1) break
-    await new Promise((r) => requestAnimationFrame(r))
+    await nextFrame(VIEW_FRAME_TIMEOUT_MS)
   }
   applyView(editor)
   // Two frames: the first carries this camera into a paint, the second has been on screen.
-  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  await nextFrame(VIEW_FRAME_TIMEOUT_MS)
+  await nextFrame(VIEW_FRAME_TIMEOUT_MS)
   const box = container.getBoundingClientRect()
   return { width: box.width, height: box.height, ratio: editor.getZoomLevel() / editor.getBaseZoom(), waited }
 }
@@ -678,7 +699,7 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
   const ratio = window.devicePixelRatio || 1
   const w = p.pixelWidth / ratio
   const h = p.pixelHeight / ratio
-  quiet = true
+  quietDepth++
   try {
     let made: { unnamed: TLShapeId[]; texts: PushedText[] } = { unnamed: [], texts: [] }
     // The image's own box, not the payload's: a stored draft carries the image shape it was made
@@ -717,7 +738,7 @@ async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<Par
       loadSnapshot(editor.store, before)
       editor.setSelectedShapes(selected)
     })
-    quiet = false
+    quietDepth--
   }
 }
 
@@ -749,7 +770,15 @@ async function renderDone(editor: Editor, scale: number) {
     postToNative({ type: 'done', png: null })
     return
   }
-  const png = await render(editor, scale)
+  let png: string | null = null
+  try {
+    png = await render(editor, scale)
+  } catch (err) {
+    // The host waits for `done` or `cancel` with no deadline of its own, so a rendering that
+    // throws (an image that will not decode, an SVG export that fails) still answers. The message
+    // only: a WebKit stack can name a served URL, which starts with the per-launch token.
+    postToNative({ type: 'log', message: 'done failed: ' + (err instanceof Error ? err.message : String(err)) })
+  }
   if (!png) return cancel(editor)
   dirty = false // the host has this rendering; no preview needed when the draft is parked
   postToNative({ type: 'done', png })

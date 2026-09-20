@@ -695,7 +695,9 @@ final class ThumbnailController: NSObject {
                 guard let self, self.transition.phase == .flyingOut(key) else { return }
                 self.send(.shown)
             }, arrived: { [weak self] in
-                guard let self, self.transition.phase == .annotating(key), let card = self.sessionCard else { return }
+                // On the key, not the phase: Done or Esc is accepted between `covered` and here,
+                // and the window then stays up through the park, still owed its shadow.
+                guard let self, self.transition.key == key, let card = self.sessionCard else { return }
                 self.onAnnotatorLanded?()
                 self.flights.dropShadow(id: card.id)
                 if self.loadedKeys.contains(key) { self.flights.lift(id: card.id) }   // else pageLoaded lifts it
@@ -805,10 +807,15 @@ final class ThumbnailController: NSObject {
         guard abs(next - model.widthScale) > 0.0001 else { return }
         var transaction = Transaction(animation: animated ? Anim.spring(ui.relayoutDuration) : nil)
         transaction.disablesAnimations = !animated
+        // Narrower cards are a shorter column; the panel keeps the height it has at rest. The
+        // scroll follows the column's height, so the cards in view stay in view and the column
+        // comes back to the same place when the stack widens again.
+        let before = drawnContentHeight
         withTransaction(transaction) {
             model.widthScale = next
-            // Narrower cards are a shorter column; the panel keeps the height it has at rest.
-            model.scroll = min(model.scroll, max(0, contentHeight - model.viewport))
+            let after = drawnContentHeight
+            let followed = before > 0 ? model.scroll * after / before : model.scroll
+            model.scroll = min(followed, max(0, after - model.viewport))
         }
     }
 
@@ -872,7 +879,7 @@ final class ThumbnailController: NSObject {
     /// The drag moved. Its place in the column is kept as a distance from the top of what is on
     /// screen, so the auto-scroll can keep selecting from the same point while the cards move under it.
     private func sweep(toYFromTop y: CGFloat) {
-        sweepFromTop = y - contentHeight + model.viewport + model.scroll
+        sweepFromTop = y - drawnContentHeight + model.viewport + model.scroll
         select(toYFromTop: y)
         updateAutoScroll()
     }
@@ -927,7 +934,7 @@ final class ThumbnailController: NSObject {
         let next = min(maxScroll, max(0, model.scroll + speed * dt))
         guard next != model.scroll else { return }
         model.scroll = next
-        select(toYFromTop: fromTop + contentHeight - model.viewport - model.scroll)
+        select(toYFromTop: fromTop + drawnContentHeight - model.viewport - model.scroll)
     }
 
     private func run(_ action: ShotAction, on cards: [Card]) {
@@ -1030,9 +1037,11 @@ final class ThumbnailController: NSObject {
 
     // MARK: Scrolling
 
-    private var contentHeight: CGFloat { layout.contentHeight(cards: cardSizes, showsBar: showsBar) }
+    /// The column's height as it is drawn now, at the stack's width scale. `layoutPanel` sizes the
+    /// panel from the full-width height instead, so a narrowed stack keeps the panel it comes back to.
+    private var drawnContentHeight: CGFloat { layout.contentHeight(cards: cardSizes, showsBar: showsBar) }
 
-    private var maxScroll: CGFloat { max(0, contentHeight - model.viewport) }
+    private var maxScroll: CGFloat { max(0, drawnContentHeight - model.viewport) }
 
     private func scroll(_ event: NSEvent) {
         guard visible, maxScroll > 0 else { return }
