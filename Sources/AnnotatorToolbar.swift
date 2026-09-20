@@ -31,7 +31,7 @@ final class AnnotatorToolbar {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false   // the bar draws its own; a window shadow cannot follow the animated content
-        panel.level = .floating
+        panel.level = AnnotationWindow.level
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.animationBehavior = .none
         panel.isMovable = false

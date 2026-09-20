@@ -545,7 +545,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         win.isOpaque = false
         win.backgroundColor = .clear
         win.hasShadow = false   // the frame view carries the shadow; the window itself is invisible
-        win.level = .floating
+        win.level = AnnotationWindow.level
         win.isMovableByWindowBackground = false
         win.isReleasedWhenClosed = false
         win.animationBehavior = .none
@@ -893,6 +893,10 @@ final class AnnotationWebView: WKWebView {
 
 /// Borderless windows refuse key status by default; the editor needs it for typing and shortcuts.
 final class AnnotationWindow: NSWindow {
+    /// Above the stack's backdrop blur (19) and the Dock (20), so the blur never paints over the
+    /// image, and under the stack and the flight layer (`.statusBar`, 25), so a flight image still
+    /// covers this window and the stack draws over its shadow. The toolbar shares it.
+    static let level = NSWindow.Level(rawValue: 21)
     var onCloseRequest: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
