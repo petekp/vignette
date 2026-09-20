@@ -186,8 +186,10 @@ final class ThumbnailController: NSObject {
             self.prefetchFlightImage(id)
             // Focus follows the pointer: one variable says where a key acts, and moving onto a card
             // moves it there. Leaving a card leaves the focus behind, so keys still act on the card
-            // the pointer last named. Only while the stack holds keys; otherwise the annotator has them.
-            if let id, self.model.isStack, self.panel.acceptsKeys { self.model.focused = id }
+            // the pointer last named. Only while the stack holds the keys and nothing is in the
+            // annotator: the stack keeps them through the flight out, and a key there is about the
+            // card that is flying, not the one the cursor happens to be over.
+            if let id, self.model.isStack, self.panel.acceptsKeys, !self.transition.isActive { self.model.focused = id }
             // A card under the pointer means the mouse is driving; the keyboard's reveal ends with it.
             if id != nil, self.model.stripRevealed == .keyboard { self.model.stripRevealed = nil }
         }
