@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 13
+export const PROTOCOL = 14
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
@@ -15,31 +15,38 @@ export interface LoadPayload {
   previewMaxPixel: number
   /** The image's draft as the host stored it, or null for a fresh canvas. */
   snapshot: TLEditorSnapshot | null
+  /**
+   * Where the editor sits inside the page: the annotator's frame. The page is laid out at the room
+   * the frame may grow within and the editor is this part of it, so the image opens fitted to the
+   * frame. Absent for a `build`, which shows nothing.
+   */
+  frame?: PageRect
 }
 
-/**
- * The picture the page draws when a zoom comes to rest. `ratio` is how far the image is magnified
- * past the size at which the whole of it fits the window, which is tldraw's own base zoom (1 puts
- * the whole image in the window); `x` and `y` are the middle of the visible part, as fractions of
- * the image; `width` and `height` are the size the host has laid the window out at, which the page
- * waits for before it applies the view. The window does not carry the image's shape while a zoom
- * has grown it, so above 1 the visible part is a different fraction of the image in each direction.
- */
-export interface ViewRequest {
-  ratio: number
+/** A rect in the page's coordinates: CSS points of the web view, x from its left and y from its top. */
+export interface PageRect {
   x: number
   y: number
   width: number
   height: number
 }
 
-/** What the page painted, once it has: the size it used, the magnification it ended up at, and
- *  how many frames it waited for the host's resize to reach this process. */
+/**
+ * The picture the page draws when a zoom comes to rest: where the editor sits inside the page,
+ * which is the annotator's frame, and where the image is drawn, both in the page's points. The
+ * image rect is the one the host's stand-in is drawing, so the two pictures are the same rect by
+ * construction. The page places the editor, moves the camera, and answers once it has painted.
+ */
+export interface ViewRequest {
+  frame: PageRect
+  image: PageRect
+}
+
+/** What the page painted, once it has: the editor's size and where the image is, in the page's points. */
 export interface ViewResult {
   width: number
   height: number
-  ratio: number
-  waited: number
+  image: PageRect
 }
 
 /**

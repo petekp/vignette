@@ -195,25 +195,21 @@ final class StandInController {
 
     // MARK: The hand-over
 
-    /// Gives the picture back to the page: it is laid out at the frame's size and given the exact
-    /// view the stand-in is showing. The page answers when it has painted that, and the stand-in
-    /// fades out over it. The page is covered, never hidden, so its frame callbacks keep running
-    /// and the answer arrives.
+    /// Hands the picture back to the page: the page is put where the room is, given the frame's
+    /// place inside it and the image's rect (`view`), and answers once it has painted that. The
+    /// stand-in fades out over it. The page is covered, never hidden, so its frame callbacks keep
+    /// running and the answer arrives. The page is never resized here: it is laid out at the room
+    /// once per image, and a rest only moves it so it stays put on screen while the frame moved.
     ///
     /// `retrying` is the second attempt, made once when the first one does not answer inside an
     /// export's timeout: the page answers from a `requestAnimationFrame`, which WebKit stops while
     /// the screen is locked. After that the stand-in comes down without an answer, since a picture
     /// that never leaves covers an editor the user can still draw in.
-    func handOver(to webView: WKWebView, size: CGSize, ratio: CGFloat, center: CGPoint,
-                  pageReady: Bool, retrying: Bool = false) {
+    func handOver(to webView: WKWebView, at place: CGRect, view: ViewRequest, pageReady: Bool, retrying: Bool = false) {
         guard picture != nil, windowVisible(), atRest() else { return }
         let epoch = self.epoch
-        // Only when the frame's size really changed: past the window's limit a zoom moves the
-        // magnification alone, and a resize the page has to answer costs it a relayout.
-        if webView.frame.size != size { webView.frame = CGRect(origin: .zero, size: size) }
+        if webView.frame != place { webView.frame = place }
         guard pageReady else { fade(); return }
-        let request = ViewRequest(ratio: Double(ratio), x: Double(center.x), y: Double(center.y),
-                                  width: Double(size.width), height: Double(size.height))
         let generation = self.generation
         let started = CACurrentMediaTime()
         var answered = false
@@ -226,28 +222,31 @@ final class StandInController {
             answered = true
             Log.write("[annotate] view timeout after \(Int(timeout)) s\(retrying ? " (second try)" : "")")
             guard !retrying, self.windowVisible() else { self.fade(); return }
-            self.handOver(to: webView, size: size, ratio: ratio, center: center,
-                          pageReady: pageReady, retrying: true)
+            self.handOver(to: webView, at: place, view: view, pageReady: pageReady, retrying: true)
         }
-        webView.callAsyncJavaScript(PageAPI.setView(request).script, arguments: [:], in: nil, in: .page) { [weak self] result in
+        webView.callAsyncJavaScript(PageAPI.setView(view).script, arguments: [:], in: nil, in: .page) { [weak self] result in
             guard let self, !answered, self.epoch == epoch, self.generation == generation else { return }
             answered = true
             if case .failure(let error) = result {
                 Log.write("[web] error view failed: \(String(describing: error).replacingOccurrences(of: "\n", with: " "))")
-            } else if let view = ViewResult(body: try? result.get()) {
-                let asked = String(format: "%.4f", ratio), painted = String(format: "%.4f", view.ratio)
-                Log.write("[annotate] view \(Int((CACurrentMediaTime() - started) * 1000))ms ratio=\(asked) painted=\(painted) waited=\(view.waited)")
-                // The page paints at the size and the magnification that reached its process. A gap
-                // wider than the layout's own rounding, or a magnification that is not the one
-                // asked for, means its picture is not this frame's, so it gets a line.
-                if abs(view.width - Double(size.width)) > 1 || abs(view.height - Double(size.height)) > 1
-                    || abs(view.ratio - Double(ratio)) > 0.001 {
-                    Log.write("[annotate] view mismatch page=\(Int(view.width))x\(Int(view.height))@\(painted) host=\(Int(size.width))x\(Int(size.height))@\(asked)")
+            } else if let painted = ViewResult(body: try? result.get()) {
+                let asked = view.image, got = painted.image
+                Log.write("[annotate] view \(Int((CACurrentMediaTime() - started) * 1000))ms image=\(Int(got.width))x\(Int(got.height))@\(Int(got.x)),\(Int(got.y))")
+                // The page paints the editor at the frame's size and the image where it was asked.
+                // The stand-in stretches the picture to the frame and the page scales it evenly,
+                // so they differ by the frame's rounding of the image's shape, under a point at
+                // the fit and that times the magnification above it. A gap wider than that means
+                // the page's picture is not the stand-in's, so it gets a line.
+                let tolerance = 1 + asked.width / max(1, view.frame.width)
+                if abs(painted.width - view.frame.width) > 1 || abs(painted.height - view.frame.height) > 1
+                    || abs(got.x - asked.x) > tolerance || abs(got.y - asked.y) > tolerance
+                    || abs(got.width - asked.width) > tolerance || abs(got.height - asked.height) > tolerance {
+                    Log.write("[annotate] view mismatch page=\(Int(painted.width))x\(Int(painted.height)) image=\(Int(got.width))x\(Int(got.height))@\(Int(got.x)),\(Int(got.y)) host=\(Int(view.frame.width))x\(Int(view.frame.height)) image=\(Int(asked.width))x\(Int(asked.height))@\(Int(asked.x)),\(Int(asked.y))")
                 }
             } else {
                 // The page refused the numbers and left its camera where it was, so it is showing
                 // the view it had. Uncovering that beats a frozen picture over a live editor.
-                Log.write("[web] error view refused ratio=\(String(format: "%.4f", ratio))")
+                Log.write("[web] error view refused image=\(Int(view.image.width))x\(Int(view.image.height))")
             }
             self.fade()
         }

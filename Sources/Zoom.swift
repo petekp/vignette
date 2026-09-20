@@ -196,16 +196,6 @@ enum Zoom {
         return (window, CGSize(width: level / window.width, height: level / window.height))
     }
 
-    /// What the page is told a zoom has come to rest at: how far the image is magnified past the
-    /// size at which the whole of it fits the frame. That fit is tldraw's own base zoom, so this is
-    /// the number its camera multiplies, and 1 means the whole image is in the window. The frame no
-    /// longer carries the image's shape, so the fit is set by the side the frame has grown least
-    /// in, and the level is measured against that side.
-    static func pageRatio(level: CGFloat, window: CGSize) -> CGFloat {
-        let least = min(window.width, window.height)
-        guard level.isFinite, least.isFinite, least > 0 else { return 1 }
-        return max(1, level / least)
-    }
 }
 
 /// The magnification's side of a zoom step in flight: the visible middle when the input arrived,

@@ -30,7 +30,7 @@ the measurements and the reasoning; a rule here points at its note.
 - `web/` React + tldraw editor page. `web/src/config.ts` holds the editor knobs. `App.tsx` is the
   component, the `window.shotnote` surface, the draft lifecycle, and `Hotkeys`; `canvas.ts` owns
   the canvas queue and the quiet count; `render.ts` holds everything that borrows the canvas for
-  a rendering (export, build, overlay, pushed text); `view.ts` the camera and the zoom input;
+  a rendering (export, build, overlay, pushed text); `view.ts` the camera, the editor's place in the page, and the zoom keys;
   `colors.ts` the colour pass over marks; `contrast.ts` the sampling behind it.
 - `Sources/Bridge.swift` and `web/src/bridge.ts` mirror each other. They are the entire
   contract between Swift and the page. Change both or neither, and bump `bridgeProtocolVersion`
@@ -458,9 +458,11 @@ the same driven sequence; a single run varies.
   that is a count, not a flag, because a load stays quiet past the end of its queue slot. The
   transition reducer knows nothing about a build, on purpose: nothing is shown, so no card, dim,
   or flight is involved.
-- Zoom belongs to the app, not the page. A pinch, cmd+wheel, or cmd+plus/minus/0 sends a
-  `zoom` message (tldraw never sees those wheels; a plain wheel still pans a magnified image) and
-  `AnnotationController.zoom(by:at:as:)` moves one number, `zoomLevel`: how far the image is
+- Zoom belongs to the app, not the page. The pinch and a wheel with cmd or ctrl held are taken
+  from AppKit before WebKit sees them (`AnnotationWebView`): they arrive with the trackpad's phases
+  and without a frame of latency, tldraw never sees them, and a plain wheel still pans a magnified
+  image. Only cmd+plus/minus/0 comes from the page, as a `zoom` message. All of them reach
+  `AnnotationController.zoom(by:at:as:)`, which moves one number, `zoomLevel`: how far the image is
   magnified past the frame it opened in. The picture is magnified uniformly by that level, so the
   image is never stretched; the frame is not, and each of its sides grows with the level until that
   side fills the room it was given (the visible screen, less the strip the recent stack keeps).
@@ -468,13 +470,21 @@ the same driven sequence; a single run varies.
   level in each direction: a side's growth is `min(level, reach)` and the magnification in that
   direction takes what is left. The two sides reach the room at different levels, so between them
   the frame does not carry the image's shape and the visible part of the image is a different
-  fraction in each direction. Zooming out reverses that and stops at the fitted size with a short
-  pull that springs back. One spring carries the level, ticked by the screen's display link; a
-  gesture's spring is short, a key's, a double tap's and a fit's longer, and a step aimed elsewhere
-  mid-spring blends its anchor (`ZoomAim`) instead of stepping sideways. The window's growth is not
-  aimed: each side grows into the room beside it, which leaves exactly one anchor per direction
-  (`Zoom.anchor(fitted:within:)`), read off the frame on screen at every step
-  (`Zoom.anchor(reproducing:fitting:or:)`) so a nudged frame does not carry its error forward.
+  fraction in each direction. Zooming out reverses that and stops at the fitted size. Only a hand
+  pulls below it, with a short pull that springs back when the fingers lift (the pinch's and the
+  wheel's `ended` phase, `release`); a key or a mouse wheel's notch, which has no phases, stops at
+  the fit, and an input that moves nothing is dropped before it raises the stand-in. One spring
+  carries the level, ticked by the screen's display link and retargeted in place by every input
+  (`Tween.animate` keeps its link and its last tick, because a link made anew per input fired at
+  an arbitrary part of the refresh and read as uneven steps); a gesture's spring is short, a
+  key's, a double tap's and a fit's longer, and a step aimed elsewhere mid-spring blends its anchor
+  (`ZoomAim`) instead of stepping sideways. The window's growth is not aimed: each side grows into
+  the room beside it, which leaves exactly one anchor per direction (`Zoom.anchor(fitted:within:)`),
+  read off the frame on screen at every step (`Zoom.anchor(reproducing:fitting:or:)`) so a nudged
+  frame does not carry its error forward. Below the fit the frame keeps the line it is on (the
+  room's for a zoom-out that runs on through the fit, the cursor's for a pull from rest); an anchor
+  worked out to hold the cursor's point divided by the shrink, which passes through zero at the
+  fit, and stepped the frame 40 points sideways (`docs/zoom-input-2026-09-19.md`).
   The cursor names which part of the image is magnified once a side has filled the room
   (`ZoomPan`), and a cursor near an edge of the picture is pulled onto it first
   (`Zoom.pulledToEdges`, `ui.zoomEdgeBandPoints`, `ui.zoomEdgePull`) so that edge stays in view; the
@@ -499,16 +509,19 @@ the same driven sequence; a single run varies.
   `sessionEnded()`, `pageRestarted()`, and `forget()`. Each tick sets the frame's rect from
   `Zoom.frame` and the picture's rect inside it from `Zoom.picture` in one run loop turn, so both
   reach the window server in one commit. `moveFrame` is the only place the frame's rect is set and
-  `frameOnScreen` reads it back. The page is not called at all while a zoom moves. At rest the web
-  view is laid out at the frame's size rounded up to whole points and given the exact view through
-  `setView` (the magnification and the middle of the visible part, as fractions of the image);
-  the page answers when it has painted that, and the stand-in crossfades out, but only while the
-  zoom is still standing still. The page is covered, never hidden, because a hidden view's frame
-  callbacks pause and the answer would never come. `ratio` is how far the image is magnified past
-  the size at which the whole of it fits the window, which is tldraw's base zoom; with a frame that
-  no longer carries the image's shape that fit is set by the side the frame has grown least in
-  (`Zoom.pageRatio`). `[annotate] view <ms> ratio=… painted=… waited=…` reports each handover and
-  a gap between the two, or between the sizes, is one `[annotate] view mismatch` line. A page that
+  `frameOnScreen` reads it back. The page is not called at all while a zoom moves. The web view is
+  laid out once per image at the whole room the frame may grow within (`pagePlace`), never resized
+  by a zoom, since a WKWebView resize is a relayout in another process at every rest; the frame
+  moves over it, and at each rest the page is moved back so it stays put on screen and given the
+  exact view through `setView`: the frame's rect inside the page, where the page puts its editor
+  (the `.editor` element), and the image's rect, which is the stand-in's own `Zoom.picture`, so the
+  two pictures are one rect by construction. `load` carries the same frame, so the image opens
+  fitted to it. The page answers when it has painted that, and the stand-in crossfades out, but
+  only while the zoom is still standing still. The page is covered, never hidden, because a
+  hidden view's frame callbacks pause and the answer would never come.
+  `[annotate] view <ms> image=WxH@x,y` reports each handover, and a gap between what was asked and
+  what was painted wider than the frame's rounding of the image's shape is one
+  `[annotate] view mismatch` line. A page that
   refuses the view logs `[web] error view refused`, and a hand-over with no answer inside an
   export's timeout logs `[annotate] view timeout` and is made once more; the stand-in comes down
   either way, since a picture that never leaves covers a live editor. The overlay is

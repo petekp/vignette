@@ -61,7 +61,3 @@ export const PUSHED_TEXT_MIN_WIDTH = 0.15
 /// current size.
 export const ZOOM_STEP = 1.25
 
-/// How far a wheel or a pinch zooms: the window's size is multiplied by `exp(-deltaY * this)`, so
-/// this is the magnification per wheel unit. A pinch-out arrives as a negative deltaY and grows
-/// the window.
-export const WHEEL_ZOOM_RATE = 0.01

@@ -297,21 +297,6 @@ final class ZoomTests: XCTestCase {
         XCTAssertEqual(stuck.camera, CGSize(width: 3, height: 3))
     }
 
-    func testThePageIsToldTheMagnificationPastTheWholeImageFitting() {
-        let reach = CGSize(width: 4, height: 2)
-        // While any side is still growing the whole image is in the window: nothing to magnify.
-        for level in [1.0, 1.5, 2.0] as [CGFloat] {
-            let window = Zoom.split(level: level, reach: reach, pull: 0.3).window
-            XCTAssertEqual(Zoom.pageRatio(level: level, window: window), 1, accuracy: 1e-9, "level \(level)")
-        }
-        // Past the first side's limit the ratio is the level over that side's growth.
-        XCTAssertEqual(Zoom.pageRatio(level: 3, window: Zoom.split(level: 3, reach: reach, pull: 0.3).window),
-                       1.5, accuracy: 1e-9)
-        XCTAssertEqual(Zoom.pageRatio(level: 8, window: Zoom.split(level: 8, reach: reach, pull: 0.3).window),
-                       4, accuracy: 1e-9)
-        XCTAssertEqual(Zoom.pageRatio(level: .nan, window: Zoom.none), 1, "the page refuses anything but a number")
-    }
-
     func testAPullBelowTheFittedSizeShowsAFractionOfItself() {
         // The window gives a little and the page is not involved, which is what springs back.
         let pulled = Zoom.split(level: 0.5, reach: CGSize(width: 2, height: 2), pull: 0.3)

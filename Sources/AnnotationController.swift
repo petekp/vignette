@@ -117,8 +117,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// The fit the window makes on its way out, before the card flies back. Shorter than a step:
     /// it is the start of the card leaving rather than a zoom the user asked for.
     private let fitToCloseSeconds = 0.2
-    /// Set when the spring has arrived, so the page is laid out at its new size once, on the next
-    /// turn of the run loop, rather than inside a display link tick.
+    /// Set when the spring has arrived, so the page is handed the view once, on the next turn of
+    /// the run loop, rather than inside a display link tick.
     private var pageLayoutPending = false
     /// What is on screen in place of the page while a zoom moves, and the hand-over that gives the
     /// picture back at rest. It owns its own outstanding page calls; see `StandInController`.
@@ -143,6 +143,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let webView = AnnotationWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
         webView.navigationDelegate = self
         webView.onMagnify = { [weak self] magnification, phase, location in self?.pinch(magnification, phase: phase, at: location) }
+        webView.onZoomWheel = { [weak self] event in self?.wheel(event) }
         webView.onSmartMagnify = { [weak self] location in
             guard let self else { return }
             smartZoom(at: cursorFraction(location))
@@ -178,7 +179,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         zoomTween.set(1)
         place(win, frame: frame)
         standIn.prepare(for: shot.url, maxPixel: standInPixels)
-        resizeWebView()
+        placeWebView()
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         webView.layoutSubtreeIfNeeded()
@@ -186,7 +187,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         win.ignoresMouseEvents = true
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        sendImage(shot, windowSize: frame.size)
+        sendImage(shot)
     }
 
     /// Asks the page for the annotations alone, for the stand-in to lay over the screenshot.
@@ -239,14 +240,22 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     func zoom(by factor: Double?, at cursor: CGPoint?, as input: ZoomInput) {
         guard window != nil, fittedFrame.width > 0 else { return }
         let cursor = cursor.map(Zoom.clamped) ?? Zoom.center
+        let target: CGFloat
+        if let factor, factor.isFinite, factor > 0 {
+            // Only a hand pulls below the fit: a key or a mouse wheel's notch stops at it, as it
+            // does in Preview, since there is no gesture to let go of.
+            let floor = input == .gesture ? minLevel : 1
+            target = min(maxLevel, max(floor, zoomTarget * CGFloat(factor)))
+        } else {
+            target = 1
+        }
+        // An input that moves nothing (a notch out at the fit, cmd+0 at rest) is over here: raising
+        // the stand-in for it would only hand the picture straight back.
+        guard target != zoomTarget || zoomTween.value != zoomTarget else { return }
+        zoomTarget = target
         // The picture becomes the app's own before the frame moves: the page is drawn in another
         // process and cannot keep step with a frame that moves every refresh.
         raiseStandIn()
-        if let factor, factor.isFinite, factor > 0 {
-            zoomTarget = min(maxLevel, max(minLevel, zoomTarget * CGFloat(factor)))
-        } else {
-            zoomTarget = 1
-        }
         aim(at: cursor, to: zoomTarget)
         aimPan(at: cursor)
         zoomTween.animate(to: zoomTarget, duration: motionScaled(input == .gesture ? trackingSeconds : stepSeconds),
@@ -336,26 +345,35 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// Hands the picture back to the page at the view it is showing; see `StandInController`.
+    /// The image rect is the stand-in's own, so the two pictures are one rect by construction.
     private func handOverToPage() {
-        guard let webView else { return }
-        standIn.handOver(to: webView, size: pageSize, ratio: Zoom.pageRatio(level: zoomLevel, window: zoomWindow),
-                         center: zoomCenter, pageReady: pageReady)
+        guard let webView, let container, let place = pagePlace else { return }
+        let picture = Zoom.picture(in: container.bounds, camera: canvasZoom, center: zoomCenter)
+        standIn.handOver(to: webView, at: place,
+                         view: ViewRequest(frame: pageRect(container.bounds, in: place), image: pageRect(picture, in: place)),
+                         pageReady: pageReady)
     }
 
-    /// The size the page is laid out at: the frame's own size rounded up to whole points. A page's
-    /// layout viewport is a whole number of CSS pixels, so a frame 1318.8 points wide would leave
-    /// its last fifth of a point uncovered and the picture would end short of the frame; rounded
-    /// up, the page covers the frame and the container's mask clips the fraction over.
-    private var pageSize: CGSize {
-        guard let container else { return .zero }
-        return CGSize(width: ceil(container.bounds.width), height: ceil(container.bounds.height))
+    /// Where the page sits inside the frame's container: the whole room the frame may grow within,
+    /// so the page is laid out once per image and never resized by a zoom, which is a relayout in
+    /// another process each time. The frame moves over it; at each rest the page is moved back so
+    /// it stays put on screen, and the editor inside it is placed at the frame (`pageRect`).
+    private var pagePlace: CGRect? {
+        guard let onScreen = frameOnScreen, let room = growthLimit else { return nil }
+        return CGRect(x: room.minX - onScreen.minX, y: room.minY - onScreen.minY,
+                      width: ceil(room.width), height: ceil(room.height))
     }
 
-    /// Lays the page out at the size it is drawn at, so it renders at the screen's own resolution.
-    /// `prepare` calls it directly: there is nothing on screen yet.
-    private func resizeWebView() {
-        guard let webView else { return }
-        webView.frame = CGRect(origin: .zero, size: pageSize)
+    /// A rect in the container's coordinates as the page sees it: CSS points of the web view at
+    /// `place`, x from its left and y from its top.
+    private func pageRect(_ rect: CGRect, in place: CGRect) -> PageRect {
+        PageRect(x: rect.minX - place.minX, y: place.maxY - rect.maxY, width: rect.width, height: rect.height)
+    }
+
+    /// Lays the page out at the room. `prepare` calls it directly: there is nothing on screen yet.
+    private func placeWebView() {
+        guard let webView, let place = pagePlace else { return }
+        webView.frame = place
     }
 
     /// The spring has arrived. A pull below the fitted size lets go here; otherwise the page takes
@@ -382,6 +400,26 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         default: zoom(by: Double(1 + magnification), at: cursorFraction(locationInWindow), as: .gesture)
         }
     }
+
+    /// Cmd+wheel or ctrl+wheel, straight from AppKit like the pinch: the event never crosses into
+    /// the web process, so it arrives with the trackpad's phases and without a frame of latency.
+    /// A trackpad's wheel is a gesture, and lifting the fingers releases the pull below the fit;
+    /// momentum after the lift is ignored, as a pinch's end is, so the zoom stops where the hand
+    /// did. A mouse wheel has no phases: each notch is a step, and it stops at the fit.
+    private func wheel(_ event: NSEvent) {
+        if event.phase.contains(.ended) || event.phase.contains(.cancelled) { release(); return }
+        guard event.momentumPhase.isEmpty else { return }
+        let dy = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * Self.wheelLinePoints
+        guard dy != 0, dy.isFinite else { return }
+        let cursor = cursorFraction(event.locationInWindow)
+        zoom(by: exp(dy * Self.wheelZoomRate), at: cursor, as: event.phase.isEmpty ? .step : .gesture)
+    }
+
+    /// How much one point of wheel travel zooms: a factor of e to this per point, so 100 points
+    /// of scroll is a zoom of e (2.7 times) in either direction.
+    private static let wheelZoomRate = 0.01
+    /// A line of a mouse wheel's notch in points, for wheels that report lines rather than points.
+    private static let wheelLinePoints: CGFloat = 10
 
     /// The fingers lifted. A pull below the fitted size lets go now, rather than when the spring
     /// catches up with it.
@@ -566,8 +604,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         container.layer?.masksToBounds = true
         container.autoresizesSubviews = true
         webView.frame = container.bounds
-        // Sized by hand: a moving zoom leaves the page at the size it was laid out at, under the
-        // stand-in, and lays it out again once, at rest.
+        // Placed by hand: the page is laid out at the room, not the frame, and only moved at rest.
         webView.autoresizingMask = []
         container.addSubview(webView)
         frameView.addSubview(container)
@@ -588,16 +625,18 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         container?.layer?.borderColor = NSColor.white.withAlphaComponent(ui.cardBorderOpacity).cgColor
     }
 
-    private func sendImage(_ shot: Screenshot, windowSize: NSSize) {
+    /// Sends the image with the editor's place inside the page, which is the frame as laid out now.
+    private func sendImage(_ shot: Screenshot) {
         guard let size = Thumbnailer.pixelSize(of: shot.url) else {
             Log.write("[annotate] could not read image \(shot.url.path)")
             return
         }
         loadStarted[shot.url.path] = CACurrentMediaTime()
+        let frame = container.flatMap { c in pagePlace.map { pageRect(c.bounds, in: $0) } }
         let payload = LoadPayload(
             key: shot.url.path,
             mimeType: LocalServer.mimeType(for: shot.url.pathExtension),
-            pixelWidth: size.width, pixelHeight: size.height)
+            pixelWidth: size.width, pixelHeight: size.height, frame: frame)
         let load = PageAPI.load(payload, snapshot: draftSnapshot?(shot.url.path))
         if pageReady { call(load) } else { pendingCall = load }
     }
@@ -716,7 +755,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         room = nil
         let win = window ?? makeWindow(webView)
         place(win, frame: frame)
-        resizeWebView()
+        placeWebView()
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         win.makeKeyAndOrderFront(nil)
@@ -766,7 +805,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             colorIDs = markColors.map(\.id)
             if let call = pendingCall { self.call(call); pendingCall = nil }
             // After a web process restart the window is still up: put its image and stored draft back.
-            else if let shot = current, let container { sendImage(shot, windowSize: container.bounds.size) }
+            else if let shot = current { sendImage(shot) }
             onPageReady?()
         case .tool(let tool, let color):
             toolbar.model.tool = tool
@@ -793,8 +832,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             // too. The draft is already debounced behind the last change, so this is as well.
             refreshOverlay(for: key)
         case .zoom(let factor, let at):
-            // A cursor names a gesture: the wheel and the pinch send the point they are over, a
-            // key sends none. The two differ only in how long their spring is.
+            // The zoom keys. The wheel and the pinch never reach the page: `AnnotationWebView`
+            // takes them, so a cursor here is a leftover and treated as a gesture's.
             zoom(by: factor, at: at, as: at == nil ? .step : .gesture)
         case .smartZoom(let at):
             // The page has decided this double-click is not tldraw's: the tool is select and the
@@ -883,8 +922,15 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
 final class AnnotationWebView: WKWebView {
     var onMagnify: ((CGFloat, NSEvent.Phase, NSPoint) -> Void)?
     var onSmartMagnify: ((NSPoint) -> Void)?
+    /// A wheel with cmd or ctrl held. Taken here so tldraw never sees it: it would zoom its own
+    /// camera, and the page would see it a frame late and without the trackpad's phases.
+    var onZoomWheel: ((NSEvent) -> Void)?
     override func magnify(with event: NSEvent) {
         onMagnify?(event.magnification, event.phase, event.locationInWindow)
+    }
+    override func scrollWheel(with event: NSEvent) {
+        if !event.modifierFlags.intersection([.command, .control]).isEmpty { onZoomWheel?(event); return }
+        super.scrollWheel(with: event)
     }
     override func smartMagnify(with event: NSEvent) {
         onSmartMagnify?(event.locationInWindow)

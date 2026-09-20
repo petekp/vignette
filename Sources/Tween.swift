@@ -45,19 +45,23 @@ final class Tween: NSObject {
     @objc private func linkTick(_ link: CADisplayLink) { tick() }
 
     func animate(to target: CGFloat, duration: Double, curve: String = "easeOut", completion: (() -> Void)? = nil) {
-        stopTicking()
         self.completion = completion
         guard duration > 0, target != value else { set(target); completion?(); return }
         if curve == "spring" {
             // A critically damped step response is within 1% of its target at omega * t = 6.6.
-            spring = (target, 6.6 / duration, CACurrentMediaTime())
+            // A spring already ticking keeps its display link and its last tick: a gesture
+            // retargets it at every input, and a link made anew each time fires its first tick at
+            // an arbitrary part of the refresh, which read as uneven steps (measured: consecutive
+            // steps of 33, 69, 40, and 65 pixels under a wheel that moved evenly).
+            let lastTick = spring?.lastTick ?? CACurrentMediaTime()
+            spring = (target, 6.6 / duration, lastTick)
             start = nil
         } else {
             start = (CACurrentMediaTime(), value, target, duration, curve)
             spring = nil
             velocity = 0
         }
-        startTicking()
+        if link == nil && timer == nil { startTicking() }
     }
 
     func set(_ target: CGFloat) {

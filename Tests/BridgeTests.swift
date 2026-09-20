@@ -95,7 +95,11 @@ final class BridgeTests: XCTestCase {
         // The argument must be one JSON object: parse what the script passes to load().
         let start = stored.range(of: "load(")!.upperBound
         let object = try JSONSerialization.jsonObject(with: Data(stored[start...].dropLast(2).utf8)) as? [String: Any]
-        XCTAssertEqual(object?.keys.sorted(), ["key", "mimeType", "pixelHeight", "pixelWidth", "previewMaxPixel", "snapshot"])
+        XCTAssertEqual(object?.keys.sorted(), ["key", "mimeType", "pixelHeight", "pixelWidth", "previewMaxPixel", "snapshot"],
+                       "a build names no frame, and the key is left out rather than sent as null")
+        let placed = LoadPayload(key: "/a.png", mimeType: "image/png", pixelWidth: 10, pixelHeight: 20,
+                                 frame: PageRect(x: 306, y: 129, width: 900.5, height: 561))
+        XCTAssertTrue(PageAPI.load(placed, snapshot: nil).script.contains(#""frame":{"height":561,"width":900.5,"x":306,"y":129}"#))
     }
 
     func testBuildScriptCarriesTheImageItsDraftAndTheMarks() throws {
@@ -139,15 +143,17 @@ final class BridgeTests: XCTestCase {
     /// The host waits for the page's answer before it takes the stand-in away, so this one is
     /// awaited too, and it carries the whole view: the magnification, the middle, and the size.
     func testTheViewIsAwaitedAndCarriesTheWholePicture() throws {
-        let script = PageAPI.setView(ViewRequest(ratio: 2.5, x: 0.25, y: 0.75, width: 936.5, height: 872)).script
+        let script = PageAPI.setView(ViewRequest(frame: PageRect(x: 306, y: 129, width: 936.5, height: 872),
+                                                 image: PageRect(x: -100, y: 29, width: 1200, height: 1072))).script
         XCTAssertTrue(script.hasPrefix("return window.shotnote ? await window.shotnote.setView("), script)
         let start = script.range(of: "setView(")!.upperBound
         let end = script.range(of: ") : null;")!.lowerBound
         let view = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(script[start..<end].utf8)) as? [String: Any])
-        XCTAssertEqual(view["ratio"] as? Double, 2.5)
-        XCTAssertEqual(view["x"] as? Double, 0.25)
-        XCTAssertEqual(view["y"] as? Double, 0.75)
-        XCTAssertEqual(view["width"] as? Double, 936.5)
-        XCTAssertEqual(view["height"] as? Double, 872)
+        XCTAssertEqual((view["frame"] as? [String: Double])?["width"], 936.5)
+        XCTAssertEqual((view["image"] as? [String: Double])?["x"], -100)
+        XCTAssertEqual((view["image"] as? [String: Double])?["height"], 1072)
+        let answer = ViewResult(body: ["width": 936, "height": 872, "image": ["x": -100, "y": 29, "width": 1200, "height": 1072]])
+        XCTAssertEqual(answer?.image, PageRect(x: -100, y: 29, width: 1200, height: 1072))
+        XCTAssertNil(ViewResult(body: ["width": 936, "height": 872]), "an answer without the image is no answer")
     }
 }

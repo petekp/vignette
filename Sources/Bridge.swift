@@ -3,7 +3,7 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 13
+let bridgeProtocolVersion = 14
 
 /// Sent to the page as `window.shotnote.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
@@ -15,21 +15,29 @@ struct LoadPayload: Encodable, Equatable {
     /// Longest side, in pixels, of the preview the page renders for this image's draft. It rides
     /// with the image rather than being written on both sides, like `PageAPI.overlay(maxPixel:)`.
     let previewMaxPixel: Int = Config.previewMaxPixel
+    /// Where the editor sits inside the page: the annotator's frame, in the page's own points with
+    /// y from the top. The page is laid out at the room the frame may grow within and the editor is
+    /// this part of it, so the image opens fitted to the frame. Nil, and left out of the JSON, for a
+    /// `build`, which shows nothing.
+    var frame: PageRect? = nil
 }
 
-/// The picture the page should draw when a zoom comes to rest: how far the image is magnified past
-/// the size at which the whole of it fits the window (1 puts the whole image in it), the middle of
-/// the visible part as a fraction of the image, and the size the host has laid the window out at.
-/// The page waits for that size, applies the view, and answers once it has painted it, which is
-/// when the stand-in may go. The window no longer carries the image's shape, so the fit the ratio
-/// is measured against is the side the window has grown least in; `Zoom.pageRatio` is where the
-/// host works it out.
-struct ViewRequest: Encodable, Equatable {
-    let ratio: Double
+/// A rect in the page's coordinates: CSS points of the web view, x from its left and y from its top.
+struct PageRect: Encodable, Equatable {
     let x: Double
     let y: Double
     let width: Double
     let height: Double
+}
+
+/// The picture the page should draw when a zoom comes to rest: where the editor sits inside the
+/// page, which is the annotator's frame, and where the image is drawn, both in the page's points.
+/// The image rect is the one the host's stand-in is drawing (`Zoom.picture`), so the page's picture
+/// and the stand-in's are the same rect by construction. The page places the editor, moves the
+/// camera, and answers once it has painted, which is when the stand-in may go.
+struct ViewRequest: Encodable, Equatable {
+    let frame: PageRect
+    let image: PageRect
 }
 
 /// One annotation an agent supplied with `add?marks=`. Every number is a fraction of the image:
@@ -225,26 +233,25 @@ struct ParkResult {
     }
 }
 
-/// What `PageAPI.setView` returns: the picture the page painted, and how many frames it waited for
-/// the host's resize to reach its process. Nil when the page refused the view and left its camera
-/// where it was; the stand-in still comes down, since a picture that never leaves covers a live
-/// editor.
+/// What `PageAPI.setView` returns: the editor's size and where it painted the image, in the page's
+/// points. Nil when the page refused the view and left its camera where it was; the stand-in still
+/// comes down, since a picture that never leaves covers a live editor.
 struct ViewResult {
     let width: Double
     let height: Double
-    let ratio: Double
-    let waited: Int
+    let image: PageRect
 
     init?(body: Any?) {
         guard let dict = body as? [String: Any],
               let width = (dict["width"] as? NSNumber)?.doubleValue,
               let height = (dict["height"] as? NSNumber)?.doubleValue,
-              let ratio = (dict["ratio"] as? NSNumber)?.doubleValue,
-              let waited = (dict["waited"] as? NSNumber)?.intValue else { return nil }
+              let image = dict["image"] as? [String: Any],
+              let x = (image["x"] as? NSNumber)?.doubleValue, let y = (image["y"] as? NSNumber)?.doubleValue,
+              let w = (image["width"] as? NSNumber)?.doubleValue, let h = (image["height"] as? NSNumber)?.doubleValue
+        else { return nil }
         self.width = width
         self.height = height
-        self.ratio = ratio
-        self.waited = waited
+        self.image = PageRect(x: x, y: y, width: w, height: h)
     }
 }
 

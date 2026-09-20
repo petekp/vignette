@@ -33,7 +33,7 @@ import { clearUnpicked, noteChanged, pickColors } from './colors'
 import { CANDIDATES, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
 import { explain, pickColor, prepareSample } from './contrast'
 import { build, cappedScale, exportDrafts, overlay, render } from './render'
-import { applyView, cursorAnchor, fitCamera, setView, useZoomWheel, zoomByKey } from './view'
+import { applyView, cursorAnchor, fitCamera, placeEditor, setView, useZoomWheel, zoomByKey } from './view'
 
 /// The image on the canvas, by its key (file path). The host owns drafts; this page keeps no
 /// state that outlives a load, so a restarted web process loses nothing the host has not seen.
@@ -215,6 +215,7 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
   const { w, h, ratio } = imageFrame(p)
   scaleRef.current = ratio
 
+  if (p.frame) placeEditor(p.frame)
   silently(editor, () => {
     placeImage(editor, p, w, h)
     // A reopen selects the annotation drawn last, and only that one, whatever the draft was parked
