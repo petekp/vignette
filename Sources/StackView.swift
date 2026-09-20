@@ -425,8 +425,9 @@ struct TactileButtonStyle: ButtonStyle {
     /// Where the hover scale grows from. A button that grows a label to the right scales from its
     /// leading edge, so the two motions pull the same way.
     var anchor: UnitPoint = .center
-    /// 1 for a button whose label coming out is its hover already: a scale on top of that would
-    /// stretch the label and move the icon out from under the cursor.
+    /// 1 for the strip's rows, where the label coming out is the hover and a scale on top of it
+    /// would stretch the label and move the icon out from under the cursor. A card's Copy keeps the
+    /// scale and anchors it to its leading edge, so the scale and the label pull the same way.
     var hoverScale: CGFloat = 1.08
     @State private var hovered = false
     private var motion: Double { Settings.shared.motionScale }
