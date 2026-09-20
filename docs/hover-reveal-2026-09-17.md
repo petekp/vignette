@@ -81,8 +81,10 @@ nothing — there may be no strip to reveal, and a reveal already up belongs to 
 still there.
 
 **What takes it away.** The pointer, as it does with the focus: moving onto a card clears a
-`.keyboard` reveal, and the strip's own hover sets `.hover` on the way in and nil on the way out.
-`releaseKeys` clears a `.keyboard` reveal, and a strip that goes clears it in `onDisappear`.
+`.keyboard` reveal, and the strip's own hover sets `.hover` on the way in and clears it on the way
+out. `releaseKeys` clears a `.keyboard` reveal. The view only ever clears a `.hover` reveal, in
+`onHover` and in `onDisappear`, so a keyboard reveal survives the strip stepping aside for the
+annotator and is out again when the strip comes back.
 
 **The shortcut.** Each row draws its own after the label, dimmer (0.55), in the same font and size,
 so one measurement covers both. `ShotAction.Key.glyphs` is the only renderer of ⌘C, ↩ and ⌘⌫; the
