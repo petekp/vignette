@@ -12,6 +12,11 @@ struct StateReport {
         [Int(frame.minX.rounded()), Int((primaryHeight - frame.maxY).rounded()), Int(frame.width.rounded()), Int(frame.height.rounded())]
     }
 
+    /// The inverse: a frame in global top-left points, back in AppKit's coordinates.
+    static func fromTopLeft(_ frame: CGRect, primaryHeight: CGFloat) -> NSRect {
+        NSRect(x: frame.minX, y: primaryHeight - frame.maxY, width: frame.width, height: frame.height)
+    }
+
     static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
 
     /// One line, or a line that says why it could not be rendered; never nil, so the caller always logs.

@@ -26,16 +26,18 @@ enum Dock {
               let list = (children as? [AXUIElement])?.first(where: { role(of: $0) == kAXListRole }),
               let rect = frame(of: list) else { return nil }
         // Accessibility reports global top-left points; the rest of the layout is AppKit's.
-        let primary = NSScreen.screens.first?.frame.height ?? rect.maxY
-        return NSRect(x: rect.minX, y: primary - rect.maxY, width: rect.width, height: rect.height)
+        return StateReport.fromTopLeft(rect, primaryHeight: StateReport.primaryHeight)
     }
 
+    @MainActor
     private static var cached: (pid: pid_t, element: AXUIElement)?
 
-    /// A wedged Dock must not stall a layout pass; the caller treats no answer as no Dock. Set on
-    /// every element this file reads, not once on the application: the timeout belongs to the
-    /// object it is set on and is not inherited by the children that come back from it, so the
-    /// child reads below would otherwise wait the process-wide default on the main thread.
+    /// How long one read waits, not how long a pass does: a wedged Dock is waited on once for the
+    /// application's children, once for each child's role until the list is found, and twice more
+    /// for that list's position and size, so a pass can take several times this on the main thread.
+    /// The caller treats no answer as no Dock. Set on every element this file reads, not once on
+    /// the application: the timeout belongs to the object it is set on and is not inherited by the
+    /// children that come back from it.
     private static let readTimeout: Float = 0.25
 
     @MainActor
