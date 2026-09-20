@@ -188,8 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// listed as usual, so silence would be the only sign it was skipped.
     private func linkedSkillRoots() -> [String] {
         SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
-            .filter(SkillInstaller.skillsIsLink(in:))
-            .map { $0.appendingPathComponent("skills").path }
+            .compactMap { SkillInstaller.linkedPath(in: $0)?.path }
     }
 
     /// `shotnote://install-skill`, for a script. With `root=` it installs there and leaves the
