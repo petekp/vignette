@@ -392,9 +392,9 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
 
   silently(editor, () => {
     placeImage(editor, p, w, h)
-    // A draft comes back with whatever selection it was parked with. A reopen picks up the
-    // annotation drawn last instead, and only that one: the select tool is what opens, so a color
-    // press, a drag, or Delete acts on it. A fresh image has nothing to pick up.
+    // A reopen selects the annotation drawn last, and only that one, whatever the draft was parked
+    // with: the select tool is what opens, so a color press, a drag, or Delete acts on it. A fresh
+    // image has nothing to pick up.
     const last = p.snapshot ? lastAnnotation(editor) : null
     editor.setSelectedShapes(last ? [last] : [])
   })
@@ -460,7 +460,9 @@ let view = { ratio: 1, x: 0.5, y: 0.5 }
 async function setView(editor: Editor, request: ViewRequest): Promise<ViewResult | null> {
   // Five numbers from the host, checked before they reach the camera: a ratio below 1 would zoom
   // the image out of a window sized to fit it, and one number that is not finite moves the camera
-  // where nothing can bring it back. The host keeps its stand-in up when this answers null.
+  // where nothing can bring it back. Answering null leaves the camera where it was; the host logs
+  // the refusal and takes its stand-in down anyway, since a picture that never leaves covers a
+  // live editor.
   const numbers = [request.ratio, request.x, request.y, request.width, request.height]
   if (!numbers.every(Number.isFinite) || request.ratio < 1) return null
   view = { ratio: request.ratio, x: request.x, y: request.y }
