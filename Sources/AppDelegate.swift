@@ -122,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
         if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
-        if new.agentSkill != old.agentSkill {
+        if new.agentSkill != old.agentSkill, !agentSkillApplied {
             // Turning it on installs; turning it off removes. The offer's unasked -> off writes nothing.
             if new.agentSkillChoice == .on { applyAgentSkill(.on) }
             else if old.agentSkillChoice == .on { applyAgentSkill(.off) }
@@ -130,6 +130,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     // MARK: The agent skill
+
+    /// Set while `installSkill` records an install it has already run, so writing the setting does
+    /// not run the same install a second time.
+    private var agentSkillApplied = false
 
     /// Keeps the bundled skill in step with the setting: installed and current for this build while
     /// it is on, gone when it goes off. `roots` is for `install-skill?root=`, which points a check
@@ -151,9 +155,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             offerAgentSkill()
         }
         // Only what changed something: a launch with the skill already current says nothing. A
-        // root refused for its link is worth one line when the user asked for an install and did
-        // not get one, and nothing at all on the removal every later launch runs.
-        let quiet: [SkillInstaller.Outcome] = choice == .off ? [.unchanged, .absent, .linkedRoot] : [.unchanged, .absent]
+        // root refused for its link, or holding a copy this installer did not write, is worth one
+        // line when the user asked for an install and did not get one, and nothing at all on the
+        // removal every later launch runs.
+        let quiet: [SkillInstaller.Outcome] = choice == .off
+            ? [.unchanged, .absent, .linkedRoot, .notOurs] : [.unchanged, .absent]
         for result in results where !quiet.contains(result.outcome) {
             Log.write("[skill] \(result.outcome.rawValue) \(result.path.path)\(result.detail.isEmpty ? "" : " \(result.detail)")")
         }
@@ -208,7 +214,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return
         }
         if request.root == nil, settings.data.agentSkillChoice != .on {
+            agentSkillApplied = true
             settings.update { $0.agentSkill = AgentSkill.on.rawValue }
+            agentSkillApplied = false
         }
         Commands.ok("install-skill", detail)
     }
