@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 
 /// Composes several screenshots into one image with numbered badges, in the order given: the first
 /// is at the top left and wears badge 1. The composition is aimed at the model that will read it,
@@ -51,12 +52,15 @@ enum Stitch {
 
     /// `longSideLimit` caps the composition's long side; the app passes `ui.stitchLongSide`.
     static func compose(_ urls: [URL], longSideLimit: CGFloat) -> Composition? {
-        let reps = urls.compactMap { url -> NSBitmapImageRep? in
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return NSBitmapImageRep(data: data)
+        // Sizes come from the files' headers, so the layout is chosen without decoding anything and
+        // only the piece being drawn is ever in memory: six 5K screenshots held at once as bitmaps
+        // is several hundred megabytes.
+        let sources = urls.compactMap { url -> (url: URL, size: CGSize)? in
+            guard let size = pixelSize(of: url) else { return nil }
+            return (url, size)
         }
-        guard !reps.isEmpty else { return nil }
-        let sizes = reps.map { CGSize(width: $0.pixelsWide, height: $0.pixelsHigh) }
+        guard !sources.isEmpty else { return nil }
+        let sizes = sources.map(\.size)
         let plan = layout(sizes)
 
         // The composition is drawn at the output size rather than drawn full size and resampled: a
@@ -74,8 +78,10 @@ enum Stitch {
 
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
-        for (i, rep) in reps.enumerated() {
-            guard let cg = rep.cgImage else { continue }
+        var drawn = 0
+        for (i, source) in sources.enumerated() {
+            guard let cg = decode(source.url) else { continue }
+            drawn += 1
             let frame = plan.frames[i]
             // CGContext draws from the bottom left; the layout counts from the top left.
             let rect = CGRect(x: frame.minX * scale, y: (plan.size.height - frame.maxY) * scale,
@@ -92,8 +98,24 @@ enum Stitch {
         // was chosen for: the cap this drawing applied and then the reader's own resize of it.
         // Reporting the second alone said a six-piece 5K stitch arrived at 0.38 when it arrived at
         // 0.29, because the cap had already taken a quarter of it.
-        return Composition(png: png, size: size, columns: plan.columns, pieces: reps.count,
+        return Composition(png: png, size: size, columns: plan.columns, pieces: drawn,
                            readerScale: scale * readerScale(size))
+    }
+
+    /// The image's size in pixels, read from its header. Nil when the file is not an image this Mac
+    /// can read, which is what drops it from the composition.
+    private static func pixelSize(of url: URL) -> CGSize? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue,
+              width > 0, height > 0 else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
+    private static func decode(_ url: URL) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
     /// The layout that survives a reader's resize best: every column count is tried and the one

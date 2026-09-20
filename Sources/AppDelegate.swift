@@ -286,6 +286,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard let composed = Stitch.compose(shots.map(\.url), longSideLimit: Settings.shared.data.ui.stitchLongSide) else {
             Commands.error("stitch", .unreadableImage, shots.map(\.url.lastPathComponent).joined(separator: ", ")); return
         }
+        // A file that would not decode is not in the picture, and one image is not a stitch.
+        guard composed.pieces >= 2 else {
+            Commands.error("stitch", .unreadableImage, "only \(composed.pieces) of \(shots.count) images could be read"); return
+        }
         let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
         let out = watchFolder.appendingPathComponent("Stitch \(stamp.string(from: Date())).png")
         do { try composed.png.write(to: out) } catch { Commands.error("stitch", .writeFailed, "\(out.path): \(error.localizedDescription)"); return }
