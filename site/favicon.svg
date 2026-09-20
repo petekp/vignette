@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Vignette">
+<style>
+  .tile { fill: #F6F1E8 }
+  .scribble { fill: none; stroke: #1C1917; stroke-width: 19.85; stroke-linecap: round; stroke-linejoin: round }
+  @media (prefers-color-scheme: dark) {
+    .tile { fill: #141210 }
+    .scribble { stroke: #F6F1E8 }
+  }
+</style>
+<rect class="tile" width="64" height="64" rx="14"/>
+<!-- The scribble keeps its own 170 x 80 coordinates. The transform centres its inked bounds
+     with 8% padding, and turns stroke-width 19.85 into 6 units here, 1.5px at 16px. A heavier
+     stroke fills in the loop; more padding shrinks the mark until the stroke has to thin. -->
+<g transform="translate(6.306 20.247) scale(0.30228)">
+  <path class="scribble" d="M6 44 C 18 10, 40 8, 46 36 C 52 66, 22 70, 24 44 C 26 18, 64 6, 88 28 C 106 46, 122 50, 138 32 C 150 18, 160 22, 164 34"/>
+</g>
+</svg>

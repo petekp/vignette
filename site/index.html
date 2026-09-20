@@ -16,6 +16,12 @@
 <meta property="og:url" content="https://vignette.pete.design/">
 <link rel="canonical" href="https://vignette.pete.design/">
 <meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&display=swap" rel="stylesheet">
 <style>
   :root {
     --ink: 28 28 28;
@@ -44,9 +50,12 @@
     max-width: 34rem;
     margin: 0 auto;
   }
-  h1 {
-    font-size: 1rem;
-    font-weight: 700;
+  h1.wordmark {
+    font-family: Caveat, cursive;
+    font-weight: 600;
+    font-size: 3.25rem;
+    line-height: 0.9;
+    color: rgb(var(--ink));
     margin: 0 0 1.4rem;
   }
   p {
@@ -93,7 +102,7 @@
 <body>
 <main>
 
-<h1>Vignette</h1>
+<h1 class="wordmark">vignette</h1>
 
 <p>Vignette is a macOS menu bar app for what happens after the screenshot: Cmd+Shift+3, 4 and 5
 still take it, and Vignette copies it, keeps the recent ones in a stack in the corner of the
