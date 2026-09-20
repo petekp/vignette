@@ -101,26 +101,6 @@ final class ZoomTests: XCTestCase {
         XCTAssertEqual(Zoom.reach(fitted: fitted, within: fitted), Zoom.none)
     }
 
-    func testTheAnchorThatHoldsTheCursorsPointHoldsIt() {
-        // What the room's anchor replaces, and what a pull below the fitted size still uses: given
-        // a frame on screen and a growth, the anchor that leaves the cursor's point where it is.
-        // Each direction is answered on its own, so a frame growing in one alone still holds it.
-        let cursors = [CGPoint(x: 0.1, y: 0.2), Zoom.center, CGPoint(x: 0.95, y: 0.9), CGPoint(x: 0, y: 1)]
-        let growths = [CGSize(width: 1.4, height: 1.4), CGSize(width: 2.2, height: 1.3),
-                       CGSize(width: 1, height: 1.8), CGSize(width: 0.8, height: 0.8)]
-        for cursor in cursors {
-            var shown = fitted
-            for window in growths {
-                let was = point(cursor, of: shown)
-                let anchor = Zoom.anchor(holding: cursor, of: shown, fitted: fitted, grownTo: window)
-                shown = Zoom.frame(fitted: fitted, scale: window, anchor: anchor, within: nil)
-                let now = point(cursor, of: shown)
-                XCTAssertEqual(now.x, was.x, accuracy: 0.001, "cursor \(cursor) grown to \(window)")
-                XCTAssertEqual(now.y, was.y, accuracy: 0.001, "cursor \(cursor) grown to \(window)")
-            }
-        }
-    }
-
     func testAimingSomewhereElseMidStepDoesNotMoveTheWindow() {
         // Grown away from the top left, then aimed at the bottom right part way through a spring.
         // The room decides the anchor a step ends at, so a mid-spring aim is where a clamp could
@@ -228,6 +208,42 @@ final class ZoomTests: XCTestCase {
                               from: 1, to: 0.8, within: room)
         XCTAssertEqual(corner.now.x, 0.9, accuracy: 1e-9)
         XCTAssertEqual(corner.now.y, 0.9, accuracy: 1e-9)
+    }
+
+    func testAZoomOutCrossesTheFitWithoutAJump() {
+        // A wheel or a pinch out from a grown frame runs straight through the fitted size into the
+        // pull, on the line it was on, so every edge runs one way. An anchor worked out to hold
+        // the cursor's point divided by the shrink, which passes through zero here, and the frame
+        // stepped sideways.
+        let reach = Zoom.reach(fitted: fitted, within: room)
+        let cursor = CGPoint(x: 0.3, y: 0.7)
+        let grown = frame(at: 1.06, within: room)
+        let target: CGFloat = 0.99
+        let window = Zoom.split(level: target, reach: reach, pull: 0.3).window
+        let aim = Zoom.aim(at: cursor, of: grown, fitted: fitted, window: window, from: 1.06, to: target, within: room)
+        var edges: [[CGFloat]] = [[], [], [], []]
+        for step in 0...70 {
+            let level = 1.06 - CGFloat(step) * 0.001
+            let split = Zoom.split(level: level, reach: reach, pull: 0.3)
+            let f = Zoom.frame(fitted: fitted, scale: split.window, anchor: aim.anchor(at: level), within: room)
+            if abs(level - 1) < 1e-9 {
+                XCTAssertEqual(f.minX, fitted.minX, accuracy: 1e-6); XCTAssertEqual(f.maxY, fitted.maxY, accuracy: 1e-6)
+            }
+            for (i, e) in [f.minX, f.maxX, f.minY, f.maxY].enumerated() { edges[i].append(e) }
+        }
+        for line in edges {
+            let falling = line.last! < line.first!
+            for (a, b) in zip(line, line.dropFirst()) {
+                XCTAssertTrue(falling ? b <= a + 1e-9 : b >= a - 1e-9, "an edge turned around crossing the fit: \(line.map { String(format: "%.2f", $0) }.joined(separator: " "))")
+            }
+        }
+        // The pull keeps the line the zoom-out was on, and home from it is that same line back.
+        XCTAssertEqual(aim.now, aim.was)
+        let pulled = Zoom.frame(fitted: fitted, scale: window, anchor: aim.anchor(at: target), within: room)
+        let home = Zoom.aim(at: Zoom.center, of: pulled, fitted: fitted, window: Zoom.none, from: target, to: 1, within: room)
+        XCTAssertEqual(home.now, home.was)
+        XCTAssertEqual(home.now.x, aim.now.x, accuracy: 1e-6)
+        XCTAssertEqual(home.now.y, aim.now.y, accuracy: 1e-6)
     }
 
     func testTheFrameStaysOnTheScreenItIsGiven() {
@@ -475,14 +491,7 @@ final class ZoomTests: XCTestCase {
         XCTAssertEqual(ZoomPan(center: Zoom.center, camera: bad, cursor: Zoom.center).center(at: CGSize(width: 2, height: 2)), Zoom.center)
     }
 
-    func testABadNumberLeavesTheAnchorWhereTheCursorIs() {
-        let cursor = CGPoint(x: 0.25, y: 0.25)
-        let twice = CGSize(width: 2, height: 2)
-        XCTAssertEqual(Zoom.anchor(holding: cursor, of: fitted, fitted: .zero, grownTo: twice), cursor)
-        XCTAssertEqual(Zoom.anchor(holding: cursor, of: .zero, fitted: fitted, grownTo: twice), cursor)
-        XCTAssertEqual(Zoom.anchor(holding: cursor, of: fitted, fitted: fitted, grownTo: CGSize(width: CGFloat.nan, height: CGFloat.nan)), cursor)
-        XCTAssertEqual(Zoom.anchor(holding: cursor, of: fitted, fitted: fitted, grownTo: Zoom.none), cursor,
-                       "nothing has grown, so there is no growth to divide")
+    func testABadPointIsClampedIntoTheWindow() {
         XCTAssertEqual(Zoom.clamped(CGPoint(x: -3, y: 9)), CGPoint(x: 0, y: 1))
     }
 }

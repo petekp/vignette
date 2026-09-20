@@ -44,16 +44,23 @@ enum Zoom {
     /// image is magnified once a side has filled the room, which is `ZoomPan`'s.
     static func aim(at cursor: CGPoint, of shown: CGRect, fitted: CGRect, window: CGSize,
                     from level: CGFloat, to target: CGFloat, within limit: CGRect?) -> ZoomAim {
-        // Below the fitted size the frame only shrinks, and a shrunk frame is inside `fitted`,
-        // which the room contains by construction. There is no growth for the room to divide, so
-        // it takes nothing: the pull shrinks about the cursor's own anchor, the middle for a key.
-        let now = target < 1 ? anchor(holding: cursor, of: shown, fitted: fitted, grownTo: window)
-                             : anchor(fitted: fitted, within: limit)
         // At the fitted size the frame is `fitted` whatever the anchor, so there is no growth for
         // an anchor to describe and nothing to blend from: a step from rest starts at `now`.
         // Blending from a made-up starting anchor bows the path instead.
-        return ZoomAim(was: anchor(reproducing: shown, fitting: fitted, or: now), now: now,
-                       from: level, to: target)
+        let now: CGPoint
+        if target < 1 || level < 1 && target == 1 {
+            // Below the fitted size the frame only shrinks, and a shrunk frame is inside `fitted`,
+            // which the room contains by construction. There is no growth for the room to divide,
+            // so the frame keeps the line it is on: the room's, for a zoom-out that runs on through
+            // the fit, or the cursor's, for a pull that starts from rest, and home from a pull is
+            // straight back up that line. An anchor worked out to hold the cursor's point instead
+            // divided by the shrink, which passes through zero as a zoom-out crosses the fit:
+            // measured at 40 points sideways and back in three frames.
+            now = anchor(reproducing: shown, fitting: fitted, or: cursor)
+        } else {
+            now = anchor(fitted: fitted, within: limit)
+        }
+        return ZoomAim(was: anchor(reproducing: shown, fitting: fitted, or: now), now: now, from: level, to: target)
     }
 
     /// How far each side of the frame can grow before it fills the room. 1 on a side that already
@@ -86,23 +93,6 @@ enum Zoom {
         let total = near + far
         guard total > 0, total.isFinite else { return 0.5 }
         return min(max(near / total, 0), 1)
-    }
-
-    /// The anchor that leaves the point at `cursor` on screen where it is when `shown`, the frame
-    /// on screen now, is redrawn at `grownTo`. `cursor` is a fraction of `shown`. A side with no
-    /// growth to divide keeps the cursor's own fraction.
-    static func anchor(holding cursor: CGPoint, of shown: CGRect, fitted: CGRect, grownTo window: CGSize) -> CGPoint {
-        guard fitted.width > 0, fitted.height > 0, shown.width > 0, shown.height > 0,
-              window.width.isFinite, window.height.isFinite else { return cursor }
-        // Where the cursor's point is on screen now, and where the fitted frame's own copy of that
-        // point lands once the frame has grown. The anchor is the share of that growth the frame
-        // gives back to bring the two together; y runs the other way, hence the swap.
-        let held = CGPoint(x: shown.minX + cursor.x * shown.width, y: shown.maxY - cursor.y * shown.height)
-        let grown = CGPoint(x: fitted.minX + cursor.x * fitted.width * window.width,
-                            y: fitted.maxY - cursor.y * fitted.height * window.height)
-        let growth = CGSize(width: fitted.width * (window.width - 1), height: fitted.height * (window.height - 1))
-        return CGPoint(x: abs(growth.width) > 1e-9 ? (grown.x - held.x) / growth.width : cursor.x,
-                       y: abs(growth.height) > 1e-9 ? (held.y - grown.y) / growth.height : cursor.y)
     }
 
     /// The anchor that redraws `fitted` as `shown`, so a step carries on from the frame that is
