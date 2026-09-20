@@ -10,7 +10,7 @@ struct Screenshot: Sendable {
 /// Whether the bundled skill is installed for the coding agents on this Mac. Three values in one
 /// key, because "not asked yet" is a state of its own: writing into another tool's directory needs
 /// a yes, and the app asks once. A bool plus an `offered` flag could say two things at once.
-enum AgentSkill: String, CaseIterable {
+enum AgentSkill: String {
     case unasked
     case on
     case off
