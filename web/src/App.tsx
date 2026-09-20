@@ -1,80 +1,51 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AssetRecordType,
-  Box,
   DefaultColorStyle,
   DefaultDashStyle,
   DefaultFillStyle,
   DefaultSizeStyle,
   Editor,
   GeoShapeGeoStyle,
-  HistoryEntry,
-  TLArrowShape,
   TLAssetStore,
   TLComponents,
-  TLEditorSnapshot,
-  TLImageShape,
-  TLRecord,
-  TLShape,
   TLShapeId,
   Tldraw,
-  createShapeId,
   getSnapshot,
-  loadSnapshot,
-  toRichText,
   track,
   useEditor,
 } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { ExportItem, ExportResult, LoadPayload, Mark, PROTOCOL, ParkResult, ViewRequest, ViewResult, ZoomAnchor, postToNative } from './bridge'
-
-/** One keyboard zoom step (cmd+plus / cmd+minus). */
-const ZOOM_STEP = 1.25
-/** Wheel and pinch: window scale per wheel unit; pinch-out (negative deltaY) grows the window. */
-const WHEEL_ZOOM_RATE = 0.01
+import { LoadPayload, PROTOCOL, ParkResult, postToNative } from './bridge'
 import {
-  CANDIDATES,
-  ColorId,
-  DEFAULT_SIZE,
-  DEFAULT_TEXT_POINTS,
-  DEFAULT_TOOL,
-  PUSHED_TEXT_MARGIN,
-  PUSHED_TEXT_MIN_WIDTH,
-  PUSHED_TEXT_SIZE,
-  REOPEN_TOOL,
-  TOOLS,
-  ToolId,
-} from './config'
-import { Area, explain, hasSample, pickColor, prepareSample } from './contrast'
-
-const IMAGE_ID: TLShapeId = createShapeId('screenshot')
+  IMAGE_ID,
+  beginQuiet,
+  endQuiet,
+  fileUrl,
+  hasAnnotations,
+  imageFrame,
+  isQuiet,
+  oneAtATime,
+  placeImage,
+  removeAll,
+  silently,
+} from './canvas'
+import { clearUnpicked, noteChanged, pickColors } from './colors'
+import { CANDIDATES, DEFAULT_SIZE, DEFAULT_TOOL, REOPEN_TOOL, TOOLS, ToolId } from './config'
+import { explain, pickColor, prepareSample } from './contrast'
+import { build, cappedScale, exportDrafts, overlay, render } from './render'
+import { applyView, cursorAnchor, fitCamera, setView, useZoomWheel, zoomByKey } from './view'
 
 /// The image on the canvas, by its key (file path). The host owns drafts; this page keeps no
 /// state that outlives a load, so a restarted web process loses nothing the host has not seen.
 let currentKey: string | null = null
 /// True when the user changed the canvas since the host last saw a rendering of it.
 let dirty = false
-/// True while `load` or `export` mutate the store, so those changes are not reported as drafts.
-let quiet = false
 let draftTimer: ReturnType<typeof setTimeout> | null = null
-/// Marks whose colour the heuristic has not picked for where they now are: drawn, moved, or
-/// resized since the last pick. Emptied when the hand lets go, before the draft goes to the host.
-let unpicked = new Set<TLShapeId>()
 /// Longest side, in pixels, of the preview returned with the parked draft of the image on the
 /// canvas. The host sends it with the image; `build` uses the one in its own payload.
 let previewMax = 0
 /// How long after the last change the draft snapshot goes to the host.
 const DRAFT_DELAY_MS = 300
-/// How many frames `setView` waits for the host's resize to reach this process before it draws.
-const VIEW_FRAMES = 20
-/// How long a rendering waits for a font it embeds the first time; see `waitForEmbeddedFonts`.
-const FONT_RASTER_MS = 250
-
-/// Asset `src` values are file paths; the host serves them from the page's own origin, under the
-/// same per-launch token as the page, so a snapshot saved in one launch resolves in the next.
-function fileUrl(path: string) {
-  return location.origin + location.pathname.replace(/[^/]*$/, 'file?p=' + encodeURIComponent(path))
-}
 
 const assets: TLAssetStore = {
   async upload() {
@@ -85,38 +56,6 @@ const assets: TLAssetStore = {
   },
 }
 
-function hasAnnotations(editor: Editor) {
-  return editor.getCurrentPageShapeIds().size > 1
-}
-
-/// Runs `fn` without touching undo history: loading a snapshot otherwise records an undo entry.
-function silently(editor: Editor, fn: () => void) {
-  editor.run(fn, { history: 'ignore' })
-}
-
-/// Runs `fn` with store changes not reported as drafts. Spans the whole operation, not just the
-/// mutating calls: tldraw delivers a snapshot load's changes to listeners on the next transaction,
-/// which for `load` is the camera fit one frame later.
-async function quietly<T>(fn: () => Promise<T>): Promise<T> {
-  quiet = true
-  try {
-    return await fn()
-  } finally {
-    quiet = false
-  }
-}
-
-/// The operations that stand the canvas on its head run one at a time, in the order the host
-/// called them. Each takes its snapshot after an await, so another one's shapes must never land in
-/// between: `park` would store them, and `export` and `build` would wipe them when they put the
-/// canvas back.
-let pending: Promise<unknown> = Promise.resolve()
-function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
-  const next = pending.then(work, work)
-  pending = next.catch(() => {})
-  return next
-}
-
 /// Sends the host the current annotations, or null when there are none. Debounced from the store
 /// listener. The host asks for the zoom overlay when this arrives.
 function scheduleDraft(editor: Editor) {
@@ -125,99 +64,9 @@ function scheduleDraft(editor: Editor) {
     // A drag is one motion, not its frames: the colours wait until the hand lets go.
     if (editor.inputs.isPointing) return scheduleDraft(editor)
     draftTimer = null
-    pickColors(editor)
+    pickColors(editor, currentKey)
     if (currentKey) postToNative({ type: 'draft', key: currentKey, snapshot: hasAnnotations(editor) ? getSnapshot(editor.store) : null })
   }, DRAFT_DELAY_MS)
-}
-
-/// Notes the marks a change touched, so their colour is picked again for where they now sit.
-function noteChanged(entry: HistoryEntry<TLRecord>) {
-  const changes = entry.changes
-  for (const record of Object.values(changes.added)) noteShape(record)
-  for (const [, after] of Object.values(changes.updated)) noteShape(after)
-  for (const record of Object.values(changes.removed)) if (record.typeName === 'shape') unpicked.delete(record.id)
-}
-
-function noteShape(record: TLRecord) {
-  if (record.typeName === 'shape' && record.id !== IMAGE_ID) unpicked.add(record.id)
-}
-
-/// The colour of every mark that is waiting for one. Marks the decode has not caught up with stay
-/// in the set, so the next pick colours them.
-function pickColors(editor: Editor) {
-  if (!currentKey || !unpicked.size || !hasSample(currentKey)) return
-  const ids = [...unpicked]
-  unpicked.clear()
-  applyColors(editor, currentKey, ids)
-}
-
-/// What a mark's ink covers, in fractions of the screenshot. An arrow is the strip between its two
-/// ends: its bounding box is the whole rectangle they span, most of which the stroke never touches,
-/// so a banner in a corner of that box would colour an arrow that runs nowhere near it. A shape
-/// drawn with no fill is its border band for the same reason.
-function areaOf(editor: Editor, shape: TLShape, image: Box): Area | null {
-  if (shape.type === 'arrow') {
-    const arrow = shape as TLArrowShape
-    const transform = editor.getShapePageTransform(shape.id)
-    const from = transform.applyToPoint(arrow.props.start)
-    const to = transform.applyToPoint(arrow.props.end)
-    return {
-      kind: 'line',
-      from: { x: (from.x - image.x) / image.w, y: (from.y - image.y) / image.h },
-      to: { x: (to.x - image.x) / image.w, y: (to.y - image.y) / image.h },
-    }
-  }
-  const bounds = editor.getShapePageBounds(shape.id)
-  if (!bounds) return null
-  const rect = {
-    x: (bounds.x - image.x) / image.w,
-    y: (bounds.y - image.y) / image.h,
-    w: bounds.w / image.w,
-    h: bounds.h / image.h,
-  }
-  // A shape with no `fill` prop at all (text, a freehand stroke) keeps the whole box.
-  const fill = (shape.props as { fill?: string }).fill
-  return { kind: fill === 'none' ? 'border' : 'fill', rect }
-}
-
-/// Sets each mark's colour from the screenshot under it. The image shape is the frame every mark is
-/// measured against, so a mark's bounds become the fraction of the screenshot it covers.
-///
-/// The change is outside undo history: the colour belongs to where the mark is, not to an edit of
-/// its own, so one undo moves or removes the mark and the next pick colours it for where it lands.
-function applyColors(editor: Editor, key: string, ids: TLShapeId[]) {
-  const image = editor.getShapePageBounds(IMAGE_ID)
-  if (!image) return
-  const picked: { id: TLShapeId; color: ColorId }[] = []
-  for (const id of ids) {
-    const shape = editor.getShape(id)
-    const props = shape?.props as { color?: string } | undefined
-    if (!shape || shape.meta.colorChosen || props?.color === undefined) continue
-    const area = areaOf(editor, shape, image)
-    if (!area) continue
-    const color = pickColor(key, area)
-    if (color && color !== props.color) picked.push({ id, color })
-  }
-  if (!picked.length) return
-  const was = quiet
-  quiet = true // the caller reports the draft this belongs to
-  silently(editor, () => {
-    // One case per shape a mark can be: `updateShape` takes the shape's own type, not the union.
-    for (const { id, color } of picked) {
-      switch (editor.getShape(id)?.type) {
-        case 'geo':
-          editor.updateShape({ id, type: 'geo', props: { color } })
-          break
-        case 'arrow':
-          editor.updateShape({ id, type: 'arrow', props: { color } })
-          break
-        case 'text':
-          editor.updateShape({ id, type: 'text', props: { color } })
-          break
-      }
-    }
-  })
-  quiet = was
 }
 
 /// The draft as the host should store it, with a rendering when the user changed it since the last one.
@@ -227,13 +76,12 @@ async function park(editor: Editor, scale: number): Promise<ParkResult> {
     draftTimer = null
   }
   if (!currentKey) return { snapshot: null, preview: null }
-  pickColors(editor)
+  pickColors(editor, currentKey)
   const annotated = hasAnnotations(editor)
   let preview: string | null = null
   if (dirty && annotated) {
     const bounds = editor.getShapePageBounds(IMAGE_ID)
-    const previewScale = bounds ? Math.min(scale, previewMax / Math.max(bounds.w, bounds.h)) : scale
-    preview = await render(editor, previewScale)
+    preview = await render(editor, bounds ? cappedScale(scale, previewMax, bounds.w, bounds.h) : scale)
   }
   dirty = false
   return { snapshot: annotated ? getSnapshot(editor.store) : null, preview }
@@ -241,7 +89,7 @@ async function park(editor: Editor, scale: number): Promise<ParkResult> {
 
 export function App() {
   const [editor, setEditor] = useState<Editor | null>(null)
-  const pending = useRef<LoadPayload | null>(null)
+  const pendingLoad = useRef<LoadPayload | null>(null)
   const scaleRef = useRef(1)
 
   // Expose the host API as soon as the page runs, even before the editor mounts.
@@ -249,7 +97,7 @@ export function App() {
     window.shotnote = {
       load(payload) {
         if (editor) loadImage(editor, payload, scaleRef)
-        else pending.current = payload
+        else pendingLoad.current = payload
       },
       async park() {
         return editor ? oneAtATime(() => park(editor, scaleRef.current)) : { snapshot: null, preview: null }
@@ -267,7 +115,7 @@ export function App() {
       },
       async export(items) {
         if (!editor) return { items: [], error: 'editor not mounted' }
-        return oneAtATime(() => exportDrafts(editor, items, scaleRef.current))
+        return oneAtATime(() => exportDrafts(editor, items, scaleRef.current, currentKey))
       },
       async overlay(maxPixel) {
         return editor ? oneAtATime(() => overlay(editor, maxPixel)) : null
@@ -285,9 +133,9 @@ export function App() {
         if (editor) finish(editor, scaleRef.current)
       },
     }
-    if (editor && pending.current) {
-      loadImage(editor, pending.current, scaleRef)
-      pending.current = null
+    if (editor && pendingLoad.current) {
+      loadImage(editor, pendingLoad.current, scaleRef)
+      pendingLoad.current = null
     }
   }, [editor])
 
@@ -314,7 +162,7 @@ export function App() {
           ed.updateInstanceState({ isDebugMode: false })
           ed.store.listen(
             (entry) => {
-              if (quiet) return
+              if (isQuiet()) return
               dirty = true
               noteChanged(entry)
               scheduleDraft(ed)
@@ -345,11 +193,11 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
       clearTimeout(draftTimer)
       draftTimer = null
     }
-    quiet = true
+    beginQuiet()
     try {
       loadImageQuietly(editor, p, scaleRef)
     } catch (err) {
-      quiet = false
+      endQuiet()
       // The message only. A WebKit stack names the bundle's served URL, and every served URL
       // starts with the per-launch token, which must never reach the log.
       postToNative({ type: 'log', message: 'load failed: ' + (err instanceof Error ? err.message : String(err)) })
@@ -360,21 +208,18 @@ function loadImage(editor: Editor, p: LoadPayload, scaleRef: { current: number }
 function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: number }) {
   currentKey = p.key
   previewMax = p.previewMaxPixel
-  unpicked.clear()
+  clearUnpicked()
   // The decode runs alongside the load: `loaded` must not wait for it, and a mark drawn before it
   // lands keeps the first candidate until the next pick.
   void prepareSample(p.key, fileUrl(p.key)).catch(() => {})
-  // The shape is sized in points so the canvas matches the window; export scales back up to pixels.
-  const ratio = window.devicePixelRatio || 1
-  const w = p.pixelWidth / ratio
-  const h = p.pixelHeight / ratio
+  const { w, h, ratio } = imageFrame(p)
   scaleRef.current = ratio
 
   silently(editor, () => {
     placeImage(editor, p, w, h)
-    // A draft comes back with whatever selection it was parked with. A reopen picks up the
-    // annotation drawn last instead, and only that one: the select tool is what opens, so a color
-    // press, a drag, or Delete acts on it. A fresh image has nothing to pick up.
+    // A reopen selects the annotation drawn last, and only that one, whatever the draft was parked
+    // with: the select tool is what opens, so a color press, a drag, or Delete acts on it. A fresh
+    // image has nothing to pick up.
     const last = p.snapshot ? lastAnnotation(editor) : null
     editor.setSelectedShapes(last ? [last] : [])
   })
@@ -390,109 +235,11 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
   // The load's store changes reach the listener during that first frame; drafts report from here on.
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      quiet = false
+      endQuiet()
       dirty = false
       postToNative({ type: 'loaded', key: p.key })
     })
   )
-}
-
-function fitCamera(editor: Editor, w: number, h: number) {
-  view = { ratio: 1, x: 0.5, y: 0.5 }
-  // An image opens in a window of its own aspect, so 'fit' makes it flush with the window there.
-  // A zoom grows each side of the window on its own, and `setView` then asks for the magnification
-  // past this fit; 'fit-max' keeps that fit the side the window has grown least in.
-  editor.setCameraOptions({
-    // No step below the fit: nothing tldraw does on its own can zoom the image out of the window.
-    zoomSteps: [1, 2, 4, 8],
-    constraints: {
-      initialZoom: 'fit-max',
-      baseZoom: 'fit-max',
-      bounds: { x: 0, y: 0, w, h },
-      padding: { x: 0, y: 0 },
-      origin: { x: 0.5, y: 0.5 },
-      behavior: 'contain',
-    },
-  })
-  // The host resizes the view right before loading; re-measure so the fit uses the final size.
-  editor.updateViewportScreenBounds(editor.getContainer())
-  editor.setCamera(editor.getCamera(), { reset: true })
-  requestAnimationFrame(() => {
-    editor.updateViewportScreenBounds(editor.getContainer())
-    editor.setCamera(editor.getCamera(), { reset: true })
-  })
-}
-
-/**
- * The picture the host last asked for: how far the image is magnified inside the window, and the
- * middle of the part that is visible, as fractions of the image. The host holds the same three
- * numbers and draws its own copy of this picture while a zoom is moving, so this is the whole of
- * what the page is told about a zoom.
- */
-let view = { ratio: 1, x: 0.5, y: 0.5 }
-
-/**
- * Draws the view the host asked for and answers once it is painted. The host has already laid the
- * window out at `width` by `height`; that resize crosses a process boundary, so the page waits for
- * it to arrive rather than drawing this camera at the old size. The host takes its own copy of the
- * picture away when this answers.
- */
-async function setView(editor: Editor, request: ViewRequest): Promise<ViewResult | null> {
-  // Five numbers from the host, checked before they reach the camera: a ratio below 1 would zoom
-  // the image out of a window sized to fit it, and one number that is not finite moves the camera
-  // where nothing can bring it back. The host keeps its stand-in up when this answers null.
-  const numbers = [request.ratio, request.x, request.y, request.width, request.height]
-  if (!numbers.every(Number.isFinite) || request.ratio < 1) return null
-  view = { ratio: request.ratio, x: request.x, y: request.y }
-  const container = editor.getContainer()
-  let waited = 0
-  for (; waited < VIEW_FRAMES; waited++) {
-    const box = container.getBoundingClientRect()
-    // Within a pixel: the host's frame is fractional and a layout viewport is whole pixels, so the
-    // size that arrives here can be one short of the size the host asked for.
-    if (Math.abs(box.width - request.width) <= 1 && Math.abs(box.height - request.height) <= 1) break
-    await new Promise((r) => requestAnimationFrame(r))
-  }
-  applyView(editor)
-  // Two frames: the first carries this camera into a paint, the second has been on screen.
-  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-  const box = container.getBoundingClientRect()
-  return { width: box.width, height: box.height, ratio: editor.getZoomLevel() / editor.getBaseZoom(), waited }
-}
-
-/**
- * Puts the stored view on the camera: the image magnified by `ratio` with the point it names in
- * the middle of the window. Idempotent, and the resize observer runs it too, so it does not matter
- * whether the host's call or the resize reaches the page first.
- */
-function applyView(editor: Editor) {
-  const bounds = editor.getShapePageBounds(IMAGE_ID)
-  if (!bounds) return
-  editor.updateViewportScreenBounds(editor.getContainer())
-  const z = editor.getBaseZoom() * view.ratio
-  const { w, h } = editor.getViewportScreenBounds()
-  editor.setCamera({ x: w / 2 / z - (bounds.x + view.x * bounds.w), y: h / 2 / z - (bounds.y + view.y * bounds.h), z })
-}
-
-/// The screenshot on an empty canvas, or the draft the host stored for it, which carries the image
-/// shape with it. The caller owns `quiet`, the camera, and `currentKey`, and runs this silently.
-function placeImage(editor: Editor, p: LoadPayload, w: number, h: number) {
-  removeAll(editor)
-  if (p.snapshot) {
-    loadSnapshot(editor.store, p.snapshot)
-    return
-  }
-  const assetId = AssetRecordType.createId()
-  editor.createAssets([
-    {
-      id: assetId,
-      typeName: 'asset',
-      type: 'image',
-      meta: {},
-      props: { w, h, mimeType: p.mimeType, src: p.key, name: 'screenshot', isAnimated: false },
-    },
-  ])
-  editor.createShape({ id: IMAGE_ID, type: 'image', x: 0, y: 0, isLocked: true, props: { w, h, assetId } })
 }
 
 /// The annotation drawn last: the top of the page's z-order, which is where tldraw puts each new
@@ -504,221 +251,9 @@ function lastAnnotation(editor: Editor): TLShapeId | null {
 }
 
 function clearCanvas(editor: Editor) {
-  unpicked.clear()
+  clearUnpicked()
   silently(editor, () => removeAll(editor))
   editor.clearHistory()
-}
-
-/// Every shape and asset, gone. The image shape is locked, so it is unlocked first.
-function removeAll(editor: Editor) {
-  const ids = [...editor.getCurrentPageShapeIds()]
-  if (ids.length) {
-    editor.updateShapes(ids.map((id) => ({ id, type: editor.getShape(id)!.type, isLocked: false })))
-    editor.deleteShapes(ids)
-  }
-  const assets = editor.getAssets().map((a) => a.id)
-  if (assets.length) editor.deleteAssets(assets)
-}
-
-/// A pushed text mark on the canvas: the shape, which mark it came from (counted from 1, the way
-/// `invalid-marks` counts them), and the scale its box is drawn at, which turns a width in canvas
-/// points into the `w` the shape carries.
-type PushedText = { id: TLShapeId; mark: number; scale: number }
-
-/// The room a pushed text has to sit in: the image less `PUSHED_TEXT_MARGIN` on every side. The
-/// margin is a fraction of the image's width on all four edges, so the inset is the same number of
-/// points all round rather than the same fraction of two sides of different lengths. On an image
-/// wider than it is tall that leaves less of the height than of the width, which is why a box is
-/// measured against this rather than against the image.
-function textRoom(image: Box): Box {
-  const margin = PUSHED_TEXT_MARGIN * image.w
-  return new Box(image.x + margin, image.y + margin, image.w - 2 * margin, image.h - 2 * margin)
-}
-
-/// An agent's marks as ordinary shapes, in canvas points: `image` is the box the screenshot
-/// occupies, and every mark number is a fraction of it. The host has already checked the numbers
-/// and the color.
-function createMarks(editor: Editor, marks: Mark[], image: Box): { unnamed: TLShapeId[]; texts: PushedText[] } {
-  const unnamed: TLShapeId[] = []
-  const texts: PushedText[] = []
-  const margin = PUSHED_TEXT_MARGIN * image.w
-  for (const [index, m] of marks.entries()) {
-    const x = image.x + m.x * image.w
-    const y = image.y + m.y * image.h
-    const color = (m.color ?? CANDIDATES[0].id) as ColorId
-    // A mark that names a colour keeps it; one that names none is the heuristic's to colour.
-    const meta = m.color ? { colorChosen: true } : {}
-    const id = createShapeId()
-    if (!m.color) unnamed.push(id)
-    if (m.type === 'arrow') {
-      editor.createShape({
-        id,
-        type: 'arrow',
-        x,
-        y,
-        meta,
-        props: {
-          start: { x: 0, y: 0 },
-          end: { x: (m.x2! - m.x) * image.w, y: (m.y2! - m.y) * image.h },
-          color,
-          size: DEFAULT_SIZE,
-          dash: 'solid',
-          fill: 'none',
-        },
-      })
-    } else if (m.type === 'text') {
-      // A pushed text is drawn at a size the image gives it and wrapped in a box, so a sentence is
-      // neither huge on a crop nor one line that runs off the edge. `scale` multiplies both the
-      // font and `w`, so the box on the canvas is `w * scale`: dividing here is what makes the
-      // wrap land where the mark asked for it.
-      const scale = (PUSHED_TEXT_SIZE * image.w) / DEFAULT_TEXT_POINTS
-      const room = image.x + image.w - margin - x
-      const box = m.w === undefined ? Math.max(PUSHED_TEXT_MIN_WIDTH * image.w, room) : m.w * image.w
-      editor.createShape({
-        id,
-        type: 'text',
-        x,
-        y,
-        meta,
-        props: { richText: toRichText(m.text!), color, size: DEFAULT_SIZE, scale, autoSize: false, w: box / scale },
-      })
-      texts.push({ id, mark: index + 1, scale })
-    } else {
-      editor.createShape({
-        id,
-        type: 'geo',
-        x,
-        y,
-        meta,
-        props: { geo: m.type, w: m.w! * image.w, h: m.h! * image.h, color, size: DEFAULT_SIZE, dash: 'solid', fill: 'none' },
-      })
-    }
-  }
-  return { unnamed, texts }
-}
-
-/// How many times a box is widened and measured again. Wrapping is discrete — a pass can land a
-/// word short of the line it aimed for — so the first estimate is checked rather than trusted.
-/// Each pass costs one measurement, and four reach the room's width from any box this can make.
-const TEXT_FIT_PASSES = 4
-
-/// Widens one text box until its words wrap short enough to fit the room's height, so a long
-/// sentence becomes a wide block rather than a column running off the bottom edge. The box's area
-/// is roughly what the sentence needs at its font size, so the width the height wants is about
-/// `w * h / room.h`; wrapping makes that an estimate, which is what the passes are for. The width
-/// stops at the room's own, the widest a box can be and still sit inside the image.
-///
-/// A box still too tall at that width is a sentence this image has no room for. Nothing here can
-/// fix that, so it is left as wide as it can be — the most of it that can show — and the caller
-/// reports it rather than letting `[add] ok` stand for a mark the picture cut in half.
-function widenToFit(editor: Editor, text: PushedText, room: Box) {
-  if (room.w <= 0 || room.h <= 0) return
-  for (let pass = 0; pass < TEXT_FIT_PASSES; pass++) {
-    const bounds = editor.getShapePageBounds(text.id)
-    if (!bounds || bounds.h <= room.h) return
-    const wanted = Math.min(room.w, (bounds.w * bounds.h) / room.h)
-    // Within a point of the width it already has: no later pass can widen it either, because the
-    // room is the limit or the estimate has converged.
-    if (wanted <= bounds.w + 1) return
-    editor.updateShape({ id: text.id, type: 'text', props: { w: wanted / text.scale } })
-  }
-}
-
-/// Fits pushed text marks inside the image: each box is first widened until its wrapped height has
-/// room, then moved so the whole of it is inside. How wide the font draws a sentence and where it
-/// wraps are neither of them things the agent that sent the mark can know, so every box is measured
-/// once it exists rather than predicted.
-///
-/// Returns the marks whose box still reaches past the image after both — a sentence too long for
-/// this picture at this font size.
-///
-/// The measure needs the font the text is drawn in. A page that has not drawn text yet has not
-/// loaded it, and measures the fallback instead, so the wait comes first: it is the font already
-/// in `web/dist`, and every later push finds it loaded.
-async function fitTextsInside(editor: Editor, texts: PushedText[], image: Box): Promise<number[]> {
-  await editor.fonts.loadRequiredFontsForCurrentPage()
-  const room = textRoom(image)
-  const margin = PUSHED_TEXT_MARGIN * image.w
-  const overflowing: number[] = []
-  silently(editor, () => {
-    for (const text of texts) {
-      widenToFit(editor, text, room)
-      const bounds = editor.getShapePageBounds(text.id)
-      const shape = editor.getShape(text.id)
-      if (!bounds || !shape) continue
-      if (bounds.w > image.w || bounds.h > image.h) overflowing.push(text.mark)
-      // A box with no room to spare in a direction is put against the image's own edge in that
-      // direction rather than the margin's: the margin is room to spare, and a box that already
-      // fitted the image exactly — a caption asked for at the full width — must not be pushed out
-      // of it by being given room it has not got. A box bigger than the image itself keeps its
-      // start showing, which is what the low bound wins.
-      const insetX = bounds.w <= room.w ? margin : 0
-      const insetY = bounds.h <= room.h ? margin : 0
-      const x = within(bounds.x, image.x + insetX, image.x + image.w - insetX - bounds.w)
-      const y = within(bounds.y, image.y + insetY, image.y + image.h - insetY - bounds.h)
-      if (x === bounds.x && y === bounds.y) continue
-      editor.updateShape({ id: text.id, type: 'text', x: shape.x + (x - bounds.x), y: shape.y + (y - bounds.y) })
-    }
-  })
-  return overflowing
-}
-
-/// `value` between the two, `low` winning when the box is bigger than the room between them.
-function within(value: number, low: number, high: number) {
-  return Math.min(Math.max(value, low), Math.max(low, high))
-}
-
-/// An agent's marks as a draft, with the editor never shown: the image and the marks go on the
-/// canvas, the snapshot and a rendering come back, and whatever the canvas held is put back. The
-/// host stores the result, so the card shows the marks and Copy Drawing has them before anyone
-/// opens the editor. `p.snapshot` is the image's existing draft, so marks add to it.
-async function build(editor: Editor, p: LoadPayload, marks: Mark[]): Promise<ParkResult> {
-  const before = getSnapshot(editor.store)
-  const selected = editor.getSelectedShapeIds()
-  const ratio = window.devicePixelRatio || 1
-  const w = p.pixelWidth / ratio
-  const h = p.pixelHeight / ratio
-  quiet = true
-  try {
-    let made: { unnamed: TLShapeId[]; texts: PushedText[] } = { unnamed: [], texts: [] }
-    // The image's own box, not the payload's: a stored draft carries the image shape it was made
-    // with, and every mark is a fraction of the box the screenshot is actually drawn in.
-    let image = new Box(0, 0, w, h)
-    silently(editor, () => {
-      placeImage(editor, p, w, h)
-      image = editor.getShapePageBounds(IMAGE_ID) ?? image
-      made = createMarks(editor, marks, image)
-    })
-    const { unnamed, texts } = made
-    // Before the colours: the heuristic samples what a mark covers, so a text has to be where it
-    // will be drawn first.
-    const overflowing = texts.length ? await fitTextsInside(editor, texts, image) : []
-    // The export and the card's preview both take tldraw's SVG within the image's bounds, so a box
-    // that reaches past it is cut everywhere the mark is seen. The host cannot tell from `ok` that
-    // it happened, and the agent that sent the mark cannot either, so it is said here.
-    if (overflowing.length) {
-      postToNative({
-        type: 'log',
-        message: `pushed text too long for this image: mark ${overflowing.join(', ')} is cut off at its edge`,
-      })
-    }
-    // The snapshot is stored as it stands, so the colours are picked before it is taken.
-    if (unnamed.length) {
-      // A screenshot that will not decode leaves no sample: the marks keep the colour they were
-      // given, and the draft is still stored. Losing an agent's marks over a colour is not a trade.
-      await prepareSample(p.key, fileUrl(p.key)).catch(() => {})
-      applyColors(editor, p.key, unnamed)
-    }
-    const snapshot = getSnapshot(editor.store)
-    const preview = await render(editor, Math.min(ratio, p.previewMaxPixel / Math.max(w, h)))
-    return { snapshot, preview }
-  } finally {
-    silently(editor, () => {
-      loadSnapshot(editor.store, before)
-      editor.setSelectedShapes(selected)
-    })
-    quiet = false
-  }
 }
 
 function selectTool(editor: Editor, id: ToolId) {
@@ -743,134 +278,29 @@ function finish(editor: Editor, scale: number) {
 }
 
 async function renderDone(editor: Editor, scale: number) {
-  pickColors(editor)
+  pickColors(editor, currentKey)
   if (!hasAnnotations(editor)) {
     dirty = false
     postToNative({ type: 'done', png: null })
     return
   }
-  const png = await render(editor, scale)
-  if (!png) return cancel(editor)
+  let png: string | null = null
+  try {
+    png = await render(editor, scale)
+  } catch (err) {
+    // The host waits for `done` or `cancel` with no deadline of its own, so a rendering that
+    // throws (an image that will not decode, an SVG export that fails) still answers. The message
+    // only: a WebKit stack can name a served URL, which starts with the per-launch token.
+    postToNative({ type: 'log', message: 'done failed: ' + (err instanceof Error ? err.message : String(err)) })
+  }
+  if (!png) return cancel()
   dirty = false // the host has this rendering; no preview needed when the draft is parked
   postToNative({ type: 'done', png })
 }
 
 /// Asks the host to close; it parks the draft on the way out.
-function cancel(_editor: Editor) {
+function cancel() {
   postToNative({ type: 'cancel' })
-}
-
-/// The image with its annotations, as a PNG data URL. `scale` maps canvas points to output pixels.
-/// The screenshot is drawn straight onto a canvas and only the annotations go through tldraw's
-/// SVG export. WebKit loads raster images embedded in an SVG asynchronously, so an SVG that
-/// carries the screenshot rasterizes blank unless it is small; tldraw's own toImage hits that.
-async function render(editor: Editor, scale: number) {
-  const bounds = editor.getShapePageBounds(IMAGE_ID)
-  const shape = editor.getShape(IMAGE_ID)
-  const assetId = shape?.type === 'image' ? (shape as TLImageShape).props.assetId : null
-  const src = assetId ? await editor.resolveAssetUrl(assetId, { shouldResolveToOriginal: true }) : null
-  if (!bounds || !src) return null
-  silently(editor, () => editor.selectNone())
-  const width = Math.round(bounds.w * scale)
-  const height = Math.round(bounds.h * scale)
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')!
-  ctx.drawImage(await decodeImage(src), 0, 0, width, height)
-  await drawAnnotations(editor, ctx, bounds, width, height, scale)
-  return canvas.toDataURL('image/png')
-}
-
-/// tldraw's SVG of the annotations alone, drawn over the whole image. False when nothing is drawn.
-async function drawAnnotations(editor: Editor, ctx: CanvasRenderingContext2D, bounds: Box, width: number, height: number, scale: number) {
-  const ids = [...editor.getCurrentPageShapeIds()].filter((id) => id !== IMAGE_ID)
-  if (!ids.length) return false
-  const svg = await editor.getSvgString(ids, { bounds: Box.From(bounds), padding: 0, background: false, scale })
-  if (!svg) return false
-  const annotations = await decodeImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.svg))
-  await waitForEmbeddedFonts(svg.svg)
-  ctx.drawImage(annotations, 0, 0, width, height)
-  return true
-}
-
-/// The annotations alone on a transparent canvas, covering the image: what the host lays over the
-/// screenshot while a zoom is moving. Null when nothing is drawn. The selection is put back, since
-/// the user is editing this canvas.
-async function overlay(editor: Editor, maxPixel: number): Promise<string | null> {
-  const bounds = editor.getShapePageBounds(IMAGE_ID)
-  if (!bounds || !hasAnnotations(editor)) return null
-  const scale = Math.min(window.devicePixelRatio || 1, maxPixel / Math.max(bounds.w, bounds.h))
-  const width = Math.round(bounds.w * scale)
-  const height = Math.round(bounds.h * scale)
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const selected = editor.getSelectedShapeIds()
-  silently(editor, () => editor.selectNone())
-  try {
-    if (!(await drawAnnotations(editor, canvas.getContext('2d')!, bounds, width, height, scale))) return null
-  } finally {
-    silently(editor, () => editor.setSelectedShapes(selected))
-  }
-  return canvas.toDataURL('image/png')
-}
-
-async function decodeImage(src: string) {
-  const img = new Image()
-  img.src = src
-  await img.decode()
-  return img
-}
-
-/// WebKit starts loading a font embedded in an SVG image when it renders it, after `decode()` has
-/// resolved, and paints nothing where that font is still loading: the first text annotation the
-/// page rasterizes comes out blank. tldraw's own export sleeps 250 ms for browsers it detects as
-/// Safari, which WKWebView is not. One wait per font: WebKit keeps it for every rendering after.
-const rasterizedFonts = new Set<string>()
-async function waitForEmbeddedFonts(svg: string) {
-  // Enough of each embedded font's data URL to tell one from another, not the whole 100 KB of it.
-  const fresh = (svg.match(/url\(["']?data:font\/[^"')]{0,48}/g) ?? []).filter((font) => !rasterizedFonts.has(font))
-  if (!fresh.length) return
-  await new Promise((resolve) => setTimeout(resolve, FONT_RASTER_MS))
-  for (const url of fresh) rasterizedFonts.add(url)
-}
-
-/// Renders each item's draft by loading it into the live store, then puts the store back. The
-/// current image's draft is what is on the canvas, not the host's copy. Undo history is left as
-/// it was. A failure stops the run and is reported; whatever rendered before it is returned.
-function exportDrafts(editor: Editor, items: ExportItem[], scale: number): Promise<ExportResult> {
-  return quietly(() => exportDraftsQuietly(editor, items, scale))
-}
-
-async function exportDraftsQuietly(editor: Editor, items: ExportItem[], scale: number): Promise<ExportResult> {
-  const before = getSnapshot(editor.store)
-  const selected = editor.getSelectedShapeIds()
-  const rendered: { key: string; png: string }[] = []
-  let error: string | null = null
-  try {
-    for (const item of items) {
-      const snapshot = item.key === currentKey ? before : item.snapshot
-      silently(editor, () => loadSnapshot(editor.store, snapshot))
-      const png = await render(editor, scale)
-      if (png) rendered.push({ key: item.key, png })
-    }
-  } catch (err) {
-    error = err instanceof Error ? err.message : String(err)
-  } finally {
-    silently(editor, () => {
-      loadSnapshot(editor.store, before)
-      editor.setSelectedShapes(selected)
-    })
-  }
-  return { items: rendered, error }
-}
-
-/// Where the cursor is as a fraction of the window: what the host and the camera both hold in
-/// place while zooming. The viewport is the window, so the same fraction reads in either space.
-function cursorAnchor(editor: Editor, e: MouseEvent): ZoomAnchor {
-  const { x, y, w, h } = editor.getViewportScreenBounds()
-  return { x: (e.clientX - x) / w, y: (e.clientY - y) / h }
 }
 
 /// Keyboard shortcuts (tldraw's own are part of the UI we hide) and tool state for the native toolbar.
@@ -893,40 +323,7 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
     return () => observer.disconnect()
   }, [editor])
 
-  // A pinch arrives as a wheel event with ctrlKey; cmd+wheel zooms too. Both go to the host,
-  // coalesced to one message per frame, and never reach tldraw's own zoom. Plain wheel still pans.
-  // Each message carries where the cursor was, so the host and the camera hold that point.
-  useEffect(() => {
-    let factor = 1
-    let at: ZoomAnchor | null = null
-    let scheduled = false
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return
-      e.preventDefault()
-      e.stopPropagation()
-      factor *= Math.exp(-e.deltaY * WHEEL_ZOOM_RATE)
-      at = cursorAnchor(editor, e)
-      if (scheduled) return
-      scheduled = true
-      requestAnimationFrame(() => {
-        scheduled = false
-        if (factor !== 1) postToNative({ type: 'zoom', factor, at })
-        factor = 1
-      })
-    }
-    // The host takes the trackpad pinch before WebKit; these are the leftovers if one gets through.
-    const swallow = (e: Event) => {
-      e.preventDefault()
-      e.stopPropagation()
-    }
-    const gestures = ['gesturestart', 'gesturechange', 'gestureend']
-    window.addEventListener('wheel', onWheel, { capture: true, passive: false })
-    for (const g of gestures) window.addEventListener(g, swallow, { capture: true, passive: false })
-    return () => {
-      window.removeEventListener('wheel', onWheel, { capture: true })
-      for (const g of gestures) window.removeEventListener(g, swallow, { capture: true })
-    }
-  }, [editor])
+  useZoomWheel(editor)
 
   // A double-click with the select tool zooms in on the point clicked, the same step the
   // trackpad's two-finger double tap takes, and comes home from above the fitted size. The page
@@ -958,7 +355,7 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
       const mod = e.metaKey || e.ctrlKey
       if (e.key === 'Escape' && !editing) {
         e.preventDefault()
-        cancel(editor)
+        cancel()
         return
       }
       if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
@@ -971,14 +368,7 @@ const Hotkeys = track(function Hotkeys({ scaleRef }: { scaleRef: { current: numb
         finish(editor, scaleRef.current)
         return
       }
-      if (mod && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
-        e.preventDefault()
-        // tldraw binds these too, on the document; stopping here keeps its camera zoom out of it.
-        e.stopPropagation()
-        // No anchor: a keyboard step zooms about the window's middle, as Preview does.
-        postToNative({ type: 'zoom', factor: e.key === '0' ? null : e.key === '-' ? 1 / ZOOM_STEP : ZOOM_STEP, at: null })
-        return
-      }
+      if (zoomByKey(e, mod)) return
       if (editing) return
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault()

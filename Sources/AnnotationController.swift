@@ -465,8 +465,11 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             completion?()
         }
         fitBeforeHide { fitted = true; finish() }
-        guard let shot = current, let webView, pageReady else { standIn.sessionEnded(); answered = true; finish(); return }
+        // The image is let go on both paths: a `current` left behind says the annotator still holds
+        // it, and `canvasRefusal` would refuse a build until the next session.
+        let shot = current
         current = nil
+        guard let shot, let webView, pageReady else { standIn.sessionEnded(); answered = true; finish(); return }
         standIn.sessionEnded()
         let epoch = pageEpoch
         let done: () -> Void = {
@@ -867,10 +870,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 }
 
-/// Borderless windows refuse key status by default; the editor needs it for typing and shortcuts.
-@MainActor
 /// Takes the trackpad's zoom gestures before WebKit does, so zoom stays the app's (see
 /// `AnnotationController.zoom`). Both carry where the fingers are, which is the point zoom holds.
+@MainActor
 final class AnnotationWebView: WKWebView {
     var onMagnify: ((CGFloat, NSEvent.Phase, NSPoint) -> Void)?
     var onSmartMagnify: ((NSPoint) -> Void)?
@@ -882,6 +884,7 @@ final class AnnotationWebView: WKWebView {
     }
 }
 
+/// Borderless windows refuse key status by default; the editor needs it for typing and shortcuts.
 final class AnnotationWindow: NSWindow {
     var onCloseRequest: (() -> Void)?
     override var canBecomeKey: Bool { true }

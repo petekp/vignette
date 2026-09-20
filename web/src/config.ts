@@ -56,3 +56,12 @@ export const PUSHED_TEXT_MARGIN = 0.02
 /// image's width. A mark whose `x` leaves less room than this is pulled left rather than wrapped
 /// into a column too narrow to hold a word. A `w` the mark does name is used as it stands.
 export const PUSHED_TEXT_MIN_WIDTH = 0.15
+
+/// How far one keyboard zoom step (cmd+plus, cmd+minus) magnifies, as a multiple of the window's
+/// current size.
+export const ZOOM_STEP = 1.25
+
+/// How far a wheel or a pinch zooms: the window's size is multiplied by `exp(-deltaY * this)`, so
+/// this is the magnification per wheel unit. A pinch-out arrives as a negative deltaY and grows
+/// the window.
+export const WHEEL_ZOOM_RATE = 0.01

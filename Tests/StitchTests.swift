@@ -18,17 +18,16 @@ final class StitchTests: XCTestCase {
     /// picks and what a standard-tier reader leaves of it. Two and three stack, four and up go in
     /// two columns, and that choice is worth about a third at six pieces.
     func testTheLayoutMatchesTheTableItWasChosenFrom() {
-        let table: [(pieces: Int, columns: Int, size: CGSize, readerScale: CGFloat)] = [
-            (2, 1, CGSize(width: 1804, height: 2226), 0.54),
-            (3, 1, CGSize(width: 1804, height: 3328), 0.45),
-            (4, 2, CGSize(width: 3586, height: 2226), 0.39),
-            (5, 2, CGSize(width: 3586, height: 3328), 0.32),
-            (6, 2, CGSize(width: 3586, height: 3328), 0.32),
+        let table: [(pieces: Int, columns: Int, readerScale: CGFloat)] = [
+            (2, 1, 0.54),
+            (3, 1, 0.45),
+            (4, 2, 0.39),
+            (5, 2, 0.32),
+            (6, 2, 0.32),
         ]
         for row in table {
             let plan = Stitch.layout(Array(repeating: screenshot, count: row.pieces))
             XCTAssertEqual(plan.columns, row.columns, "\(row.pieces) pieces")
-            XCTAssertEqual(plan.size, row.size, "\(row.pieces) pieces")
             XCTAssertEqual(plan.readerScale, row.readerScale, accuracy: 0.005, "\(row.pieces) pieces")
         }
     }

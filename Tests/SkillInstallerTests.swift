@@ -82,20 +82,29 @@ final class SkillInstallerTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: installed.path))
     }
 
-    func testARootWhoseSkillsDirectoryIsALinkIsNeverWrittenThrough() throws {
+    func testARootOrItsSkillsDirectoryThatIsALinkIsNeverWrittenThrough() throws {
         // What one agent's directory looks like on a real Mac: `skills` is a link into a
         // repository of the user's, so a copy written through it lands somewhere they did not name.
         let real = dir.appendingPathComponent("someone-elses-repo/skills")
         try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("skills"), withDestinationURL: real)
 
-        XCTAssertTrue(SkillInstaller.skillsIsLink(in: root))
+        XCTAssertEqual(SkillInstaller.linkedPath(in: root)?.path, root.appendingPathComponent("skills").path)
         XCTAssertEqual(SkillInstaller.install(source: source, into: [root], stamp: stamp).map(\.outcome), [.linkedRoot])
         XCTAssertEqual(SkillInstaller.remove(from: [root]).map(\.outcome), [.linkedRoot])
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: real.path), [],
                        "nothing was written through the link")
         XCTAssertFalse(SkillInstaller.install(source: source, into: [root], stamp: stamp)[0].detail.isEmpty,
                        "the refusal says why")
+
+        // The agent directory itself can be the link, and the copy lands just as far away.
+        let linked = dir.appendingPathComponent("linked-root")
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: dir.appendingPathComponent("someone-elses-repo"))
+        XCTAssertEqual(SkillInstaller.linkedPath(in: linked)?.path, linked.path)
+        XCTAssertEqual(SkillInstaller.install(source: source, into: [linked], stamp: stamp).map(\.outcome), [.linkedRoot])
+        XCTAssertEqual(SkillInstaller.remove(from: [linked]).map(\.outcome), [.linkedRoot])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: real.path), [],
+                       "nothing was written through the linked root either")
     }
 
     func testRemoveTakesOurCopyAndReportsWhenThereIsNone() {
@@ -117,7 +126,8 @@ final class SkillInstallerTests: XCTestCase {
         let home = dir.appendingPathComponent("home")
         try FileManager.default.createDirectory(at: home.appendingPathComponent(".codex"), withIntermediateDirectories: true)
         XCTAssertEqual(SkillInstaller.roots(home: home), [home.appendingPathComponent(".codex")])
-        try FileManager.default.createDirectory(at: home.appendingPathComponent(".claude"), withIntermediateDirectories: true)
-        XCTAssertEqual(SkillInstaller.roots(home: home).map(\.lastPathComponent), [".claude", ".codex"])
+        try FileManager.default.createSymbolicLink(at: home.appendingPathComponent(".claude"), withDestinationURL: dir)
+        XCTAssertEqual(SkillInstaller.roots(home: home).map(\.lastPathComponent), [".claude", ".codex"],
+                       "a linked root is still listed, so the state report can name it as skipped")
     }
 }

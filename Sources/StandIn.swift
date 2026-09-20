@@ -39,13 +39,10 @@ final class StandIn {
 /// itself, the two images it draws, the overlay rendering that keeps its annotations current, and
 /// the hand-over that gives the picture back to the page.
 ///
-/// It is its own type because each of the last two is a call left outstanding on the page, and the
-/// annotator already remembers three of those by hand — `pendingExport`, `pendingBuild`,
-/// `pendingHide` — in two places that nothing links, `canvasRefusal` and
-/// `webViewWebContentProcessDidTerminate`. The stand-in's own outstanding calls were in neither
-/// list. Behind this seam there is nothing to remember: the annotator says `pageRestarted()` when
-/// the web process dies and `forget()` when the window goes, and what is outstanding is this
-/// file's to know.
+/// Every call the stand-in leaves outstanding on the page is this file's to track, not the
+/// annotator's. The annotator tells it three things and remembers none of them: `sessionEnded()`
+/// where it lets the image go, `pageRestarted()` when the web process dies, and `forget()` when
+/// the window has gone.
 @MainActor
 final class StandInController {
     /// The picture, while it is up. Nil at rest, when the page is what is seen and edited.

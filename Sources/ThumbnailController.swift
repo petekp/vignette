@@ -133,11 +133,12 @@ final class ThumbnailController: NSObject {
     private var autoScrollTick: CFTimeInterval = 0
     /// The one owner of the annotation session. Only `send` writes it; see AnnotatorTransition.
     private var transition = AnnotatorTransition()
-    /// The annotation queue: the files still waiting, in the order they were given, and how many
-    /// the run started with, which the `[annotate] next` line counts against. Only the queue
-    /// continues itself; every other request to annotate replaces it.
+    /// The annotation queue: the files still waiting, in the order they were given, how many the
+    /// run started with, and how many of them have opened, which is what the `[annotate] next` line
+    /// counts. Only the queue continues itself; every other request to annotate replaces it.
     private var queue: [String] = []
     private var queueTotal = 0
+    private var queueOpened = 0
     /// The file the queue hands over to, held for the length of one `send`: it is taken before the
     /// finished card's effects run, so `returnCard` knows another image follows and leaves the
     /// session open.
@@ -171,7 +172,7 @@ final class ThumbnailController: NSObject {
         model.onClickImage = { [weak self] card in
             guard let self else { return }
             // A click picks the next image by hand, so it replaces whatever the queue had left.
-            if self.transition.isActive { self.queue = []; self.annotate(card); return }
+            if self.transition.isActive { self.endQueue(); self.annotate(card); return }
             if self.model.inSelectionMode { self.toggle(card) }
             else if let action = Config.actions.first(where: \.isDefault) { self.run(action, on: [card]) }
         }
@@ -186,8 +187,10 @@ final class ThumbnailController: NSObject {
             self.prefetchFlightImage(id)
             // Focus follows the pointer: one variable says where a key acts, and moving onto a card
             // moves it there. Leaving a card leaves the focus behind, so keys still act on the card
-            // the pointer last named. Only while the stack holds keys; otherwise the annotator has them.
-            if let id, self.model.isStack, self.panel.acceptsKeys { self.model.focused = id }
+            // the pointer last named. Only while the stack holds the keys and nothing is in the
+            // annotator: the stack keeps them through the flight out, and a key there is about the
+            // card that is flying, not the one the cursor happens to be over.
+            if let id, self.model.isStack, self.panel.acceptsKeys, !self.transition.isActive { self.model.focused = id }
             // A card under the pointer means the mouse is driving; the keyboard's reveal ends with it.
             if id != nil, self.model.stripRevealed == .keyboard { self.model.stripRevealed = nil }
         }
@@ -333,7 +336,7 @@ final class ThumbnailController: NSObject {
     func toggleRecent(_ shots: [Screenshot], detail: String = "") -> StackToggle {
         if visible && model.isStack { dismiss(); return .dismissed }
         if transition.isActive { send(.dismiss) }   // a lone annotation gives way to the stack
-        queue = []   // a stack presented anew starts with nothing queued
+        endQueue()   // a stack presented anew starts with nothing queued
         let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
         guard !cards.isEmpty else { return .empty }
@@ -375,6 +378,7 @@ final class ThumbnailController: NSObject {
         guard let first = shots.first else { return }
         queue = shots.dropFirst().map(\.url.path)
         queueTotal = shots.count
+        queueOpened = 1
         annotate(first)
     }
 
@@ -396,7 +400,7 @@ final class ThumbnailController: NSObject {
     /// The page abandoned the session (Esc, click outside, Cmd+W). The reducer decides what returns.
     func annotationEnded() {
         restoreFocusOnEnd = true
-        queue = []   // ending one card ends the run; the rest of the list is dropped
+        endQueue()   // ending one card ends the run; the rest of the list is dropped
         send(.close)
     }
 
@@ -405,7 +409,7 @@ final class ThumbnailController: NSObject {
     func annotationFinished(quick: Bool) {
         restoreFocusOnEnd = true
         if quick {
-            queue = []   // quick annotate closes everything; nothing follows it
+            endQueue()   // quick annotate closes everything; nothing follows it
             if visible { dismiss() } else { send(.dismiss) }
         } else {
             send(.finish)
@@ -448,7 +452,7 @@ final class ThumbnailController: NSObject {
         queue.removeAll { paths.contains($0) }
         // The file in the annotator going ends the run: the annotator hides, and nothing should
         // take its place in the same turn.
-        if let key = transition.key, paths.contains(key) { queue = [] }
+        if let key = transition.key, paths.contains(key) { endQueue() }
         for url in urls { send(.remove(url.path)) }
         for card in model.cards where urls.contains(card.shot.url) { flights.end(id: card.id) }
         endSweep()
@@ -565,7 +569,7 @@ final class ThumbnailController: NSObject {
     func dismiss() {
         guard visible else { return }
         visible = false
-        queue = []
+        endQueue()
         dismissGeneration += 1
         let gen = dismissGeneration
         dismissTimer?.invalidate()
@@ -639,12 +643,20 @@ final class ThumbnailController: NSObject {
         model.annotating = transition.isActive
     }
 
+    /// Ends the run: nothing waits, and the next run counts from its own first image.
+    private func endQueue() {
+        queue = []
+        queueTotal = 0
+        queueOpened = 0
+    }
+
     /// The next file the queue has for the annotator. Files that have gone since drop out.
     private func takeNext() -> Screenshot? {
         while !queue.isEmpty {
             let key = queue.removeFirst()
             guard FileManager.default.fileExists(atPath: key) else { continue }
-            Log.write("[annotate] next \((key as NSString).lastPathComponent) \(queueTotal - queue.count) of \(queueTotal)")
+            queueOpened += 1
+            Log.write("[annotate] next \((key as NSString).lastPathComponent) \(queueOpened) of \(queueTotal)")
             return Screenshot(url: URL(fileURLWithPath: key))
         }
         return nil
@@ -695,7 +707,9 @@ final class ThumbnailController: NSObject {
                 guard let self, self.transition.phase == .flyingOut(key) else { return }
                 self.send(.shown)
             }, arrived: { [weak self] in
-                guard let self, self.transition.phase == .annotating(key), let card = self.sessionCard else { return }
+                // On the key, not the phase: Done or Esc is accepted between `covered` and here,
+                // and the window then stays up through the park, still owed its shadow.
+                guard let self, self.transition.key == key, let card = self.sessionCard else { return }
                 self.onAnnotatorLanded?()
                 self.flights.dropShadow(id: card.id)
                 if self.loadedKeys.contains(key) { self.flights.lift(id: card.id) }   // else pageLoaded lifts it
@@ -805,10 +819,15 @@ final class ThumbnailController: NSObject {
         guard abs(next - model.widthScale) > 0.0001 else { return }
         var transaction = Transaction(animation: animated ? Anim.spring(ui.relayoutDuration) : nil)
         transaction.disablesAnimations = !animated
+        // Narrower cards are a shorter column; the panel keeps the height it has at rest. The
+        // scroll follows the column's height, so the cards in view stay in view and the column
+        // comes back to the same place when the stack widens again.
+        let before = drawnContentHeight
         withTransaction(transaction) {
             model.widthScale = next
-            // Narrower cards are a shorter column; the panel keeps the height it has at rest.
-            model.scroll = min(model.scroll, max(0, contentHeight - model.viewport))
+            let after = drawnContentHeight
+            let followed = before > 0 ? model.scroll * after / before : model.scroll
+            model.scroll = min(followed, max(0, after - model.viewport))
         }
     }
 
@@ -872,7 +891,7 @@ final class ThumbnailController: NSObject {
     /// The drag moved. Its place in the column is kept as a distance from the top of what is on
     /// screen, so the auto-scroll can keep selecting from the same point while the cards move under it.
     private func sweep(toYFromTop y: CGFloat) {
-        sweepFromTop = y - contentHeight + model.viewport + model.scroll
+        sweepFromTop = y - drawnContentHeight + model.viewport + model.scroll
         select(toYFromTop: y)
         updateAutoScroll()
     }
@@ -927,7 +946,7 @@ final class ThumbnailController: NSObject {
         let next = min(maxScroll, max(0, model.scroll + speed * dt))
         guard next != model.scroll else { return }
         model.scroll = next
-        select(toYFromTop: fromTop + contentHeight - model.viewport - model.scroll)
+        select(toYFromTop: fromTop + drawnContentHeight - model.viewport - model.scroll)
     }
 
     private func run(_ action: ShotAction, on cards: [Card]) {
@@ -1030,9 +1049,11 @@ final class ThumbnailController: NSObject {
 
     // MARK: Scrolling
 
-    private var contentHeight: CGFloat { layout.contentHeight(cards: cardSizes, showsBar: showsBar) }
+    /// The column's height as it is drawn now, at the stack's width scale. `layoutPanel` sizes the
+    /// panel from the full-width height instead, so a narrowed stack keeps the panel it comes back to.
+    private var drawnContentHeight: CGFloat { layout.contentHeight(cards: cardSizes, showsBar: showsBar) }
 
-    private var maxScroll: CGFloat { max(0, contentHeight - model.viewport) }
+    private var maxScroll: CGFloat { max(0, drawnContentHeight - model.viewport) }
 
     private func scroll(_ event: NSEvent) {
         guard visible, maxScroll > 0 else { return }

@@ -10,7 +10,7 @@ struct Screenshot: Sendable {
 /// Whether the bundled skill is installed for the coding agents on this Mac. Three values in one
 /// key, because "not asked yet" is a state of its own: writing into another tool's directory needs
 /// a yes, and the app asks once. A bool plus an `offered` flag could say two things at once.
-enum AgentSkill: String, CaseIterable {
+enum AgentSkill: String {
     case unasked
     case on
     case off
@@ -612,12 +612,17 @@ enum AppleScreencapture {
 /// Animation helper honoring the tweakable curves.
 @MainActor
 enum Anim {
+    /// The bounce every card flight and the annotator's toolbar are carried by. One number: the
+    /// toolbar slides to the next image's place over `passesTarget` of the flight's own spring, and
+    /// the two are only in step while they agree.
+    static let flightBounce = 0.15
+
     static func swiftUI(_ curve: String, duration: Double) -> Animation {
         switch curve {
         case "easeOut": return .easeOut(duration: duration)
         case "easeInOut": return .easeInOut(duration: duration)
         case "linear": return .linear(duration: duration)
-        default: return spring(duration, bounce: 0.15)   // "spring"
+        default: return spring(duration, bounce: flightBounce)   // "spring"
         }
     }
 

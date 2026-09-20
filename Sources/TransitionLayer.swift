@@ -97,14 +97,14 @@ final class TransitionLayer {
         let gen = start(id: id, image: image, from: from, to: to, look: lookFrom, ui: ui, dropped: dropped)
         let travel = max(abs(to.minX - from.minX), abs(to.minY - from.minY),
                          abs(to.width - from.width), abs(to.height - from.height))
-        let settleTime = Anim.settle(ui.expandDuration, bounce: 0.15, distance: travel, within: Self.arrivalTolerance)
-        let coverTime = min(settleTime, Anim.passesTarget(ui.expandDuration, bounce: 0.15))
+        let settleTime = Anim.settle(ui.expandDuration, bounce: Anim.flightBounce, distance: travel, within: Self.arrivalTolerance)
+        let coverTime = min(settleTime, Anim.passesTarget(ui.expandDuration, bounce: Anim.flightBounce))
         // The starting state has to be committed before the animated change, or it starts at `to`.
         DispatchQueue.main.async { [weak self] in
             guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
             // A spring, so a flight retargeted mid-way (a swap) blends into the new path instead
             // of restarting; SwiftUI springs are additive by default.
-            withAnimation(Anim.spring(ui.expandDuration, bounce: 0.15)) {
+            withAnimation(Anim.spring(ui.expandDuration, bounce: Anim.flightBounce)) {
                 self.model.flights[i].frame = self.local(to)
                 self.model.flights[i].look = lookTo
                 self.model.flights[i].opacity = 1
@@ -153,9 +153,35 @@ final class TransitionLayer {
         pendingLift.remove(result.id)
         let resting = Flight(id: result.id, image: result.image, frame: local(result.frame), look: look, opacity: 0)
         model.flights.append(resting)
+        // Every piece answers exactly once: `arrived` when its spring settles, `dropped` when its
+        // flight is ended before that (the stack dismissed mid-converge). The last answer finishes
+        // the converge, so the result is uncovered when the pieces really are on it.
+        var answered = 0
+        let land: () -> Void = {
+            answered += 1
+            guard answered == pieces.count else { return }
+            // A turn later: a dropped flight answers from inside `end`, which the dismissal that is
+            // taking the stack down is part way through, and `completion` reaches back into it.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                for piece in pieces { self.end(id: piece.id) }
+                // The card behind it draws the shadow from here on. Not when the flight has been aimed
+                // somewhere else since (a new capture flying the stitched card into the annotator):
+                // that one is still in the air and needs its own shadow.
+                if let i = self.model.flights.firstIndex(where: { $0.id == result.id }),
+                   self.model.flights[i].generation == resting.generation { self.dropShadow(id: result.id) }
+                completion()
+                // The card view draws on SwiftUI's next commit; lift the finished image after it.
+                DispatchQueue.main.async {
+                    guard let i = self.model.flights.firstIndex(where: { $0.id == result.id }),
+                          self.model.flights[i].generation == resting.generation else { return }
+                    self.end(id: result.id)
+                }
+            }
+        }
         for piece in pieces {
             fly(id: piece.id, image: piece.image, from: piece.from, to: result.frame,
-                lookFrom: look, lookTo: look, on: screen)
+                lookFrom: look, lookTo: look, on: screen, arrived: land, dropped: land)
         }
         let flying = Set(pieces.map(\.id))
         DispatchQueue.main.async { [weak self] in
@@ -165,22 +191,6 @@ final class TransitionLayer {
                     if self.model.flights[i].id == result.id { self.model.flights[i].opacity = 1 }
                     else if flying.contains(self.model.flights[i].id) { self.model.flights[i].opacity = 0 }
                 }
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + ui.expandDuration * 1.15) { [weak self] in
-            guard let self else { return }
-            for piece in pieces { self.end(id: piece.id) }
-            // The card behind it draws the shadow from here on. Not when the flight has been aimed
-            // somewhere else since (a new capture flying the stitched card into the annotator):
-            // that one is still in the air and needs its own shadow.
-            if let i = self.model.flights.firstIndex(where: { $0.id == result.id }),
-               self.model.flights[i].generation == resting.generation { self.dropShadow(id: result.id) }
-            completion()
-            // The card view draws on SwiftUI's next commit; lift the finished image after it.
-            DispatchQueue.main.async {
-                guard let i = self.model.flights.firstIndex(where: { $0.id == result.id }),
-                      self.model.flights[i].generation == resting.generation else { return }
-                self.end(id: result.id)
             }
         }
     }

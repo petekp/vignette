@@ -65,7 +65,7 @@ struct StackLayout {
     /// The column's width on screen: the card box at the stack's current width.
     var columnWidth: CGFloat { maxCardWidth * widthScale }
     /// How narrow the stack goes, and the width it reserves for itself at that narrowest.
-    var minWidthScale: CGFloat { min(1, max(0.05, ui.stackMinScale)) }
+    var minWidthScale: CGFloat { ui.stackMinScale }
     /// The row under the column that carries the feedback toast.
     var barHeight: CGFloat { ui.selectionBarHeight }
     /// One column of button-sized rows, padded by the button spacing.

@@ -226,8 +226,9 @@ struct ParkResult {
 }
 
 /// What `PageAPI.setView` returns: the picture the page painted, and how many frames it waited for
-/// the host's resize to reach its process. Nil when the page refused the view, which keeps the
-/// stand-in up rather than uncovering a page at the wrong magnification.
+/// the host's resize to reach its process. Nil when the page refused the view and left its camera
+/// where it was; the stand-in still comes down, since a picture that never leaves covers a live
+/// editor.
 struct ViewResult {
     let width: Double
     let height: Double
