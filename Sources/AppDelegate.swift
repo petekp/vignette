@@ -122,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
         if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
-        if new.agentSkill != old.agentSkill {
+        if new.agentSkill != old.agentSkill, !agentSkillApplied {
             // Turning it on installs; turning it off removes. The offer's unasked -> off writes nothing.
             if new.agentSkillChoice == .on { applyAgentSkill(.on) }
             else if old.agentSkillChoice == .on { applyAgentSkill(.off) }
@@ -130,6 +130,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     // MARK: The agent skill
+
+    /// Set while `installSkill` records an install it has already run, so writing the setting does
+    /// not run the same install a second time.
+    private var agentSkillApplied = false
 
     /// Keeps the bundled skill in step with the setting: installed and current for this build while
     /// it is on, gone when it goes off. `roots` is for `install-skill?root=`, which points a check
@@ -151,9 +155,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             offerAgentSkill()
         }
         // Only what changed something: a launch with the skill already current says nothing. A
-        // root refused for its link is worth one line when the user asked for an install and did
-        // not get one, and nothing at all on the removal every later launch runs.
-        let quiet: [SkillInstaller.Outcome] = choice == .off ? [.unchanged, .absent, .linkedRoot] : [.unchanged, .absent]
+        // root refused for its link, or holding a copy this installer did not write, is worth one
+        // line when the user asked for an install and did not get one, and nothing at all on the
+        // removal every later launch runs.
+        let quiet: [SkillInstaller.Outcome] = choice == .off
+            ? [.unchanged, .absent, .linkedRoot, .notOurs] : [.unchanged, .absent]
         for result in results where !quiet.contains(result.outcome) {
             Log.write("[skill] \(result.outcome.rawValue) \(result.path.path)\(result.detail.isEmpty ? "" : " \(result.detail)")")
         }
@@ -182,8 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// listed as usual, so silence would be the only sign it was skipped.
     private func linkedSkillRoots() -> [String] {
         SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
-            .filter(SkillInstaller.skillsIsLink(in:))
-            .map { $0.appendingPathComponent("skills").path }
+            .compactMap { SkillInstaller.linkedPath(in: $0)?.path }
     }
 
     /// `shotnote://install-skill`, for a script. With `root=` it installs there and leaves the
@@ -208,7 +213,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return
         }
         if request.root == nil, settings.data.agentSkillChoice != .on {
+            agentSkillApplied = true
             settings.update { $0.agentSkill = AgentSkill.on.rawValue }
+            agentSkillApplied = false
         }
         Commands.ok("install-skill", detail)
     }
@@ -277,6 +284,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard shots.count >= 2 else { Commands.error("stitch", .notEnoughFiles, "needs 2, got \(shots.count)"); return }
         guard let composed = Stitch.compose(shots.map(\.url), longSideLimit: Settings.shared.data.ui.stitchLongSide) else {
             Commands.error("stitch", .unreadableImage, shots.map(\.url.lastPathComponent).joined(separator: ", ")); return
+        }
+        // A file that would not decode is not in the picture, and one image is not a stitch.
+        guard composed.pieces >= 2 else {
+            Commands.error("stitch", .unreadableImage, "only \(composed.pieces) of \(shots.count) images could be read"); return
         }
         let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
         let out = watchFolder.appendingPathComponent("Stitch \(stamp.string(from: Date())).png")

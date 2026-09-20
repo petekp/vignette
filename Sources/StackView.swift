@@ -220,16 +220,16 @@ private struct CardView: View {
         // Copy in the bottom-left corner, delete in the bottom-right, both as icons; Copy says its
         // name while the cursor is on it. A click anywhere else on the card draws.
         .overlay(alignment: .bottomLeading) {
-            if showsButtons, let copy = Config.action(id: "copy") {
-                RevealButton(symbol: copy.symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
+            if showsButtons, let copy = Config.action(id: "copy"), let symbol = copy.symbol {
+                RevealButton(symbol: symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
                     .onHover { model.overControl = $0 }
                     .padding(CardView.buttonPad)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if showsButtons, let trash = Config.action(id: "trash") {
-                RoundButton(symbol: trash.symbol, help: trash.label, ui: ui) { model.onAction(trash, [card]) }
+            if showsButtons, let trash = Config.action(id: "trash"), let symbol = trash.symbol {
+                RoundButton(symbol: symbol, help: trash.label, ui: ui) { model.onAction(trash, [card]) }
                     .onHover { model.overControl = $0 }
                     .padding(CardView.buttonPad)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
@@ -383,7 +383,9 @@ private struct SelectionStrip: View {
             ForEach(Config.stripActions, id: \.id) { action in
                 Button { model.onAction(action, cards) } label: {
                     HStack(spacing: 0) {
-                        Image(systemName: action.symbol)
+                        // The icon column keeps its width with or without a symbol, so the labels
+                        // still line up against it.
+                        Group { if let symbol = action.symbol { Image(systemName: symbol) } }
                             .font(.system(size: 13, weight: .medium))
                             .frame(width: ui.buttonSize, height: ui.buttonSize)
                         RevealedLabel(text: action.label, shortcut: action.key?.glyphs ?? "",
@@ -402,11 +404,12 @@ private struct SelectionStrip: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
         // The pointer on the strip takes the reveal over from the keys, and takes it away on the
-        // way out: from here on the mouse is driving.
-        .onHover { model.stripRevealed = $0 ? .hover : nil }
+        // way out. Only its own: a strip that steps aside for the annotator and comes back keeps
+        // the labels a keyboard selection put out.
+        .onHover { if $0 { model.stripRevealed = .hover } else if model.stripRevealed == .hover { model.stripRevealed = nil } }
         .animation(Anim.spring(ui.hoverRevealDuration), value: model.stripRevealed)
         // A strip that goes while the cursor is on it gets no leaving hover.
-        .onDisappear { model.stripRevealed = nil }
+        .onDisappear { if model.stripRevealed == .hover { model.stripRevealed = nil } }
         // The box stays the grown width and the strip sits against its trailing edge: the right
         // edge never moves, and the labels grow into the room on the left that the box holds open.
         .frame(width: size.width + reveal, alignment: .trailing)
@@ -424,8 +427,9 @@ struct TactileButtonStyle: ButtonStyle {
     /// Where the hover scale grows from. A button that grows a label to the right scales from its
     /// leading edge, so the two motions pull the same way.
     var anchor: UnitPoint = .center
-    /// 1 for a button whose label coming out is its hover already: a scale on top of that would
-    /// stretch the label and move the icon out from under the cursor.
+    /// 1 for the strip's rows, where the label coming out is the hover and a scale on top of it
+    /// would stretch the label and move the icon out from under the cursor. A card's Copy keeps the
+    /// scale and anchors it to its leading edge, so the scale and the label pull the same way.
     var hoverScale: CGFloat = 1.08
     @State private var hovered = false
     private var motion: Double { Settings.shared.motionScale }

@@ -86,7 +86,7 @@ final class AnnotatorToolbar {
     /// frame, which is when that window comes up (`TransitionLayer.fly`). The motion scale is in
     /// `motionUI`, so `ui.motion: 0` puts the bar at the next place at once.
     private var slideSeconds: Double {
-        Anim.passesTarget(Settings.shared.motionUI.expandDuration, bounce: 0.15)
+        Anim.passesTarget(Settings.shared.motionUI.expandDuration, bounce: Anim.flightBounce)
     }
 
     /// Orders the panel in hidden and lets the bar rise into place a turn later, so the
