@@ -25,6 +25,10 @@ targets:
       - path: skills/vignette
         type: folder
         buildPhase: resources
+      # Vendor logos for the agent badge, one <name>.svg per agent= value (Agent.logo(for:)).
+      - path: Resources/agents
+        type: folder
+        buildPhase: resources
     info:
       path: Info.plist
       properties:

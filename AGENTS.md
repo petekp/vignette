@@ -75,7 +75,8 @@ the measurements and the reasoning; a rule here points at its note.
    `add?file=` copies an image in from anywhere and the watcher then reports it like a capture,
    minus the copy and annotate toggles (`&annotate` opens the editor). `&agent=<name>` says which
    agent is pushing it: the name is recorded on the copy as the `com.petepetrash.vignette.agent`
-   extended attribute (`Agent.swift`, `xattr -l` shows it) and the card gets a purple badge.
+   extended attribute (`Agent.swift`, `xattr -l` shows it) and the card gets a white "From <Name>" tab
+   with the vendor's logo when `Resources/agents/<name>.svg` has one (`Agent.logo(for:)`).
    `&marks=<json file>` pushes the agent's own annotations with the image (README has the format):
    the page turns them into a draft before the card appears, so the human edits them like their own,
    and the command answers once that draft is stored. That JSON file may also be anywhere; it is
@@ -415,8 +416,9 @@ the same driven sequence; a single run varies.
   can appear the moment the card lands (`show`); a swap runs two of these at once, and the stack
   keeps the slot, drawn empty, so the card flies back to the same place. Which tool an image opens
   on is in `web/src/config.ts`: `DEFAULT_TOOL` for a fresh image, `REOPEN_TOOL` for one that
-  already has a draft. A reopen selects the annotation drawn last (`lastAnnotation`, the top of the
-  page's z-order), so a drag or Delete acts on that mark.
+  already has a draft. A reopen selects the annotation the user drew last (`lastAnnotation`, the top
+  of the page's z-order), so a drag or Delete acts on that mark; an agent's pushed marks carry
+  `meta.agent` and are never the one picked, so a card an agent sent opens with nothing selected.
 - Annotations in progress are drafts owned by the app (`DraftStore`), one JSON snapshot per
   screenshot under `~/Library/Application Support/<bundle id>/drafts/` keyed by the file path
   the app uses everywhere (`shot.url.path`), with a preview PNG under `~/Library/Caches/<bundle

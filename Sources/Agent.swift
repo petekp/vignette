@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// Which agent added a screenshot. `add?file=…&agent=<name>` records the name on the copied file
 /// as an extended attribute: it travels with the file through a rename or a move on the same
@@ -35,11 +35,24 @@ enum Agent {
         return String(decoding: buffer.prefix(size), as: UTF8.self)
     }
 
-    /// The badge glyph for an agent. Every vendor falls back to the same one today: SF Symbols has
-    /// no robot, and a vendor's own logo is a trademark asset to clear first (docs/TODOS.md).
-    static func symbol(for name: String) -> String { vendorSymbols[name.lowercased()] ?? fallbackSymbol }
+    /// What the badge says: "From Claude" for `agent=claude`, "From an agent" for a push with no name.
+    static func label(for name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard let first = trimmed.first else { return "From an agent" }
+        return "From " + first.uppercased() + trimmed.dropFirst()
+    }
 
-    /// A chip: a machine put this image here. The closest SF Symbol to the robot this wants to be.
+    /// The vendor's logo, `Resources/agents/<name>.svg` in the bundle, or nil for a vendor without one.
+    /// Loaded once per name; the SVG is rasterized by AppKit at the size it is drawn.
+    @MainActor static func logo(for name: String) -> NSImage? {
+        let key = name.lowercased()
+        if let cached = logos[key] { return cached }
+        let image = Bundle.main.url(forResource: key, withExtension: "svg", subdirectory: "agents").flatMap { NSImage(contentsOf: $0) }
+        logos[key] = .some(image)
+        return image
+    }
+    @MainActor private static var logos: [String: NSImage?] = [:]
+
+    /// The glyph for a vendor without a logo: the closest SF Symbol to the robot this wants to be.
     static let fallbackSymbol = "cpu"
-    private static let vendorSymbols: [String: String] = [:]
 }

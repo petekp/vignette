@@ -203,9 +203,9 @@ final class RenderTests: XCTestCase {
         XCTAssertEqual(try eval("return window.editor.getCurrentPageShapeIds().size") as? Int, 1 + marks.count,
                        "the stored draft reopens as the image with every mark on it")
         XCTAssertEqual(try eval("return window.editor.getShape('shape:screenshot').props.w > 0") as? Bool, true)
-        // A reopen picks up the annotation added last, which here is the text mark, the last of the three.
-        XCTAssertEqual(try eval("return window.editor.getSelectedShapeIds().length") as? Int, 1)
-        XCTAssertEqual(try eval("return window.editor.getOnlySelectedShape().type") as? String, "text")
+        // A reopen picks up the annotation the user drew last; these are the agent's, so none is picked.
+        XCTAssertEqual(try eval("return window.editor.getSelectedShapeIds().length") as? Int, 0)
+        XCTAssertEqual(try eval("return window.editor.getCurrentPageShapes().filter(s => s.meta.agent).length") as? Int, marks.count)
     }
 
     /// A marked push and an image opening at the same moment. The build borrows the canvas and puts

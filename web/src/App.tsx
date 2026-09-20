@@ -218,9 +218,9 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
   if (p.frame) placeEditor(p.frame)
   silently(editor, () => {
     placeImage(editor, p, w, h)
-    // A reopen selects the annotation drawn last, and only that one, whatever the draft was parked
-    // with: the select tool is what opens, so a color press, a drag, or Delete acts on it. A fresh
-    // image has nothing to pick up.
+    // A reopen selects the annotation the user drew last, and only that one, whatever the draft
+    // was parked with: the select tool is what opens, so a color press, a drag, or Delete acts on
+    // it. A fresh image has nothing to pick up, and neither has a card whose marks an agent drew.
     const last = p.snapshot ? lastAnnotation(editor) : null
     editor.setSelectedShapes(last ? [last] : [])
   })
@@ -243,11 +243,12 @@ function loadImageQuietly(editor: Editor, p: LoadPayload, scaleRef: { current: n
   )
 }
 
-/// The annotation drawn last: the top of the page's z-order, which is where tldraw puts each new
-/// shape (`getHighestIndexForParent`). Nothing here reorders shapes, so top is newest. The
-/// screenshot is under all of them and is never it.
+/// The annotation the user drew last: the top of the page's z-order, which is where tldraw puts
+/// each new shape (`getHighestIndexForParent`). Nothing here reorders shapes, so top is newest. The
+/// screenshot is under all of them and is never it, and an agent's pushed marks (`meta.agent`)
+/// are not the user's to have picked up.
 function lastAnnotation(editor: Editor): TLShapeId | null {
-  const shapes = editor.getCurrentPageShapesSorted().filter((s) => s.id !== IMAGE_ID)
+  const shapes = editor.getCurrentPageShapesSorted().filter((s) => s.id !== IMAGE_ID && !s.meta.agent)
   return shapes.length ? shapes[shapes.length - 1].id : null
 }
 

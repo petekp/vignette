@@ -347,18 +347,29 @@ private struct SelectionCircle: View {
     }
 }
 
-/// Marks a card an agent pushed in with `add?agent=`.
+/// Marks a card an agent pushed in with `add?agent=`: a white tab saying who, with the vendor's
+/// logo when the bundle has one (`Agent.logo(for:)`).
 private struct AgentBadge: View {
     let agent: String
     let size: CGFloat
     var body: some View {
-        ZStack {
-            Circle().fill(Color.purple)
-            Image(systemName: Agent.symbol(for: agent)).font(.system(size: size / 2, weight: .bold)).foregroundStyle(.white)
+        HStack(spacing: size * 0.22) {
+            if let logo = Agent.logo(for: agent) {
+                Image(nsImage: logo).resizable().aspectRatio(contentMode: .fit)
+                    .frame(width: size * 0.62, height: size * 0.62)
+            } else {
+                Image(systemName: Agent.fallbackSymbol).font(.system(size: size * 0.5, weight: .bold))
+                    .foregroundStyle(.black.opacity(0.8))
+            }
+            Text(Agent.label(for: agent)).font(.system(size: size * 0.55, weight: .semibold))
+                .foregroundStyle(.black.opacity(0.85)).lineLimit(1).fixedSize()
         }
-        .frame(width: size, height: size)
-        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-        .help(agent.isEmpty ? "Added by an agent" : "Added by \(agent)")
+        .padding(.horizontal, size * 0.4)
+        .frame(height: size)
+        // A hairline edge and a deep shadow: the tab lands on light images too, a white wordmark included.
+        .background(Capsule().fill(.white).overlay(Capsule().strokeBorder(.black.opacity(0.22), lineWidth: 0.75)))
+        .shadow(color: .black.opacity(0.5), radius: 5, y: 1.5)
+        .help(Agent.label(for: agent))
     }
 }
 

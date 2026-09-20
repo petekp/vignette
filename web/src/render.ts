@@ -203,7 +203,8 @@ function createMarks(editor: Editor, marks: Mark[], image: Box): { unnamed: TLSh
     const y = image.y + m.y * image.h
     const color = (m.color ?? CANDIDATES[0].id) as ColorId
     // A mark that names a colour keeps it; one that names none is the heuristic's to colour.
-    const meta = m.color ? { colorChosen: true } : {}
+    // `agent` says who drew it: a reopen never selects an agent's mark as if it were the user's own.
+    const meta = { agent: true, ...(m.color ? { colorChosen: true } : {}) }
     const id = createShapeId()
     if (!m.color) unnamed.push(id)
     if (m.type === 'arrow') {

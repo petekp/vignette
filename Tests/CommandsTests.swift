@@ -222,9 +222,9 @@ final class AgentTests: XCTestCase {
         XCTAssertNil(Agent.of(dir.appendingPathComponent("gone.png")))
     }
 
-    func testEveryVendorFallsBackToOneGlyphToday() {
-        XCTAssertEqual(Agent.symbol(for: "claude"), Agent.fallbackSymbol)
-        XCTAssertEqual(Agent.symbol(for: ""), Agent.fallbackSymbol)
+    func testBadgeLabelNamesTheAgent() {
+        XCTAssertEqual(Agent.label(for: "claude"), "From Claude")
+        XCTAssertEqual(Agent.label(for: ""), "From an agent")
         XCTAssertNotNil(NSImage(systemSymbolName: Agent.fallbackSymbol, accessibilityDescription: nil), "the badge glyph must exist")
     }
 }
