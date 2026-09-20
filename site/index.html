@@ -82,12 +82,13 @@
   figure {
     margin: 0 0 1.4rem;
   }
-  img {
+  img, video {
     display: block;
     width: 100%;
     height: auto;
     border: 1px solid rgb(var(--ink) / 0.15);
     border-radius: 4px;
+    background: #000;
   }
   figcaption {
     margin-top: 0.6rem;
@@ -107,6 +108,22 @@
 <p>Vignette is a macOS menu bar app for what happens after the screenshot: Cmd+Shift+3, 4 and 5
 still take it, and Vignette copies it, keeps the recent ones in a stack in the corner of the
 screen, and opens any of them in an editor to draw on.</p>
+
+<figure>
+  <video
+    controls
+    playsinline
+    muted
+    preload="metadata"
+    poster="demo/vignette-demo.jpg"
+    width="1512"
+    height="982">
+    <source src="demo/vignette-demo-av1.mp4" type='video/mp4; codecs="av01.0.08M.08"'>
+    <source src="demo/vignette-demo.mp4" type='video/mp4; codecs="avc1.640029"'>
+    <a href="demo/vignette-demo.mp4">Download the demo video (MP4)</a>
+  </video>
+  <figcaption>Taking a screenshot, marking it up, sending it to Claude, and getting a screenshot back from Claude with its own question drawn on it.</figcaption>
+</figure>
 
 <figure>
   <img src="stack-and-editor.png" width="1200" height="668" alt="A Mac screen with recent screenshots stacked as cards down the right edge and one of them open in the editor beside them, a red rectangle drawn on it.">
