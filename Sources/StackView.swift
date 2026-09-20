@@ -220,16 +220,16 @@ private struct CardView: View {
         // Copy in the bottom-left corner, delete in the bottom-right, both as icons; Copy says its
         // name while the cursor is on it. A click anywhere else on the card draws.
         .overlay(alignment: .bottomLeading) {
-            if showsButtons, let copy = Config.action(id: "copy") {
-                RevealButton(symbol: copy.symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
+            if showsButtons, let copy = Config.action(id: "copy"), let symbol = copy.symbol {
+                RevealButton(symbol: symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
                     .onHover { model.overControl = $0 }
                     .padding(CardView.buttonPad)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if showsButtons, let trash = Config.action(id: "trash") {
-                RoundButton(symbol: trash.symbol, help: trash.label, ui: ui) { model.onAction(trash, [card]) }
+            if showsButtons, let trash = Config.action(id: "trash"), let symbol = trash.symbol {
+                RoundButton(symbol: symbol, help: trash.label, ui: ui) { model.onAction(trash, [card]) }
                     .onHover { model.overControl = $0 }
                     .padding(CardView.buttonPad)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
@@ -383,7 +383,9 @@ private struct SelectionStrip: View {
             ForEach(Config.stripActions, id: \.id) { action in
                 Button { model.onAction(action, cards) } label: {
                     HStack(spacing: 0) {
-                        Image(systemName: action.symbol)
+                        // The icon column keeps its width with or without a symbol, so the labels
+                        // still line up against it.
+                        Group { if let symbol = action.symbol { Image(systemName: symbol) } }
                             .font(.system(size: 13, weight: .medium))
                             .frame(width: ui.buttonSize, height: ui.buttonSize)
                         RevealedLabel(text: action.label, shortcut: action.key?.glyphs ?? "",

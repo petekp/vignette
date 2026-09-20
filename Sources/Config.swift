@@ -21,9 +21,9 @@ enum Config {
                    placement: .everywhere) { shots, app in app.copyToClipboard(shots) },
         ShotAction(id: "annotate", symbol: "pencil.line", label: "Draw", key: .init("\r", []),
                    placement: .strip, isDefault: true) { shots, app in app.annotate(shots) },
-        ShotAction(id: "paths", symbol: "text.quote", label: "Copy Paths", key: .init("c", [.command, .option]),
+        ShotAction(id: "paths", label: "Copy Paths", key: .init("c", [.command, .option]),
                    placement: .shortcut) { shots, app in app.copyPaths(shots) },
-        ShotAction(id: "copy-annotated", symbol: "doc.on.doc.fill", label: "Copy Drawing", key: .init("c", [.command, .shift]),
+        ShotAction(id: "copy-annotated", label: "Copy Drawing", key: .init("c", [.command, .shift]),
                    placement: .shortcut) { shots, app in app.copyAnnotated(shots) },
         ShotAction(id: "stitch", symbol: "rectangle.stack", label: "Stitch", key: .init("s", [.command]),
                    placement: .strip, minimumCount: 2) { shots, app in app.stitch(shots) },
@@ -61,7 +61,8 @@ struct ShotAction: Sendable {
     }
 
     let id: String
-    let symbol: String      // SF Symbol name
+    /// SF Symbol name. None for a `.shortcut` action: it is drawn on no card and in no strip.
+    var symbol: String? = nil
     let label: String
     var key: Key? = nil     // shortcut while the recent stack has focus
     var placement: Placement = .everywhere
