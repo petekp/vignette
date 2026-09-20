@@ -4,7 +4,7 @@ Things decided or raised but not built. Each entry says what, why, and what it w
 
 ## Public release (raised 2026-09-19)
 
-The repository went public on 2026-09-19 at github.com/petekp/vignette, renamed from Shotnote the
+The repository went public on 2026-09-19 at github.com/petekp/vignette, renamed the
 same day. A downloadable build waits on three things, in order:
 
 - The tldraw key. The app ships only with one (AGENTS.md, the first rule), and the Hobby key is
