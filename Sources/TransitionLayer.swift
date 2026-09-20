@@ -97,14 +97,14 @@ final class TransitionLayer {
         let gen = start(id: id, image: image, from: from, to: to, look: lookFrom, ui: ui, dropped: dropped)
         let travel = max(abs(to.minX - from.minX), abs(to.minY - from.minY),
                          abs(to.width - from.width), abs(to.height - from.height))
-        let settleTime = Anim.settle(ui.expandDuration, bounce: 0.15, distance: travel, within: Self.arrivalTolerance)
-        let coverTime = min(settleTime, Anim.passesTarget(ui.expandDuration, bounce: 0.15))
+        let settleTime = Anim.settle(ui.expandDuration, bounce: Anim.flightBounce, distance: travel, within: Self.arrivalTolerance)
+        let coverTime = min(settleTime, Anim.passesTarget(ui.expandDuration, bounce: Anim.flightBounce))
         // The starting state has to be committed before the animated change, or it starts at `to`.
         DispatchQueue.main.async { [weak self] in
             guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
             // A spring, so a flight retargeted mid-way (a swap) blends into the new path instead
             // of restarting; SwiftUI springs are additive by default.
-            withAnimation(Anim.spring(ui.expandDuration, bounce: 0.15)) {
+            withAnimation(Anim.spring(ui.expandDuration, bounce: Anim.flightBounce)) {
                 self.model.flights[i].frame = self.local(to)
                 self.model.flights[i].look = lookTo
                 self.model.flights[i].opacity = 1

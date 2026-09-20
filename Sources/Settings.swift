@@ -612,12 +612,17 @@ enum AppleScreencapture {
 /// Animation helper honoring the tweakable curves.
 @MainActor
 enum Anim {
+    /// The bounce every card flight and the annotator's toolbar are carried by. One number: the
+    /// toolbar slides to the next image's place over `passesTarget` of the flight's own spring, and
+    /// the two are only in step while they agree.
+    static let flightBounce = 0.15
+
     static func swiftUI(_ curve: String, duration: Double) -> Animation {
         switch curve {
         case "easeOut": return .easeOut(duration: duration)
         case "easeInOut": return .easeInOut(duration: duration)
         case "linear": return .linear(duration: duration)
-        default: return spring(duration, bounce: 0.15)   // "spring"
+        default: return spring(duration, bounce: flightBounce)   // "spring"
         }
     }
 
