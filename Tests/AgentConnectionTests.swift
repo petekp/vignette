@@ -125,4 +125,57 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(found.map(\.id), ["b"])
         XCTAssertEqual(found.first?.address, .codexThread(uuid: "01a0c176-bfab-7662-9ffb-a30cc3490835", endpoint: nil))
     }
+
+    // MARK: Codex discovery
+
+    /// A running app-server's sessions and the configured ones are one list. A configured entry
+    /// that names the same thread wins, because its name is the one the person chose.
+    func testDiscoveredSessionsJoinTheConfiguredOnesWithoutDuplicatingAThread() {
+        let shared = "01a0c14e-e536-7580-866c-c50622cecd9b"
+        let answer = """
+        {"id":2,"result":{"data":[\
+        {"id":"\(shared)","name":"Server's name","cwd":"/Users/p/Code/vignette","status":{"type":"idle"}},\
+        {"id":"01a0c28f-7c24-7a93-82e4-a7906de82cf4","name":"Open drawing","cwd":"/tmp/loop-test","status":{"type":"idle"}}]}}
+        """
+        var connection = CodexConnection(configured: [
+            AgentDestination(id: "mine", name: "My name for it", detail: "vignette",
+                             address: .codexThread(uuid: shared, endpoint: nil)),
+        ])
+        connection.binary = { "/bin/codex" }
+        connection.serverIsRunning = { true }
+        connection.converse = { _, _, _ in [answer] }
+
+        let found = connection.destinations()
+        XCTAssertEqual(found.map(\.name), ["My name for it", "Open drawing"])
+        XCTAssertEqual(found[1].detail, "loop-test", "the project is the session's own folder")
+        XCTAssertEqual(found[1].address, .codexThread(uuid: "01a0c28f-7c24-7a93-82e4-a7906de82cf4",
+                                                      endpoint: "unix://" + AppServer.controlSocket.path))
+    }
+
+    /// No server to ask is the ordinary case, and not an error: the configured entries answer and
+    /// nothing is started to change that.
+    func testWithNoRunningServerOnlyTheConfiguredSessionsAreOffered() {
+        var asked = false
+        var connection = CodexConnection(configured: [
+            AgentDestination(id: "mine", name: "Mine", address: .codexThread(uuid: "u", endpoint: nil)),
+        ])
+        connection.binary = { "/bin/codex" }
+        connection.serverIsRunning = { false }
+        connection.converse = { _, _, _ in asked = true; return [] }
+
+        XCTAssertEqual(connection.destinations().map(\.name), ["Mine"])
+        XCTAssertFalse(asked, "nothing is spawned when there is no socket")
+    }
+
+    /// The conversation is aimed at the control socket through the proxy, which is what reaches
+    /// the server that owns the threads.
+    func testDiscoveryAsksThroughTheProxyAtTheControlSocket() {
+        var argv: [String] = []
+        var connection = CodexConnection()
+        connection.binary = { "/bin/codex" }
+        connection.serverIsRunning = { true }
+        connection.converse = { _, arguments, _ in argv = arguments; return [] }
+        _ = connection.destinations()
+        XCTAssertEqual(argv, ["app-server", "proxy", "--sock", AppServer.controlSocket.path])
+    }
 }

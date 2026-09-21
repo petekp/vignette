@@ -11,8 +11,12 @@ session's endpoint or an explicit choice of Vignette-created sessions. Neither w
 ~/.codex/packages/standalone/current/codex`), so there is no shared local endpoint to discover, and
 installing one is a machine change that needs Pete. Vignette therefore takes the endpoint and the
 thread UUID as **explicit configuration** and never starts, owns, resumes, or stops a Codex server
-or session. A Codex destination is a line in `settings.json`. This leaves the gate open in the sense
-the plan meant: a future daemon or desktop install can supply the same two values automatically.
+or session. A Codex destination is a line in `settings.json`.
+
+That gate is now half open. Vignette reads a running app-server's own thread list when one is
+there, so a daemon supplies the sessions automatically and the configured lines are the fallback
+rather than the only way (`docs/codex-discovery-2026-09-21.md`). It still starts nothing: no
+socket, no discovery.
 
 **Reply trust model.** Implemented as the plan's own proposal: a per-request bearer ticket in a
 private request directory. Possession of the ticket authorizes one request's replies; it does not
@@ -150,6 +154,10 @@ out stays unknown: it is neither retried on another route nor reported as failed
 
 ## Known limits
 
+- Codex sessions are discovered only while an app-server is running with a control socket. On a
+  Mac with none, they still have to be named in `settings.json`, and the ChatGPT desktop app's own
+  server does not count: it listens on nothing. Sending to a *discovered* thread is also the one
+  part of the loop never exercised end to end, since no daemon owns a thread here.
 - The Send menu groups the sessions by the project each is working in, which is what a person
   picking among a dozen navigates by. Up to six projects they are sections, so every session is one
   press away; above that each project is a submenu, because a heading and separator per project is

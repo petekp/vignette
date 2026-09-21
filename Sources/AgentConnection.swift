@@ -48,6 +48,13 @@ enum AgentAddress: Equatable, Codable {
         }
     }
 
+    /// The Codex thread this address names, for telling a discovered session from a configured
+    /// one that is the same conversation. Nil for every other client.
+    var threadUUID: String? {
+        if case .codexThread(let uuid, _) = self { return uuid }
+        return nil
+    }
+
     /// How the address reads in `[state]` and in a request record's log line.
     var description: String {
         switch self {
@@ -205,6 +212,12 @@ struct CodexConnection: AgentConnection {
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
         Send.launch($0, $1, timeout: $2)
     }
+    /// One stdio conversation with a running app-server. Injected so a test never spawns codex.
+    var converse: @Sendable (String, [String], [String]) -> [String] = {
+        AppServer.converse($0, $1, $2)
+    }
+    /// Whether an app-server is there to ask. Injected for the same reason.
+    var serverIsRunning: @Sendable () -> Bool = { AppServer.controlSocketExists }
 
     static let queueTimeout: TimeInterval = 25
 
@@ -220,9 +233,32 @@ struct CodexConnection: AgentConnection {
         binaryPaths.first(where: exists)
     }
 
-    /// Codex sessions cannot be enumerated without an endpoint to ask, so these are the ones the
-    /// person configured. A route that could enumerate would fill this the same way.
-    func destinations() -> [AgentDestination] { configured }
+    /// Every Codex session that can be addressed: the ones a running app-server reports, plus the
+    /// ones settings.json names. A configured entry the server also reported is kept once, under
+    /// the configured name, because that is the name the person chose.
+    func destinations() -> [AgentDestination] {
+        let discovered = self.discovered()
+        let named = Set(configured.compactMap(\.address.threadUUID))
+        return configured + discovered.filter { !named.contains($0.address.threadUUID ?? "") }
+    }
+
+    /// The sessions a running app-server knows about. Empty when there is no server to ask, which
+    /// is the ordinary case on a Mac with no daemon: the configured entries are then the answer,
+    /// and nothing is started to change that.
+    private func discovered() -> [AgentDestination] {
+        guard serverIsRunning(), let codex = binary() else { return [] }
+        let socket = AppServer.controlSocket.path
+        let lines = converse(codex, ["app-server", "proxy", "--sock", socket], AppServer.discoveryRequests())
+        return AppServer.threads(in: lines).map { thread in
+            AgentDestination(
+                id: thread.id,
+                name: thread.name?.isEmpty == false ? thread.name! : "Codex \(thread.id.prefix(8))",
+                detail: (thread.cwd as NSString).lastPathComponent,
+                // The same socket the listing came from: `codex queue --remote unix://<path>`
+                // reaches the server that owns the thread, which is what resolves the UUID.
+                address: .codexThread(uuid: thread.id, endpoint: "unix://" + socket))
+        }
+    }
 
     /// The argv for one queue call. Built as a list, never a shell line: an image path with spaces
     /// and a message with quotes are both one element.

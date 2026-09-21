@@ -618,8 +618,16 @@ the same driven sequence; a single run varies.
   event cannot copy it to the clipboard or open the editor, and its card is inserted once, by its
   own import. Startup loads the records before the watcher starts or anything warms the stack.
 - A destination is an agent session, never the terminal displaying it. Codex is addressed by its
-  thread UUID at an App Server endpoint named in `settings.json` (`codexSessions`); the runtime
-  resolves the UUID or fails, which is `AddressGuard.runtimeEnforced`. Claude Code is addressed by
+  thread UUID at an App Server endpoint; the runtime resolves the UUID or fails, which is
+  `AddressGuard.runtimeEnforced`. Those sessions come from two places and are one list: a running
+  app-server's own, and the ones `settings.json` names (`codexSessions`). `AppServer.swift` is the
+  only thing that speaks the app-server protocol, and it only reads: when
+  `~/.codex/app-server-control/app-server-control.sock` is there, `codex app-server proxy --sock`
+  carries a `thread/list` and the answer becomes menu rows, grouped by each thread's own `cwd`. No
+  socket means no server to ask, which is the ordinary case and not an error: the configured
+  entries are then the whole answer, and Vignette still starts nothing.
+  `docs/codex-discovery-2026-09-21.md` has the protocol, the timings behind `listLimit`, and what
+  is on this Mac. Claude Code is addressed by
   its session id, which herdr reports per pane; herdr's submission API takes a pane and has no
   expected-session parameter, so Vignette re-lists and checks the pane still holds that exact
   session immediately before submitting (`AddressGuard.preflight`). A session in no pane is an
