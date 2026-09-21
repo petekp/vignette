@@ -13,54 +13,33 @@ https://github.com/user-attachments/assets/cb06c65f-ba08-436f-8e7e-4df31729ad36
 
 ## What it does
 
-### The same shortcuts
-
-Cmd+Shift+3, 4, and 5 still take the screenshot. A preview thumbnail appears in the bottom right
-corner, just like it used to, with Copy, Draw, and Delete on hover.
-
-### Screenshot history, one key away
-
-Use the Vignette shortcut (double-tap `Shift`, by default) and your recent screenshots slide in
-from the right. A camera roll for your screenshots. Arrows move, Space selects, Return opens.
-
-### Non-destructive
-
-A drawing is saved beside the original and stays editable. Go back, change it, undo it. The
-original is never touched.
-
-### Queue
-
-Annotate several at once. Open them and they come one after another. Each Done opens the next.
-
-### One-click stitch
-
-Several screenshots into one image, auto-numbered.
-
-### No colour picker
-
-The colour is chosen from the image for the highest contrast.
-
-### Three tools
-
-Rectangle, text, arrow.
-
-### Copies on capture
-
-Every screenshot lands on the clipboard.
-
-### Native, refined feel
-
-Draw without leaving what you were doing. The stack takes keys without stealing focus from your
-app. Hold the hotkey and the newest shot lifts into the editor.
-
-### Agent-friendly
-
-Experimental. Two-way: a coding agent can send you annotations, and you can send it yours. A skill
-for Claude Code and Codex ships with the app.
-
-### Customizable and hackable
-
-A settings file, every action as a URL, MIT licensed.
+- **The same shortcuts**<br>
+  Cmd+Shift+3, 4, and 5 still take the screenshot. A preview thumbnail appears in the bottom
+  right corner, just like it used to, with Copy, Draw, and Delete on hover.
+- **Screenshot history, one key away**<br>
+  Use the Vignette shortcut (double-tap `Shift`, by default) and your recent screenshots slide in
+  from the right. A camera roll for your screenshots. Arrows move, Space selects, Return opens.
+- **Non-destructive**<br>
+  A drawing is saved beside the original and stays editable. Go back, change it, undo it. The
+  original is never touched.
+- **Queue**<br>
+  Annotate several at once. Open them and they come one after another. Each Done opens the next.
+- **One-click stitch**<br>
+  Several screenshots into one image, auto-numbered.
+- **No colour picker**<br>
+  The colour is chosen from the image for the highest contrast.
+- **Three tools**<br>
+  Rectangle, text, arrow.
+- **Copies on capture**<br>
+  Every screenshot lands on the clipboard.
+- **Native, refined feel**<br>
+  Draw without leaving what you were doing. The stack takes keys without stealing focus from your
+  app. Hold the hotkey and the newest shot lifts into the editor.
+- **Agent-friendly**<br>
+  Experimental. Two-way: a coding agent can send you annotations, and you can send it yours. A
+  skill for Claude Code and Codex ships with the app.
+- **Customizable and hackable**<br>
+  A settings file, every action as a URL, MIT licensed.
 
 ## Get it
 
