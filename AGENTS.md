@@ -198,6 +198,10 @@ the same driven sequence; a single run varies.
   `annotate` instead of `show`.
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
+- `docs/glossary.md` is the vocabulary for the agent loop: agent client, agent session, terminal
+  host, destination, delivery route, screenshot request, screenshot reply, reply ticket. It says
+  what each one means and what not to call it. The distinctions it keeps are load-bearing, above
+  all that a session is a conversation and a pane is a place.
 - Two vocabularies, and they do not mix. Every string a user reads says draw: the buttons, the menu
   items, the toggles, the section headings, the toasts. Every name a script, a log reader or a
   compiler reads says annotate: the URL ids (`vignette://annotate`, `copy-annotated`), the log tags
@@ -679,7 +683,9 @@ the same driven sequence; a single run varies.
   rewrites every copy that is there and differs from the bundle's, installs nothing new, and removes
   nothing; the Agents tab's per-agent buttons and `install-skill` are the only things that put the
   skill somewhere or take it away. An older file holding `on` is read as `off` (`validated()`).
-  `docs/agent-skill-2026-09-18.md` has the reasons.
+  `docs/agent-skill-2026-09-18.md` says why the app carries the skill at all;
+  `docs/menu-settings-revamp-2026-09-20.md` is the installer as it works now, and replaces that
+  note's marker file, `foreign` state, `not-ours`, and `linked-root`.
 
 ## Adding things
 

@@ -1,5 +1,10 @@
 # Shipping the agent skill with the app (2026-09-18)
 
+> The installer's mechanics changed on 2026-09-20: the marker file, the `foreign` state,
+> `not-ours`, and `linked-root` are gone, links are resolved all the way, and an install
+> overwrites whatever is at the path. `docs/menu-settings-revamp-2026-09-20.md` is the current
+> design. Why the app carries the skill, below, still holds.
+
 Someone who downloads Vignette needs their coding agent to learn the `vignette://` contract. The
 app is the only thing they are guaranteed to have, and the only thing that knows which commands its
 version supports. So the app carries the skill and installs it.

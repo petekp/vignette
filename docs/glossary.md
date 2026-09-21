@@ -1,8 +1,8 @@
-# Vignette
+# Glossary
 
-Vignette lets a person draw on screenshots and exchange those drawings with agent sessions. A native connection addresses the agent session independently of the terminal displaying it.
-
-## Language
+The words this project uses for the agent loop, and the ones it avoids. A native connection
+addresses the agent session independently of the terminal displaying it, and most of these terms
+exist to keep that distinction from collapsing.
 
 **Agent client**: The software running an agent conversation, such as Claude Code or Codex. It is distinct from the model vendor and the terminal displaying it.
 _Avoid_: Provider when referring to both an agent client and a terminal host.

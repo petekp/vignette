@@ -1,6 +1,6 @@
 # Closed agent loop implementation — 2026-09-20
 
-What was built from [the plan](closed-agent-loop-plan.md), the two gates it left open, and how each
+What was built, the two gates the plan left open, and how each
 route was proved. Update this file rather than adding another.
 
 ## The two gates, and what was chosen
@@ -118,6 +118,35 @@ Two of the sixteen were comment drift (`pendingImports` is in arrival order only
 the watch-folder check is about the folder being gone) and are corrected in place. The symlink
 comment overclaimed: resolving both sides of the path check matched through a link put in place of
 `submissions/<replyId>`. Only the request root is resolved now.
+
+## Adding another agent
+
+Implement its connection and whatever instructions it needs to read an image and return a reply.
+Reuse the request records, the reply validation, the receipts, the import queue, and the UI. An
+agent shown in several terminals is still one connection: a second integration that needs Vignette's
+delivery code changed has not reused the workflow.
+
+Prove the missing capability before adding anything. If a runtime cannot receive an external
+message or return what a reply needs, that integration is unsupported and the answer is manual
+copy and paste — not a terminal adapter, a wrapper, or a new service to fill the gap. The
+agent-driver and terminal-transport designs were considered and withdrawn for that reason; raw
+terminal injection is outside this feature.
+
+Whether a connection may submit at all is the eligibility rule, which is what `AddressGuard`
+records on every request:
+
+| What the connection proves | May Vignette submit | Why |
+| --- | --- | --- |
+| The receiving runtime enforces an immutable conversation address | Yes | It submits to that exact conversation. A missing or archived one is an error, never a substitute target. |
+| A receiver-side check of the expected conversation, made atomically as it accepts | Yes | An old generation is rejected before anything is written or queued. |
+| A preflight check with no receiver-side guard, but a real conversation identity | Yes, and recorded as the weaker tier | The window between the check and the submission is real; the address is still a conversation, not a pane. This is the Claude Code route, and the note above says why it is allowed. |
+| No conversation identity at all | No | Addressing a pane is addressing whatever is in it. |
+
+Automatic means Vignette submits without the person pasting into the agent's own UI. It never
+means delivery without their Send or Reply. A binding does not survive the conversation being
+replaced, `/clear`, a resume into another conversation, or a reused pane; a new one needs the
+person to pick again, and queued requests are never silently redirected. A submission that timed
+out stays unknown: it is neither retried on another route nor reported as failed.
 
 ## Known limits
 
