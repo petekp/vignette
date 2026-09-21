@@ -13,32 +13,43 @@ https://github.com/user-attachments/assets/cb06c65f-ba08-436f-8e7e-4df31729ad36
 
 ## What it does
 
+### Capture
+
 - **The same shortcuts**<br>
   Cmd+Shift+3, 4, and 5 still take the screenshot. A preview thumbnail appears in the bottom
   right corner, just like it used to, with Copy, Draw, and Delete on hover.
+- **Copies on capture**<br>
+  Every screenshot lands on the clipboard.
+
+### Recent screenshots
+
 - **Screenshot history, one key away**<br>
   Use the Vignette shortcut (double-tap `Shift`, by default) and your recent screenshots slide in
   from the right. A camera roll for your screenshots. Arrows move, Space selects, Return opens.
+- **One-click stitch**<br>
+  Several screenshots into one image, auto-numbered.
+
+### Drawing
+
+- **Simple by design**<br>
+  Three tools: rectangle, text, arrow. No colour picker. The colour is chosen from the image for
+  the highest contrast.
 - **Non-destructive**<br>
   A drawing is saved beside the original and stays editable. Go back, change it, undo it. The
   original is never touched.
 - **Queue**<br>
   Annotate several at once. Open them and they come one after another. Each Done opens the next.
-- **One-click stitch**<br>
-  Several screenshots into one image, auto-numbered.
-- **Simple by design**<br>
-  Three tools: rectangle, text, arrow. No colour picker. The colour is chosen from the image for
-  the highest contrast.
-- **Copies on capture**<br>
-  Every screenshot lands on the clipboard.
+
+### The app
+
 - **Native, refined feel**<br>
   Draw without leaving what you were doing. The stack takes keys without stealing focus from your
   app. Hold the hotkey and the newest shot lifts into the editor.
+- **Customizable and hackable**<br>
+  A settings file, every action as a URL, MIT licensed.
 - **Agent-friendly**<br>
   Experimental. Two-way: a coding agent can send you annotations, and you can send it yours. A
   skill for Claude Code and Codex ships with the app.
-- **Customizable and hackable**<br>
-  A settings file, every action as a URL, MIT licensed.
 
 ## Get it
 
