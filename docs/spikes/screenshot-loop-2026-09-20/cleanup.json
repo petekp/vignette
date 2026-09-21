@@ -1,0 +1,13 @@
+{
+  "settings_sha256_unchanged": true,
+  "settings_mtime_unchanged": true,
+  "original_pid": 32185,
+  "original_process": "build/Build/Products/Debug/Vignette.app/Contents/MacOS/Vignette",
+  "scratch_drafts_remaining": [],
+  "scratch_shots_remaining": [],
+  "scratch_app_terminated": true,
+  "clipboard": "Contains a synthetic test image from the real export path",
+  "claude_trust": "User approved trust for this disposable folder; that trust entry and CLI-owned interactive histories are retained",
+  "scratch_directory": "/var/folders/hs/xnk080153dn7fq5qk9bk3g7w0000gn/T/vignette-loop-spike-ay2vpwju",
+  "additional_scratch_processes_stopped": []
+}

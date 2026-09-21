@@ -1,0 +1,14 @@
+{
+  "request_id": "08d1cfb82c054e7cab9632d52eb94aad",
+  "code_word": "VESPER-4829",
+  "selected_color": "teal",
+  "marks": [
+    {
+      "type": "arrow",
+      "x": 0.05,
+      "y": 0.15,
+      "x2": 0.185,
+      "y2": 0.34
+    }
+  ]
+}

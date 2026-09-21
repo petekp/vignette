@@ -1,0 +1,21 @@
+{
+  "inReplyTo": "c09d000bc1c7416db81be01e8f57e0b9",
+  "experiment_label": "cedar-17",
+  "code_word": "VESPER-4829",
+  "selected_color": "teal",
+  "marks": [
+    {
+      "type": "arrow",
+      "x": 0.38,
+      "y": 0.85,
+      "x2": 0.185,
+      "y2": 0.539
+    },
+    {
+      "type": "text",
+      "x": 0.05,
+      "y": 0.02,
+      "text": "Ellipse circles teal tile"
+    }
+  ]
+}

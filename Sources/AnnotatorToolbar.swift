@@ -13,12 +13,21 @@ final class AnnotatorToolbar {
         /// `[state] annotator.color` reports.
         @Published var color: String = ""
         @Published var shown = false     // drives the entrance and exit
+        /// The agent sessions Send offers, read when the image opened. Empty hides the button:
+        /// a control that can only say "nothing here" is not worth the width.
+        @Published var destinations: [AgentDestination] = []
+        /// Where a reply goes back to, when the open image is an agent's reply. It leads the menu
+        /// and turns Send into Reply, so the recorded target is never guessed at.
+        @Published var replyTo: AgentDestination?
+        /// A send is rendering or submitting. The button says so and takes no second click.
+        @Published var sending = false
     }
 
     let panel: NSPanel
     let model = Model()
     var onTool: ((String) -> Void)?
     var onDone: (() -> Void)?
+    var onSend: ((AgentDestination) -> Void)?
     private var hosting: NSHostingView<ToolbarView>!
 
     static let height: CGFloat = 44
@@ -35,7 +44,9 @@ final class AnnotatorToolbar {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.animationBehavior = .none
         panel.isMovable = false
-        hosting = NSHostingView(rootView: ToolbarView(model: model, onTool: { [weak self] in self?.onTool?($0) }, onDone: { [weak self] in self?.onDone?() }))
+        hosting = NSHostingView(rootView: ToolbarView(model: model, onTool: { [weak self] in self?.onTool?($0) },
+                                                      onDone: { [weak self] in self?.onDone?() },
+                                                      onSend: { [weak self] in self?.onSend?($0) }))
         panel.contentView = hosting
     }
 
@@ -135,6 +146,37 @@ private struct ToolbarView: View {
     @ObservedObject var model: AnnotatorToolbar.Model
     let onTool: (String) -> Void
     let onDone: () -> Void
+    let onSend: (AgentDestination) -> Void
+
+    /// The sessions the menu lists, grouped by the project each one is working in, since that is
+    /// what a person picking between a dozen of them navigates by. A project with no name comes
+    /// last under no heading, which is also the whole menu when nothing reports one.
+    /// The reply target is not in here: it leads the menu on its own.
+    private var groups: [(project: String, sessions: [AgentDestination])] {
+        let rest = model.destinations.filter { $0.id != model.replyTo?.id }
+        return Dictionary(grouping: rest, by: \.detail)
+            .map { (project: $0.key, sessions: $0.value.sorted { $0.name < $1.name }) }
+            .sorted {
+                if $0.project.isEmpty != $1.project.isEmpty { return $1.project.isEmpty }
+                return $0.project < $1.project
+            }
+    }
+
+    /// Whether the menu has anything to show at all.
+    private var hasDestinations: Bool { !model.destinations.isEmpty || model.replyTo != nil }
+
+    /// Above this many projects each one becomes a submenu; at or below it they are sections and
+    /// every session is visible in one press. Six projects is about twenty rows once their
+    /// headings and separators are counted, which fits the shortest screen this runs on: the
+    /// headings are what push a longer list off the bottom, and that is where a second press
+    /// costs less than a menu that scrolls.
+    private static let submenuThreshold = 6
+
+    @ViewBuilder private func rows(_ sessions: [AgentDestination]) -> some View {
+        ForEach(sessions) { destination in
+            Button(destination.name) { onSend(destination) }
+        }
+    }
 
     var body: some View {
         HStack(spacing: 2) {
@@ -150,6 +192,43 @@ private struct ToolbarView: View {
                 .help("\(tool.label) (\(tool.key.uppercased()))")
             }
             Divider().frame(height: 20).padding(.horizontal, 6)
+            // No default target and no last-used one: the menu is the whole control, so where a
+            // drawing is going is read before it goes rather than remembered from last time.
+            if hasDestinations {
+                Menu {
+                    // The conversation a card came from leads, named with its project, so replying
+                    // never means finding it again among the rest.
+                    if let reply = model.replyTo {
+                        Section("Reply to") {
+                            Button { onSend(reply) } label: {
+                                Text(reply.detail.isEmpty ? reply.name : "\(reply.name) — \(reply.detail)")
+                            }
+                        }
+                    }
+                    // A project with no name has no submenu and no heading to sit under, so its
+                    // sessions stand at the level they are on. `groups` puts it last either way.
+                    if groups.count > Self.submenuThreshold {
+                        ForEach(groups, id: \.project) { group in
+                            if group.project.isEmpty { rows(group.sessions) }
+                            else { Menu(group.project) { rows(group.sessions) } }
+                        }
+                    } else {
+                        ForEach(groups, id: \.project) { group in
+                            if group.project.isEmpty { Section { rows(group.sessions) } }
+                            else { Section(group.project) { rows(group.sessions) } }
+                        }
+                    }
+                } label: {
+                    Text(model.sending ? "Sending…" : (model.replyTo == nil ? "Send" : "Reply"))
+                        .font(.system(size: 13, weight: .medium))
+                        .padding(.horizontal, 10)
+                        .frame(height: 30)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(model.sending)
+                .help("Hand this drawing to an agent session")
+            }
             Button(action: onDone) {
                 Text("Done")
                     .font(.system(size: 13, weight: .semibold))

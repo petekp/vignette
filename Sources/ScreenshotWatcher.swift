@@ -56,14 +56,15 @@ final class ScreenshotWatcher: @unchecked Sendable {
 
     /// The newest `limit` screenshots and how many candidates the folder holds, from the index.
     /// While the folder cannot be watched (a volume that is not mounted yet) it lists the folder
-    /// instead, and the next rescan retries the watch.
-    func recent(limit: Int) -> (recent: [URL], files: Int) {
+    /// instead, and the next rescan retries the watch. `include` filters before the limit is
+    /// taken, so a file the app is hiding does not cost the stack one of its cards.
+    func recent(limit: Int, include: (URL) -> Bool = { _ in true }) -> (recent: [URL], files: Int) {
         let snapshot = state.withLock { $0.watching ? $0.files : nil }
-        return ScreenshotWatcher.recent(from: snapshot ?? ScreenshotWatcher.listing(of: folder), in: folder, limit: limit)
+        return ScreenshotWatcher.recent(from: snapshot ?? ScreenshotWatcher.listing(of: folder), in: folder, limit: limit, include: include)
     }
 
-    func newest() -> URL? {
-        recent(limit: 1).recent.first
+    func newest(include: (URL) -> Bool = { _ in true }) -> URL? {
+        recent(limit: 1, include: include).recent.first
     }
 
     private func scan() {
@@ -148,12 +149,13 @@ final class ScreenshotWatcher: @unchecked Sendable {
 
     /// The newest `limit` of `files`, newest first, plus the candidate count. Ties fall to the name,
     /// which carries the capture time for a screenshot.
-    static func recent(from files: [String: Date], in folder: URL, limit: Int) -> (recent: [URL], files: Int) {
-        let recent = files
+    static func recent(from files: [String: Date], in folder: URL, limit: Int,
+                       include: (URL) -> Bool = { _ in true }) -> (recent: [URL], files: Int) {
+        let visible = files
             .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key > $1.key }
-            .prefix(max(0, limit))   // prefix traps on a negative count
             .map { folder.appendingPathComponent($0.key) }
-        return (recent, files.count)
+            .filter(include)
+        return (Array(visible.prefix(max(0, limit))), visible.count)   // prefix traps on a negative count
     }
 
     /// A fresh listing sorted like the index; for tests and for a folder that is not watched.

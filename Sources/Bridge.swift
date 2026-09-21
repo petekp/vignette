@@ -3,7 +3,7 @@ import Foundation
 // Mirror of web/src/bridge.ts. Change both files together; nothing else crosses the boundary.
 // `protocolVersion` goes up with any change to either side; a page built for another version is
 // refused at `ready`, so a stale web/dist is an error line instead of silent no-ops.
-let bridgeProtocolVersion = 15
+let bridgeProtocolVersion = 16
 
 /// Sent to the page as `window.vignette.load(payload)`. `key` identifies the image's draft.
 struct LoadPayload: Encodable, Equatable {
@@ -47,8 +47,8 @@ struct ViewRequest: Encodable, Equatable {
 ///
 /// On a text mark `w` is the box the words wrap in, and it is optional: without it the box is the
 /// room between `x` and the right edge. `h` is the wrap's, never the mark's.
-struct Mark: Encodable, Equatable {
-    enum Kind: String, Encodable, CaseIterable { case ellipse, rectangle, arrow, text }
+struct Mark: Codable, Equatable {
+    enum Kind: String, Codable, CaseIterable { case ellipse, rectangle, arrow, text }
 
     let type: Kind
     let x: Double
@@ -85,6 +85,8 @@ enum PageAPI: Equatable {
     case build(LoadPayload, snapshot: Data?, marks: [Mark])
     /// Each item's stored draft JSON, by key.
     case export([(key: String, snapshot: Data)])
+    /// The image on the canvas as it stands, rendered at full scale, without closing anything.
+    case snapshot
     /// The current image's annotations alone, on a transparent canvas, no larger than this on the
     /// longest side: what the zoom stand-in lays over the screenshot.
     case overlay(maxPixel: Int)
@@ -107,6 +109,7 @@ enum PageAPI: Equatable {
         case .export(let items):
             let list = items.map { "{\"key\":\(PageAPI.json($0.key)),\"snapshot\":\(String(data: $0.snapshot, encoding: .utf8) ?? "null")}" }
             return "return window.vignette ? await window.vignette.export([\(list.joined(separator: ","))]) : null;"
+        case .snapshot: return "return window.vignette ? await window.vignette.snapshot() : null;"
         case .overlay(let maxPixel):
             return "return window.vignette ? await window.vignette.overlay(\(maxPixel)) : null;"
         case .setTool(let id): return "window.vignette && window.vignette.setTool(\(PageAPI.json(id)));"
@@ -230,6 +233,19 @@ struct ParkResult {
         let snapshot = dict["snapshot"]
         self.snapshot = snapshot is NSNull ? nil : snapshot
         self.preview = (dict["preview"] as? String).flatMap(WebMessage.pngData)
+    }
+}
+
+/// What `PageAPI.snapshot` returns: the rendering, or the reason there is none. A nil png with no
+/// error means nothing is drawn on the image, which is a send of the plain screenshot.
+struct SnapshotResult {
+    let png: Data?
+    let error: String?
+
+    init?(body: Any?) {
+        guard let dict = body as? [String: Any] else { return nil }
+        png = (dict["png"] as? String).flatMap(WebMessage.pngData)
+        error = dict["error"] as? String
     }
 }
 

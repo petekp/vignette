@@ -15,7 +15,7 @@ import {
   useEditor,
 } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { LoadPayload, PROTOCOL, ParkResult, postToNative } from './bridge'
+import { LoadPayload, PROTOCOL, ParkResult, SnapshotResult, postToNative } from './bridge'
 import {
   IMAGE_ID,
   beginQuiet,
@@ -116,6 +116,15 @@ export function App() {
       async export(items) {
         if (!editor) return { items: [], error: 'editor not mounted' }
         return oneAtATime(() => exportDrafts(editor, items, scaleRef.current, currentKey))
+      },
+      async snapshot() {
+        if (!editor) return { png: null, error: 'editor not mounted' }
+        return oneAtATime(async () => {
+          // A sentence still being typed is part of the drawing the host is about to send, so the
+          // text shape is committed first. Done does not do this, and its contract is unchanged.
+          editor.setEditingShape(null)
+          return renderCurrent(editor, scaleRef.current)
+        })
       },
       async overlay(maxPixel) {
         return editor ? oneAtATime(() => overlay(editor, maxPixel)) : null
@@ -280,24 +289,34 @@ function finish(editor: Editor, scale: number) {
 }
 
 async function renderDone(editor: Editor, scale: number) {
-  pickColors(editor, currentKey)
-  if (!hasAnnotations(editor)) {
-    dirty = false
-    postToNative({ type: 'done', png: null })
-    return
-  }
-  let png: string | null = null
-  try {
-    png = await render(editor, scale)
-  } catch (err) {
+  const { png, error } = await renderCurrent(editor, scale)
+  if (error) {
     // The host waits for `done` or `cancel` with no deadline of its own, so a rendering that
     // throws (an image that will not decode, an SVG export that fails) still answers. The message
     // only: a WebKit stack can name a served URL, which starts with the per-launch token.
-    postToNative({ type: 'log', message: 'done failed: ' + (err instanceof Error ? err.message : String(err)) })
+    postToNative({ type: 'log', message: 'done failed: ' + error })
+    return cancel()
   }
-  if (!png) return cancel()
   dirty = false // the host has this rendering; no preview needed when the draft is parked
   postToNative({ type: 'done', png })
+}
+
+/// The image on the canvas rendered at full scale, with a null png when nothing is drawn on it and
+/// an error when the rendering threw. Done turns that into `done`/`cancel`; the host's `snapshot`
+/// takes it as it is, because a send that fails must leave the drawing exactly where it was.
+async function renderCurrent(editor: Editor, scale: number): Promise<SnapshotResult> {
+  pickColors(editor, currentKey)
+  if (!hasAnnotations(editor)) return { png: null, error: null }
+  try {
+    // `render` answers null when the image shape has no bounds or its picture will not resolve.
+    // There are marks, so a null png is a failed rendering, not an empty one: Done must cancel
+    // rather than copy the plain screenshot, and Send must refuse rather than send it unmarked.
+    const png = await render(editor, scale)
+    if (!png) return { png: null, error: 'the image on the canvas has no bounds or picture' }
+    return { png, error: null }
+  } catch (err) {
+    return { png: null, error: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 /// Asks the host to close; it parks the draft on the way out.

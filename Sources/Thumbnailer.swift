@@ -107,6 +107,18 @@ enum Thumbnailer: @unchecked Sendable {
         return CGImageDestinationFinalize(dest) ? out as Data : nil
     }
 
+    /// The file's pixels as PNG, whatever format it is stored in. Returns the bytes unchanged when
+    /// the file is already a PNG, so the common case costs one read.
+    static func png(from url: URL) -> Data? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        if CGImageSourceGetType(source) == "public.png" as CFString { return try? Data(contentsOf: url) }
+        guard let cg = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, cg, nil)
+        return CGImageDestinationFinalize(dest) ? out as Data : nil
+    }
+
     /// The `maxPixel` for an image drawn at screen size: a card in flight and the zoom stand-in's
     /// screenshot. Both ask for it so the cache holds one decode for the two of them; the cache is
     /// keyed on `maxPixel`, so two expressions that drifted apart would silently hold two.

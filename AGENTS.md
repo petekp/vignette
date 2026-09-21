@@ -43,6 +43,10 @@ the measurements and the reasoning; a rule here points at its note.
   --test` also runs the unit tests in `Tests/` (the `VignetteTests` target compiles `Sources/`
   itself; it never launches the app). A build into another `-derivedDataPath` leaves `build/`,
   and an instance running from it, untouched.
+- `Sources/AgentConnection.swift`, `Sources/ScreenshotRequests.swift`, `Sources/ReplyProtocol.swift`,
+  and `skills/vignette/scripts/reply` are the closed loop: a drawing sent to an agent session and
+  that agent's drawing sent back. See the rules below and
+  `docs/closed-agent-loop-implementation-2026-09-20.md`.
 - `Sources/Identity.swift` reads the bundle id, name, and URL scheme from the bundle and derives
   the log name, the status item's autosave name, the Application Support folder, and the Carbon
   hotkey signature from them, so a fork renames things in project.yml only. A second launch of
@@ -60,8 +64,11 @@ the measurements and the reasoning; a rule here points at its note.
    A relaunch from `open` carries no `VIGNETTE_SETTINGS`, so it runs on the user's real settings
    and folder, and when another copy of the bundle id is running `open -a <path>` can launch that
    copy instead of the path given; running `<app>/Contents/MacOS/Vignette` directly always lands on
-   the path given. A driving script reads `[state]` first and stops unless `app.settingsFile` is its
-   scratch file, and only then sends an action. `state` is no exception: sent without `-a` it
+   the path given. A driving script reads `[state]` first and stops unless `app.bundle` is its own
+   build and `app.settingsFile` is its scratch file, and only then sends an action. `app.bundle` is
+   the check that holds: `build` is `git describe` of the checkout, so worktrees branched from one
+   commit stamp the same string, and `settingsFile` reads the same from any copy launched without
+   `VIGNETTE_SETTINGS`. Confirming a restored instance needs that same check. `state` is no exception: sent without `-a` it
    launches whichever copy LaunchServices has, on the user's file, and that launch fills in every
    settings key the copy's schema has and the user's file does not. Several agents working in
    parallel (a worktree each) share one Mac and one running instance, so they launch one at a time
@@ -116,7 +123,7 @@ the measurements and the reasoning; a rule here points at its note.
 5. Read `~/Library/Logs/Vignette.log`. Every action, URL command, watcher event, web message,
    and error lands there with a `[tag]`. `open -g "vignette://state?tag=<id>"` writes one
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
-   `app` (pid, build, isActive, accessibility, watch folder, settings file, debug), `screen`,
+   `app` (pid, build, bundle, isActive, accessibility, watch folder, settings file, debug), `screen`,
    `stack` (cards with `file`, `frame`, `out`, `forming`, `draft`, `agent`; `selected`, `focused`,
    `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`, `scroll`,
    `viewport`, `safeBottom`, the room the Dock keeps under the column, feedback, panel,
@@ -394,8 +401,11 @@ the same driven sequence; a single run varies.
 - The annotator window is borderless and sized exactly to the image. Its toolbar is a native
   panel (`AnnotatorToolbar.swift`) placed under the window, never inside the page: the page
   sends its tools in the `ready` message, along with every color a mark may be drawn in, reports
-  the active tool, and takes `setTool`/`finish` calls. The bar is tools, one divider, Done: there
-  is no palette, so which colour a mark is drawn in is the page's, not the user's. While one image
+  the active tool, and takes `setTool`/`finish` calls. The bar is tools, one divider, Send, Done:
+  there is no palette, so which colour a mark is drawn in is the page's, not the user's. Send has
+  no default and no last-used target; its menu groups the agent sessions by project, as sections up
+  to `submenuThreshold` projects and as a submenu each above it, so where a drawing is going is
+  read before it goes. While one image
   follows another with no gap (a click on another card, or the queue moving on) the bar stays on
   screen and springs to the next image's place: `place(below:gap:)` slides the panel when it is
   already up, one `Tween` per direction, over `Anim.passesTarget(ui.expandDuration)`, which is when
@@ -440,7 +450,10 @@ the same driven sequence; a single run varies.
   `history: 'ignore'`). That borrows the canvas for the length of one rendering, so a build is
   refused while anything else owns it (`AnnotationController.canvasRefusal`): the annotator owns it
   from `prepare` until `park` answers, and an export owns it for as long as Copy Drawing runs. A
-  refusal is one `page-not-ready` line and no file copied. Every call that takes a snapshot of the
+  refusal is one `page-not-ready` line and no file copied. A reply's marks wait instead of failing,
+  so every owner says when it lets go: `canvasMaybeFreed` fires `onCanvasFree` a turn later from
+  each of the four places one is released, rather than from their callers, because a release path
+  whose caller forgot to signal strands a waiting import until some unrelated session ends. Every call that takes a snapshot of the
   canvas and puts it back (`load`, `reset`, `park`, `export`, `build`, `overlay`, `setView`, and
   `finish`) runs one at a time on the page, in the order the host called them. The page's own edits
   do not queue: `setTool`, the debounced colour pass, the hotkeys' undo, redo and delete, and the
@@ -585,6 +598,61 @@ the same driven sequence; a single run varies.
   exist before `xcodegen generate` runs, which build.sh guarantees.
 - Settings changes push to Apple's `com.apple.screencapture` defaults (location, show-thumbnail,
   disable-shadow, type). Only keys that changed are written, and never on first run.
+- Sending a drawing to an agent session and taking its drawing back is one object,
+  `ScreenshotRequests`, and one small boundary, `AgentConnection`. Two things are durable and
+  different: **acceptance** means Vignette owns every byte of a reply, and is what the receipt a
+  helper waits for acknowledges; **publication** means the reply is a card. Between them the reply's
+  watch-folder name is reserved and excluded from every listing, so an interrupted import leaves
+  nothing half-shown. `isVisible` is derived from the reply record, not a second ledger, and it
+  fails closed: a file named `Agent reply <uuid>.png` with no `published` record is hidden, whoever
+  wrote it. Only that exact name shape is managed; a screenshot merely starting with "Agent" is an
+  ordinary capture. Naming one is refused the same way listing it is: a `file=` on a reserved reply
+  answers `missing-file`, and `add` refuses a source with that name outright, since the copy would
+  have no record and so could never be shown. Clearing a request takes its reserved file back and
+  cancels a build already in flight; publication re-reads the record rather than trusting the copy
+  its import has been carrying. A managed reply is never a capture even after publication, so a late watcher
+  event cannot copy it to the clipboard or open the editor, and its card is inserted once, by its
+  own import. Startup loads the records before the watcher starts or anything warms the stack.
+- A destination is an agent session, never the terminal displaying it. Codex is addressed by its
+  thread UUID at an App Server endpoint named in `settings.json` (`codexSessions`); the runtime
+  resolves the UUID or fails, which is `AddressGuard.runtimeEnforced`. Claude Code is addressed by
+  its session id, which herdr reports per pane; herdr's submission API takes a pane and has no
+  expected-session parameter, so Vignette re-lists and checks the pane still holds that exact
+  session immediately before submitting (`AddressGuard.preflight`). A session in no pane is an
+  error and never another pane. The two tiers are recorded on every request and reported in
+  `[state] requests`; `docs/closed-agent-loop-implementation-2026-09-20.md` says why the weaker one
+  is still allowed to submit.
+- A `vignette://` URL has no authenticated sender, so a reply is authorized by a per-request bearer
+  secret in the request's own directory. The ticket's path travels in the request line; the secret
+  does not, because `[url]` logs every URL. Holding the ticket permits replies to that one request
+  and proves nothing about which process wrote them. The helper writes its envelope where its own
+  ids say it should be and Vignette derives that path itself, so a caller cannot name a file
+  outside the request directory. Only the request root is resolved, because Vignette created it;
+  every component below it must be real, so a link put in place of `submissions/<replyId>` is
+  refused rather than read through. A refusal writes a receipt where the attempt's ids say, except
+  when the authorization itself failed and a receipt is already there: the attempt id is the
+  caller's to choose, and an unauthenticated one may not replace the answer a genuine attempt is
+  waiting for. A reply's
+  identity is a digest over the bundle file's own bytes and then the image's, which is why the
+  helper and the app cannot disagree about how a number is spelled. The same reply id with the same
+  digest is acknowledged from its record and makes no second card; with a different digest it is
+  refused and the first is untouched. `ReplyProtocol.version` and the helper's `PROTOCOL` go up
+  together.
+- The reply helper returns to the app that issued the request: `ticket.app` names the bundle and the
+  helper passes it to `open -a`. Plain `open` hands a `vignette://` URL to whichever copy of the
+  bundle id LaunchServices registered last, which on a Mac with a second build is a different app
+  that answers `unknown-command` (observed).
+- Send never reuses Done. `window.vignette.snapshot()` renders the canvas and reports, closing
+  nothing: Done's rendering failure sends `cancel` and ends the session, and that contract is
+  unchanged. The request is stored before the image leaves the editor, so a failure anywhere before
+  then leaves the drawing where the hand left it; a rendering that answers after the person moved to
+  another image is dropped rather than closing that one, and so is a list of sessions that arrives
+  after the editor moved on. A rendering that fails is a refusal, never a send of the bare
+  screenshot: only a canvas with nothing drawn on it sends the picture itself, and it goes through
+  PNG whatever the capture's own format is. Send ends the session without a copied mark and the
+  queue carries on to the next card: a list of files to annotate is something the person asked for,
+  and handing one of them to an agent does not withdraw the rest. Esc is the one that empties the
+  queue, because that is a person stopping.
 - `send` (`Send.swift`, debug only) shells out to herdr, which is the only thing on the machine that
   knows which panes hold a coding agent: `herdr agent list` names them, `herdr agent prompt` types
   one line into one of them. The image travels as a path the agent opens itself, so the agent must

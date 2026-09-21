@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Hands a screenshot to a coding agent that herdr (Pete's terminal multiplexer) is running in a
 /// pane. herdr knows which panes hold an agent and what kind each is (`herdr agent list`), and
@@ -19,6 +20,12 @@ enum Send {
         let status: String
         /// The pane the herdr UI last focused; the default target.
         let focused: Bool
+        /// The agent session herdr says this pane is running, when it knows one: for Claude Code
+        /// that is the conversation's own id. A pane hosts different sessions over time, so this,
+        /// and not the pane, is what a screenshot request is addressed to (see AgentConnection).
+        var session: String? = nil
+        /// What the pane's title says it is doing. Only a label; two panes may share it.
+        var title: String = ""
     }
 
     /// Where herdr may be. The app is launched by LaunchServices, so it inherits no shell PATH.
@@ -35,8 +42,11 @@ enum Send {
         return agents.compactMap { agent in
             guard let pane = agent["pane_id"] as? String, let kind = agent["agent"] as? String else { return nil }
             let name = (agent["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let session = (agent["agent_session"] as? [String: Any])?["value"] as? String
             return Target(id: name ?? pane, pane: pane, kind: kind, cwd: agent["cwd"] as? String ?? "",
-                          status: agent["agent_status"] as? String ?? "unknown", focused: agent["focused"] as? Bool ?? false)
+                          status: agent["agent_status"] as? String ?? "unknown", focused: agent["focused"] as? Bool ?? false,
+                          session: (session?.isEmpty ?? true) ? nil : session,
+                          title: agent["terminal_title_stripped"] as? String ?? "")
         }
     }
 
@@ -66,6 +76,15 @@ enum Send {
     /// Runs herdr and returns its status and combined output, or nil when it cannot start. Blocks
     /// on a socket round trip, so callers keep it off the main thread.
     static func run(_ binary: String, _ arguments: [String], timeout: TimeInterval = 15) -> (status: Int32, output: String)? {
+        guard let result = launch(binary, arguments, timeout: timeout) else { return nil }
+        return (result.status, result.output)
+    }
+
+    /// The same, and whether the watchdog had to stop it. A command killed on the deadline may
+    /// still have been accepted by whatever it was talking to, so a caller that has to tell a
+    /// definite failure from an uncertain one reads this rather than the exit status.
+    static func launch(_ binary: String, _ arguments: [String], timeout: TimeInterval = 15)
+        -> (status: Int32, output: String, timedOut: Bool)? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = arguments
@@ -73,11 +92,16 @@ enum Send {
         process.standardOutput = pipe
         process.standardError = pipe
         do { try process.run() } catch { return nil }
-        let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        let killed = OSAllocatedUnfairLock(initialState: false)
+        let watchdog = DispatchWorkItem {
+            guard process.isRunning else { return }
+            killed.withLock { $0 = true }
+            process.terminate()
+        }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         watchdog.cancel()
-        return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "", killed.withLock { $0 })
     }
 }

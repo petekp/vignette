@@ -3,7 +3,7 @@
 import type { TLEditorSnapshot } from 'tldraw'
 
 /** Goes up with any change to this contract; the host refuses a page built for another version. */
-export const PROTOCOL = 15
+export const PROTOCOL = 16
 
 export interface LoadPayload {
   /** Identifies the image's draft: its file path. Also the asset `src` the page resolves to a URL. */
@@ -82,6 +82,14 @@ export interface ParkResult {
   preview: string | null
 }
 
+/** What `snapshot` returns: the current image rendered, or why it could not be. */
+export interface SnapshotResult {
+  /** The rendering, or null when nothing is drawn on the image. */
+  png: string | null
+  /** Set only when the rendering failed; the host then leaves the drawing open. */
+  error: string | null
+}
+
 export interface ExportItem { key: string; snapshot: TLEditorSnapshot }
 /** What `export` returns: the renderings that succeeded, and the error that stopped the run, if any. */
 export interface ExportResult {
@@ -133,6 +141,12 @@ declare global {
       build(payload: LoadPayload, marks: Mark[]): Promise<ParkResult>
       /** Renders each item's draft to PNG. */
       export(items: ExportItem[]): Promise<ExportResult>
+      /**
+       * The image on the canvas as it stands, rendered at full scale. Unlike `finish` it reports
+       * nothing, closes nothing, and leaves the draft alone: the host takes the PNG and the person
+       * keeps drawing if the host decides not to close.
+       */
+      snapshot(): Promise<SnapshotResult>
       /**
        * The current image's annotations alone, on a transparent canvas covering the image, as a
        * PNG data URL; null when nothing is drawn. `maxPixel` caps its longest side. The host lays

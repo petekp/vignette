@@ -1,0 +1,21 @@
+{
+  "inReplyTo": "460aac0574b04be4ba01eb12e85c1825",
+  "experiment_label": "harbor-62",
+  "code_word": "VESPER-4829",
+  "selected_color": "teal",
+  "marks": [
+    {
+      "type": "arrow",
+      "x": 0.5,
+      "y": 0.85,
+      "x2": 0.1855,
+      "y2": 0.5398
+    },
+    {
+      "type": "text",
+      "x": 0.05,
+      "y": 0.02,
+      "text": "Teal tile is circled."
+    }
+  ]
+}

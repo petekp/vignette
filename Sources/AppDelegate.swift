@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         var waiting: Screenshot?
     }
     private var pendingAdds: [String: PendingAdd] = [:]
+    /// Sending drawings to agent sessions and taking their drawings back. See ScreenshotRequests.
+    private let requests = ScreenshotRequests(root: Identity.applicationSupportURL.appendingPathComponent("requests"))
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         replaceOlderInstances()
@@ -53,12 +55,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         updateStatusItem()
         annotator.preload()
         thumbnail.actions = self
-        thumbnail.onAnnotatorPrepare = { [weak self] shot, frame, room in self?.annotator.prepare(shot, in: frame, room: room) }
+        thumbnail.onAnnotatorPrepare = { [weak self] shot, frame, room in
+            guard let self else { return }
+            self.annotator.prepare(shot, in: frame, room: room)
+            self.refreshDestinations(for: shot)
+        }
         annotator.onFrame = { [weak self] frame in self?.thumbnail.annotatorFrameMoved(frame) }
         thumbnail.onAnnotatorShow = { [weak self] in self?.annotator.show() }
         thumbnail.onAnnotatorLanded = { [weak self] in self?.annotator.landed() }
         thumbnail.annotatorBelow = { [weak self] in self?.annotator.spaceBelow ?? 0 }
-        thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide(then: hidden) }
+        thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide { hidden() } }
         thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }
         annotator.onFinished = { [weak self] shot, pngData in self?.finishAnnotation(shot, pngData) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
@@ -76,10 +82,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self else { return }
             self.renderMissingPreviews(self.drafts.keysWithoutPreview())
         }
+        // A reply's marks need the page's canvas, and every owner of it releases at its own moment:
+        // a session ending, an export answering, a push finishing, the page coming back.
+        annotator.onCanvasFree = { [weak self] in self?.requests.canvasBecameAvailable() }
+        annotator.onSend = { [weak self] destination in self?.sendDrawing(to: destination) }
         settingsWindow.callbacks = SettingsWindowController.Callbacks(
             restoreAppleDefaults: { [weak self] in self?.restoreAppleDefaults() },
             openTweaks: { [weak self] in self?.debugPanel.toggle() })
         loadDrafts()
+        startRequests()
         startWatching()
         registerHotKey()
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
@@ -121,6 +132,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if new.screenshotsFolder != old.screenshotsFolder { startWatching() }
         if new.screenshotsFolder != old.screenshotsFolder || new.debug != old.debug {
             annotator.fileAccess.update(folder: new.folderURL, unrestricted: new.debug)
+        }
+        if new.codexSessions != old.codexSessions {
+            requests.connections[.codex] = CodexConnection(configured: new.codexDestinations)
         }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
@@ -277,7 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// The newest screenshot in the watch folder goes into the annotator, on screen or not.
     @objc private func annotateLast() {
-        guard let url = watcher?.newest() else {
+        guard let url = newestShot() else {
             Commands.error("annotate", .missingFile, "no screenshot in \(watchFolder.path)"); return
         }
         annotate([Screenshot(url: url)])
@@ -492,6 +506,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case "state": dumpState(tag: request.tag)
         case "settings": settingsWindow.show(); Commands.ok("settings", "window opened")
         case "install-skill": installSkill(request)
+        case "reply":
+            guard let file = request.files.first else { Commands.error("reply", .missingFile, "no file given"); return }
+            requests.receiveReply(envelope: file)
+        case "requests": requests.run(clear: request.clear)
         case "restore-apple-defaults": restoreAppleDefaults()
         case "send": sendToAgent(request)
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
@@ -503,7 +521,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let action = Config.action(id: cmd) else { return }
             var targets = request.files
             if targets.isEmpty {
-                guard let newest = watcher?.newest() else {
+                guard let newest = newestShot() else {
                     Commands.error(cmd, .missingFile, "no file given and no screenshot in \(watchFolder.path)"); return
                 }
                 targets = [newest]
@@ -511,6 +529,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             for file in targets {
                 if let code = Commands.policyError(for: file, watchFolder: watchFolder, debug: settings.data.debug) {
                     Commands.error(cmd, code, file.path); return
+                }
+                // A reserved reply is Vignette's own until its import commits: opening it would take
+                // the canvas the import is waiting for, and trashing it would delete the file the
+                // import is about to draw on. The listings hide it; so does naming it.
+                guard requests.isVisible(file) else {
+                    Commands.error(cmd, .missingFile, "\(file.path): an agent reply that is not imported yet"); return
                 }
             }
             guard targets.count >= action.minimumCount else {
@@ -544,6 +568,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             "pid": Int(ProcessInfo.processInfo.processIdentifier), "build": BuildInfo.current.build, "version": BuildInfo.current.version,
             "isActive": NSApp.isActive, "accessibility": ModifierTap.trusted(prompt: false),
             "watchFolder": watchFolder.path, "settingsFile": Settings.fileURL.path, "readOnly": settings.readOnly,
+            "bundle": Bundle.main.bundlePath,
             "appleThumbnail": settings.data.appleThumbnail, "recentCount": settings.data.recentCount, "hotkey": settings.data.recentHotkey, "debug": settings.data.debug,
             "launchAtLogin": settings.data.launchAtLogin, "loginItem": LoginItem.status,
             "agentSkill": ["setting": settings.data.agentSkill, "installed": installedSkillPaths(),
@@ -551,6 +576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         ] as [String: Any]
         report.sections["annotator"] = annotator.stateJSON
         report.sections["drafts"] = drafts.keys.sorted()
+        report.sections["requests"] = requests.stateJSON
         report.sections["memory"] = ["rss": residentBytes(), "thumbnails": Thumbnailer.cacheBytes]
         annotator.queryPage(timeout: 1) { page in
             report.sections["page"] = page ?? "unavailable"
@@ -691,7 +717,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     @objc private func openLast() {
-        guard let url = watcher?.newest() else {
+        guard let url = newestShot() else {
             Commands.error("last", .missingFile, "no screenshot in \(watchFolder.path)"); return
         }
         thumbnail.show(Screenshot(url: url))
@@ -724,6 +750,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if !inFolder {
             guard ScreenshotWatcher.isCandidate(source.lastPathComponent) else {
                 Commands.error("add", .unsupportedType, "\(source.lastPathComponent): needs a png, jpg, jpeg, or heic name without \(Config.annotatedSuffix)"); return
+            }
+            // `Agent reply <uuid>.png` is the one name Vignette writes itself. A copy landing on it
+            // would have no reply record, and `isVisible` fails closed, so it would never be shown.
+            guard ReplyProtocol.replyID(fromFileName: source.lastPathComponent) == nil else {
+                Commands.error("add", .unsupportedType, "\(source.lastPathComponent): that name belongs to an agent reply"); return
             }
             destination = Commands.destination(for: source, in: watchFolder) { FileManager.default.fileExists(atPath: $0.path) }
         }
@@ -779,7 +810,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Hands one screenshot to a coding agent in a herdr pane. The herdr calls are socket round
     /// trips, so they run off the main thread and the `[send]` line arrives when herdr answers.
     private func sendToAgent(_ request: CommandRequest) {
-        guard let file = request.files.first ?? watcher?.newest() else {
+        guard let file = request.files.first ?? newestShot() else {
             Commands.error("send", .missingFile, "no file given and no screenshot in \(watchFolder.path)"); return
         }
         guard FileManager.default.fileExists(atPath: file.path) else { Commands.error("send", .missingFile, file.path); return }
@@ -810,6 +841,106 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
     }
 
+    // MARK: Screenshot requests: Send, replies, and which files a reply owns. See ScreenshotRequests.
+
+    /// Wires the coordinator and reads what is already on disk. Runs before the watcher starts and
+    /// before anything warms the stack: until the reply records are loaded nothing knows which
+    /// managed files are unfinished, and an unfinished one must never read as an ordinary capture.
+    private func startRequests() {
+        requests.connections = [.claude: ClaudeCodeConnection(),
+                                .codex: CodexConnection(configured: settings.data.codexDestinations)]
+        requests.callbacks = ScreenshotRequests.Callbacks(
+            // Not `self?.annotator.canvasRefusal ?? …`: optional chaining on an already-optional
+            // property flattens, so a free canvas (nil) would read as the fallback and every
+            // import would wait forever.
+            canvasRefusal: { [weak self] in
+                guard let self else { return "the app is gone" }
+                return self.annotator.canvasRefusal
+            },
+            buildDraft: { [weak self] shot, marks, done in
+                guard let self else { return done(nil, "the app is gone") }
+                self.annotator.buildDraft(shot, marks: marks, completion: done)
+            },
+            saveDraft: { [weak self] key, snapshot, preview in
+                guard let self else { throw ReplyProtocol.Problem(.storeFailed, "the app is gone") }
+                // The throwing store, not `storeDraft`: publication may only commit once the draft
+                // is really on disk, and a logged failure is not an acknowledgement.
+                try self.drafts.save(key: key, snapshot: snapshot)
+                if let preview { try self.drafts.savePreview(key: key, png: preview) }
+                self.draftsChanged()
+                if let preview { self.thumbnail.setPreview(key, preview) }
+            },
+            present: { [weak self] shot in self?.thumbnail.show(shot) },
+            watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
+            feedback: { [weak self] text in self?.thumbnail.showFeedback(text) })
+        requests.load()
+    }
+
+    /// The newest screenshots a person may act on: the folder's, less any agent reply whose import
+    /// has not committed. Every listing goes through here rather than through the index directly.
+    private func recentShots(limit: Int) -> (recent: [URL], files: Int) {
+        watcher?.recent(limit: limit, include: { [weak self] in self?.requests.isVisible($0) ?? true }) ?? (recent: [], files: 0)
+    }
+
+    private func newestShot() -> URL? {
+        recentShots(limit: 1).recent.first
+    }
+
+    /// What the Send menu offers while this image is open, and the session a reply belongs back to.
+    /// Reading the sessions runs subprocesses, so it answers later; the bar shows no button until it does.
+    private func refreshDestinations(for shot: Screenshot) {
+        let replyTo = requests.origin(of: shot.url)
+        annotator.setDestinations([], replyTo: replyTo)
+        requests.destinations { [weak self] found in
+            guard let self else { return }
+            // Listing the sessions runs subprocesses that can take seconds, so two images' answers
+            // can arrive out of order. An answer for an image the editor has left would label the
+            // one that replaced it, and a reply would go to a session it was never about.
+            guard self.annotator.currentKey == shot.url.path else { return }
+            self.annotator.setDestinations(found, replyTo: replyTo)
+        }
+    }
+
+    /// Send, from the annotator's toolbar. The drawing is rendered without closing anything; the
+    /// image leaves the editor only once that rendering and the request are stored, so a failure
+    /// anywhere before then leaves the drawing exactly where the hand left it.
+    private func sendDrawing(to destination: AgentDestination) {
+        guard !annotator.sending else { return }
+        annotator.sending = true
+        annotator.snapshotCurrent { [weak self] key, png, error in
+            guard let self else { return }
+            self.annotator.sending = false
+            guard !key.isEmpty else {
+                Commands.error("send", .pageNotReady, error ?? "no image in the editor"); return
+            }
+            // A rendering that answers after the person moved to another image belongs to neither
+            // of them: it is dropped, and nothing is sent and nothing closed.
+            guard self.annotator.currentKey == key else {
+                Log.write("[send] dropped \((key as NSString).lastPathComponent); the editor moved on"); return
+            }
+            let source = URL(fileURLWithPath: key)
+            if let error {
+                Commands.error("send", error.hasPrefix("timeout") ? .exportTimeout : .exportFailed, "\(source.lastPathComponent): \(error)")
+                self.thumbnail.showFeedback("Could not render the drawing; see the log")
+                return
+            }
+            // Nothing drawn is a send of the screenshot itself, which is what the person is looking at.
+            // Through PNG whatever the capture format is: a reply copies these bytes to a `.png`
+            // name, and an agent opening a file whose name and content disagree may not cope.
+            guard let bytes = png ?? Thumbnailer.png(from: source) else {
+                Commands.error("send", .unreadableImage, source.path)
+                self.thumbnail.showFeedback("Could not read \(source.lastPathComponent)")
+                return
+            }
+            guard self.requests.send(png: bytes, source: source, to: destination) != nil else {
+                self.thumbnail.showFeedback("Could not store the request; see the log"); return
+            }
+            // Stored, so the request survives whatever the client does next. The image goes home
+            // and takes no copied mark: copying is Done's contract. A queued run carries on.
+            self.thumbnail.annotationSent()
+        }
+    }
+
     private func present(_ shot: Screenshot, annotate: Bool) {
         if annotate { self.annotate([shot]) } else { thumbnail.show(shot) }
     }
@@ -819,7 +950,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     @discardableResult
     private func pressRecent() -> ThumbnailController.StackToggle {
         if thumbnail.stackShowing { thumbnail.dismiss(); Commands.ok("recent", "dismissed"); return .dismissed }
-        let index = watcher?.recent(limit: settings.data.recentCount) ?? (recent: [], files: 0)
+        let index = recentShots(limit: settings.data.recentCount)
         watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
         let result = thumbnail.toggleRecent(index.recent.map(Screenshot.init), detail: "files=\(index.files) ")
         switch result {
@@ -846,6 +977,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 self.presentAdd(name)   // waits when the push's marks are still becoming a draft
                 return
             }
+            // An agent's reply is shown once by its own import, when every byte and its draft are
+            // stored. A watcher report for one — the copy that made it, or a later rescan — is
+            // never a capture, so it neither goes to the clipboard nor opens the editor.
+            guard self.requests.isCapture(url) else { return }
             if self.settings.data.copyOnCapture {
                 Clipboard.copyFiles([url])
                 Log.write("[watcher] copied \(url.lastPathComponent)")
@@ -855,6 +990,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[watcher] removed \(urls.map(\.lastPathComponent).joined(separator: ", "))")
             self?.thumbnail.remove(urls.map(Screenshot.init))
             self?.forgetDrafts(urls.map(Screenshot.init))
+            for url in urls { self?.requests.fileRemoved(url) }
         })
         warmThumbnails()
         if wakeObserver == nil {
@@ -870,7 +1006,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// Decodes thumbnails for the recent stack ahead of time so the hotkey shows it at once.
     private func warmThumbnails() {
-        thumbnail.warm((watcher?.recent(limit: settings.data.recentCount).recent ?? []).map(Screenshot.init))
+        thumbnail.warm(recentShots(limit: settings.data.recentCount).recent.map(Screenshot.init))
     }
 }
 

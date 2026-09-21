@@ -55,6 +55,38 @@ fraction of the image: `x`,`y` is a shape's top-left corner or an arrow's tail, 
 - `[add] ok <name> … marks=<n>` says they landed. `invalid-marks` names the mark and the field.
 - `page-not-ready` means the editor is busy with the user's own image. Wait and send it again.
 
+## When the user sends you a drawing
+
+The user can hand you a drawing from Vignette's editor. It arrives in your session as one line:
+
+```text
+Vignette request <id>: open the drawing at "<path>" and do what it asks. To answer with a drawing
+of your own, run: python3 "<helper>" --ticket "<ticket>" --marks <marks.json>; …
+```
+
+Open that image and answer what it asks. When the answer is easier to show than to say, reply with
+a drawing: the helper puts your marks on a new card beside the user's other screenshots, and they
+edit them like their own and can send the result straight back to you.
+
+```sh
+cat > /tmp/reply.json <<'JSON'
+[{"type": "arrow", "x": 0.50, "y": 0.90, "x2": 0.44, "y2": 0.62},
+ {"type": "text",  "x": 0.20, "y": 0.92, "text": "this column is the one that overflows"}]
+JSON
+python3 "<helper>" --ticket "<ticket>" --marks /tmp/reply.json
+```
+
+- The marks are the same format as `&marks=` above, with the same limits.
+- `--image <your.png>` puts them on a picture of your own instead of the one you were sent.
+- It prints one JSON line and exits **0** accepted, **2** refused, **3** unconfirmed. Accepted means
+  Vignette has your reply and will keep it, not that the card is on screen yet.
+- **Unconfirmed means do not send a new reply.** Vignette never answered, so your reply may or may
+  not have arrived. Retry the exact one, which can never make a second card:
+  `python3 "<helper>" --ticket "<ticket>" --retry <the bundle path it printed>`.
+- Only the ticket you were given authorizes a reply, and only to that one request. A request the
+  user has cleared refuses new replies (`request-closed`).
+- Answer in words in your own session as usual. The reply carries only the drawing.
+
 ## Read back what they drew
 
 The user draws and presses Return. Vignette writes `<name>-annotated.png` beside the copy in the

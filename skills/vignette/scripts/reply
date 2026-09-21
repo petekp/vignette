@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Answer a Vignette screenshot request with a drawing of your own.
+
+Vignette sends you a request line naming an image and a ticket. Look at the image, then run this
+to send marks back: they arrive as a new card the person can edit like their own drawing.
+
+    python3 reply --ticket <ticket.json> --marks <marks.json> [--image <your.png>]
+
+The marks file is a JSON array. Every number is a fraction of the image: `x`,`y` is a shape's
+top-left corner or an arrow's tail, `w`,`h` its size, `x2`,`y2` an arrow's head.
+
+    [{"type": "ellipse",   "x": 0.12, "y": 0.30, "w": 0.20, "h": 0.10},
+     {"type": "arrow",     "x": 0.50, "y": 0.50, "x2": 0.70, "y2": 0.60},
+     {"type": "rectangle", "x": 0.10, "y": 0.10, "w": 0.30, "h": 0.20},
+     {"type": "text",      "x": 0.10, "y": 0.80, "w": 0.50, "text": "This header should not scroll"}]
+
+At most 100 marks. A mark with no "color" is coloured from the pixels it covers; to choose one,
+name it: red, yellow, light-blue, white, violet. Without --image the marks go on the picture the
+person sent you; with it they go on yours.
+
+It prints one JSON line and exits 0 accepted, 2 refused, 3 unconfirmed, 1 for a usage or IO error.
+Unconfirmed means Vignette never answered: the reply may or may not have arrived, so do not send a
+new one. Retry that exact reply instead, which can never make a second card:
+
+    python3 reply --retry <the bundle path this printed>
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import urllib.parse
+import uuid
+
+# Must equal ReplyProtocol.version in the app. A mismatch is refused rather than half-understood.
+PROTOCOL = 1
+# How long to wait for the receipt Vignette writes. The app answers in well under a second; the
+# margin is for an app that is busy rendering somebody's drawing.
+RECEIPT_TIMEOUT_S = 30
+RECEIPT_POLL_S = 0.1
+MAX_MARKS = 100
+
+
+def fail(message, code=1):
+    print(json.dumps({"status": "error", "error": message}))
+    sys.exit(code)
+
+
+def load_ticket(path):
+    try:
+        with open(path, "r") as f:
+            ticket = json.load(f)
+    except (OSError, ValueError) as err:
+        fail("cannot read the ticket at %s: %s" % (path, err))
+    if ticket.get("protocolVersion") != PROTOCOL:
+        fail("this helper speaks protocol %d, the ticket says %s" % (PROTOCOL, ticket.get("protocolVersion")))
+    for key in ("requestId", "secret", "requestDirectory", "app"):
+        if not ticket.get(key):
+            fail("the ticket has no %s" % key)
+    return ticket
+
+
+def load_marks(path):
+    try:
+        with open(path, "r") as f:
+            marks = json.load(f)
+    except (OSError, ValueError) as err:
+        fail("cannot read the marks at %s: %s" % (path, err))
+    if not isinstance(marks, list):
+        fail("the marks file must hold a JSON array")
+    if len(marks) > MAX_MARKS:
+        fail("%d marks; at most %d" % (len(marks), MAX_MARKS))
+    return marks
+
+
+def digest(bundle_bytes, image_bytes):
+    """The identity of this reply's bytes. Over the bundle file exactly as written, then the image,
+    so the helper and the app cannot disagree about how a number is spelled."""
+    h = hashlib.sha256()
+    h.update(bundle_bytes)
+    h.update(b"\x00")
+    if image_bytes is not None:
+        h.update(image_bytes)
+    return "sha256:" + h.hexdigest()
+
+
+def prepare(ticket, marks, image):
+    """Freezes one reply: a new reply id, the marks, and a staged copy of any image, written once.
+    A retry submits this again rather than reading your files a second time, so a reply cannot
+    change under a resend and cannot become a second card."""
+    reply_id = str(uuid.uuid4()).lower()
+    directory = os.path.join(ticket["requestDirectory"], "submissions", reply_id)
+    try:
+        os.makedirs(directory, exist_ok=True)
+        image_bytes = None
+        if image:
+            # Staged before anything is dispatched, so you may delete your own temporary file the
+            # moment this returns without changing what a retry would send.
+            staged = os.path.join(directory, "image.png")
+            shutil.copyfile(image, staged)
+            with open(staged, "rb") as f:
+                image_bytes = f.read()
+        bundle = {
+            "protocolVersion": PROTOCOL,
+            "requestId": ticket["requestId"],
+            "replyId": reply_id,
+            "hasImage": image is not None,
+            "marks": marks,
+        }
+        bundle_bytes = json.dumps(bundle, sort_keys=True).encode("utf-8")
+        with open(os.path.join(directory, "bundle.json"), "wb") as f:
+            f.write(bundle_bytes)
+    except OSError as err:
+        fail("cannot write the reply bundle in %s: %s" % (directory, err))
+    return directory, reply_id, digest(bundle_bytes, image_bytes)
+
+
+def reread(directory):
+    """A prepared bundle, for --retry: the same reply id and the same digest as when it was made."""
+    try:
+        with open(os.path.join(directory, "bundle.json"), "rb") as f:
+            bundle_bytes = f.read()
+        bundle = json.loads(bundle_bytes)
+        image_bytes = None
+        if bundle.get("hasImage"):
+            with open(os.path.join(directory, "image.png"), "rb") as f:
+                image_bytes = f.read()
+    except (OSError, ValueError) as err:
+        fail("cannot read the prepared bundle at %s: %s" % (directory, err))
+    return bundle["replyId"], digest(bundle_bytes, image_bytes)
+
+
+def submit(ticket, directory, reply_id, payload_digest, scheme):
+    """One dispatch. The secret travels in the envelope file and never in the URL, which is logged."""
+    attempt_id = str(uuid.uuid4()).lower()
+    envelope = os.path.join(directory, "attempt-%s.json" % attempt_id)
+    try:
+        with open(envelope, "w") as f:
+            json.dump({
+                "protocolVersion": PROTOCOL,
+                "requestId": ticket["requestId"],
+                "replyId": reply_id,
+                "attemptId": attempt_id,
+                "payloadDigest": payload_digest,
+                "secret": ticket["secret"],
+            }, f)
+    except OSError as err:
+        fail("cannot write the envelope at %s: %s" % (envelope, err))
+    url = "%s://reply?file=%s" % (scheme, urllib.parse.quote(envelope))
+    # -a names the app that issued the request. Without it `open` hands the URL to whichever copy
+    # of the bundle id LaunchServices registered last, which on a machine with a second build is
+    # not the app holding this request.
+    dispatch = subprocess.run(["open", "-g", "-a", ticket["app"], url], capture_output=True, text=True)
+    # A nonzero `open` says the URL was not delivered; it is not proof that nothing was accepted,
+    # and a zero one is not proof that anything was. Only the receipt answers.
+    return attempt_id, dispatch.returncode, (dispatch.stderr or "").strip()
+
+
+def wait_for_receipt(ticket, reply_id, attempt_id, payload_digest):
+    path = os.path.join(ticket["requestDirectory"], "receipts", "%s.json" % attempt_id)
+    deadline = time.time() + RECEIPT_TIMEOUT_S
+    while time.time() < deadline:
+        try:
+            with open(path, "r") as f:
+                receipt = json.load(f)
+        except (OSError, ValueError):
+            time.sleep(RECEIPT_POLL_S)
+            continue
+        # Every correlation field is checked: a receipt for some other attempt does not answer this one.
+        if (receipt.get("protocolVersion") == PROTOCOL
+                and receipt.get("requestId") == ticket["requestId"]
+                and receipt.get("replyId") == reply_id
+                and receipt.get("attemptId") == attempt_id
+                and receipt.get("payloadDigest") == payload_digest):
+            return receipt
+        time.sleep(RECEIPT_POLL_S)
+    return None
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Answer a Vignette screenshot request with a drawing.",
+        epilog=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--ticket", help="the ticket.json path from the request line")
+    parser.add_argument("--marks", help="a JSON file of marks; see --help for the format")
+    parser.add_argument("--image", help="your own PNG to draw the marks on, instead of the picture you were sent")
+    parser.add_argument("--retry", metavar="BUNDLE", help="send a prepared reply again, unchanged")
+    parser.add_argument("--scheme", default="vignette", help=argparse.SUPPRESS)
+    args = parser.parse_args()
+
+    if not args.ticket:
+        fail("--ticket is required; the request line names it")
+    ticket = load_ticket(args.ticket)
+
+    if args.retry:
+        # A retry is the same bytes again; that is what makes it safe to send twice. Marks given
+        # with it would be silently dropped, so say so rather than send something else.
+        if args.marks or args.image:
+            fail("--retry sends the prepared reply unchanged; drop --marks and --image")
+        directory = args.retry
+        reply_id, payload_digest = reread(directory)
+    else:
+        if not args.marks and not args.image:
+            fail("nothing to send: give --marks, --image, or both")
+        marks = load_marks(args.marks) if args.marks else []
+        if args.image and not os.path.isfile(args.image):
+            fail("no image at %s" % args.image)
+        directory, reply_id, payload_digest = prepare(ticket, marks, args.image)
+
+    attempt_id, dispatch_code, dispatch_error = submit(ticket, directory, reply_id, payload_digest, args.scheme)
+    receipt = wait_for_receipt(ticket, reply_id, attempt_id, payload_digest)
+    if receipt is None:
+        print(json.dumps({
+            "status": "unconfirmed", "replyId": reply_id, "bundle": directory,
+            "detail": ("open exited %d: %s" % (dispatch_code, dispatch_error)) if dispatch_code else
+                      "Vignette wrote no receipt within %d s" % RECEIPT_TIMEOUT_S,
+            "retry": "python3 %s --ticket %s --retry %s" % (sys.argv[0], args.ticket, directory),
+        }))
+        sys.exit(3)
+    if receipt.get("acceptance") != "accepted":
+        print(json.dumps({"status": "refused", "replyId": reply_id,
+                          "error": receipt.get("errorCode") or "refused"}))
+        sys.exit(2)
+    print(json.dumps({"status": "accepted", "replyId": reply_id,
+                      "publication": receipt.get("publication")}))
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

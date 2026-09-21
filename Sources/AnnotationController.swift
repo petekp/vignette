@@ -31,6 +31,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// The frame moved: it was placed, a zoom stepped it, or it came home on the way out. The
     /// stack follows it, so it narrows as the frame grows towards it.
     var onFrame: ((NSRect) -> Void)?
+    /// The Send menu asked to hand the drawing on the canvas to this agent session.
+    var onSend: ((AgentDestination) -> Void)?
 
     /// Nil when the bundle has no page or the server did not start; every call then no-ops.
     private var webView: WKWebView?
@@ -68,6 +70,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private var pendingExport: (([String: Data], String?) -> Void)?
     /// The marks build waiting on the page, if any. One at a time, and called exactly once.
     private var pendingBuild: ((ParkResult?, String?) -> Void)?
+    /// Set while Send is rendering the current drawing, so two clicks cannot send twice.
+    private var pendingSnapshot: ((Data?, String?) -> Void)?
     /// The hide waiting on the page's park, so a process restart still hides the window.
     private var pendingHide: (() -> Void)?
     /// How long Copy Drawing waits for the page before giving up.
@@ -128,6 +132,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         _ = FocusReturn.shared
         toolbar.onTool = { [weak self] id in self?.call(.setTool(id)) }
         toolbar.onDone = { [weak self] in self?.call(.finish) }
+        toolbar.onSend = { [weak self] destination in self?.onSend?(destination) }
         standIn.atRest = { [weak self] in self.map { $0.zoomTween.value == $0.zoomTarget } ?? false }
         standIn.windowVisible = { [weak self] in self?.window?.isVisible == true }
         guard let dist = Bundle.main.url(forResource: "dist", withExtension: nil) else {
@@ -492,6 +497,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         standIn.sessionEnded()
         call(.reset)
         hideWindows()
+        canvasMaybeFreed()
     }
 
     /// Parks the draft, then removes the window. `then` runs once the page has answered, so a
@@ -508,6 +514,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             self?.pendingHide = nil
             self?.hideWindows()
             completion?()
+            self?.canvasMaybeFreed()
         }
         fitBeforeHide { fitted = true; finish() }
         // The image is let go on both paths: a `current` left behind says the annotator still holds
@@ -659,6 +666,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             guard !answered else { return }
             answered = true
             self?.pendingExport = nil
+            self?.canvasMaybeFreed()
             // The page's own text can name the URL it failed on, and the log is readable by any
             // local process, so the token comes out of it before anyone writes it down.
             completion(pngs, error.map { self?.server?.redacted($0) ?? $0 })
@@ -676,6 +684,62 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         }
     }
 
+    /// The image the page is holding, by path, or nil between sessions. A send compares its own
+    /// answer with this, so a rendering that lands after a swap closes nothing.
+    var currentKey: String? { current?.url.path }
+
+    /// What the Send menu offers for the image that is opening, and the session a reply belongs
+    /// back to. Read once per image: the list comes from subprocesses, and a menu that re-read it
+    /// on every click would stall the bar.
+    func setDestinations(_ list: [AgentDestination], replyTo: AgentDestination?) {
+        toolbar.model.destinations = list
+        toolbar.model.replyTo = replyTo
+    }
+
+    /// True while a send is rendering or submitting; the button says so and takes no second click.
+    var sending: Bool {
+        get { toolbar.model.sending }
+        set { toolbar.model.sending = newValue }
+    }
+
+    /// The drawing exactly as it stands, rendered at full size, with nothing closed and nothing
+    /// stored: what Send hands to an agent. Done is unsuitable for this — its rendering failure
+    /// path sends `cancel` and ends the session — and its contract is left alone.
+    ///
+    /// Answers with the key the rendering belongs to, so a caller can drop an answer that arrived
+    /// after the person moved to another image. A nil PNG with no error means nothing is drawn,
+    /// which is a send of the plain screenshot. Always answers.
+    func snapshotCurrent(completion: @escaping (_ key: String, _ png: Data?, _ error: String?) -> Void) {
+        guard let shot = current, let webView, pageReady else {
+            completion("", nil, "the editor page is not ready"); return
+        }
+        let key = shot.url.path
+        guard pendingSnapshot == nil else { completion(key, nil, "a send is already preparing"); return }
+        let epoch = pageEpoch
+        var answered = false
+        let finish: (Data?, String?) -> Void = { [weak self] png, error in
+            guard !answered else { return }
+            answered = true
+            self?.pendingSnapshot = nil
+            // The page's own text can name a served URL, and every served URL starts with the
+            // per-launch token, which must never reach the log.
+            completion(key, png, error.map { self?.server?.redacted($0) ?? $0 })
+        }
+        pendingSnapshot = finish
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) { finish(nil, "timeout after \(Int(Self.exportTimeout)) s") }
+        webView.callAsyncJavaScript(PageAPI.snapshot.script, arguments: [:], in: nil, in: .page) { [weak self] result in
+            guard let self, self.pageEpoch == epoch else { return }
+            switch result {
+            case .failure(let error): finish(nil, String(describing: error).replacingOccurrences(of: "\n", with: " "))
+            case .success(let value):
+                guard let snapshot = SnapshotResult(body: value) else {
+                    finish(nil, "page returned \(WebMessage.describe(value as Any))"); return
+                }
+                finish(snapshot.png, snapshot.error)
+            }
+        }
+    }
+
     /// The page's canvas belongs to the annotator, so nothing else may draw on it. It takes it in
     /// `prepare`, about half a second before the window appears, and gives it back when `park`
     /// answers, after the window is gone.
@@ -688,6 +752,23 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// and a preview rendering both put their own image there for the length of one rendering, so
     /// they wait for the annotator; `add` asks before it copies anything, so a refusal is one error
     /// line and no file left behind.
+    /// Called a turn after the canvas stops being owned, so whatever was refused can ask again.
+    /// It fires from every place one of the four owners lets go rather than from the callers of
+    /// those places: an export or a build that answered somewhere new would otherwise strand a
+    /// waiting import until the next unrelated session.
+    var onCanvasFree: (() -> Void)?
+
+    /// Signals `onCanvasFree` on the next turn of the run loop, if the canvas is still free then.
+    /// The next turn rather than now: an owner clears its flag inside its own completion, and an
+    /// import starting there would run inside the call that released it.
+    private func canvasMaybeFreed() {
+        guard canvasRefusal == nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.canvasRefusal == nil else { return }
+            self.onCanvasFree?()
+        }
+    }
+
     var canvasRefusal: String? {
         if webView == nil || !pageReady { return "the editor page is not ready" }
         if holdsCanvas { return "an image is in the annotator" }
@@ -718,6 +799,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             guard !answered else { return }
             answered = true
             self?.pendingBuild = nil
+            self?.canvasMaybeFreed()
             completion(parked, error)
         }
         pendingBuild = finish
@@ -801,6 +883,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             }
             Log.write("[web] ready protocol=\(version) tools=\(tools.count) markColors=\(markColors.count)")
             pageReady = true
+            canvasMaybeFreed()
             toolbar.model.tools = tools
             colorIDs = markColors.map(\.id)
             if let call = pendingCall { self.call(call); pendingCall = nil }
@@ -905,6 +988,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         Log.write("[web] error process-terminated; reloading")
         pendingExport?([:], "web process terminated")
         pendingBuild?(nil, "web process terminated")
+        pendingSnapshot?(nil, "web process terminated")
         pendingHide?()
         standIn.pageRestarted()
         // The reloaded page fits the image to the frame it finds, and a zoomed frame is not the

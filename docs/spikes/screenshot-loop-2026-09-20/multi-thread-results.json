@@ -1,0 +1,18 @@
+[
+  {
+    "thread": "01a0c16b-b664-7470-bdbe-ee68d44204da",
+    "response": {
+      "request_id": "codex-b",
+      "code_word": "VESPER-4829",
+      "selected_color": "teal"
+    }
+  },
+  {
+    "thread": "01a0c16b-b51c-7042-be96-0f12df3a5f89",
+    "response": {
+      "request_id": "codex-a",
+      "code_word": "VESPER-4829",
+      "selected_color": "orange"
+    }
+  }
+]

@@ -69,4 +69,26 @@ final class ThumbnailerTests: XCTestCase {
         XCTAssertEqual(rep.pixelsHigh, 533)
         XCTAssertNil(Thumbnailer.downsampled(png: Data("not a png".utf8), maxPixel: 100))
     }
+
+    /// A drawing sent to an agent is stored as `image.png`, and a reply copies those bytes to a
+    /// `.png` card. A jpg or heic capture sent with nothing drawn on it would otherwise put the
+    /// capture's own bytes under a name that says PNG.
+    func testAnyCaptureFormatIsSentAsRealPNGBytes() throws {
+        let source = dir.appendingPathComponent("capture.jpg")
+        let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 20, bitsPerSample: 8,
+                                                 samplesPerPixel: 3, hasAlpha: false, isPlanar: false,
+                                                 colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        try XCTUnwrap(rep.representation(using: .jpeg, properties: [:])).write(to: source)
+
+        let converted = try XCTUnwrap(Thumbnailer.png(from: source))
+        XCTAssertEqual(converted.prefix(8), Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+        let decoded = try XCTUnwrap(NSBitmapImageRep(data: converted))
+        XCTAssertEqual(decoded.pixelsWide, 40)
+        XCTAssertEqual(decoded.pixelsHigh, 20)
+
+        // A PNG is handed back as it is, so the common case costs one read and no re-encode.
+        let png = try self.png("already.png", w: 8, h: 8)
+        XCTAssertEqual(Thumbnailer.png(from: png), try Data(contentsOf: png))
+        XCTAssertNil(Thumbnailer.png(from: dir.appendingPathComponent("nothing.png")))
+    }
 }

@@ -405,6 +405,15 @@ final class ThumbnailController: NSObject {
         send(.close)
     }
 
+    /// Send: the drawing is stored as a request and the card comes home without a copied mark.
+    /// The run carries on, because a queue is a list the person asked for and sending one of its
+    /// cards to an agent does not withdraw the rest; only Esc, which is a person stopping, empties
+    /// it. Copying is Done's, so this is `close` rather than `finish`.
+    func annotationSent() {
+        restoreFocusOnEnd = true
+        send(.close)
+    }
+
     /// Done or Return: the result is on the clipboard. The card comes back marked copied; in quick
     /// mode everything closes instead.
     func annotationFinished(quick: Bool) {
