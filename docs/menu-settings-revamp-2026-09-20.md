@@ -107,15 +107,22 @@ Claude Code     Not installed
 Codex           Installed
 ```
 
-- One button. "Install" while any agent directory lacks the skill; "Remove" when every agent has
-  it. Install writes `agentSkill` on, Remove writes off: the existing settings
-  observer does the work, so `install-skill` and a hand-edited file behave as before.
+- One button per row. Each agent has its own state on disk, so each row carries its own action:
+  "Install" when it lacks the skill, "Remove" when it has it. A shared button would have to pick
+  one label, wrong for whichever row disagrees. Disk is the truth: a setting that can disagree
+  with it is a second source of truth, which is what made the switch lie.
+- `agentSkill` keeps only its "asked once" role: `unasked` until the offer, then `off`. `on` no
+  longer means anything and is read as `off` (`validated()` rewrites it). A launch refreshes every
+  copy that exists on disk whose files differ from the bundle, and installs nothing new. The
+  `install-skill` URL installs into every agent directory and writes no setting; `&root=` is
+  unchanged. `docs/settings.md` and `docs/commands.md` say so. This is a change to a documented
+  settings key, made because the key had no job left.
 - Links are resolved, all the way. The destination for a root is `<root>/skills/vignette` with
   every link resolved (`URL.resolvingSymlinksInPath()` on the deepest existing component), including
   a link at the skill folder itself, so the skill is written where it really lives. Roots whose
   destinations resolve to the same folder share one copy: one install, and every one of those rows
   reads Installed (on this Mac both agents' `vignette` entries resolve to the repo's own
-  `skills/vignette`). Remove deletes the entry at `<resolved skills>/vignette`: a link goes and its
+  `skills/vignette`). A row's Remove removes that row's entry only. Remove deletes the entry at `<resolved skills>/vignette`: a link goes and its
   target stays, a folder goes. The `linkedRoot` outcome, `linkedPath`, the state report's
   `linkedSkillRoots`, and the docs paragraph about links go.
 - Rows, one per agent directory found, no paths: "Installed" when `<root>/skills/vignette/SKILL.md`
