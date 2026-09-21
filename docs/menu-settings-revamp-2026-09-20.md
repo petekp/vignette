@@ -95,11 +95,35 @@ with the standard animation). Each tab is a grouped `Form`, 480 pt wide. Tabs, w
 
 ### Agents (`sparkles`)
 
-- **Install the Vignette skill for Claude Code and Codex** — toggle (`agentSkill` on/off; the existing
-  `agentSkill` binding). Caption: "Lets an agent show you an image and read back what you draw on it.
-  Copies go into ~/.claude/skills and ~/.codex/skills; off removes only the copies Vignette made."
-- The offer (`AppDelegate.offerAgentSkill`) opens this tab (`show(scrollTo: SettingsView.agentsSection)`
-  becomes `show(tab: .agents)`).
+Decided with Pete on 2026-09-20, after the first build: the switch could lie (a linked
+`~/.claude/skills` installs nothing and only the log says so), nothing showed whether the skill was
+there, and the caption listed paths and mechanism instead of the reason.
+
+```
+Vignette can teach your coding agents to show you an image and read back what you draw on it.
+
+  Install the skill                                              [switch]
+
+  Claude Code     Installed, 1.4 (4787973)
+                  ~/.claude/skills/vignette
+  Codex           Not installed: ~/.codex/skills is a link, and Vignette
+                  does not write through links.                  [Reveal]
+```
+
+- The sentence at the top is the whole pitch, and the offer text when the window opens itself.
+- One switch, "Install the skill", bound as before (`agentSkill` on/off; off is an answer, never
+  `unasked`). Disabled, and off, when no agent directory exists.
+- One row per agent directory found (`SkillInstaller.roots`), named "Claude Code" for `.claude`
+  and "Codex" for `.codex`, computed from disk (`SkillInstaller.state(of:)`, `linkedPath(in:)`)
+  on show and after every settings change. The states, in words:
+  - ours: "Installed, <version> (<build>)" from the stamp, then the path.
+  - none: "Not installed", then the path it would take.
+  - foreign: "Something else is at <path>. Vignette leaves it alone."
+  - linked root: "Not installed: <link path> is a link, and Vignette does not write through
+    links." with a "Reveal" button that selects the link in Finder.
+- No agent found: "No coding agent found on this Mac. Vignette looks for Claude Code and Codex."
+- The offer (`offerAgentSkill`) still opens this tab once, unasked, `activating: false`.
+- No installer change and no settings change. `docs/agents.md` "Installing" describes the tab.
 
 ### Developer (`wrench.and.screwdriver`) — only when `debug` is on
 
