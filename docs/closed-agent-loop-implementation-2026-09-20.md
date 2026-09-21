@@ -6,17 +6,16 @@ route was proved. Update this file rather than adding another.
 ## The two gates, and what was chosen
 
 **Native Codex connection setup.** The plan required either a supported way to reach an existing
-session's endpoint or an explicit choice of Vignette-created sessions. Neither was taken silently.
-`codex app-server daemon start` refuses on this Mac (`managed standalone Codex install not found at
-~/.codex/packages/standalone/current/codex`), so there is no shared local endpoint to discover, and
-installing one is a machine change that needs Pete. Vignette therefore takes the endpoint and the
-thread UUID as **explicit configuration** and never starts, owns, resumes, or stops a Codex server
-or session. A Codex destination is a line in `settings.json`.
+session's endpoint or an explicit choice of Vignette-created sessions. It was first read as needing
+an endpoint, so a Codex destination was a line in `settings.json` naming one.
 
-That gate is now half open. Vignette reads a running app-server's own thread list when one is
-there, so a daemon supplies the sessions automatically and the configured lines are the fallback
-rather than the only way (`docs/codex-discovery-2026-09-21.md`). It still starts nothing: no
-socket, no discovery.
+That reading was wrong, and the gate is now closed without either horn. No endpoint is needed at
+each end: `thread/list` reads a store on disk, so a `codex app-server` Vignette starts for the
+length of one listing sees every session, and `codex queue --thread <uuid>` with no `--remote`
+finds the engine that owns the thread, including the desktop app's, which listens on nothing (both
+verified 2026-09-21, `docs/codex-discovery-2026-09-21.md`). Vignette still never starts, owns,
+resumes, or stops a Codex *session*; the read-only server it runs for a listing is ended with it.
+`codexSessions` stays for a session on a server that is not this Mac's.
 
 **Reply trust model.** Implemented as the plan's own proposal: a per-request bearer ticket in a
 private request directory. Possession of the ticket authorizes one request's replies; it does not
@@ -27,7 +26,7 @@ same-user processes remain outside the guarantee.
 
 | Client | Submission | Address | Guard |
 | --- | --- | --- | --- |
-| Codex | `codex queue --thread <UUID> [--remote <endpoint>] --message <line>` | the thread UUID | runtime-enforced: the app server resolves the UUID or fails |
+| Codex | `codex queue --thread <UUID> [--remote <endpoint>] --message <line>` | the thread UUID; `--remote` only for a configured session on another machine's server | runtime-enforced: the app server resolves the UUID or fails |
 | Claude Code | `herdr agent prompt <pane> <line>` | the Claude Code session UUID | preflight: `herdr agent list` must still report that session UUID in a pane |
 
 Codex matches the plan's first eligibility row. Claude Code does not: herdr's prompt API takes a
@@ -154,10 +153,11 @@ out stays unknown: it is neither retried on another route nor reported as failed
 
 ## Known limits
 
-- Codex sessions are discovered only while an app-server is running with a control socket. On a
-  Mac with none, they still have to be named in `settings.json`, and the ChatGPT desktop app's own
-  server does not count: it listens on nothing. Sending to a *discovered* thread is also the one
-  part of the loop never exercised end to end, since no daemon owns a thread here.
+- A Codex session drawing back is the one part of the loop never exercised end to end. Discovery,
+  the menu, and submission to a real Codex Desktop thread were all driven live on 2026-09-21, and
+  the request sits submitted; finishing it needs that session to run its turn and call the reply
+  helper, which no test can make it do. The return leg is the same ticket-addressed code the Claude
+  Code loop exercises, and nothing in it is Codex-specific.
 - The Send menu groups the sessions by the project each is working in, which is what a person
   picking among a dozen navigates by. Up to six projects they are sections, so every session is one
   press away; above that each project is a submenu, because a heading and separator per project is

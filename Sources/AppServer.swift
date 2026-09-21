@@ -2,14 +2,16 @@ import Foundation
 import os
 
 /// The Codex app-server's JSON-RPC, spoken over a child process's standard input and output.
-/// `codex app-server proxy --sock <path>` bridges that stdio to whichever server is running, so
-/// discovery is one conversation shape whether the server is a daemon or a process of our own.
+/// `thread/list` reads the thread store on disk, so a server started here for the length of one
+/// listing sees every session, whoever owns it. `codex app-server proxy --sock <path>` bridges the
+/// same stdio to a server already running, which is cheaper when there is one; the conversation is
+/// identical either way.
 ///
 /// This is the only thing in the app that knows the app-server protocol. It reads; it never starts
 /// a thread, sends a turn, or changes anything a session holds.
 enum AppServer {
-    /// Where a running app-server publishes its control socket. Absent means nothing is running to
-    /// ask, which is not an error: the configured destinations are then the whole answer.
+    /// Where a running app-server publishes its control socket. Present means one is already up and
+    /// the proxy can ask it; absent means discovery starts its own, which answers the same listing.
     static var controlSocket: URL {
         URL(fileURLWithPath: ("~/.codex/app-server-control/app-server-control.sock" as NSString).expandingTildeInPath)
     }

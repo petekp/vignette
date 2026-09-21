@@ -216,8 +216,8 @@ struct CodexConnection: AgentConnection {
     var converse: @Sendable (String, [String], [String]) -> [String] = {
         AppServer.converse($0, $1, $2)
     }
-    /// Whether an app-server is there to ask. Injected for the same reason.
-    var serverIsRunning: @Sendable () -> Bool = { AppServer.controlSocketExists }
+    /// Whether a running app-server has published its control socket. Injected for the same reason.
+    var controlSocketExists: @Sendable () -> Bool = { AppServer.controlSocketExists }
 
     static let queueTimeout: TimeInterval = 25
 
@@ -242,21 +242,27 @@ struct CodexConnection: AgentConnection {
         return configured + discovered.filter { !named.contains($0.address.threadUUID ?? "") }
     }
 
-    /// The sessions a running app-server knows about. Empty when there is no server to ask, which
-    /// is the ordinary case on a Mac with no daemon: the configured entries are then the answer,
-    /// and nothing is started to change that.
+    /// Every Codex session the machine knows about. `thread/list` reads the store all of them
+    /// share, so any app-server can answer it: a running daemon's control socket when there is
+    /// one, and otherwise a server started for the length of this one call. That is why
+    /// discovery needs no daemon and no endpoint, and why the sessions a person actually has,
+    /// which the ChatGPT desktop app owns, are in the menu on a Mac with neither.
     private func discovered() -> [AgentDestination] {
-        guard serverIsRunning(), let codex = binary() else { return [] }
-        let socket = AppServer.controlSocket.path
-        let lines = converse(codex, ["app-server", "proxy", "--sock", socket], AppServer.discoveryRequests())
+        guard let codex = binary() else { return [] }
+        let arguments = controlSocketExists()
+            ? ["app-server", "proxy", "--sock", AppServer.controlSocket.path]
+            : ["app-server"]
+        let lines = converse(codex, arguments, AppServer.discoveryRequests())
         return AppServer.threads(in: lines).map { thread in
             AgentDestination(
                 id: thread.id,
                 name: thread.name?.isEmpty == false ? thread.name! : "Codex \(thread.id.prefix(8))",
                 detail: (thread.cwd as NSString).lastPathComponent,
-                // The same socket the listing came from: `codex queue --remote unix://<path>`
-                // reaches the server that owns the thread, which is what resolves the UUID.
-                address: .codexThread(uuid: thread.id, endpoint: "unix://" + socket))
+                // No endpoint: `codex queue --thread <uuid>` finds the engine that owns the thread
+                // by itself, including the desktop app's, which listens on nothing (verified
+                // 2026-09-21, a message queued with no --remote arrived in a Codex Desktop
+                // session). An endpoint stays a setting, for a server that is not this Mac's.
+                address: .codexThread(uuid: thread.id, endpoint: nil))
         }
     }
 
