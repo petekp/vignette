@@ -26,10 +26,9 @@ https://github.com/user-attachments/assets/cb06c65f-ba08-436f-8e7e-4df31729ad36
   Annotate several at once. Open them and they come one after another. Each Done opens the next.
 - **One-click stitch**<br>
   Several screenshots into one image, auto-numbered.
-- **No colour picker**<br>
-  The colour is chosen from the image for the highest contrast.
-- **Three tools**<br>
-  Rectangle, text, arrow.
+- **Simple by design**<br>
+  Three tools: rectangle, text, arrow. No colour picker. The colour is chosen from the image for
+  the highest contrast.
 - **Copies on capture**<br>
   Every screenshot lands on the clipboard.
 - **Native, refined feel**<br>
