@@ -3,26 +3,21 @@
 What if macOS's built-in screenshot tool had continued to evolve after 2010? That's the idea
 behind Vignette.
 
-Vignette uses the same shortcuts you already use for taking screenshots (like Cmd+Shift+4). After
-you take a screenshot, a preview thumbnail appears in the bottom right corner, just like it used
-to, but with more readily available actions like Copy, Draw, and Delete available on hover.
-
-When you use the Vignette shortcut (double-tap `Shift`, by default), all your recent screenshots
-slide in from the right. It's like a camera roll for your screenshots. You can annotate several at
-once or even stitch them together. Annotations are non-destructive, so you can easily undo or
-modify them after the fact.
-
 ## See it
 
 https://github.com/user-attachments/assets/cb06c65f-ba08-436f-8e7e-4df31729ad36
 
 ## What it does
 
-- **Screenshot history, one key away.** Your recent screenshots in a stack in the corner of the
-  screen. Arrows move, Space selects, Return opens.
+- **The same shortcuts.** Cmd+Shift+3, 4, and 5 still take the screenshot. A preview thumbnail
+  appears in the bottom right corner, just like it used to, with Copy, Draw, and Delete on hover.
+- **Screenshot history, one key away.** Use the Vignette shortcut (double-tap `Shift`, by default)
+  and your recent screenshots slide in from the right. A camera roll for your screenshots. Arrows
+  move, Space selects, Return opens.
 - **Non-destructive.** A drawing is saved beside the original and stays editable. Go back,
   change it, undo it. The original is never touched.
-- **Queue.** Open several cards and they come one after another. Each Done opens the next.
+- **Queue.** Annotate several at once. Open them and they come one after another. Each Done
+  opens the next.
 - **One-click stitch.** Several screenshots into one image, auto-numbered.
 - **No colour picker.** The colour is chosen from the image for the highest contrast.
 - **Three tools.** Rectangle, text, arrow.
