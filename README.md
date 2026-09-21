@@ -7,11 +7,6 @@ still take the screenshot. Vignette handles what comes after.
 
 https://github.com/user-attachments/assets/cb06c65f-ba08-436f-8e7e-4df31729ad36
 
-One minute, real footage, one take. A corner of a page is boxed and labelled, the recent stack
-comes up, three shots are stitched into one, and a screenshot from Claude lands in the stack
-with a question drawn on it. The file is in the repo at
-[docs/demo/vignette-demo.mp4](docs/demo/vignette-demo.mp4) (59 s, no sound).
-
 ## What it does
 
 - **Screenshot history, one key away.** Your recent screenshots in a stack in the corner of the
