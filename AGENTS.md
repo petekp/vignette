@@ -77,7 +77,7 @@ the measurements and the reasoning; a rule here points at its note.
    agent is pushing it: the name is recorded on the copy as the `com.petepetrash.vignette.agent`
    extended attribute (`Agent.swift`, `xattr -l` shows it) and the card gets a white "From <Name>" tab
    with the vendor's logo when `Resources/agents/<name>.svg` has one (`Agent.logo(for:)`).
-   `&marks=<json file>` pushes the agent's own annotations with the image (README has the format):
+   `&marks=<json file>` pushes the agent's own annotations with the image (`docs/commands.md` has the format):
    the page turns them into a draft before the card appears, so the human edits them like their own,
    and the command answers once that draft is stored. That JSON file may also be anywhere; it is
    read on the main thread, so it is capped at 256 KB, and an error line names the mark and the
@@ -575,7 +575,7 @@ the same driven sequence; a single run varies.
 - Signing: project.yml defaults to ad-hoc so any clone builds; `scripts/build.sh` reads the
   gitignored `scripts/signing.env` (identity and team) and this Mac's names the Developer ID
   certificate. Keep it that way here: Accessibility trust is tied to the signature's designated
-  requirement, and an ad-hoc signature changes on every build (README has the details).
+  requirement, and an ad-hoc signature changes on every build (`docs/building.md` has the details).
   `ENABLE_DEBUG_DYLIB` is off in project.yml: with it on, a Debug build loads its code from
   `Vignette.debug.dylib`, which the hardened runtime rejects for a signer without a team ID, so a
   self-signed build crashed at launch. macOS keys Accessibility by bundle id: a second copy of
