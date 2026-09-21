@@ -80,7 +80,10 @@
     text-underline-offset: 0.2em;
   }
   figure {
+    /* Break out of the 34rem text column, staying centred on it. */
+    width: min(64rem, 100vw - 2rem);
     margin: 0 0 1.4rem;
+    margin-left: calc(50% - min(64rem, 100vw - 2rem) / 2);
   }
   img, video {
     display: block;
@@ -91,7 +94,8 @@
     background: #000;
   }
   figcaption {
-    margin-top: 0.6rem;
+    max-width: 34rem;
+    margin: 0.6rem auto 0;
     opacity: 0.65;
   }
   footer {
