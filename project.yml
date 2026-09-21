@@ -29,6 +29,10 @@ targets:
       - path: Resources/agents
         type: folder
         buildPhase: resources
+      # The app icon, an Icon Composer document; actool compiles it (ASSETCATALOG_COMPILER_APPICON_NAME).
+      - path: Resources/vignette.icon
+        type: file
+        buildPhase: resources
     info:
       path: Info.plist
       properties:
@@ -64,6 +68,7 @@ targets:
         # No sandbox: the app writes Apple's com.apple.screencapture defaults, watches a folder the
         # user names without security-scoped bookmarks, and installs global event monitors.
         ENABLE_APP_SANDBOX: false
+        ASSETCATALOG_COMPILER_APPICON_NAME: vignette
     postBuildScripts:
       # The bundle carries the git state: commit count as CFBundleVersion, describe as
       # VignetteBuild. A build phase, not a build.sh argument, so a build from Xcode or a bare

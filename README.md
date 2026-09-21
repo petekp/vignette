@@ -1,4 +1,6 @@
 <p align="center">
+  <img src="docs/app-icon.png" width="128" alt="">
+  <br>
   <img src="docs/logotype.svg" width="150" alt="Vignette">
   <br>
   for macOS
