@@ -122,6 +122,64 @@ final class SkillInstallerTests: XCTestCase {
         XCTAssertEqual(results.map(\.outcome), [.installed, .notOurs])
     }
 
+    // MARK: What the Agents tab reads
+
+    /// A home folder with the two agent directories in it, and the roots the tab would list.
+    private func agentHome(claude: Bool = true, codex: Bool = true) throws -> URL {
+        let home = dir.appendingPathComponent("home")
+        for (make, name) in [(claude, ".claude"), (codex, ".codex")] where make {
+            try FileManager.default.createDirectory(at: home.appendingPathComponent(name), withIntermediateDirectories: true)
+        }
+        return home
+    }
+
+    func testStatusOfOurCopyNamesTheBuildAndThePath() throws {
+        let home = try agentHome(codex: false)
+        let claude = home.appendingPathComponent(".claude")
+        _ = SkillInstaller.install(source: source, into: [claude], stamp: stamp)
+        let status = SkillInstaller.status(of: claude, home: home)
+        XCTAssertEqual(status.name, "Claude Code")
+        XCTAssertEqual(status.status, "Installed, 0.1.0 (aaaa111)")
+        XCTAssertEqual(status.detail, "~/.claude/skills/vignette")
+        XCTAssertNil(status.reveal)
+    }
+
+    func testStatusOfAnEmptyRootNamesThePathTheSkillWouldTake() throws {
+        let home = try agentHome(claude: false)
+        let status = SkillInstaller.status(of: home.appendingPathComponent(".codex"), home: home)
+        XCTAssertEqual(status.name, "Codex")
+        XCTAssertEqual(status.status, "Not installed")
+        XCTAssertEqual(status.detail, "~/.codex/skills/vignette")
+        XCTAssertNil(status.reveal)
+    }
+
+    func testStatusOfSomeoneElsesSkillSaysItIsLeftAlone() throws {
+        let home = try agentHome(codex: false)
+        let claude = home.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: SkillInstaller.folder(in: claude), withIntermediateDirectories: true)
+        let status = SkillInstaller.status(of: claude, home: home)
+        XCTAssertEqual(status.status, "Something else is at ~/.claude/skills/vignette. Vignette leaves it alone.")
+        XCTAssertNil(status.detail)
+        XCTAssertNil(status.reveal)
+    }
+
+    func testStatusOfALinkedRootSaysWhyAndRevealsTheLink() throws {
+        let home = try agentHome(claude: false)
+        let codex = home.appendingPathComponent(".codex")
+        let link = codex.appendingPathComponent("skills")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: dir.appendingPathComponent("someone-elses-repo"))
+        let status = SkillInstaller.status(of: codex, home: home)
+        XCTAssertEqual(status.status, "Not installed: ~/.codex/skills is a link, and Vignette does not write through links.")
+        XCTAssertNil(status.detail)
+        XCTAssertEqual(status.reveal, link)
+    }
+
+    func testStatusesAreOneRowPerAgentAndNoneWithoutOne() throws {
+        let home = try agentHome()
+        XCTAssertEqual(SkillInstaller.statuses(home: home).map(\.name), ["Claude Code", "Codex"])
+        XCTAssertEqual(SkillInstaller.statuses(home: dir.appendingPathComponent("empty-home")), [])
+    }
+
     func testRootsAreTheAgentDirectoriesThatExist() throws {
         let home = dir.appendingPathComponent("home")
         try FileManager.default.createDirectory(at: home.appendingPathComponent(".codex"), withIntermediateDirectories: true)

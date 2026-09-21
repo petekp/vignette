@@ -13,6 +13,10 @@ once. The answer is recorded as `agentSkill` in settings.json, which holds `unas
 removes those copies. A later launch rewrites a copy that is older than the app.
 `open -g vignette://install-skill` does the same from a script.
 
+The Agents tab lists every agent found on this Mac and says, for each, whether the skill is
+installed and where it is. An agent whose `skills` is a link reads as not installed, with a Reveal
+button for the link, because the installer does not write through one.
+
 ## What the installer will not touch
 
 The installer only touches a copy it made. It writes `.vignette-skill.json` beside the skill, naming

@@ -95,6 +95,55 @@ enum SkillInstaller {
         return (.ours, stamp)
     }
 
+    /// The agent's name as the user knows it.
+    static func agentName(of root: URL) -> String {
+        switch root.lastPathComponent {
+        case ".claude": return "Claude Code"
+        case ".codex": return "Codex"
+        default: return root.lastPathComponent
+        }
+    }
+
+    /// What one root looks like to a reader: the agent's name, what is at its skill path, the path
+    /// itself where naming it twice would not help, and what a Reveal button would select.
+    static func status(of root: URL, home: URL) -> AgentSkillStatus {
+        let name = agentName(of: root)
+        let folder = folder(in: root)
+        // Checked before the state, as `install` does: a linked root is refused whatever is at the
+        // end of the link.
+        if let linked = linkedPath(in: root) {
+            return AgentSkillStatus(
+                name: name,
+                status: "Not installed: \(shortPath(linked, home: home)) is a link, and Vignette does not write through links.",
+                detail: nil, reveal: linked)
+        }
+        // `state` reports `ours` only with a stamp to read; a copy without one is not ours.
+        switch state(of: root) {
+        case (.ours, let stamp?):
+            return AgentSkillStatus(name: name, status: "Installed, \(stamp.version) (\(stamp.build))",
+                                    detail: shortPath(folder, home: home), reveal: nil)
+        case (.none, _):
+            return AgentSkillStatus(name: name, status: "Not installed",
+                                    detail: shortPath(folder, home: home), reveal: nil)
+        case (.foreign, _), (.ours, nil):
+            return AgentSkillStatus(name: name,
+                                    status: "Something else is at \(shortPath(folder, home: home)). Vignette leaves it alone.",
+                                    detail: nil, reveal: nil)
+        }
+    }
+
+    /// One row per agent directory on this Mac, in the order `roots` lists them.
+    static func statuses(home: URL) -> [AgentSkillStatus] {
+        roots(home: home).map { status(of: $0, home: home) }
+    }
+
+    /// A path as the user writes it, with `~` for their home folder.
+    private static func shortPath(_ url: URL, home: URL) -> String {
+        let home = home.standardizedFileURL.path
+        guard url.path == home || url.path.hasPrefix(home + "/") else { return url.path }
+        return "~" + url.path.dropFirst(home.count)
+    }
+
     /// Copies `source` into each root, replacing our own older copy and refusing anyone else's.
     static func install(source: URL, into roots: [URL], stamp: Stamp) -> [Result] {
         roots.map { root in
@@ -185,4 +234,15 @@ enum SkillInstaller {
         }
         return out
     }
+}
+
+/// One agent's line in the Settings window's Agents tab. `detail` is a second line under the
+/// status, and `reveal` is what a Reveal button selects in Finder.
+struct AgentSkillStatus: Equatable, Identifiable {
+    let name: String
+    let status: String
+    let detail: String?
+    let reveal: URL?
+
+    var id: String { name }
 }

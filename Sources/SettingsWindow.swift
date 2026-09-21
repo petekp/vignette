@@ -180,6 +180,8 @@ struct SettingsView: View {
     let callbacks: SettingsWindowController.Callbacks
 
     @ObservedObject private var settings = Settings.shared
+    /// What is on disk for each agent, read on show and after every settings change.
+    @State private var agentRows = SkillInstaller.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
 
     var body: some View {
         Form {
@@ -286,11 +288,48 @@ struct SettingsView: View {
 
     // MARK: Agents
 
-    private var agents: some View {
+    @ViewBuilder private var agents: some View {
         Section {
-            Toggle("Install the Vignette skill for Claude Code and Codex", isOn: agentSkill)
-            caption("Lets an agent show you an image and read back what you draw on it. Copies go into ~/.claude/skills and ~/.codex/skills; off removes only the copies Vignette made.")
+            Text("Vignette can teach your coding agents to show you an image and read back what you draw on it.")
         }
+        Section {
+            Toggle("Install the skill", isOn: agentSkill).disabled(agentRows.isEmpty)
+            if agentRows.isEmpty {
+                Text("No coding agent found on this Mac. Vignette looks for Claude Code and Codex.")
+            } else {
+                ForEach(agentRows) { row in
+                    LabeledContent {
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.status)
+                                if let detail = row.detail {
+                                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            if let reveal = row.reveal {
+                                Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([reveal]) }
+                            }
+                        }
+                    } label: {
+                        Text(row.name)
+                    }
+                }
+            }
+        }
+        .onAppear(perform: refreshAgents)
+        .onReceive(settings.$data) { _ in
+            // The publisher fires before the new settings are stored, so the install the app runs
+            // from the same change has not happened yet; the second pass reads what it wrote.
+            refreshAgents()
+            DispatchQueue.main.async(execute: refreshAgents)
+        }
+    }
+
+    private func refreshAgents() {
+        agentRows = SkillInstaller.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
     }
 
     // MARK: Developer
@@ -342,8 +381,9 @@ struct SettingsView: View {
     }
 
     /// The skill toggle. Off is an answer, so the setting never goes back to `unasked` from here.
+    /// With no agent on this Mac it reads off whatever the file says, and nothing is written.
     private var agentSkill: Binding<Bool> {
-        Binding(get: { settings.data.agentSkillChoice == .on },
+        Binding(get: { !agentRows.isEmpty && settings.data.agentSkillChoice == .on },
                 set: { on in settings.update { $0.agentSkill = (on ? AgentSkill.on : AgentSkill.off).rawValue } })
     }
 
