@@ -95,35 +95,39 @@ with the standard animation). Each tab is a grouped `Form`, 480 pt wide. Tabs, w
 
 ### Agents (`sparkles`)
 
-Decided with Pete on 2026-09-20, after the first build: the switch could lie (a linked
-`~/.claude/skills` installs nothing and only the log says so), nothing showed whether the skill was
-there, and the caption listed paths and mechanism instead of the reason.
+Third pass, 2026-09-20 evening. Pete on the second: a switch is the wrong control for an install,
+"Reveal" says nothing, "does not write through links" and "Vignette leaves it alone" mean nothing to
+an end user. Disk is the truth and the button says the one thing the user can do next.
 
 ```
 Vignette can teach your coding agents to show you an image and read back what you draw on it.
 
-  Install the skill                                              [switch]
-
-  Claude Code     Installed, 1.4 (4787973)
-                  ~/.claude/skills/vignette
-  Codex           Not installed: ~/.codex/skills is a link, and Vignette
-                  does not write through links.                  [Reveal]
+                                                              [ Install ]
+Claude Code     Not installed
+Codex           Installed by you. Vignette won't change it.
 ```
 
-- The sentence at the top is the whole pitch, and the offer text when the window opens itself.
-- One switch, "Install the skill", bound as before (`agentSkill` on/off; off is an answer, never
-  `unasked`). Disabled, and off, when no agent directory exists.
-- One row per agent directory found (`SkillInstaller.roots`), named "Claude Code" for `.claude`
-  and "Codex" for `.codex`, computed from disk (`SkillInstaller.state(of:)`, `linkedPath(in:)`)
-  on show and after every settings change. The states, in words:
-  - ours: "Installed, <version> (<build>)" from the stamp, then the path.
-  - none: "Not installed", then the path it would take.
-  - foreign: "Something else is at <path>. Vignette leaves it alone."
-  - linked root: "Not installed: <link path> is a link, and Vignette does not write through
-    links." with a "Reveal" button that selects the link in Finder.
+- One button. "Install" while any agent directory lacks Vignette's copy and could take one;
+  "Remove" when every agent that could take one has it (and none is missing); no button when there
+  is nothing it could do. Install writes `agentSkill` on, Remove writes off: the existing settings
+  observer does the work, so `install-skill` and a hand-edited file behave as before.
+- Links are followed. A `skills` directory that is a link is written through, so the skill lands
+  where the agent reads it. The `linkedRoot` outcome, `linkedPath`, the state report's
+  `linkedSkillRoots`, and the docs paragraph about links go. A skill folder that is itself a link
+  is still foreign (the user's own).
+- Rows, one per agent directory found, no paths:
+  - none: "Not installed"
+  - ours: "Installed"
+  - foreign with a `SKILL.md`: "Installed by you. Vignette won't change it."
+  - foreign without one: "A folder named vignette is already there and isn't a skill. Move it
+    aside to install."
+- An install that fails toasts "Couldn't install the skill for <agent>" (`thumbnail.showFeedback`
+  from the AppDelegate's result handling); the row stays "Not installed".
 - No agent found: "No coding agent found on this Mac. Vignette looks for Claude Code and Codex."
-- The offer (`offerAgentSkill`) still opens this tab once, unasked, `activating: false`.
-- No installer change and no settings change. `docs/agents.md` "Installing" describes the tab.
+  and no button.
+- The offer still opens this tab once, unasked; the Install button is the invitation.
+- `docs/agents.md` "Installing" and "What the installer will not touch" say this in two short
+  paragraphs.
 
 ### Developer (`wrench.and.screwdriver`) — only when `debug` is on
 
