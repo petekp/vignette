@@ -607,24 +607,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     private func rebuildMenu(_ menu: NSMenu) {
         menu.removeAllItems()
-        menu.addItem(withTitle: "Open Last Screenshot", action: #selector(openLast), keyEquivalent: "")
-        menu.addItem(withTitle: "Show Recent Screenshots  (\(settings.data.recentHotkey))", action: #selector(toggleRecent), keyEquivalent: "")
-        menu.addItem(withTitle: "Draw on Last Screenshot  (hold \(settings.data.recentHotkey))", action: #selector(annotateLast), keyEquivalent: "")
-        let copyItem = NSMenuItem(title: "Copy New Captures", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
+        let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
+
+        let recentItem = NSMenuItem(title: "Show Recent Screenshots", action: #selector(toggleRecent), keyEquivalent: "")
+        // A status item's menu is not the main menu, so this key equivalent is live only while the
+        // menu is open; the global press is the Carbon hotkey's.
+        if let equivalent = shortcut?.menuKeyEquivalent {
+            recentItem.keyEquivalent = equivalent.key
+            recentItem.keyEquivalentModifierMask = equivalent.modifiers
+        } else if let shortcut {
+            recentItem.badge = NSMenuItemBadge(string: shortcut.label)
+        }
+        menu.addItem(recentItem)
+
+        let drawItem = NSMenuItem(title: "Draw on Last Screenshot", action: #selector(annotateLast), keyEquivalent: "")
+        if let shortcut { drawItem.badge = NSMenuItemBadge(string: "hold \(shortcut.label)") }
+        menu.addItem(drawItem)
+
+        menu.addItem(.separator())
+        let copyItem = NSMenuItem(title: "Copy New Screenshots", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
         copyItem.state = settings.data.copyOnCapture ? .on : .off
         menu.addItem(copyItem)
-        let captureItem = NSMenuItem(title: "Draw on New Captures", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
+        let captureItem = NSMenuItem(title: "Draw on New Screenshots", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
         captureItem.state = settings.data.annotateOnCapture ? .on : .off
         menu.addItem(captureItem)
+
         menu.addItem(.separator())
-        let folderItem = NSMenuItem(title: "Watching: \(settings.data.screenshotsFolder)", action: nil, keyEquivalent: "")
-        folderItem.isEnabled = false
+        let folderItem = NSMenuItem(title: "Open Screenshots Folder", action: #selector(openScreenshotsFolder), keyEquivalent: "")
+        folderItem.toolTip = (settings.data.folderURL.path as NSString).abbreviatingWithTildeInPath
         menu.addItem(folderItem)
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(withTitle: "Restore Apple Screenshot Defaults", action: #selector(restoreAppleDefaults), keyEquivalent: "")
-        menu.addItem(withTitle: "Tweak UI…", action: #selector(openTweaks), keyEquivalent: "")
-        menu.addItem(withTitle: "Open Log", action: #selector(openLog), keyEquivalent: "")
+
         menu.addItem(.separator())
+        if settings.data.debug {
+            menu.addItem(.sectionHeader(title: "Developer"))
+            menu.addItem(withTitle: "Tweak UI…", action: #selector(openTweaks), keyEquivalent: "")
+            menu.addItem(withTitle: "Open Log", action: #selector(openLog), keyEquivalent: "")
+            menu.addItem(withTitle: "Reveal settings.json", action: #selector(revealSettings), keyEquivalent: "")
+            menu.addItem(.separator())
+        }
+
         menu.addItem(withTitle: "Quit Vignette", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
     }
@@ -633,7 +655,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         settingsWindow.show()
     }
 
-    @objc private func restoreAppleDefaults() {
+    @objc func restoreAppleDefaults() {
         guard let restored = settings.restoreAppleDefaults() else {
             Commands.error("restore-apple-defaults", .noAppleOriginal, "nothing was recorded, so nothing to restore")
             thumbnail.showFeedback("No Apple defaults were recorded")
@@ -645,6 +667,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     @objc private func openTweaks() {
         debugPanel.toggle()
+    }
+
+    @objc private func openScreenshotsFolder() {
+        NSWorkspace.shared.open(settings.data.folderURL)
+    }
+
+    @objc private func revealSettings() {
+        NSWorkspace.shared.activateFileViewerSelecting([Settings.fileURL])
     }
 
     @objc private func toggleCopyOnCapture() {
