@@ -1,7 +1,16 @@
 # Vignette
 
-Just like the built-in macOS screenshot tool, better in every way. Cmd+Shift+3, 4, and 5
-still take the screenshot. Vignette handles what comes after.
+What if macOS's built-in screenshot tool had continued to evolve after 2010? That's the idea
+behind Vignette.
+
+Vignette uses the same shortcuts you already use for taking screenshots (like Cmd+Shift+4). After
+you take a screenshot, a preview thumbnail appears in the bottom right corner, just like it used
+to, but with more readily available actions like Copy, Draw, and Delete available on hover.
+
+When you use the Vignette shortcut (double-tap `Shift`, by default), all your recent screenshots
+slide in from the right. It's like a camera roll for your screenshots. You can annotate several at
+once or even stitch them together. Annotations are non-destructive, so you can easily undo or
+modify them after the fact.
 
 ## See it
 
