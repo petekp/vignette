@@ -39,16 +39,21 @@ final class SettingsTests: XCTestCase {
     }
 
     @MainActor
-    func testAgentSkillStartsUnaskedAndAnUnknownWordIsClamped() throws {
+    func testAgentSkillStartsUnaskedAndOnlyRecordsThatTheOfferWasMade() throws {
         XCTAssertEqual(SettingsData().agentSkillChoice, .unasked)
-        try write(#"{"agentSkill": "on"}"#)
-        guard case .loaded(let loaded) = Settings.load(file) else { return XCTFail("expected .loaded") }
-        XCTAssertEqual(loaded.data.agentSkillChoice, .on)
         var odd = SettingsData()
         odd.agentSkill = "maybe"
-        let validated = odd.validated()
+        var validated = odd.validated()
         XCTAssertEqual(validated.data.agentSkillChoice, .unasked)
         XCTAssertEqual(validated.corrections, ["agentSkill \"maybe\" -> \"unasked\""])
+
+        // `on` used to install at every launch. Disk says what is installed now, so a file that
+        // still holds it is read as an offer already made.
+        var older = SettingsData()
+        older.agentSkill = "on"
+        validated = older.validated()
+        XCTAssertEqual(validated.data.agentSkillChoice, .off)
+        XCTAssertEqual(validated.corrections, ["agentSkill \"on\" -> \"off\""])
     }
 
     @MainActor

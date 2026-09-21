@@ -50,8 +50,10 @@ file, which is how tests and agents keep away from the real one.
   file URL and path for apps that take those, and is on by default. An image that arrives through
   `add` skips this and Draw on New Screenshots: a push from an agent is not a capture.
 - **`debug`** unlocks `eval`, `show-editor`, `tweaks`, `send`, and `file=` outside the watch folder.
-- **`agentSkill`** is the skill for coding agents: `unasked`, `on`, or `off` (see
-  [agents.md](agents.md)).
+- **`agentSkill`** records only whether the app has offered the skill for coding agents:
+  `unasked` until the offer, then `off`. Whether the skill is installed is read from disk, and the
+  Agents tab installs or removes it per agent. An older file holding `on` is read as `off`
+  (see [agents.md](agents.md)).
 - **`ui`** holds the design numbers. See below.
 - **`appleOriginal`** records what macOS was already doing on first run, so nothing changes until
   you edit the file. `restore-apple-defaults` puts those values back.

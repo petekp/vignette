@@ -8,21 +8,13 @@ ships in the app bundle. The marks format is in [commands.md](commands.md).
 ## Installing
 
 The first launch that finds `~/.claude` or `~/.codex` opens Settings at the Agents section and asks
-once. The answer is recorded as `agentSkill` in settings.json, which holds `unasked`, `on`, or
-`off`. On copies the skill into `~/.claude/skills/vignette` and `~/.codex/skills/vignette`. Off
-removes those copies. A later launch rewrites a copy that is older than the app.
-`open -g vignette://install-skill` does the same from a script.
+once; `agentSkill` in settings.json records only that the offer was made. The tab lists every agent
+found on this Mac, says whether the skill is there, and gives each one its own Install or Remove
+button. Disk is the only record: a later launch rewrites a copy whose files differ from the app's
+and installs nothing new. `open -g vignette://install-skill` installs for every agent from a script.
 
-The Agents tab lists every agent found on this Mac and says, for each, whether the skill is
-installed and where it is. An agent whose `skills` is a link reads as not installed, with a Reveal
-button for the link, because the installer does not write through one.
-
-## What the installer will not touch
-
-The installer only touches a copy it made. It writes `.vignette-skill.json` beside the skill, naming
-the build that wrote it. Anything at that path without that marker is left alone and answered with
-`not-ours`, including a link to your own copy.
-
-A `skills` directory that is itself a link is skipped whole, with `linked-root`. Writing through the
-link would put the skill wherever the link points, which is not where you asked for it. Move the
-skill there by hand if you want it.
+Links are resolved all the way, so the skill is written where it really lives: an agent whose
+`skills` is a link into a repository of yours, or whose `vignette` folder is a link to a skill you
+keep elsewhere, has that folder updated in place, and two agents reaching one folder share the one
+copy. Installing replaces whatever is at the skill's path with the app's copy. Remove takes away
+the entry under that agent's `skills` and nothing else, so a link goes and what it pointed at stays.

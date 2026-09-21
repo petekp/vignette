@@ -5,45 +5,29 @@ import Foundation
 /// `<root>/skills/<skillName>`. Roots are parameters everywhere, so a test never reaches the
 /// real ones.
 ///
-/// The installer only ever touches a copy it made. It writes a marker beside the skill naming the
-/// build that wrote it, and refuses anything at that path without one: a directory, a link, or a
-/// file someone put there by hand is left exactly as it is.
+/// Links are resolved all the way, so a skill the user keeps in a repository of theirs and links
+/// into both agents is one folder: it is updated where it lives, and each agent that reaches it
+/// reads as installed. Installing overwrites whatever is at that folder; removing takes the entry
+/// under `skills` away, which for a link is the link and not what it points at.
 enum SkillInstaller {
     /// The skill's folder, in the bundle and under `<root>/skills`.
     static let skillName = "vignette"
-    /// Names the build that wrote this copy. A directory without it is not ours.
-    static let markerName = ".vignette-skill.json"
     /// Where Claude Code and Codex keep their skills. A directory that is not there means that
     /// agent is not installed on this Mac.
     static let agentDirectories = [".claude", ".codex"]
 
-    /// What the marker holds: which build wrote the copy.
-    struct Stamp: Codable, Equatable {
-        var app: String
-        var version: String
-        var build: String
-
-        static var current: Stamp {
-            Stamp(app: Identity.name, version: BuildInfo.current.version, build: BuildInfo.current.build)
-        }
-    }
-
-    /// What is at `<root>/skills/<skillName>` right now.
-    enum State: String {
-        case none        // nothing there
-        case ours        // this installer wrote it
-        case foreign     // something else: never written, never removed
+    /// Whether the skill is at `<root>/skills/<skillName>`.
+    enum State {
+        case none, installed
     }
 
     /// What one root's install or remove did.
     enum Outcome: String {
         case installed              // written where there was nothing
-        case updated                // our copy, rewritten for this build
-        case unchanged              // our copy, already this build
+        case updated                // something was there, and now holds this build's copy
+        case unchanged              // already the files the bundle carries
         case removed
-        case absent                 // nothing of ours to remove
-        case notOurs = "not-ours"
-        case linkedRoot = "linked-root"   // the root or its `skills` is a link: the copy would land elsewhere
+        case absent                 // nothing to remove
         case failed
     }
 
@@ -57,12 +41,21 @@ enum SkillInstaller {
     /// The skill folder in the app bundle; nil in a bundle that does not carry it (the test bundle).
     static var bundled: URL? { Bundle.main.url(forResource: skillName, withExtension: nil) }
 
-    static func folder(in root: URL) -> URL {
-        root.appendingPathComponent("skills").appendingPathComponent(skillName)
+    /// The entry under `skills` that the skill is reached through: the links on the way there are
+    /// resolved, a link at the skill folder itself is not. Removing takes this away.
+    static func entry(in root: URL) -> URL {
+        root.appendingPathComponent("skills").resolvingSymlinksInPath().appendingPathComponent(skillName)
+    }
+
+    /// Where the skill's files live: `entry` with a link at the skill folder followed too, so an
+    /// install rewrites the user's own folder in place instead of replacing their link with a copy.
+    static func destination(in root: URL) -> URL {
+        let entry = entry(in: root)
+        return present(entry) ? entry.resolvingSymlinksInPath() : entry
     }
 
     /// The agent directories this Mac has, in a fixed order. `fileExists` follows a link, so a root
-    /// that is itself a link is listed; `linkedPath` is what refuses to write through it.
+    /// that is itself a link is listed, and the skill is written through it.
     static func roots(home: URL) -> [URL] {
         agentDirectories.map { home.appendingPathComponent($0) }.filter { url in
             var isDirectory: ObjCBool = false
@@ -70,29 +63,10 @@ enum SkillInstaller {
         }
     }
 
-    /// The link the skill would be written through, or nil when there is none: the root itself or
-    /// its `skills`. Writing through one puts the skill somewhere the user did not name — on this
-    /// Mac one agent's `skills` links into a git repository of theirs — so the installer neither
-    /// writes nor removes through a linked root. `attributesOfItem` is `lstat`, so it reports the
-    /// link rather than what it points at; `fileExists` would follow it.
-    static func linkedPath(in root: URL) -> URL? {
-        [root, root.appendingPathComponent("skills")].first(where: isLink)
-    }
-
-    private static func isLink(_ url: URL) -> Bool {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else { return false }
-        return attributes[.type] as? FileAttributeType == .typeSymbolicLink
-    }
-
-    /// Reads the marker. `attributesOfItem` does not follow links, so a symlink at the skill's
-    /// path is foreign rather than whatever it points at.
-    static func state(of root: URL) -> (state: State, stamp: Stamp?) {
-        let folder = folder(in: root)
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: folder.path) else { return (.none, nil) }
-        guard attributes[.type] as? FileAttributeType == .typeDirectory else { return (.foreign, nil) }
-        guard let raw = try? Data(contentsOf: folder.appendingPathComponent(markerName)),
-              let stamp = try? JSONDecoder().decode(Stamp.self, from: raw) else { return (.foreign, nil) }
-        return (.ours, stamp)
+    /// The skill is its `SKILL.md`, at the end of whatever links lead there.
+    static func state(of root: URL) -> State {
+        let skill = destination(in: root).appendingPathComponent("SKILL.md")
+        return FileManager.default.fileExists(atPath: skill.path) ? .installed : .none
     }
 
     /// The agent's name as the user knows it.
@@ -104,104 +78,71 @@ enum SkillInstaller {
         }
     }
 
-    /// What one root looks like to a reader: the agent's name, what is at its skill path, the path
-    /// itself where naming it twice would not help, and what a Reveal button would select.
-    static func status(of root: URL, home: URL) -> AgentSkillStatus {
-        let name = agentName(of: root)
-        let folder = folder(in: root)
-        // Checked before the state, as `install` does: a linked root is refused whatever is at the
-        // end of the link.
-        if let linked = linkedPath(in: root) {
-            return AgentSkillStatus(
-                name: name,
-                status: "Not installed: \(shortPath(linked, home: home)) is a link, and Vignette does not write through links.",
-                detail: nil, reveal: linked)
-        }
-        // `state` reports `ours` only with a stamp to read; a copy without one is not ours.
-        switch state(of: root) {
-        case (.ours, let stamp?):
-            return AgentSkillStatus(name: name, status: "Installed, \(stamp.version) (\(stamp.build))",
-                                    detail: shortPath(folder, home: home), reveal: nil)
-        case (.none, _):
-            return AgentSkillStatus(name: name, status: "Not installed",
-                                    detail: shortPath(folder, home: home), reveal: nil)
-        case (.foreign, _), (.ours, nil):
-            return AgentSkillStatus(name: name,
-                                    status: "Something else is at \(shortPath(folder, home: home)). Vignette leaves it alone.",
-                                    detail: nil, reveal: nil)
-        }
+    /// What one root looks like to a reader: the agent's name and whether the skill is there.
+    static func status(of root: URL) -> AgentSkillStatus {
+        AgentSkillStatus(root: root, name: agentName(of: root), installed: state(of: root) == .installed)
     }
 
     /// One row per agent directory on this Mac, in the order `roots` lists them.
     static func statuses(home: URL) -> [AgentSkillStatus] {
-        roots(home: home).map { status(of: $0, home: home) }
+        roots(home: home).map(status(of:))
     }
 
-    /// A path as the user writes it, with `~` for their home folder.
-    private static func shortPath(_ url: URL, home: URL) -> String {
-        let home = home.standardizedFileURL.path
-        guard url.path == home || url.path.hasPrefix(home + "/") else { return url.path }
-        return "~" + url.path.dropFirst(home.count)
-    }
-
-    /// Copies `source` into each root, replacing our own older copy and refusing anyone else's.
-    static func install(source: URL, into roots: [URL], stamp: Stamp) -> [Result] {
-        roots.map { root in
-            let folder = folder(in: root)
-            if let linked = linkedPath(in: root) { return linkedRootResult(root, linked: linked) }
-            let found = state(of: root)
-            switch found.state {
-            case .foreign:
-                return Result(root: root, path: folder, outcome: .notOurs, detail: "not written by \(Identity.name)")
-            case .ours where found.stamp == stamp && matches(source: source, installed: folder):
-                return Result(root: root, path: folder, outcome: .unchanged)
-            case .ours, .none:
-                // Staged beside the folder, marker included, and moved into place in one step. A
-                // copy that failed part way would otherwise leave a folder without its marker, which
-                // reads as foreign: neither install nor remove would touch it again.
-                let skills = folder.deletingLastPathComponent()
-                let staging = skills.appendingPathComponent(".\(skillName)-incoming")
-                do {
-                    try FileManager.default.createDirectory(at: skills, withIntermediateDirectories: true)
-                    try? FileManager.default.removeItem(at: staging)
-                    try FileManager.default.copyItem(at: source, to: staging)
-                    try marker(stamp).write(to: staging.appendingPathComponent(markerName), options: .atomic)
-                    if found.state == .ours { try FileManager.default.removeItem(at: folder) }
-                    try FileManager.default.moveItem(at: staging, to: folder)
-                    return Result(root: root, path: folder, outcome: found.state == .ours ? .updated : .installed)
-                } catch {
-                    try? FileManager.default.removeItem(at: staging)
-                    return Result(root: root, path: folder, outcome: .failed, detail: error.localizedDescription)
-                }
+    /// Copies `source` to each root's destination, replacing whatever is there.
+    static func install(source: URL, into roots: [URL]) -> [Result] {
+        each(of: roots, at: destination(in:)) { destination in
+            if matches(source: source, installed: destination) { return (.unchanged, "") }
+            // Staged beside the destination and moved into place in one step, so a copy that failed
+            // part way leaves the old one where it was. Both paths are inside one directory, so the
+            // move is a rename.
+            let parent = destination.deletingLastPathComponent()
+            let staging = parent.appendingPathComponent(".\(skillName)-incoming")
+            let replacing = present(destination)
+            do {
+                try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+                try? FileManager.default.removeItem(at: staging)
+                try FileManager.default.copyItem(at: source, to: staging)
+                if replacing { try FileManager.default.removeItem(at: destination) }
+                try FileManager.default.moveItem(at: staging, to: destination)
+                return (replacing ? .updated : .installed, "")
+            } catch {
+                try? FileManager.default.removeItem(at: staging)
+                return (.failed, error.localizedDescription)
             }
         }
     }
 
-    /// Removes our copy from each root. Anything without our marker stays.
+    /// Takes each root's entry under `skills` away. A link goes and what it points at stays.
     static func remove(from roots: [URL]) -> [Result] {
-        roots.map { root in
-            let folder = folder(in: root)
-            if let linked = linkedPath(in: root) { return linkedRootResult(root, linked: linked) }
-            switch state(of: root).state {
-            case .none:
-                return Result(root: root, path: folder, outcome: .absent)
-            case .foreign:
-                return Result(root: root, path: folder, outcome: .notOurs, detail: "not written by \(Identity.name)")
-            case .ours:
-                do {
-                    try FileManager.default.removeItem(at: folder)
-                    return Result(root: root, path: folder, outcome: .removed)
-                } catch {
-                    return Result(root: root, path: folder, outcome: .failed, detail: error.localizedDescription)
-                }
+        each(of: roots, at: entry(in:)) { entry in
+            guard present(entry) else { return (.absent, "") }
+            do {
+                try FileManager.default.removeItem(at: entry)
+                return (.removed, "")
+            } catch {
+                return (.failed, error.localizedDescription)
             }
+        }
+    }
+
+    /// Runs `work` once for each distinct path the roots lead to, and gives every root that shares
+    /// a path the same answer: two agents linked to one folder are one copy on disk, and both rows
+    /// say what happened to it.
+    private static func each(of roots: [URL], at path: (URL) -> URL,
+                             work: (URL) -> (outcome: Outcome, detail: String)) -> [Result] {
+        var done: [String: (outcome: Outcome, detail: String)] = [:]
+        return roots.map { root in
+            let path = path(root)
+            let answer = done[path.path] ?? work(path)
+            done[path.path] = answer
+            return Result(root: root, path: path, outcome: answer.outcome, detail: answer.detail)
         }
     }
 
     /// True when `installed` holds exactly the files `source` does, byte for byte. Hidden files are
-    /// skipped on both sides: the marker is the installer's own, and macOS leaves .DS_Store behind.
-    /// A file that will not read matches nothing, so the copy is written again rather than taken on
-    /// trust for a file nobody could compare.
+    /// skipped on both sides: macOS leaves .DS_Store behind. A file that will not read matches
+    /// nothing, so the copy is written again rather than taken on trust for a file nobody could
+    /// compare.
     static func matches(source: URL, installed: URL) -> Bool {
         let wanted = files(under: source), found = files(under: installed)
         guard Set(wanted.keys) == Set(found.keys) else { return false }
@@ -211,15 +152,10 @@ enum SkillInstaller {
         }
     }
 
-    private static func linkedRootResult(_ root: URL, linked: URL) -> Result {
-        Result(root: root, path: folder(in: root), outcome: .linkedRoot,
-               detail: "\(linked.path) is a link, so the skill would land somewhere else")
-    }
-
-    private static func marker(_ stamp: Stamp) throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return try encoder.encode(stamp)
+    /// Whether anything is at `url`. `attributesOfItem` is `lstat`, so a link is something there
+    /// even when it points at nothing.
+    private static func present(_ url: URL) -> Bool {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil
     }
 
     /// Every regular file under `folder`, keyed by its path inside it. A file that will not read is
@@ -236,13 +172,13 @@ enum SkillInstaller {
     }
 }
 
-/// One agent's line in the Settings window's Agents tab. `detail` is a second line under the
-/// status, and `reveal` is what a Reveal button selects in Finder.
+/// One agent's line in the Settings window's Agents tab. Each row carries its own root, because
+/// each agent's button acts on that agent alone.
 struct AgentSkillStatus: Equatable, Identifiable {
+    let root: URL
     let name: String
-    let status: String
-    let detail: String?
-    let reveal: URL?
+    let installed: Bool
 
+    var status: String { installed ? "Installed" : "Not installed" }
     var id: String { name }
 }

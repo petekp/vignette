@@ -88,7 +88,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotator.onSend = { [weak self] destination in self?.sendDrawing(to: destination) }
         settingsWindow.callbacks = SettingsWindowController.Callbacks(
             restoreAppleDefaults: { [weak self] in self?.restoreAppleDefaults() },
-            openTweaks: { [weak self] in self?.debugPanel.toggle() })
+            openTweaks: { [weak self] in self?.debugPanel.toggle() },
+            installAgentSkill: { [weak self] root in self?.installAgentSkill(into: [root]) },
+            removeAgentSkill: { [weak self] root in self?.removeAgentSkill(from: [root]) })
         loadDrafts()
         startRequests()
         startWatching()
@@ -98,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         else if settings.firstLaunch { thumbnail.showFeedback("\(Identity.name) is watching \(settings.data.screenshotsFolder). Launch at login is off; turn it on in Settings.") }
         // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
         LoginItem.apply(settings.data.launchAtLogin)
-        applyAgentSkill()
+        startAgentSkill()
         // The contract for agents: after this line every command answers. The page reports `[web] ready` on its own.
         Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) port=\(annotator.port) watching=\(watchFolder.path)")
     }
@@ -139,52 +141,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
         if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
-        if new.agentSkill != old.agentSkill, !agentSkillApplied {
-            // Turning it on installs; turning it off removes. The offer's unasked -> off writes nothing.
-            if new.agentSkillChoice == .on { applyAgentSkill(.on) }
-            else if old.agentSkillChoice == .on { applyAgentSkill(.off) }
-        }
     }
 
     // MARK: The agent skill
 
-    /// Set while `installSkill` records an install it has already run, so writing the setting does
-    /// not run the same install a second time.
-    private var agentSkillApplied = false
+    /// Launch: the offer if it has never been made, and a fresh copy of the skill for every agent
+    /// that already has one. Nothing is installed where there is none and nothing is removed — disk
+    /// is the truth, and putting the skill there or taking it away is the user's to ask for.
+    private func startAgentSkill() {
+        if settings.data.agentSkillChoice == .unasked { offerAgentSkill() }
+        let existing = SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
+            .filter { SkillInstaller.state(of: $0) == .installed }
+        if !existing.isEmpty { installAgentSkill(into: existing) }
+    }
 
-    /// Keeps the bundled skill in step with the setting: installed and current for this build while
-    /// it is on, gone when it goes off. `roots` is for `install-skill?root=`, which points a check
-    /// at one directory instead of the agent directories.
+    /// The Agents tab's Install, and `install-skill`.
     @discardableResult
-    private func applyAgentSkill(_ choice: AgentSkill? = nil, roots: [URL]? = nil) -> [SkillInstaller.Result] {
-        let choice = choice ?? settings.data.agentSkillChoice
-        let roots = roots ?? SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
-        var results: [SkillInstaller.Result] = []
-        switch choice {
-        case .on:
-            guard let source = SkillInstaller.bundled else {
-                Log.write("[skill] error missing-file \(SkillInstaller.skillName) is not in the bundle"); return []
-            }
-            results = SkillInstaller.install(source: source, into: roots, stamp: .current)
-        case .off:
-            results = SkillInstaller.remove(from: roots)
-        case .unasked:
-            offerAgentSkill()
+    func installAgentSkill(into roots: [URL]) -> [SkillInstaller.Result] {
+        guard let source = SkillInstaller.bundled else {
+            Log.write("[skill] error missing-file \(SkillInstaller.skillName) is not in the bundle"); return []
         }
-        // Only what changed something: a launch with the skill already current says nothing. A
-        // root refused for its link, or holding a copy this installer did not write, is worth one
-        // line when the user asked for an install and did not get one, and nothing at all on the
-        // removal every later launch runs.
-        let quiet: [SkillInstaller.Outcome] = choice == .off
-            ? [.unchanged, .absent, .linkedRoot, .notOurs] : [.unchanged, .absent]
-        for result in results where !quiet.contains(result.outcome) {
+        return report(SkillInstaller.install(source: source, into: roots), verb: "install")
+    }
+
+    /// The Agents tab's Remove.
+    @discardableResult
+    func removeAgentSkill(from roots: [URL]) -> [SkillInstaller.Result] {
+        report(SkillInstaller.remove(from: roots), verb: "remove")
+    }
+
+    /// One line for everything that changed, and a toast for everything that failed. A launch with
+    /// every copy already current says nothing.
+    @discardableResult
+    private func report(_ results: [SkillInstaller.Result], verb: String) -> [SkillInstaller.Result] {
+        for result in results where ![.unchanged, .absent].contains(result.outcome) {
             Log.write("[skill] \(result.outcome.rawValue) \(result.path.path)\(result.detail.isEmpty ? "" : " \(result.detail)")")
+        }
+        for result in results where result.outcome == .failed {
+            thumbnail.showFeedback("Couldn't \(verb) the skill for \(SkillInstaller.agentName(of: result.root))")
         }
         return results
     }
 
     /// The offer, once: the app has never asked and this Mac has an agent directory. The offer is
-    /// the Settings window, since the toast carries no button, and the answer is the toggle in it.
+    /// the Settings window, since the toast carries no button, and the answer is the buttons in it.
     /// Recorded as `off` as it is made, so the question is asked once whatever the user does.
     private func offerAgentSkill() {
         let roots = SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
@@ -194,23 +194,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         settingsWindow.show(tab: .agents, activating: false)
     }
 
-    /// Where a copy this installer made is sitting right now, for the state report.
+    /// Where the skill is sitting right now, for the state report. Two agents reaching one folder
+    /// name it once.
     private func installedSkillPaths() -> [String] {
-        SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
-            .filter { SkillInstaller.state(of: $0).state == .ours }
-            .map { SkillInstaller.folder(in: $0).path }
+        var paths: [String] = []
+        for root in SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
+        where SkillInstaller.state(of: root) == .installed {
+            let path = SkillInstaller.destination(in: root).path
+            if !paths.contains(path) { paths.append(path) }
+        }
+        return paths
     }
 
-    /// Agent directories the installer will not write to, and why, for the state report: a root is
-    /// listed as usual, so silence would be the only sign it was skipped.
-    private func linkedSkillRoots() -> [String] {
-        SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
-            .compactMap { SkillInstaller.linkedPath(in: $0)?.path }
-    }
-
-    /// `vignette://install-skill`, for a script. With `root=` it installs there and leaves the
-    /// setting alone; without one it installs for every agent on this Mac and turns the setting on,
-    /// so later launches keep the copy current.
+    /// `vignette://install-skill`, for a script: it installs for every agent on this Mac, or with
+    /// `root=` into that one directory. It writes no setting; the skill's own presence on disk is
+    /// what a later launch reads.
     private func installSkill(_ request: CommandRequest) {
         if let root = request.root, !settings.data.debug {
             Commands.error("install-skill", .debugDisabled, "root=\(root.path) needs \"debug\": true in settings.json"); return
@@ -222,17 +220,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard !roots.isEmpty else {
             Commands.error("install-skill", .noAgent, "no \(SkillInstaller.agentDirectories.joined(separator: " or ")) in this home folder"); return
         }
-        let results = applyAgentSkill(.on, roots: roots)
+        let results = installAgentSkill(into: roots)
         let detail = results.map { "\($0.path.path)=\($0.outcome.rawValue)" }.joined(separator: " ")
-        if let bad = results.first(where: { [.notOurs, .linkedRoot, .failed].contains($0.outcome) }) {
-            let code: CommandError = bad.outcome == .notOurs ? .notOurs : (bad.outcome == .linkedRoot ? .linkedRoot : .writeFailed)
-            Commands.error("install-skill", code, bad.detail.isEmpty ? detail : "\(detail) \(bad.detail)")
+        if let bad = results.first(where: { $0.outcome == .failed }) {
+            Commands.error("install-skill", .writeFailed, bad.detail.isEmpty ? detail : "\(detail) \(bad.detail)")
             return
-        }
-        if request.root == nil, settings.data.agentSkillChoice != .on {
-            agentSkillApplied = true
-            settings.update { $0.agentSkill = AgentSkill.on.rawValue }
-            agentSkillApplied = false
         }
         Commands.ok("install-skill", detail)
     }
@@ -571,8 +563,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             "bundle": Bundle.main.bundlePath,
             "appleThumbnail": settings.data.appleThumbnail, "recentCount": settings.data.recentCount, "hotkey": settings.data.recentHotkey, "debug": settings.data.debug,
             "launchAtLogin": settings.data.launchAtLogin, "loginItem": LoginItem.status,
-            "agentSkill": ["setting": settings.data.agentSkill, "installed": installedSkillPaths(),
-                           "linkedRoots": linkedSkillRoots()] as [String: Any],
+            "agentSkill": ["setting": settings.data.agentSkill, "installed": installedSkillPaths()] as [String: Any],
         ] as [String: Any]
         report.sections["annotator"] = annotator.stateJSON
         report.sections["drafts"] = drafts.keys.sorted()

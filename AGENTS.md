@@ -665,18 +665,21 @@ the same driven sequence; a single run varies.
   (project.yml), and `SkillInstaller.swift` copies it out. A root is an agent's own directory,
   `~/.claude` or `~/.codex`, and only one that exists; the skill lands in `<root>/skills/vignette`.
   Roots are parameters everywhere, so a test never reaches the real ones, and the live check is
-  `install-skill?root=<dir>` (debug only). The installer writes `.vignette-skill.json` beside the
-  skill naming the build, and refuses anything at that path without it, a link included
-  (`not-ours`): it never touches a copy it did not make. The copy is staged beside the folder with
-  its marker and moved into place, so a failed install leaves nothing there. A root that is itself a
-  link, or whose `skills` is, is refused whole (`linked-root`), because the copy would land wherever
-  the link points; `roots(home:)` still lists it and `[state] app.agentSkill.linkedRoots` names it,
-  so a skipped root is never silent. `agentSkill` in settings.json is `unasked`, `on`, or `off`;
-  `on` installs and keeps the copy current at every launch, `off` removes it and then says nothing,
-  and `unasked` with an agent directory present makes the offer once, which is the Settings window
-  at the Agents section, since the toast carries no button. That window comes up with `orderFront`
-  and does not activate the app: the user did not ask for it. Making the offer records `off`, so it
-  happens once whatever the user does. `docs/agent-skill-2026-09-18.md` has the reasons.
+  `install-skill?root=<dir>` (debug only). Links are resolved all the way, including one at the
+  skill folder itself (`destination(in:)`), so a skill the user keeps elsewhere is rewritten where
+  it lives and two roots reaching one folder are one copy reported for both. Removing takes the
+  entry at `<resolved skills>/vignette` away without following it, so a link goes and its target
+  stays (`entry(in:)`). An install overwrites whatever is there, and `matches(source:installed:)`
+  is what makes a launch with nothing to change say nothing. The copy is staged beside the
+  destination and moved into place, so a failed install leaves the old one where it was.
+  `agentSkill` in settings.json records only that the offer was made: `unasked` with an agent
+  directory present makes it once, which is the Settings window at the Agents section, since the
+  toast carries no button, and making it records `off`. That window comes up with `orderFront` and
+  does not activate the app: the user did not ask for it. Disk is the rest of the truth. A launch
+  rewrites every copy that is there and differs from the bundle's, installs nothing new, and removes
+  nothing; the Agents tab's per-agent buttons and `install-skill` are the only things that put the
+  skill somewhere or take it away. An older file holding `on` is read as `off` (`validated()`).
+  `docs/agent-skill-2026-09-18.md` has the reasons.
 
 ## Adding things
 
