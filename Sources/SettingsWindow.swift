@@ -221,7 +221,16 @@ struct SettingsView: View {
             }
         }
         Section {
-            Stepper("Keep the last \(settings.data.recentCount) screenshots", value: binding(\.recentCount), in: 1...100)
+            LabeledContent("Keep recent screenshots") {
+                HStack(spacing: 4) {
+                    TextField("", value: recentCount, format: .number)
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 44)
+                    Stepper("", value: recentCount, in: 1...100).labelsHidden()
+                }
+            }
             LabeledContent("Show a new screenshot for") {
                 HStack {
                     Slider(value: binding(\.ui.thumbnailSeconds), in: 2...15, step: 1)
@@ -321,6 +330,11 @@ struct SettingsView: View {
                                if isDoubleTap() { settings.update { $0.recentHotkey = SettingsData().recentHotkey } }
                            }
                        })
+    }
+
+    /// The field takes any number typed; the stack holds 1 to 100.
+    private var recentCount: Binding<Int> {
+        Binding(get: { settings.data.recentCount }, set: { n in settings.update { $0.recentCount = min(max(n, 1), 100) } })
     }
 
     private var menuBarIcon: Binding<Bool> {
