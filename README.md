@@ -43,7 +43,7 @@ https://github.com/user-attachments/assets/cb06c65f-ba08-436f-8e7e-4df31729ad36
 ### The app
 
 - **Native, refined feel**<br>
-  The stack answers your keys without taking focus from the app you're in. Hold the hotkey and
+  The stack answers your keys without taking focus from the app you're in. Hold the shortcut and
   the newest shot lifts into the editor. Close it and you're back where you were.
 - **Customizable and hackable**<br>
   Every setting lives in a file, every action is a URL, and the source is MIT.
@@ -86,7 +86,7 @@ the app. [docs/building.md](docs/building.md) has the rest.
 
 ## Guides
 
-- [Using Vignette](docs/using.md): the recent stack, the annotator, the hotkey.
+- [Using Vignette](docs/using.md): the recent stack, the annotator, the shortcut.
 - [Commands](docs/commands.md): every action as a `vignette://` URL, the marks format, the log.
 - [Settings](docs/settings.md): `settings.json`, the `ui` numbers, the tweaks panel.
 - [Building](docs/building.md): build, sign, the tldraw license, where things live, forking.

@@ -76,6 +76,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self else { return }
             self.renderMissingPreviews(self.drafts.keysWithoutPreview())
         }
+        settingsWindow.callbacks = SettingsWindowController.Callbacks(
+            restoreAppleDefaults: { [weak self] in self?.restoreAppleDefaults() },
+            openTweaks: { [weak self] in self?.debugPanel.toggle() })
         loadDrafts()
         startWatching()
         registerHotKey()
@@ -174,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard !roots.isEmpty else { return }
         settings.update { $0.agentSkill = AgentSkill.off.rawValue }
         Log.write("[skill] offered \(roots.map(\.lastPathComponent).joined(separator: " "))")
-        settingsWindow.show(scrollTo: SettingsView.agentsSection, activating: false)
+        settingsWindow.show(tab: .agents, activating: false)
     }
 
     /// Where a copy this installer made is sitting right now, for the state report.

@@ -62,7 +62,7 @@ back when you are done.
 Cmd+S stitches the selection into one image with numbered badges, saved next to the originals and
 copied. Two or three pieces stack, and more go in a grid. Each badge is the number the card's
 circle showed. The selected cards fly together into the new card, which takes their place at the
-bottom of the stack, or opens in the annotator when Draw on New Captures is on.
+bottom of the stack, or opens in the annotator when Draw on New Screenshots is on.
 
 Drag a card out to drop it as a file on a chat window, Finder, or a terminal. A selected card
 drags the whole selection.
@@ -98,14 +98,15 @@ starts on the rectangle tool.
 A card whose drawing you parked with Esc or a swap shows the drawing in its thumbnail. Reopen the
 card and the drawing is back. Copy Drawing renders it without opening the editor.
 
-## The hotkey
+## The shortcut
 
-The hotkey is either a key combination, which needs no permission, or `double-rshift`, a double
+The shortcut is either a key combination, which needs no permission, or `double-rshift`, a double
 tap of right Shift. `double-rshift` needs Vignette trusted for Accessibility, under System
 Settings → Privacy & Security → Accessibility; the app asks the first time. Hold the key, or the
 second tap, and the newest screenshot lifts out of the stack into the annotator: capture,
-tap-tap-hold, draw. The menu bar has the same command. [Settings](settings.md) covers changing
-the hotkey.
+tap-tap-hold, draw. The menu bar shows the same two commands, Show Recent Screenshots and Draw on
+Last Screenshot, with the shortcut beside them. [Settings](settings.md) covers changing the
+shortcut.
 
 ## Cards from an agent
 

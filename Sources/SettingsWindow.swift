@@ -1,42 +1,167 @@
 import AppKit
+import Combine
 import SwiftUI
+
+/// One tab of the Settings window: a toolbar item, the window title while it is up, and one form.
+enum SettingsTab: String, CaseIterable {
+    case general, screenshots, agents, developer
+
+    var name: String {
+        switch self {
+        case .general: return "General"
+        case .screenshots: return "Screenshots"
+        case .agents: return "Agents"
+        case .developer: return "Developer"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general: return "gearshape"
+        case .screenshots: return "camera.viewfinder"
+        case .agents: return "sparkles"
+        case .developer: return "wrench.and.screwdriver"
+        }
+    }
+
+    var itemIdentifier: NSToolbarItem.Identifier { NSToolbarItem.Identifier("settings.\(rawValue)") }
+
+    init?(itemIdentifier: NSToolbarItem.Identifier) {
+        guard let tab = SettingsTab.allCases.first(where: { $0.itemIdentifier == itemIdentifier }) else { return nil }
+        self = tab
+    }
+}
 
 /// A thin editor over settings.json. Every control writes straight to the file.
 @MainActor
-final class SettingsWindowController: NSObject, NSWindowDelegate {
-    private var window: NSWindow?
-    private let focus = SettingsFocus()
+final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate {
+    /// The two actions the window asks for rather than performs: both are AppDelegate's own, and
+    /// they already toast and log.
+    struct Callbacks {
+        var restoreAppleDefaults: () -> Void = {}
+        var openTweaks: () -> Void = {}
+    }
 
-    /// `section` is a section id to bring into view, for a window opened to ask something.
+    var callbacks = Callbacks()
+
+    private let settings = Settings.shared
+    private var window: NSWindow?
+    private var hosting: NSHostingView<SettingsView>?
+    private var tab: SettingsTab = .general
+    private var watch: AnyCancellable?
+
+    /// `tab` is the tab to open on, for a window opened to ask something; nil keeps the last one.
     /// `activating` is false for a window the user did not ask for: it comes up where they can see
     /// it without taking the keyboard from what they are doing.
-    func show(scrollTo section: String? = nil, activating: Bool = true) {
+    func show(tab: SettingsTab? = nil, activating: Bool = true) {
         let win = window ?? makeWindow()
-        win.center()
+        let wasVisible = win.isVisible
+        select(tab ?? self.tab, animated: wasVisible)
+        if !wasVisible { win.center() }
         if activating {
             win.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         } else {
             win.orderFront(nil)
         }
-        focus.section = section
     }
 
     private func makeWindow() -> NSWindow {
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        win.title = "Vignette Settings"
-        let hosting = NSHostingView(rootView: SettingsView(focus: focus))
-        win.contentView = hosting
-        // The form is taller than a laptop screen, and the window has no resize control, so the
-        // last sections would hang off the bottom where nothing can reach them. Capped, the form
-        // scrolls inside the window instead.
-        let room = (NSScreen.main?.visibleFrame.height ?? .greatestFiniteMagnitude) - SettingsView.screenRoom
-        let fitting = hosting.fittingSize
-        win.setContentSize(NSSize(width: fitting.width, height: min(fitting.height, room)))
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: SettingsView.width, height: 200),
+                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
         win.isReleasedWhenClosed = false
         win.delegate = self
+        win.toolbarStyle = .preference
+        let toolbar = NSToolbar(identifier: "settings")
+        toolbar.delegate = self
+        toolbar.allowsUserCustomization = false
+        toolbar.displayMode = .iconAndLabel
+        win.toolbar = toolbar
         window = win
+        watch = settings.$data.sink { [weak self] data in
+            guard let self else { return }
+            self.debugChanged(data.debug)
+            // The form is laid out after this notification, so the window follows a turn later.
+            DispatchQueue.main.async { self.fit(animated: true) }
+        }
         return win
+    }
+
+    /// The Developer tab exists only while `debug` is on, and the file can turn it off under a
+    /// window that is showing that tab.
+    private func debugChanged(_ debug: Bool) {
+        guard let toolbar = window?.toolbar else { return }
+        let identifier = SettingsTab.developer.itemIdentifier
+        let index = toolbar.items.firstIndex { $0.itemIdentifier == identifier }
+        if debug, index == nil {
+            toolbar.insertItem(withItemIdentifier: identifier, at: toolbar.items.count)
+        } else if !debug, let index {
+            toolbar.removeItem(at: index)
+            if tab == .developer { select(.general, animated: window?.isVisible == true) }
+        }
+    }
+
+    private func select(_ tab: SettingsTab, animated: Bool) {
+        guard let win = window else { return }
+        self.tab = tab
+        win.title = tab.name
+        win.toolbar?.selectedItemIdentifier = tab.itemIdentifier
+        let view = NSHostingView(rootView: SettingsView(tab: tab, callbacks: callbacks))
+        hosting = view
+        win.contentView = view
+        fit(animated: animated)
+    }
+
+    /// The window is the height of the form it holds. That height changes with the tab and with
+    /// the form's own contents: the recorder comes and goes with the kind of shortcut, and a
+    /// caption with the menu bar icon.
+    private func fit(animated: Bool) {
+        guard let win = window, let hosting else { return }
+        hosting.layoutSubtreeIfNeeded()
+        // The window has no resize control, so a form taller than the screen would hang off the
+        // bottom where nothing can reach it. Capped, the form scrolls inside the window instead.
+        let screen = (win.screen ?? NSScreen.main)?.visibleFrame.height ?? .greatestFiniteMagnitude
+        let height = min(hosting.fittingSize.height, screen - SettingsView.screenRoom)
+        let frame = win.frameRect(forContentRect: NSRect(x: 0, y: 0, width: SettingsView.width, height: height))
+        guard abs(frame.height - win.frame.height) > 0.5 else { return }
+        // The top-left corner stays put: the title bar is what the eye is anchored on while the
+        // window grows or shrinks.
+        var target = win.frame
+        target.origin.y = win.frame.maxY - frame.height
+        target.size = frame.size
+        win.setFrame(target, display: true, animate: animated)
+    }
+
+    private var tabs: [SettingsTab] {
+        SettingsTab.allCases.filter { $0 != .developer || settings.data.debug }
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        tabs.map(\.itemIdentifier)
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsTab.allCases.map(\.itemIdentifier)
+    }
+
+    func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsTab.allCases.map(\.itemIdentifier)
+    }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
+                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        guard let tab = SettingsTab(itemIdentifier: identifier) else { return nil }
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = tab.name
+        item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.name)
+        item.target = self
+        item.action = #selector(pickTab(_:))
+        return item
+    }
+
+    @objc private func pickTab(_ sender: NSToolbarItem) {
+        guard let tab = SettingsTab(itemIdentifier: sender.itemIdentifier) else { return }
+        select(tab, animated: true)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -44,27 +169,162 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 }
 
-/// Which section the window was opened to show. The offer sets it; the view clears it once it has
-/// scrolled, so reopening the window by hand starts at the top again.
-@MainActor
-final class SettingsFocus: ObservableObject {
-    @Published var section: String?
-}
-
 @MainActor
 struct SettingsView: View {
-    /// Title bar plus a margin: how much of the screen's visible height the form may not use.
+    /// Every tab is this wide; the window takes its height from the form.
+    static let width: CGFloat = 480
+    /// Title bar plus a margin: how much of the screen's visible height a form may not use.
     static let screenRoom: CGFloat = 60
-    /// What `show(scrollTo:)` names to open the window on the skill toggle.
-    static let agentsSection = "agents"
 
+    let tab: SettingsTab
+    let callbacks: SettingsWindowController.Callbacks
 
-    @ObservedObject var focus: SettingsFocus
     @ObservedObject private var settings = Settings.shared
-    @State private var hotkeyText = Settings.shared.data.recentHotkey
+
+    var body: some View {
+        Form {
+            switch tab {
+            case .general: general
+            case .screenshots: screenshots
+            case .agents: agents
+            case .developer: developer
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: SettingsView.width)
+    }
+
+    // MARK: General
+
+    @ViewBuilder private var general: some View {
+        Section {
+            Picker("Shortcut", selection: shortcutKind) {
+                Text("Key combination").tag(ShortcutKind.combination)
+                Text("Double-tap Right Shift").tag(ShortcutKind.doubleTap)
+            }
+            .pickerStyle(.segmented)
+            if shortcutKind.wrappedValue == .combination {
+                HStack {
+                    Spacer()
+                    ShortcutRecorder(text: HotKeySpec.parse(settings.data.recentHotkey)?.glyphs ?? settings.data.recentHotkey) { shortcut in
+                        settings.update { $0.recentHotkey = shortcut }
+                    }
+                    .frame(width: 140, height: 24)
+                }
+            }
+            caption("Shows your recent screenshots. Hold it to draw on the newest one.")
+            if shortcutKind.wrappedValue == .doubleTap, !ModifierTap.trusted(prompt: false) {
+                caption("Needs Accessibility permission.")
+                Button("Open System Settings") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                }
+            }
+        }
+        Section {
+            Stepper("Keep the last \(settings.data.recentCount) screenshots", value: binding(\.recentCount), in: 1...100)
+            LabeledContent("Show a new screenshot for") {
+                HStack {
+                    Slider(value: binding(\.ui.thumbnailSeconds), in: 2...15, step: 1)
+                    Text("\(Int(settings.data.ui.thumbnailSeconds))s").monospacedDigit().frame(width: 30)
+                }
+            }
+            Toggle("Launch at login", isOn: binding(\.launchAtLogin))
+            Toggle("Show in menu bar", isOn: menuBarIcon)
+            if settings.data.hideMenuBarIcon {
+                caption("Reopen Settings with open vignette://settings in Terminal.")
+            }
+        }
+    }
+
+    // MARK: Screenshots
+
+    @ViewBuilder private var screenshots: some View {
+        Section {
+            LabeledContent("Save to") {
+                HStack {
+                    Text(settings.data.screenshotsFolder).lineLimit(1).truncationMode(.middle)
+                    Button("Choose…", action: chooseFolder)
+                }
+            }
+            Toggle("Save macOS screenshots here", isOn: binding(\.syncAppleSaveLocation))
+            Picker("Format", selection: binding(\.format)) {
+                Text("PNG").tag("png")
+                Text("JPEG").tag("jpg")
+            }
+            Toggle("Show the macOS thumbnail", isOn: binding(\.appleThumbnail))
+            caption("Off saves the file right away and Vignette's thumbnail is the only one.")
+            Toggle("Shadow on window screenshots", isOn: binding(\.windowShadow))
+        }
+        Section("After a screenshot") {
+            Toggle("Copy to the clipboard", isOn: binding(\.copyOnCapture))
+            Toggle("Open it to draw", isOn: binding(\.annotateOnCapture))
+            caption("Instead of showing a thumbnail.")
+        }
+        Section("When you finish drawing") {
+            Picker("When you finish drawing", selection: binding(\.quickAnnotate)) {
+                Text("Return to the stack").tag(false)
+                Text("Copy and close").tag(true)
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+        }
+        Section("macOS") {
+            Button("Restore macOS Screenshot Settings…") { callbacks.restoreAppleDefaults() }
+                .disabled(settings.data.appleOriginal == nil)
+            caption("Puts back where macOS saved screenshots, the thumbnail, the shadow, and the format from before Vignette changed them.")
+        }
+    }
+
+    // MARK: Agents
+
+    private var agents: some View {
+        Section {
+            Toggle("Install the Vignette skill for Claude Code and Codex", isOn: agentSkill)
+            caption("Lets an agent show you an image and read back what you draw on it. Copies go into ~/.claude/skills and ~/.codex/skills; off removes only the copies Vignette made.")
+        }
+    }
+
+    // MARK: Developer
+
+    private var developer: some View {
+        Section {
+            HStack {
+                Button("Tweak UI…") { callbacks.openTweaks() }
+                Button("Open Log") { NSWorkspace.shared.open(Log.url) }
+                Button("Reveal settings.json") { NSWorkspace.shared.activateFileViewerSelecting([Settings.fileURL]) }
+            }
+            caption("Shown because debug is on in settings.json.")
+        }
+    }
+
+    // MARK: Bindings
+
+    private enum ShortcutKind { case combination, doubleTap }
 
     private func binding<T>(_ path: WritableKeyPath<SettingsData, T>) -> Binding<T> {
         Binding(get: { settings.data[keyPath: path] }, set: { v in settings.update { $0[keyPath: path] = v } })
+    }
+
+    /// Which kind of shortcut is in the file. Choosing the other kind writes a working value of it
+    /// straight away, so the setting is never a choice the file does not hold.
+    private var shortcutKind: Binding<ShortcutKind> {
+        func isDoubleTap() -> Bool {
+            if case .doubleTap = HotKeySpec.parse(settings.data.recentHotkey) { return true }
+            return false
+        }
+        return Binding(get: { isDoubleTap() ? .doubleTap : .combination },
+                       set: { kind in
+                           switch kind {
+                           case .doubleTap:
+                               settings.update { $0.recentHotkey = "double-rshift" }
+                           case .combination:
+                               if isDoubleTap() { settings.update { $0.recentHotkey = SettingsData().recentHotkey } }
+                           }
+                       })
+    }
+
+    private var menuBarIcon: Binding<Bool> {
+        Binding(get: { !settings.data.hideMenuBarIcon }, set: { on in settings.update { $0.hideMenuBarIcon = !on } })
     }
 
     /// The skill toggle. Off is an answer, so the setting never goes back to `unasked` from here.
@@ -73,96 +333,8 @@ struct SettingsView: View {
                 set: { on in settings.update { $0.agentSkill = (on ? AgentSkill.on : AgentSkill.off).rawValue } })
     }
 
-    var body: some View {
-        ScrollViewReader { proxy in
-            form
-                .onAppear { scroll(proxy) }
-                .onChange(of: focus.section) { _, _ in scroll(proxy) }
-        }
-    }
-
-    /// Brings the section the window was opened for into view. Not animated: it is where the
-    /// window starts, not a movement.
-    private func scroll(_ proxy: ScrollViewProxy) {
-        guard let section = focus.section else { return }
-        proxy.scrollTo(section, anchor: .top)
-        focus.section = nil
-    }
-
-    private var form: some View {
-        Form {
-            Section("Screenshots") {
-                LabeledContent("Folder") {
-                    HStack {
-                        Text(settings.data.screenshotsFolder).lineLimit(1).truncationMode(.middle)
-                        Button("Choose…", action: chooseFolder)
-                    }
-                }
-                Toggle("Tell macOS to save screenshots here", isOn: binding(\.syncAppleSaveLocation))
-                Toggle("Show Apple's floating thumbnail", isOn: binding(\.appleThumbnail))
-                Text("Off means the file lands immediately and Vignette's thumbnail is the only one.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle("Window capture shadow", isOn: binding(\.windowShadow))
-                Picker("Format", selection: binding(\.format)) {
-                    Text("PNG").tag("png")
-                    Text("JPG").tag("jpg")
-                }
-            }
-            Section("Recent stack") {
-                Stepper("Keep \(settings.data.recentCount) recent screenshots in the stack", value: binding(\.recentCount), in: 1...100)
-                LabeledContent("Thumbnail stays for") {
-                    HStack {
-                        Slider(value: binding(\.ui.thumbnailSeconds), in: 2...15, step: 1)
-                        Text("\(Int(settings.data.ui.thumbnailSeconds))s").monospacedDigit().frame(width: 30)
-                    }
-                }
-                LabeledContent("Hotkey") {
-                    TextField("", text: $hotkeyText, prompt: Text("cmd+shift+6"))
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 160)
-                        .onSubmit(commitHotkey)
-                        .foregroundStyle(HotKeySpec.parse(hotkeyText) == nil ? .red : .primary)
-                }
-                Text("Modifiers cmd, shift, opt, ctrl and a key, joined with +, or double-rshift for a double tap of right Shift (asks for Accessibility permission). Press Return to apply. Hold the key, or the second tap, to draw on the newest screenshot.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("New captures") {
-                Toggle("Copy to the clipboard", isOn: binding(\.copyOnCapture))
-                Text("Every new screenshot is on the clipboard as soon as it lands: the image, plus its file for apps that take one.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle("Draw on new captures", isOn: binding(\.annotateOnCapture))
-                Text("Every new screenshot opens in the annotator right away, instead of showing a thumbnail.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Drawing") {
-                Toggle("Quick draw", isOn: binding(\.quickAnnotate))
-                Text("Done copies the image you drew on and closes everything, instead of returning to the stack.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Agents") {
-                Toggle("Install the Vignette skill", isOn: agentSkill)
-                    .id(SettingsView.agentsSection)
-                Text("Copies a skill into ~/.claude/skills and ~/.codex/skills, so Claude Code and Codex know how to show you an image and read back what you drew on it. Off removes the copies Vignette made; a skill you put there yourself is left alone.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Startup") {
-                Toggle("Launch at login", isOn: binding(\.launchAtLogin))
-                Text("Adds Vignette to System Settings > General > Login Items.").font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Advanced") {
-                Toggle("Hide menu bar icon", isOn: binding(\.hideMenuBarIcon))
-                Text("Reopen settings with: open vignette://settings").font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Button("Reveal settings.json") { NSWorkspace.shared.activateFileViewerSelecting([Settings.fileURL]) }
-                    Button("Open Log") { NSWorkspace.shared.open(Log.url) }
-                    Button("Debug Panel…") { NSWorkspace.shared.open(URL(string: "vignette://tweaks")!) }
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .frame(width: 460)
-        .onChange(of: settings.data.recentHotkey) { _, new in hotkeyText = new }
+    private func caption(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(.secondary)
     }
 
     private func chooseFolder() {
@@ -176,9 +348,111 @@ struct SettingsView: View {
             settings.update { $0.screenshotsFolder = path }
         }
     }
+}
 
-    private func commitHotkey() {
-        guard HotKeySpec.parse(hotkeyText) != nil else { return }
-        settings.update { $0.recentHotkey = hotkeyText }
+/// The shortcut field: it reads the shortcut as glyphs, and takes one typed in.
+private struct ShortcutRecorder: NSViewRepresentable {
+    let text: String
+    let onCommit: (String) -> Void
+
+    func makeNSView(context: Context) -> ShortcutRecorderView { ShortcutRecorderView() }
+
+    func updateNSView(_ view: ShortcutRecorderView, context: Context) {
+        view.text = text
+        view.onCommit = onCommit
+    }
+}
+
+/// An NSView because the press has to be caught before anything else sees it: a combination with
+/// ⌘ arrives as a key equivalent, which the main menu would take (⌘W closes the window) and which
+/// SwiftUI's key handling never reports at all.
+private final class ShortcutRecorderView: NSView {
+    var text = "" { didSet { if text != oldValue { needsDisplay = true } } }
+    var onCommit: (String) -> Void = { _ in }
+
+    private var recording = false { didSet { needsDisplay = true } }
+    private var outsideClick: Any?
+
+    override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    isolated deinit {
+        if let outsideClick { NSEvent.removeMonitor(outsideClick) }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let box = bounds.insetBy(dx: 1, dy: 1)
+        let path = NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6)
+        NSColor.textBackgroundColor.setFill()
+        path.fill()
+        path.lineWidth = recording ? 2 : 1
+        (recording ? NSColor.controlAccentColor : NSColor.separatorColor).setStroke()
+        path.stroke()
+        let shown = recording ? "Type a shortcut…" : text
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        style.lineBreakMode = .byTruncatingTail
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: recording ? NSColor.secondaryLabelColor : NSColor.labelColor,
+            .paragraphStyle: style,
+        ]
+        let height = (shown as NSString).size(withAttributes: attributes).height
+        (shown as NSString).draw(in: NSRect(x: box.minX, y: box.midY - height / 2, width: box.width, height: height),
+                                 withAttributes: attributes)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        begin()
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard recording else { return false }
+        take(event)
+        return true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard recording else { return super.keyDown(with: event) }
+        take(event)
+    }
+
+    override func resignFirstResponder() -> Bool {
+        stop()
+        return true
+    }
+
+    private func begin() {
+        guard !recording else { return }
+        recording = true
+        // A click on a part of the form that takes no focus leaves this view first responder, so
+        // the press itself is what says the user has moved on.
+        outsideClick = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self, event.window === self.window else { return event }
+            if !self.bounds.contains(self.convert(event.locationInWindow, from: nil)) { self.stop() }
+            return event
+        }
+    }
+
+    private func stop() {
+        recording = false
+        if let outsideClick { NSEvent.removeMonitor(outsideClick) }
+        outsideClick = nil
+    }
+
+    /// Esc keeps the old shortcut; so does a press with no ⌘⌥⌃ or a key no shortcut can name.
+    private func take(_ event: NSEvent) {
+        if event.keyCode == 53 { stop(); return }
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        guard flags.contains(.command) || flags.contains(.option) || flags.contains(.control),
+              let shortcut = HotKeySpec.text(keyCode: UInt32(event.keyCode), modifiers: HotKeySpec.carbonModifiers(flags)) else {
+            NSSound.beep()
+            stop()
+            return
+        }
+        stop()
+        window?.makeFirstResponder(nil)
+        onCommit(shortcut)
     }
 }

@@ -1,8 +1,9 @@
 # Settings
 
 `~/.config/vignette/settings.json` is the source of truth. The Settings window (menu bar →
-Settings…, or `open -g vignette://settings`) edits it; so can you or your agent. The app reloads it
-within a second of a save. `VIGNETTE_SETTINGS=<path>` in the environment points a launch at another
+Settings…, or `open -g vignette://settings`) edits it in four tabs — General, Screenshots, Agents,
+and, with `debug` on, Developer — and so can you or your agent. The app reloads the file within a
+second of a save. `VIGNETTE_SETTINGS=<path>` in the environment points a launch at another
 file, which is how tests and agents keep away from the real one.
 
 ```json
@@ -41,13 +42,13 @@ file, which is how tests and agents keep away from the real one.
 - **`hideMenuBarIcon`** removes Vignette's menu bar icon. `vignette://settings` still opens the
   Settings window.
 - **`launchAtLogin`** adds Vignette to your login items.
-- **`quickAnnotate`** is Quick draw: Done copies the image you drew on and closes the annotator and
-  the stack at once, instead of returning to the stack.
-- **`annotateOnCapture`** is Draw on New Captures: it opens every new screenshot in the annotator
-  right away, instead of showing a thumbnail. The menu bar toggles it and Quick draw.
+- **`quickAnnotate`** is what happens when you finish drawing: on, Done copies the image you drew
+  on and closes the annotator and the stack at once, instead of returning to the stack.
+- **`annotateOnCapture`** is Draw on New Screenshots: it opens every new screenshot in the annotator
+  right away, instead of showing a thumbnail. The menu bar toggles it.
 - **`copyOnCapture`** puts every new screenshot on the clipboard as it lands, the image plus its
   file URL and path for apps that take those, and is on by default. An image that arrives through
-  `add` skips this and Draw on New Captures: a push from an agent is not a capture.
+  `add` skips this and Draw on New Screenshots: a push from an agent is not a capture.
 - **`debug`** unlocks `eval`, `show-editor`, `tweaks`, `send`, and `file=` outside the watch folder.
 - **`agentSkill`** is the skill for coding agents: `unasked`, `on`, or `off` (see
   [agents.md](agents.md)).
@@ -68,9 +69,9 @@ ignored and the number it names takes its default, so a dead line is safe to del
 
 `"ui": {"motion": 0}` turns every animation off. The system's Reduce Motion does the same.
 
-With `debug` on, menu bar → Tweak UI… (or `open -g vignette://tweaks`) opens a floating panel of
-sliders that edits these live, with buttons to summon the thumbnail, stack, toast, and annotator
-while you tweak.
+With `debug` on, the Settings window's Developer tab → Tweak UI… (or `open -g vignette://tweaks`)
+opens a floating panel of sliders that edits these live, with buttons to summon the thumbnail,
+stack, toast, and annotator while you tweak.
 
 ## Invalid files
 
