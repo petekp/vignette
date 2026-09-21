@@ -25,31 +25,31 @@ https://github.com/user-attachments/assets/cb06c65f-ba08-436f-8e7e-4df31729ad36
 
 - **Screenshot history, one key away**<br>
   Use the Vignette shortcut (double-tap `Shift`, by default) and your recent screenshots slide in
-  from the right. A camera roll for your screenshots. Arrows move, Space selects, Return opens.
+  from the right. A camera roll for screenshots. Arrows move, Space selects, Return opens.
 - **One-click stitch**<br>
-  Several screenshots into one image, auto-numbered.
+  Join several screenshots into one image. Each piece gets a number.
 
 ### Drawing
 
 - **Simple by design**<br>
-  Three tools: rectangle, text, arrow. No colour picker. The colour is chosen from the image for
-  the highest contrast.
+  Three tools: rectangle, text, arrow. No colour picker. Vignette picks the colour that stands out
+  most against the image under your mark.
 - **Non-destructive**<br>
-  A drawing is saved beside the original and stays editable. Go back, change it, undo it. The
-  original is never touched.
+  Your drawing is a separate file beside the original. Go back, change it, undo it. The original
+  stays as it was.
 - **Queue**<br>
-  Annotate several at once. Open them and they come one after another. Each Done opens the next.
+  Annotate several in a row. Open them together and each Done opens the next.
 
 ### The app
 
 - **Native, refined feel**<br>
-  Draw without leaving what you were doing. The stack takes keys without stealing focus from your
-  app. Hold the hotkey and the newest shot lifts into the editor.
+  The stack answers your keys without taking focus from the app you're in. Hold the hotkey and
+  the newest shot lifts into the editor. Close it and you're back where you were.
 - **Customizable and hackable**<br>
-  A settings file, every action as a URL, MIT licensed.
+  Every setting lives in a file, every action is a URL, and the source is MIT.
 - **Agent-friendly**<br>
-  Experimental. Two-way: a coding agent can send you annotations, and you can send it yours. A
-  skill for Claude Code and Codex ships with the app.
+  Experimental. A coding agent can send you a screenshot with its own marks on it, and you can
+  send yours back. The skill for Claude Code and Codex ships with the app.
 
 ## Get it
 
@@ -62,9 +62,9 @@ cd vignette/web && pnpm install && cd ..
 ./scripts/run.sh
 ```
 
-That needs Xcode, `xcodegen`, and `pnpm`. [docs/building.md](docs/building.md) has the details,
-and its Signing section says why a build of your own has to be re-trusted for Accessibility
-after each rebuild. macOS 14 or later.
+You need Xcode, `xcodegen`, `pnpm`, and macOS 14 or later. [docs/building.md](docs/building.md)
+has the details, including why macOS asks you to re-trust your own build for Accessibility after
+each rebuild.
 
 ## How it works
 
@@ -92,7 +92,7 @@ the app. [docs/building.md](docs/building.md) has the rest.
 - [Building](docs/building.md): build, sign, the tldraw license, where things live, forking.
 - [For agents](docs/agents.md): the skill that ships with the app and how it is installed.
 
-`AGENTS.md` is the working loop for a person or agent changing the app. The dated notes in
-`docs/` are measurements and reasoning behind particular changes, not guides.
+`AGENTS.md` is the onboarding for anyone changing the app, person or agent. The dated notes in
+`docs/` record the measurements and reasoning behind particular changes.
 
 Vignette is MIT licensed. The editor is tldraw, under [its own license](LICENSE-tldraw.md).
