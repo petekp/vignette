@@ -62,3 +62,17 @@ See `AGENTS.md` for the working loop.
    without any manual step besides `pnpm install`.
 4. Drafts live on disk, so relaunching while annotating loses nothing that was parked.
 5. Ship only with a tldraw license key of your own (see the tldraw license section above).
+
+# How it works
+
+- `Sources/` is the Swift shell: menu bar item, folder watcher, panels, clipboard, hotkey, drafts.
+- `web/` is the editor page: React + tldraw, built with Vite into `web/dist`, bundled into the app.
+- `Sources/LocalServer.swift` serves `web/dist` and the screenshot being annotated on 127.0.0.1,
+  behind a per-launch token. tldraw only runs unlicensed on http origins; `file://` and custom
+  schemes make it hide the editor after five seconds, and the image has to share the page's
+  origin for the export canvas to stay untainted.
+- `web/src/bridge.ts` and `Sources/Bridge.swift` are the whole contract between the two sides.
+  The page reports a protocol version in `ready`; a stale page is refused with a log line and a
+  toast instead of failing quietly.
+- Annotations in progress are drafts the app keeps on disk (`~/Library/Application Support/
+  com.petepetrash.vignette/drafts/`), so they survive relaunches and a crashed web process.
