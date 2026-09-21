@@ -107,28 +107,25 @@ Claude Code     Not installed
 Codex           Installed
 ```
 
-- One button. "Install" while any agent directory lacks Vignette's copy and could take one;
-  "Remove" when every agent that could take one has it (and none is missing); no button when there
-  is nothing it could do. Install writes `agentSkill` on, Remove writes off: the existing settings
+- One button. "Install" while any agent directory lacks the skill; "Remove" when every agent has
+  it. Install writes `agentSkill` on, Remove writes off: the existing settings
   observer does the work, so `install-skill` and a hand-edited file behave as before.
 - Links are followed. A `skills` directory that is a link is written through, so the skill lands
   where the agent reads it. The `linkedRoot` outcome, `linkedPath`, the state report's
-  `linkedSkillRoots`, and the docs paragraph about links go. A skill folder that is itself a link
-  is still foreign (the user's own).
-- Rows, one per agent directory found, no paths:
-  - none: "Not installed"
-  - ours: "Installed"
-  - foreign with a `SKILL.md`: "Installed". How it got there is not the user's concern; Vignette
-    still never rewrites or removes a copy without its marker.
-  - foreign without one: "A folder named vignette is already there and isn't a skill. Move it
-    aside to install."
+  `linkedSkillRoots`, and the docs paragraph about links go.
+- Rows, one per agent directory found, no paths: "Installed" when `<root>/skills/vignette/SKILL.md`
+  exists, else "Not installed". Nothing else.
+- Install overwrites. Whatever is at `<root>/skills/vignette` (a folder, a link, anything) is
+  replaced by the bundled skill; Remove deletes whatever is there. The marker file, the `foreign`
+  state, `notOurs`, and `matches`-by-marker go. A launch with `agentSkill` on rewrites the copy when
+  its files differ from the bundle, and says nothing when they match.
 - An install that fails toasts "Couldn't install the skill for <agent>" (`thumbnail.showFeedback`
   from the AppDelegate's result handling); the row stays "Not installed".
 - No agent found: "No coding agent found on this Mac. Vignette looks for Claude Code and Codex."
   and no button.
 - The offer still opens this tab once, unasked; the Install button is the invitation.
-- `docs/agents.md` "Installing" and "What the installer will not touch" say this in two short
-  paragraphs.
+- `docs/agents.md` "Installing" says this in one short paragraph; "What the installer will not
+  touch" goes.
 
 ### Developer (`wrench.and.screwdriver`) — only when `debug` is on
 
