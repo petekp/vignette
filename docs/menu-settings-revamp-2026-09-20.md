@@ -110,8 +110,13 @@ Codex           Installed
 - One button. "Install" while any agent directory lacks the skill; "Remove" when every agent has
   it. Install writes `agentSkill` on, Remove writes off: the existing settings
   observer does the work, so `install-skill` and a hand-edited file behave as before.
-- Links are followed. A `skills` directory that is a link is written through, so the skill lands
-  where the agent reads it. The `linkedRoot` outcome, `linkedPath`, the state report's
+- Links are resolved, all the way. The destination for a root is `<root>/skills/vignette` with
+  every link resolved (`URL.resolvingSymlinksInPath()` on the deepest existing component), including
+  a link at the skill folder itself, so the skill is written where it really lives. Roots whose
+  destinations resolve to the same folder share one copy: one install, and every one of those rows
+  reads Installed (on this Mac both agents' `vignette` entries resolve to the repo's own
+  `skills/vignette`). Remove deletes the entry at `<resolved skills>/vignette`: a link goes and its
+  target stays, a folder goes. The `linkedRoot` outcome, `linkedPath`, the state report's
   `linkedSkillRoots`, and the docs paragraph about links go.
 - Rows, one per agent directory found, no paths: "Installed" when `<root>/skills/vignette/SKILL.md`
   exists, else "Not installed". Nothing else.
