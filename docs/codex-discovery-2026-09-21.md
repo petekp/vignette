@@ -16,18 +16,19 @@ not have to reach the process that owns a session in order to list it.
 
 `ThreadStatus` is `notLoaded`, `idle`, `active` (with flags), or `systemError`, and it is per
 server: a server started fresh reports every thread `notLoaded`, because it has just started and
-holds none of them. So the status says nothing useful about a session another process owns, and
-discovery does not read it beyond keeping the thread.
+holds none of them. So the status says nothing about a session another process owns, and discovery
+drops it rather than storing a number that cannot mean anything.
 
 ## The transport
 
 One child process speaking newline JSON-RPC over stdio, which is the same shape as the herdr calls
-the Claude route already makes. `AppServer.converse` writes the requests, reads until every request
-carrying an id has been answered, and ends the process.
+the Claude route already makes. `AppServer.converse` runs `codex app-server`, writes the requests,
+reads until every request carrying an id has been answered, and ends the process.
 
-`codex app-server` on its own is the ordinary case. `codex app-server proxy --sock <path>` is used
-instead when `~/.codex/app-server-control/app-server-control.sock` exists, which is a server already
-running: asking it is cheaper than starting another. Nothing else differs between the two.
+`codex app-server proxy --sock <path>` would reach a server already running instead of starting
+one, and was built and then removed: the socket it needs does not exist on this Mac, `codex
+app-server daemon start` refuses to create one, and the two paths measured the same anyway (0.77 s
+through a proxy stood up by hand, 0.42–0.74 s spawning). A branch that never runs is not a fallback.
 
 The handshake is `initialize` (with `clientInfo`), the `initialized` notification, then the call.
 Standard input has to stay open until the answers are in: a batch written with the pipe already
@@ -43,8 +44,8 @@ closed is answered only as far as `initialize`, because the server exits on EOF.
 | 50 | 3.05 s | 50 |
 
 It runs every time an image opens, so `AppServer.listLimit` is 15. The cost is not linear and a menu
-of fifty is not one a person reads. A spawned server measured 0.42–0.74 s for the whole
-conversation, handshake included.
+of fifty is not one a person reads. Those numbers were measured through a proxy; a spawned server
+came back in 0.42–0.74 s for the whole conversation, handshake included.
 
 ## Sending needs no endpoint either
 
@@ -53,8 +54,9 @@ conversation, handshake included.
 the person reading it). The desktop app's own app-server listens on nothing, so this is the case an
 endpoint could never have covered.
 
-`endpoint` therefore stays a setting rather than something discovery writes: it is for a server that
-is not this Mac's. A discovered destination carries `endpoint: nil`.
+So a Codex destination is a thread UUID and nothing else. `endpoint`, `--remote`, and the
+hand-written `codexSessions` they existed for are gone: discovery finds every session on the
+machine, and a session on some other machine's server was never designed for or tested.
 
 ## What was verified
 
@@ -62,11 +64,12 @@ On 2026-09-21, against the live store and a real Codex Desktop session:
 
 - A freshly spawned `codex app-server`, with no control socket present and no daemon running, listed
   15 threads in 0.74 s with name, cwd, and status.
-- The app, launched on scratch settings with `codexSessions: []`, showed those sessions in the Send
-  menu grouped by project alongside the herdr panes. The `vignette` group held four rows: two Claude
-  Code panes and two Codex threads, one of which was the desktop session `Handle greeting`.
+- The app, launched on scratch settings with no Codex sessions configured, showed those sessions in
+  the Send menu grouped by project alongside the herdr panes. The `vignette` group held four rows:
+  two Claude Code panes and two Codex threads, one of which was the desktop session
+  `Handle greeting`.
 - Choosing it stored and submitted the request:
-  `[send] ok … Handle greeting thread=01a0c4a6-… ` with `guard: runtime-enforced` and no endpoint.
+  `[send] ok … Handle greeting thread=01a0c4a6-…` with `guard: runtime-enforced`.
 
 ## What is still unproven
 

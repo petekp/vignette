@@ -7,13 +7,12 @@ final class AppServerTests: XCTestCase {
     {"id":2,"result":{"data":[{"id":"01a0c28f-7c24-7a93-82e4-a7906de82cf4","name":"Open drawing","cwd":"/tmp/loop-test","status":{"type":"notLoaded"}},{"id":"01a0c14e-e536-7580-866c-c50622cecd9b","name":"Explore agent screenshot loop","cwd":"/Users/p/Code/vignette","status":{"type":"idle"}}],"nextCursor":null}}
     """#
 
-    func testTheThreadsInAnAnswerCarryTheirNameProjectAndWhetherTheyAreLoaded() {
+    func testTheThreadsInAnAnswerCarryTheirNameAndProject() {
         let threads = AppServer.threads(in: ["{\"method\":\"remoteControl/status/changed\"}", answer])
-        XCTAssertEqual(threads.count, 2)
+        XCTAssertEqual(threads.map(\.id), ["01a0c28f-7c24-7a93-82e4-a7906de82cf4",
+                                          "01a0c14e-e536-7580-866c-c50622cecd9b"])
         XCTAssertEqual(threads[0].name, "Open drawing")
         XCTAssertEqual(threads[0].cwd, "/tmp/loop-test")
-        XCTAssertFalse(threads[0].loaded, "notLoaded is a thread no server holds in memory")
-        XCTAssertTrue(threads[1].loaded, "idle is loaded and can take a turn")
     }
 
     /// The store pages can overlap, and a thread can have no name.

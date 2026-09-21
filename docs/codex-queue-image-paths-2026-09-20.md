@@ -1,5 +1,10 @@
 # Codex queue with image paths — 2026-09-20
 
+> The endpoint this note treats as necessary is not: on 2026-09-21 `codex queue --thread <uuid>`
+> with no `--remote` reached a Codex Desktop session, whose engine listens on nothing. Vignette
+> sends the UUID alone. `docs/codex-discovery-2026-09-21.md` is the current design; the measured
+> behaviour below (idle wakeup, busy ordering, image paths over attachments) still holds.
+
 `codex queue` can deliver an image path to a persistent Codex session. The agent opens the file with `view_image`. No image attachment flag is needed.
 
 This corrects the earlier spike's recommendation. Rejecting `-i` and ephemeral threads was not evidence against queueing a file path to a persistent thread.

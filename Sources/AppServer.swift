@@ -3,24 +3,11 @@ import os
 
 /// The Codex app-server's JSON-RPC, spoken over a child process's standard input and output.
 /// `thread/list` reads the thread store on disk, so a server started here for the length of one
-/// listing sees every session, whoever owns it. `codex app-server proxy --sock <path>` bridges the
-/// same stdio to a server already running, which is cheaper when there is one; the conversation is
-/// identical either way.
+/// listing answers for every session, whoever owns it.
 ///
 /// This is the only thing in the app that knows the app-server protocol. It reads; it never starts
 /// a thread, sends a turn, or changes anything a session holds.
 enum AppServer {
-    /// Where a running app-server publishes its control socket. Present means one is already up and
-    /// the proxy can ask it; absent means discovery starts its own, which answers the same listing.
-    static var controlSocket: URL {
-        URL(fileURLWithPath: ("~/.codex/app-server-control/app-server-control.sock" as NSString).expandingTildeInPath)
-    }
-
-    static var controlSocketExists: Bool {
-        (try? controlSocket.resourceValues(forKeys: [.isRegularFileKey])) != nil
-            || FileManager.default.fileExists(atPath: controlSocket.path)
-    }
-
     /// How many threads discovery asks for, newest first. The store's list call costs about 0.12 s
     /// for five, 0.50 s for fifteen, and 2.9 s for thirty (measured 2026-09-21), and this runs
     /// every time an image opens. A menu longer than this is not one a person reads anyway.
@@ -31,14 +18,13 @@ enum AppServer {
     /// waiting on it.
     static let timeout: TimeInterval = 8
 
-    /// One session the server knows about. `cwd` is the project the menu groups by; `loaded` is
-    /// whether the server has it in memory, which is per server: a process of our own reports
-    /// every thread `notLoaded` because it has just started.
+    /// One session the server knows about. `cwd` is the project the menu groups by. The listing's
+    /// `status` is not kept: it is what the answering server holds in memory, and a server started
+    /// for one listing holds nothing, so it says nothing about the session's real state.
     struct Thread: Equatable {
         let id: String
         let name: String?
         let cwd: String
-        let loaded: Bool
     }
 
     /// The request lines for one discovery: the handshake, then the listing. `initialized` is a
@@ -67,9 +53,7 @@ enum AppServer {
                 guard let id = item["id"] as? String, let cwd = item["cwd"] as? String,
                       !seen.contains(id) else { continue }
                 seen.insert(id)
-                let status = (item["status"] as? [String: Any])?["type"] as? String
-                found.append(Thread(id: id, name: item["name"] as? String, cwd: cwd,
-                                    loaded: status != nil && status != "notLoaded"))
+                found.append(Thread(id: id, name: item["name"] as? String, cwd: cwd))
             }
         }
         return found

@@ -135,9 +135,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if new.screenshotsFolder != old.screenshotsFolder || new.debug != old.debug {
             annotator.fileAccess.update(folder: new.folderURL, unrestricted: new.debug)
         }
-        if new.codexSessions != old.codexSessions {
-            requests.connections[.codex] = CodexConnection(configured: new.codexDestinations)
-        }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
         if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
@@ -839,7 +836,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// managed files are unfinished, and an unfinished one must never read as an ordinary capture.
     private func startRequests() {
         requests.connections = [.claude: ClaudeCodeConnection(),
-                                .codex: CodexConnection(configured: settings.data.codexDestinations)]
+                                .codex: CodexConnection()]
         requests.callbacks = ScreenshotRequests.Callbacks(
             // Not `self?.annotator.canvasRefusal ?? …`: optional chaining on an already-optional
             // property flattens, so a free canvas (nil) would read as the fallback and every

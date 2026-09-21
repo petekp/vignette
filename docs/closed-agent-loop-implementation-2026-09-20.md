@@ -7,15 +7,16 @@ route was proved. Update this file rather than adding another.
 
 **Native Codex connection setup.** The plan required either a supported way to reach an existing
 session's endpoint or an explicit choice of Vignette-created sessions. It was first read as needing
-an endpoint, so a Codex destination was a line in `settings.json` naming one.
+an endpoint, so a Codex destination was a hand-written line in `settings.json` naming one.
 
-That reading was wrong, and the gate is now closed without either horn. No endpoint is needed at
-each end: `thread/list` reads a store on disk, so a `codex app-server` Vignette starts for the
-length of one listing sees every session, and `codex queue --thread <uuid>` with no `--remote`
-finds the engine that owns the thread, including the desktop app's, which listens on nothing (both
-verified 2026-09-21, `docs/codex-discovery-2026-09-21.md`). Vignette still never starts, owns,
-resumes, or stops a Codex *session*; the read-only server it runs for a listing is ended with it.
-`codexSessions` stays for a session on a server that is not this Mac's.
+That reading was wrong, and the gate is closed without either horn: neither end needs an endpoint.
+`thread/list` reads a store on disk, so a `codex app-server` Vignette starts for the length of one
+listing sees every session, and `codex queue --thread <uuid>` with no `--remote` finds the engine
+that owns the thread, including the desktop app's, which listens on nothing (both verified
+2026-09-21, `docs/codex-discovery-2026-09-21.md`). A Codex destination is therefore a thread UUID
+and nothing else, and the configured sessions, their endpoints, and `--remote` are gone rather than
+kept as a fallback for a case nothing was built for. Vignette still never starts, owns, resumes, or
+stops a Codex *session*; the read-only server it runs for a listing is ended with it.
 
 **Reply trust model.** Implemented as the plan's own proposal: a per-request bearer ticket in a
 private request directory. Possession of the ticket authorizes one request's replies; it does not
@@ -26,7 +27,7 @@ same-user processes remain outside the guarantee.
 
 | Client | Submission | Address | Guard |
 | --- | --- | --- | --- |
-| Codex | `codex queue --thread <UUID> [--remote <endpoint>] --message <line>` | the thread UUID; `--remote` only for a configured session on another machine's server | runtime-enforced: the app server resolves the UUID or fails |
+| Codex | `codex queue --thread <UUID> --message <line>` | the thread UUID | runtime-enforced: the owning engine resolves the UUID or fails |
 | Claude Code | `herdr agent prompt <pane> <line>` | the Claude Code session UUID | preflight: `herdr agent list` must still report that session UUID in a pane |
 
 Codex matches the plan's first eligibility row. Claude Code does not: herdr's prompt API takes a
@@ -84,7 +85,7 @@ session already running.
 | The same bundle sent twice | Second attempt answered `accepted / ready` from the record; four reply files before, four after. |
 | Cleared request | New replies refused with `request-closed`; the fixed PNG and submissions removed; published cards untouched. |
 | Deleted reply file | Recorded as removed and never recreated from the recovery copy. |
-| Codex endpoint stopped | `destination-changed`; the request kept with the reason; nothing sent anywhere else. |
+| Codex engine unreachable | `destination-changed`; the request kept with the reason; nothing sent anywhere else. (Observed against an endpoint that stopped, back when one was configured.) |
 | Claude session exited | Reply from its own card refused: "session … is in no herdr pane now". Never redirected to another pane. |
 | An older build answered the URL | Before `ticket.app` existed, `open` handed the reply to another Vignette build on this Mac, which answered `unknown-command`, and the helper reported it as unconfirmed rather than as delivered. That routing is what `ticket.app` fixes. |
 

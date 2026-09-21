@@ -2,7 +2,7 @@
 
 The local loop works. Claude Code and Codex received a drawing, returned editable marks, and received a revised drawing in the same sessions. A separate test woke an idle interactive Claude Code session through an MCP channel and completed the same round trip without terminal input for either screenshot request.
 
-Follow-up: [`codex queue` with image paths passed](codex-queue-image-paths-2026-09-20.md) in persistent sessions, including idle wakeup, two concurrent recipients, ordered follow-ups, and delivery to an attached CLI. Prefer this simpler send adapter when the owning App Server endpoint is known. The attachment and ephemeral-thread failures below do not rule out this route.
+Follow-up: [`codex queue` with image paths passed](codex-queue-image-paths-2026-09-20.md) in persistent sessions, including idle wakeup, two concurrent recipients, ordered follow-ups, and delivery to an attached CLI. Prefer this simpler send adapter; it needs no endpoint (`docs/codex-discovery-2026-09-21.md`). The attachment and ephemeral-thread failures below do not rule out this route.
 
 This is experimental evidence, not a shipped integration. No application source, build scripts, agent rules, or infrastructure configuration was changed.
 

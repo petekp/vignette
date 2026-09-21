@@ -34,25 +34,10 @@ struct SettingsData: Codable, Equatable {
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
     var debug = false                        // unlocks eval, show-editor, tweaks, and file= outside the watch folder
     var agentSkill = AgentSkill.unasked.rawValue  // whether the skill was offered: unasked, then off
-    var codexSessions: [CodexSession] = []   // the Codex threads Send may address; see CodexSession
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
     var appleOriginal: AppleOriginal?        // Apple's screencapture values before Vignette changed them
 
     var folderURL: URL { URL(fileURLWithPath: (screenshotsFolder as NSString).expandingTildeInPath) }
-
-    /// The Codex destinations, as the app addresses them. An entry without a thread UUID is left
-    /// out: there is nothing to send to.
-    var codexDestinations: [AgentDestination] {
-        codexSessions.compactMap { session in
-            guard ReplyProtocol.isID(session.thread.lowercased()) else { return nil }
-            let id = session.id.isEmpty ? session.thread.lowercased() : session.id
-            return AgentDestination(
-                id: id, name: session.name.isEmpty ? "Codex \(session.thread.prefix(8))" : session.name,
-                detail: session.project,
-                address: .codexThread(uuid: session.thread.lowercased(),
-                                      endpoint: session.endpoint?.isEmpty == false ? session.endpoint : nil))
-        }
-    }
 
     /// `agentSkill` as the states it holds. An unknown word reads as `unasked`, which
     /// `validated()` then writes back.
@@ -69,9 +54,6 @@ struct SettingsData: Codable, Equatable {
         }
         if d.screenshotsFolder.trimmingCharacters(in: .whitespaces).isEmpty {
             notes.append("screenshotsFolder \"\" -> \"~/Desktop\""); d.screenshotsFolder = "~/Desktop"
-        }
-        for session in d.codexSessions where !ReplyProtocol.isID(session.thread.lowercased()) {
-            notes.append("codexSessions \"\(session.name)\" has no thread UUID; it cannot be addressed")
         }
         if AgentSkill(rawValue: d.agentSkill) == nil {
             notes.append("agentSkill \"\(d.agentSkill)\" -> \"\(AgentSkill.unasked.rawValue)\""); d.agentSkill = AgentSkill.unasked.rawValue
@@ -242,22 +224,6 @@ struct UITweaks: Codable, Equatable {
         // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
     ]
-}
-
-/// One Codex session Send may address. Codex has no local command that lists the sessions running
-/// on this Mac, so each one is named here: the thread UUID and the App Server endpoint that owns
-/// it (`ws://127.0.0.1:<port>`; leave it out for a Codex daemon's own socket). Vignette never
-/// starts, resumes, or stops a Codex server or session.
-struct CodexSession: Codable, Equatable {
-    /// What a request record keeps, so a reply's card offers the session it came from. Defaults
-    /// to the thread UUID; set it only to keep that handle stable across a change of thread.
-    var id = ""
-    /// What the Send menu shows.
-    var name = ""
-    var thread = ""
-    var endpoint: String?
-    /// The project, so two sessions with the same name are still told apart.
-    var project = ""
 }
 
 /// The `com.apple.screencapture` values Vignette found before it wrote any of its own, so

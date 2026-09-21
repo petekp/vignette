@@ -618,18 +618,14 @@ the same driven sequence; a single run varies.
   event cannot copy it to the clipboard or open the editor, and its card is inserted once, by its
   own import. Startup loads the records before the watcher starts or anything warms the stack.
 - A destination is an agent session, never the terminal displaying it. Codex is addressed by its
-  thread UUID alone; `codex queue --thread` finds the engine that owns the thread, the desktop
-  app's included, and the runtime resolves the UUID or fails, which is
-  `AddressGuard.runtimeEnforced`. An `endpoint` is a setting for a server that is not this Mac's,
-  and nothing discovery writes. Those sessions come from two places and are one list: the thread
-  store's, and the ones `settings.json` names (`codexSessions`). `AppServer.swift` is the only
-  thing that speaks the app-server protocol, and it only reads: it carries one `thread/list` to a
-  `codex app-server` of its own and turns the answer into menu rows, grouped by each thread's own
-  `cwd`. The store is on disk, so any server can answer for every session; a server is started for
-  the length of the listing and ended. When
-  `~/.codex/app-server-control/app-server-control.sock` is there, one is already running and
-  `codex app-server proxy --sock` asks that one instead. No `codex` on the machine means no
-  discovery, which is not an error: the configured entries are then the whole answer.
+  thread UUID and nothing else: `codex queue --thread` finds the engine that owns the thread, the
+  desktop app's included, and that engine resolves the UUID or fails, which is
+  `AddressGuard.runtimeEnforced`. `AppServer.swift` is the only thing that speaks the app-server
+  protocol, and it only reads: it carries one `thread/list` to a `codex app-server` of its own and
+  turns the answer into menu rows, grouped by each thread's own `cwd`. The thread store is on disk,
+  so a server started for the length of that one listing answers for every session, whoever owns
+  it; the listing's `status` is that server's own memory and says nothing about a session, so it is
+  not kept. No `codex` on the machine means no Codex destinations, which is not an error.
   `docs/codex-discovery-2026-09-21.md` has the protocol, the timings behind `listLimit`, and what
   was verified against a live desktop session. Claude Code is addressed by
   its session id, which herdr reports per pane; herdr's submission API takes a pane and has no

@@ -92,12 +92,8 @@ final class AgentConnectionTests: XCTestCase {
 
     func testTheQueueCallIsOneArgvElementPerPart() {
         let thread = "01a0c176-bfab-7662-9ffb-a30cc3490835"
-        XCTAssertEqual(CodexConnection.arguments(thread: thread, endpoint: nil, message: "look at \"a b.png\""),
+        XCTAssertEqual(CodexConnection.arguments(thread: thread, message: "look at \"a b.png\""),
                        ["queue", "--thread", thread, "--message", "look at \"a b.png\""])
-        XCTAssertEqual(CodexConnection.arguments(thread: thread, endpoint: "ws://127.0.0.1:1", message: "x"),
-                       ["queue", "--thread", thread, "--remote", "ws://127.0.0.1:1", "--message", "x"])
-        XCTAssertEqual(CodexConnection.arguments(thread: thread, endpoint: "", message: "x").count, 5,
-                       "an empty endpoint is no endpoint, not an empty one")
     }
 
     func testAThreadTheServerDoesNotHaveIsTheDestinationHavingChanged() {
@@ -105,7 +101,7 @@ final class AgentConnectionTests: XCTestCase {
             return XCTFail("a missing thread is not a retryable failure")
         }
         guard case .destinationChanged = CodexConnection.failure(output: "failed to connect to ws://127.0.0.1:9", thread: "t") else {
-            return XCTFail("an endpoint that is gone is not a retryable failure")
+            return XCTFail("an engine that cannot be reached is not a retryable failure")
         }
         guard case .notSubmitted = CodexConnection.failure(output: "Error: invalid message", thread: "t") else {
             return XCTFail("anything else definitely did not arrive")
@@ -113,82 +109,49 @@ final class AgentConnectionTests: XCTestCase {
     }
 
     func testACodexDestinationIsPinnedByTheRuntimeAndAClaudeOneByAPreflightCheck() {
-        XCTAssertEqual(AgentAddress.codexThread(uuid: "u", endpoint: nil).guardTier, .runtimeEnforced)
+        XCTAssertEqual(AgentAddress.codexThread(uuid: "u").guardTier, .runtimeEnforced)
         XCTAssertEqual(AgentAddress.claudeSession("s").guardTier, .preflight)
-    }
-
-    func testSettingsWithoutAThreadUuidOfferNoCodexDestination() {
-        var data = SettingsData()
-        data.codexSessions = [CodexSession(id: "a", name: "A", thread: "not-a-uuid"),
-                              CodexSession(id: "b", name: "B", thread: "01A0C176-BFAB-7662-9FFB-A30CC3490835")]
-        let found = data.codexDestinations
-        XCTAssertEqual(found.map(\.id), ["b"])
-        XCTAssertEqual(found.first?.address, .codexThread(uuid: "01a0c176-bfab-7662-9ffb-a30cc3490835", endpoint: nil))
     }
 
     // MARK: Codex discovery
 
-    /// The app-server's sessions and the configured ones are one list. A configured entry that
-    /// names the same thread wins, because its name is the one the person chose. A discovered
-    /// thread carries no endpoint: `codex queue --thread` finds the engine that owns it.
-    func testDiscoveredSessionsJoinTheConfiguredOnesWithoutDuplicatingAThread() {
-        let shared = "01a0c14e-e536-7580-866c-c50622cecd9b"
+    /// Every thread the listing reports becomes a destination, named and grouped by its own
+    /// project, and addressed by its UUID alone.
+    func testEveryListedThreadBecomesADestinationGroupedByItsProject() {
         let answer = """
         {"id":2,"result":{"data":[\
-        {"id":"\(shared)","name":"Server's name","cwd":"/Users/p/Code/vignette","status":{"type":"idle"}},\
+        {"id":"01a0c14e-e536-7580-866c-c50622cecd9b","name":"Explore agent screenshot loop","cwd":"/Users/p/Code/vignette","status":{"type":"idle"}},\
         {"id":"01a0c28f-7c24-7a93-82e4-a7906de82cf4","name":"Open drawing","cwd":"/tmp/loop-test","status":{"type":"idle"}}]}}
         """
-        var connection = CodexConnection(configured: [
-            AgentDestination(id: "mine", name: "My name for it", detail: "vignette",
-                             address: .codexThread(uuid: shared, endpoint: nil)),
-        ])
+        var connection = CodexConnection()
         connection.binary = { "/bin/codex" }
-        connection.controlSocketExists = { false }
         connection.converse = { _, _, _ in [answer] }
 
         let found = connection.destinations()
-        XCTAssertEqual(found.map(\.name), ["My name for it", "Open drawing"])
+        XCTAssertEqual(found.map(\.name), ["Explore agent screenshot loop", "Open drawing"])
         XCTAssertEqual(found[1].detail, "loop-test", "the project is the session's own folder")
-        XCTAssertEqual(found[1].address,
-                       .codexThread(uuid: "01a0c28f-7c24-7a93-82e4-a7906de82cf4", endpoint: nil))
+        XCTAssertEqual(found[1].address, .codexThread(uuid: "01a0c28f-7c24-7a93-82e4-a7906de82cf4"))
     }
 
-    /// With a control socket there, the conversation goes through the proxy: that reaches the
-    /// server already running rather than starting a second one.
-    func testDiscoveryAsksThroughTheProxyWhenAControlSocketIsThere() {
+    /// Discovery starts an app-server of its own. `thread/list` reads the store on disk, so that
+    /// server sees the same sessions the desktop app's does.
+    func testDiscoveryAsksAnAppServerItStarts() {
         var argv: [String] = []
         var connection = CodexConnection()
         connection.binary = { "/bin/codex" }
-        connection.controlSocketExists = { true }
-        connection.converse = { _, arguments, _ in argv = arguments; return [] }
-        _ = connection.destinations()
-        XCTAssertEqual(argv, ["app-server", "proxy", "--sock", AppServer.controlSocket.path])
-    }
-
-    /// Without one, discovery starts its own app-server and asks that. `thread/list` reads the
-    /// store on disk, so a server of our own sees the same sessions the desktop app's does.
-    func testDiscoveryStartsItsOwnServerWhenThereIsNoControlSocket() {
-        var argv: [String] = []
-        var connection = CodexConnection()
-        connection.binary = { "/bin/codex" }
-        connection.controlSocketExists = { false }
         connection.converse = { _, arguments, _ in argv = arguments; return [] }
         _ = connection.destinations()
         XCTAssertEqual(argv, ["app-server"])
     }
 
-    /// No Codex on the machine is not an error: the configured entries are the whole answer and
-    /// nothing is spawned to look for more.
-    func testWithNoCodexOnlyTheConfiguredSessionsAreOffered() {
+    /// No Codex on the machine is not an error: there is nothing to discover and nothing is spawned.
+    func testWithNoCodexThereAreNoDestinationsAndNothingIsSpawned() {
         var asked = false
-        var connection = CodexConnection(configured: [
-            AgentDestination(id: "mine", name: "Mine", address: .codexThread(uuid: "u", endpoint: nil)),
-        ])
+        var connection = CodexConnection()
         connection.binary = { nil }
-        connection.controlSocketExists = { false }
         connection.converse = { _, _, _ in asked = true; return [] }
 
-        XCTAssertEqual(connection.destinations().map(\.name), ["Mine"])
+        XCTAssertTrue(connection.destinations().isEmpty)
         XCTAssertFalse(asked, "nothing is spawned when there is no binary to spawn")
     }
 }

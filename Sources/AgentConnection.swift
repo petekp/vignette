@@ -2,13 +2,13 @@ import Foundation
 
 /// How Vignette reaches one agent session. The terminal a session happens to be displayed in is
 /// not part of this: a destination is a conversation, and a connection is the native call that
-/// puts a request into it. See CONTEXT.md for the words.
+/// puts a request into it. See docs/glossary.md for the words.
 ///
-/// Two routes exist. Codex is addressed by its thread UUID at an App Server endpoint the person
-/// configured, and the runtime itself refuses a UUID it does not own. Claude Code is addressed by
-/// its session id, which herdr reports for the pane running it; herdr's submission API takes a
-/// pane and has no expected-session parameter, so Vignette checks the pane still holds that exact
-/// session immediately before it submits. `Address.guardTier` is the difference, and it is
+/// Two routes exist. Codex is addressed by its thread UUID alone, and the engine that owns the
+/// thread refuses a UUID it does not have. Claude Code is addressed by its session id, which herdr
+/// reports for the pane running it; herdr's submission API takes a pane and has no
+/// expected-session parameter, so Vignette checks the pane still holds that exact session
+/// immediately before it submits. `Address.guardTier` is the difference, and it is
 /// recorded on every request rather than assumed away.
 enum AgentClient: String, Codable, CaseIterable {
     case claude, codex
@@ -30,9 +30,9 @@ enum AddressGuard: String, Codable {
 enum AgentAddress: Equatable, Codable {
     /// A Claude Code session id. herdr resolves it to the pane running it at send time.
     case claudeSession(String)
-    /// A Codex thread, and the App Server endpoint that owns it. Nil endpoint means the local
-    /// default, which exists only where a Codex daemon is installed.
-    case codexThread(uuid: String, endpoint: String?)
+    /// A Codex thread. `codex queue --thread` finds the engine that owns it, so there is nothing
+    /// else to say: the UUID is the whole address.
+    case codexThread(uuid: String)
 
     var client: AgentClient {
         switch self {
@@ -48,27 +48,20 @@ enum AgentAddress: Equatable, Codable {
         }
     }
 
-    /// The Codex thread this address names, for telling a discovered session from a configured
-    /// one that is the same conversation. Nil for every other client.
-    var threadUUID: String? {
-        if case .codexThread(let uuid, _) = self { return uuid }
-        return nil
-    }
-
     /// How the address reads in `[state]` and in a request record's log line.
     var description: String {
         switch self {
         case .claudeSession(let id): return "claude session=\(id)"
-        case .codexThread(let uuid, let endpoint): return "codex thread=\(uuid)\(endpoint.map { " endpoint=\($0)" } ?? "")"
+        case .codexThread(let uuid): return "codex thread=\(uuid)"
         }
     }
 }
 
 /// One agent session a request may be addressed to.
 struct AgentDestination: Equatable, Identifiable {
-    /// Vignette's stable handle for it: the `id` in settings.json for a configured Codex
-    /// destination, the session id for Claude Code. It is what a request records, so a reply's
-    /// card can offer the conversation it came from.
+    /// Vignette's stable handle for it: the thread UUID for Codex, the session id for Claude
+    /// Code. It is what a request records, so a reply's card can offer the conversation it came
+    /// from.
     let id: String
     let name: String
     /// Enough to tell two alike apart: the project folder, or the pane's title.
@@ -199,25 +192,20 @@ struct ClaudeCodeConnection: AgentConnection {
 
 // MARK: Codex, through its own queue command
 
-/// `codex queue --thread <UUID> --message <line>` hands a message to a persistent Codex thread at
-/// the App Server that owns it: an idle session starts a turn, a busy one runs it next. The thread
-/// UUID is resolved by that server, so a thread it does not own is an error rather than another
-/// thread. Vignette never starts, resumes, or stops a Codex server or session; the endpoint and
-/// the thread are configuration.
+/// `codex queue --thread <UUID> --message <line>` hands a message to a persistent Codex thread:
+/// the command finds the engine that owns it, an idle session starts a turn, and a busy one runs
+/// it next. That engine resolves the UUID, so a thread no engine has is an error rather than
+/// another thread. Vignette never starts, resumes, or stops a Codex session.
 struct CodexConnection: AgentConnection {
     let client = AgentClient.codex
-    /// The configured Codex destinations, as settings.json names them.
-    var configured: [AgentDestination] = []
     var binary: () -> String? = { CodexConnection.binary() }
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
         Send.launch($0, $1, timeout: $2)
     }
-    /// One stdio conversation with a running app-server. Injected so a test never spawns codex.
+    /// One stdio conversation with an app-server. Injected so a test never spawns codex.
     var converse: @Sendable (String, [String], [String]) -> [String] = {
         AppServer.converse($0, $1, $2)
     }
-    /// Whether a running app-server has published its control socket. Injected for the same reason.
-    var controlSocketExists: @Sendable () -> Bool = { AppServer.controlSocketExists }
 
     static let queueTimeout: TimeInterval = 25
 
@@ -233,55 +221,36 @@ struct CodexConnection: AgentConnection {
         binaryPaths.first(where: exists)
     }
 
-    /// Every Codex session that can be addressed: the ones a running app-server reports, plus the
-    /// ones settings.json names. A configured entry the server also reported is kept once, under
-    /// the configured name, because that is the name the person chose.
-    func destinations() -> [AgentDestination] {
-        let discovered = self.discovered()
-        let named = Set(configured.compactMap(\.address.threadUUID))
-        return configured + discovered.filter { !named.contains($0.address.threadUUID ?? "") }
-    }
-
     /// Every Codex session the machine knows about. `thread/list` reads the store all of them
-    /// share, so any app-server can answer it: a running daemon's control socket when there is
-    /// one, and otherwise a server started for the length of this one call. That is why
-    /// discovery needs no daemon and no endpoint, and why the sessions a person actually has,
-    /// which the ChatGPT desktop app owns, are in the menu on a Mac with neither.
-    private func discovered() -> [AgentDestination] {
+    /// share, so an app-server started for the length of this one call answers for every session,
+    /// including the ones the ChatGPT desktop app owns. No codex on the machine means no Codex
+    /// destinations, which is not an error.
+    func destinations() -> [AgentDestination] {
         guard let codex = binary() else { return [] }
-        let arguments = controlSocketExists()
-            ? ["app-server", "proxy", "--sock", AppServer.controlSocket.path]
-            : ["app-server"]
-        let lines = converse(codex, arguments, AppServer.discoveryRequests())
+        let lines = converse(codex, ["app-server"], AppServer.discoveryRequests())
         return AppServer.threads(in: lines).map { thread in
             AgentDestination(
                 id: thread.id,
                 name: thread.name?.isEmpty == false ? thread.name! : "Codex \(thread.id.prefix(8))",
                 detail: (thread.cwd as NSString).lastPathComponent,
-                // No endpoint: `codex queue --thread <uuid>` finds the engine that owns the thread
-                // by itself, including the desktop app's, which listens on nothing (verified
-                // 2026-09-21, a message queued with no --remote arrived in a Codex Desktop
-                // session). An endpoint stays a setting, for a server that is not this Mac's.
-                address: .codexThread(uuid: thread.id, endpoint: nil))
+                address: .codexThread(uuid: thread.id))
         }
     }
 
     /// The argv for one queue call. Built as a list, never a shell line: an image path with spaces
     /// and a message with quotes are both one element.
-    static func arguments(thread: String, endpoint: String?, message: String) -> [String] {
-        var args = ["queue", "--thread", thread]
-        if let endpoint, !endpoint.isEmpty { args += ["--remote", endpoint] }
-        return args + ["--message", message]
+    static func arguments(thread: String, message: String) -> [String] {
+        ["queue", "--thread", thread, "--message", message]
     }
 
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
-        guard case .codexThread(let uuid, let endpoint) = destination.address else {
+        guard case .codexThread(let uuid) = destination.address else {
             return .notSubmitted(code: .noAgent, detail: "not a Codex destination")
         }
         guard let codex = binary() else {
             return .notSubmitted(code: .noAgent, detail: "no codex at \(Self.binaryPaths.joined(separator: " "))")
         }
-        guard let result = run(codex, Self.arguments(thread: uuid, endpoint: endpoint, message: line), Self.queueTimeout) else {
+        guard let result = run(codex, Self.arguments(thread: uuid, message: line), Self.queueTimeout) else {
             return .notSubmitted(code: .sendFailed, detail: "codex queue did not run")
         }
         if result.timedOut {
@@ -290,7 +259,7 @@ struct CodexConnection: AgentConnection {
         guard result.status == 0 else {
             return Self.failure(output: result.output, thread: uuid)
         }
-        return .accepted(detail: "thread=\(uuid)\(endpoint.map { " endpoint=\($0)" } ?? "")")
+        return .accepted(detail: "thread=\(uuid)")
     }
 
     /// What a nonzero `codex queue` means. A thread the server does not have, or a server that is
