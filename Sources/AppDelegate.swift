@@ -595,7 +595,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if UserDefaults.standard.object(forKey: positionKey) == nil { UserDefaults.standard.set(80, forKey: positionKey) }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.autosaveName = NSStatusItem.AutosaveName(Identity.statusItemAutosaveName)
-        item.button?.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: Identity.name)
+        let image = NSImage(named: "MenuBarIcon")
+        image?.isTemplate = true
+        image?.accessibilityDescription = Identity.name
+        item.button?.image = image
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu

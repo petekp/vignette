@@ -33,6 +33,11 @@ targets:
       - path: Resources/vignette.icon
         type: file
         buildPhase: resources
+      # The status item image: the logomark as a template PNG pair, so macOS tints it for the bar.
+      - path: Resources/MenuBarIcon.png
+        buildPhase: resources
+      - path: Resources/MenuBarIcon@2x.png
+        buildPhase: resources
     info:
       path: Info.plist
       properties:
