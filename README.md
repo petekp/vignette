@@ -1,9 +1,7 @@
 <p align="center">
-  <img src="docs/app-icon.png" width="128" alt="">
+  <a href="https://vignette.pete.design"><img src="docs/app-icon.png" width="128" alt=""></a>
   <br>
-  <img src="docs/logotype.svg" width="150" alt="Vignette">
-  <br>
-  for macOS
+  <a href="https://vignette.pete.design"><img src="docs/logotype.svg" width="150" alt="Vignette"></a>
 </p>
 
 What if macOS's built-in screenshot tool had continued to evolve after 2010? That's the idea
