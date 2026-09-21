@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logomark.svg" width="180" alt="Vignette">
+  <img src="docs/logotype.svg" width="220" alt="Vignette">
   <br>
   for macOS
 </p>
