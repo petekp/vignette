@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/cb06c65f-ba08-436f-8e7e-4df31729ad36
 ### Recent screenshots
 
 - **Screenshot history, one key away**<br>
-  Use the Vignette shortcut (double-tap `Shift`, by default) and your recent screenshots slide in
+  Use the Vignette shortcut (double-tap `Right Shift`, by default) and your recent screenshots slide in
   from the right. A camera roll for screenshots. Arrows move, Space selects, Return opens.
 - **One-click stitch**<br>
   Join several screenshots into one image. Each piece gets a number.
