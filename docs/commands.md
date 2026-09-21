@@ -63,7 +63,7 @@ Every command answers with one line in `~/Library/Logs/Vignette.log` (menu bar â
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`, `unreadable-image`,
 `page-not-ready`, `export-timeout`, `export-failed`, `settings-invalid`, `debug-disabled`,
 `no-apple-original`, `eval-failed`, `write-failed`, `unsupported-type`, `invalid-marks`, `no-agent`,
-`send-failed`, `not-ours`, `linked-root`. The log has one event per line,
+`send-failed`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value â€¦`, and rotates to `Vignette.log.1` at 5 MB.
 
 ## Input events

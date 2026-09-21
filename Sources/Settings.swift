@@ -7,9 +7,9 @@ struct Screenshot: Sendable {
     let url: URL
 }
 
-/// Whether the bundled skill is installed for the coding agents on this Mac. Three values in one
-/// key, because "not asked yet" is a state of its own: writing into another tool's directory needs
-/// a yes, and the app asks once. A bool plus an `offered` flag could say two things at once.
+/// Whether the app has offered the agent skill yet. Whether the skill is installed is read from
+/// disk, so the key only records that the offer was made. `on` is what older files hold; it is
+/// read as `off` (`validated()`).
 enum AgentSkill: String {
     case unasked
     case on
@@ -33,13 +33,13 @@ struct SettingsData: Codable, Equatable {
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
     var debug = false                        // unlocks eval, show-editor, tweaks, and file= outside the watch folder
-    var agentSkill = AgentSkill.unasked.rawValue  // the skill for coding agents: unasked, on, off
+    var agentSkill = AgentSkill.unasked.rawValue  // whether the skill was offered: unasked, then off
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
     var appleOriginal: AppleOriginal?        // Apple's screencapture values before Vignette changed them
 
     var folderURL: URL { URL(fileURLWithPath: (screenshotsFolder as NSString).expandingTildeInPath) }
 
-    /// `agentSkill` as the three states it holds. An unknown word reads as `unasked`, which
+    /// `agentSkill` as the states it holds. An unknown word reads as `unasked`, which
     /// `validated()` then writes back.
     var agentSkillChoice: AgentSkill { AgentSkill(rawValue: agentSkill) ?? .unasked }
 
@@ -57,6 +57,11 @@ struct SettingsData: Codable, Equatable {
         }
         if AgentSkill(rawValue: d.agentSkill) == nil {
             notes.append("agentSkill \"\(d.agentSkill)\" -> \"\(AgentSkill.unasked.rawValue)\""); d.agentSkill = AgentSkill.unasked.rawValue
+        }
+        // `on` used to install at every launch. The Agents tab installs per agent now and disk says
+        // what is there, so the key only records that the offer was made.
+        if d.agentSkillChoice == .on {
+            notes.append("agentSkill \"on\" -> \"off\""); d.agentSkill = AgentSkill.off.rawValue
         }
         if !["spring", "easeOut", "easeInOut", "linear"].contains(d.ui.slideInCurve) {
             notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"

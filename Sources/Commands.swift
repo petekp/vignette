@@ -20,8 +20,6 @@ enum CommandError: String, CaseIterable {
     case invalidMarks = "invalid-marks"
     case noAgent = "no-agent"
     case sendFailed = "send-failed"
-    case notOurs = "not-ours"
-    case linkedRoot = "linked-root"
 }
 
 /// What is wrong with an agent's `marks=`, in the words the error line uses.
@@ -72,7 +70,7 @@ enum Commands {
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
         Fixed(name: "cancel", summary: "close the annotator without exporting, as Esc would"),
         Fixed(name: "settings", summary: "open the Settings window"),
-        Fixed(name: "install-skill", summary: "copy the bundled agent skill into ~/.claude/skills and ~/.codex/skills and turn the setting on; &root=<dir> installs into that directory instead and leaves the setting alone (needs \"debug\": true)"),
+        Fixed(name: "install-skill", summary: "copy the bundled agent skill into ~/.claude/skills and ~/.codex/skills; &root=<dir> installs into that directory instead (needs \"debug\": true)"),
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Vignette first recorded"),
         Fixed(name: "send", summary: "hand a screenshot's path to a coding agent herdr is running: \(Identity.urlScheme)://send?file=<path>&to=<agent or pane>&text=<words>; the focused pane's agent when no target is given", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
