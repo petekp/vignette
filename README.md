@@ -1,4 +1,8 @@
-# Vignette
+<p align="center">
+  <img src="docs/logomark.svg" width="180" alt="Vignette">
+  <br>
+  for macOS
+</p>
 
 What if macOS's built-in screenshot tool had continued to evolve after 2010? That's the idea
 behind Vignette.
