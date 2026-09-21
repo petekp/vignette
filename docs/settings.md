@@ -1,9 +1,9 @@
 # Settings
 
-`~/.config/vignette/settings.json` is the source of truth. The Settings window (menu bar → Settings…,
-or `open -g vignette://settings`) edits it; so can you or your agent. The app reloads it within a
-second of a save. `VIGNETTE_SETTINGS=<path>` in the environment points a launch at another file,
-which is how tests and agents keep away from the real one.
+`~/.config/vignette/settings.json` is the source of truth. The Settings window (menu bar →
+Settings…, or `open -g vignette://settings`) edits it; so can you or your agent. The app reloads it
+within a second of a save. `VIGNETTE_SETTINGS=<path>` in the environment points a launch at another
+file, which is how tests and agents keep away from the real one.
 
 ```json
 {
@@ -26,30 +26,53 @@ which is how tests and agents keep away from the real one.
 }
 ```
 
-The folder is one setting for two things: where Cmd+Shift+3/4/5 saves and what Vignette watches.
-`appleThumbnail`, `windowShadow`, and `format` are Apple's own screenshot defaults; Vignette writes
-them for you. On first run the file mirrors what macOS is already doing, so nothing changes until
-you edit it; `appleOriginal` records those first values, and `restore-apple-defaults` puts them
-back. `launchAtLogin` adds Vignette to your login items. `quickAnnotate` is Quick draw: Done
-copies the image you drew on and closes the annotator and the stack at once, instead of returning
-to the stack. `copyOnCapture` puts every new screenshot on the clipboard as it lands (the image,
-plus its file URL and path for apps that take those), and is on by default. `annotateOnCapture` is
-Draw on New Captures: it opens every new screenshot in the annotator right away, instead of showing
-a thumbnail. The menu bar toggles both.
-An image that arrives through `add` skips both: a push from an agent is not a capture.
-`agentSkill` is the skill for coding agents: `unasked`, `on`, or `off` (see [agents.md](agents.md)).
-`debug` unlocks `eval`, `show-editor`,
-`tweaks`, `send`, and `file=` outside the watch folder. A file that does not parse is moved aside as
-`settings.json.invalid` and replaced with defaults, with a toast saying so.
+- **`screenshotsFolder`** is one setting for two things: where Cmd+Shift+3/4/5 saves and what
+  Vignette watches. Set it to the folder you want your screenshots to live in.
+- **`syncAppleSaveLocation`** writes `screenshotsFolder` to Apple's screenshot save location. Turn
+  it off to let Apple save somewhere other than the folder Vignette watches.
+- **`appleThumbnail`** is Apple's own floating thumbnail after a capture. Vignette writes this
+  setting for you, so turn it on if you want Apple's thumbnail back.
+- **`windowShadow`** is Apple's drop shadow around a captured window, another Apple default that
+  Vignette writes. Turn it off for window shots with no shadow margin.
+- **`format`** is the file type Apple saves, such as `"png"`. Vignette writes this one too.
+- **`recentCount`** is how many cards the recent stack holds. Raise it to reach further back.
+- **`recentHotkey`** opens the recent stack, `"cmd+shift+6"` by default. Change it if that key is
+  taken.
+- **`hideMenuBarIcon`** removes Vignette's menu bar icon. `vignette://settings` still opens the
+  Settings window.
+- **`launchAtLogin`** adds Vignette to your login items.
+- **`quickAnnotate`** is Quick draw: Done copies the image you drew on and closes the annotator and
+  the stack at once, instead of returning to the stack.
+- **`annotateOnCapture`** is Draw on New Captures: it opens every new screenshot in the annotator
+  right away, instead of showing a thumbnail. The menu bar toggles it and Quick draw.
+- **`copyOnCapture`** puts every new screenshot on the clipboard as it lands, the image plus its
+  file URL and path for apps that take those, and is on by default. An image that arrives through
+  `add` skips this and Draw on New Captures: a push from an agent is not a capture.
+- **`debug`** unlocks `eval`, `show-editor`, `tweaks`, `send`, and `file=` outside the watch folder.
+- **`agentSkill`** is the skill for coding agents: `unasked`, `on`, or `off` (see
+  [agents.md](agents.md)).
+- **`ui`** holds the design numbers. See below.
+- **`appleOriginal`** records what macOS was already doing on first run, so nothing changes until
+  you edit the file. `restore-apple-defaults` puts those values back.
+
+## The ui section
 
 The `ui` section holds the design numbers: card sizes, corners, shadows, hover buttons, animation
 durations and curves, how far a card bows and swells on its way to the annotator, how narrow the
 stack goes to make room for it and how far it stays from it, how deep the drag-select's edge band is
 and how fast it scrolls there, how near an edge of the image a zoom holds that edge, backdrop blur
-and tint, annotator window limits. The defaults are the
-tuned UI, so a fresh install looks the same. A key the app does not know is ignored and the number
-it names takes its default, so a renamed key leaves a dead line you can delete: `zoomEdgeBand`, a
-fraction of the picture, is now `zoomEdgeBandPoints`, in points. With `debug` on, menu bar → Tweak UI… (or `open -g
-vignette://tweaks`) opens a floating panel of sliders that edits them live, with buttons to summon
-the thumbnail, stack, toast, and annotator while you tweak. `"ui": {"motion": 0}` turns every
-animation off; the system's Reduce Motion does the same.
+and tint, annotator window limits.
+
+The defaults are the tuned UI, so a fresh install looks the same. A key the app does not know is
+ignored and the number it names takes its default, so a dead line is safe to delete.
+
+`"ui": {"motion": 0}` turns every animation off. The system's Reduce Motion does the same.
+
+With `debug` on, menu bar → Tweak UI… (or `open -g vignette://tweaks`) opens a floating panel of
+sliders that edits these live, with buttons to summon the thumbnail, stack, toast, and annotator
+while you tweak.
+
+## Invalid files
+
+A file that does not parse is moved aside as `settings.json.invalid` and replaced with defaults. A
+toast says so.
