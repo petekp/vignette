@@ -104,7 +104,7 @@ Vignette can teach your coding agents to show you an image and read back what yo
 
                                                               [ Install ]
 Claude Code     Not installed
-Codex           Installed by you. Vignette won't change it.
+Codex           Installed
 ```
 
 - One button. "Install" while any agent directory lacks Vignette's copy and could take one;
@@ -118,7 +118,8 @@ Codex           Installed by you. Vignette won't change it.
 - Rows, one per agent directory found, no paths:
   - none: "Not installed"
   - ours: "Installed"
-  - foreign with a `SKILL.md`: "Installed by you. Vignette won't change it."
+  - foreign with a `SKILL.md`: "Installed". How it got there is not the user's concern; Vignette
+    still never rewrites or removes a copy without its marker.
   - foreign without one: "A folder named vignette is already there and isn't a skill. Move it
     aside to install."
 - An install that fails toasts "Couldn't install the skill for <agent>" (`thumbnail.showFeedback`
