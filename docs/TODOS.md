@@ -21,6 +21,36 @@ same day. A downloadable build waits on three things, in order:
 
 Publishing the skill on skills.sh (the entry below) waits on the same release.
 
+## Xcode's JSON project format (raised 2026-09-21)
+
+Xcode 27 stores the project configuration as JSON: `project.xcproj` inside the `.xcodeproj`,
+in place of `project.pbxproj`. It is the default in 27.2 and readable by 27 and later. Apple's
+note is "Updating your Xcode project configuration file format"; the point of it is a committed
+project file with readable diffs, fewer merge conflicts, and edits an agent can make.
+
+Nothing to adopt as the repo stands. `Vignette.xcodeproj/` is gitignored and `scripts/build.sh`
+regenerates it with `xcodegen generate` on every build, so the project is a build artifact.
+`project.yml` is the committed source of truth and already gives all three of those things.
+Changing the artifact's format would change a file nobody reads and nobody merges.
+
+The decision that would mean something is dropping XcodeGen: commit a native Xcode project as
+the source of truth and delete `project.yml`. Not decided. What it would cost:
+
+- `Info.plist` is generated from `project.yml` and gitignored today. It becomes a committed file.
+- The reasons travel in `project.yml`'s comments and would have nowhere to live in project
+  settings: the "Stamp git state" build phase, `ENABLE_DEBUG_DYLIB: false`, the ad-hoc default
+  with `scripts/signing.env` overriding it, and the test target compiling `Sources/` rather than
+  hosting the app.
+- `scripts/build.sh` and `scripts/run.sh` read the scheme name out of `project.yml`.
+- AGENTS.md documents the generate step in several places.
+
+Waits on two things, either way:
+
+- Xcode 27. This Mac has 26.3 and no other Xcode, and Xcode 26 cannot open a `.xcproj`.
+- XcodeGen emitting the format, if `project.yml` stays. Tuist's XcodeProj has an experimental
+  pull request for it (tuist/XcodeProj#1177); XcodeGen itself has nothing yet. Until then there
+  is no path from `project.yml` to a `.xcproj` at all.
+
 ## Ship the agent skill with the app (decided 2026-09-16)
 
 Built on 2026-09-18 on branch `todo6/integration` (`skills/vignette/SKILL.md` bundled, the
