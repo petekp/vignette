@@ -687,8 +687,13 @@ the same driven sequence; a single run varies.
   the double tap. macOS gives an app few chances at the dialog, and one spent during launch on a
   question nobody asked is the one people dismiss. The window learns the grant landed by polling
   (AXIsProcessTrusted announces nothing) and learns the shortcut works from the `.hotKeyFired`
-  notification, which `registerHotKey`'s `fire` posts: the stack is empty on a Mac with no
-  screenshots yet, so the keys firing is the only thing that proves the setup worked. `setup` in
+  notification, which `registerHotKey`'s `fire` posts: the keys firing is what proves the setup
+  worked, since the stack appearing does not on a Mac with no screenshots yet. That same poll reads
+  the watch folder's count, and an empty folder asks for a capture first, ahead of the fired state:
+  a tap with nothing to show opens nothing, so reporting success would report it about an empty
+  corner. The two menu items that act on a screenshot, Show Recent Screenshots and Draw on Last
+  Screenshot, are greyed out while the folder is empty (`validateMenuItem`), which is the rest of
+  that silence: both used to answer only in the log. `setup` in
   settings.json records `unasked` then `done`, written when the window closes rather than when it
   opens, so a launch quit part way through asks again. `ShortcutSetting` is the one shortcut
   control, shared with the Settings window's General tab.

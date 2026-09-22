@@ -25,7 +25,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     /// when it opens, so a launch quit part way through asks again.
     var isUnasked: Bool { settings.data.setupChoice == .unasked }
 
-    func show() {
+    func show(hasScreenshots: @escaping () -> Bool) {
         if let win = window {
             win.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -35,7 +35,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         // and a fixed frame clips whichever row is last. `preferredContentSize` has AppKit follow
         // the SwiftUI layout, including the parts that change from the view's own state, which a
         // one-shot measurement at show time cannot see.
-        let host = NSHostingController(rootView: SetupView(done: { [weak self] in self?.close() }))
+        let host = NSHostingController(rootView: SetupView(hasScreenshots: hasScreenshots,
+                                                          done: { [weak self] in self?.close() }))
         host.sizingOptions = [.preferredContentSize]
         let win = NSWindow(contentViewController: host)
         win.styleMask = [.titled, .closable]
@@ -69,11 +70,15 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
 struct SetupView: View {
     static let width: CGFloat = 460
 
+    /// Asked again on every poll rather than read once: a folder filled while the window is open
+    /// is the case the window is asking the user to create.
+    let hasScreenshots: () -> Bool
     let done: () -> Void
 
     @ObservedObject private var settings = Settings.shared
     @State private var trusted = ModifierTap.trusted(prompt: false)
     @State private var fired = false
+    @State private var hasShots = true
     /// AXIsProcessTrusted does not announce a change, so the only way to know the user came back
     /// from System Settings having flipped the switch is to look.
     private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -104,7 +109,11 @@ struct SetupView: View {
             .padding(.horizontal, 20).padding(.bottom, 20)
         }
         .frame(width: SetupView.width)
-        .onReceive(poll) { _ in trusted = ModifierTap.trusted(prompt: false) }
+        .onAppear { hasShots = hasScreenshots() }
+        .onReceive(poll) { _ in
+            trusted = ModifierTap.trusted(prompt: false)
+            hasShots = hasScreenshots()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .hotKeyFired)) { _ in fired = true }
         .onChange(of: settings.data.usesDoubleTap) { fired = false }
     }
@@ -114,6 +123,11 @@ struct SetupView: View {
     @ViewBuilder private var status: some View {
         if !settings.data.usesDoubleTap {
             label("A key combination needs no permission.", symbol: "checkmark.circle.fill", tint: .green)
+        } else if trusted, !hasShots {
+            // Ahead of `fired`: with nothing in the folder the shortcut opens nothing, so saying
+            // it worked would be saying so about an empty corner.
+            label("Take a screenshot with Cmd+Shift+4, then tap Right Shift twice.",
+                  symbol: "camera", tint: .accentColor)
         } else if fired {
             label("That works. You're set.", symbol: "checkmark.circle.fill", tint: .green)
         } else if trusted {

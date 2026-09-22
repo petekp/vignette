@@ -107,7 +107,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         LoginItem.apply(settings.data.launchAtLogin)
         // Setup comes first and has the launch to itself: two windows competing for a first-time
         // user is worse than the skill offer waiting until the next launch.
-        if setupWindow.isUnasked { setupWindow.show() } else { startAgentSkill() }
+        if setupWindow.isUnasked {
+            setupWindow.show(hasScreenshots: { [weak self] in self?.hasScreenshots ?? false })
+        } else {
+            startAgentSkill()
+        }
         // The contract for agents: after this line every command answers. The page reports `[web] ready` on its own.
         Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) port=\(annotator.port) watching=\(watchFolder.path)")
     }
@@ -892,6 +896,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         recentShots(limit: 1).recent.first
     }
 
+    /// Whether anything is there to show. The count comes from the watcher's in-memory index, so
+    /// this is cheap enough to ask every time the menu opens.
+    private var hasScreenshots: Bool { recentShots(limit: 0).files > 0 }
+
     /// What the Send menu offers while this image is open, and the session a reply belongs back to.
     /// Reading the sessions runs subprocesses, so it answers later; the bar shows no button until it does.
     private func refreshDestinations(for shot: Screenshot) {
@@ -1016,6 +1024,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 }
 
-extension AppDelegate: NSMenuDelegate {
+extension AppDelegate: NSMenuDelegate, NSMenuItemValidation {
     func menuNeedsUpdate(_ menu: NSMenu) { rebuildMenu(menu) }
+
+    /// Both of these act on a screenshot, and with an empty folder they did nothing and said so
+    /// only in the log. Greyed out is what a Mac user already reads as nothing to act on.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(toggleRecent), #selector(annotateLast): return hasScreenshots
+        default: return true
+        }
+    }
 }
