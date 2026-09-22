@@ -538,11 +538,12 @@ final class ThumbnailController: NSObject {
                     agent: Agent.of(url))
     }
 
-    /// "Copied" over the cards themselves; the toast only when none of them is showing.
-    func showCopied(_ shots: [Screenshot]) {
+    /// "Copied" over the cards themselves; the toast only when none of them is showing. `fallback`
+    /// is what that toast says, since what was copied is the caller's to name.
+    func showCopied(_ shots: [Screenshot], fallback: String? = nil) {
         let ids = shots.compactMap { shot in model.cards.first { $0.shot.url == shot.url }?.id }
         guard visible, !ids.isEmpty else {
-            showFeedback(shots.count == 1 ? "Copied to clipboard" : "Copied \(shots.count) images")
+            showFeedback(fallback ?? (shots.count == 1 ? "Copied to clipboard" : "Copied \(shots.count) images"))
             return
         }
         model.copied.formUnion(ids)
