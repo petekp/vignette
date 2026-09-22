@@ -21,7 +21,7 @@ open -g "vignette://add?file=$path&agent=claude"
   alone and does not open the editor, whatever the user's capture settings say. Add `&annotate`
   to open the editor instead, only when you are asking for marks right away.
 - `&agent=<name>` says who pushed it. The card gets a badge naming you.
-- `open -g` keeps the focus where it is. Always percent-encode the path; `open` does not.
+- `open -g` keeps the focus where it is. Always percent-encode the path yourself; `open` will not.
 - The file may be anywhere. Every other command takes files inside the watch folder only.
 - Wait for `[add] ok <name>` in the log. The name gains a counter (`x 2.png`) when one is taken.
   Errors end with `missing-file`, `unreadable-image`, `unsupported-type` (png, jpg, jpeg, or heic
@@ -65,8 +65,8 @@ of your own, run: python3 "<helper>" --ticket "<ticket>" --marks <marks.json>; â
 ```
 
 Open that image and answer what it asks. When the answer is easier to show than to say, reply with
-a drawing: the helper puts your marks on a new card beside the user's other screenshots, and they
-edit them like their own and can send the result straight back to you.
+a drawing: the helper puts your marks on a new card beside the user's other screenshots. They edit
+those marks like their own and can send the result straight back to you.
 
 ```sh
 cat > /tmp/reply.json <<'JSON'

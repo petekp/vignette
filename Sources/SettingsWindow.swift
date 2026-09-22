@@ -265,7 +265,7 @@ struct SettingsView: View {
                 Text("JPEG").tag("jpg")
             }
             Toggle("Show the macOS thumbnail", isOn: binding(\.appleThumbnail))
-            caption("Off saves the file right away and Vignette's thumbnail is the only one.")
+            caption("With it off, the file is saved right away and Vignette's thumbnail is the only one.")
             Toggle("Shadow on window screenshots", isOn: binding(\.windowShadow))
         }
         Section("After a screenshot") {
@@ -284,7 +284,7 @@ struct SettingsView: View {
         Section("macOS") {
             Button("Restore macOS Screenshot Settings…") { callbacks.restoreAppleDefaults() }
                 .disabled(settings.data.appleOriginal == nil)
-            caption("Puts back where macOS saved screenshots, the thumbnail, the shadow, and the format from before Vignette changed them.")
+            caption("Puts back the save location, thumbnail, shadow, and format macOS used before Vignette changed them.")
         }
     }
 

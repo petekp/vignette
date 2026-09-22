@@ -1,8 +1,8 @@
 # Glossary
 
-The words this project uses for the agent loop, and the ones it avoids. A native connection
-addresses the agent session independently of the terminal displaying it, and most of these terms
-exist to keep that distinction from collapsing.
+The words this project uses for the agent loop, and the ones it avoids. A connection addresses the
+agent session itself, not the terminal displaying it. Most of these terms exist to hold that
+distinction.
 
 **Agent client**: The software running an agent conversation, such as Claude Code or Codex. It is distinct from the model vendor and the terminal displaying it.
 _Avoid_: Provider when referring to both an agent client and a terminal host.

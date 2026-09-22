@@ -2,9 +2,10 @@
 
 ## Commands
 
-Every action is a URL. `open -g` keeps terminal focus; plain `open` activates Vignette. Without
-`?file=` an action acts on the newest screenshot, and `file=` repeats for several. Paths are
-percent-encoded, and inside the watch folder, except for `add`, which copies one in from anywhere.
+Every action is a URL. `open -g` leaves your terminal in front, and plain `open` activates
+Vignette. Without `?file=` an action acts on the newest screenshot, and `file=` repeats for several.
+Percent-encode every path. A path must be inside the watch folder, except for `add`, which copies an
+image in from anywhere.
 
 ```
 open -g vignette://copy                       # copy to clipboard
@@ -15,7 +16,7 @@ open -g "vignette://trash?file=~/Dropbox/Screenshots/x.png"
 open -g "vignette://stitch?file=/a.png&file=/b.png"
 open -g vignette://last                       # show the thumbnail for the newest screenshot
 open -g "vignette://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
-open -g "vignette://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a purple badge on the card
+open -g "vignette://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a tab naming the agent
 open -g "vignette://add?file=/tmp/agent/x.png&marks=/tmp/agent/marks.json"  # the same, with the agent's drawing on it
 open -g vignette://recent                     # toggle the recent stack (same as the hotkey)
 open -g vignette://dismiss                    # close the thumbnail or the stack
@@ -43,18 +44,18 @@ on its pixel size:
  {"type": "text", "x": 0.1, "y": 0.8, "w": 0.5, "text": "Header should not scroll"}]
 ```
 
-The types are `ellipse`, `rectangle`, `arrow`, and `text`. `ellipse` has no toolbar button, and an
-agent can still push one. `ellipse` and `rectangle` take `x`, `y`, `w`, `h`. `arrow` takes `x`, `y`,
-`x2`, `y2`. `text` takes `x`, `y`, `text`, and an optional `w`, the box the words wrap in. Without
+The types are `ellipse`, `rectangle`, `arrow`, and `text`. The toolbar has no ellipse button, and
+an agent can push one anyway. `ellipse` and `rectangle` take `x`, `y`, `w`, `h`. `arrow` takes
+`x`, `y`, `x2`, `y2`. `text` takes `x`, `y`, `text`, and an optional `w`, the box the words wrap in. Without
 `w` the box runs from `x` to the right edge. Text is sized for the image. A box that would run off
 is widened and moved inside. Text too long to fit is logged as `[web] pushed text too long`, and
 [pushed-text-2026-09-19.md](pushed-text-2026-09-19.md) has the numbers.
 
-`color` is optional. A mark that names one keeps it, any of `CANDIDATES` in `web/src/config.ts`. A
-mark that names none is coloured from what it covers, like your own. Pushed marks become a draft
-before the card appears, so the card and Copy Drawing show them, and the editor can move, retype, or
-delete them. A marked push is refused with `page-not-ready` from the moment the annotator takes an
-image until it has given it back, and while a Copy Drawing is rendering.
+`color` is optional. A mark may name any colour in `CANDIDATES` (`web/src/config.ts`) and keeps it.
+A mark that names none is coloured from what it covers, like your own marks. Pushed marks become a
+draft before the card appears, so the card and Copy Drawing show them, and the editor can move,
+retype, or delete them. A marked push is refused with `page-not-ready` from the moment the
+annotator takes an image until it has given it back, and while a Copy Drawing is rendering.
 
 ## The log
 
