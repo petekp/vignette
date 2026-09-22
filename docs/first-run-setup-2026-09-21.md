@@ -1,7 +1,11 @@
 # First-run shortcut setup
 
-Proposed, not built. The goal is that a new user chooses the shortcut before anything asks for a
+Built 2026-09-21. The goal was that a new user chooses the shortcut before anything asks for a
 permission, and that double-tap Right Shift is what they choose.
+
+What shipped differs from the plan below in one place: `ModifierTap` gained no `onTrusted`
+callback. The window polls `AXIsProcessTrusted` once a second while it is open instead, which keeps
+the window's business in the window rather than threading a callback through AppDelegate's tap.
 
 ## The trap
 
@@ -83,12 +87,22 @@ Registering Cmd+Shift+6 as a temporary second hotkey until trust arrives would c
 machinery for a transient state, and it means the shortcut a user was taught is not the one that
 works. Not proposed.
 
-## Verify before shipping
+## Verified 2026-09-21
 
-- On a Mac with no TCC record for the bundle id: the Accessibility dialog does not appear during
-  launch, and appears when the double tap is picked in the setup window.
-- How many times macOS will show that dialog for one bundle id. The plan assumes roughly once and
-  spends it deliberately; confirm on a clean TCC state (`tccutil reset Accessibility <bundle id>`).
-- Granting from System Settings flips the status line within about two seconds, with no relaunch.
+Against a real untrusted state (`tccutil reset Accessibility com.petepetrash.vignette`, relaunched
+through `open` so the app did not inherit the terminal's trust):
+
+- No Accessibility dialog during launch.
+- The untrusted status line and its button render, and the window grows to fit them.
+- **The button does not raise the dialog, and that is fine.** macOS suppresses it for a bundle id
+  that has prompted before, so what `trusted(prompt: true)` actually buys is the entry in the
+  Accessibility list: without it the pane opens with nothing for the user to switch on. The plan's
+  claim that the dialog is the shorter route holds only on a Mac that has never prompted.
+- Granting in System Settings flips the status line to "Try it" within a second, and `ModifierTap`'s
+  own retry installs the monitors (`[hotkey] Accessibility granted; modifier tap active`).
+- A real right-Shift double tap then reaches the app and the line becomes "That works. You're set."
+
+Still unverified: what a Mac that has never prompted for this bundle id does, which is every new
+user. That needs a fresh macOS install or a VM.
 - The grant survives a rebuild only with a real certificate. See [building.md](building.md); an
   ad-hoc build is a new app to macOS on every build, so test the flow on a signed build.

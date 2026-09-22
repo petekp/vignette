@@ -14,7 +14,7 @@ launch at another file, which is how tests and agents keep away from the real on
   "windowShadow": false,
   "format": "png",
   "recentCount": 30,
-  "recentHotkey": "cmd+shift+6",
+  "recentHotkey": "double-rshift",
   "hideMenuBarIcon": false,
   "launchAtLogin": false,
   "quickAnnotate": false,
@@ -22,6 +22,7 @@ launch at another file, which is how tests and agents keep away from the real on
   "copyOnCapture": true,
   "debug": false,
   "agentSkill": "unasked",
+  "setup": "unasked",
   "ui": { "cardMaxWidth": 208, "slideInDuration": 0.75, "backdropBlurRadius": 13, "...": "the design numbers" },
   "appleOriginal": { "location": "~/Desktop", "showThumbnail": true, "disableShadow": false, "type": "png" }
 }
@@ -37,8 +38,9 @@ launch at another file, which is how tests and agents keep away from the real on
   Vignette writes. Turn it off for window shots with no shadow margin.
 - **`format`** is the file type Apple saves, such as `"png"`. Vignette writes this one too.
 - **`recentCount`** is how many cards the recent stack holds. Raise it to reach further back.
-- **`recentHotkey`** opens the recent stack, `"cmd+shift+6"` by default. Change it if that key is
-  taken.
+- **`recentHotkey`** opens the recent stack. `"double-rshift"` by default, a double tap of right
+  Shift, which needs Accessibility permission. A key combination such as `"cmd+shift+6"` needs none.
+  The setup window on first launch is where this is normally chosen.
 - **`hideMenuBarIcon`** removes Vignette's menu bar icon. `vignette://settings` still opens the
   Settings window.
 - **`launchAtLogin`** adds Vignette to your login items.
@@ -54,6 +56,8 @@ launch at another file, which is how tests and agents keep away from the real on
   `unasked` until the offer, then `off`. Whether the skill is installed is read from disk, and the
   Agents tab installs or removes it per agent. An older file holding `on` is read as `off`
   (see [agents.md](agents.md)).
+- **`setup`** records whether the first-run setup window has had its turn: `unasked`, then `done`.
+  It is written when the window closes, so a launch quit part way through asks again.
 - **`ui`** holds the design numbers. See below.
 - **`appleOriginal`** records what macOS was already doing on first run, so nothing changes until
   you edit the file. `restore-apple-defaults` puts those values back.

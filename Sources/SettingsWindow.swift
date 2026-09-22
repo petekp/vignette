@@ -202,26 +202,10 @@ struct SettingsView: View {
 
     @ViewBuilder private var general: some View {
         Section {
-            Picker("Shortcut", selection: shortcutKind) {
-                Text("Key combination").tag(ShortcutKind.combination)
-                Text("Double-tap Right Shift").tag(ShortcutKind.doubleTap)
-            }
-            .pickerStyle(.segmented)
-            if shortcutKind.wrappedValue == .combination {
-                HStack {
-                    Spacer()
-                    ShortcutRecorder(text: HotKeySpec.parse(settings.data.recentHotkey)?.glyphs ?? settings.data.recentHotkey) { shortcut in
-                        settings.update { $0.recentHotkey = shortcut }
-                    }
-                    .frame(width: 140, height: 24)
-                }
-            }
-            caption("Shows your recent screenshots. Hold it to draw on the newest one.")
-            if shortcutKind.wrappedValue == .doubleTap, !ModifierTap.trusted(prompt: false) {
+            ShortcutSetting()
+            if settings.data.usesDoubleTap, !ModifierTap.trusted(prompt: false) {
                 caption("Needs Accessibility permission.")
-                Button("Open System Settings") {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-                }
+                Button("Open System Settings") { Accessibility.openSystemSettings() }
             }
         }
         Section {
@@ -340,28 +324,8 @@ struct SettingsView: View {
 
     // MARK: Bindings
 
-    private enum ShortcutKind { case combination, doubleTap }
-
     private func binding<T>(_ path: WritableKeyPath<SettingsData, T>) -> Binding<T> {
         Binding(get: { settings.data[keyPath: path] }, set: { v in settings.update { $0[keyPath: path] = v } })
-    }
-
-    /// Which kind of shortcut is in the file. Choosing the other kind writes a working value of it
-    /// straight away, so the setting is never a choice the file does not hold.
-    private var shortcutKind: Binding<ShortcutKind> {
-        func isDoubleTap() -> Bool {
-            if case .doubleTap = HotKeySpec.parse(settings.data.recentHotkey) { return true }
-            return false
-        }
-        return Binding(get: { isDoubleTap() ? .doubleTap : .combination },
-                       set: { kind in
-                           switch kind {
-                           case .doubleTap:
-                               settings.update { $0.recentHotkey = "double-rshift" }
-                           case .combination:
-                               if isDoubleTap() { settings.update { $0.recentHotkey = SettingsData().recentHotkey } }
-                           }
-                       })
     }
 
     /// The field takes any number typed; the stack holds 1 to 100.
@@ -494,5 +458,57 @@ private final class ShortcutRecorderView: NSView {
         stop()
         window?.makeFirstResponder(nil)
         onCommit(shortcut)
+    }
+}
+
+/// The shortcut picker and its recorder, shared by the Settings window's General tab and the
+/// first-run setup window. What each of those says about Accessibility below it differs, so the
+/// permission line is not part of this.
+@MainActor
+struct ShortcutSetting: View {
+    @ObservedObject private var settings = Settings.shared
+
+    enum Kind { case combination, doubleTap }
+
+    var body: some View {
+        Picker("Shortcut", selection: kind) {
+            Text("Double-tap Right Shift").tag(Kind.doubleTap)
+            Text("Key combination").tag(Kind.combination)
+        }
+        .pickerStyle(.segmented)
+        if !settings.data.usesDoubleTap {
+            HStack {
+                Spacer()
+                ShortcutRecorder(text: HotKeySpec.parse(settings.data.recentHotkey)?.glyphs ?? settings.data.recentHotkey) { shortcut in
+                    settings.update { $0.recentHotkey = shortcut }
+                }
+                .frame(width: 140, height: 24)
+            }
+        }
+        Text("Shows your recent screenshots. Hold it to draw on the newest one.")
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    /// Which kind of shortcut is in the file. Choosing the other kind writes a working value of it
+    /// straight away, so the setting is never a choice the file does not hold.
+    private var kind: Binding<Kind> {
+        Binding(get: { settings.data.usesDoubleTap ? .doubleTap : .combination },
+                set: { kind in
+                    switch kind {
+                    case .doubleTap:
+                        settings.update { $0.recentHotkey = "double-rshift" }
+                    case .combination:
+                        if settings.data.usesDoubleTap {
+                            settings.update { $0.recentHotkey = SettingsData.defaultKeyCombination }
+                        }
+                    }
+                })
+    }
+}
+
+/// The one Accessibility pane, and the one place that opens it.
+enum Accessibility {
+    static func openSystemSettings() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
 }

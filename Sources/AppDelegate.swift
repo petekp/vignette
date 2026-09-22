@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let thumbnail = ThumbnailController()
     private let annotator = AnnotationController()
     private let settingsWindow = SettingsWindowController()
+    private let setupWindow = SetupWindowController()
     private lazy var debugPanel = DebugPanelController(previews: .init(
         thumbnail: { [weak self] in self?.openLast() },
         stack: { [weak self] in self?.toggleRecent() },
@@ -97,10 +98,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         registerHotKey()
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
         if let notice = settings.startupNotice { thumbnail.showFeedback(notice) }
-        else if settings.firstLaunch { thumbnail.showFeedback("\(Identity.name) is watching \(settings.data.screenshotsFolder). Launch at login is off; turn it on in Settings.") }
+        // The setup window says the watch folder and offers launch at login, so the toast that used
+        // to say both is only for a launch that is not showing it.
+        else if settings.firstLaunch, !setupWindow.isUnasked {
+            thumbnail.showFeedback("\(Identity.name) is watching \(settings.data.screenshotsFolder). Launch at login is off; turn it on in Settings.")
+        }
         // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
         LoginItem.apply(settings.data.launchAtLogin)
-        startAgentSkill()
+        // Setup comes first and has the launch to itself: two windows competing for a first-time
+        // user is worse than the skill offer waiting until the next launch.
+        if setupWindow.isUnasked { setupWindow.show() } else { startAgentSkill() }
         // The contract for agents: after this line every command answers. The page reports `[web] ready` on its own.
         Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) port=\(annotator.port) watching=\(watchFolder.path)")
     }
@@ -234,6 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let fire = { [weak self] in
             guard let self else { return }
             Log.write("[hotkey] recent")
+            NotificationCenter.default.post(name: .hotKeyFired, object: nil)
             let focused = thumbnail.focusedShot
             pressDismissed = pressRecent() == .dismissed
             holdTarget = pressDismissed ? focused : nil

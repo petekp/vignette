@@ -94,9 +94,11 @@ card and the drawing is back. Copy Drawing renders it without opening the editor
 
 ## The shortcut
 
-The shortcut is either a double tap of right Shift or a key combination. The double tap needs
-Vignette trusted for Accessibility, under System Settings → Privacy & Security → Accessibility, and
-the app asks the first time. A key combination needs no permission.
+The shortcut is either a double tap of right Shift, which is the default, or a key combination.
+The first launch opens a window to choose, and that window is the only thing that asks for
+permission: the double tap needs Vignette trusted for Accessibility, under System Settings →
+Privacy & Security → Accessibility. A key combination needs none. The window says when the grant
+lands and waits for you to press the keys once.
 
 Hold the key, or the second tap, and the newest screenshot lifts out of the stack into the
 annotator: capture, tap-tap-hold, draw. The menu bar shows the same two commands, Show Recent

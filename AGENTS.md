@@ -64,7 +64,13 @@ the measurements and the reasoning; a rule here points at its note.
    A relaunch from `open` carries no `VIGNETTE_SETTINGS`, so it runs on the user's real settings
    and folder, and when another copy of the bundle id is running `open -a <path>` can launch that
    copy instead of the path given; running `<app>/Contents/MacOS/Vignette` directly always lands on
-   the path given. A driving script reads `[state]` first and stops unless `app.bundle` is its own
+   the path given. That last one is the wrong way to test anything about permissions: a process
+   launched from the terminal is attributed to the terminal, so the app inherits its Accessibility
+   trust and reports itself trusted with no entry of its own in the TCC database (measured
+   2026-09-21, a build launched from a trusted Ghostty after `tccutil reset Accessibility
+   com.petepetrash.vignette`). `open -g --env VIGNETTE_SETTINGS=<path> <app>` goes through
+   LaunchServices and answers honestly. `[hotkey] modifier tap needs Accessibility permission` in
+   the log, or `app.accessibility` in `[state]`, says which one you got. A driving script reads `[state]` first and stops unless `app.bundle` is its own
    build and `app.settingsFile` is its scratch file, and only then sends an action. `app.bundle` is
    the check that holds: `build` is `git describe` of the checkout, so worktrees branched from one
    commit stamp the same string, and `settingsFile` reads the same from any copy launched without
@@ -673,6 +679,19 @@ the same driven sequence; a single run varies.
   `[send]` line arrives when herdr answers. Without herdr the command is one `no-agent` error;
   nothing else in the app depends on it. `docs/send-to-agent-exploration-2026-09-17.md` has the
   routes that were measured and why the others were refused.
+- The first launch opens the setup window (`SetupWindow.swift`), and it has that launch to itself:
+  the agent-skill offer waits for the next one rather than competing for a first-time user. Its job
+  is the shortcut, because the default is `double-rshift` and that needs Accessibility. Nothing else
+  may raise that dialog: `ModifierTap` is constructed with `prompt: false`, so the only
+  `trusted(prompt: true)` in the app is the window's own button, pressed after the user has chosen
+  the double tap. macOS gives an app few chances at the dialog, and one spent during launch on a
+  question nobody asked is the one people dismiss. The window learns the grant landed by polling
+  (AXIsProcessTrusted announces nothing) and learns the shortcut works from the `.hotKeyFired`
+  notification, which `registerHotKey`'s `fire` posts: the stack is empty on a Mac with no
+  screenshots yet, so the keys firing is the only thing that proves the setup worked. `setup` in
+  settings.json records `unasked` then `done`, written when the window closes rather than when it
+  opens, so a launch quit part way through asks again. `ShortcutSetting` is the one shortcut
+  control, shared with the Settings window's General tab.
 - The agent skill (`skills/vignette/SKILL.md`) ships in the bundle as a folder resource
   (project.yml), and `SkillInstaller.swift` copies it out. A root is an agent's own directory,
   `~/.claude` or `~/.codex`, and only one that exists; the skill lands in `<root>/skills/vignette`.

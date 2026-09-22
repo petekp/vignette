@@ -16,6 +16,13 @@ enum AgentSkill: String {
     case off
 }
 
+/// Whether the first-run setup window has had its turn. Recorded when the window closes, so a
+/// launch that is quit part way through asks again.
+enum SetupState: String {
+    case unasked
+    case done
+}
+
 /// Everything a user changes per machine. Lives in ~/.config/vignette/settings.json.
 /// Missing keys fall back to defaults, so a partial file is fine.
 struct SettingsData: Codable, Equatable {
@@ -26,7 +33,7 @@ struct SettingsData: Codable, Equatable {
     var windowShadow = true                  // Apple's window-capture shadow
     var format = "png"                       // png or jpg
     var recentCount = 30                      // cards in the recent stack
-    var recentHotkey = "cmd+shift+6"         // opens the recent stack
+    var recentHotkey = "double-rshift"       // opens the recent stack; needs Accessibility, which setup asks for
     var hideMenuBarIcon = false              // vignette://settings still opens the window
     var launchAtLogin = false                // registers the app as a login item (System Settings > Login Items)
     var quickAnnotate = false                // Done copies the result and closes the annotator and the stack at once
@@ -34,6 +41,7 @@ struct SettingsData: Codable, Equatable {
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
     var debug = false                        // unlocks eval, show-editor, tweaks, and file= outside the watch folder
     var agentSkill = AgentSkill.unasked.rawValue  // whether the skill was offered: unasked, then off
+    var setup = SetupState.unasked.rawValue  // whether the setup window has run: unasked, then done
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
     var appleOriginal: AppleOriginal?        // Apple's screencapture values before Vignette changed them
 
@@ -42,6 +50,20 @@ struct SettingsData: Codable, Equatable {
     /// `agentSkill` as the states it holds. An unknown word reads as `unasked`, which
     /// `validated()` then writes back.
     var agentSkillChoice: AgentSkill { AgentSkill(rawValue: agentSkill) ?? .unasked }
+
+    /// `setup` as the states it holds. An unknown word reads as `unasked`.
+    var setupChoice: SetupState { SetupState(rawValue: setup) ?? .unasked }
+
+    /// Whether the shortcut is a modifier double tap rather than a key combination. Three places
+    /// ask, and each one parsing the string itself is how they drift apart.
+    var usesDoubleTap: Bool {
+        if case .doubleTap = HotKeySpec.parse(recentHotkey) { return true }
+        return false
+    }
+
+    /// What picking "Key combination" writes. The default shortcut is the double tap, so this
+    /// cannot be read off a fresh `SettingsData`.
+    static let defaultKeyCombination = "cmd+shift+6"
 
     /// Clamps values that would crash or break layout math and reports each correction.
     /// Design limits live in the debug panel; these are only the bounds the code cannot survive.
@@ -62,6 +84,9 @@ struct SettingsData: Codable, Equatable {
         // what is there, so the key only records that the offer was made.
         if d.agentSkillChoice == .on {
             notes.append("agentSkill \"on\" -> \"off\""); d.agentSkill = AgentSkill.off.rawValue
+        }
+        if SetupState(rawValue: d.setup) == nil {
+            notes.append("setup \"\(d.setup)\" -> \"\(SetupState.unasked.rawValue)\""); d.setup = SetupState.unasked.rawValue
         }
         if !["spring", "easeOut", "easeInOut", "linear"].contains(d.ui.slideInCurve) {
             notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"

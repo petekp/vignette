@@ -36,7 +36,10 @@ final class ModifierTap {
         case 58, 61: flag = .option
         default: flag = .control
         }
-        if ModifierTap.trusted(prompt: true) { install() } else {
+        // Never prompts. The double tap is the default shortcut, so this runs during every launch,
+        // and macOS's Accessibility dialog arriving unasked seconds into a first launch is the one
+        // people dismiss. The setup window raises it, as the answer to a choice just made.
+        if ModifierTap.trusted(prompt: false) { install() } else {
             Log.write("[hotkey] modifier tap needs Accessibility permission; waiting for it")
             // Timer.scheduledTimer runs its block on the run loop it is scheduled on: the main one, here.
             retry = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
