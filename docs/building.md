@@ -83,6 +83,54 @@ production" watermark, and the watermark stays. A key goes in as `VITE_TLDRAW_LI
 build environment, and `App.tsx` passes it as the `licenseKey` prop. `LICENSE-tldraw.md` ships in
 the bundle verbatim, as the license requires.
 
+## Releasing
+
+`scripts/release.sh <version>` builds a Release archive, exports it Developer ID signed, packages a
+disk image with an Applications alias, notarizes it, and staples the ticket.
+
+```
+./scripts/release.sh 0.1.0 --dry-run   # everything but notarization
+./scripts/release.sh 0.1.0             # the real thing
+```
+
+It refuses to run without three things:
+
+- **A Developer ID certificate** in `scripts/signing.env`, with `DEVELOPMENT_TEAM` set. An ad-hoc or
+  self-signed build cannot be notarized.
+- **`VITE_TLDRAW_LICENSE_KEY`** in `web/.env.local`. Without a key tldraw renders its "get a license
+  for production" watermark, and the license forbids distributing that way.
+- **Notarization credentials**, unless `--dry-run`. Store them once:
+
+  ```
+  xcrun notarytool store-credentials vignette \
+    --apple-id <your Apple ID> --team-id <your team id> --password <app-specific password>
+  ```
+
+  The app-specific password comes from appleid.apple.com under Sign-In and Security. The profile
+  name is `vignette`; `NOTARY_PROFILE` in the environment picks another.
+
+It also refuses a dirty working tree, so the artifact matches the tag it goes out under.
+
+The script archives and exports rather than running `xcodebuild build`. A plain build is signed for
+development and carries the `get-task-allow` entitlement whatever the configuration says, and the
+notary service rejects a binary that has it. The script checks for that entitlement, for the
+hardened runtime, and for a strict signature before it packages anything.
+
+A `.dmg` rather than a `.zip` on purpose. An app launched out of a downloaded zip is still
+quarantined, and macOS runs it from a randomized read-only location. Vignette registers a URL
+scheme, writes `~/.config/vignette/settings.json`, and needs an Accessibility grant, none of which
+survive that. Dragging out of a disk image into Applications clears the quarantine.
+
+Publishing is two commands, which the script prints when it finishes:
+
+```
+git tag v0.1.0 && git push origin v0.1.0
+gh release create v0.1.0 build/dist/Vignette-0.1.0.dmg --title "Vignette 0.1.0"
+```
+
+The README and the site link to `/releases/latest`, so both go live the moment the first release
+exists and 404 before it.
+
 ## Forking
 
 1. In `project.yml`, change `name`, the target and scheme keys that repeat it, both
