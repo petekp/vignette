@@ -74,17 +74,14 @@ restore stick. Without the key, restore would set Apple's default and the next l
 macOS screen recording has no Vignette equivalent. Today Apple's thumbnail covers it; after this
 change nothing does. The recording lands in the folder and neither app says anything.
 
-First version, matching what the stack already does:
+First version: a card appears, clicking it hands the file to macOS the way the system would open it,
+and Copy and Delete work as on any card. No drawing, no frame extraction, no stitching.
 
-- The watcher accepts the recording's extension. `ScreenshotWatcher.candidateExtensions` is png, jpg,
-  jpeg, heic today. Confirm what Cmd+Shift+5 actually writes before coding to `.mov`.
-- The card shows a poster frame with a duration badge. `AVAssetImageGenerator` for the frame.
-- Actions that mean something: Copy, Copy Path, drag out, Trash, Reveal.
-- Actions that do not: Draw, Stitch. The editor is for images.
-- `annotateOnCapture` skips a recording. `copyOnCapture` puts the file on the pasteboard.
+Trim and share are not lost. Apple's thumbnail offered them, and so does whatever app macOS opens
+the recording in. Vignette says the capture happened and gets out of the way.
 
-**Not in the first version:** trimming. Apple's thumbnail offers it and this will not. That is a
-stated difference, not a hidden one.
+What recordings are for beyond that is
+[recordings-north-star-2026-09-22.md](recordings-north-star-2026-09-22.md).
 
 ## Order
 
