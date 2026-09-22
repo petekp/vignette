@@ -53,8 +53,10 @@ https://github.com/user-attachments/assets/cb06c65f-ba08-436f-8e7e-4df31729ad36
 
 ## Get it
 
-There is no download yet. The editor is tldraw, and shipping a build needs a license key.
-Until then, build it yourself:
+**[Download Vignette](https://github.com/petekp/vignette/releases/latest)** for macOS 14 or later.
+Open the disk image and drag Vignette to Applications.
+
+Or build it yourself:
 
 ```
 git clone https://github.com/petekp/vignette.git
@@ -62,9 +64,8 @@ cd vignette/web && pnpm install && cd ..
 ./scripts/run.sh
 ```
 
-You need Xcode, `xcodegen`, `pnpm`, and macOS 14 or later. [docs/building.md](docs/building.md)
-has the details, including why macOS asks you to re-trust your own build for Accessibility after
-each rebuild.
+You need Xcode, `xcodegen`, and `pnpm`. [docs/building.md](docs/building.md) has the details,
+including why macOS asks you to re-trust your own build for Accessibility after each rebuild.
 
 ## How it works
 
@@ -82,7 +83,7 @@ Cmd+Shift+4  ──►  ~/Dropbox/Screenshots/Screenshot ….png
 ```
 
 `Sources/` is the Swift menu bar app. `web/` is the editor page, React and tldraw, bundled into
-the app. [docs/building.md](docs/building.md) has the rest.
+the app.
 
 ## Guides
 

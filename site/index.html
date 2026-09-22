@@ -8,11 +8,11 @@
 <meta name="description" content="A macOS menu bar app for what happens after the screenshot: copy it, keep the recent ones in a stack, draw on any of them.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Vignette">
-<meta property="og:description" content="An easier way to annotate and share screenshots with agents, for macOS.">
+<meta property="og:description" content="A macOS menu bar app for what happens after the screenshot: copy it, keep the recent ones in a stack, draw on any of them.">
 <meta property="og:image" content="https://vignette.pete.design/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The vignette wordmark beside a column of annotated screenshots, one from Claude and one from Codex.">
+<meta property="og:image:alt" content="The Vignette wordmark beside a column of annotated screenshots, one from Claude and one from Codex.">
 <meta property="og:url" content="https://vignette.pete.design/">
 <link rel="canonical" href="https://vignette.pete.design/">
 <meta name="twitter:card" content="summary_large_image">
@@ -153,6 +153,21 @@
     margin: 0.6rem auto 0;
     opacity: 0.65;
   }
+  .download {
+    margin-bottom: 0.6rem;
+  }
+  .download a {
+    display: inline-block;
+    padding: 0.6rem 1.4rem;
+    border: 1px solid rgb(var(--ink) / 0.25);
+    border-radius: 6px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .download a:hover,
+  .download a:focus-visible {
+    background: rgb(var(--ink) / 0.06);
+  }
   footer {
     margin-top: 2.8rem;
     opacity: 0.65;
@@ -174,8 +189,8 @@
   </nav>
 </header>
 
-<p>Just like the built-in macOS screenshot tool, better in every way. Cmd+Shift+3, 4 and 5
-still take the screenshot. Vignette handles what comes after.</p>
+<p>What if macOS's built-in screenshot tool had continued to evolve after 2010? Cmd+Shift+3, 4
+and 5 still take the screenshot. Vignette handles what comes after.</p>
 
 <figure>
   <video
@@ -190,44 +205,19 @@ still take the screenshot. Vignette handles what comes after.</p>
     <source src="demo/vignette-demo.mp4" type='video/mp4; codecs="avc1.640029"'>
     <a href="demo/vignette-demo.mp4">Download the demo video (MP4)</a>
   </video>
-  <figcaption>Taking a screenshot, marking it up, sending it to Claude, and getting a screenshot back from Claude with its own question drawn on it.</figcaption>
+  <figcaption>A screenshot marked up and sent to Claude, and the screenshot Claude sends back with its own question drawn on it.</figcaption>
 </figure>
 
 <figure>
   <img src="stack-and-editor.png" width="1200" height="668" alt="A Mac screen with recent screenshots stacked as cards down the right edge and one of them open in the editor beside them, a red rectangle drawn on it.">
-  <figcaption>The recent stack, and one of its screenshots open in the editor.</figcaption>
+  <figcaption>The recent stack, with one screenshot open in the editor.</figcaption>
 </figure>
 
 <section class="features">
 
   <div class="feature">
     <h2>Screenshot history, one key away</h2>
-    <p>Your recent screenshots in a stack in the corner of the screen. Arrows move, Space selects, Return opens.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Non-destructive</h2>
-    <p>A drawing is saved beside the original and stays editable. Go back, change it, undo it. The original is never touched.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Queue</h2>
-    <p>Open several cards and they come one after another. Each Done opens the next.</p>
-  </div>
-
-  <div class="feature">
-    <h2>One-click stitch</h2>
-    <p>Several screenshots into one image, auto-numbered.</p>
-  </div>
-
-  <div class="feature">
-    <h2>No colour picker</h2>
-    <p>The colour is chosen from the image for the highest contrast.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Three tools</h2>
-    <p>Rectangle, text, arrow.</p>
+    <p>Press the Vignette shortcut and your recent screenshots slide in from the right. A camera roll for screenshots. Arrows move, Space selects, Return opens.</p>
   </div>
 
   <div class="feature">
@@ -236,31 +226,48 @@ still take the screenshot. Vignette handles what comes after.</p>
   </div>
 
   <div class="feature">
+    <h2>One-click stitch</h2>
+    <p>Join several screenshots into one image. Each piece gets a number.</p>
+  </div>
+
+  <div class="feature">
+    <h2>Simple by design</h2>
+    <p>Three tools: rectangle, text, arrow. No colour picker. Vignette picks the colour that stands out most against the image under your mark.</p>
+  </div>
+
+  <div class="feature">
+    <h2>Non-destructive</h2>
+    <p>Your drawing is a separate file beside the original. Go back, change it, undo it. The original stays as it was.</p>
+  </div>
+
+  <div class="feature">
+    <h2>Queue</h2>
+    <p>Annotate several in a row. Open them together and each Done opens the next.</p>
+  </div>
+
+  <div class="feature">
     <h2>Native, refined feel</h2>
-    <p>Draw without leaving what you were doing. The stack takes keys without stealing focus from your app. Hold the hotkey and the newest shot lifts into the editor.</p>
+    <p>The stack answers your keys without taking focus from the app you're in. Hold the shortcut and the newest shot lifts into the editor. Close it and you're back where you were.</p>
   </div>
 
   <div class="feature">
     <h2>Agent-friendly</h2>
-    <p>Experimental. Two-way: a coding agent can send you annotations, and you can send it yours. A skill for Claude Code and Codex ships with the app.</p>
+    <p>Experimental. A coding agent can send you a screenshot with its own marks on it, and you can send yours back. The skill for Claude Code and Codex ships with the app.</p>
   </div>
 
   <div class="feature">
     <h2>Customizable and hackable</h2>
-    <p>A settings file, every action as a URL, MIT licensed.</p>
+    <p>Every setting lives in a file, every action is a URL, and the source is MIT.</p>
   </div>
 
 </section>
 
-<p>
-Download Vignette &mdash; not released yet.
-</p>
+<p class="download"><a href="https://github.com/petekp/vignette/releases/latest">Download Vignette</a></p>
 
-<p>
-<a href="https://github.com/petekp/vignette">Vignette on GitHub</a> &mdash; source, MIT licensed. Build it yourself until the download is ready.
-</p>
+<p>Open the disk image and drag Vignette to Applications. Or
+<a href="https://github.com/petekp/vignette">build it from source</a>.</p>
 
-<footer>macOS 14 or later. Vignette is MIT licensed; the editor is tldraw, under its own license.</footer>
+<footer>macOS 14 or later. Vignette is MIT licensed. The editor is tldraw, under its own license.</footer>
 
 </main>
 </body>
