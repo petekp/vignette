@@ -32,10 +32,17 @@ Vignette already does and already treats as non-negotiable (`AGENTS.md`).
 
 Review time is not published; the page says a team member looks at each application.
 
-- **Bridge if review is slow:** tldraw also issues a free 100-day trial key immediately on form
-  submission. It would unblock a first release today. The risk is that business units get one trial
-  period, so spending it before knowing the Hobby answer removes the fallback. Worth applying for
-  Hobby first and holding the trial in reserve.
+- **An evaluation key cannot be shipped.** Verified in `@tldraw/editor@5.4.2` source, not guessed:
+  an evaluation license expires with no grace period (`LicenseManager.ts:78`), and the expired
+  branch is the one check in `getLicenseState` with no `isDevelopment` guard
+  (`LicenseManager.ts:625`). Serving on `http://127.0.0.1` does not save it; that escape hatch
+  applies only to an unparseable key (`LicenseManager.ts:591`). The state resolves to `expired`,
+  `shouldHideEditorAfterDelay` returns true for it (`LicenseProvider.tsx:34`), and five seconds
+  after mount the provider renders a hidden div (`LicenseProvider.tsx:66`). The annotator goes
+  blank, on every copy already downloaded, with no updater to fix them.
+
+  So the download waits on the Hobby key. Building and running locally on an evaluation key is
+  fine, because a rebuild takes a new one.
 - **Worth knowing now:** Hobby is for projects that are not a business. If Vignette ever charges,
   that path needs a commercial license, which tldraw prices privately (public
   reports put it around $6k/year). That is a constraint on the product's future, not on this release.
