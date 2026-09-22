@@ -83,6 +83,33 @@ the recording in. Vignette says the capture happened and gets out of the way.
 What recordings are for beyond that is
 [recordings-north-star-2026-09-22.md](recordings-north-star-2026-09-22.md).
 
+### How a recording card behaves
+
+Decided 2026-09-22, built, and checked in the running app against a scratch folder.
+
+- The card shows the first frame and a badge with a video glyph and the length, to the nearest
+  second and never 0:00, so a poster frame is not mistaken for a screenshot.
+- A click, or Return, opens it in the app macOS uses for `.mov`, which is QuickTime Player unless the
+  user chose another. The hint that follows the pointer says Open instead of Draw.
+- Every action declares the kinds of file it takes, and an action is offered only when it takes every
+  card in the selection: Copy, Copy Paths and Delete take both; Draw, Copy Drawing and Stitch take
+  screenshots; Open takes recordings. The strip greys a row that cannot run. Draw and Open share
+  Return, so they share one row, which shows whichever can run. A key whose action cannot run on
+  the selection beeps, the way a disabled menu item's shortcut does.
+- A new recording is copied as a file when Copy New Screenshots is on, with no pixels read, and
+  shows its card even when Draw on New Screenshots is on.
+- The hold gesture and Draw on Last Screenshot take the newest screenshot and pass over newer
+  recordings, since both promise drawing. A URL action with no `file=` takes the newest file it can
+  act on.
+
+**A greyed row draws its reason.** No system tooltip appeared on any strip row after 2.5 seconds of
+hover. AppKit shows a window's tooltips only while its app is active, unless the window sets
+`allowsToolTipsWhenApplicationIsInactive`, and the stack never makes Vignette active. So a greyed
+row draws its reason under itself while the pointer is on it, in the click hint's style: "Screenshots
+only", "Recordings only", or "Select 2 or more". Checked on screen. Setting that window flag instead
+would be one line, but it would also turn on the stack's other tooltips, which repeat the labels the
+rows already show, and each would wait for the system's hover delay.
+
 ### What a recording is
 
 Measured 2026-09-22 against the real Cmd+Shift+5 interface, driven through `screencaptureui`'s
@@ -136,4 +163,5 @@ arrives. That window is the room to do this in the right order.
 2. The video gap, before the first download. Shipping 1 and 2 without it would take away the only UI
    recordings have and give nothing back.
 
-Between the two, a recording is silent. Nobody has a build, so nobody meets that.
+Between the two, a recording is silent. Nobody has a build, so nobody meets that. Both are built as
+of 2026-09-22.

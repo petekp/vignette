@@ -9,8 +9,10 @@ enum Clipboard {
         pb.writeObjects([imageItem(png: png)])
     }
 
-    /// One pasteboard that works everywhere: a file URL per image (chat apps attach them all),
-    /// the paths as text (terminals paste them), and the first image's pixels (single-image targets).
+    /// One pasteboard that works everywhere: a file URL per file (chat apps attach them all),
+    /// the paths as text (terminals paste them), and the first file's pixels when it is an image
+    /// (single-image targets). A recording goes on as its file only; reading one whole to offer its
+    /// bytes would hold the video in memory for a paste target that wants the file anyway.
     static func copyFiles(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
         let pb = NSPasteboard.general
@@ -18,12 +20,12 @@ enum Clipboard {
         var items: [NSPasteboardItem] = []
         for (i, url) in urls.enumerated() {
             let item: NSPasteboardItem
-            if i == 0, let png = try? Data(contentsOf: url) {
+            if i == 0, Screenshot(url: url).kind == .image, let png = try? Data(contentsOf: url) {
                 item = imageItem(png: png)
-                item.setString(pathsText(urls), forType: .string)
             } else {
                 item = NSPasteboardItem()
             }
+            if i == 0 { item.setString(pathsText(urls), forType: .string) }
             item.setString(url.absoluteString, forType: .fileURL)
             items.append(item)
         }

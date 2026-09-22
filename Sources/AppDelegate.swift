@@ -256,7 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self else { return }
             Log.write("[hotkey] hold")
             if pressDismissed { _ = pressRecent() }
-            if let shot = holdTarget { annotate([shot]) } else { annotateLast() }
+            if let shot = holdTarget, shot.kind == .image { annotate([shot]) } else { annotateLast() }
         }
         switch HotKeySpec.parse(settings.data.recentHotkey) {
         case .key(let keyCode, let modifiers):
@@ -289,13 +289,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     func annotate(_ shots: [Screenshot]) {
         guard let shot = shots.first else { Commands.error("annotate", .missingFile, "nothing selected"); return }
+        if let recording = shots.first(where: { $0.kind == .recording }) {
+            Commands.error("annotate", .unsupportedType, "\(recording.url.lastPathComponent) is a recording"); return
+        }
         Commands.ok("annotate", shots.count > 1 ? "\(shot.url.lastPathComponent) 1 of \(shots.count)" : shot.url.lastPathComponent)
         thumbnail.annotate(shots)
     }
 
-    /// The newest screenshot in the watch folder goes into the annotator, on screen or not.
+    /// The newest screenshot in the watch folder goes into the annotator, on screen or not. A newer
+    /// recording is passed over: the hold and this menu item both promise drawing.
     @objc private func annotateLast() {
-        guard let url = newestShot() else {
+        guard let url = newestShot(where: { $0.kind == .image }) else {
             Commands.error("annotate", .missingFile, "no screenshot in \(watchFolder.path)"); return
         }
         annotate([Screenshot(url: url)])
@@ -400,6 +404,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         drafts.forget(had.map(\.url.path))
         Log.write("[draft] forgot \(had.map(\.url.lastPathComponent).joined(separator: ", "))")
         draftsChanged()
+    }
+
+    func open(_ shots: [Screenshot]) {
+        guard !shots.isEmpty else { Commands.error("open", .missingFile, "nothing selected"); return }
+        for shot in shots { NSWorkspace.shared.open(shot.url) }
+        Commands.ok("open", shots.map(\.url.lastPathComponent).joined(separator: ", "))
     }
 
     func moveToTrash(_ shots: [Screenshot]) {
@@ -525,10 +535,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let action = Config.action(id: cmd) else { return }
             var targets = request.files
             if targets.isEmpty {
-                guard let newest = newestShot() else {
-                    Commands.error(cmd, .missingFile, "no file given and no screenshot in \(watchFolder.path)"); return
+                // The newest file the action can take, so `annotate` passes over a newer recording
+                // and `open` over newer screenshots.
+                guard let newest = newestShot(where: { action.kinds.contains($0.kind) }) else {
+                    Commands.error(cmd, .missingFile, "no file given and none it applies to in \(watchFolder.path)"); return
                 }
                 targets = [newest]
+            }
+            if !targets.allSatisfy({ action.kinds.contains(Screenshot(url: $0).kind) }),
+               let reason = action.unavailableReason(for: targets.map(Screenshot.init)) {
+                Commands.error(cmd, .unsupportedType, reason); return
             }
             for file in targets {
                 if let code = Commands.policyError(for: file, watchFolder: watchFolder, debug: settings.data.debug) {
@@ -890,12 +906,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// The newest screenshots a person may act on: the folder's, less any agent reply whose import
     /// has not committed. Every listing goes through here rather than through the index directly.
-    private func recentShots(limit: Int) -> (recent: [URL], files: Int) {
-        watcher?.recent(limit: limit, include: { [weak self] in self?.requests.isVisible($0) ?? true }) ?? (recent: [], files: 0)
+    private func recentShots(limit: Int, where fits: (Screenshot) -> Bool = { _ in true }) -> (recent: [URL], files: Int) {
+        watcher?.recent(limit: limit, include: { [weak self] url in
+            (self?.requests.isVisible(url) ?? true) && fits(Screenshot(url: url))
+        }) ?? (recent: [], files: 0)
     }
 
-    private func newestShot() -> URL? {
-        recentShots(limit: 1).recent.first
+    private func newestShot(where fits: (Screenshot) -> Bool = { _ in true }) -> URL? {
+        recentShots(limit: 1, where: fits).recent.first
     }
 
     /// Whether anything is there to show. The count comes from the watcher's in-memory index, so
@@ -958,7 +976,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func present(_ shot: Screenshot, annotate: Bool) {
-        if annotate { self.annotate([shot]) } else { thumbnail.show(shot) }
+        if annotate, shot.kind == .image { self.annotate([shot]) } else { thumbnail.show(shot) }
     }
 
     @objc private func toggleRecent() { _ = pressRecent() }

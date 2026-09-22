@@ -123,8 +123,9 @@ final class LocalServerTests: XCTestCase {
         XCTAssertEqual(LocalServer.redacted(URL(string: "http://127.0.0.1:0/s3cret/file?p=%2Fa.png")!), "http://127.0.0.1:0/token/file?p=%2Fa.png")
     }
 
-    func testMimeTypesCoverEveryWatchedFormat() {
-        for ext in ScreenshotWatcher.candidateExtensions {
+    func testMimeTypesCoverEveryWatchedImageFormat() {
+        // Recordings are watched too but never reach the page, so the server has no type for them.
+        for ext in ScreenshotWatcher.candidateExtensions.subtracting(Screenshot.recordingExtensions) {
             XCTAssertTrue(LocalServer.mimeType(for: ext).hasPrefix("image/"), ext)
         }
         XCTAssertEqual(LocalServer.mimeType(for: "JPG"), "image/jpeg")

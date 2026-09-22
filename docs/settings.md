@@ -32,8 +32,10 @@ launch at another file, which is how tests and agents keep away from the real on
   Vignette watches. Set it to the folder you want your screenshots to live in.
 - **`syncAppleSaveLocation`** writes `screenshotsFolder` to Apple's screenshot save location. Turn
   it off to let Apple save somewhere other than the folder Vignette watches.
-- **`appleThumbnail`** is Apple's own floating thumbnail after a capture. Vignette writes this
-  setting for you, so turn it on if you want Apple's thumbnail back.
+- **`appleThumbnail`** is the value Vignette keeps Apple's floating thumbnail at. The first launch
+  turns it off, because Apple's thumbnail holds the file back for about five seconds, and every
+  launch puts it back if something else changed it. `restore-apple-defaults` sets it to what macOS
+  had before.
 - **`windowShadow`** is Apple's drop shadow around a captured window, another Apple default that
   Vignette writes. Turn it off for window shots with no shadow margin.
 - **`format`** is the file type Apple saves, such as `"png"`. Vignette writes this one too.
@@ -59,8 +61,8 @@ launch at another file, which is how tests and agents keep away from the real on
 - **`setup`** records whether the first-run setup window has had its turn: `unasked`, then `done`.
   It is written when the window closes, so a launch quit part way through asks again.
 - **`ui`** holds the design numbers. See below.
-- **`appleOriginal`** records what macOS was already doing on first run, so nothing changes until
-  you edit the file. `restore-apple-defaults` puts those values back.
+- **`appleOriginal`** records what macOS was doing before Vignette's first launch changed anything.
+  `restore-apple-defaults` puts those values back.
 
 ## The ui section
 

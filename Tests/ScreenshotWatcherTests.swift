@@ -31,7 +31,7 @@ final class ScreenshotWatcherTests: XCTestCase {
     }
 
     func testCandidatesAreScreenshotFormatsAndNotOutputs() {
-        for name in ["Screenshot 1.png", "x.PNG", "x.jpg", "x.jpeg", "x.heic"] { XCTAssertTrue(ScreenshotWatcher.isCandidate(name), name) }
+        for name in ["Screenshot 1.png", "x.PNG", "x.jpg", "x.jpeg", "x.heic", "Screenshot 1.mov", "x.MOV"] { XCTAssertTrue(ScreenshotWatcher.isCandidate(name), name) }
         for name in [".hidden.png", "x-annotated.png", "x.pdf", "x.tiff", "x.gif", "png", "x.png.part"] { XCTAssertFalse(ScreenshotWatcher.isCandidate(name), name) }
     }
 

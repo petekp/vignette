@@ -191,6 +191,39 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(lines.count, Commands.fixed.count + Config.actions.count)
     }
 
+    /// A recording in the selection turns off everything that only works on images, rather than
+    /// running it on the part it can take, and Return opens a recording where it draws on an image.
+    func testActionsRunOnlyOnKindsTheyTake() {
+        let image = Screenshot(url: URL(fileURLWithPath: "/tmp/Screenshot 1.png"))
+        let recording = Screenshot(url: URL(fileURLWithPath: "/tmp/Screenshot 2.MOV"))
+        let returnKey: (ShotAction.Key) -> Bool = { $0.character == "\r" && $0.modifiers.isEmpty }
+        func ran(_ shots: [Screenshot]) -> String? {
+            if case .run(let action) = Config.action(for: returnKey, on: shots) { return action.id }
+            return nil
+        }
+
+        XCTAssertEqual(recording.kind, .recording)
+        XCTAssertEqual(ran([image]), "annotate")
+        XCTAssertEqual(ran([recording]), "open")
+        XCTAssertNil(ran([image, recording]))
+        guard case .unavailable = Config.action(for: returnKey, on: [image, recording]) else { return XCTFail("Return on a mixed selection") }
+
+        XCTAssertEqual(Config.defaultAction(for: [recording])?.label, "Open")
+        XCTAssertEqual(Config.defaultAction(for: [image])?.label, "Draw")
+        for id in ["annotate", "copy-annotated", "stitch"] {
+            XCTAssertNotNil(Config.action(id: id)?.unavailableReason(for: [image, image, recording]), id)
+        }
+        for id in ["copy", "paths", "trash"] {
+            XCTAssertNil(Config.action(id: id)?.unavailableReason(for: [image, recording]), id)
+        }
+
+        // Draw and Open are one row, which shows the one that can run.
+        let row = Config.stripRows.first { $0.contains { $0.id == "annotate" } } ?? []
+        XCTAssertEqual(row.map(\.id), ["annotate", "open"])
+        XCTAssertEqual(Config.stripAction(in: row, for: [recording]).id, "open")
+        XCTAssertEqual(Config.stripAction(in: row, for: [image, recording]).id, "annotate")
+    }
+
     func testErrorCodesAreKebabCaseAndUnique() {
         let codes = CommandError.allCases.map(\.rawValue)
         XCTAssertEqual(Set(codes).count, codes.count)

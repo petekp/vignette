@@ -104,10 +104,10 @@ final class ScreenshotWatcher: @unchecked Sendable {
     }
 
     /// screencapture writes the file in one go, but Dropbox and other syncers stream it in. Wait
-    /// until the size holds across two polls and ImageIO sees a complete image, for up to ten seconds.
+    /// until the size holds across two polls and the file reads whole, for up to ten seconds.
     private func waitUntilComplete(_ url: URL, attempts: Int = 100, last: Int = -1, done: @escaping @Sendable (Bool) -> Void) {
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? -1
-        if size > 0 && size == last && ScreenshotWatcher.isCompleteImage(url) { done(true); return }
+        if size > 0 && size == last && ScreenshotWatcher.isComplete(url) { done(true); return }
         guard attempts > 0 else { done(false); return }
         queue.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             self?.waitUntilComplete(url, attempts: attempts - 1, last: size, done: done)
@@ -116,13 +116,19 @@ final class ScreenshotWatcher: @unchecked Sendable {
 
     /// True when ImageIO can decode the file. A file still being written fails to decode; ImageIO's
     /// status calls do not tell the two apart (measured: both report complete), so this decodes once.
+    /// An image ImageIO can decode, or a recording AVFoundation finds a video track in. The second
+    /// also stores the recording's size, so the card made for it next does not read it again.
+    static func isComplete(_ url: URL) -> Bool {
+        Screenshot(url: url).kind == .recording ? Thumbnailer.pointSize(of: url) != nil : isCompleteImage(url)
+    }
+
     static func isCompleteImage(_ url: URL) -> Bool {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
         return CGImageSourceCreateImageAtIndex(source, 0, nil) != nil
     }
 
-    /// The formats screencapture can write that the app can decode. Outputs of the annotator are not candidates.
-    static let candidateExtensions: Set<String> = ["png", "jpg", "jpeg", "heic"]
+    /// The formats screencapture can write that the app can show. Outputs of the annotator are not candidates.
+    static let candidateExtensions: Set<String> = Set(["png", "jpg", "jpeg", "heic"]).union(Screenshot.recordingExtensions)
 
     static func isCandidate(_ name: String) -> Bool {
         let lower = name.lowercased()

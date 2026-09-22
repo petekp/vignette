@@ -3,15 +3,18 @@
 ## Commands
 
 Every action is a URL. `open -g` leaves your terminal in front, and plain `open` activates
-Vignette. Without `?file=` an action acts on the newest screenshot, and `file=` repeats for several.
-Percent-encode every path. A path must be inside the watch folder, except for `add`, which copies an
-image in from anywhere.
+Vignette. Without `?file=` an action acts on the newest file it can take: `annotate` passes over a
+newer recording, and `open` over newer screenshots. `file=` repeats for several. A file the action
+cannot take, such as a recording given to `annotate`, answers `unsupported-type`. Percent-encode
+every path. A path must be inside the watch folder, except for `add`, which copies an image in from
+anywhere.
 
 ```
 open -g vignette://copy                       # copy to clipboard
 open -g vignette://annotate                   # open the annotator
 open -g vignette://copy-annotated             # copy with the draft rendered in, if there is one
 open -g vignette://paths                      # copy the path as text
+open -g vignette://open                       # open the newest recording in the app that plays movies
 open -g "vignette://trash?file=~/Dropbox/Screenshots/x.png"
 open -g "vignette://stitch?file=/a.png&file=/b.png"
 open -g vignette://last                       # show the thumbnail for the newest screenshot

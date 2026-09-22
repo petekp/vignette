@@ -70,7 +70,7 @@ struct StackView: View {
         // column, inside the room the frame may grow into. The selection stays; the strip is back
         // when the session ends.
         guard model.isStack, model.inSelectionMode, !model.annotating else { return nil }
-        return layout.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
+        return layout.stripPlacement(rows: Config.stripRows.count, selection: model.selectedIndices(),
                                      cards: model.cards.map { layout.drawn($0.size) }, showsBar: model.showsBar,
                                      scroll: model.scroll, viewport: model.viewport)
     }
@@ -156,7 +156,9 @@ private struct CardView: View {
     private var showsCircle: Bool { model.isStack && !isOut && !isForming && (hovered || model.inSelectionMode || focused) }
     private var copied: Bool { model.copied.contains(card.id) }
     private var showsButtons: Bool { showsHover && !model.inSelectionMode && !copied }
-    private var showsDrawHint: Bool { showsButtons && !model.overControl && !pressed && !overCornerButton }
+    /// What a click on this card runs: Draw on a screenshot, Open on a recording.
+    private var clickAction: ShotAction? { Config.defaultAction(for: [card.shot]) }
+    private var showsClickHint: Bool { showsButtons && !model.overControl && !pressed && !overCornerButton && clickAction != nil }
     /// The pointer is over one of the card's two corner buttons, each button's own padding included:
     /// a click there is the button's, not a draw. Only those two rects, so the hint stays up across
     /// the middle of the card's bottom edge, which holds no button. Copy's label only comes out once
@@ -245,6 +247,9 @@ private struct CardView: View {
                 AgentBadge(agent: agent, size: ui.selectionCircleSize)
                     .padding(CardView.buttonPad)
                     .transition(.opacity)
+            } else if card.shot.kind == .recording, !isOut, !isForming {
+                RecordingBadge(duration: card.duration, size: ui.selectionCircleSize)
+                    .padding(CardView.buttonPad)
             }
         }
         .overlay(alignment: .topLeading) {
@@ -272,15 +277,16 @@ private struct CardView: View {
             }
         }
         .animation(Anim.spring((copied ? 0.15 : 0.4) * motion), value: copied)
-        // "Draw" trails the mouse over the card, away from its controls: a click there annotates.
-        // Positioned in the card's own coordinates, so it appears where the mouse is.
+        // What a click does trails the mouse over the card, away from its controls: "Draw" on a
+        // screenshot, "Open" on a recording. Positioned in the card's own coordinates, so it
+        // appears where the mouse is.
         .overlay(alignment: .topLeading) {
-            if showsDrawHint, let p = pointer {
-                DrawHintFollower(point: p)
+            if showsClickHint, let p = pointer, let action = clickAction {
+                ClickHintFollower(point: p, label: action.label, symbol: action.hintSymbol ?? action.symbol ?? "")
                     .transition(.asymmetric(insertion: .scale(scale: 0.6, anchor: .bottom).combined(with: .opacity), removal: .opacity))
             }
         }
-        .animation(showsDrawHint ? Anim.spring(0.3 * motion, bounce: 0.3) : Anim.spring(0.1 * motion), value: showsDrawHint)
+        .animation(showsClickHint ? Anim.spring(0.3 * motion, bounce: 0.3) : Anim.spring(0.1 * motion), value: showsClickHint)
         .zIndex(showsHover ? 1 : 0)   // the hint may hang over the card below
         .scaleEffect(pressed ? ui.pressScale : (showsHover ? ui.hoverScale : 1))
         .animation(Anim.spring(0.25 * motion, bounce: 0.3), value: pressed)
@@ -381,6 +387,33 @@ private struct AgentBadge: View {
     }
 }
 
+/// Marks a card as a screen recording rather than a screenshot, since its poster frame alone looks
+/// like one, and a click on it opens it instead of drawing. Shows the length once it has been read.
+private struct RecordingBadge: View {
+    let duration: TimeInterval?
+    let size: CGFloat
+    var body: some View {
+        HStack(spacing: size * 0.2) {
+            Image(systemName: "video.fill").font(.system(size: size * 0.45, weight: .semibold))
+            if let duration { Text(RecordingBadge.format(duration)).font(.system(size: size * 0.55, weight: .semibold).monospacedDigit()) }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, size * 0.35)
+        .frame(height: size)
+        .background(Capsule().fill(.black.opacity(0.7)))
+        .fixedSize()
+        .allowsHitTesting(false)
+    }
+
+    /// m:ss, or h:mm:ss past an hour, to the nearest second. Never 0:00: a clip under half a second
+    /// still recorded something.
+    static func format(_ seconds: TimeInterval) -> String {
+        let total = max(1, Int(seconds.rounded()))
+        let (h, m, s) = (total / 3600, total / 60 % 60, total % 60)
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+}
+
 /// Beside the selected cards: the bulk actions, in one vertical strip. `StackLayout` places it
 /// and sizes it; the rows here fill that size exactly. The count is on the cards themselves.
 /// The cursor on the strip names every button: the right edge stays put and the strip grows to the
@@ -391,6 +424,10 @@ private struct SelectionStrip: View {
     @ObservedObject var model: StackModel
     let size: NSSize        // the icon column, as the placement sized it
     let reveal: CGFloat     // how far the labels put the strip's left edge out
+    /// The greyed row under the pointer. Its reason is drawn here rather than left to `.help`:
+    /// AppKit shows a window's tooltips only while its app is active, and the stack never
+    /// activates Vignette.
+    @State private var explained: String? = nil
     private var ui: UITweaks { Settings.shared.motionUI }
 
     var body: some View {
@@ -400,8 +437,10 @@ private struct SelectionStrip: View {
         let revealed = true
         let out = reveal
         let labelBox = StackLayout.current.stripLabelBox(reveal: reveal)
+        let shots = cards.map(\.shot)
         VStack(spacing: ui.buttonSpacing) {
-            ForEach(Config.stripActions, id: \.id) { action in
+            ForEach(Config.stripRows.map { Config.stripAction(in: $0, for: shots) }, id: \.id) { action in
+                let reason = action.unavailableReason(for: shots)
                 Button { model.onAction(action, cards) } label: {
                     HStack(spacing: 0) {
                         // The icon column keeps its width with or without a symbol, so the labels
@@ -415,11 +454,26 @@ private struct SelectionStrip: View {
                     }
                 }
                 .buttonStyle(TactileButtonStyle(shape: .rounded, hoverScale: 1))
+                .disabled(reason != nil)
+                .opacity(reason != nil ? 0.35 : 1)
                 .help(action.label + shortcutHint(action))
-                .disabled(cards.count < action.minimumCount)
-                .opacity(cards.count < action.minimumCount ? 0.35 : 1)
+                .accessibilityHint(reason ?? "")
+                .onHover { inside in
+                    if inside, reason != nil { explained = action.id }
+                    else if explained == action.id { explained = nil }
+                }
+                .overlay(alignment: .top) {
+                    if let reason, explained == action.id {
+                        UnavailableReason(text: reason)
+                            .offset(y: ui.buttonSize + ui.buttonSpacing)
+                            .transition(.opacity)
+                    }
+                }
+                // Over the rows below it, which a VStack otherwise draws on top.
+                .zIndex(explained == action.id ? 1 : 0)
             }
         }
+        .animation(Anim.spring(0.15 * Settings.shared.motionScale), value: explained)
         .frame(width: size.width + out, height: size.height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))
@@ -489,8 +543,10 @@ private struct CopiedOverlay: View {
 
 /// Appears at the pointer and then eases after it; the first position is never animated, or the
 /// hint would slide in from wherever the view's initial offset was.
-private struct DrawHintFollower: View {
+private struct ClickHintFollower: View {
     let point: CGPoint
+    let label: String
+    let symbol: String
     @State private var shown: CGPoint? = nil
     @State private var width: CGFloat = 0
 
@@ -499,7 +555,7 @@ private struct DrawHintFollower: View {
         // Centered just above the pointer: a frame from the card's top-left corner to a spot half
         // the hint's width right of the pointer, with the hint aligned to its far corner. Its width
         // is measured, so the hint stays hidden until the first measurement lands.
-        DrawHint()
+        ClickHint(label: label, symbol: symbol)
             .background(GeometryReader { g in
                 Color.clear
                     .onAppear { width = g.size.width }
@@ -514,11 +570,31 @@ private struct DrawHintFollower: View {
     }
 }
 
-private struct DrawHint: View {
+/// Why a greyed strip row cannot run on the selection, under the row, in the click hint's style.
+/// One line, centered on the row: it may overhang the strip into the panel's inset, and a reason
+/// wider than that would be cut off at the window's edge.
+private struct UnavailableReason: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white)
+            .fixedSize()
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            // Darker than the click hint's 0.7, which let the rows under it read through.
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.black.opacity(0.85)))
+            .allowsHitTesting(false)
+    }
+}
+
+private struct ClickHint: View {
+    let label: String
+    let symbol: String
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: "scribble.variable").font(.system(size: 11, weight: .semibold))
-            Text("Draw").font(.system(size: 12, weight: .semibold))
+            Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+            Text(label).font(.system(size: 12, weight: .semibold))
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 10)

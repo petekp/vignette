@@ -105,6 +105,21 @@ annotator: capture, tap-tap-hold, draw. The menu bar shows the same two commands
 Screenshots and Draw on Last Screenshot, with the shortcut beside them. [Settings](settings.md)
 covers changing it.
 
+## Screen recordings
+
+A recording from Cmd+Shift+5 gets a card too, showing its first frame with its length in the
+corner. Click it, or press Return, to open it in QuickTime Player, or in whichever app your Mac
+opens movies with.
+
+Copy, Copy Paths, and Delete work on recordings. Draw, Copy Drawing, and Stitch work only on
+screenshots. With a recording in the selection, Draw and Stitch are greyed in the strip, and
+hovering one says why. Their shortcuts beep. When every selected card is a recording, Draw becomes
+Open.
+
+Cmd+C copies a recording as a file, which chat apps attach and terminals paste as its path. Draw on
+Last Screenshot and the held shortcut skip recordings and open the newest screenshot. Draw on New
+Screenshots leaves a new recording in the stack.
+
 ## Cards from an agent
 
 A card with a white tab in its top corner was pushed in by an agent (`add?agent=<name>`), not

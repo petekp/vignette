@@ -237,8 +237,10 @@ enum Commands {
     static func helpLines() -> [String] {
         let commands = fixed.map { "\($0.name): \($0.summary)\($0.needsDebug ? " (needs \"debug\": true in settings.json)" : "")" }
         let actions = Config.actions.map { action -> String in
-            var line = "\(action.id): \(action.label); \(Identity.urlScheme)://\(action.id)?file=<path>&file=<path>, the newest screenshot when no file is given"
+            var line = "\(action.id): \(action.label); \(Identity.urlScheme)://\(action.id)?file=<path>&file=<path>, the newest file it applies to when no file is given"
             if action.minimumCount > 1 { line += "; needs \(action.minimumCount) files" }
+            if !action.kinds.contains(.recording) { line += "; screenshots only" }
+            else if !action.kinds.contains(.image) { line += "; recordings only" }
             return line
         }
         return commands + actions

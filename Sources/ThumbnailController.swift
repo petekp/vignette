@@ -8,9 +8,10 @@ struct Card: Identifiable {
     let pointSize: NSSize     // the screenshot in points, for the annotator frame
     let size: NSSize          // the card on screen
     let agent: String?        // the agent that added the file (see Agent); nil for a capture
+    var duration: TimeInterval? = nil   // a recording's length, for its badge; nil for an image
 
-    func with(image: NSImage?) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent) }
-    func with(size: NSSize) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent) }
+    func with(image: NSImage?) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration) }
+    func with(size: NSSize) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration) }
 }
 
 /// Why the selection strip's labels are out. The cursor on the strip brings them out; so does a
@@ -175,10 +176,16 @@ final class ThumbnailController: NSObject {
         }
         model.onClickImage = { [weak self] card in
             guard let self else { return }
+            // A recording opens in its own app whatever else is going on; it never takes the
+            // annotator's place, so a drawing in progress is left where it is.
+            if card.shot.kind == .recording, !self.model.inSelectionMode {
+                if let open = Config.defaultAction(for: [card.shot]) { self.run(open, on: [card]) }
+                return
+            }
             // A click picks the next image by hand, so it replaces whatever the queue had left.
             if self.transition.isActive { self.endQueue(); self.annotate(card); return }
             if self.model.inSelectionMode { self.toggle(card) }
-            else if let action = Config.actions.first(where: \.isDefault) { self.run(action, on: [card]) }
+            else if let action = Config.defaultAction(for: [card.shot]) { self.run(action, on: [card]) }
         }
         model.onSweep = { [weak self] y in self?.sweep(toYFromTop: y) }
         model.onSweepEnd = { [weak self] in
@@ -275,7 +282,7 @@ final class ThumbnailController: NSObject {
     /// the panel's window must not be resized while a session is running.
     private var stripFrame: NSRect? {
         guard !model.annotating else { return nil }
-        guard showsStrip, let strip = layout.stripPlacement(rows: Config.stripActions.count, selection: model.selectedIndices(),
+        guard showsStrip, let strip = layout.stripPlacement(rows: Config.stripRows.count, selection: model.selectedIndices(),
                                                             cards: cardSizes, showsBar: showsBar,
                                                             scroll: model.scroll, viewport: model.viewport) else { return nil }
         let reveal = layout.stripReveal(rows: StackLayout.stripRows)
@@ -294,7 +301,8 @@ final class ThumbnailController: NSObject {
                     let card = model.cards[i]
                     return ["file": card.shot.url.path, "frame": StateReport.topLeft(cardFrame(i), primaryHeight: h),
                             "out": model.outCards.contains(card.id), "forming": model.forming.contains(card.id),
-                            "draft": model.drafts.contains(card.shot.url.path), "agent": card.agent as Any]
+                            "draft": model.drafts.contains(card.shot.url.path), "agent": card.agent as Any,
+                            "kind": card.shot.kind == .recording ? "recording" : "image"]
                 },
                 "selected": model.selectedCards().map(\.shot.url.path),
                 "queue": queue,
@@ -536,7 +544,7 @@ final class ThumbnailController: NSObject {
         let size = layout.cardSize(for: pointSize)
         guard let image = Thumbnailer.image(at: url, maxPixel: thumbnailPixels(size: size, pointSize: pointSize)) else { return nil }
         return Card(id: UUID(), shot: Screenshot(url: url), image: image, pointSize: pointSize, size: size,
-                    agent: Agent.of(url))
+                    agent: Agent.of(url), duration: Thumbnailer.duration(of: url))
     }
 
     /// The copied mark over the cards themselves; the toast only when none of them is showing.
@@ -668,7 +676,7 @@ final class ThumbnailController: NSObject {
         queue.removeAll { gone.contains($0) }
         queueTotal -= before - queue.count
         for id in added {
-            guard let card = model.cards.first(where: { $0.id == id }) else { continue }
+            guard let card = model.cards.first(where: { $0.id == id }), card.shot.kind == .image else { continue }
             let key = card.shot.url.path
             guard key != transition.key, !queue.contains(key) else { continue }
             queue.append(key)
@@ -982,7 +990,7 @@ final class ThumbnailController: NSObject {
     }
 
     private func run(_ action: ShotAction, on cards: [Card]) {
-        guard let actions, cards.count >= action.minimumCount else { return }
+        guard let actions, action.applies(to: cards.map(\.shot)) else { return }
         action.run(cards.map(\.shot), actions)
     }
 
@@ -1028,16 +1036,19 @@ final class ThumbnailController: NSObject {
             relayout()
             return true
         }
-        for action in Config.actions {
-            guard let key = action.key else { continue }
-            let matches = (key.character == "\u{7f}" && isDelete) || (key.character == "\r" && isReturn)
+        let targets = targetCards()
+        let match = Config.action(for: { key in
+            let pressed = (key.character == "\u{7f}" && isDelete) || (key.character == "\r" && isReturn)
                 || (key.character != "\u{7f}" && key.character != "\r" && key.character == chars)
-            if matches && mods == key.modifiers {
-                run(action, on: targetCards())
-                return true
-            }
+            return pressed && mods == key.modifiers
+        }, on: targets.map(\.shot))
+        switch match {
+        case .run(let action): run(action, on: targets); return true
+        // The row for it is greyed out in the strip; the key says so the way a disabled menu
+        // item's shortcut does, rather than nothing happening.
+        case .unavailable: NSSound.beep(); return true
+        case .none: return false
         }
-        return false
     }
 
     /// Down arrow moves toward the newest card (index 0), which sits at the bottom. Shift extends
@@ -1111,7 +1122,7 @@ final class ThumbnailController: NSObject {
         let size = layout.cardSize(for: pointSize)
         let maxPixel = thumbnailPixels(size: size, pointSize: pointSize)
         let card = Card(id: UUID(), shot: shot, image: previews[shot.url.path] ?? Thumbnailer.cached(at: shot.url, maxPixel: maxPixel),
-                        pointSize: pointSize, size: size, agent: Agent.of(shot.url))
+                        pointSize: pointSize, size: size, agent: Agent.of(shot.url), duration: Thumbnailer.duration(of: shot.url))
         if card.image == nil {
             Thumbnailer.load(at: shot.url, maxPixel: maxPixel) { [weak self] image in
                 guard let self, let image, self.previews[shot.url.path] == nil, self.model.cards.contains(where: { $0.id == card.id }) else { return }

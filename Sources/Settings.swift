@@ -5,6 +5,16 @@ import Combine
 
 struct Screenshot: Sendable {
     let url: URL
+
+    /// A still image, or a screen recording from Cmd+Shift+5.
+    enum Kind: Sendable { case image, recording }
+
+    /// Read from the extension alone. The name says nothing: macOS names screenshots and recordings
+    /// from the same `com.apple.screencapture name` default, which is the user's to change.
+    var kind: Kind { Screenshot.recordingExtensions.contains(url.pathExtension.lowercased()) ? .recording : .image }
+
+    /// What Cmd+Shift+5 writes (docs/replacing-apple-capture-2026-09-22.md).
+    static let recordingExtensions: Set<String> = ["mov"]
 }
 
 /// Whether the app has offered the agent skill yet. Whether the skill is installed is read from

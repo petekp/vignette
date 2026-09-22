@@ -290,9 +290,10 @@ the same driven sequence; a single run varies.
   menu bar on a notch Mac puts the new icon under the notch and it never appears.
 - Files named `*-annotated.png` are outputs and are ignored by the watcher. `Stitch *.png`
   outputs are not ignored on purpose: they arrive like a capture, which is what carries a stitch into
-  the annotator when `annotateOnCapture` is on. The watcher takes png, jpg, jpeg, and heic
-  (`ScreenshotWatcher.candidateExtensions`), reports removals to the stack (`[watcher] removed`),
-  waits for a new file to decode before reporting it, and gives up on one that never does after
+  the annotator when `annotateOnCapture` is on. The watcher takes png, jpg, jpeg, and heic images
+  and mov recordings (`ScreenshotWatcher.candidateExtensions`), reports removals to the stack
+  (`[watcher] removed`), waits for a new file to decode before reporting it (a recording, until
+  AVFoundation can read its video track), and gives up on one that never does after
   ten seconds (`[watcher] error never-stable`); the next folder event or stack open picks it up.
   Wake from sleep rescans the folder. The watcher keeps an index of the folder (name and
   modification date, from one bulk listing) so opening the stack and finding the newest screenshot
@@ -300,6 +301,18 @@ the same driven sequence; a single run varies.
   index catches a file changed in place. While the folder cannot be watched (a volume not mounted
   yet) the reads list it directly and each rescan retries the watch. Copying puts the PNG on the
   pasteboard and promises the TIFF, which is rendered only when a paste target asks.
+- A screen recording is a `Screenshot` whose `kind` is `.recording`, read from the `.mov`
+  extension alone (`Screenshot.recordingExtensions`). Its card shows the first frame, decoded on
+  the thumbnail queue (`Thumbnailer.posterFrame`, about 90 ms), and a badge with its length. Each
+  action names the kinds it takes (`ShotAction.kinds`, images only unless it says otherwise), and
+  `unavailableReason(for:)` is the one test: the strip greys a row that cannot take every selected
+  card, its key beeps, and its URL answers `unsupported-type`. An action never runs on the part of
+  a selection it can take. Draw and Open share Return and one strip row (`Config.stripRows` groups
+  actions by key); the row shows whichever applies, and Draw when neither does. A click on a
+  recording opens it in the app macOS opens movies with. A recording never reaches the annotator,
+  so `annotateOnCapture`, the hold, and Draw on Last Screenshot pass over it. Copy puts a recording
+  on the pasteboard as its file URL and path, never its frames.
+  `docs/replacing-apple-capture-2026-09-22.md` has the measurements.
 - Stitching from the stack is one motion, not a file appearing later. `ThumbnailController.stitched`
   takes the cards the image was made from out of the column, holds a slot for the new card at the
   bottom, and hands both to `TransitionLayer.converge`: the pieces fly into that slot while the
@@ -320,7 +333,10 @@ the same driven sequence; a single run varies.
   call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
   annotator the panel gives up key status so typing reaches the editor. It gives it up in
   `perform(.prepare)`, right after the annotator's window has taken it, so the keys pass from one
-  to the other instead of being nobody's for the length of the flight.
+  to the other instead of being nobody's for the length of the flight. A `.help` tooltip never
+  shows in the stack: AppKit shows a window's tooltips only while its app is active, unless the
+  window sets `allowsToolTipsWhenApplicationIsInactive`, which the panel does not. Text the user
+  must see there is drawn, like a greyed strip row's reason (`UnavailableReason`).
 - Which card a key acts on is one variable, `model.focused`. The stack focuses the newest card the
   moment it takes keys (`takeKeys`), so arrows, Space, and Return act on a card without a first
   click, and the pointer moves the focus too: moving onto a card focuses it, and leaving it leaves
@@ -362,13 +378,14 @@ the same driven sequence; a single run varies.
   stack does this: a lone thumbnail leaves the panel when the annotator opens, and a
   `vignette://annotate` with no stack showing gets the whole visible frame.
   `docs/stack-room-2026-09-17.md` has the numbers.
-- The Draw hint goes out over the card's two corner buttons and nowhere else
-  (`CardView.overCornerButton`): each button's frame plus its padding, not the whole band along the
-  bottom, so the hint stays up over the middle of the band and a click there still draws.
+- The click hint (Draw on a screenshot, Open on a recording) goes out over the card's two corner
+  buttons and nowhere else (`CardView.overCornerButton`): each button's frame plus its padding, not
+  the whole band along the bottom, so the hint stays up over the middle of the band and a click
+  there still does what it says.
 - A card's thumbnail fills the card, so a screenshot whose shape differs from the card's box hangs
   outside the card's frame, and the clip that hides it does not shrink the hit area. The
   `contentShape` in `CardView` holds each card's hover and clicks to its own frame; without it a
-  hovered card, which `zIndex` raises for the Draw hint, takes them from the card below.
+  hovered card, which `zIndex` raises for the click hint, takes them from the card below.
 - "Click outside" detection goes through `OutsideClick`. A plain global mouse monitor also
   reports clicks on this app's own floating windows, so the topmost window under the cursor is
   checked first. The stack and the annotator each own one; the monitor's token never leaves that
@@ -626,8 +643,7 @@ the same driven sequence; a single run varies.
   Vignette replaces the thumbnail, a few rows above "Restore macOS Screenshot Settings…", which is
   the disable path and the only way back in the UI. `appleThumbnail` stays a settings.json key with
   no control, because `restoreAppleDefaults()` writes Apple's old value into it and that is what
-  makes a restore survive the next launch's reconcile. Screen recordings have no Vignette card yet,
-  so between this change and that one a Cmd+Shift+5 recording is silent.
+  makes a restore survive the next launch's reconcile.
 - Sending a drawing to an agent session and taking its drawing back is one object,
   `ScreenshotRequests`, and one small boundary, `AgentConnection`. Two things are durable and
   different: **acceptance** means Vignette owns every byte of a reply, and is what the receipt a
@@ -743,8 +759,9 @@ the same driven sequence; a single run varies.
 
 - An action: add a `ShotAction` to `Config.actions` and a method on the `Actions` protocol. Its
   `placement` decides whether it is a hover button on a card, a button in the selection strip, or
-  both; `key` gives it a shortcut inside the recent stack. It is a `vignette://<id>` URL either
-  way. Actions always receive a list of screenshots: in the order the cards were selected when the
+  both; `key` gives it a shortcut inside the recent stack; `kinds` says whether it takes
+  recordings as well as screenshots. It is a `vignette://<id>` URL either way.
+  Actions always receive a list of screenshots: in the order the cards were selected when the
   stack runs them, and in the order a URL names its `file=` parameters otherwise. `annotate` opens
   the first of them and queues the rest, since the annotator holds one image; its `ok` line says
   which is opening and how many there are (`ok <name> 1 of 3`), and each later card logs one
