@@ -46,6 +46,8 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         VignetteBuild: $(VIGNETTE_BUILD)
+        # Where "Check for Updates…" sends the user. A fork points this at its own releases.
+        ReleasesURL: https://github.com/petekp/vignette/releases/latest
         LSUIElement: true
         NSHighResolutionCapable: true
         CFBundleURLTypes:

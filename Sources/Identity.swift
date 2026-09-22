@@ -13,6 +13,9 @@ enum Identity {
         .appendingPathComponent("Library/Application Support/\(bundleID)")
     static let cachesURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Caches/\(bundleID)")
+    /// The page "Check for Updates…" opens, from the bundle so a fork only edits project.yml.
+    static let releasesURL = (Bundle.main.infoDictionary?["ReleasesURL"] as? String)
+        .flatMap(URL.init(string:)) ?? URL(string: "https://github.com/petekp/vignette/releases/latest")!
     static let statusItemAutosaveName = bundleID
     static let hotKeySignature = hotKeySignature(for: bundleID)
 

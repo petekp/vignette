@@ -656,6 +656,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
 
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Check for Updates…", action: #selector(openReleases), keyEquivalent: "")
+
+        menu.addItem(.separator())
         if settings.data.debug {
             menu.addItem(.sectionHeader(title: "Developer"))
             menu.addItem(withTitle: "Tweak UI…", action: #selector(openTweaks), keyEquivalent: "")
@@ -666,6 +669,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
         menu.addItem(withTitle: "Quit Vignette", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
+    }
+
+    /// Opens the releases page rather than comparing versions: the page names the latest version and
+    /// carries the download, and the app has no updater to hand off to yet.
+    @objc private func openReleases() {
+        NSWorkspace.shared.open(Identity.releasesURL)
     }
 
     @objc private func openSettings() {
