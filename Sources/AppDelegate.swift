@@ -277,7 +277,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard !shots.isEmpty else { Commands.error("paths", .missingFile, "nothing selected"); return }
         Clipboard.copyText(Clipboard.pathsText(shots.map(\.url)))
         Commands.ok("paths", shots.map(\.url.lastPathComponent).joined(separator: ", "))
-        thumbnail.showCopied(shots, fallback: shots.count == 1 ? "Copied path" : "Copied \(shots.count) paths")
+        thumbnail.showCopied(shots, label: "Copied Path",
+                             fallback: shots.count == 1 ? "Copied path" : "Copied \(shots.count) paths")
     }
 
     func annotate(_ shots: [Screenshot]) {

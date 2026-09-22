@@ -268,7 +268,7 @@ private struct CardView: View {
         .contentShape(Rectangle())
         .overlay {
             if copied && !isOut && !isForming {
-                CopiedOverlay(corner: ui.cardCornerRadius).transition(.opacity)
+                CopiedOverlay(corner: ui.cardCornerRadius, label: model.copiedLabel).transition(.opacity)
             }
         }
         .animation(Anim.spring((copied ? 0.15 : 0.4) * motion), value: copied)
@@ -469,6 +469,7 @@ struct TactileButtonStyle: ButtonStyle {
 /// Flush over a card after a copy: the veil fades in, the mark springs in, and both fade out.
 private struct CopiedOverlay: View {
     let corner: CGFloat
+    let label: String
     @State private var landed = false
 
     var body: some View {
@@ -476,7 +477,7 @@ private struct CopiedOverlay: View {
             RoundedRectangle(cornerRadius: corner, style: .continuous).fill(.black.opacity(0.55))
             VStack(spacing: 2) {
                 Image(systemName: "checkmark.circle.fill").font(.system(size: 22, weight: .bold)).foregroundStyle(.green)
-                Text("Copied").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
             }
             .scaleEffect(landed ? 1 : 0.3)
             .opacity(landed ? 1 : 0)

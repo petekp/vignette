@@ -34,7 +34,8 @@ final class StackModel: ObservableObject {
     /// the two would overlap. The selection is untouched and the strip comes back when the session
     /// ends. Set from `send`, which is the one place the session changes.
     @Published var annotating = false
-    @Published var copied: Set<UUID> = []      // cards showing "Copied" over their image
+    @Published var copied: Set<UUID> = []      // cards showing the copied mark over their image
+    @Published var copiedLabel = "Copied"      // what that mark says; one action marks every card the same
     /// The selected cards, in the order they were selected. Every action, Stitch included, takes
     /// them in this order, and a card's circle shows its place here.
     @Published private(set) var selection: [UUID] = []
@@ -538,14 +539,16 @@ final class ThumbnailController: NSObject {
                     agent: Agent.of(url))
     }
 
-    /// "Copied" over the cards themselves; the toast only when none of them is showing. `fallback`
-    /// is what that toast says, since what was copied is the caller's to name.
-    func showCopied(_ shots: [Screenshot], fallback: String? = nil) {
+    /// The copied mark over the cards themselves; the toast only when none of them is showing.
+    /// `label` is what the mark says and `fallback` what the toast says, since what was copied is
+    /// the caller's to name.
+    func showCopied(_ shots: [Screenshot], label: String = "Copied", fallback: String? = nil) {
         let ids = shots.compactMap { shot in model.cards.first { $0.shot.url == shot.url }?.id }
         guard visible, !ids.isEmpty else {
             showFeedback(fallback ?? (shots.count == 1 ? "Copied to clipboard" : "Copied \(shots.count) images"))
             return
         }
+        model.copiedLabel = label
         model.copied.formUnion(ids)
         // A card still on its way back from the annotator shows the mark when it lands.
         let hold = ui.toastSeconds + ui.expandDuration
