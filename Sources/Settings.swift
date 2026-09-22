@@ -378,6 +378,11 @@ final class Settings: ObservableObject {
         case .missing:
             var d = SettingsData.fromSystem()
             d.appleOriginal = AppleOriginal.capture()
+            // Installing Vignette is choosing what happens after a capture, so the one Apple
+            // behavior it replaces goes off here. Apple's thumbnail withholds the file for about
+            // 5.6 seconds (docs/replacing-apple-capture-2026-09-22.md), which makes copy on capture
+            // paste what was on the clipboard before. `appleOriginal` above holds the way back.
+            d.appleThumbnail = false
             var boot = Bootstrap(data: d, firstLaunch: true)
             boot.written = (try? encoder().encode(d)).flatMap { write($0, to: url) }
             boot.log.append("created \(url.path)")
@@ -500,6 +505,31 @@ final class Settings: ObservableObject {
         if next.ui == old.ui { Log.write("[settings] changed via \(source)") }
         if pushApple { pushToApple(old: old, new: next) }
         onChange?(old, next)
+    }
+
+    /// Put back the keys Vignette owns when something outside the app changed them. Only the two
+    /// whose drift breaks it: Apple's thumbnail delays the file past the clipboard fill, and a save
+    /// location pointing elsewhere leaves the watcher with nothing to see. `type` and
+    /// `disable-shadow` are left alone, since both of their values work.
+    func reconcileApple() {
+        var fixed: [String] = []
+        if (AppleScreencapture.bool("show-thumbnail") ?? true) != data.appleThumbnail {
+            AppleScreencapture.set("show-thumbnail", data.appleThumbnail)
+            fixed.append("show-thumbnail=\(data.appleThumbnail)")
+        }
+        // Compared expanded, because Vignette writes the tilde form and Apple's own UI writes a
+        // full path; a plain string compare would rewrite the key on every launch.
+        if data.syncAppleSaveLocation {
+            let want = data.folderURL.standardizedFileURL.path
+            let have = AppleScreencapture.string("location").map {
+                URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath).standardizedFileURL.path
+            }
+            if have != want {
+                AppleScreencapture.set("location", data.screenshotsFolder)
+                fixed.append("location=\(data.screenshotsFolder)")
+            }
+        }
+        if !fixed.isEmpty { Log.write("[settings] reconciled apple \(fixed.joined(separator: " "))") }
     }
 
     /// Keep macOS's screenshot behavior in line with the file. Only touched keys are written.

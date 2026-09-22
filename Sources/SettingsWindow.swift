@@ -248,8 +248,6 @@ struct SettingsView: View {
                 Text("PNG").tag("png")
                 Text("JPEG").tag("jpg")
             }
-            Toggle("Show the macOS thumbnail", isOn: binding(\.appleThumbnail))
-            caption("With it off, the file is saved right away and Vignette's thumbnail is the only one.")
             Toggle("Shadow on window screenshots", isOn: binding(\.windowShadow))
         }
         Section("After a screenshot") {
@@ -266,6 +264,9 @@ struct SettingsView: View {
             .labelsHidden()
         }
         Section("macOS") {
+            // The only place that says the thumbnail is gone, sitting with the button that brings
+            // it back: someone who misses it comes looking here, not at a toast they already lost.
+            caption("Vignette replaces the macOS screenshot thumbnail, so a capture is saved right away.")
             Button("Restore macOS Screenshot Settings…") { callbacks.restoreAppleDefaults() }
                 .disabled(settings.data.appleOriginal == nil)
             caption("Puts back the save location, thumbnail, shadow, and format macOS used before Vignette changed them.")

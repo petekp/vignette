@@ -92,6 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             openTweaks: { [weak self] in self?.debugPanel.toggle() },
             installAgentSkill: { [weak self] root in self?.installAgentSkill(into: [root]) },
             removeAgentSkill: { [weak self] root in self?.removeAgentSkill(from: [root]) })
+        // Before the watcher, so a capture taken during launch already lands the way Vignette needs.
+        settings.reconcileApple()
         loadDrafts()
         startRequests()
         startWatching()
