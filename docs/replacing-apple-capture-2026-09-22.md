@@ -83,6 +83,49 @@ the recording in. Vignette says the capture happened and gets out of the way.
 What recordings are for beyond that is
 [recordings-north-star-2026-09-22.md](recordings-north-star-2026-09-22.md).
 
+### What a recording is
+
+Measured 2026-09-22 against the real Cmd+Shift+5 interface, driven through `screencaptureui`'s
+accessibility buttons, and cross-checked against `screencapture -v -p`. Both produce the same thing.
+
+| | |
+|---|---|
+| Name | `Screenshot 2026-09-22 at 8.50.03 AM.mov` |
+| Extension | `mov` |
+| UTI | `com.apple.quicktime-movie`, conforming to `public.movie` and `public.audiovisual-content` |
+| Example | 4.05s, 840x908, 60fps, 0.64 MB |
+| On disk | 0.27s after the recording stops |
+
+**Detect by extension or UTI, never by name.** The prefix is
+`defaults read com.apple.screencapture name`, it is the user's to change, and screenshots and
+recordings share it: on this machine both are `Screenshot`. The timestamp also carries U+202F, a
+narrow no-break space, before AM and PM rather than an ordinary space.
+
+The file lands promptly, so recordings have none of the delay problem this note is otherwise about.
+
+A poster frame costs about 90ms: 84ms for the 4 second capture above and 95ms for a 39 second,
+1562x1620 one, both at a 416 point limit. That tracks resolution rather than duration, and it is far
+too slow for the main thread, so it belongs on the same asynchronous path `Thumbnailer` already uses
+for images.
+
+### What breaks if `mov` simply joins `candidateExtensions`
+
+1. `waitUntilComplete` requires `isCompleteImage`, which no recording satisfies. Every one would
+   spend ten seconds failing and log `never-stable`. This is the one that makes a naive change look
+   like nothing happening at all.
+2. `Clipboard.copyFiles` reads the first file whole to build an image item. A long recording would
+   go into memory for no reason.
+3. `Thumbnailer` is ImageIO throughout, so there is no poster frame.
+4. `ShotAction` has `minimumCount` but nothing that says an action does not apply to a card, so
+   Draw, Copy Drawing and Stitch would be offered on a recording.
+5. `annotateOnCapture` would send a recording to the editor.
+
+`Screenshot` is `{ url: URL }`, so it needs no new field: the kind follows from the extension.
+
+An existing folder gains its history at once. This Mac's watch folder holds 127 recordings beside
+1404 images, of which one falls inside the newest thirty, so the stack barely changes here. Another
+folder could differ.
+
 ## Order
 
 The public download is blocked on the tldraw Hobby key, so nothing here reaches a user until that

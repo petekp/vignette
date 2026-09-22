@@ -153,7 +153,13 @@ the measurements and the reasoning; a rule here points at its note.
    watch folder from the watcher's index.
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
-Delete test files afterwards; the watch folder is the user's real screenshot folder.
+Delete test files afterwards; the watch folder is the user's real screenshot folder. Never retype a
+real capture's name to reach it: macOS writes the time with U+202F, a narrow no-break space, before
+AM and PM, so a typed path with an ordinary space is a different path and every call on it answers
+ENOENT while `ls` still lists the file, which reads as the file being unreadable rather than
+misnamed. Take the name from a listing (`os.listdir`, `contentsOfDirectory`) and pass it through.
+The prefix is no safer: it is `defaults read com.apple.screencapture name`, the user's to change,
+and screen recordings share it, so `Screenshot ….mov` is a recording and only the extension says so.
 
 Measuring a handoff or a flicker: a burst of `screencapture -x -R x,y,w,h` reaches about 12 frames a
 second; `screencapture -x -v` records the region at 60, and the frames read back with AVFoundation
