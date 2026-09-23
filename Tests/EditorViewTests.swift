@@ -187,8 +187,9 @@ final class EditorViewTests: XCTestCase {
 
         key("\r", 36)
         XCTAssertNil(view.core.typing)
-        XCTAssertNil(textView, "the text view is gone")
         XCTAssertTrue(window.firstResponder === view)
+        settleTexts()
+        XCTAssertNil(textView, "the text view is gone once the text's bitmap is on screen")
         XCTAssertEqual(text(view.core.drawing.marks.last)?.text, "vrat \"quoted\" -- x\ntwo")
         XCTAssertEqual(view.core.selection, [view.core.drawing.marks[0].id])
     }
@@ -264,6 +265,7 @@ final class EditorViewTests: XCTestCase {
         open([Mark(geometry: .rectangle(CGRect(x: 100, y: 60, width: 300, height: 150))),
               Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 600, y: 100), end: CGPoint(x: 900, y: 100)))),
               Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 600, y: 400), text: "Top", wrap: nil, size: 24)))])
+        settleTexts()
         let rep = try capture { self.isBackground(self.pixel($0, 500, 300)) }
         XCTAssertEqual(view.pictureRect, CGRect(x: 0, y: 0, width: 1000, height: 600), "one point a px, so the capture's pixels are the drawing's")
 
@@ -276,11 +278,108 @@ final class EditorViewTests: XCTestCase {
         XCTAssertTrue(isRed(pixel(rep, 894, 100)), "arrowhead: \(pixel(rep, 894, 100))")
         XCTAssertTrue(isBackground(pixel(rep, 894, 500)))
         // The text's letters are in its first line, 400 to about 430 px down, and not mirrored.
-        func redPixels(in rows: ClosedRange<Int>) -> Int {
-            rows.reduce(0) { sum, y in sum + (600...660).filter { isRed(pixel(rep, $0, y)) }.count }
+        XCTAssertGreaterThan(red(rep, x: 600...660, y: 400...432), 20)
+        XCTAssertEqual(red(rep, x: 600...660, y: 168...200), 0)
+    }
+
+    /// How many pixels in a rect of the view are the marks' red.
+    private func red(_ rep: NSBitmapImageRep, x: ClosedRange<Int>, y: ClosedRange<Int>) -> Int {
+        y.reduce(0) { sum, row in sum + x.filter { isRed(pixel(rep, $0, row)) }.count }
+    }
+
+    /// Waits until every text bitmap the view has asked for is drawn and on its layer, or dropped: the
+    /// text queue runs dry, then the main queue runs what it sent back, which may ask for more.
+    private func settleTexts() {
+        func contents() -> [ObjectIdentifier?] {
+            (view.subviews.first?.layer?.sublayers?.first?.sublayers ?? []).map { $0.contents.map { ObjectIdentifier($0 as AnyObject) } }
         }
-        XCTAssertGreaterThan(redPixels(in: 400...432), 20)
-        XCTAssertEqual(redPixels(in: 168...200), 0)
+        var last = contents(), quiet = 0
+        while quiet < 2 {
+            EditorPicture.textQueue.sync {}
+            var ran = false
+            DispatchQueue.main.async { ran = true }
+            while !ran { RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01)) }
+            let now = contents()
+            quiet = now == last ? quiet + 1 : 0
+            last = now
+        }
+    }
+
+    func testABitmapThatArrivesAfterItsTextMovedIsNotShown() throws {
+        open([Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 100), text: "Moved", wrap: nil, size: 24)))])
+        // The first bitmap is drawn and waits on the main queue; the next draw waits on the text queue.
+        EditorPicture.textQueue.sync {}
+        EditorPicture.textQueue.suspend()
+        var suspended = true
+        defer { if suspended { EditorPicture.textQueue.resume() } }
+        drag(from: (130, 115), to: (130, 415))
+        XCTAssertEqual(text(view.core.drawing.marks.first)?.origin, CGPoint(x: 100, y: 400))
+
+        let moving = try capture { _ in true }
+        XCTAssertEqual(red(moving, x: 100...200, y: 100...130), 0, "the bitmap drawn for where the text was is dropped")
+        XCTAssertEqual(red(moving, x: 100...200, y: 400...430), 0, "the one for where it is has not been drawn")
+
+        EditorPicture.textQueue.resume()
+        suspended = false
+        settleTexts()
+        let moved = try capture { _ in true }
+        XCTAssertGreaterThan(red(moved, x: 100...200, y: 400...430), 20)
+        XCTAssertEqual(red(moved, x: 100...200, y: 100...130), 0)
+    }
+
+    func testNoBitmapIsShownAfterParkOrOnAnotherImage() throws {
+        EditorPicture.textQueue.suspend()
+        var suspended = true
+        defer { if suspended { EditorPicture.textQueue.resume() } }
+        open([Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 100), text: "Parked", wrap: nil, size: 24)))])
+        XCTAssertNotNil(view.park())
+        EditorPicture.textQueue.resume()
+        suspended = false
+        settleTexts()
+        let parked = try capture { _ in true }
+        XCTAssertEqual(red(parked, x: 100...200, y: 100...130), 0, "a bitmap asked for before park is not shown")
+
+        EditorPicture.textQueue.suspend()
+        suspended = true
+        open([Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 300), text: "First", wrap: nil, size: 24)))])
+        open([Mark(geometry: .rectangle(CGRect(x: 600, y: 100, width: 200, height: 100)))])
+        EditorPicture.textQueue.resume()
+        suspended = false
+        settleTexts()
+        let other = try capture { self.isRed(self.pixel($0, 700, 100)) }
+        XCTAssertEqual(red(other, x: 100...200, y: 300...330), 0, "the first image's text is not drawn on the second")
+    }
+
+    func testWhenTypingEndsTheWordsAreOnScreenInEveryFrame() throws {
+        open()
+        key("t", 17)
+        mouse(.leftMouseDown, 100, 100)
+        mouse(.leftMouseUp, 100, 100)
+        type("Words")
+        EditorPicture.textQueue.suspend()
+        var suspended = true
+        defer { if suspended { EditorPicture.textQueue.resume() } }
+        key("\r", 36)
+        XCTAssertNil(view.core.typing)
+        let box = try XCTUnwrap(text(view.core.drawing.marks.first).map { TextLayout($0, imageWidth: 1000, pointScale: 1, style: .standard).box })
+        let columns = Int(box.minX)...Int(box.maxX), rows = Int(box.minY)...Int(box.maxY)
+
+        // Its bitmap cannot be drawn yet, so the text view still shows the words.
+        let ended = try capture { _ in true }
+        XCTAssertGreaterThan(red(ended, x: columns, y: rows), 20)
+
+        // Once the bitmap can be drawn, it takes over from the text view in one frame.
+        EditorPicture.textQueue.resume()
+        suspended = false
+        var frames = 0
+        while textView != nil, frames < 100 {
+            let frame = try capture { _ in true }
+            XCTAssertGreaterThan(red(frame, x: columns, y: rows), 20, "frame \(frames)")
+            frames += 1
+        }
+        XCTAssertNil(textView)
+        let drawn = try capture { _ in true }
+        XCTAssertGreaterThan(red(drawn, x: columns, y: rows), 20)
     }
 
     /// The selection's blue (`#3182ed`), whatever the display's profile did to it.
@@ -343,6 +442,7 @@ final class EditorViewTests: XCTestCase {
         // text is drawn for it.
         centre(CGPoint(x: 606, y: 412))
         RunLoop.main.run(until: Date(timeIntervalSinceNow: EditorView.restDelay * 3))
+        settleTexts()
         rep = try capture(nominal: false) { _ in true }
         let row = (rep.pixelsWide / 2 - 45 * scale...rep.pixelsWide / 2 + 45 * scale).map { ($0, rep.pixelsHigh / 2) }
         XCTAssertGreaterThan(row.filter { red(self.pixel(rep, $0.0, $0.1)) }.count, 4 * scale, "the stems' fill")
