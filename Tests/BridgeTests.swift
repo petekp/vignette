@@ -104,8 +104,8 @@ final class BridgeTests: XCTestCase {
 
     func testBuildScriptCarriesTheImageItsDraftAndTheMarks() throws {
         let payload = LoadPayload(key: "/a b.png", mimeType: "image/png", pixelWidth: 10, pixelHeight: 20)
-        let marks = [Mark(type: .ellipse, x: 0.1, y: 0.2, w: 0.3, h: 0.4, color: "red"),
-                     Mark(type: .text, x: 0, y: 0, text: "say \"hi\"")]
+        let marks = [AgentMark(type: .ellipse, x: 0.1, y: 0.2, w: 0.3, h: 0.4, color: "red"),
+                     AgentMark(type: .text, x: 0, y: 0, text: "say \"hi\"")]
         let script = PageAPI.build(payload, snapshot: Data(#"{"document":1}"#.utf8), marks: marks).script
         XCTAssertTrue(script.hasPrefix(#"return window.vignette ? await window.vignette.build({"snapshot":{"document":1},"key":"/a b.png""#), script)
         // Both arguments must be JSON the page can take as they are: read them back as a pair.

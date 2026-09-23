@@ -184,9 +184,9 @@ final class RenderTests: XCTestCase {
             return window.editor.getCurrentPageShapeIds().size;
             """)
         let marks = [
-            Mark(type: .ellipse, x: 0.2, y: 0.2, w: 0.5, h: 0.5, color: "red"),
-            Mark(type: .arrow, x: 0.1, y: 0.9, x2: 0.4, y2: 0.6, color: "red"),
-            Mark(type: .text, x: 0.05, y: 0.05, text: "Header should not scroll", color: "red"),
+            AgentMark(type: .ellipse, x: 0.2, y: 0.2, w: 0.5, h: 0.5, color: "red"),
+            AgentMark(type: .arrow, x: 0.1, y: 0.9, x2: 0.4, y2: 0.6, color: "red"),
+            AgentMark(type: .text, x: 0.05, y: 0.05, text: "Header should not scroll", color: "red"),
         ]
         let built = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(payload, snapshot: nil, marks: marks).script)))
         let preview = try XCTUnwrap(built.preview, "a build always renders a preview for the card")
@@ -219,7 +219,7 @@ final class RenderTests: XCTestCase {
             window.editor.createShape({ type: 'geo', x: 0, y: 0, props: { w: 10, h: 10, geo: 'rectangle', color: 'light-blue' } });
             return window.editor.getCurrentPageShapeIds().size;
             """)
-        let marks = [Mark(type: .ellipse, x: 0.2, y: 0.2, w: 0.5, h: 0.5, color: "red")]
+        let marks = [AgentMark(type: .ellipse, x: 0.2, y: 0.2, w: 0.5, h: 0.5, color: "red")]
         // The build is not awaited. The load goes in once its mark is on the canvas, which is the
         // build waiting on its rendering: the moment a load used to be thrown away.
         _ = try eval("""
@@ -259,9 +259,9 @@ final class RenderTests: XCTestCase {
         waitFor("ready")
         let words = "16 pt between strip and card now. Enough? Circle what to change."
         let marks = [
-            Mark(type: .text, x: 0.3, y: 0.55, text: words, color: "red"),
-            Mark(type: .text, x: 0.1, y: 0.1, w: 0.4, text: words, color: "red"),
-            Mark(type: .text, x: 0.92, y: 0.9, text: words, color: "red"),
+            AgentMark(type: .text, x: 0.3, y: 0.55, text: words, color: "red"),
+            AgentMark(type: .text, x: 0.1, y: 0.1, w: 0.4, text: words, color: "red"),
+            AgentMark(type: .text, x: 0.92, y: 0.9, text: words, color: "red"),
         ]
         let built = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(payload, snapshot: nil, marks: marks).script)))
         try loadFixture(snapshot: try JSONSerialization.data(withJSONObject: try XCTUnwrap(built.snapshot)))
@@ -284,7 +284,7 @@ final class RenderTests: XCTestCase {
         // A caption asked for at the image's full width already fits it exactly, so the pull-back
         // has no room to give it and must leave it where it is rather than move it in by the margin.
         let full = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(payload, snapshot: nil,
-            marks: [Mark(type: .text, x: 0, y: 0.1, w: 1, text: words, color: "red")]).script)))
+            marks: [AgentMark(type: .text, x: 0, y: 0.1, w: 1, text: words, color: "red")]).script)))
         try loadFixture(snapshot: try JSONSerialization.data(withJSONObject: try XCTUnwrap(full.snapshot)))
         let spanning = try XCTUnwrap(eval(oneTextBox) as? [String: Double])
         XCTAssertGreaterThanOrEqual(spanning["x"]!, 0, "a full-width caption stays inside: \(spanning)")
@@ -296,7 +296,7 @@ final class RenderTests: XCTestCase {
         let wide = LoadPayload(key: fixture.path, mimeType: "image/png", pixelWidth: pixelWidth * 7, pixelHeight: pixelHeight * 2)
         let long = String(repeating: "the header should not scroll with the rest of the page, ", count: 4)
         let tall = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(wide, snapshot: nil,
-            marks: [Mark(type: .text, x: 0.88, y: 0.2, text: long, color: "red")]).script)))
+            marks: [AgentMark(type: .text, x: 0.88, y: 0.2, text: long, color: "red")]).script)))
         try loadFixture(snapshot: try JSONSerialization.data(withJSONObject: try XCTUnwrap(tall.snapshot)))
         let column = try XCTUnwrap(eval(oneTextBox) as? [String: Double])
         XCTAssertLessThanOrEqual(column["h"]!, 1, "a long sentence is widened until it fits the image's height: \(column)")
@@ -320,7 +320,7 @@ final class RenderTests: XCTestCase {
     func testEveryTextMarkIsDrawn() throws {
         waitFor("ready")
         for words in ["Header should not scroll", "The second one draws too"] {
-            let marks = [Mark(type: .text, x: 0.1, y: 0.4, text: words, color: "red")]
+            let marks = [AgentMark(type: .text, x: 0.1, y: 0.4, text: words, color: "red")]
             let built = try XCTUnwrap(ParkResult(body: try eval(PageAPI.build(payload, snapshot: nil, marks: marks).script)))
             let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(built.preview)))
             XCTAssertGreaterThan(redPixels(rep), 50, "\"\(words)\" is drawn, not left blank")

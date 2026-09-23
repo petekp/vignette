@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 /// Annotations in progress, owned by the app: one JSON file per screenshot under Application
@@ -20,13 +19,8 @@ final class DraftStore {
         }
     }
 
-    /// The file name for a key: a hash, so any path fits and the name is stable across launches.
-    static func id(for key: String) -> String {
-        SHA256.hash(data: Data(key.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()
-    }
-
-    func snapshotURL(for key: String) -> URL { directory.appendingPathComponent(Self.id(for: key) + ".json") }
-    func previewURL(for key: String) -> URL { previewDirectory.appendingPathComponent(Self.id(for: key) + ".png") }
+    func snapshotURL(for key: String) -> URL { directory.appendingPathComponent(DrawingStore.id(for: key) + ".json") }
+    func previewURL(for key: String) -> URL { previewDirectory.appendingPathComponent(DrawingStore.id(for: key) + ".png") }
 
     /// The stored snapshot as JSON, ready to hand to the page.
     func snapshot(for key: String) -> Data? {

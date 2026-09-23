@@ -745,9 +745,6 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// answers, after the window is gone.
     private var holdsCanvas: Bool { current != nil || pendingHide != nil }
 
-    /// Every color the page can draw a mark in, by id: what an agent's `marks=` may name.
-    private(set) var colorIDs: [String] = []
-
     /// Why nothing may borrow the page's canvas right now, or nil when it is free. A marks build
     /// and a preview rendering both put their own image there for the length of one rendering, so
     /// they wait for the annotator; `add` asks before it copies anything, so a refusal is one error
@@ -784,7 +781,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// `snapshot` is the image's existing draft, so marks add to it instead of replacing it.
     /// Always answers, like `exportDrafts`: with the result, or with an error after a failure, a
     /// timeout, or when the page cannot take the call.
-    func buildDraft(_ shot: Screenshot, marks: [Mark], completion: @escaping (ParkResult?, String?) -> Void) {
+    func buildDraft(_ shot: Screenshot, marks: [AgentMark], completion: @escaping (ParkResult?, String?) -> Void) {
         if let refusal = canvasRefusal { completion(nil, refusal); return }
         guard let webView else { completion(nil, "the editor page is not ready"); return }
         guard let pixels = Thumbnailer.pixelSize(of: shot.url) else {
@@ -885,7 +882,6 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
             pageReady = true
             canvasMaybeFreed()
             toolbar.model.tools = tools
-            colorIDs = markColors.map(\.id)
             if let call = pendingCall { self.call(call); pendingCall = nil }
             // After a web process restart the window is still up: put its image and stored draft back.
             else if let shot = current { sendImage(shot) }

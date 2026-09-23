@@ -759,17 +759,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private func addImage(_ request: CommandRequest) {
         guard let source = request.files.first else { Commands.error("add", .missingFile, "no file given"); return }
         guard Commands.isReadableImage(source) else { Commands.error("add", .unreadableImage, source.path); return }
-        var marks: [Mark] = []
+        var marks: [AgentMark] = []
         if let value = request.marks {
             // Checked before anything is copied: a push with bad marks is one error line and no file.
-            do { marks = try Commands.marks(from: value) } catch { Commands.error("add", .invalidMarks, "\(error)"); return }
-            // Before the color check: the colors come from the page, so without one the answer is
-            // that the page is not ready, not that the color is wrong.
+            do { marks = try AgentMark.parse(value) } catch { Commands.error("add", .invalidMarks, "\(error)"); return }
             if let refused = annotator.canvasRefusal {
                 Commands.error("add", .pageNotReady, "\(refused); marks need the editor free"); return
-            }
-            if let unknown = marks.compactMap(\.color).first(where: { !annotator.colorIDs.contains($0) }) {
-                Commands.error("add", .invalidMarks, "unknown color \"\(unknown)\"; the editor has \(annotator.colorIDs.joined(separator: ", "))"); return
             }
         }
         let inFolder = Commands.policyError(for: source, watchFolder: watchFolder, debug: false) == nil

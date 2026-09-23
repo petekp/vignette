@@ -73,12 +73,4 @@ final class DraftStoreTests: XCTestCase {
         XCTAssertEqual(store.sweep { $0 == "/kept.png" }, ["/gone.png"])
         XCTAssertEqual(store.keys, ["/kept.png"])
     }
-
-    func testIdIsStableAndFilenameSafe() {
-        let id = DraftStore.id(for: "/Users/p/Screenshots/Screenshot 2026-09-15 at 2.50.12 PM.png")
-        XCTAssertEqual(id, DraftStore.id(for: "/Users/p/Screenshots/Screenshot 2026-09-15 at 2.50.12 PM.png"))
-        XCTAssertEqual(id.count, 32)
-        XCTAssertTrue(id.allSatisfy { $0.isHexDigit })
-        XCTAssertNotEqual(id, DraftStore.id(for: "/Users/p/Screenshots/Screenshot 2026-09-15 at 2.50.13 PM.png"))
-    }
 }

@@ -40,28 +40,6 @@ struct ViewRequest: Encodable, Equatable {
     let image: PageRect
 }
 
-/// One annotation an agent supplied with `add?marks=`. Every number is a fraction of the image:
-/// `x` and `y` from its top-left corner, `w` and `h` of its size, `x2` and `y2` where an arrow
-/// points, so a mark does not depend on the screenshot's pixel size. `Commands.marks(from:)`
-/// checks them; the page turns them into ordinary shapes the user then edits like their own.
-///
-/// On a text mark `w` is the box the words wrap in, and it is optional: without it the box is the
-/// room between `x` and the right edge. `h` is the wrap's, never the mark's.
-struct Mark: Codable, Equatable {
-    enum Kind: String, Codable, CaseIterable { case ellipse, rectangle, arrow, text }
-
-    let type: Kind
-    let x: Double
-    let y: Double
-    var w: Double?
-    var h: Double?
-    var x2: Double?
-    var y2: Double?
-    var text: String?
-    /// A color id from web/src/config.ts; the page uses its first color when this is absent.
-    var color: String?
-}
-
 struct ToolInfo: Identifiable, Equatable {
     let id: String
     let label: String
@@ -82,7 +60,7 @@ enum PageAPI: Equatable {
     case reset
     /// An agent's marks as a draft, with nothing shown: the answer is a `ParkResult` to store.
     /// `snapshot` is the image's existing draft, which the marks are added to.
-    case build(LoadPayload, snapshot: Data?, marks: [Mark])
+    case build(LoadPayload, snapshot: Data?, marks: [AgentMark])
     /// Each item's stored draft JSON, by key.
     case export([(key: String, snapshot: Data)])
     /// The image on the canvas as it stands, rendered at full scale, without closing anything.

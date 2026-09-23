@@ -7,7 +7,7 @@ final class ScreenshotRequestsTests: XCTestCase {
     private var folder: URL!
     private var requests: ScreenshotRequests!
     /// The marks the fake page "built" into a draft, and whether storing one is allowed to succeed.
-    private var built: [[Mark]] = []
+    private var built: [[AgentMark]] = []
     private var canvasBusy: String?
     private var draftStoreFails = false
     private var presented: [URL] = []

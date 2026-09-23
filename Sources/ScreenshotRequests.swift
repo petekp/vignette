@@ -17,7 +17,7 @@ final class ScreenshotRequests {
         /// Why the page's canvas cannot be borrowed, or nil when it is free.
         var canvasRefusal: () -> String? = { "no editor" }
         /// Turns marks into a draft without showing anything (`AnnotationController.buildDraft`).
-        var buildDraft: (Screenshot, [Mark], @escaping (ParkResult?, String?) -> Void) -> Void = { _, _, done in done(nil, "no editor") }
+        var buildDraft: (Screenshot, [AgentMark], @escaping (ParkResult?, String?) -> Void) -> Void = { _, _, done in done(nil, "no editor") }
         /// Stores a draft and its preview durably, or throws. Publication waits for this to succeed.
         var saveDraft: (String, Any, Data?) throws -> Void = { _, _, _ in }
         /// Shows a published reply's card. Managed replies never reach the watcher's capture path.
@@ -91,7 +91,7 @@ final class ScreenshotRequests {
         let digest: String
         /// True when the reply supplied its own PNG; false means it draws on the request's image.
         let hasImage: Bool
-        let marks: [Mark]
+        let marks: [AgentMark]
         var stage: Stage
         /// The person deleted the published file. Publication still happened and is not undone.
         var deleted = false
