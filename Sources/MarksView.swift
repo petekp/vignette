@@ -24,6 +24,17 @@ final class MarksView: NSView {
         didSet { if picture != oldValue { place() } }
     }
 
+    /// The picture's corner radius, when the marks are clipped here rather than by SwiftUI: continuous
+    /// corners, the curve SwiftUI's `RoundedRectangle(style: .continuous)` draws.
+    var corner: CGFloat? {
+        didSet {
+            guard corner != oldValue else { return }
+            host.cornerRadius = corner ?? 0
+            host.cornerCurve = .continuous
+            host.masksToBounds = corner != nil
+        }
+    }
+
     private let host = CALayer()
 
     override init(frame: NSRect) {
@@ -87,9 +98,10 @@ private struct MarksOverlay: NSViewRepresentable {
 
 extension View {
     /// `marks` over this picture, an image of `picture`'s shape filling the view with aspect fill,
-    /// clipped to the picture's corners. Put it after the picture's shadow: SwiftUI draws the shadow
-    /// of a view holding an AppKit view differently, a level or two a channel, and a card's shadow has
-    /// to match its flight's and the annotator's exactly.
+    /// clipped to the picture's corners as they animate: a flight's. A card's are drawn by its
+    /// `DragSource`. Put it after the picture's shadow: SwiftUI draws the shadow of a view holding an
+    /// AppKit view differently, a level or two a channel, and a card's shadow has to match its
+    /// flight's and the annotator's exactly.
     func marks(_ marks: MarkLayers?, picture: CGSize?, corner: CGFloat) -> some View {
         overlay {
             if let marks {
