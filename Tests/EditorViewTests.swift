@@ -42,7 +42,8 @@ final class EditorViewTests: XCTestCase {
         ctx.setFillColor(CGColor(gray: 0.9, alpha: 1))
         ctx.fill(CGRect(x: 0, y: 0, width: 100, height: 60))
         view.open(Drawing(key: "/tmp/Screenshot test.png", pixels: Self.pixels, pointScale: 1, marks: marks), image: ctx.makeImage()!,
-                  style: .standard, metrics: .standard, arrowhead: .standard, pickColor: { _ in nil })
+                  picture: CGRect(x: 0, y: 0, width: 1000, height: 600), style: .standard, metrics: .standard, arrowhead: .standard,
+                  pickColor: { _ in nil })
     }
 
     // MARK: Events
@@ -218,10 +219,11 @@ final class EditorViewTests: XCTestCase {
 
     // MARK: What is drawn
 
-    /// The window server's own picture of the test window, one pixel per point: what a person sees,
-    /// with every layer where AppKit and Core Animation really put it. The window is ordered in far
-    /// off every screen for the capture, and out again afterwards.
-    private func capture(until ready: (NSBitmapImageRep) -> Bool) throws -> NSBitmapImageRep {
+    /// The window server's own picture of the test window: what a person sees, with every layer where
+    /// AppKit and Core Animation really put it. One pixel a point, or the screen's own pixels with
+    /// `nominal` false. The window is ordered in far off every screen for the capture, and out again
+    /// afterwards.
+    private func capture(nominal: Bool = true, until ready: (NSBitmapImageRep) -> Bool) throws -> NSBitmapImageRep {
         typealias CreateImage = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
         // Swift has not been able to call it since the macOS 15 SDK, but it still answers for the
         // caller's own windows, with no screen-recording permission.
@@ -235,7 +237,7 @@ final class EditorViewTests: XCTestCase {
         let deadline = Date(timeIntervalSinceNow: 5)
         while true {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-            let options = CGWindowImageOption.boundsIgnoreFraming.rawValue | CGWindowImageOption.nominalResolution.rawValue
+            let options = CGWindowImageOption.boundsIgnoreFraming.rawValue | (nominal ? CGWindowImageOption.nominalResolution.rawValue : 0)
             if let image = createImage(.null, CGWindowListOption.optionIncludingWindow.rawValue, CGWindowID(window.windowNumber), options)?.takeRetainedValue() {
                 let rep = NSBitmapImageRep(cgImage: image)
                 if ready(rep) || Date() > deadline { return rep }
@@ -279,6 +281,54 @@ final class EditorViewTests: XCTestCase {
         }
         XCTAssertGreaterThan(redPixels(in: 400...432), 20)
         XCTAssertEqual(redPixels(in: 168...200), 0)
+    }
+
+    /// Along a line of pixels, how many are soft, in between the colours `kinds` name, and how many
+    /// edges from one colour to another the line crosses. A shape drawn at the screen's resolution
+    /// has about one soft pixel an edge; a magnified bitmap has several.
+    private func edges(_ rep: NSBitmapImageRep, _ points: [(Int, Int)],
+                       _ kinds: [((r: CGFloat, g: CGFloat, b: CGFloat)) -> Bool]) -> (soft: Int, edges: Int) {
+        var soft = 0, edges = 0, last: Int?
+        for point in points {
+            guard let kind = kinds.firstIndex(where: { $0(pixel(rep, point.0, point.1)) }) else {
+                soft += 1
+                continue
+            }
+            if let last, last != kind { edges += 1 }
+            last = kind
+        }
+        return (soft, edges)
+    }
+
+    func testStrokesAreSharpAtZoomThreeAtOnceAndTextsOnceTheZoomRests() throws {
+        open([Mark(geometry: .rectangle(CGRect(x: 100, y: 60, width: 300, height: 150))),
+              Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 600, y: 400), text: "HH", wrap: nil, size: 24)))])
+        let zoom: CGFloat = 3
+        func centre(_ point: CGPoint) { view.pictureRect = CGRect(x: 500 - point.x * zoom, y: 300 - point.y * zoom, width: 3000, height: 1800) }
+        let background = { (c: (r: CGFloat, g: CGFloat, b: CGFloat)) in self.isBackground(c) }
+        let red = { (c: (r: CGFloat, g: CGFloat, b: CGFloat)) in self.isRed(c) }
+        let dark = { (c: (r: CGFloat, g: CGFloat, b: CGFloat)) in max(c.r, c.g, c.b) < 0.2 }
+
+        // The rectangle's top edge, captured before the zoom rests: a stroke needs nothing drawn again.
+        centre(CGPoint(x: 250, y: 60))
+        var rep = try capture(nominal: false) { red(self.pixel($0, $0.pixelsWide / 2, $0.pixelsHigh / 2)) }
+        let scale = rep.pixelsWide / 1000
+        let column = (rep.pixelsHigh / 2 - 20 * scale...rep.pixelsHigh / 2 + 20 * scale).map { (rep.pixelsWide / 2, $0) }
+        XCTAssertGreaterThan(column.filter { red(self.pixel(rep, $0.0, $0.1)) }.count, 9 * scale, "the stroke is 3.5 px, 10.5 pt at zoom 3")
+        let stroke = edges(rep, column, [background, red])
+        XCTAssertEqual(stroke.edges, 2)
+        XCTAssertLessThanOrEqual(stroke.soft, stroke.edges + 1, "about one soft pixel at each edge of the stroke")
+
+        // Across the first H, near the top of its stems, captured once the zoom has rested and the
+        // text is drawn for it.
+        centre(CGPoint(x: 606, y: 412))
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: EditorView.restDelay * 3))
+        rep = try capture(nominal: false) { _ in true }
+        let row = (rep.pixelsWide / 2 - 45 * scale...rep.pixelsWide / 2 + 45 * scale).map { ($0, rep.pixelsHigh / 2) }
+        XCTAssertGreaterThan(row.filter { red(self.pixel(rep, $0.0, $0.1)) }.count, 4 * scale, "the stems' fill")
+        let letters = edges(rep, row, [background, red, dark])
+        XCTAssertGreaterThanOrEqual(letters.edges, 4, "into and out of the outline and the fill")
+        XCTAssertLessThanOrEqual(letters.soft, letters.edges + 2, "about one soft pixel at each edge of the letters")
     }
 
     // MARK: The clipboard

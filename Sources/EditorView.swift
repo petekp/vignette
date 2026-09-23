@@ -35,9 +35,9 @@ final class EditorView: NSView {
     /// Everything the editor decides; the host reads it for `[state]`.
     private(set) var core = EditorCore()
 
-    /// Where the picture sits in the view: the host's zoom sets it on every step. The zoom, in screen
-    /// pt per image px, is its width over the image's, and the marks, the overlay and the text being
-    /// typed follow it in the same turn. `open` fits the picture to the view until the host sets it.
+    /// Where the picture sits in the view: `open` places it, and the host's zoom sets it on every
+    /// step. The zoom, in screen pt per image px, is its width over the image's, and the marks, the
+    /// overlay and the text being typed follow it in the same turn.
     var pictureRect: CGRect {
         get { placedPicture }
         set {
@@ -46,7 +46,16 @@ final class EditorView: NSView {
         }
     }
 
-    /// How long the picture stays put before the marks are drawn again for the zoom it is at.
+    /// The view's size and the picture's rect in it, set together as one zoom step, for a host whose
+    /// zoom grows the window with the picture. Setting the size alone is a zoom step too.
+    func setSize(_ size: CGSize, picture: CGRect) {
+        settingSize = true
+        setFrameSize(size)
+        settingSize = false
+        pictureRect = picture
+    }
+
+    /// How long the picture stays put before the texts are drawn again for the zoom it is at.
     static let restDelay: TimeInterval = 0.1
 
     private let pasteboard: NSPasteboard
@@ -60,8 +69,8 @@ final class EditorView: NSView {
     private var handOverTimer: Timer?
     private var restTimer: Timer?
     private var zoomMoving = false
-    /// The resolution the mark layers were last drawn at, kept while a zoom moves.
-    private var markScale: CGFloat = 1
+    /// Inside `setSize(_:picture:)`, whose picture step follows the size at once.
+    private var settingSize = false
     /// Arrow keys down, which get their key up when the window stops being key.
     private var heldArrows: Set<EditorCore.Key> = []
     private var resignKeyObserver: NSObjectProtocol?
@@ -88,16 +97,17 @@ final class EditorView: NSView {
     // MARK: Opening, parking and the toolbar
 
     /// Opens a screenshot with its drawing, an empty one when it has none. `image` is the screenshot
-    /// decoded at any size; it fills the drawing's `pixels`. `pickColor` is the colour pass's pick,
-    /// which may answer nil until its sample exists (`colorSampleArrived`).
-    func open(_ drawing: Drawing, image: CGImage, style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle,
+    /// decoded at any size; it fills the drawing's `pixels`, shown at `picture` in the view.
+    /// `pickColor` is the colour pass's pick, which may answer nil until its sample exists
+    /// (`colorSampleArrived`).
+    func open(_ drawing: Drawing, image: CGImage, picture: CGRect, style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle,
               pickColor: @escaping EditorCore.ColorPick) {
         self.arrowhead = arrowhead
         stopTimers()
         heldArrows = []
         screenshotName = URL(fileURLWithPath: drawing.key).deletingPathExtension().lastPathComponent
-        picture.open(image, pixels: drawing.pixels)
-        placedPicture = Self.fitted(drawing.pixels, in: bounds)
+        self.picture.open(image, pixels: drawing.pixels)
+        placedPicture = picture
         handle(.open(drawing, style: style, metrics: metrics, pickColor: pickColor))
         guard core.isOpen else {
             Log.write("[editor] error open-refused \(screenshotName): pixels=\(drawing.pixels.width)x\(drawing.pixels.height) pointScale=\(drawing.pointScale)")
@@ -154,15 +164,6 @@ final class EditorView: NSView {
     func imagePoint(forViewPoint point: CGPoint) -> CGPoint {
         guard zoom > 0 else { return point }
         return CGPoint(x: (point.x - placedPicture.minX) / zoom, y: (point.y - placedPicture.minY) / zoom)
-    }
-
-    /// The image fitted inside `bounds` and centred in it, or at one pt per px while the view has no size.
-    private static func fitted(_ pixels: PixelSize, in bounds: CGRect) -> CGRect {
-        let size = CGSize(width: pixels.width, height: pixels.height)
-        guard bounds.width > 0, bounds.height > 0, size.width > 0, size.height > 0 else { return CGRect(origin: .zero, size: size) }
-        let scale = min(bounds.width / size.width, bounds.height / size.height)
-        return CGRect(x: bounds.midX - size.width * scale / 2, y: bounds.midY - size.height * scale / 2,
-                      width: size.width * scale, height: size.height * scale)
     }
 
     // MARK: Running the core
@@ -239,7 +240,7 @@ final class EditorView: NSView {
         let geometry = core.geometry
         picture.layer.setAffineTransform(transform)
         picture.show(core.drawing, typing: core.typing?.id, geometry: geometry, style: core.style, arrowhead: arrowhead,
-                     resolution: resolution(), sliding: core.gesture != nil)
+                     resolution: resolution, gesture: core.gesture != nil)
         overlay.show(core.overlay, drawing: core.drawing, geometry: geometry, arrowhead: arrowhead, transform: transform)
         placeTypingField()
         CATransaction.commit()
@@ -247,24 +248,19 @@ final class EditorView: NSView {
 
     private var backingScale: CGFloat { window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2 }
 
-    /// The mark layers at the zoom's resolution, but no finer than the whole image fitted to the view;
-    /// closer than that, the part in view at the zoom's own resolution as well. Kept as they are while
-    /// a zoom moves.
-    private func resolution() -> EditorPicture.Resolution {
-        guard !zoomMoving else { return EditorPicture.Resolution(marks: markScale, detail: nil, moving: true) }
-        let needed = zoom * backingScale
-        let pixels = core.drawing.pixels
-        let fit = backingScale * min(bounds.width / CGFloat(pixels.width), bounds.height / CGFloat(pixels.height))
-        markScale = fit > 0 ? min(needed, fit) : needed
-        var detail: (region: CGRect, scale: CGFloat)?
-        if needed > markScale * 1.01 {
-            let inView = CGRect(origin: imagePoint(forViewPoint: bounds.origin), size: CGSize(width: bounds.width / zoom, height: bounds.height / zoom))
-            let region = inView.intersection(pixels.bounds)
-            if !region.isNull, !region.isEmpty { detail = (region, needed) }
+    /// The zoom's resolution and the part of the image in view, the whole picture while the view has
+    /// no size yet.
+    private var resolution: EditorPicture.Resolution {
+        let shown = bounds.isEmpty ? placedPicture : bounds.intersection(placedPicture)
+        var visible = CGRect.null
+        if !shown.isNull, zoom > 0 {
+            let origin = imagePoint(forViewPoint: shown.origin)
+            visible = CGRect(x: origin.x, y: origin.y, width: shown.width / zoom, height: shown.height / zoom).intersection(core.drawing.pixels.bounds)
         }
-        return EditorPicture.Resolution(marks: markScale, detail: detail, moving: false)
+        return EditorPicture.Resolution(scale: zoom * backingScale, visible: visible, moving: zoomMoving)
     }
 
+    /// A zoom step: everything follows at once, and the texts are drawn for the new zoom once it rests.
     private func pictureMoved() {
         guard core.isOpen, zoom > 0, zoom.isFinite else { return }
         zoomMoving = true
@@ -277,7 +273,7 @@ final class EditorView: NSView {
         handle(.zoomChanged(zoom))
     }
 
-    /// The zoom is still: the marks are drawn for it, and the hover is found again under a pointer the
+    /// The zoom is still: the texts are drawn for it, and the hover is found again under a pointer the
     /// picture moved beneath.
     private func zoomCameToRest() {
         restTimer = nil
@@ -292,13 +288,15 @@ final class EditorView: NSView {
     }
 
     override func setFrameSize(_ newSize: NSSize) {
+        let changed = newSize != frame.size
         super.setFrameSize(newSize)
-        if core.isOpen { refresh() }
+        if changed, !settingSize { pictureMoved() }
     }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         overlay.setScale(backingScale)
+        picture.setScale(backingScale)
         canvas.host.contentsScale = backingScale
         refresh()
     }
