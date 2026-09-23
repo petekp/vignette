@@ -96,10 +96,10 @@ final class EditorView: NSView {
     // MARK: Opening, parking and the toolbar
 
     /// Opens a screenshot with its drawing, an empty one when it has none. `image` is the screenshot
-    /// decoded at any size; it fills the drawing's `pixels`, shown at `picture` in the view.
-    /// `pickColor` is the colour pass's pick, which may answer nil until its sample exists
-    /// (`colorSampleArrived`).
-    func open(_ drawing: Drawing, image: CGImage, picture: CGRect, style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle,
+    /// decoded at any size, or nil until its decode arrives (`setImage`); it fills the drawing's
+    /// `pixels`, shown at `picture` in the view. `pickColor` is the colour pass's pick, which may
+    /// answer nil until its sample exists (`colorSampleArrived`).
+    func open(_ drawing: Drawing, image: CGImage?, picture: CGRect, style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle,
               pickColor: @escaping EditorCore.ColorPick) {
         stopTimers()
         heldArrows = []
@@ -126,6 +126,26 @@ final class EditorView: NSView {
         heldArrows = []
         refresh()
         return parked
+    }
+
+    /// The screenshot's decode, when it arrives after `open`. The drawing and everything else stay.
+    func setImage(_ image: CGImage) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        picture.setImage(image)
+        CATransaction.commit()
+    }
+
+    /// Frees the screenshot and every mark's layers once the parked view is out of sight. The next
+    /// `open` draws again.
+    func clear() {
+        guard !core.isOpen else { return }
+        stopTimers()
+        core = EditorCore()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        picture.open(nil, pixels: core.drawing.pixels)
+        CATransaction.commit()
     }
 
     /// A tool button in the toolbar.
@@ -263,8 +283,9 @@ final class EditorView: NSView {
     }
 
     /// A zoom step: everything follows at once, and the texts are drawn for the new zoom once it rests.
+    /// A parked view still follows, since the host springs it back to fit before it hides.
     private func pictureMoved() {
-        guard core.isOpen, zoom > 0, zoom.isFinite else { return }
+        guard zoom > 0, zoom.isFinite else { return }
         zoomMoving = true
         restTimer?.invalidate()
         let timer = Timer(timeInterval: Self.restDelay, repeats: false) { [weak self] _ in
@@ -272,7 +293,7 @@ final class EditorView: NSView {
         }
         RunLoop.main.add(timer, forMode: .common)
         restTimer = timer
-        handle(.zoomChanged(zoom))
+        if core.isOpen { handle(.zoomChanged(zoom)) } else { refresh() }
     }
 
     /// The zoom is still: the texts are drawn for it, and the hover is found again under a pointer the

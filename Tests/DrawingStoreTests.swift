@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 final class DrawingStoreTests: XCTestCase {
@@ -213,4 +214,89 @@ final class LogLines: @unchecked Sendable {
 
     func append(_ line: String) { lock.withLock { lines.append(line) } }
     var all: [String] { lock.withLock { lines } }
+}
+
+/// Agents' marks reaching a drawing, and the launch clearing out the previous editor's drafts.
+@MainActor
+final class DrawingsTests: XCTestCase {
+    private var dir: URL!
+    private var drawings: Drawings!
+
+    override func setUp() async throws {
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-drawings-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        drawings = Drawings(store: DrawingStore(directory: dir.appendingPathComponent("drawings")))
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    /// A 300 by 200 screenshot in the red a mark starts in, so the colour pass has to move a mark off it.
+    private func redShot() throws -> URL {
+        try writeTestImage(width: 300, height: 200, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)), in: dir) { _, _ in (0xe0, 0x31, 0x31) }
+    }
+
+    private let pushed = [AgentMark(type: .rectangle, x: 0.1, y: 0.1, w: 0.5, h: 0.5),
+                          AgentMark(type: .ellipse, x: 0.5, y: 0.5, w: 0.2, h: 0.2, color: "red")]
+
+    func testAgentsMarksJoinTheStoredDrawingThroughTheColourPass() throws {
+        let shot = try redShot()
+        let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
+        let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)), color: .yellow)
+        drawings.write(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]), reason: "saved")
+
+        let added = try drawings.add(pushed, to: shot, editor: nil, sample: ColorSample(imageAt: shot), style: .standard, newPointScale: 2)
+        XCTAssertEqual(added, 2)
+        let stored = try XCTUnwrap(drawings.read(shot, pixels: pixels, style: .standard))
+        XCTAssertEqual(stored.pointScale, 1, "a stored drawing keeps its own scale")
+        XCTAssertEqual(stored.marks.map(\.geometry).first, theirs.geometry, "the person's mark stays first")
+        XCTAssertEqual(stored.marks.count, 3)
+        XCTAssertEqual(stored.marks.dropFirst().map(\.agent), [true, true])
+        XCTAssertNotEqual(stored.marks[1].color, .red, "the colour pass moves an unnamed mark off the red under it")
+        XCTAssertEqual(stored.marks[2].color, .red, "a colour the agent named is kept")
+
+        // A screenshot with no drawing gets a new one at the scale it is given.
+        let fresh = try redShot()
+        XCTAssertEqual(try drawings.add(pushed, to: fresh, editor: nil, sample: nil, style: .standard, newPointScale: 2), 2)
+        let made = try XCTUnwrap(drawings.read(fresh, pixels: pixels, style: .standard))
+        XCTAssertEqual(made.pointScale, 2)
+        XCTAssertEqual(made.marks.count, 2)
+        XCTAssertEqual(drawings.keys, [shot.path, fresh.path])
+    }
+
+    func testAgentsMarksJoinTheOpenDrawingAsOneUndoStep() throws {
+        let shot = try redShot()
+        let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("com.petepetrash.vignette.tests.\(UUID().uuidString)"))
+        let view = EditorView(pasteboard: pasteboard)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { _ = view.park(); pasteboard.releaseGlobally(); window.close() }
+        let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)), color: .yellow)
+        view.open(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]), image: nil,
+                  picture: CGRect(x: 0, y: 0, width: 300, height: 200), style: .standard, metrics: .standard, arrowhead: .standard,
+                  pickColor: { _ in nil })
+
+        view.onHandOver = { [drawings] drawing in drawings!.write(drawing, reason: "saved") }
+
+        XCTAssertEqual(try drawings.add(pushed, to: shot, editor: view, sample: nil, style: .standard, newPointScale: 2), 2)
+        XCTAssertEqual(view.core.drawing.marks.count, 3)
+        XCTAssertEqual(view.core.drawing.marks.dropFirst().map(\.agent), [true, true])
+        XCTAssertEqual(drawings.read(shot, pixels: pixels, style: .standard)?.marks.count, 3,
+                       "the editor hands the join over at once, so the push answers with the drawing written")
+
+        view.undo(nil)
+        XCTAssertEqual(view.core.drawing.marks.map(\.geometry), [theirs.geometry], "one undo takes the whole push back")
+    }
+
+    func testALaunchRemovesTheOldDraftsFolders() throws {
+        let drafts = dir.appendingPathComponent("drafts")
+        try FileManager.default.createDirectory(at: drafts, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: drafts.appendingPathComponent("a.json"))
+        Drawings.removeDrafts(in: [drafts, dir.appendingPathComponent("never-made")])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: drafts.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.path), "only the drafts folder goes")
+    }
 }

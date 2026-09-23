@@ -253,6 +253,13 @@ extension PixelSize {
         let turned = (5...8).contains(properties[kCGImagePropertyOrientation] as? Int ?? 1)
         self.init(width: turned ? height : width, height: turned ? width : height)
     }
+
+    /// The size as displayed of the image file at `url`, from its header alone.
+    init?(imageAt url: URL) {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else { return nil }
+        self.init(imageProperties: properties)
+    }
 }
 
 /// A screenshot with its drawing's marks, as PNG: what Done, Send and Copy Drawing hand on. It is the

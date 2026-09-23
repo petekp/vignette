@@ -49,7 +49,7 @@ struct SettingsData: Codable, Equatable {
     var quickAnnotate = false                // Done copies the result and closes the annotator and the stack at once
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
-    var debug = false                        // unlocks eval, show-editor, tweaks, and file= outside the watch folder
+    var debug = false                        // unlocks tweaks, install-skill root=, and file= outside the watch folder
     var agentSkill = AgentSkill.unasked.rawValue  // whether the skill was offered: unasked, then off
     var setup = SetupState.unasked.rawValue  // whether the setup window has run: unasked, then done
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live

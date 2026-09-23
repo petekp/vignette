@@ -32,6 +32,17 @@ enum Clipboard {
         pb.writeObjects(items)
     }
 
+    /// Done's clipboard, before its rendering exists: the same kinds of data `copyFiles` puts on for
+    /// the rendered file. The path goes on as text at once; the PNG, the TIFF and the file's URL are
+    /// promised, so a paste that comes before the rendering finishes waits for it.
+    static func copyRendering(_ rendering: PendingRendering, file: URL, to pasteboard: NSPasteboard = .general) {
+        let item = NSPasteboardItem()
+        item.setString(pathsText([file]), forType: .string)
+        item.setDataProvider(RenderingProvider(rendering: rendering), forTypes: [.png, .tiff, .fileURL])
+        pasteboard.clearContents()
+        pasteboard.writeObjects([item])
+    }
+
     static func copyText(_ text: String) {
         let pb = NSPasteboard.general
         pb.clearContents()
@@ -65,5 +76,30 @@ private final class TIFFProvider: NSObject, NSPasteboardItemDataProvider, @unche
     func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
         guard type == .tiff, let tiff = NSImage(data: png)?.tiffRepresentation else { return }
         item.setData(tiff, forType: .tiff)
+    }
+}
+
+/// Answers a paste of a rendering that may still be running: it waits for it, then gives the PNG,
+/// its TIFF, or the written file's URL. A rendering that failed gives nothing. The callback runs on
+/// the main thread, which the rendering never needs, so waiting there cannot deadlock.
+private final class RenderingProvider: NSObject, NSPasteboardItemDataProvider, @unchecked Sendable {
+    private let rendering: PendingRendering
+    /// How long a paste waits before it gives up and gets nothing. A rendering of the largest
+    /// capture takes under half a second; this covers one waiting behind a Copy Drawing of many.
+    private static let patience: TimeInterval = 30
+
+    init(rendering: PendingRendering) { self.rendering = rendering }
+
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
+        guard let output = rendering.wait(timeout: Self.patience) else {
+            Log.write("[clipboard] error the rendering took longer than \(Int(Self.patience)) s; the paste got nothing")
+            return
+        }
+        switch type {
+        case .png: if let png = output.png { item.setData(png, forType: .png) }
+        case .tiff: if let tiff = output.png.flatMap({ NSImage(data: $0)?.tiffRepresentation }) { item.setData(tiff, forType: .tiff) }
+        case .fileURL: if let file = output.file { item.setString(file.absoluteString, forType: .fileURL) }
+        default: break
+        }
     }
 }

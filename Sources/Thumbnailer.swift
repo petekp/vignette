@@ -86,57 +86,12 @@ enum Thumbnailer: @unchecked Sendable {
         return NSSize(width: w * 72 / (dpiX > 0 ? dpiX : 72), height: h * 72 / (dpiY > 0 ? dpiY : 72))
     }
 
-    /// The screenshot's size in pixels, from the file header only.
-    static func pixelSize(of url: URL) -> (width: Int, height: Int)? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int,
-              w > 0, h > 0 else { return nil }
-        return (w, h)
-    }
-
-    /// A fully decoded image from PNG bytes, sized in points like `pointSize`. `NSImage(data:)` would
-    /// defer the decode to Core Animation's first commit of the layer, on the main thread.
-    static func decode(png: Data) -> NSImage? {
-        guard let source = CGImageSourceCreateWithData(png as CFData, nil),
-              let cg = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { return nil }
-        let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
-        let dpiX = props[kCGImagePropertyDPIWidth] as? Double ?? 72
-        let dpiY = props[kCGImagePropertyDPIHeight] as? Double ?? 72
-        let size = NSSize(width: Double(cg.width) * 72 / (dpiX > 0 ? dpiX : 72), height: Double(cg.height) * 72 / (dpiY > 0 ? dpiY : 72))
-        return NSImage(cgImage: cg, size: size)
-    }
-
-    /// `decode(png:)` off the main thread, handed back on it.
-    static func decode(png: Data, completion: @escaping @MainActor @Sendable (NSImage?) -> Void) {
-        queue.async {
-            let image = decode(png: png)
-            DispatchQueue.main.async { MainActor.assumeIsolated { completion(image) } }
-        }
-    }
-
     /// A cached decode of at least `maxPixel` on the longest side, if the file has not changed.
     static func cached(at url: URL, maxPixel: Int) -> NSImage? {
         lock.lock(); defer { lock.unlock() }
         guard let entry = cache[url.path], entry.maxPixel >= maxPixel, entry.modified == modified(url) else { return nil }
         touch(url.path)
         return entry.image
-    }
-
-    /// PNG bytes of the image in `png`, downscaled so its longest side is at most `maxPixel`. Used for
-    /// the Done rendering, so a card preview never holds a full-resolution decode.
-    static func downsampled(png: Data, maxPixel: Int) -> Data? {
-        guard let source = CGImageSourceCreateWithData(png as CFData, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-        ]
-        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        let out = NSMutableData()
-        guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(dest, cg, nil)
-        return CGImageDestinationFinalize(dest) ? out as Data : nil
     }
 
     /// The file's pixels as PNG, whatever format it is stored in. Returns the bytes unchanged when
@@ -151,9 +106,9 @@ enum Thumbnailer: @unchecked Sendable {
         return CGImageDestinationFinalize(dest) ? out as Data : nil
     }
 
-    /// The `maxPixel` for an image drawn at screen size: a card in flight and the zoom stand-in's
-    /// screenshot. Both ask for it so the cache holds one decode for the two of them; the cache is
-    /// keyed on `maxPixel`, so two expressions that drifted apart would silently hold two.
+    /// The `maxPixel` for an image drawn at screen size: a card in flight and the screenshot in the
+    /// editor. Both ask for it so the cache holds one decode for the two of them; the cache is keyed
+    /// on `maxPixel`, so two expressions that drifted apart would silently hold two.
     static func screenPixels(on screen: NSScreen) -> Int {
         Int(ceil(max(screen.visibleFrame.width, screen.visibleFrame.height) * screen.backingScaleFactor))
     }

@@ -26,13 +26,6 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(r.files, [URL(fileURLWithPath: NSHomeDirectory() + "/Desktop/s.png")])
     }
 
-    func testEvalKeepsTheDecodedQuery() {
-        let r = Commands.parse(URL(string: "vignette://eval?return%201%2B1")!)
-        XCTAssertEqual(r.name, "eval")
-        XCTAssertEqual(r.query, "return 1+1")
-        XCTAssertEqual(r.files, [])
-    }
-
     func testTagIsReadFromTheQuery() {
         XCTAssertEqual(Commands.parse(URL(string: "vignette://state?tag=t%201")!).tag, "t 1")
         XCTAssertNil(Commands.parse(URL(string: "vignette://state")!).tag)
@@ -83,7 +76,7 @@ final class CommandsTests: XCTestCase {
                        [AgentMark(type: .arrow, x: 0.5, y: 0.5, x2: 0.7, y2: 0.6)])
         XCTAssertEqual(try AgentMark.parse(#"[{"type":"text","x":0.1,"y":0.8,"text":"Header should not scroll"}]"#),
                        [AgentMark(type: .text, x: 0.1, y: 0.8, text: "Header should not scroll")])
-        // A text mark may name the box its words wrap in; without one the page uses the room to the edge.
+        // A text mark may name the box its words wrap in; without one it takes the room to the edge.
         XCTAssertEqual(try AgentMark.parse(#"[{"type":"text","x":0.1,"y":0.8,"w":0.4,"text":"Header should not scroll"}]"#),
                        [AgentMark(type: .text, x: 0.1, y: 0.8, w: 0.4, text: "Header should not scroll")])
         XCTAssertEqual(try AgentMark.parse(#"[{"type":"rectangle","x":0,"y":1,"w":1,"h":0.5,"color":"light-blue"}]"#),
@@ -125,7 +118,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertTrue(Commands.isKnown("copy"))
         XCTAssertFalse(Commands.isKnown("bogus"))
         XCTAssertFalse(Commands.isKnown(""))
-        XCTAssertTrue(Commands.needsDebug("eval"))
+        XCTAssertTrue(Commands.needsDebug("tweaks"))
         XCTAssertFalse(Commands.needsDebug("recent"))
         XCTAssertFalse(Commands.needsDebug("copy"))
     }

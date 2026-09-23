@@ -1,81 +1,51 @@
 import AppKit
-import WebKit
 
-/// Hosts the tldraw editor in a WKWebView. Preloaded at launch so opening feels instant.
-/// Lifecycle: `prepare` sizes the hidden window and loads the image, `show` reveals it once the
-/// card transition has landed, `hide` removes it at once for a swap, and the page's cancel/done
-/// messages end a session through `close`.
+/// Hosts the drawing editor in a borderless window. Lifecycle: `prepare` opens the image in the
+/// window, ordered in invisible, and gives it the keys; `show` reveals it once the card's flight
+/// covers its frame; `hide` parks the drawing at once and removes the window. The editor never
+/// hides itself: Esc, a click outside, Cmd+W and Done ask through `onClosed` and `onFinished`, and
+/// the transition reducer decides.
 @MainActor
-final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
-    /// Done: the rendering, or nil when nothing was drawn.
-    var onFinished: ((Screenshot, Data?) -> Void)?
-    /// The page asks to end the session: Esc, click outside, Cmd+W, or Done. The owner decides what
-    /// happens next and calls `hide` when it is time; nothing here hides on its own.
+final class AnnotationController {
+    /// Done: the drawing to render, copy and finish with.
+    var onFinished: ((Screenshot, Drawing) -> Void)?
+    /// Esc, a click outside, or Cmd+W. The owner decides what happens next and calls `hide` when
+    /// it is time; nothing here hides on its own.
     var onClosed: (() -> Void)?
-    /// The page has the image for this key on its canvas.
+    /// The editor has this key's screenshot, decoded at the screen's size.
     var onLoaded: ((String) -> Void)?
-    /// Something the user should see: a stale page, a page that never came up.
-    var onProblem: ((String) -> Void)?
-    /// Which files the server may serve; the app keeps it in step with the watch folder and `debug`.
-    let fileAccess = LocalServer.FileAccess()
-    /// The stored draft for a key, as JSON, to load with its image. The owner keeps the drafts.
-    var draftSnapshot: ((String) -> Data?)?
-    /// The page reported the current image's annotations; a nil snapshot means there are none.
-    var onDraft: ((String, Any?) -> Void)?
-    /// The page parked an image on hide: what to store, and a rendering when it changed.
-    var onParked: ((String, ParkResult) -> Void)?
-    /// A rendering of a screenshot with its draft, for the stack to show in place of the original.
-    var onDraftPreview: ((String, Data) -> Void)?
-    /// The editor page is up and can take calls. Also after a web content process restart.
-    var onPageReady: (() -> Void)?
+    /// A drawing to store: the editor handed it over after a change, or it was parked. `reason`
+    /// names which in the log.
+    var onDrawing: ((Drawing, _ reason: String) -> Void)?
+    /// The stored drawing for a screenshot whose size as displayed is the given one, if any.
+    var storedDrawing: ((URL, PixelSize) -> Drawing?)?
     /// The frame moved: it was placed, a zoom stepped it, or it came home on the way out. The
     /// stack follows it, so it narrows as the frame grows towards it.
     var onFrame: ((NSRect) -> Void)?
-    /// The Send menu asked to hand the drawing on the canvas to this agent session.
-    var onSend: ((AgentDestination) -> Void)?
+    /// The Send menu handed the drawing to this agent session.
+    var onSend: ((Screenshot, Drawing, AgentDestination) -> Void)?
+    /// Cmd+C with nothing selected: this drawing's rendering goes on the clipboard.
+    var onCopyDrawing: ((Screenshot, Drawing) -> Void)?
 
-    /// Nil when the bundle has no page or the server did not start; every call then no-ops.
-    private var webView: WKWebView?
+    /// The editor, the whole content of the frame. The state report reads its core.
+    let editor = EditorView()
     private let toolbar = AnnotatorToolbar()
-    private var server: LocalServer?
+    private let toast = AnnotatorToast()
     private var window: AnnotationWindow?
     /// The window spans the screen's visible frame and stays put. The visible frame is `frameView`
-    /// inside it (shadow) with `container` (clip, corner, ring, web view), so a zoom step moves the
+    /// inside it (shadow) with `container` (clip, corner, ring, editor), so a zoom step moves the
     /// frame and the picture inside it in one layer commit: a window resize and a layer change do
-    /// not land on the same display frame, and the image would drift from the frame between them.
-    /// While a zoom moves, the picture is the native stand-in over the web view; see `StandIn`.
+    /// not land on the same display frame, and the picture would drift from the frame between them.
     private var frameView: NSView?
     private var container: NSView?
     private var zoomScreen: NSScreen?
-    /// The shot the page holds, from `prepare` until `hide` parks it. Not the session: see AnnotatorTransition.
+    /// The shot in the editor, from `prepare` until `hide` parks it. Not the session: see AnnotatorTransition.
     private var current: Screenshot?
-    private var pageReady = false
-    private var pageFailed = false
-    private var pendingCall: PageAPI?
-
-    enum PageState { case unavailable, loading, ready }
-    /// Whether the editor page can take a call: `loading` calls are queued one deep, `unavailable`
-    /// means there is no page to wait for (bundle or server missing, or the load failed).
-    var pageState: PageState {
-        if pageReady { return .ready }
-        if webView == nil || pageFailed { return .unavailable }
-        return .loading
-    }
-    var port: UInt16 { server?.port ?? 0 }
     private let outsideClick = OutsideClick()
-    /// Bumped when the web process restarts, so an answer from the old page is ignored.
-    private var pageEpoch = 0
-    /// The export waiting on the page, if any. Called exactly once: by the page's answer, the
-    /// timeout, or a process restart, whichever comes first.
-    private var pendingExport: (([String: Data], String?) -> Void)?
-    /// The marks build waiting on the page, if any. One at a time, and called exactly once.
-    private var pendingBuild: ((ParkResult?, String?) -> Void)?
-    /// Set while Send is rendering the current drawing, so two clicks cannot send twice.
-    private var pendingSnapshot: ((Data?, String?) -> Void)?
-    /// The hide waiting on the page's park, so a process restart still hides the window.
-    private var pendingHide: (() -> Void)?
-    /// How long Copy Drawing waits for the page before giving up.
-    static let exportTimeout: TimeInterval = 15
+    /// The colour pass's sample of the screenshot in the editor, once it is made.
+    private var colorSample: (key: String, sample: ColorSample)?
+    /// Where the Send menu's pick goes once the editor hands over the drawing.
+    private var sendingTo: AgentDestination?
 
     /// Room the annotator needs below its window: the toolbar and its gap.
     var spaceBelow: CGFloat { AnnotatorToolbar.height + Settings.shared.data.ui.annotationToolbarGap }
@@ -101,8 +71,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// The same for the magnification inside a window that can grow no further: where the visible
     /// middle was when the input arrived, and the point it named.
     private var zoomPan = ZoomPan.centered
-    /// The middle of the visible part of the image, as a fraction of it. The stand-in draws from
-    /// this and the page is given it at rest, so the two show the same part of the image.
+    /// The middle of the visible part of the image, as a fraction of it.
     private(set) var zoomCenter = Zoom.center
     /// The anchor in effect at the level on screen.
     var zoomAnchor: CGPoint { zoomAim.anchor(at: zoomLevel) }
@@ -112,68 +81,55 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// How far a two-finger double tap zooms in. Preview picks a level from the content; one step
     /// of twice the fitted size is the same gesture without guessing at what is under the cursor.
     private let smartZoomFactor = 2.0
+    /// How far Cmd+Plus and Cmd+Minus magnify, as a multiple of the level.
+    private let keyZoomStep = 1.25
     /// A gesture's spring. Short enough to follow the fingers; long enough that the window still
-    /// moves once per display refresh when the page's messages arrive unevenly, which they do:
-    /// they cross a process boundary, so two can land in one refresh and none in the next.
+    /// moves once per display refresh when events arrive unevenly.
     private let trackingSeconds = 0.1
     /// A step's spring: a key, a two-finger double tap, or a fit is a movement the eye follows.
     private let stepSeconds = 0.3
     /// The fit the window makes on its way out, before the card flies back. Shorter than a step:
     /// it is the start of the card leaving rather than a zoom the user asked for.
     private let fitToCloseSeconds = 0.2
-    /// Set when the spring has arrived, so the page is handed the view once, on the next turn of
-    /// the run loop, rather than inside a display link tick.
-    private var pageLayoutPending = false
-    /// What is on screen in place of the page while a zoom moves, and the hand-over that gives the
-    /// picture back at rest. It owns its own outstanding page calls; see `StandInController`.
-    private let standIn = StandInController()
 
-    func preload() {
-        _ = FocusReturn.shared
-        toolbar.onTool = { [weak self] id in self?.call(.setTool(id)) }
-        toolbar.onDone = { [weak self] in self?.call(.finish) }
-        toolbar.onSend = { [weak self] destination in self?.onSend?(destination) }
-        standIn.atRest = { [weak self] in self.map { $0.zoomTween.value == $0.zoomTarget } ?? false }
-        standIn.windowVisible = { [weak self] in self?.window?.isVisible == true }
-        guard let dist = Bundle.main.url(forResource: "dist", withExtension: nil) else {
-            Log.write("[web] web/dist missing from bundle")
-            return
-        }
-        let server = LocalServer(root: dist, access: fileAccess)
-        do { try server.start() } catch { Log.write("LocalServer start failed: \(error)"); return }
-        self.server = server
-        let config = WKWebViewConfiguration()
-        config.userContentController.add(self, name: "vignette")
-        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        let webView = AnnotationWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
-        webView.navigationDelegate = self
-        webView.onMagnify = { [weak self] magnification, phase, location in self?.pinch(magnification, phase: phase, at: location) }
-        webView.onZoomWheel = { [weak self] event in self?.wheel(event) }
-        webView.onSmartMagnify = { [weak self] location in
+    init() {
+        toolbar.onTool = { [weak self] tool in self?.editor.setTool(tool) }
+        toolbar.onDone = { [weak self] in self?.editor.done() }
+        toolbar.onSend = { [weak self] destination in
             guard let self else { return }
-            smartZoom(at: cursorFraction(location))
+            sendingTo = destination
+            editor.send()
         }
-        webView.setValue(false, forKey: "drawsBackground")
-        webView.load(URLRequest(url: server.indexURL))
-        self.webView = webView
+        editor.onTool = { [weak self] tool in self?.toolbar.model.tool = tool }
+        editor.onHandOver = { [weak self] drawing in self?.onDrawing?(drawing, "saved") }
+        editor.onClose = { [weak self] in self?.cancel() }
+        editor.onDone = { [weak self] drawing in
+            guard let self, let shot = current else { return }
+            onFinished?(shot, drawing)
+        }
+        editor.onSend = { [weak self] drawing in
+            guard let self, let shot = current, let destination = sendingTo else { return }
+            sendingTo = nil
+            onSend?(shot, drawing, destination)
+        }
+        editor.onCopyDrawing = { [weak self] drawing in
+            guard let self, let shot = current else { return }
+            onCopyDrawing?(shot, drawing)
+        }
+        editor.onToast = { [weak self] words in self?.toast.show(words) }
+        editor.onZoom = { [weak self] request in self?.zoom(request) }
+        editor.onZoomGesture = { [weak self] event in self?.zoomGesture(event) }
     }
 
-    /// The web content process, for `kill` tests and memory checks. WKWebView only exposes it
-    /// through a private accessor, so this is nil if that accessor disappears.
-    var webProcessID: pid_t? {
-        guard let webView, webView.responds(to: Selector(("_webProcessIdentifier"))) else { return nil }
-        return (webView.value(forKey: "_webProcessIdentifier") as? NSNumber)?.int32Value
-    }
-
-    /// Sizes the window to `frame`, loads the image, and takes the keys, so the page has rendered
-    /// by `show` and a key pressed during the flight already reaches it. The window is ordered in
-    /// invisible and ignoring the mouse until `show`: a press still lands on the flight image, whose
-    /// picture is not where the page is yet. `room` is the rect the frame may grow within: the
-    /// visible screen, less any strip its owner keeps for itself.
+    /// Sizes the window to `frame`, opens the image in the editor, and takes the keys, so a key
+    /// pressed during the flight already reaches the editor and Esc turns the card around. The
+    /// window is ordered in invisible and ignoring the mouse until `show`: a press still lands on the
+    /// flight image, whose picture is not where the editor's is yet. `room` is the rect the frame may
+    /// grow within: the visible screen, less any strip its owner keeps for itself.
     func prepare(_ shot: Screenshot, in frame: NSRect, room: NSRect) {
-        guard let webView else { return }
+        let started = CACurrentMediaTime()
         current = shot
-        let win = window ?? makeWindow(webView)
+        let win = window ?? makeWindow()
         fittedFrame = frame
         self.room = room
         zoomTarget = 1
@@ -183,26 +139,72 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         canvasZoom = Zoom.none
         zoomTween.set(1)
         place(win, frame: frame)
-        standIn.prepare(for: shot.url, maxPixel: standInPixels)
-        placeWebView()
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
-        webView.layoutSubtreeIfNeeded()
         win.alphaValue = 0
         win.ignoresMouseEvents = true
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        sendImage(shot)
+        open(shot, started: started)
     }
 
-    /// Asks the page for the annotations alone, for the stand-in to lay over the screenshot.
-    private func refreshOverlay(for key: String) {
-        guard let webView, pageReady else { return }
-        standIn.refreshOverlay(on: webView, for: key)
+    /// Opens the drawing with the screenshot's decode at the screen's size: the one a hovered card's
+    /// flight already asked for when there is one, else decoded off the main thread and handed to
+    /// the editor when it is ready. The drawing opens at once either way, so the keys work from here.
+    private func open(_ shot: Screenshot, started: CFTimeInterval) {
+        let key = shot.url.path, name = shot.url.lastPathComponent
+        guard let pixels = PixelSize(imageAt: shot.url) else {
+            Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(name)")
+            cancel()
+            return
+        }
+        let screen = zoomScreen ?? NSScreen.main ?? NSScreen.screens[0]
+        // A new drawing takes the point scale of the screen the annotator opens on (spec, Decision 8).
+        let pointScale = min(max(screen.backingScaleFactor, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
+        let drawing = storedDrawing?(shot.url, pixels) ?? Drawing(key: key, pixels: pixels, pointScale: pointScale, marks: [])
+        let maxPixel = Thumbnailer.screenPixels(on: screen)
+        let decoded = Thumbnailer.cached(at: shot.url, maxPixel: maxPixel).flatMap(Self.cgImage)
+        colorSample = nil
+        let style = TextStyle.standard
+        // Read here and captured: the pick runs inside the core's own reduce, where the editor's core
+        // cannot be read.
+        let scale = drawing.pointScale
+        editor.open(drawing, image: decoded, picture: container?.bounds ?? .zero, style: style, metrics: .standard, arrowhead: .standard,
+                    pickColor: { [weak self] mark in
+                        guard let sample = self?.colorSample, sample.key == key else { return nil }
+                        return sample.sample.pick(for: mark, pointScale: scale, style: style)
+                    })
+        if decoded != nil { loaded(key, started: started) }
+        else {
+            Thumbnailer.load(at: shot.url, maxPixel: maxPixel) { [weak self] image in
+                guard let self, current?.url.path == key else { return }
+                guard let cg = image.flatMap(Self.cgImage) else {
+                    Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(name)")
+                    cancel()
+                    return
+                }
+                editor.setImage(cg)
+                loaded(key, started: started)
+            }
+        }
+        let url = shot.url
+        DispatchQueue.global(qos: .userInitiated).async {
+            let sample = ColorSample(imageAt: url)
+            DispatchQueue.main.async { MainActor.assumeIsolated { [weak self] in
+                guard let self, let sample, current?.url.path == key else { return }
+                colorSample = (key, sample)
+                editor.colorSampleArrived()
+            } }
+        }
     }
 
-    private var standInPixels: Int {
-        Thumbnailer.screenPixels(on: zoomScreen ?? NSScreen.main ?? NSScreen.screens[0])
+    private func loaded(_ key: String, started: CFTimeInterval) {
+        Log.write("[annotate] loaded \(Int((CACurrentMediaTime() - started) * 1000))ms \((key as NSString).lastPathComponent)")
+        onLoaded?(key)
+    }
+
+    private static func cgImage(_ image: NSImage) -> CGImage? {
+        image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
     private func place(_ win: NSWindow, frame: NSRect) {
@@ -213,16 +215,26 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         moveFrame(to: frame)
     }
 
-    /// The one place the frame's rect is set: the frame view, the clip and the shadow's path all
-    /// take it from here, in the same tick, so nothing can be a frame behind. `frameOnScreen`
-    /// reads the result back for anyone who needs the rect.
+    /// The one place the frame's rect is set: the frame view, the clip, the shadow's path and the
+    /// editor inside it all take it from here, in the same tick, so nothing can be a frame behind.
+    /// `frameOnScreen` reads the result back for anyone who needs the rect.
     private func moveFrame(to frame: NSRect) {
         guard let win = window, let frameView, let container else { return }
         frameView.frame = NSRect(x: frame.minX - win.frame.minX, y: frame.minY - win.frame.minY, width: frame.width, height: frame.height)
         container.frame = frameView.bounds
         let r = Settings.shared.data.ui.annotationCornerRadius
         frameView.layer?.shadowPath = CGPath(roundedRect: frameView.bounds, cornerWidth: r, cornerHeight: r, transform: nil)
+        editor.setSize(container.bounds.size, picture: pictureRect)
         onFrame?(frame)
+    }
+
+    /// Where the whole picture sits in the editor: the frame magnified by `canvasZoom` and slid so
+    /// that the part of the image `zoomCenter` names fills it. In the editor's own coordinates,
+    /// which run down from the top.
+    private var pictureRect: CGRect {
+        guard let bounds = container?.bounds else { return .zero }
+        let up = Zoom.picture(in: bounds, camera: canvasZoom, center: zoomCenter)
+        return CGRect(x: up.minX, y: bounds.height - up.maxY, width: up.width, height: up.height)
     }
 
     /// The visible frame in screen coordinates.
@@ -231,8 +243,35 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         return win.convertToScreen(frameView.frame)
     }
 
+    // MARK: Zoom
+
     /// What asked for a zoom: the fingers on a trackpad, or a key, a two-finger double tap, or a fit.
     enum ZoomInput { case gesture, step }
+
+    /// The editor's zoom keys and its double-click on empty space. Only once the window is up: a
+    /// zoom during the flight would move a frame the flight is still landing on.
+    private func zoom(_ request: EditorCore.ZoomRequest) {
+        guard window?.isVisible == true, window?.alphaValue == 1 else { return }
+        switch request {
+        case .zoomIn: zoom(by: keyZoomStep, at: nil, as: .step)
+        case .zoomOut: zoom(by: 1 / keyZoomStep, at: nil, as: .step)
+        case .fit: zoom(by: nil, at: nil, as: .step)
+        case .smart(let point):
+            smartZoom(at: cursorFraction(editor.convert(editor.viewPoint(forImagePoint: point), to: nil)))
+        }
+    }
+
+    /// A pinch, a scroll or a two-finger double tap over the editor. Cmd or ctrl on a scroll zooms,
+    /// as the pinch does; a plain scroll moves the part of a magnified picture in view.
+    private func zoomGesture(_ event: NSEvent) {
+        switch event.type {
+        case .magnify: pinch(event.magnification, phase: event.phase, at: event.locationInWindow)
+        case .smartMagnify: smartZoom(at: cursorFraction(event.locationInWindow))
+        case .scrollWheel:
+            if event.modifierFlags.intersection([.command, .control]).isEmpty { pan(event) } else { wheel(event) }
+        default: break
+        }
+    }
 
     /// Zoom in grows each side of the window until that side fills the room, then magnifies the
     /// image past it. Zoom out reverses that and stops at the fitted size: pulling further shrinks
@@ -241,7 +280,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     /// `factor` multiplies the zoom level; nil asks for the fitted size. `cursor` is the point to
     /// keep in place, a fraction of the window with y from the top; nil means its middle, which is
     /// where a key zooms. Both phases honor it: the window grows away from it, and past that the
-    /// page moves its camera about it.
+    /// picture is magnified about it.
     func zoom(by factor: Double?, at cursor: CGPoint?, as input: ZoomInput) {
         guard window != nil, fittedFrame.width > 0 else { return }
         let cursor = cursor.map(Zoom.clamped) ?? Zoom.center
@@ -254,13 +293,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         } else {
             target = 1
         }
-        // An input that moves nothing (a notch out at the fit, cmd+0 at rest) is over here: raising
-        // the stand-in for it would only hand the picture straight back.
+        // An input that moves nothing (a notch out at the fit, cmd+0 at rest) is over here.
         guard target != zoomTarget || zoomTween.value != zoomTarget else { return }
         zoomTarget = target
-        // The picture becomes the app's own before the frame moves: the page is drawn in another
-        // process and cannot keep step with a frame that moves every refresh.
-        raiseStandIn()
         aim(at: cursor, to: zoomTarget)
         aimPan(at: cursor)
         zoomTween.animate(to: zoomTarget, duration: motionScaled(input == .gesture ? trackingSeconds : stepSeconds),
@@ -276,7 +311,7 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     private func aim(at cursor: CGPoint, to target: CGFloat) {
         guard let onScreen = frameOnScreen, target != zoomLevel else { return }
         zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, window: split(target).window,
-                           from: zoomLevel, to: target, within: growthLimit)
+                           from: zoomLevel, to: target, within: room)
     }
 
     /// Points the magnification at `cursor`, from the part of the image that is visible now. Like
@@ -311,16 +346,13 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         Zoom.split(level: level, reach: reach, pull: overpull)
     }
 
-    /// The room `prepare` was given, if any. `presentEmpty` has none.
-    private var room: NSRect?
-
-    /// The rect the frame may grow within. The one place that says it, so the strip the recent
-    /// stack keeps for itself reaches both how far the window may grow and where the frame ends up.
-    private var growthLimit: CGRect? { room ?? zoomScreen?.visibleFrame }
+    /// The rect the frame may grow within, as `prepare` was given it, so the strip the recent stack
+    /// keeps for itself reaches both how far the window may grow and where the frame ends up.
+    private var room = NSRect.zero
 
     /// How far each side of the window may grow: to the whole of that rect, past the fitted inset
     /// and the toolbar's room.
-    private var reach: CGSize { Zoom.reach(fitted: fittedFrame, within: growthLimit) }
+    private var reach: CGSize { Zoom.reach(fitted: fittedFrame, within: room) }
     /// The level stops where the side that fills the room first has been magnified `maxCanvasZoom`
     /// past it. That side is the one magnified most, so this is the cap on the whole picture.
     private var maxLevel: CGFloat { min(reach.width, reach.height) * maxCanvasZoom }
@@ -337,67 +369,15 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         canvasZoom = step.camera
         zoomCenter = zoomPan.center(at: step.camera)
         // Kept on screen: a frame grown to the screen's height slides rather than clips.
-        moveFrame(to: Zoom.frame(fitted: fittedFrame, scale: step.window,
-                                 anchor: zoomAim.anchor(at: level), within: growthLimit))
-        if let container { standIn.layout(in: container.bounds, camera: step.camera, center: zoomCenter) }
+        moveFrame(to: Zoom.frame(fitted: fittedFrame, scale: step.window, anchor: zoomAim.anchor(at: level), within: room))
     }
 
-    /// The picture becomes the app's own before the frame moves. Called before every zoom step,
-    /// and on the fit the window makes on its way out.
-    private func raiseStandIn() {
-        guard let container, let webView else { return }
-        standIn.raise(over: webView, in: container, camera: canvasZoom, center: zoomCenter)
-    }
-
-    /// Hands the picture back to the page at the view it is showing; see `StandInController`.
-    /// The image rect is the stand-in's own, so the two pictures are one rect by construction.
-    private func handOverToPage() {
-        guard let webView, let container, let place = pagePlace else { return }
-        let picture = Zoom.picture(in: container.bounds, camera: canvasZoom, center: zoomCenter)
-        standIn.handOver(to: webView, at: place,
-                         view: ViewRequest(frame: pageRect(container.bounds, in: place), image: pageRect(picture, in: place)),
-                         pageReady: pageReady)
-    }
-
-    /// Where the page sits inside the frame's container: the whole room the frame may grow within,
-    /// so the page is laid out once per image and never resized by a zoom, which is a relayout in
-    /// another process each time. The frame moves over it; at each rest the page is moved back so
-    /// it stays put on screen, and the editor inside it is placed at the frame (`pageRect`).
-    private var pagePlace: CGRect? {
-        guard let onScreen = frameOnScreen, let room = growthLimit else { return nil }
-        return CGRect(x: room.minX - onScreen.minX, y: room.minY - onScreen.minY,
-                      width: ceil(room.width), height: ceil(room.height))
-    }
-
-    /// A rect in the container's coordinates as the page sees it: CSS points of the web view at
-    /// `place`, x from its left and y from its top.
-    private func pageRect(_ rect: CGRect, in place: CGRect) -> PageRect {
-        PageRect(x: rect.minX - place.minX, y: place.maxY - rect.maxY, width: rect.width, height: rect.height)
-    }
-
-    /// Lays the page out at the room. `prepare` calls it directly: there is nothing on screen yet.
-    private func placeWebView() {
-        guard let webView, let place = pagePlace else { return }
-        webView.frame = place
-    }
-
-    /// The spring has arrived. A pull below the fitted size lets go here; otherwise the page takes
-    /// the picture back, on the next turn of the run loop rather than inside the tick that just
-    /// ran, and only if nothing has aimed the zoom somewhere else meanwhile.
+    /// The spring has arrived. A pull below the fitted size lets go here.
     private func arrived() {
-        if zoomTarget < 1 { zoom(by: nil, at: nil, as: .step); return }
-        guard !pageLayoutPending else { return }
-        pageLayoutPending = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.pageLayoutPending = false
-            guard self.zoomTween.value == self.zoomTarget else { return }
-            self.handOverToPage()
-        }
+        if zoomTarget < 1 { zoom(by: nil, at: nil, as: .step) }
     }
 
-    /// A trackpad pinch, straight from AppKit: WebKit would otherwise turn it into gesture events
-    /// the page zooms on. It follows the fingers about the point they are over. The pull springs
+    /// A trackpad pinch. It follows the fingers about the point they are over. The pull springs
     /// back the moment the fingers lift.
     private func pinch(_ magnification: CGFloat, phase: NSEvent.Phase, at locationInWindow: NSPoint) {
         switch phase {
@@ -406,11 +386,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         }
     }
 
-    /// Cmd+wheel or ctrl+wheel, straight from AppKit like the pinch: the event never crosses into
-    /// the web process, so it arrives with the trackpad's phases and without a frame of latency.
-    /// A trackpad's wheel is a gesture, and lifting the fingers releases the pull below the fit;
-    /// momentum after the lift is ignored, as a pinch's end is, so the zoom stops where the hand
-    /// did. A mouse wheel has no phases: each notch is a step, and it stops at the fit.
+    /// Cmd+wheel or ctrl+wheel. A trackpad's wheel is a gesture, and lifting the fingers releases
+    /// the pull below the fit; momentum after the lift is ignored, as a pinch's end is, so the zoom
+    /// stops where the hand did. A mouse wheel has no phases: each notch is a step, and it stops at
+    /// the fit.
     private func wheel(_ event: NSEvent) {
         if event.phase.contains(.ended) || event.phase.contains(.cancelled) { release(); return }
         guard event.momentumPhase.isEmpty else { return }
@@ -418,6 +397,24 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         guard dy != 0, dy.isFinite else { return }
         let cursor = cursorFraction(event.locationInWindow)
         zoom(by: exp(dy * Self.wheelZoomRate), at: cursor, as: event.phase.isEmpty ? .step : .gesture)
+    }
+
+    /// A plain scroll over a picture magnified past its frame moves the part in view, with the
+    /// fingers, as Preview does. At the fitted size, or on a side that is still growing, there is
+    /// nothing hidden to bring into view.
+    private func pan(_ event: NSEvent) {
+        guard canvasZoom.width > 1 || canvasZoom.height > 1 else { return }
+        let picture = pictureRect
+        guard picture.width > 0, picture.height > 0 else { return }
+        let line: CGFloat = event.hasPreciseScrollingDeltas ? 1 : Self.wheelLinePoints
+        let dx = event.scrollingDeltaX * line, dy = event.scrollingDeltaY * line
+        guard dx.isFinite, dy.isFinite, dx != 0 || dy != 0 else { return }
+        // The content follows the fingers, so the middle of what is in view moves the other way.
+        let center = Zoom.clamped(center: CGPoint(x: zoomCenter.x - dx / picture.width, y: zoomCenter.y - dy / picture.height),
+                                  camera: canvasZoom)
+        zoomPan = ZoomPan(center: center, camera: canvasZoom, cursor: Zoom.center)
+        zoomCenter = center
+        editor.pictureRect = pictureRect
     }
 
     /// How much one point of wheel travel zooms: a factor of e to this per point, so 100 points
@@ -433,9 +430,9 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         zoom(by: nil, at: nil, as: .step)
     }
 
-    /// A two-finger double tap on the trackpad, or a double-click with the select tool, as Preview
-    /// and Safari use it: in on the point named, or back to the fitted size from anywhere above it.
-    /// `cursor` is a fraction of the window; nil zooms about its middle.
+    /// A two-finger double tap on the trackpad, or a double-click with the select tool on empty
+    /// space, as Preview and Safari use it: in on the point named, or back to the fitted size from
+    /// anywhere above it. `cursor` is a fraction of the window; nil zooms about its middle.
     private func smartZoom(at cursor: CGPoint?) {
         guard window?.isVisible == true else { return }
         let zoomedIn = zoomTarget > 1.001
@@ -443,19 +440,19 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// A point in the window's coordinates as a fraction of the visible frame, x from the left and
-    /// y from the top, which is how the page reports the cursor. Read against the frame view: the
-    /// web view carries a layer transform between rest positions, so its own bounds are not where
-    /// its pixels are.
+    /// y from the top.
     private func cursorFraction(_ locationInWindow: NSPoint) -> CGPoint? {
         guard let frameView, frameView.bounds.width > 0, frameView.bounds.height > 0 else { return nil }
         let p = frameView.convert(locationInWindow, from: nil)
         return Zoom.clamped(CGPoint(x: p.x / frameView.bounds.width, y: 1 - p.y / frameView.bounds.height))
     }
 
+    // MARK: Showing and hiding
+
     /// Puts the window up behind the flight image, which is past this frame on every side and so
     /// covers it — except for a shadow, which falls outside the frame it is cast from. The flight
     /// carries the shadow until it lands; `landed` hands it over. The keys came with `prepare`; the
-    /// pointer comes here, so a drag lands on the page as soon as the card looks still.
+    /// pointer comes here, so a drag lands on the editor as soon as the card looks still.
     func show() {
         guard let win = window, current != nil else { return }
         win.alphaValue = 1
@@ -484,72 +481,33 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         frameView?.layer?.shadowOpacity = Float(TransitionLayer.Look.annotator(Settings.shared.data.ui).shadowOpacity)
     }
 
-    /// Lets the prepared image go without asking the page for anything. Called instead of `hide`
-    /// when the session ends before the window came up: nobody saw that image and nobody could
-    /// draw on it, so there is nothing to store, and the stored draft the page was told to load
-    /// stays as it is. A park here would be a round trip that can sit behind an export, with the
-    /// card hanging in the air until it answers.
+    /// Lets the prepared image go without a fit: the session ends before the window came up, so
+    /// there is no zoom to undo. Its drawing is parked and stored like any other, since a key
+    /// pressed during the flight may have changed it.
     func abandon() {
         guard current != nil else { return }
         outsideClick.stop()
         current = nil
-        pendingHide = nil
-        standIn.sessionEnded()
-        call(.reset)
+        park()
         hideWindows()
-        canvasMaybeFreed()
     }
 
-    /// Parks the draft, then removes the window. `then` runs once the page has answered, so a
-    /// transition that starts there shows the annotations. Called once per `prepare`, by the reducer.
+    /// Parks the drawing at once and stores it, then removes the window. While zoomed, the window
+    /// springs back to the fitted frame first, so the card flies home from where it left. `then`
+    /// runs once the window is gone. Called once per `prepare`, by the reducer.
     func hide(then completion: (() -> Void)? = nil) {
         outsideClick.stop()
-        // The window comes home to the fitted frame before it goes. The card flies back from that
-        // frame, and a zoomed window is not only somewhere else: it shows a crop of the image where
-        // the flight image is the whole picture, so handing over from it would swap the content too.
-        var fitted = false, answered = false, finished = false
-        let finish: () -> Void = { [weak self] in
-            guard fitted, answered, !finished else { return }
-            finished = true
-            self?.pendingHide = nil
+        current = nil
+        park()
+        fitBeforeHide { [weak self] in
             self?.hideWindows()
             completion?()
-            self?.canvasMaybeFreed()
         }
-        fitBeforeHide { fitted = true; finish() }
-        // The image is let go on both paths: a `current` left behind says the annotator still holds
-        // it, and `canvasRefusal` would refuse a build until the next session.
-        let shot = current
-        current = nil
-        guard let shot, let webView, pageReady else { standIn.sessionEnded(); answered = true; finish(); return }
-        standIn.sessionEnded()
-        let epoch = pageEpoch
-        let done: () -> Void = {
-            guard !answered else { return }
-            answered = true
-            finish()
-        }
-        pendingHide = done
-        // The page runs park, export, and build one at a time, so an Esc during a long
-        // Copy Drawing waits behind it. The window comes down on this deadline whatever the page
-        // does; a park that answers after it is dropped, because by then the canvas may hold
-        // another image.
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) {
-            guard !answered else { return }
-            Log.write("[web] error park timeout after \(Int(Self.exportTimeout)) s \(shot.url.lastPathComponent)")
-            done()
-        }
-        webView.callAsyncJavaScript(PageAPI.park.script, arguments: [:], in: nil, in: .page) { [weak self] result in
-            guard let self, self.pageEpoch == epoch, !answered else { return }
-            switch result {
-            case .failure(let error): Log.write("[web] error park failed: \(error)")
-            case .success(let value):
-                if let parked = ParkResult(body: value) { self.onParked?(shot.url.path, parked) }
-                else { Log.write("[web] error park returned \(WebMessage.describe(value as Any))") }
-            }
-            self.call(.reset)
-            done()
-        }
+    }
+
+    private func park() {
+        sendingTo = nil
+        if let drawing = editor.park() { onDrawing?(drawing, "parked") }
     }
 
     /// Springs the level back to the fitted size and answers once it is there, so the window the
@@ -563,7 +521,6 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         }
         var answered = false
         let once = { if !answered { answered = true; done() } }
-        raiseStandIn()
         zoomTarget = 1
         aim(at: Zoom.center, to: 1)
         aimPan(at: Zoom.center)
@@ -572,20 +529,21 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     private func hideWindows() {
-        // Nothing here is on screen any more: a spring still ticking would move a hidden frame,
-        // hand a view to a page that has been reset, and lay out a hidden web view.
+        // Nothing here is on screen any more: a spring still ticking would move a hidden frame.
         zoomTween.stop()
-        pageLayoutPending = false
-        standIn.forget()
+        toast.hide()
         // The panel stops being this window's child before the window goes, or AppKit would order
         // it out with its parent; `hideSoon` then takes it down only if no other image has asked
         // for it by the next turn of the run loop, and `show` makes it a child of the new window.
         if let win = window, toolbar.panel.parent === win { win.removeChildWindow(toolbar.panel) }
         toolbar.hideSoon()
         window?.orderOut(nil)
+        // The window is out of sight, so the screenshot and the marks' layers are let go.
+        editor.clear()
+        colorSample = nil
     }
 
-    private func makeWindow(_ webView: WKWebView) -> AnnotationWindow {
+    private func makeWindow() -> AnnotationWindow {
         let win = AnnotationWindow(contentRect: .zero, styleMask: [.borderless, .fullSizeContentView], backing: .buffered, defer: false)
         win.isOpaque = false
         win.backgroundColor = .clear
@@ -609,11 +567,12 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         let container = NSView()
         container.wantsLayer = true
         container.layer?.masksToBounds = true
-        container.autoresizesSubviews = true
-        webView.frame = container.bounds
-        // Placed by hand: the page is laid out at the room, not the frame, and only moved at rest.
-        webView.autoresizingMask = []
-        container.addSubview(webView)
+        // Sized by hand, with its picture, in `moveFrame`: a size set without the picture would lay
+        // the editor out at a size its picture does not fill.
+        editor.autoresizingMask = []
+        container.addSubview(editor)
+        toast.autoresizingMask = [.minXMargin, .maxXMargin, .maxYMargin]
+        container.addSubview(toast)
         frameView.addSubview(container)
         root.addSubview(frameView)
         win.contentView = root
@@ -632,60 +591,8 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         container?.layer?.borderColor = NSColor.white.withAlphaComponent(ui.cardBorderOpacity).cgColor
     }
 
-    /// Sends the image with the editor's place inside the page, which is the frame as laid out now.
-    private func sendImage(_ shot: Screenshot) {
-        guard let size = Thumbnailer.pixelSize(of: shot.url) else {
-            Log.write("[annotate] could not read image \(shot.url.path)")
-            return
-        }
-        loadStarted[shot.url.path] = CACurrentMediaTime()
-        let frame = container.flatMap { c in pagePlace.map { pageRect(c.bounds, in: $0) } }
-        let payload = LoadPayload(
-            key: shot.url.path,
-            mimeType: LocalServer.mimeType(for: shot.url.pathExtension),
-            pixelWidth: size.width, pixelHeight: size.height, frame: frame)
-        let load = PageAPI.load(payload, snapshot: draftSnapshot?(shot.url.path))
-        if pageReady { call(load) } else { pendingCall = load }
-    }
-
-    private func call(_ api: PageAPI) {
-        webView?.evaluateJavaScript(api.script) { _, error in
-            if let error { Log.write("[web] error call failed: \(String(describing: error).replacingOccurrences(of: "\n", with: " "))") }
-        }
-    }
-
-    /// Renders each item's stored draft at original pixel size. Always answers: with the page's
-    /// renderings, or with `error` after a failure, a timeout, or when the page cannot take the
-    /// call. One export at a time; a second one answers `error` at once.
-    func exportDrafts(_ items: [(key: String, snapshot: Data)], completion: @escaping ([String: Data], String?) -> Void) {
-        guard let webView, pageReady else { completion([:], "page not ready"); return }
-        guard pendingExport == nil else { completion([:], "an export is already running"); return }
-        let epoch = pageEpoch
-        var answered = false
-        let finish: ([String: Data], String?) -> Void = { [weak self] pngs, error in
-            guard !answered else { return }
-            answered = true
-            self?.pendingExport = nil
-            self?.canvasMaybeFreed()
-            // The page's own text can name the URL it failed on, and the log is readable by any
-            // local process, so the token comes out of it before anyone writes it down.
-            completion(pngs, error.map { self?.server?.redacted($0) ?? $0 })
-        }
-        pendingExport = finish
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) { finish([:], "timeout after \(Int(Self.exportTimeout)) s") }
-        webView.callAsyncJavaScript(PageAPI.export(items).script, arguments: [:], in: nil, in: .page) { [weak self] result in
-            guard let self, self.pageEpoch == epoch else { return }
-            switch result {
-            case .failure(let error): finish([:], String(describing: error).replacingOccurrences(of: "\n", with: " "))
-            case .success(let value):
-                guard let exported = ExportResult(body: value) else { finish([:], "page returned \(WebMessage.describe(value as Any))"); return }
-                finish(exported.pngs, exported.error)
-            }
-        }
-    }
-
-    /// The image the page is holding, by path, or nil between sessions. A send compares its own
-    /// answer with this, so a rendering that lands after a swap closes nothing.
+    /// The image in the editor, by path, or nil between sessions. A send compares its own answer
+    /// with this, so a rendering that lands after a swap closes nothing.
     var currentKey: String? { current?.url.path }
 
     /// What the Send menu offers for the image that is opening, and the session a reply belongs
@@ -702,157 +609,10 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         set { toolbar.model.sending = newValue }
     }
 
-    /// The drawing exactly as it stands, rendered at full size, with nothing closed and nothing
-    /// stored: what Send hands to an agent. Done is unsuitable for this — its rendering failure
-    /// path sends `cancel` and ends the session — and its contract is left alone.
-    ///
-    /// Answers with the key the rendering belongs to, so a caller can drop an answer that arrived
-    /// after the person moved to another image. A nil PNG with no error means nothing is drawn,
-    /// which is a send of the plain screenshot. Always answers.
-    func snapshotCurrent(completion: @escaping (_ key: String, _ png: Data?, _ error: String?) -> Void) {
-        guard let shot = current, let webView, pageReady else {
-            completion("", nil, "the editor page is not ready"); return
-        }
-        let key = shot.url.path
-        guard pendingSnapshot == nil else { completion(key, nil, "a send is already preparing"); return }
-        let epoch = pageEpoch
-        var answered = false
-        let finish: (Data?, String?) -> Void = { [weak self] png, error in
-            guard !answered else { return }
-            answered = true
-            self?.pendingSnapshot = nil
-            // The page's own text can name a served URL, and every served URL starts with the
-            // per-launch token, which must never reach the log.
-            completion(key, png, error.map { self?.server?.redacted($0) ?? $0 })
-        }
-        pendingSnapshot = finish
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) { finish(nil, "timeout after \(Int(Self.exportTimeout)) s") }
-        webView.callAsyncJavaScript(PageAPI.snapshot.script, arguments: [:], in: nil, in: .page) { [weak self] result in
-            guard let self, self.pageEpoch == epoch else { return }
-            switch result {
-            case .failure(let error): finish(nil, String(describing: error).replacingOccurrences(of: "\n", with: " "))
-            case .success(let value):
-                guard let snapshot = SnapshotResult(body: value) else {
-                    finish(nil, "page returned \(WebMessage.describe(value as Any))"); return
-                }
-                finish(snapshot.png, snapshot.error)
-            }
-        }
-    }
-
-    /// The page's canvas belongs to the annotator, so nothing else may draw on it. It takes it in
-    /// `prepare`, about half a second before the window appears, and gives it back when `park`
-    /// answers, after the window is gone.
-    private var holdsCanvas: Bool { current != nil || pendingHide != nil }
-
-    /// Why nothing may borrow the page's canvas right now, or nil when it is free. A marks build
-    /// and a preview rendering both put their own image there for the length of one rendering, so
-    /// they wait for the annotator; `add` asks before it copies anything, so a refusal is one error
-    /// line and no file left behind.
-    /// Called a turn after the canvas stops being owned, so whatever was refused can ask again.
-    /// It fires from every place one of the four owners lets go rather than from the callers of
-    /// those places: an export or a build that answered somewhere new would otherwise strand a
-    /// waiting import until the next unrelated session.
-    var onCanvasFree: (() -> Void)?
-
-    /// Signals `onCanvasFree` on the next turn of the run loop, if the canvas is still free then.
-    /// The next turn rather than now: an owner clears its flag inside its own completion, and an
-    /// import starting there would run inside the call that released it.
-    private func canvasMaybeFreed() {
-        guard canvasRefusal == nil else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.canvasRefusal == nil else { return }
-            self.onCanvasFree?()
-        }
-    }
-
-    var canvasRefusal: String? {
-        if webView == nil || !pageReady { return "the editor page is not ready" }
-        if holdsCanvas { return "an image is in the annotator" }
-        // Copy Drawing and a launch-time preview both run through `exportDrafts`, so this says
-        // what is true of either rather than naming one of them.
-        if pendingExport != nil { return "the page is rendering" }
-        if pendingBuild != nil { return "another push is still building its marks" }
-        return nil
-    }
-
-    /// Turns an agent's marks into a draft without showing anything: the page puts the image and the
-    /// marks on its canvas, hands back the snapshot and a rendering, and restores its own canvas.
-    /// `snapshot` is the image's existing draft, so marks add to it instead of replacing it.
-    /// Always answers, like `exportDrafts`: with the result, or with an error after a failure, a
-    /// timeout, or when the page cannot take the call.
-    func buildDraft(_ shot: Screenshot, marks: [AgentMark], completion: @escaping (ParkResult?, String?) -> Void) {
-        if let refusal = canvasRefusal { completion(nil, refusal); return }
-        guard let webView else { completion(nil, "the editor page is not ready"); return }
-        guard let pixels = Thumbnailer.pixelSize(of: shot.url) else {
-            completion(nil, "could not read \(shot.url.lastPathComponent)"); return
-        }
-        let payload = LoadPayload(
-            key: shot.url.path, mimeType: LocalServer.mimeType(for: shot.url.pathExtension),
-            pixelWidth: pixels.width, pixelHeight: pixels.height)
-        let epoch = pageEpoch
-        var answered = false
-        let finish: (ParkResult?, String?) -> Void = { [weak self] parked, error in
-            guard !answered else { return }
-            answered = true
-            self?.pendingBuild = nil
-            self?.canvasMaybeFreed()
-            completion(parked, error)
-        }
-        pendingBuild = finish
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.exportTimeout) { finish(nil, "timeout after \(Int(Self.exportTimeout)) s") }
-        let script = PageAPI.build(payload, snapshot: draftSnapshot?(shot.url.path), marks: marks).script
-        webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { [weak self] result in
-            guard let self, self.pageEpoch == epoch else { return }
-            switch result {
-            case .failure(let error): finish(nil, String(describing: error).replacingOccurrences(of: "\n", with: " "))
-            case .success(let value):
-                guard let parked = ParkResult(body: value) else { finish(nil, "page returned \(WebMessage.describe(value as Any))"); return }
-                finish(parked, nil)
-            }
-        }
-    }
-
-    /// When each image's `load` was sent, by key, for the `[annotate] loaded` line. A swap can have two in flight.
-    private var loadStarted: [String: CFTimeInterval] = [:]
-
-    /// Debug: runs JavaScript in the page and logs the result. `open 'vignette://eval?<code>'`.
-    func evalForDebug(_ code: String) {
-        guard let webView else { Commands.error("eval", .pageNotReady, "no page"); return }
-        webView.callAsyncJavaScript(code, arguments: [:], in: nil, in: .page) { result in
-            switch result {
-            case .success(let value): Commands.ok("eval", String(describing: value).replacingOccurrences(of: "\n", with: " "))
-            case .failure(let error): Commands.error("eval", .evalFailed, String(describing: error).replacingOccurrences(of: "\n", with: " "))
-            }
-        }
-    }
-
-    /// Debug: shows the editor window without loading an image.
-    func presentEmpty() {
-        guard let webView else { return }
-        let frame = StackLayout.current.annotationFrame(for: NSSize(width: 1200, height: 800), visibleFrame: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame)
-        room = nil
-        let win = window ?? makeWindow(webView)
-        place(win, frame: frame)
-        placeWebView()
-        applyCornerRadius()
-        toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
-        win.makeKeyAndOrderFront(nil)
-        landed()   // no flight to hand over from: this window is the whole of it
-        if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
-        toolbar.show()
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    /// Ends the session as Esc would, or closes the empty editor from `show-editor`.
-    /// `open vignette://cancel`. False when nothing was open.
+    /// Ends the session as Esc would. `open vignette://cancel`. False when nothing was open.
     @discardableResult
     func cancelForDebug() -> Bool {
-        if current == nil {
-            guard let window, window.isVisible else { return false }
-            hideWindows()
-            return true
-        }
+        guard current != nil else { return false }
         cancel()
         return true
     }
@@ -863,157 +623,96 @@ final class AnnotationController: NSObject, WKScriptMessageHandler, WKNavigation
         onClosed?()
     }
 
-    // MARK: WKScriptMessageHandler
-
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let msg = WebMessage(body: message.body) else {
-            Log.write("[web] unrecognized message \(WebMessage.describe(message.body))")
-            return
-        }
-        switch msg {
-        case .ready(let version, let tools, let markColors):
-            guard version == bridgeProtocolVersion else {
-                pageFailed = true
-                Log.write("[web] error protocol-mismatch page=\(version) app=\(bridgeProtocolVersion); rebuild with scripts/build.sh")
-                onProblem?("The editor page is out of date; rebuild the app")
-                return
-            }
-            Log.write("[web] ready protocol=\(version) tools=\(tools.count) markColors=\(markColors.count)")
-            pageReady = true
-            canvasMaybeFreed()
-            toolbar.model.tools = tools
-            if let call = pendingCall { self.call(call); pendingCall = nil }
-            // After a web process restart the window is still up: put its image and stored draft back.
-            else if let shot = current { sendImage(shot) }
-            onPageReady?()
-        case .tool(let tool, let color):
-            toolbar.model.tool = tool
-            toolbar.model.color = color
-        case .loaded(let key):
-            let ms = loadStarted.removeValue(forKey: key).map { Int((CACurrentMediaTime() - $0) * 1000) } ?? -1
-            Log.write("[annotate] loaded \(ms)ms \((key as NSString).lastPathComponent)")
-            onLoaded?(key)
-            // A stored draft comes with the image, so the stand-in has its annotations before the
-            // first zoom rather than after the first change.
-            refreshOverlay(for: key)
-        case .done(let png):
-            // The host answers through the transition (finish or dismiss), which parks and hides.
-            guard let shot = current else { return }
-            if let png { onDraftPreview?(shot.url.path, png) }
-            onFinished?(shot, png)
-        case .cancel:
-            cancel()
-        case .log(let text):
-            Log.write("[web] \(text)")
-        case .draft(let key, let snapshot):
-            onDraft?(key, snapshot)
-            // The annotations changed, so the picture the stand-in draws them with has to change
-            // too. The draft is already debounced behind the last change, so this is as well.
-            refreshOverlay(for: key)
-        case .zoom(let factor, let at):
-            // The zoom keys. The wheel and the pinch never reach the page: `AnnotationWebView`
-            // takes them, so a cursor here is a leftover and treated as a gesture's.
-            zoom(by: factor, at: at, as: at == nil ? .step : .gesture)
-        case .smartZoom(let at):
-            // The page has decided this double-click is not tldraw's: the tool is select and the
-            // pointer is over the picture rather than over a mark.
-            smartZoom(at: at)
-        }
+    /// The drawing in the editor, stored before the app quits. The editor parks for it.
+    func storeForQuit() {
+        guard current != nil else { return }
+        park()
     }
 
     var stateJSON: [String: Any] {
         [
             "current": current?.url.path as Any,
             "windowVisible": window?.isVisible ?? false,
+            "key": window?.isKeyWindow ?? false,
             "zoom": [zoomWindow.width, zoomWindow.height],
             "zoomLevel": zoomLevel,
             "canvasZoom": [canvasZoom.width, canvasZoom.height],
             "zoomAnchor": [zoomAnchor.x, zoomAnchor.y],
             "zoomCenter": [zoomCenter.x, zoomCenter.y],
-            "standIn": standIn.isUp,
-            "overlay": standIn.overlayPixels as Any,
-            "room": growthLimit.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
+            "room": StateReport.topLeft(room, primaryHeight: StateReport.primaryHeight),
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.panel.frame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
-            "pageState": "\(pageState)",
-            "tool": toolbar.model.tool as Any, "color": toolbar.model.color,
-            "port": Int(port),
-            "webPid": webProcessID.map { Int($0) } as Any,
+            "tool": toolbar.model.tool?.rawValue as Any,
+            // The colour pass picks every mark's colour, so the next one always starts in this.
+            "color": MarkColor.start.rawValue,
         ]
-    }
-
-    /// What the page has rendered, or nil when it does not answer in time (no page, a page that is
-    /// loading, or a dead web process). Driven by vignette://state.
-    func queryPage(timeout: TimeInterval, completion: @escaping (Any?) -> Void) {
-        guard let webView, pageReady else { completion(nil); return }
-        var answered = false
-        let finish: (Any?) -> Void = { value in
-            guard !answered else { return }
-            answered = true
-            completion(value)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish(nil) }
-        let script = "const vb = window.editor ? window.editor.getViewportPageBounds() : null; return {title: document.title, root: document.getElementById('root')?.children.length, api: typeof window.vignette, canvas: document.querySelector('.tl-canvas') != null, images: document.querySelectorAll('.tl-image').length, shapes: window.editor ? window.editor.getCurrentPageShapeIds().size : null, canUndo: window.editor ? window.editor.getCanUndo() : null, zoom: window.editor ? window.editor.getZoomLevel() / window.editor.getBaseZoom() : null, visible: vb ? [Math.round(vb.x), Math.round(vb.y), Math.round(vb.w), Math.round(vb.h)] : null, inner: [innerWidth, innerHeight], hidden: document.hidden, page: location.pathname.split('/').pop()};"
-        webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { result in
-            if case .success(let value) = result { finish(value) } else { finish(nil) }
-        }
-    }
-
-    // MARK: WKNavigationDelegate
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        Log.write("[web] loaded \(webView.url.map { LocalServer.redacted($0) } ?? "?")")
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        pageFailed = true
-        Log.write("[web] failed to load: \(error.localizedDescription)")
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        pageFailed = true
-        Log.write("[web] navigation failed: \(error.localizedDescription)")
-    }
-
-    /// WebKit killed or lost the content process. Everything on the page is gone; reload it. The
-    /// `ready` that follows re-sends the current image with its stored draft.
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        pageReady = false
-        pendingCall = nil
-        pageEpoch += 1
-        Log.write("[web] error process-terminated; reloading")
-        pendingExport?([:], "web process terminated")
-        pendingBuild?(nil, "web process terminated")
-        pendingSnapshot?(nil, "web process terminated")
-        pendingHide?()
-        standIn.pageRestarted()
-        // The reloaded page fits the image to the frame it finds, and a zoomed frame is not the
-        // image's shape any more, so it would fit the whole image inside it with a gap down one
-        // side. The window comes home instead, which is the view that page will draw.
-        if abs(zoomTarget - 1) > 0.001 { zoom(by: nil, at: nil, as: .step) }
-        onProblem?("The editor restarted")
-        webView.reload()
     }
 }
 
-/// Takes the trackpad's zoom gestures before WebKit does, so zoom stays the app's (see
-/// `AnnotationController.zoom`). Both carry where the fingers are, which is the point zoom holds.
+/// A short confirmation from the editor, such as "Copied drawing": a small dark capsule at the
+/// bottom of the frame, over the picture, where the eye already is and nothing in the toolbar moves
+/// for it. It takes no clicks.
 @MainActor
-final class AnnotationWebView: WKWebView {
-    var onMagnify: ((CGFloat, NSEvent.Phase, NSPoint) -> Void)?
-    var onSmartMagnify: ((NSPoint) -> Void)?
-    /// A wheel with cmd or ctrl held. Taken here so tldraw never sees it: it would zoom its own
-    /// camera, and the page would see it a frame late and without the trackpad's phases.
-    var onZoomWheel: ((NSEvent) -> Void)?
-    override func magnify(with event: NSEvent) {
-        onMagnify?(event.magnification, event.phase, event.locationInWindow)
+private final class AnnotatorToast: NSVisualEffectView {
+    private let label = NSTextField(labelWithString: "")
+    private var generation = 0
+    /// Its distance from the bottom of the frame, and its padding around the words.
+    private static let inset: CGFloat = 14
+    private static let padding = CGSize(width: 12, height: 5)
+
+    init() {
+        super.init(frame: .zero)
+        material = .hudWindow
+        blendingMode = .withinWindow
+        state = .active
+        appearance = NSAppearance(named: .darkAqua)
+        wantsLayer = true
+        alphaValue = 0
+        isHidden = true
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = .labelColor
+        addSubview(label)
     }
-    override func scrollWheel(with event: NSEvent) {
-        if !event.modifierFlags.intersection([.command, .control]).isEmpty { onZoomWheel?(event); return }
-        super.scrollWheel(with: event)
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func show(_ words: String) {
+        guard let container = superview else { return }
+        generation += 1
+        let gen = generation
+        label.stringValue = words
+        label.sizeToFit()
+        let size = CGSize(width: ceil(label.frame.width) + Self.padding.width * 2, height: ceil(label.frame.height) + Self.padding.height * 2)
+        frame = CGRect(x: ((container.bounds.width - size.width) / 2).rounded(), y: Self.inset, width: size.width, height: size.height)
+        label.frame.origin = CGPoint(x: Self.padding.width, y: Self.padding.height)
+        layer?.cornerRadius = size.height / 2
+        isHidden = false
+        let ui = Settings.shared.motionUI
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15 * Settings.shared.motionScale
+            animator().alphaValue = 1
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + ui.toastSeconds) { [weak self] in
+            guard let self, generation == gen else { return }
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.2 * Settings.shared.motionScale
+                self.animator().alphaValue = 0
+            }, completionHandler: { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.generation == gen else { return }
+                    self.isHidden = true
+                }
+            })
+        }
     }
-    override func smartMagnify(with event: NSEvent) {
-        onSmartMagnify?(event.locationInWindow)
+
+    /// Gone at once, with the window.
+    func hide() {
+        generation += 1
+        alphaValue = 0
+        isHidden = true
     }
 }
 

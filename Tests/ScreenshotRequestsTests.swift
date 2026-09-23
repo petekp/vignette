@@ -6,14 +6,13 @@ final class ScreenshotRequestsTests: XCTestCase {
     private var root: URL!
     private var folder: URL!
     private var requests: ScreenshotRequests!
-    /// The marks the fake page "built" into a draft, and whether storing one is allowed to succeed.
+    /// The marks added to a drawing, and whether writing it fails.
     private var built: [[AgentMark]] = []
-    private var canvasBusy: String?
-    private var draftStoreFails = false
+    private var buildFails = false
     private var presented: [URL] = []
-    /// Set to hold the page's answer: the build's completion lands here instead of being called,
-    /// which is what a real `buildDraft` does for as long as the page takes.
-    private var heldBuild: ((ParkResult?, String?) -> Void)?
+    /// Set to hold the answer: the completion lands here instead of being called, which is what a
+    /// real `addMarks` does while it makes its colour sample off the main thread.
+    private var heldBuild: ((Drawings.Failure?) -> Void)?
     /// The attempt id `stageReply` last wrote, for a test that needs to read back its receipt.
     private var firstAttemptID = ""
 
@@ -24,14 +23,10 @@ final class ScreenshotRequestsTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         requests = ScreenshotRequests(root: root)
         requests.callbacks = ScreenshotRequests.Callbacks(
-            canvasRefusal: { [unowned self] in self.canvasBusy },
-            buildDraft: { [unowned self] _, marks, done in
+            addMarks: { [unowned self] _, marks, done in
                 self.built.append(marks)
                 guard self.heldBuild == nil else { self.heldBuild = done; return }
-                done(ParkResult(body: ["snapshot": ["store": [:]], "preview": NSNull()]), nil)
-            },
-            saveDraft: { [unowned self] _, _, _ in
-                if self.draftStoreFails { throw ReplyProtocol.Problem(.storeFailed, "disk full") }
+                done(self.buildFails ? Drawings.Failure(code: .writeFailed, description: "disk full") : nil)
             },
             present: { [unowned self] shot in self.presented.append(shot.url) },
             watchFolder: { [unowned self] in self.folder },
@@ -189,13 +184,15 @@ final class ScreenshotRequestsTests: XCTestCase {
     }
 
     func testAnImportStoppedBeforePublicationLeavesNoVisibleFile() throws {
-        draftStoreFails = true
+        buildFails = true
         let record = try makeRequest()
         try requests.receiveReply(envelope: stageReply(record))
         let file = folder.appendingPathComponent(ReplyProtocol.replyFileName(try replyID(in: record)))
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path), "the PNG is copied under the reserved name")
         XCTAssertFalse(requests.isVisible(file), "but nothing may list it until publication commits")
         XCTAssertEqual(presented, [])
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["error"] as? String, "draft-store-failed",
+                       "the code receipts have always carried for a drawing that could not be stored")
     }
 
     func testAnUnknownManagedNameIsHiddenRatherThanTreatedAsACapture() {
@@ -203,35 +200,27 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertFalse(requests.isVisible(stray), "a corrupt or missing record fails closed")
     }
 
-    func testAReplyWaitsForTheCanvasAndPublishesWhenItIsFree() throws {
-        canvasBusy = "an image is in the annotator"
-        let record = try makeRequest()
-        try requests.receiveReply(envelope: stageReply(record))
-        XCTAssertEqual(presented, [], "nothing is shown while the person is drawing")
-        XCTAssertEqual(requests.stateJSON["pendingImports"] as? [String], [try replyID(in: record)])
-        canvasBusy = nil
-        requests.canvasBecameAvailable()
-        XCTAssertEqual(presented.count, 1)
-        XCTAssertEqual((requests.stateJSON["pendingImports"] as? [String])?.count, 0)
-    }
-
-    func testReloadingFromDiskFindsTheSameStateAndResumesWhatWasPending() throws {
-        canvasBusy = "an image is in the annotator"
+    func testALaunchPublishesTheRepliesStillWaitingOnce() throws {
+        heldBuild = { _ in }             // the import stops before publication, as a quit would leave it
         let record = try makeRequest()
         try requests.receiveReply(envelope: stageReply(record))
         let id = try replyID(in: record)
+        let file = folder.appendingPathComponent(ReplyProtocol.replyFileName(id))
+        XCTAssertEqual(requests.stateJSON["pendingImports"] as? [String], [id])
 
+        heldBuild = nil
         let reopened = ScreenshotRequests(root: root)
         reopened.callbacks = requests.callbacks
         reopened.load()
-        XCTAssertEqual(reopened.stateJSON["pendingImports"] as? [String], [id])
-        XCTAssertFalse(reopened.isVisible(folder.appendingPathComponent(ReplyProtocol.replyFileName(id))))
+        XCTAssertEqual(presented, [file], "the records' load is what starts the import")
+        XCTAssertEqual((reopened.stateJSON["pendingImports"] as? [String])?.count, 0)
+        XCTAssertTrue(reopened.isVisible(file))
     }
 
     // MARK: Clearing
 
     func testClearingStopsNewRepliesAndCancelsUnpublishedImports() throws {
-        canvasBusy = "an image is in the annotator"
+        heldBuild = { _ in }             // the import stays unpublished
         let record = try makeRequest()
         try requests.receiveReply(envelope: stageReply(record))
         requests.run(clear: record.id)
@@ -273,11 +262,11 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: published), png(6))
     }
 
-    /// `buildDraft` can be outstanding for seconds. A clear in that window cancels the import, and
-    /// the answer arriving afterwards must not publish it anyway.
+    /// `addMarks` answers later, once its colour sample is made. A clear in that window cancels the
+    /// import, and the answer arriving afterwards must not publish it anyway.
     func testAClearDuringABuildCancelsTheImportInsteadOfPublishingIt() throws {
         let record = try makeRequest()
-        heldBuild = { _, _ in }          // hold the next build's answer
+        heldBuild = { _ in }             // hold the next build's answer
         requests.receiveReply(envelope: try stageReply(record))
         let id = try replyID(in: record)
         let published = folder.appendingPathComponent(ReplyProtocol.replyFileName(id))
@@ -285,7 +274,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: published.path), "the name is reserved while the build runs")
 
         requests.run(clear: record.id)
-        answer(ParkResult(body: ["snapshot": ["store": [:]], "preview": NSNull()]), nil)
+        answer(nil)
 
         XCTAssertEqual(presented, [], "a cleared reply makes no card")
         XCTAssertFalse(FileManager.default.fileExists(atPath: published.path), "and leaves no hidden file behind")

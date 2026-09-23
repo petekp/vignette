@@ -4,7 +4,7 @@ import SwiftUI
 struct Card: Identifiable {
     let id: UUID
     let shot: Screenshot
-    var image: NSImage?       // thumbnail-sized, or the draft preview; nil until decoded
+    var image: NSImage?       // thumbnail-sized; nil until decoded
     let pointSize: NSSize     // the screenshot in points, for the annotator frame
     let size: NSSize          // the card on screen
     let agent: String?        // the agent that added the file (see Agent); nil for a capture
@@ -25,7 +25,7 @@ final class StackModel: ObservableObject {
     var slidingOut = false                     // picks the exit stagger order and curve for `offscreen`
     @Published var outCards: Set<UUID> = []    // cards currently in the annotator; their slots stay empty
     @Published var forming: Set<UUID> = []     // cards whose image is in the transition layer, mid-stitch; drawn as nothing
-    @Published var drafts: Set<String> = []    // file paths with annotations in progress
+    @Published var drawings: Set<String> = []  // file paths that have a drawing
     @Published var feedback: String? = nil
     @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
     @Published var pressedCard: UUID? = nil
@@ -102,9 +102,9 @@ final class ThumbnailController: NSObject {
     var onAnnotatorShow: (() -> Void)?
     /// The flight is exactly on the frame; the annotator draws the shadow itself from here on.
     var onAnnotatorLanded: (() -> Void)?
-    /// A swap, return, or dismissal has started. The annotator parks its draft, hides, then calls back.
+    /// A swap, return, or dismissal has started. The annotator parks its drawing, hides, then calls back.
     var onAnnotatorHide: ((_ hidden: @escaping () -> Void) -> Void)?
-    /// The session ends before the window came up. The annotator lets the image go and stores nothing.
+    /// The session ends before the window came up. The annotator stores the drawing and lets the image go, with no fit-out.
     var onAnnotatorAbandon: (() -> Void)?
     /// Space the annotator needs below its window, for the toolbar.
     var annotatorBelow: () -> CGFloat = { 0 }
@@ -152,13 +152,11 @@ final class ThumbnailController: NSObject {
     private var sessionCard: Card?
     private var annotating: Card? { transition.isActive ? sessionCard : nil }
     private var annotationFrame: NSRect = .zero
-    /// Keys whose image the page reports on its canvas. The flight image lifts once the annotator
-    /// is visible and its key is here, so an empty editor is never seen.
+    /// Keys whose screenshot the editor has at the screen's size. The flight image lifts once the
+    /// annotator is visible and its key is here, so an editor still waiting for its decode is never seen.
     private var loadedKeys: Set<String> = []
     /// True when the session ends by the user's hand, so focus returns to their app once the annotator is gone.
     private var restoreFocusOnEnd = false
-    /// Renderings of drafts, by file path. Cards show these instead of the file while a draft exists.
-    private var previews: [String: NSImage] = [:]
     /// Larger decodes for the flight to the annotator, by file path. Filled on hover.
     private var flightImages: [String: NSImage] = [:]
     private var flightOrder: [String] = []
@@ -301,7 +299,7 @@ final class ThumbnailController: NSObject {
                     let card = model.cards[i]
                     return ["file": card.shot.url.path, "frame": StateReport.topLeft(cardFrame(i), primaryHeight: h),
                             "out": model.outCards.contains(card.id), "forming": model.forming.contains(card.id),
-                            "draft": model.drafts.contains(card.shot.url.path), "agent": card.agent as Any,
+                            "drawing": model.drawings.contains(card.shot.url.path), "agent": card.agent as Any,
                             "kind": card.shot.kind == .recording ? "recording" : "image"]
                 },
                 "selected": model.selectedCards().map(\.shot.url.path),
@@ -317,7 +315,6 @@ final class ThumbnailController: NSObject {
             "transition": ["phase": "\(transition.phase)", "annotating": annotating?.shot.url.path as Any, "isActive": transition.isActive],
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
                        "visibleFrame": StateReport.topLeft(s.visibleFrame, primaryHeight: h), "scale": s.backingScaleFactor, "pinned": pinnedScreen != nil],
-            "previews": previews.keys.sorted(),
             "backdrop": backdrop.stateJSON,
         ]
     }
@@ -407,7 +404,7 @@ final class ThumbnailController: NSObject {
         annotate(card)
     }
 
-    /// The page abandoned the session (Esc, click outside, Cmd+W). The reducer decides what returns.
+    /// The editor asked to close (Esc, click outside, Cmd+W). The reducer decides what returns.
     func annotationEnded() {
         restoreFocusOnEnd = true
         endQueue()   // ending one card ends the run; the rest of the list is dropped
@@ -435,33 +432,15 @@ final class ThumbnailController: NSObject {
         }
     }
 
-    /// The page has the image for `key` on its canvas.
-    func pageLoaded(_ key: String) {
+    /// The editor has the screenshot for `key`.
+    func editorLoaded(_ key: String) {
         loadedKeys.insert(key)
         if case .annotating(let k) = transition.phase, k == key, let card = sessionCard { flights.lift(id: card.id) }
     }
 
-    func setDrafts(_ paths: Set<String>) {
-        model.drafts = paths
-        // A draft that was emptied or forgotten shows the file again.
-        for path in previews.keys where !paths.contains(path) {
-            previews[path] = nil
-            if let card = model.cards.first(where: { $0.shot.url.path == path }) {
-                replaceImage(of: card, with: Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: card.size, pointSize: card.pointSize)))
-            }
-        }
-    }
-
-    /// The preview lands a moment later, decoded off the main thread; a draft emptied meanwhile wins.
-    func setPreview(_ path: String, _ png: Data) {
-        Thumbnailer.decode(png: png) { [weak self] image in
-            guard let self, let image, self.model.drafts.contains(path) else { return }
-            self.previews[path] = image
-            if let card = self.model.cards.first(where: { $0.shot.url.path == path }) {
-                self.replaceImage(of: card, with: image)
-                self.flights.setImage(id: card.id, image)
-            }
-        }
+    /// The screenshots that have a drawing.
+    func setDrawings(_ paths: Set<String>) {
+        model.drawings = paths
     }
 
     /// Drops cards whose files no longer exist.
@@ -488,7 +467,7 @@ final class ThumbnailController: NSObject {
         guard visible else { return }
         model.cards = model.cards.map { card in
             let size = layout.cardSize(for: card.pointSize)
-            let image = previews[card.shot.url.path] ?? Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize)) ?? card.image
+            let image = Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize)) ?? card.image
             return card.with(size: size).with(image: image)
         }
         relayout()
@@ -605,7 +584,7 @@ final class ThumbnailController: NSObject {
             model.forming = []
         }
         if let card = annotating, model.isStack {
-            // The image in the annotator leaves with the stack while the page parks its draft.
+            // The image in the annotator leaves with the stack while the annotator parks its drawing.
             var slot = cardFrame(of: card)
             slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
             flights.fly(id: card.id, image: flightImage(for: currentCard(card)), from: annotationFrame, to: slot,
@@ -751,7 +730,7 @@ final class ThumbnailController: NSObject {
             onAnnotatorPrepare?(card.shot, target, annotatorRoom)
             // After the annotator's window has taken the keys, so they pass from one to the other
             // rather than being nobody's: a tool key or Esc pressed during the flight reaches the
-            // page, and its Esc comes back through `onClosed` as `close`, which turns the card around.
+            // editor, and its Esc comes back through `onClosed` as `close`, which turns the card around.
             releaseKeys()
             var from = slot ?? cardFrame(of: card)
             if model.offscreen.contains(card.id) { from.origin.x += layout.offscreenDistance(cardWidth: from.width) }
@@ -771,7 +750,7 @@ final class ThumbnailController: NSObject {
                 guard let self, self.transition.key == key, let card = self.sessionCard else { return }
                 self.onAnnotatorLanded?()
                 self.flights.dropShadow(id: card.id)
-                if self.loadedKeys.contains(key) { self.flights.lift(id: card.id) }   // else pageLoaded lifts it
+                if self.loadedKeys.contains(key) { self.flights.lift(id: card.id) }   // else editorLoaded lifts it
             }, dropped: { [weak self] in
                 // The layer went down between the two moments — a new capture presenting the panel
                 // anew while a lone thumbnail is being annotated. Nothing covers the window now.
@@ -888,11 +867,10 @@ final class ThumbnailController: NSObject {
         }
     }
 
-    /// The best image for the flight: the draft preview, a larger decode if hovering fetched one,
-    /// else the thumbnail, upgraded as soon as a larger decode arrives.
+    /// The best image for the flight: a larger decode if hovering fetched one, else the thumbnail,
+    /// upgraded as soon as a larger decode arrives.
     private func flightImage(for card: Card) -> NSImage {
         let path = card.shot.url.path
-        if let preview = previews[path] { return preview }
         if let image = flightImages[path] { return image }
         prefetchFlightImage(card.id)
         return card.image ?? NSImage(size: card.size)
@@ -901,10 +879,10 @@ final class ThumbnailController: NSObject {
     private func prefetchFlightImage(_ id: UUID?) {
         guard let id, let card = model.cards.first(where: { $0.id == id }) else { return }
         let path = card.shot.url.path
-        guard flightImages[path] == nil, previews[path] == nil else { return }
+        guard flightImages[path] == nil else { return }
         Thumbnailer.load(at: card.shot.url, maxPixel: Thumbnailer.screenPixels(on: screen)) { [weak self] image in
             // `visible`: a decode that lands after the stack hid must not refill the cache it cleared.
-            guard let self, let image, self.visible, self.previews[path] == nil else { return }
+            guard let self, let image, self.visible else { return }
             self.flightImages[path] = image
             self.flightOrder.append(path)
             if self.flightOrder.count > 4 { self.flightImages[self.flightOrder.removeFirst()] = nil }
@@ -1138,11 +1116,11 @@ final class ThumbnailController: NSObject {
         guard let pointSize = Thumbnailer.pointSize(of: shot.url) else { return nil }
         let size = layout.cardSize(for: pointSize)
         let maxPixel = thumbnailPixels(size: size, pointSize: pointSize)
-        let card = Card(id: UUID(), shot: shot, image: previews[shot.url.path] ?? Thumbnailer.cached(at: shot.url, maxPixel: maxPixel),
+        let card = Card(id: UUID(), shot: shot, image: Thumbnailer.cached(at: shot.url, maxPixel: maxPixel),
                         pointSize: pointSize, size: size, agent: Agent.of(shot.url), duration: Thumbnailer.duration(of: shot.url))
         if card.image == nil {
             Thumbnailer.load(at: shot.url, maxPixel: maxPixel) { [weak self] image in
-                guard let self, let image, self.previews[shot.url.path] == nil, self.model.cards.contains(where: { $0.id == card.id }) else { return }
+                guard let self, let image, self.model.cards.contains(where: { $0.id == card.id }) else { return }
                 self.replaceImage(of: card, with: image)
             }
         }

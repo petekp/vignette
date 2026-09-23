@@ -130,8 +130,9 @@ final class EditorPicture {
         layer.addSublayer(screenshot)
     }
 
-    /// A new screenshot: its image, decoded at any size, fills `pixels`.
-    func open(_ image: CGImage, pixels: PixelSize) {
+    /// A new screenshot: its image, decoded at any size, fills `pixels`. Nil shows nothing until
+    /// `setImage`.
+    func open(_ image: CGImage?, pixels: PixelSize) {
         for record in shapes.values { record.stroke.removeFromSuperlayer() }
         for record in texts.values {
             record.whole.removeFromSuperlayer()
@@ -141,6 +142,11 @@ final class EditorPicture {
         texts = [:]
         layer.bounds = pixels.bounds
         screenshot.frame = pixels.bounds
+        screenshot.contents = image
+    }
+
+    /// The screenshot, decoded again; the marks stay as they are.
+    func setImage(_ image: CGImage) {
         screenshot.contents = image
     }
 

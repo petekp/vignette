@@ -11,7 +11,7 @@ struct AnnotatorTransition: Equatable {
     /// Where the annotated card came from: a lone fresh thumbnail, or the recent stack.
     enum Origin: Equatable { case thumbnail, stack }
 
-    /// What to do once the page has parked the current draft.
+    /// What to do once the editor has parked the current drawing.
     enum Next: Equatable {
         case annotate(String)   // the old card returns and this key flies out (a swap)
         case close              // the session was abandoned: the card returns to its stack slot, or the annotator just hides
@@ -24,13 +24,13 @@ struct AnnotatorTransition: Equatable {
         case idle
         case flyingOut(String)            // prepare sent; the card is travelling to the annotator frame
         case annotating(String)           // the annotator is visible with this key
-        case parking(String, then: Next)  // the page is parking this key's draft
+        case parking(String, then: Next)  // the editor is parking this key's drawing
     }
 
     enum Event: Equatable {
         case annotate(String, from: Origin)
         case shown               // the flight landed and the annotator became visible
-        case parked              // the page finished parking
+        case parked              // the editor finished parking
         case close               // Esc, click outside, or Cmd+W: nothing to show for it
         case finish              // Done or Return: the result is on the clipboard
         case newShot(String)     // a new file arrived
@@ -41,8 +41,8 @@ struct AnnotatorTransition: Equatable {
     enum Effect: Equatable {
         case prepare(String)     // load this key in the hidden annotator and fly its card out
         case show                // reveal the annotator in place of the landed card
-        case park(String)        // ask the page to park; answer with `.parked`
-        case abandon(String)     // the page holds this key and nobody saw it: let it go, store nothing
+        case park(String)        // ask the editor to park; answer with `.parked`
+        case abandon(String)     // the editor holds this key and nobody saw it: close it at once, no fit on the way out
         case returnCard(String)  // fly the card back to its slot
         case hideAnnotator       // the annotator is done; nothing returns
         case markCopied(String)  // the returned card shows the copied mark when it lands
@@ -70,10 +70,9 @@ struct AnnotatorTransition: Equatable {
             return [.prepare(k)]
 
         case .flyingOut(let k):
-            // The window has not come up, so nobody has seen this image and nobody could draw on
-            // it. A request to close it or to open another one turns the flight around in this
-            // turn: there is nothing to store, and a park is a round trip that can be queued
-            // behind an export, which would leave the card hanging in the air until it answers.
+            // The window has not come up, so nobody has seen this image and no zoom has moved it.
+            // A request to close it or to open another one turns the flight around in this turn:
+            // `abandon` stores the drawing at once, with no fit-out to wait for.
             switch event {
             case .shown:
                 phase = .annotating(k)
@@ -86,8 +85,8 @@ struct AnnotatorTransition: Equatable {
                 phase = .flyingOut(k2)
                 return [.abandon(k), .returnCard(k), .prepare(k2)]
             case .finish:
-                // Done renders on the page, so it cannot come from a window that never appeared;
-                // if it does, the rendering exists and the draft behind it is parked as usual.
+                // The editor holds the keys from `prepare`, so Return can finish before the window
+                // is up; the drawing is parked as usual and the card comes back marked copied.
                 phase = .parking(k, then: .finish)
                 return [.park(k)]
             case .dismiss:

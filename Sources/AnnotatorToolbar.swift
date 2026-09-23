@@ -2,16 +2,12 @@ import AppKit
 import SwiftUI
 
 /// The annotator's toolbar: a native panel that floats just below the image window, so it is
-/// never clipped by the image and looks like the rest of macOS. The tools come from the page at
-/// load; the active state is mirrored from the page; taps are sent back to it.
+/// never clipped by the image and looks like the rest of macOS. The tools are the editor's; the
+/// active one is the editor's to report, and a tap sets it there.
 @MainActor
 final class AnnotatorToolbar {
     final class Model: ObservableObject {
-        @Published var tools: [ToolInfo] = []
-        @Published var tool: String? = nil
-        /// The colour the next mark will be drawn in. Nothing in the bar shows it; it is what
-        /// `[state] annotator.color` reports.
-        @Published var color: String = ""
+        @Published var tool: EditorCore.Tool? = nil
         @Published var shown = false     // drives the entrance and exit
         /// The agent sessions Send offers, read when the image opened. Empty hides the button:
         /// a control that can only say "nothing here" is not worth the width.
@@ -25,7 +21,7 @@ final class AnnotatorToolbar {
 
     let panel: NSPanel
     let model = Model()
-    var onTool: ((String) -> Void)?
+    var onTool: ((EditorCore.Tool) -> Void)?
     var onDone: (() -> Void)?
     var onSend: ((AgentDestination) -> Void)?
     private var hosting: NSHostingView<ToolbarView>!
@@ -144,7 +140,7 @@ private final class ToolbarPanel: NSPanel {
 
 private struct ToolbarView: View {
     @ObservedObject var model: AnnotatorToolbar.Model
-    let onTool: (String) -> Void
+    let onTool: (EditorCore.Tool) -> Void
     let onDone: () -> Void
     let onSend: (AgentDestination) -> Void
 
@@ -180,16 +176,16 @@ private struct ToolbarView: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(model.tools) { tool in
-                Button { onTool(tool.id) } label: {
+            ForEach(EditorCore.Tool.allCases, id: \.self) { tool in
+                Button { onTool(tool) } label: {
                     Image(systemName: tool.symbol)
                         .font(.system(size: 14, weight: .medium))
                         .frame(width: 32, height: 30)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(model.tool == tool.id ? Color.accentColor : .clear))
-                        .foregroundStyle(model.tool == tool.id ? .white : .primary)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(model.tool == tool ? Color.accentColor : .clear))
+                        .foregroundStyle(model.tool == tool ? .white : .primary)
                 }
                 .buttonStyle(TactileButtonStyle(shape: .rounded))
-                .help("\(tool.label) (\(tool.key.uppercased()))")
+                .help("\(tool.label) (\(String(tool.key).uppercased()))")
             }
             Divider().frame(height: 20).padding(.horizontal, 6)
             // No default target and no last-used one: the menu is the whole control, so where a

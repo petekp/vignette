@@ -61,15 +61,6 @@ final class ThumbnailerTests: XCTestCase {
         XCTAssertNil(Thumbnailer.cached(at: big, maxPixel: 100), "and goes as soon as something newer arrives")
     }
 
-    func testDownsampledPNGKeepsAspectWithinMaxPixel() throws {
-        let data = try Data(contentsOf: png("wide.png", w: 3000, h: 1000))
-        let small = try XCTUnwrap(Thumbnailer.downsampled(png: data, maxPixel: 1600))
-        let rep = try XCTUnwrap(NSBitmapImageRep(data: small))
-        XCTAssertEqual(rep.pixelsWide, 1600)
-        XCTAssertEqual(rep.pixelsHigh, 533)
-        XCTAssertNil(Thumbnailer.downsampled(png: Data("not a png".utf8), maxPixel: 100))
-    }
-
     /// A drawing sent to an agent is stored as `image.png`, and a reply copies those bytes to a
     /// `.png` card. A jpg or heic capture sent with nothing drawn on it would otherwise put the
     /// capture's own bytes under a name that says PNG.

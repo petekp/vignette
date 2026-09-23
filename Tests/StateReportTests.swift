@@ -12,10 +12,10 @@ final class StateReportTests: XCTestCase {
 
     func testRendersOneSortedLineThatParsesBack() throws {
         var report = StateReport()
-        report.sections = ["tag": "t1", "drafts": ["/a b.png"], "page": "unavailable", "nested": ["x": 1, "note": "line\nbreak"]]
+        report.sections = ["tag": "t1", "drawings": ["/a b.png"], "nested": ["x": 1, "note": "line\nbreak"]]
         let line = report.rendered()
         XCTAssertFalse(line.contains("\n"))
-        XCTAssertTrue(line.hasPrefix(#"{"drafts":["/a b.png"],"nested":{"note":"line\nbreak","x":1},"page":"unavailable","tag":"t1"}"#), line)
+        XCTAssertTrue(line.hasPrefix(#"{"drawings":["/a b.png"],"nested":{"note":"line\nbreak","x":1},"tag":"t1"}"#), line)
         let back = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
         XCTAssertEqual(back?["tag"] as? String, "t1")
     }
@@ -25,20 +25,6 @@ final class StateReportTests: XCTestCase {
         let missing: String? = nil
         report.sections = ["focused": missing as Any]
         XCTAssertEqual(report.rendered(), #"{"focused":null}"#)
-    }
-
-    @MainActor
-    func testPageQueryAnswersOnceWithoutAPage() {
-        let controller = AnnotationController()   // never preloaded: no web view
-        var answers: [Any?] = []
-        controller.queryPage(timeout: 0.05) { answers.append($0) }
-        XCTAssertEqual(answers.count, 1)
-        XCTAssertNil(answers[0] as Any?)
-        let waited = expectation(description: "past the timeout")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { waited.fulfill() }
-        wait(for: [waited], timeout: 1)
-        XCTAssertEqual(answers.count, 1, "the timeout must not answer a second time")
-        XCTAssertEqual(controller.stateJSON["pageState"] as? String, "unavailable")
     }
 
     func testUnserializableStateStillYieldsALine() {

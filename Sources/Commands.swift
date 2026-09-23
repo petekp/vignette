@@ -9,12 +9,8 @@ enum CommandError: String, CaseIterable {
     case outsideWatchFolder = "outside-watch-folder"
     case notEnoughFiles = "not-enough-files"
     case unreadableImage = "unreadable-image"
-    case pageNotReady = "page-not-ready"
-    case exportTimeout = "export-timeout"
-    case exportFailed = "export-failed"
     case debugDisabled = "debug-disabled"
     case noAppleOriginal = "no-apple-original"
-    case evalFailed = "eval-failed"
     case writeFailed = "write-failed"
     case unsupportedType = "unsupported-type"
     case invalidMarks = "invalid-marks"
@@ -29,8 +25,6 @@ enum CommandError: String, CaseIterable {
 struct CommandRequest: Equatable {
     let name: String
     let files: [URL]
-    /// The decoded query, for `eval`, which carries JavaScript instead of files.
-    let query: String?
     /// `tag=` from the query, echoed in the `[state]` line so a script can find its own answer.
     let tag: String?
     /// `annotate` in the query: `add` opens the image in the annotator instead of showing its thumbnail.
@@ -59,20 +53,18 @@ enum Commands {
     /// Commands that are not actions on screenshots. Actions come from `Config.actions`.
     static let fixed: [Fixed] = [
         Fixed(name: "help", summary: "list every command and action in the log"),
-        Fixed(name: "state", summary: "dump app and page state to the log"),
+        Fixed(name: "state", summary: "dump app state to the log"),
         Fixed(name: "last", summary: "show the thumbnail for the newest screenshot"),
-        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &marks=<json file> draws on it, as a draft the user can edit; ignores copyOnCapture and annotateOnCapture"),
+        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &marks=<json file> draws on it, as marks the user can edit; ignores copyOnCapture and annotateOnCapture"),
         Fixed(name: "recent", summary: "toggle the recent stack"),
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
-        Fixed(name: "cancel", summary: "close the annotator without exporting, as Esc would"),
+        Fixed(name: "cancel", summary: "close the annotator without copying, as Esc would"),
         Fixed(name: "settings", summary: "open the Settings window"),
         Fixed(name: "install-skill", summary: "copy the bundled agent skill into ~/.claude/skills and ~/.codex/skills; &root=<dir> installs into that directory instead (needs \"debug\": true)"),
         Fixed(name: "reply", summary: "an agent's reply to a screenshot request: \(Identity.urlScheme)://reply?file=<attempt envelope>; the bundled reply helper writes that envelope and waits for the receipt Vignette writes back"),
         Fixed(name: "requests", summary: "list the open screenshot requests; &clear=<id or all> stops one taking replies, cancels its unpublished imports, and removes the files Vignette owns"),
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Vignette first recorded"),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
-        Fixed(name: "show-editor", summary: "open the editor window without an image", needsDebug: true),
-        Fixed(name: "eval", summary: "run JavaScript in the editor page: \(Identity.urlScheme)://eval?<code>", needsDebug: true),
     ]
 
     /// URLComponents decodes each query value once; `open` does not encode again, so nothing else may.
@@ -81,7 +73,7 @@ enum Commands {
         let files = items.filter { $0.name == "file" }.compactMap(\.value)
             .map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
         let annotate = items.first { $0.name == "annotate" }.map { !["0", "false"].contains($0.value ?? "") } ?? false
-        return CommandRequest(name: url.host ?? "", files: files, query: url.query?.removingPercentEncoding,
+        return CommandRequest(name: url.host ?? "", files: files,
                               tag: items.first { $0.name == "tag" }?.value, annotate: annotate,
                               agent: Agent.clean(items.first { $0.name == "agent" }.map { $0.value ?? "" }),
                               marks: items.first { $0.name == "marks" }?.value,
