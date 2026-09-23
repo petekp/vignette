@@ -35,6 +35,13 @@ final class MarksView: NSView {
         }
     }
 
+    /// Draws the marks as one picture, at the largest size they have been placed at, and scales that
+    /// picture below it: a card's, which a narrowing stack shrinks on every frame and which would
+    /// otherwise draw every shape again at each new size.
+    var flattened = false {
+        didSet { if flattened != oldValue { place() } }
+    }
+
     private let host = CALayer()
 
     override init(frame: NSRect) {
@@ -60,6 +67,7 @@ final class MarksView: NSView {
         super.viewDidChangeBackingProperties()
         host.contentsScale = backingScale
         marks?.setScale(backingScale)
+        place()
     }
 
     private var backingScale: CGFloat { window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2 }
@@ -75,6 +83,13 @@ final class MarksView: NSView {
         CATransaction.setDisableActions(true)
         marks.layer.setAffineTransform(CGAffineTransform(a: drawn.width / image.width, b: 0, c: 0, d: drawn.height / image.height,
                                                          tx: (bounds.width - drawn.width) / 2, ty: (bounds.height - drawn.height) / 2))
+        let scale = drawn.width / image.width * backingScale
+        if !flattened {
+            marks.layer.shouldRasterize = false
+        } else if !marks.layer.shouldRasterize || scale > marks.layer.rasterizationScale {
+            marks.layer.shouldRasterize = true
+            marks.layer.rasterizationScale = scale
+        }
         CATransaction.commit()
     }
 }

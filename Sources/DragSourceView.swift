@@ -45,6 +45,7 @@ final class DragSourceView: NSView, NSDraggingSource {
         let view = marksView ?? MarksView(frame: bounds)
         if marksView == nil {
             view.autoresizingMask = [.width, .height]
+            view.flattened = true
             addSubview(view)
             marksView = view
         }
