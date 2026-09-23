@@ -54,16 +54,6 @@ final class MarkGeometryTests: XCTestCase {
         }
     }
 
-    func testTheEndDirectionFollowsTheArcIntoTheTip() {
-        let straight = Mark.Arrow(start: CGPoint(x: 0, y: 0), end: CGPoint(x: 30, y: 40)).body(pointScale: 1)
-        XCTAssertEqual(straight.endDirection.dx, 0.6, accuracy: 1e-12)
-        XCTAssertEqual(straight.endDirection.dy, 0.8, accuracy: 1e-12)
-        // A half circle from left to right, bowed below: it arrives at the tip going up.
-        let arc = Mark.Arrow(start: CGPoint(x: 0, y: 0), end: CGPoint(x: 100, y: 0), bend: 50).body(pointScale: 1)
-        XCTAssertEqual(arc.endDirection.dx, 0, accuracy: 1e-9)
-        XCTAssertEqual(arc.endDirection.dy, -1, accuracy: 1e-9)
-    }
-
     func testTheDistanceToAStraightBody() {
         let body = Mark.Arrow(start: CGPoint(x: 0, y: 0), end: CGPoint(x: 100, y: 0)).body(pointScale: 1)
         XCTAssertEqual(body.distance(to: CGPoint(x: 50, y: 7)), 7)

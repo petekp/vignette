@@ -65,9 +65,9 @@ extension ArrowBody {
     }
 }
 
-/// The head at the end of an arrow's body, drawn `strokeWidth` px wide: a triangle pointing along
-/// the body's direction at its tip, and the point along the body where the stroke stops so the
-/// head covers its round cap.
+/// The head at the end of an arrow's body, drawn `strokeWidth` px wide: a triangle whose tip is the
+/// body's end, aimed from the point on the body one head-length back, and the point along the body
+/// where the stroke stops so the head covers its round cap.
 struct Arrowhead {
     let tip: CGPoint
     /// The base's two corners.
@@ -80,17 +80,25 @@ struct Arrowhead {
         let shrink = min(1, bodyLength * ArrowheadStyle.maxShareOfBody / max(style.length * strokeWidth, .ulpOfOne))
         let length = style.length * strokeWidth * shrink
         let halfWidth = style.width * strokeWidth * shrink / 2
-        let direction = body.endDirection
+        // The point on the body `length` from the tip, where an arc crosses the circle of that radius
+        // around it. Aimed from there, the head's axis runs through the body at the middle of its
+        // base; aimed along the tangent at the tip, a tight arc hooks and bows out through a side.
+        let back: CGFloat
+        if let arc = body.arc {
+            back = max(0, 1 - 2 * asin(min(1, length / (2 * arc.radius))) / abs(arc.sweep))
+        } else {
+            back = bodyLength > 0 ? max(0, 1 - length / bodyLength) : 0
+        }
+        let from = body.point(at: back)
+        let reach = hypot(body.end.x - from.x, body.end.y - from.y)
+        let direction = reach > 0 ? CGVector(dx: (body.end.x - from.x) / reach, dy: (body.end.y - from.y) / reach) : CGVector(dx: 1, dy: 0)
         let base = CGPoint(x: body.end.x - direction.dx * length, y: body.end.y - direction.dy * length)
         tip = body.end
         corners = (CGPoint(x: base.x - direction.dy * halfWidth, y: base.y + direction.dx * halfWidth),
                    CGPoint(x: base.x + direction.dy * halfWidth, y: base.y - direction.dx * halfWidth))
-        // The stroke ends where its round cap has the most room inside the head: on a straight body
-        // at the head's base, and on an arc where it has turned from the tip by the head's
-        // half-angle, beyond which it bows out through the head's side. On a tight arc the cap still
-        // shows a little.
-        let stop = body.arc.map { min(length, $0.radius * atan2(halfWidth, length)) } ?? length
-        bodyEnd = bodyLength > 0 ? 1 - stop / bodyLength : 0
+        // The stroke stops on the head's axis, so its round cap lies inside the head however tight
+        // the arc.
+        bodyEnd = back
     }
 
     var path: CGPath {

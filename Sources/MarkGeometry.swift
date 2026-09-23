@@ -85,18 +85,6 @@ struct ArrowBody {
         return arc.point(at: arc.startAngle + arc.sweep * t)
     }
 
-    /// The unit direction the body travels in as it reaches `end`: where the head points.
-    var endDirection: CGVector {
-        guard let arc else {
-            let length = hypot(end.x - start.x, end.y - start.y)
-            guard length > 0 else { return CGVector(dx: 1, dy: 0) }
-            return CGVector(dx: (end.x - start.x) / length, dy: (end.y - start.y) / length)
-        }
-        let angle = arc.startAngle + arc.sweep
-        let turn: CGFloat = arc.sweep > 0 ? 1 : -1
-        return CGVector(dx: -sin(angle) * turn, dy: cos(angle) * turn)
-    }
-
     /// The distance from `point` to the nearest point of the body.
     func distance(to point: CGPoint) -> CGFloat {
         guard let arc else {

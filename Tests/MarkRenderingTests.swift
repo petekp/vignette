@@ -143,35 +143,38 @@ final class MarkRenderingTests: XCTestCase {
                              "the emoji draws in its own yellow")
     }
 
-    /// The body stops inside the head, so its round cap never shows past the tip or through a side.
-    func testTheArrowheadCoversTheEndOfTheBody() {
+    /// The head is aimed from the point on the body one head-length back from the tip, and the body
+    /// stops there, so its round cap never shows past the tip or through a side, however tight the arc.
+    func testTheArrowheadIsAimedAlongTheBodyAndCoversItsEnd() {
         let stroke = Mark.strokeWidth * 2
         let arrows = [
             Mark.Arrow(start: CGPoint(x: 10, y: 10), end: CGPoint(x: 400, y: 10)),
             Mark.Arrow(start: CGPoint(x: 400, y: 300), end: CGPoint(x: 20, y: 40)),
             Mark.Arrow(start: CGPoint(x: 10, y: 200), end: CGPoint(x: 410, y: 200), bend: 60),
-            // A half circle whose radius is 8 strokes, tight against the head's length.
+            // Half circles whose radius is 8 strokes, and 4, tighter than 6.
             Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 100 + 16 * stroke, y: 100), bend: -8 * stroke),
+            Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 100 + 8 * stroke, y: 100), bend: 4 * stroke),
+            // Bent past a half circle, with a radius of about 3.6 strokes.
+            Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 140, y: 100), bend: 40),
         ]
         for arrow in arrows {
             let body = arrow.body(pointScale: 2)
+            XCTAssertEqual(body.arc != nil, arrow.bend != 0, "the bent ones are drawn as arcs")
             let head = Arrowhead(body: body, strokeWidth: stroke, style: .standard)
             XCTAssertEqual(head.tip, arrow.end)
-            // The cap is the half circle ahead of where the stroke ends, facing the way it travels there.
-            let end = body.point(at: head.bodyEnd)
-            let ahead = body.point(at: head.bodyEnd + 1e-6)
-            let facing = atan2(ahead.y - end.y, ahead.x - end.x)
-            for step in -17...17 {
-                let angle = facing + CGFloat(step) * .pi / 36
-                let edge = CGPoint(x: end.x + cos(angle) * stroke / 2, y: end.y + sin(angle) * stroke / 2)
-                XCTAssertTrue(head.path.contains(edge), "\(arrow): the cap's edge at \(step * 5)°")
-            }
-            // The head points the way the body travels into the tip.
+            // The middle of the base is on the body, a head's length from the tip.
             let base = CGPoint(x: (head.corners.0.x + head.corners.1.x) / 2, y: (head.corners.0.y + head.corners.1.y) / 2)
-            let length = hypot(arrow.end.x - base.x, arrow.end.y - base.y)
-            XCTAssertEqual(length, ArrowheadStyle.standard.length * stroke, accuracy: 1e-9)
-            XCTAssertEqual((arrow.end.x - base.x) / length, body.endDirection.dx, accuracy: 1e-9)
-            XCTAssertEqual((arrow.end.y - base.y) / length, body.endDirection.dy, accuracy: 1e-9)
+            XCTAssertEqual(hypot(arrow.end.x - base.x, arrow.end.y - base.y), ArrowheadStyle.standard.length * stroke, accuracy: 1e-9, "\(arrow)")
+            XCTAssertLessThan(body.distance(to: base), 1e-9, "\(arrow)")
+            // The stroke stops there, and everything of its round cap ahead of the base is inside the head.
+            let end = body.point(at: head.bodyEnd)
+            XCTAssertLessThan(hypot(end.x - base.x, end.y - base.y), 1e-9, "\(arrow)")
+            for step in 0..<72 {
+                let angle = CGFloat(step) * .pi / 36
+                let edge = CGPoint(x: end.x + cos(angle) * stroke / 2, y: end.y + sin(angle) * stroke / 2)
+                let ahead = (edge.x - base.x) * (arrow.end.x - base.x) + (edge.y - base.y) * (arrow.end.y - base.y) > 1e-9
+                XCTAssertTrue(!ahead || head.path.contains(edge), "\(arrow): the cap's edge at \(step * 5)°")
+            }
         }
     }
 
