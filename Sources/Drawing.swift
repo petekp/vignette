@@ -61,6 +61,9 @@ enum MarkColor: String, Encodable, CaseIterable {
 
 /// One mark on a drawing, in px.
 struct Mark: Equatable, Identifiable {
+    /// Every stroke's width, in pt: the outline of a rectangle or an ellipse, and an arrow's body.
+    static let strokeWidth: CGFloat = 3.5
+
     /// Names the mark while the app runs, so a selection or an undo step follows it across deletes
     /// and reorders. Never written to a file: a mark read back gets a new one.
     let id: UUID
@@ -106,6 +109,9 @@ struct Mark: Equatable, Identifiable {
         var wrap: CGFloat?
         /// The font size, in pt.
         var size: CGFloat
+
+        /// The size a text made with the Text tool starts at, in pt.
+        static let defaultSize: CGFloat = 24
     }
 
     var kind: MarkKind {
