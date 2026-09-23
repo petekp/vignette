@@ -381,6 +381,51 @@ final class EditorViewTests: XCTestCase {
         XCTAssertGreaterThan(red(drawn, x: columns, y: rows), 20)
     }
 
+    /// New tweaks reach the open editor: the strokes take the arrowhead at once, a text is drawn again
+    /// in the new style even when a bitmap in the old one was already on its way, and a text being
+    /// typed is laid out again on the new style's baselines.
+    func testNewTweaksReachTheOpenEditor() throws {
+        MarkLayers.textQueue.suspend()
+        var suspended = true
+        defer { if suspended { MarkLayers.textQueue.resume() } }
+        open([Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 600, y: 100), end: CGPoint(x: 900, y: 100)))),
+              Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 100), text: "A\nB", wrap: nil, size: 24)))])
+        let tall = TextStyle(weight: .medium, lineHeight: 4)
+        view.applyTweaks(style: tall, metrics: .standard, arrowhead: ArrowheadStyle(length: 4.5, width: 12))
+        MarkLayers.textQueue.resume()
+        suspended = false
+        settleTexts()
+        let rep = try capture { _ in true }
+        // 12 stroke widths across, the head reaches 16 px from the arrow's line 12 px behind its tip;
+        // 4 would reach 5.
+        XCTAssertTrue(isRed(pixel(rep, 888, 110)), "\(pixel(rep, 888, 110))")
+        XCTAssertTrue(isRed(pixel(rep, 888, 90)), "\(pixel(rep, 888, 90))")
+        // At 4 times the size, the second line sits below where any of the text was at 1.35.
+        XCTAssertGreaterThan(red(rep, x: 100...130, y: 230...258), 20)
+
+        key("t", 17)
+        mouse(.leftMouseDown, 150, 450)
+        mouse(.leftMouseUp, 150, 450)
+        type("Typed")
+        let bold = TextStyle(weight: .bold, lineHeight: 2)
+        view.applyTweaks(style: bold, metrics: .standard, arrowhead: .standard)
+        let field = try XCTUnwrap(textView)
+        XCTAssertTrue(window.firstResponder === field, "typing goes on")
+        XCTAssertEqual(field.string, "Typed")
+        let layoutManager = try XCTUnwrap(field.layoutManager)
+        layoutManager.ensureLayout(for: try XCTUnwrap(field.textContainer))
+        let fragment = layoutManager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+        let glyph = layoutManager.location(forGlyphAt: 0)
+        let typed = field.convert(CGPoint(x: field.textContainerOrigin.x + fragment.minX + glyph.x,
+                                          y: field.textContainerOrigin.y + fragment.minY + glyph.y), to: view)
+        let mark = try XCTUnwrap(text(view.core.mark(try XCTUnwrap(view.core.typing?.id))))
+        let line = try XCTUnwrap(TextLayout(mark, imageWidth: 1000, pointScale: 1, style: bold).lines.first)
+        let drawn = view.viewPoint(forImagePoint: CGPoint(x: line.rect.minX, y: line.baseline))
+        XCTAssertEqual(fragment.height, line.rect.height, accuracy: 1e-9)
+        XCTAssertEqual(typed.y, drawn.y, accuracy: 0.5)
+        XCTAssertEqual(typed.x, drawn.x, accuracy: 0.5)
+    }
+
     /// The selection's blue (`#3182ed`), whatever the display's profile did to it.
     private func isBlue(_ c: (r: CGFloat, g: CGFloat, b: CGFloat)) -> Bool { c.b > 0.8 && c.r < 0.4 && c.g < 0.7 }
 

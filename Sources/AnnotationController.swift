@@ -49,6 +49,8 @@ final class AnnotationController {
     private var openGeneration = 0
     /// Where the Send menu's pick goes once the editor hands over the drawing.
     private var sendingTo: AgentDestination?
+    /// The text style of the tweaks, which the colour pass lays a text out in to sample under it.
+    private var textStyle = TextStyle.standard
 
     /// Room the annotator needs below its window: the toolbar and its gap.
     var spaceBelow: CGFloat { AnnotatorToolbar.height + Settings.shared.data.ui.annotationToolbarGap }
@@ -170,14 +172,15 @@ final class AnnotationController {
         let maxPixel = Thumbnailer.screenPixels(on: screen)
         let decoded = Thumbnailer.cached(at: shot.url, maxPixel: maxPixel).flatMap(Self.cgImage)
         colorSample = nil
-        let style = TextStyle.standard
+        let ui = Settings.shared.data.ui
+        textStyle = ui.textStyle
         // Read here and captured: the pick runs inside the core's own reduce, where the editor's core
         // cannot be read.
         let scale = drawing.pointScale
-        editor.open(drawing, image: decoded, picture: container?.bounds ?? .zero, style: style, metrics: .standard, arrowhead: .standard,
-                    pickColor: { [weak self] mark in
-                        guard let sample = self?.colorSample, sample.key == key else { return nil }
-                        return sample.sample.pick(for: mark, pointScale: scale, style: style)
+        editor.open(drawing, image: decoded, picture: container?.bounds ?? .zero, style: textStyle, metrics: ui.editorMetrics,
+                    arrowhead: ui.arrowhead, pickColor: { [weak self] mark in
+                        guard let self, let sample = colorSample, sample.key == key else { return nil }
+                        return sample.sample.pick(for: mark, pointScale: scale, style: textStyle)
                     })
         if decoded != nil { loaded(key, started: started) }
         else {
@@ -610,6 +613,13 @@ final class AnnotationController {
     /// A short message over the picture, where the editor's own confirmations appear.
     func showToast(_ words: String) { toast.show(words) }
 
+    /// The tweaks changed: the open editor takes their text style, sizes and arrowhead at once.
+    func applyTweaks() {
+        let ui = Settings.shared.data.ui
+        textStyle = ui.textStyle
+        editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, arrowhead: ui.arrowhead)
+    }
+
     /// What the Send menu offers for the image that is opening, and the session a reply belongs
     /// back to. Read once per image: the list comes from subprocesses, and a menu that re-read it
     /// on every click would stall the bar.
@@ -658,8 +668,6 @@ final class AnnotationController {
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.panel.frame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
             "tool": toolbar.model.tool?.rawValue as Any,
-            // The colour pass picks every mark's colour, so the next one always starts in this.
-            "color": MarkColor.start.rawValue,
         ]
     }
 }

@@ -475,6 +475,7 @@ private struct SequenceRun {
         case .keyUp(let key): return "keyUp \(key)"
         case .setTool(let tool): return "tool \(tool)"
         case .zoomChanged(let zoom): return "zoom \(zoom)"
+        case .tweaksChanged: return "tweaks"
         case .typingChanged(let text): return "type \(text.count) characters"
         case .typingEnded: return "typingEnded"
         case .timerFired: return "timer"

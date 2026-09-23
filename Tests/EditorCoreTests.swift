@@ -858,6 +858,38 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(core.reduce(.timerFired), [], "nothing changed since")
     }
 
+    func testNewTweaksKeepTheDrawingTheSelectionTheHistoryAndTheTextBeingTyped() throws {
+        var core = core()
+        core.drag(from: (100, 100), to: (300, 250))
+        _ = core.reduce(.setTool(.text))
+        core.click(200, 400)
+        _ = core.reduce(.typingChanged("a note"))
+        let drawing = core.drawing, selection = core.selection, typing = try XCTUnwrap(core.typing)
+        XCTAssertEqual(core.undoSteps.count, 1)
+
+        var metrics = EditorMetrics.standard
+        metrics.handleSize = 20
+        let style = TextStyle(weight: .bold, lineHeight: 2)
+        let arrowhead = ArrowheadStyle(length: 8, width: 6)
+        let effects = core.reduce(.tweaksChanged(style: style, metrics: metrics, arrowhead: arrowhead))
+        XCTAssertEqual(core.drawing, drawing, "every mark stays as it was, a text's origin included")
+        XCTAssertEqual(core.selection, selection)
+        XCTAssertEqual(core.typing, typing)
+        XCTAssertFalse(effects.contains(.endTyping))
+        XCTAssertEqual(core.undoSteps.count, 1)
+        XCTAssertEqual(core.geometry.layout(try XCTUnwrap(textOf(core.drawing.marks.last))).lineHeight, 48, "its lines are set in the new style")
+
+        // Typing goes on in the same session, which ends as one step with the text it made.
+        _ = core.reduce(.typingChanged("a note, longer"))
+        core.key(.escape)
+        XCTAssertEqual(textOf(core.drawing.marks.last)?.text, "a note, longer")
+        XCTAssertEqual(core.overlay.handles.compactMap(\.square).first?.width, 20)
+        XCTAssertEqual(core.undoSteps.count, 2)
+        core.key(.character("z"), .command)
+        core.key(.character("z"), .command)
+        XCTAssertTrue(core.drawing.marks.isEmpty, "the steps from before the tweaks still undo")
+    }
+
     // MARK: Opening, agents and the colour pass
 
     func testReopeningSelectsTheNewestMarkThePersonDrewNeverAnAgentsAndChangesNoColour() {

@@ -12,7 +12,8 @@ struct ArrowheadStyle: Equatable {
     var length: CGFloat
     var width: CGFloat
 
-    static let standard = ArrowheadStyle(length: 4.5, width: 4)
+    /// The tweaks' defaults.
+    static let standard = UITweaks().arrowhead
 
     /// The most of an arrow's body a head may take: a short arrow gets a smaller head of the same
     /// shape, so it still shows a body and its head never reaches back past its start.

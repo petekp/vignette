@@ -73,7 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotator.onFinished = { [weak self] shot, drawing in self?.finishAnnotation(shot, drawing) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
         annotator.onLoaded = { [weak self] key in self?.thumbnail.editorLoaded(key) }
-        annotator.storedDrawing = { [weak self] url, pixels in self?.drawings.read(url, pixels: pixels, style: .standard) }
+        annotator.storedDrawing = { [weak self] url, pixels in
+            guard let self else { return nil }
+            return drawings.read(url, pixels: pixels, style: settings.data.ui.textStyle)
+        }
         annotator.onDrawing = { [weak self] drawing, reason in self?.drawings.write(drawing, reason: reason) }
         annotator.onSend = { [weak self] shot, drawing, destination in self?.sendDrawing(drawing, of: shot, to: destination) }
         annotator.onCopyDrawing = { [weak self] shot, drawing in self?.copyDrawing(drawing, of: shot) }
@@ -133,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func settingsChanged(_ old: SettingsData, _ new: SettingsData) {
-        if new.ui != old.ui { thumbnail.applyTweaks(); warmThumbnails() }
+        if new.ui != old.ui { thumbnail.applyTweaks(); annotator.applyTweaks(); warmThumbnails() }
         if new.recentCount != old.recentCount { warmThumbnails() }
         if new.screenshotsFolder != old.screenshotsFolder { startWatching() }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
@@ -352,7 +355,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Task {
             let sample = await Self.colorSample(of: url)
             do {
-                _ = try drawings.add(marks, to: url, editor: annotator.editor, sample: sample, style: .standard,
+                _ = try drawings.add(marks, to: url, editor: annotator.editor, sample: sample, style: settings.data.ui.textStyle,
                                      newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)
                 done(nil)
             } catch let failure as Drawings.Failure {
@@ -401,12 +404,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// drawing, which is ahead of the stored one until the next hand-over. The queue renders these
     /// in the order asked, so once the last rendering is done every one is.
     func copyAnnotated(_ shots: [Screenshot]) {
+        let ui = settings.data.ui, style = ui.textStyle
         let renderings = shots.map { shot -> (shot: Screenshot, rendering: PendingRendering?) in
             let drawing = annotator.openDrawing(of: shot.url)
-                ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: .standard) }
+                ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: style) }
             guard let drawing, !drawing.marks.isEmpty else { return (shot, nil) }
             return (shot, RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: annotatedURL(for: shot),
-                                                       style: .standard, arrowhead: .standard))
+                                                       style: style, arrowhead: ui.arrowhead))
         }
         if let last = renderings.compactMap(\.rendering).last {
             last.whenDone { [weak self] _ in self?.finishCopyAnnotated(renderings) }
@@ -460,7 +464,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return
         }
         let file = annotatedURL(for: shot)
-        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: .standard, arrowhead: .standard,
+        let ui = settings.data.ui
+        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: ui.textStyle, arrowhead: ui.arrowhead,
                                                      order: .first)
         Clipboard.copyRendering(rendering, file: file)
         rendering.whenDone { [weak self] output in
@@ -575,6 +580,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             "agentSkill": ["setting": settings.data.agentSkill, "installed": installedSkillPaths()] as [String: Any],
         ] as [String: Any]
         report.sections["annotator"] = annotator.stateJSON
+        report.sections["editor"] = annotator.editor.core.inspection
         report.sections["drawings"] = drawings.keys.sorted()
         report.sections["requests"] = requests.stateJSON
         report.sections["memory"] = ["rss": residentBytes(), "thumbnails": Thumbnailer.cacheBytes]
@@ -867,7 +873,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return submit(bytes, of: shot, to: destination)
         }
         annotator.sending = true
-        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: nil, style: .standard, arrowhead: .standard)
+        let ui = settings.data.ui
+        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: nil, style: ui.textStyle, arrowhead: ui.arrowhead)
         rendering.whenDone { [weak self] output in
             guard let self else { return }
             annotator.sending = false

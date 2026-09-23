@@ -207,7 +207,7 @@ final class EditorOverlayLayers {
     private let handles = CAShapeLayer()
     private let halos = CAShapeLayer()
     private let dots = CAShapeLayer()
-    private var shown: (overlay: EditorCore.Overlay, marks: [Mark], transform: CGAffineTransform)?
+    private var shown: (overlay: EditorCore.Overlay, marks: [Mark], transform: CGAffineTransform, geometry: EditorGeometry)?
 
     init() {
         for edge in [hoverEdge, selectionEdge] { edge.strokeColor = EditorStyle.lightEdge.cgColor }
@@ -247,8 +247,10 @@ final class EditorOverlayLayers {
     func show(_ overlay: EditorCore.Overlay, drawing: Drawing, geometry: EditorGeometry, transform: CGAffineTransform) {
         let ids = overlay.selected + (overlay.hovered.map { [$0] } ?? [])
         let marks = drawing.marks.filter { ids.contains($0.id) }
-        if let shown, shown.overlay == overlay, shown.marks == marks, shown.transform == transform { return }
-        shown = (overlay, marks, transform)
+        // An outline's path also follows the selection outline's width, the arrowhead and the text style.
+        if let shown, shown.overlay == overlay, shown.marks == marks, shown.transform == transform,
+           shown.geometry.metrics == geometry.metrics, shown.geometry.arrowhead == geometry.arrowhead, shown.geometry.style == geometry.style { return }
+        shown = (overlay, marks, transform, geometry)
         var transform = transform
         let zoom = transform.a
         hoverEdge.lineWidth = geometry.metrics.selectionOutlineWidth

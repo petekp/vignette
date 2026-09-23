@@ -32,9 +32,8 @@ struct EditorMetrics: Equatable {
     /// outside a mark's ink, so the mark's colour shows.
     var selectionOutlineWidth: CGFloat
 
-    static let standard = EditorMetrics(dragDistance: 4, hitMargin: 4, cornerHitSize: 13.5, edgeHitSize: 9, smallSide: 16,
-                                        handleSize: 8, dotRadius: 4, dotHitRadius: 12, smallestRectangle: 4, shortestArrow: 8,
-                                        textDragDelay: 0.15, textDragDistance: 24, newTextSize: 24, selectionOutlineWidth: 3.5)
+    /// The tweaks' defaults.
+    static let standard = UITweaks().editorMetrics
 }
 
 /// Everything the drawing editor decides, as a reducer with no view in it. The view turns events
@@ -87,6 +86,10 @@ struct EditorCore {
         case setTool(Tool)
         /// The host's zoom: screen pt per image px.
         case zoomChanged(CGFloat)
+        /// The text style, sizes and arrowhead the host uses now, in place of the ones `open` gave. The
+        /// drawing, the selection, the history, a gesture and a typing session stay; a text keeps its
+        /// origin, and its lines break where the new style breaks them.
+        case tweaksChanged(style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle)
         /// The text of the typing session is now this.
         case typingChanged(String)
         /// The text view ended the session on its own.
@@ -476,6 +479,10 @@ struct EditorCore {
             self.tool = tool
         case .zoomChanged(let zoom):
             if zoom > 0, zoom.isFinite { self.zoom = zoom }
+        case .tweaksChanged(let style, let metrics, let arrowhead):
+            self.style = style
+            self.metrics = metrics
+            self.arrowhead = arrowhead
         case .typingChanged(let text): typed(text)
         case .typingEnded: endTyping()
         case .timerFired: timerFired()
@@ -1467,8 +1474,9 @@ struct EditorCore {
 
     // MARK: Inspecting
 
-    /// The `editor` section of `[state]`: the tool, each mark's type and frame in px, the selection
-    /// as indexes into the marks, whether a text is being typed, and the undo and redo depth.
+    /// The `editor` section of `[state]`: the tool, each mark's type, frame in px and whether an agent
+    /// drew it, the selection as indexes into the marks, whether a text is being typed, and the undo
+    /// and redo depth. Never a text's words.
     var inspection: [String: Any] {
         let geometry = self.geometry
         return [
@@ -1476,7 +1484,8 @@ struct EditorCore {
             "tool": tool.rawValue,
             "marks": drawing.marks.map { mark -> [String: Any] in
                 let frame = geometry.extent(of: mark)
-                return ["type": mark.kind.rawValue, "frame": [frame.minX, frame.minY, frame.width, frame.height].map { Int($0.rounded()) }]
+                return ["type": mark.kind.rawValue, "frame": [frame.minX, frame.minY, frame.width, frame.height].map { Int($0.rounded()) },
+                        "agent": mark.agent]
             },
             "selection": drawing.marks.indices.filter { selection.contains(drawing.marks[$0].id) },
             "typing": typing != nil,
@@ -1504,7 +1513,7 @@ private extension EditorCore.Input {
     var keepsNudge: Bool {
         switch self {
         case .keyDown(let key, _, _): return key.direction != nil
-        case .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .timerFired: return true
+        case .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .tweaksChanged, .timerFired: return true
         default: return false
         }
     }
