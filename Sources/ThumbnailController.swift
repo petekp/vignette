@@ -316,6 +316,7 @@ final class ThumbnailController: NSObject {
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
                        "visibleFrame": StateReport.topLeft(s.visibleFrame, primaryHeight: h), "scale": s.backingScaleFactor, "pinned": pinnedScreen != nil],
             "backdrop": backdrop.stateJSON,
+            "dim": ["visible": dim.isVisible, "alpha": dim.alphaValue],
         ]
     }
 
@@ -342,8 +343,10 @@ final class ThumbnailController: NSObject {
     @discardableResult
     func toggleRecent(_ shots: [Screenshot], detail: String = "") -> StackToggle {
         if visible && model.isStack { dismiss(); return .dismissed }
-        if transition.isActive { send(.dismiss) }   // a lone annotation gives way to the stack
+        // Before the dismissal: its park can answer in the same turn, and a queue still holding
+        // files would open the next one then, under a stack that is about to replace the panel.
         endQueue()   // a stack presented anew starts with nothing queued
+        if transition.isActive { send(.dismiss) }   // a lone annotation gives way to the stack
         let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
         guard !cards.isEmpty else { return .empty }
