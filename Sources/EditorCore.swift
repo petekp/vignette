@@ -1,6 +1,39 @@
 import CoreGraphics
 import Foundation
 
+/// The editor's sizes and timings that a person tunes by feel, given at open from the tweaks.
+/// Sizes are in screen pt unless they say otherwise; `standard` holds the spec's numbers.
+struct EditorMetrics: Equatable {
+    /// How far a press travels before it is a drag.
+    var dragDistance: CGFloat
+    /// Added to a stroke's half-width on screen to make its hit band.
+    var hitMargin: CGFloat
+    /// A corner handle's hit area: a square this wide, centred on the corner.
+    var cornerHitSize: CGFloat
+    /// An edge handle's hit area: a strip this wide along the whole side.
+    var edgeHitSize: CGFloat
+    /// A mark shorter than this along an axis has its handles' hit areas outside it on that axis.
+    var smallSide: CGFloat
+    /// The drawn corner square.
+    var handleSize: CGFloat
+    /// An arrow dot's drawn radius and its hit radius.
+    var dotRadius: CGFloat
+    var dotHitRadius: CGFloat
+    /// A new rectangle's shortest side and a new arrow's shortest length.
+    var smallestRectangle: CGFloat
+    var shortestArrow: CGFloat
+    /// A Text tool press becomes a wrap-width drag after this wait, in seconds, and this much
+    /// sideways travel.
+    var textDragDelay: TimeInterval
+    var textDragDistance: CGFloat
+    /// The size a new text starts at, typed or pasted, in pt.
+    var newTextSize: CGFloat
+
+    static let standard = EditorMetrics(dragDistance: 4, hitMargin: 4, cornerHitSize: 13.5, edgeHitSize: 9, smallSide: 16,
+                                        handleSize: 8, dotRadius: 4, dotHitRadius: 12, smallestRectangle: 4, shortestArrow: 8,
+                                        textDragDelay: 0.15, textDragDistance: 24, newTextSize: 24)
+}
+
 /// Everything the drawing editor decides, as a reducer with no view in it. The view turns events
 /// into `Input`s, runs the `Effect`s each one returns in order, and draws `drawing`, `overlay` and
 /// the text being typed. It hit-tests nothing itself: `overlay` is what a press is tested against.
@@ -11,29 +44,6 @@ import Foundation
 struct EditorCore {
     // MARK: Sizes
 
-    /// How far a press travels before it is a drag, in screen pt.
-    static let dragDistance: CGFloat = 4
-    /// Added to a stroke's half-width on screen to make its hit band, in screen pt.
-    static let hitMargin: CGFloat = 4
-    /// A corner handle's hit area: a square this wide, in screen pt, centred on the corner.
-    static let cornerHitSize: CGFloat = 13.5
-    /// An edge handle's hit area: a strip this wide along the whole side, in screen pt.
-    static let edgeHitSize: CGFloat = 9
-    /// A mark shorter than this on screen along an axis has its handles' hit areas outside it on
-    /// that axis, in screen pt.
-    static let smallSide: CGFloat = 16
-    /// The drawn corner square, in screen pt.
-    static let handleSize: CGFloat = 8
-    /// An arrow dot's drawn radius and its hit radius, in screen pt.
-    static let dotRadius: CGFloat = 4
-    static let dotHitRadius: CGFloat = 12
-    /// A new rectangle's shortest side and a new arrow's shortest length, in screen pt.
-    static let smallestRectangle: CGFloat = 4
-    static let shortestArrow: CGFloat = 8
-    /// A Text tool press becomes a wrap-width drag after this wait and this much sideways travel,
-    /// in screen pt.
-    static let textDragDelay: TimeInterval = 0.15
-    static let textDragDistance: CGFloat = 24
     /// A nudge and a Shift nudge, in pt.
     static let nudge: CGFloat = 1
     static let longNudge: CGFloat = 10
@@ -55,7 +65,7 @@ struct EditorCore {
 
     enum Input {
         /// A screenshot opens with its drawing, or an empty one whose point scale is the display's.
-        case open(Drawing, style: TextStyle, pickColor: ColorPick)
+        case open(Drawing, style: TextStyle, metrics: EditorMetrics, pickColor: ColorPick)
         /// The pointer moved with no button held.
         case pointerMoved(Pointer)
         /// The pointer left the canvas.
@@ -327,6 +337,7 @@ struct EditorCore {
     private(set) var isOpen = false
     private(set) var drawing = Drawing(key: "", pixels: PixelSize(width: 0, height: 0), pointScale: 1, marks: [])
     private(set) var style = TextStyle.standard
+    private(set) var metrics = EditorMetrics.standard
     private var pickColor: ColorPick = { _ in nil }
     private(set) var tool = Tool.rectangle
     private(set) var selection: Set<Mark.ID> = []
@@ -407,7 +418,7 @@ struct EditorCore {
     }
 
     var geometry: EditorGeometry {
-        EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: style, zoom: zoom)
+        EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: style, metrics: metrics, zoom: zoom)
     }
 
     var canUndo: Bool { !undoSteps.isEmpty }
@@ -417,8 +428,8 @@ struct EditorCore {
 
     mutating func reduce(_ input: Input) -> [Effect] {
         effects = []
-        if case .open(let drawing, let style, let pickColor) = input {
-            open(drawing, style: style, pickColor: pickColor)
+        if case .open(let drawing, let style, let metrics, let pickColor) = input {
+            open(drawing, style: style, metrics: metrics, pickColor: pickColor)
         } else if isOpen {
             if !input.keepsNudge { nudging = false }
             handle(input)
@@ -497,7 +508,7 @@ struct EditorCore {
 
     // MARK: Opening, parking and handing over
 
-    private mutating func open(_ drawing: Drawing, style: TextStyle, pickColor: @escaping ColorPick) {
+    private mutating func open(_ drawing: Drawing, style: TextStyle, metrics: EditorMetrics, pickColor: @escaping ColorPick) {
         if typing != nil { emit(.endTyping) }
         let zoom = self.zoom, pending = effects
         self = EditorCore()
@@ -507,6 +518,7 @@ struct EditorCore {
         isOpen = true
         self.drawing = drawing
         self.style = style
+        self.metrics = metrics
         self.pickColor = pickColor
         tool = drawing.marks.isEmpty ? .rectangle : .select
         // The newest mark the person drew, never an agent's.
@@ -768,10 +780,10 @@ struct EditorCore {
     private func dragPhase(for press: Press, at event: Pointer) -> Phase? {
         let dx = event.location.x - press.location.x, dy = event.location.y - press.location.y
         if press.target == .empty, tool == .text {
-            let waited = event.time - press.time >= Self.textDragDelay
-            return waited && abs(dx) * zoom > Self.textDragDistance ? .wrapping : nil
+            let waited = event.time - press.time >= metrics.textDragDelay
+            return waited && abs(dx) * zoom > metrics.textDragDistance ? .wrapping : nil
         }
-        guard hypot(dx, dy) * zoom > Self.dragDistance else { return nil }
+        guard hypot(dx, dy) * zoom > metrics.dragDistance else { return nil }
         switch press.target {
         case .empty:
             switch tool {
@@ -954,8 +966,8 @@ struct EditorCore {
             }
             let big: Bool
             switch mark.geometry {
-            case .rectangle(let frame): big = min(frame.width, frame.height) * zoom >= Self.smallestRectangle
-            case .arrow(let arrow): big = hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y) * zoom > Self.shortestArrow
+            case .rectangle(let frame): big = min(frame.width, frame.height) * zoom >= metrics.smallestRectangle
+            case .arrow(let arrow): big = hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y) * zoom > metrics.shortestArrow
             default: big = false
             }
             if big {
@@ -1007,8 +1019,8 @@ struct EditorCore {
         for mark in chosen.reversed() {
             guard case .arrow(let arrow) = mark.geometry else { continue }
             for (kind, center) in geometry.dotCenters(of: arrow) {
-                overlay.dots.append(Dot(mark: mark.id, kind: kind, center: center, radius: geometry.screen(Self.dotRadius),
-                                        hitRadius: geometry.screen(Self.dotHitRadius), hovered: hover == .dot(mark.id, kind)))
+                overlay.dots.append(Dot(mark: mark.id, kind: kind, center: center, radius: geometry.screen(metrics.dotRadius),
+                                        hitRadius: geometry.screen(metrics.dotHitRadius), hovered: hover == .dot(mark.id, kind)))
             }
         }
         if let gesture, gesture.phase == .brushing {
@@ -1098,7 +1110,7 @@ struct EditorCore {
     }
 
     private mutating func newText(at point: CGPoint, wrap: CGFloat?) {
-        let size = Mark.Text.defaultSize
+        let size = metrics.newTextSize
         let origin = geometry.textOrigin(at: geometry.inside(point), size: size)
         let id = UUID()
         var edit = MarkEdit(marks: drawing.marks, selectionBefore: selection)
@@ -1332,7 +1344,8 @@ struct EditorCore {
             guard !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             let image = geometry.image
             let at = pointer.flatMap { image.encloses($0) ? $0 : nil } ?? CGPoint(x: image.midX, y: image.midY)
-            let text = Mark.Text(origin: geometry.textOrigin(at: at, size: Mark.Text.defaultSize), text: words, wrap: nil, size: Mark.Text.defaultSize)
+            let size = metrics.newTextSize
+            let text = Mark.Text(origin: geometry.textOrigin(at: at, size: size), text: words, wrap: nil, size: size)
             insert([Mark(geometry: .text(text))])
         case .image:
             emit(.toast("Images can't be pasted here"))

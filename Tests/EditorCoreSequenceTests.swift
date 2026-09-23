@@ -51,10 +51,10 @@ private struct SequenceRun {
     mutating func open(_ drawing: Drawing, seeded: Bool) {
         var drawing = drawing
         if seeded {
-            let geometry = EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: .standard, zoom: 1)
+            let geometry = EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: .standard, metrics: .standard, zoom: 1)
             drawing.marks = (0..<Int.random(in: 0...5, using: &rng)).compactMap { _ in geometry.placed(randomMark(in: drawing.pixels, agent: Bool.random(using: &rng))) }
         }
-        let effects = core.reduce(.open(drawing, style: .standard, pickColor: { mark in Self.pick(mark) }))
+        let effects = core.reduce(.open(drawing, style: .standard, metrics: .standard, pickColor: { mark in Self.pick(mark) }))
         trace.append("open \(drawing.pixels.width)x\(drawing.pixels.height)@\(drawing.pointScale) marks=\(drawing.marks.count) -> \(Self.describe(effects))")
         _ = core.reduce(.zoomChanged([0.25, 0.5, 1, 2, 4].randomElement(using: &rng)!))
         states = [Self.plain(core.drawing.marks)]

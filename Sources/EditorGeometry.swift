@@ -8,6 +8,7 @@ struct EditorGeometry {
     let pixels: PixelSize
     let pointScale: CGFloat
     let style: TextStyle
+    let metrics: EditorMetrics
     /// Screen pt per image px.
     let zoom: CGFloat
 
@@ -84,7 +85,7 @@ struct EditorGeometry {
     // MARK: What a point hits
 
     /// How far from a stroke's centre line it is hit: half the stroke on screen plus the hit margin.
-    var hitBand: CGFloat { pt(Mark.strokeWidth) / 2 + screen(EditorCore.hitMargin) }
+    var hitBand: CGFloat { pt(Mark.strokeWidth) / 2 + screen(metrics.hitMargin) }
 
     enum Hit {
         /// On the stroke, this far from its centre line.
@@ -155,15 +156,15 @@ struct EditorGeometry {
     /// four edges, in the order a press tries them. Along an axis on which the mark is under
     /// `smallSide` on screen, the hit areas lie outside the mark, so each corner can still be taken.
     func handles(around frame: CGRect, of id: Mark.ID) -> [EditorCore.Handle] {
-        let smallX = frame.width * zoom < EditorCore.smallSide
-        let smallY = frame.height * zoom < EditorCore.smallSide
+        let smallX = frame.width * zoom < metrics.smallSide
+        let smallY = frame.height * zoom < metrics.smallSide
         // The span a hit area of `size` covers across a side at `at`: centred on it, or outside the
         // mark, on the side `outward` points to.
         func across(_ at: CGFloat, outward: Int, size: CGFloat, small: Bool) -> (low: CGFloat, high: CGFloat) {
             guard small else { return (at - size / 2, at + size / 2) }
             return outward < 0 ? (at - size, at) : (at, at + size)
         }
-        let corner = screen(EditorCore.cornerHitSize), edge = screen(EditorCore.edgeHitSize), drawn = screen(EditorCore.handleSize)
+        let corner = screen(metrics.cornerHitSize), edge = screen(metrics.edgeHitSize), drawn = screen(metrics.handleSize)
         return EditorCore.HandlePosition.allCases.map { position in
             let x: (low: CGFloat, high: CGFloat)
             let y: (low: CGFloat, high: CGFloat)
@@ -194,7 +195,7 @@ struct EditorGeometry {
         guard length > 0 else { return [(.start, arrow.start), (.end, arrow.end)] }
         let normal = CGVector(dx: -dy / length, dy: dx / length)
         let middle = CGPoint(x: (arrow.start.x + arrow.end.x) / 2, y: (arrow.start.y + arrow.end.y) / 2)
-        let clear = screen(EditorCore.dotHitRadius + EditorCore.dotRadius)
+        let clear = screen(metrics.dotHitRadius + metrics.dotRadius)
         var offset = arrow.bend
         if hypot(length / 2, offset) < clear {
             let side: CGFloat = offset < 0 ? -1 : 1

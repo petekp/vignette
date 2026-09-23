@@ -115,8 +115,6 @@ struct Mark: Equatable, Identifiable {
         /// The font size, in pt.
         var size: CGFloat
 
-        /// The size a text made with the Text tool starts at, in pt.
-        static let defaultSize: CGFloat = 24
         /// The largest size a text read from a file or a paste may have, in pt.
         static let maxSize: CGFloat = 1000
     }
