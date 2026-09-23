@@ -613,10 +613,12 @@ final class ThumbnailController: NSObject {
                 self?.flights.end(id: card.id)
             })
         }
+        // Before the event: a park that answers in the same turn hides the annotator, and that must
+        // leave the flight just aimed offscreen to the slide-out.
+        model.slidingOut = true
         if transition.isActive { send(.dismiss) }
         // Cards leave the way they came, newest first (see CardView). The selection and any toast
         // stay in the layout and slide out with them; the block below clears them once gone.
-        model.slidingOut = true
         model.offscreen = Set(model.cards.map(\.id))
         let total = ui.slideOutDuration + Double(max(0, model.cards.count - 1)) * StackView.staggerStep(count: model.cards.count) + 0.05
         DispatchQueue.main.asyncAfter(deadline: .now() + (model.cards.isEmpty ? ui.slideOutDuration : total)) { [weak self] in
@@ -641,7 +643,21 @@ final class ThumbnailController: NSObject {
         send(.annotate(card.shot.url.path, from: model.isStack ? .stack : .thumbnail))
     }
 
+    /// Events that arrived while one was still being handled, in the order they came. A park or a
+    /// flight can answer inside the effects of the event that asked for it, and its answer runs once
+    /// that event is done, so the reducer's events stay in order.
+    private var heldEvents: [AnnotatorTransition.Event] = []
+    private var handlingEvent = false
+
     private func send(_ event: AnnotatorTransition.Event) {
+        heldEvents.append(event)
+        guard !handlingEvent else { return }
+        handlingEvent = true
+        while !heldEvents.isEmpty { handle(heldEvents.removeFirst()) }
+        handlingEvent = false
+    }
+
+    private func handle(_ event: AnnotatorTransition.Event) {
         let effects = transition.reduce(event)
         Log.write("[transition] \(event) -> \(transition.phase) effects=\(effects.map(\.description).joined(separator: " "))")
         // A queue hands over in the turn the finished card is sent home, so its flight back and the
@@ -786,7 +802,8 @@ final class ThumbnailController: NSObject {
         case .hideAnnotator:
             // While the stack slides out, the image is flying to its slot's offscreen position
             // (see `dismiss`); that flight ends itself, and the slide-out's completion clears the card.
-            if let card = sessionCard, !model.slidingOut { model.outCards.remove(card.id); flights.end(id: card.id) }
+            // A lone thumbnail's panel has no such flight.
+            if let card = sessionCard, !(model.slidingOut && model.isStack) { model.outCards.remove(card.id); flights.end(id: card.id) }
             sessionCard = nil
             dim.hide()
             endSession()
