@@ -12,8 +12,9 @@ import QuartzCore
 ///
 /// A text is a bitmap the renderer draws on a serial queue, because only the renderer draws its
 /// outline. Until a new bitmap arrives the old one stays, scaled, and a text that only moved slides
-/// it; a text new here may show another picture's bitmap of it meanwhile (`adopt`). A bitmap is shown only if its text is still here, as the same record, and still wants exactly
-/// it; after `park` none is.
+/// it; a text new here may show another picture's bitmap of it meanwhile (`adopt`). A bitmap is
+/// shown only if its text is still here, as the same record, and still wants exactly it; after
+/// `park` none is.
 @MainActor
 final class MarkLayers {
     /// Where the editor's and the flights' texts are drawn: apart from any export's, so a long export
@@ -87,6 +88,37 @@ final class MarkLayers {
     }
 
     enum Part { case whole, detail }
+
+    /// The bitmaps drawn lately, held weakly: the editor and the flight into it want the same texts
+    /// at the same scale, and the second to ask shows the first one's rather than drawing it again.
+    fileprivate final class Recent: @unchecked Sendable {
+        private struct Entry {
+            let target: Target, pointScale: CGFloat, imageWidth: CGFloat, style: TextStyle, frame: CGRect
+            weak var surface: IOSurface?
+        }
+        private let lock = NSLock()
+        private var entries: [Entry] = []
+
+        func find(_ target: Target, pointScale: CGFloat, imageWidth: CGFloat, style: TextStyle) -> (IOSurface, CGRect)? {
+            lock.withLock {
+                for entry in entries where entry.target.region == target.region && entry.target.scale == target.scale
+                    && entry.pointScale == pointScale && entry.imageWidth == imageWidth && entry.style == style
+                    && MarkLayers.alike(entry.target.mark, target.mark) {
+                    if let surface = entry.surface { return (surface, entry.frame) }
+                }
+                return nil
+            }
+        }
+
+        func add(_ surface: IOSurface, frame: CGRect, for target: Target, pointScale: CGFloat, imageWidth: CGFloat, style: TextStyle) {
+            lock.withLock {
+                entries.removeAll { $0.surface == nil }
+                entries.append(Entry(target: target, pointScale: pointScale, imageWidth: imageWidth, style: style, frame: frame, surface: surface))
+            }
+        }
+    }
+
+    nonisolated private static let recent = Recent()
 
     /// What a text wants drawn now. A queued draw reads it before it starts, and is skipped when its
     /// text no longer wants it.
@@ -283,7 +315,7 @@ final class MarkLayers {
     }
 
     /// The same mark but for its id, which a drawing read from its file gives every mark anew.
-    private static func alike(_ a: Mark, _ b: Mark) -> Bool {
+    nonisolated fileprivate static func alike(_ a: Mark, _ b: Mark) -> Bool {
         a.geometry == b.geometry && a.color == b.color && a.agent == b.agent && a.colorChosen == b.colorChosen
     }
 
@@ -367,10 +399,14 @@ final class MarkLayers {
                 result = .skipped
             } else if let source {
                 result = .drawn(MarkLayers.scaled(source, to: sourceFrame, scale: target.scale), sourceFrame)
+            } else if let (surface, region) = MarkLayers.recent.find(target, pointScale: pointScale, imageWidth: imageWidth, style: style) {
+                result = .drawn(surface, region)
             } else {
                 let region = MarkLayers.covered(by: target, pointScale: pointScale, imageWidth: imageWidth, style: style)
-                result = .drawn(MarkLayers.bitmap(of: target.mark, pointScale: pointScale, imageWidth: imageWidth, region: region,
-                                                  scale: target.scale, style: style), region)
+                let surface = MarkLayers.bitmap(of: target.mark, pointScale: pointScale, imageWidth: imageWidth, region: region,
+                                                scale: target.scale, style: style)
+                if let surface { MarkLayers.recent.add(surface, frame: region, for: target, pointScale: pointScale, imageWidth: imageWidth, style: style) }
+                result = .drawn(surface, region)
             }
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated { self?.arrived(result, part: part, target: target, for: identity) }
