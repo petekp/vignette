@@ -290,12 +290,13 @@ final class EditorViewTests: XCTestCase {
     /// Waits until every text bitmap the view has asked for is drawn and on its layer, or dropped: the
     /// text queue runs dry, then the main queue runs what it sent back, which may ask for more.
     private func settleTexts() {
-        func contents() -> [ObjectIdentifier?] {
-            (view.subviews.first?.layer?.sublayers?.first?.sublayers ?? []).map { $0.contents.map { ObjectIdentifier($0 as AnyObject) } }
+        func contents(_ layer: CALayer?) -> [ObjectIdentifier?] {
+            (layer?.sublayers ?? []).flatMap { [$0.contents.map { ObjectIdentifier($0 as AnyObject) }] + contents($0) }
         }
+        func contents() -> [ObjectIdentifier?] { contents(view.subviews.first?.layer) }
         var last = contents(), quiet = 0
         while quiet < 2 {
-            EditorPicture.textQueue.sync {}
+            MarkLayers.textQueue.sync {}
             var ran = false
             DispatchQueue.main.async { ran = true }
             while !ran { RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01)) }
@@ -308,10 +309,10 @@ final class EditorViewTests: XCTestCase {
     func testABitmapThatArrivesAfterItsTextMovedIsNotShown() throws {
         open([Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 100), text: "Moved", wrap: nil, size: 24)))])
         // The first bitmap is drawn and waits on the main queue; the next draw waits on the text queue.
-        EditorPicture.textQueue.sync {}
-        EditorPicture.textQueue.suspend()
+        MarkLayers.textQueue.sync {}
+        MarkLayers.textQueue.suspend()
         var suspended = true
-        defer { if suspended { EditorPicture.textQueue.resume() } }
+        defer { if suspended { MarkLayers.textQueue.resume() } }
         drag(from: (130, 115), to: (130, 415))
         XCTAssertEqual(text(view.core.drawing.marks.first)?.origin, CGPoint(x: 100, y: 400))
 
@@ -319,7 +320,7 @@ final class EditorViewTests: XCTestCase {
         XCTAssertEqual(red(moving, x: 100...200, y: 100...130), 0, "the bitmap drawn for where the text was is dropped")
         XCTAssertEqual(red(moving, x: 100...200, y: 400...430), 0, "the one for where it is has not been drawn")
 
-        EditorPicture.textQueue.resume()
+        MarkLayers.textQueue.resume()
         suspended = false
         settleTexts()
         let moved = try capture { _ in true }
@@ -328,22 +329,22 @@ final class EditorViewTests: XCTestCase {
     }
 
     func testNoBitmapIsShownAfterParkOrOnAnotherImage() throws {
-        EditorPicture.textQueue.suspend()
+        MarkLayers.textQueue.suspend()
         var suspended = true
-        defer { if suspended { EditorPicture.textQueue.resume() } }
+        defer { if suspended { MarkLayers.textQueue.resume() } }
         open([Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 100), text: "Parked", wrap: nil, size: 24)))])
         XCTAssertNotNil(view.park())
-        EditorPicture.textQueue.resume()
+        MarkLayers.textQueue.resume()
         suspended = false
         settleTexts()
         let parked = try capture { _ in true }
         XCTAssertEqual(red(parked, x: 100...200, y: 100...130), 0, "a bitmap asked for before park is not shown")
 
-        EditorPicture.textQueue.suspend()
+        MarkLayers.textQueue.suspend()
         suspended = true
         open([Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 300), text: "First", wrap: nil, size: 24)))])
         open([Mark(geometry: .rectangle(CGRect(x: 600, y: 100, width: 200, height: 100)))])
-        EditorPicture.textQueue.resume()
+        MarkLayers.textQueue.resume()
         suspended = false
         settleTexts()
         let other = try capture { self.isRed(self.pixel($0, 700, 100)) }
@@ -356,9 +357,9 @@ final class EditorViewTests: XCTestCase {
         mouse(.leftMouseDown, 100, 100)
         mouse(.leftMouseUp, 100, 100)
         type("Words")
-        EditorPicture.textQueue.suspend()
+        MarkLayers.textQueue.suspend()
         var suspended = true
-        defer { if suspended { EditorPicture.textQueue.resume() } }
+        defer { if suspended { MarkLayers.textQueue.resume() } }
         key("\r", 36)
         XCTAssertNil(view.core.typing)
         let box = try XCTUnwrap(text(view.core.drawing.marks.first).map { TextLayout($0, imageWidth: 1000, pointScale: 1, style: .standard).box })
@@ -369,7 +370,7 @@ final class EditorViewTests: XCTestCase {
         XCTAssertGreaterThan(red(ended, x: columns, y: rows), 20)
 
         // Once the bitmap can be drawn, it takes over from the text view in one frame.
-        EditorPicture.textQueue.resume()
+        MarkLayers.textQueue.resume()
         suspended = false
         var frames = 0
         while textView != nil, frames < 100 {
