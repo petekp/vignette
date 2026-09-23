@@ -224,7 +224,8 @@ New files only. Nothing is wired into the annotator yet.
 ## Step 6: the final check
 
 - `git grep -i -E "tldraw|WKWebView|WebKit|LocalServer|StandIn|stand-in|web/dist|pnpm|VITE_|page-not-ready|eval-failed|\[web\]"`
-  returns nothing.
+  returns only the launch cleanup that removes WebKit's old data folders (`AppDelegate`, `Drawings`
+  and its test), and the dated notes in `docs/` that record history.
 - `scripts/build.sh --test` passes.
 - A driven round on a scratch instance covers the acceptance checks that need the running app.
 - Idle memory is measured. Before this work, the app used 57 MB and WebKit's three processes 132 MB.
