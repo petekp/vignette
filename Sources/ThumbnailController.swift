@@ -157,6 +157,8 @@ final class ThumbnailController: NSObject {
     private var loadedKeys: Set<String> = []
     /// True when the session ends by the user's hand, so focus returns to their app once the annotator is gone.
     private var restoreFocusOnEnd = false
+    /// The file whose Done failed to copy before its card came home, so the card takes no copied mark.
+    private var uncopied: String?
     /// Larger decodes for the flight to the annotator, by file path. Filled on hover.
     private var flightImages: [String: NSImage] = [:]
     private var flightOrder: [String] = []
@@ -546,6 +548,14 @@ final class ThumbnailController: NSObject {
         if !model.isStack { scheduleDismiss(after: hold) }
     }
 
+    /// A copy the card was marked for did not happen: the mark comes off, and a card still on its
+    /// way back from the annotator does not take it when it lands.
+    func takeBackCopied(_ shot: Screenshot) {
+        let key = shot.url.path
+        if case .parking(key, then: .finish) = transition.phase { uncopied = key }
+        if let card = model.cards.first(where: { $0.shot.url.path == key }) { model.copied.remove(card.id) }
+    }
+
     /// In the stack the toast sits under the cards; on its own it replaces the thumbnails.
     func showFeedback(_ text: String) {
         dismissTimer?.invalidate()
@@ -720,6 +730,7 @@ final class ThumbnailController: NSObject {
     private func perform(_ effect: AnnotatorTransition.Effect, leaving slot: NSRect?) {
         switch effect {
         case .prepare(let key):
+            uncopied = nil   // the session it was for has ended
             guard let card = model.cards.first(where: { $0.shot.url.path == key }) else { return }
             sessionCard = card
             loadedKeys.remove(key)
@@ -790,6 +801,7 @@ final class ThumbnailController: NSObject {
             dim.hide()
             endSession()
         case .markCopied(let key):
+            if uncopied == key { uncopied = nil; return }
             if let card = model.cards.first(where: { $0.shot.url.path == key }) { showCopied([card.shot]) }
         case .join:
             break   // `show(_:)` inserts the card; the reducer only confirms the annotator stays open.

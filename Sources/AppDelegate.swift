@@ -376,14 +376,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         else { Commands.error("trash", .writeFailed, "\(failed.joined(separator: "; ")); trashed \(trashed.count) of \(shots.count)") }
     }
 
-    /// Copy Drawing: each card's stored drawing, rendered and written beside its screenshot, and the
-    /// original file for a card without one. The queue renders in the order asked, so once the last
-    /// rendering is done every one is.
+    /// Copy Drawing: each card's drawing, rendered and written beside its screenshot, and the
+    /// original file for a card without one. The card open in the editor renders the editor's own
+    /// drawing, which is ahead of the stored one until the next hand-over. The queue renders these
+    /// in the order asked, so once the last rendering is done every one is.
     func copyAnnotated(_ shots: [Screenshot]) {
         let renderings = shots.map { shot -> (shot: Screenshot, rendering: PendingRendering?) in
-            guard let pixels = PixelSize(imageAt: shot.url), let drawing = drawings.read(shot.url, pixels: pixels, style: .standard) else {
-                return (shot, nil)
-            }
+            let drawing = annotator.openDrawing(of: shot.url)
+                ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: .standard) }
+            guard let drawing, !drawing.marks.isEmpty else { return (shot, nil) }
             return (shot, RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: annotatedURL(for: shot),
                                                        style: .standard, arrowhead: .standard))
         }
@@ -429,7 +430,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// The annotated file on the clipboard as a file, an image, and its path as text, so a terminal
     /// pastes the path and a chat app pastes the image. The file is promised, so nothing waits for
-    /// the rendering but a paste that comes before it. `verb` names the moment in the log line.
+    /// the rendering but a paste that comes before it, and the rendering goes ahead of any that has
+    /// not started. `verb` names the moment in the log line.
     private func copyRendering(of drawing: Drawing, shot: Screenshot, verb: String) {
         let name = shot.url.lastPathComponent
         guard !drawing.marks.isEmpty else {
@@ -438,11 +440,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return
         }
         let file = annotatedURL(for: shot)
-        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: .standard, arrowhead: .standard)
+        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: .standard, arrowhead: .standard,
+                                                     order: .first)
         Clipboard.copyRendering(rendering, file: file)
-        rendering.whenDone { output in
-            if let failure = output.failure { Log.write("[annotate] error \(failure.code.rawValue) \(name): \(failure)") }
-            if let file = output.file, let png = output.png { Log.write("[annotate] \(verb) \(file.lastPathComponent) \(png.count) bytes, copied") }
+        rendering.whenDone { [weak self] output in
+            guard let self else { return }
+            if let failure = output.failure {
+                Log.write("[annotate] error \(failure.code.rawValue) \(name): \(failure)")
+                // The clipboard took its promise back; the card must not say otherwise.
+                let words = "Could not copy the drawing; see the log"
+                thumbnail.takeBackCopied(shot)
+                if !thumbnail.stackShowing, annotator.currentKey != nil { annotator.showToast(words) } else { thumbnail.showFeedback(words) }
+            } else if let file = output.file, let png = output.png {
+                Log.write("[annotate] \(verb) \(file.lastPathComponent) \(png.count) bytes, copied")
+            }
         }
     }
 

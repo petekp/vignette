@@ -142,6 +142,24 @@ final class MarkRenderingTests: XCTestCase {
         XCTAssertNil(output.failure)
         XCTAssertEqual(output.file, file)
         XCTAssertEqual(try Data(contentsOf: file), output.png)
+
+        // A rendering that fails takes its promise back, and never a copy made after it.
+        func answered(_ rendering: PendingRendering) {
+            rendering.finish(png: nil, file: nil, failure: .unreadableImage("the file is gone"))
+            let drained = expectation(description: "the main queue ran the rendering's answer")
+            DispatchQueue.main.async { drained.fulfill() }
+            wait(for: [drained], timeout: 1)
+        }
+        let failed = PendingRendering()
+        Clipboard.copyRendering(failed, file: file, to: pasteboard)
+        answered(failed)
+        XCTAssertNil(pasteboard.string(forType: .string), "no path to a file that never appears")
+        let overtaken = PendingRendering()
+        Clipboard.copyRendering(overtaken, file: file, to: pasteboard)
+        pasteboard.clearContents()
+        pasteboard.setString("copied since", forType: .string)
+        answered(overtaken)
+        XCTAssertEqual(pasteboard.string(forType: .string), "copied since")
     }
 
     // MARK: Marks

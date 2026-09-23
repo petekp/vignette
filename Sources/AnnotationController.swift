@@ -595,6 +595,16 @@ final class AnnotationController {
     /// with this, so a rendering that lands after a swap closes nothing.
     var currentKey: String? { current?.url.path }
 
+    /// The drawing open for `url` as the editor would hand it over now, or nil when that screenshot
+    /// is not open.
+    func openDrawing(of url: URL) -> Drawing? {
+        guard editor.core.isOpen, editor.core.drawing.key == url.path else { return nil }
+        return editor.core.drawingForHost
+    }
+
+    /// A short message over the picture, where the editor's own confirmations appear.
+    func showToast(_ words: String) { toast.show(words) }
+
     /// What the Send menu offers for the image that is opening, and the session a reply belongs
     /// back to. Read once per image: the list comes from subprocesses, and a menu that re-read it
     /// on every click would stall the bar.
