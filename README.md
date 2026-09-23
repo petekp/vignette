@@ -60,11 +60,11 @@ Or build it yourself:
 
 ```
 git clone https://github.com/petekp/vignette.git
-cd vignette/web && pnpm install && cd ..
+cd vignette
 ./scripts/run.sh
 ```
 
-You need Xcode, `xcodegen`, and `pnpm`. [docs/building.md](docs/building.md) has the details,
+You need Xcode and `xcodegen`. [docs/building.md](docs/building.md) has the details,
 including why macOS asks you to re-trust your own build for Accessibility after each rebuild.
 
 ## How it works
@@ -76,24 +76,25 @@ Cmd+Shift+4  ──►  ~/Dropbox/Screenshots/Screenshot ….png
                   ThumbnailController  ── bottom-right panel: fresh shot, or recent stack
                         │ Copy / Draw / Delete
                         ▼
-                  AnnotationController ── window hosting web/ (tldraw) via LocalServer
-                        │ "done" message with PNG
+                  AnnotationController ── window hosting EditorView, the drawing editor
+                        │ Done: the drawing, rendered off the main thread
                         ▼
                   Clipboard + "<name>-annotated.png" next to the original
 ```
 
-`Sources/` is the Swift menu bar app. `web/` is the editor page, React and tldraw, bundled into
-the app.
+`Sources/` is the whole app, in Swift. The drawing editor is native AppKit, and
+[docs/editor.md](docs/editor.md) says how it behaves.
 
 ## Guides
 
 - [Using Vignette](docs/using.md): the recent stack, the annotator, the shortcut.
+- [The drawing editor](docs/editor.md): the tools, the keys, the clipboard, the drawing file.
 - [Commands](docs/commands.md): every action as a `vignette://` URL, the marks format, the log.
 - [Settings](docs/settings.md): `settings.json`, the `ui` numbers, the tweaks panel.
-- [Building](docs/building.md): build, sign, the tldraw license, where things live, forking.
+- [Building](docs/building.md): build, sign, where things live, forking.
 - [For agents](docs/agents.md): the skill that ships with the app and how it is installed.
 
 `AGENTS.md` is the onboarding for anyone changing the app, person or agent. The dated notes in
 `docs/` record the measurements and reasoning behind particular changes.
 
-Vignette is MIT licensed. The editor is tldraw, under [its own license](LICENSE-tldraw.md).
+Vignette is MIT licensed.
