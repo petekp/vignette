@@ -77,56 +77,98 @@ This step is independent of the editor and lands on `main` first.
 
 ## Step 4: the switch
 
-The editor goes into the annotator, and the web editor goes in the same step.
+The editor goes into the annotator, and the web editor goes in the same step. It is four parts, in
+order, each built, tested and driven before the next starts.
 
-Build:
+### 4a: the editor view
 
-- An AppKit view that hosts the core. It draws with Core Animation layers and handles hit testing,
-  cursors and handles. Text is typed in a plain-text `NSTextView` with every automatic substitution
-  off.
-- The thresholds in the spec go in `UITweaks`, each with a `Bound` and a slider: the drag
-  thresholds, hit bands, handle and dot sizes, text sizes, and the arrowhead's proportions.
-- Zoom scales the view's layers. Handles and outlines are redrawn in the same frame.
-- Park and build answer at once. `ThumbnailController.send` holds an event that arrives while it is
-  still handling one, and runs it right after.
-- Done puts a promised PNG on the clipboard and sends the card home at once.
-- Cards and flights draw marks with the renderer.
-- `[state]` gains its `editor` section.
-- The first launch deletes `drafts/` under Application Support and under Caches.
+New files only. Nothing is wired into the annotator yet.
 
-Delete:
+- An AppKit view that hosts the core. It turns mouse, key and modifier events into the core's
+  inputs, runs its effects in order, and draws what the core's state says. It decides nothing.
+- It draws with Core Animation layers: the screenshot, the marks through the renderer, and the
+  core's overlay of outlines, handles, dots and the brush. Zoom scales the picture's layers. The
+  overlay is redrawn at the same size on screen in the same frame.
+- Text is typed in a plain-text `NSTextView` with every automatic substitution off. It is laid out
+  at the layout's font size in px, scaled by the zoom, and shifted by the difference between
+  TextKit's baseline and `TextLayout`'s, so a text does not move when typing ends.
+- Cursors, the short confirmations, the clipboard, and VoiceOver.
+
+### 4b: the switch
+
+- The annotator hosts the editor view in place of the web view. Opening, park, Esc, Done, Send and
+  the toolbar go through the core. The zoom keys and the double-click smart zoom come from the view.
+- Drawings are read from and written to `DrawingStore`.
+- Done puts a promised PNG on the clipboard and sends the card home at once. Send and Copy Drawing
+  render with the renderer, one at a time, off the main thread.
+- `add?marks=` and replies turn agents' marks into px with `AgentMark.marks`, and add them to the
+  stored drawing, or to the open drawing as one undo step.
+- The colour pass's sample is made off the main thread when an image opens.
+- `ThumbnailController.send` holds an event that arrives while it is still handling one, and runs
+  it right after.
+- Every launch removes `drafts/` under Application Support and under Caches, if they are there.
+- Delete everything in the list below. Cards show the plain screenshot until 4c.
+
+### 4c: cards and flights
+
+- A card and a card in flight draw the drawing's marks over the image with the renderer. No
+  preview images are stored or cached.
+- The preview code goes: `previews`, `setPreview`, the preview producers, and the Thumbnailer
+  functions only they used.
+
+### 4d: tweaks, inspection, and the driven round
+
+- The core's metrics, the text style and the arrowhead's proportions are `UITweaks`, each with a
+  `Bound` and a slider, and a change reaches the open editor.
+- `[state]` gains its `editor` section, and is written without waiting for anything.
+- The last of the dead code the switch leaves, and a driven round of the acceptance checks that
+  need the running app.
+
+### Decisions made while planning 4
+
+| Decision | Why |
+|---|---|
+| The transition reducer's `parking` phase stays. | Park still waits for the zoom to spring back to fit, so the card flies home from the fitted frame. Without a zoom, park answers in the same turn. |
+| The annotator's window still comes up invisible at `prepare`. | It holds the keys during the flight, so Esc during the flight turns the card around. |
+| The flight's wait for `loaded` stays only if the editor's image decode is asynchronous. | 4b measures it. A wait that never waits is deleted. |
+| `dismiss` sets `slidingOut` before it sends the event. | A park that answers in the same turn otherwise ends the card's flight offscreen. |
+| A drawing made from agents' marks keeps the stored drawing's point scale. A new one takes the main screen's, inside `Drawing.pointScales`. | Decision 8's best guess when no annotator is open. |
+| Replies waiting at launch are imported as soon as their records load. | Today the page's `ready` starts them. A build no longer waits for anything. |
+| `FocusReturn` is created at launch by `AppDelegate`. | The web view's preload was the only thing that created it early enough to record the frontmost app. |
+| The drafts folders are removed at every launch they exist, with no flag. | Once they are gone, the check costs one lookup. |
+| Cards draw marks live over the image, rather than keeping a composited image. | A card is current the moment its drawing parks and sharp at any size, with nothing to invalidate. |
+
+### Delete in 4b
 
 - Code:
   - all of `web/`, including the license key in `web/.env.local`;
-  - `LocalServer.swift`, `Bridge.swift`, `StandIn.swift` and `DraftStore.swift`;
+  - `LocalServer.swift`, `Bridge.swift`, `StandIn.swift` and `DraftStore.swift`. `ToolInfo` goes
+    with Bridge: the toolbar takes its tools from the core's `Tool`;
   - in `AnnotationController.swift`: the web view, `preload`, `queryPage`, `evalForDebug`,
-    `presentEmpty`, `canvasMaybeFreed`, `onCanvasFree`, `canvasRefusal`, the stand-in and overlay
-    code, `setView`, the script message handler, and the navigation and process-termination
-    delegate methods;
-  - `Config.overlayMaxPixel` and `Config.previewMaxPixel`;
+    `presentEmpty`, `canvasMaybeFreed`, `onCanvasFree`, `canvasRefusal`, `onProblem`, the stand-in
+    and overlay code, `setView`, `pagePlace`, the script message handler, and the navigation and
+    process-termination delegate methods;
+  - `Config.overlayMaxPixel`;
   - in `AppDelegate.swift`: `renderMissingPreviews`, the `onCanvasFree` wiring, the `pageState`
-    checks, and `port=` in the ready line;
+    checks, `LocalServer.FileAccess`, and `port=` in the ready line;
   - in `ScreenshotRequests.swift`: `canvasRefusal` and `canvasBecameAvailable`, since a build no
     longer waits;
-  - the `eval` and `show-editor` commands, and their mention in the `debug` setting's comment;
+  - the `eval` and `show-editor` commands, `CommandRequest.query`, and their mention in the `debug`
+    setting's comment;
   - the error codes `page-not-ready`, `export-timeout`, `export-failed` and `eval-failed`;
   - `[state]`'s `page` section and the annotator's `webPid`, `port`, `pageState`, stand-in and
     overlay fields;
   - every `[web]` and `[annotate] view` log line.
-- Tests: `RenderTests`, `BridgeTests`, `LocalServerTests`, `DraftStoreTests`, and the cases in
+- Tests: `RenderTests`, `BridgeTests`, `LocalServerTests`, `DraftStoreTests`, the page query in
+  `StateReportTests`, the `eval` cases in `CommandsTests`, and the cases in
   `ScreenshotRequestsTests` that wait for the page.
 - Build and release:
-  - `project.yml`: the `web/dist` resources and `LICENSE-tldraw.md`, with the comment above them;
-  - `scripts/build.sh`: the pnpm build and its comment;
-  - `scripts/release.sh`: the tldraw key;
+  - `project.yml`: the `web/dist` resources on both targets and `LICENSE-tldraw.md`, with the
+    comment above them;
+  - `scripts/build.sh`: the pnpm build and its comments;
+  - `scripts/release.sh`: the tldraw key, the pnpm build, and their comments;
   - `.gitignore`: `web/node_modules/`, `web/dist/` and `web/.env.local`;
-  - `LICENSE-tldraw.md`, and the tldraw line in `LICENSE`.
-
-Check, and delete if they no longer do anything:
-
-- the transition reducer's `parking` phase, which exists because park used to take a round trip;
-- the flight's wait for `loaded` before it lifts;
-- ordering the annotator's window in, invisible, so the page could draw during the flight.
+  - `LICENSE-tldraw.md`, and the tldraw lines in `LICENSE`.
 
 ## Step 5: guidance and docs
 
