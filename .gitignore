@@ -1,8 +1,5 @@
 build/
 Vignette.xcodeproj/
-web/node_modules/
-web/dist/
 .DS_Store
 scripts/signing.env
 Info.plist
-web/.env.local

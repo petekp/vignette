@@ -306,8 +306,8 @@ final class AnnotationController {
     /// screen, so the step carries on from where the window is: a frame the screen edge has nudged
     /// does not carry that error forward, and a step aimed elsewhere mid-spring bends rather than
     /// stepping sideways. The anchor it ends at is the one the room allows, so the room gives way
-    /// once, here, rather than the frame sliding part way through the spring. The window standing
-    /// still has nothing to aim.
+    /// once, here, rather than the frame sliding part way through the spring. A window at rest
+    /// has nothing to aim.
     private func aim(at cursor: CGPoint, to target: CGFloat) {
         guard let onScreen = frameOnScreen, target != zoomLevel else { return }
         zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, window: split(target).window,
