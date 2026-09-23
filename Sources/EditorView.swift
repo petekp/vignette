@@ -57,8 +57,6 @@ final class EditorView: NSView {
     private var arrowhead = ArrowheadStyle.standard
     private var screenshotName = ""
     private var typingField: TypingField?
-    /// The press went to the text being typed, and so do its drag and release.
-    private var pressIsText = false
     private var handOverTimer: Timer?
     private var restTimer: Timer?
     private var zoomMoving = false
@@ -97,7 +95,6 @@ final class EditorView: NSView {
         self.arrowhead = arrowhead
         stopTimers()
         heldArrows = []
-        pressIsText = false
         screenshotName = URL(fileURLWithPath: drawing.key).deletingPathExtension().lastPathComponent
         picture.open(image, pixels: drawing.pixels)
         placedPicture = Self.fitted(drawing.pixels, in: bounds)
@@ -186,8 +183,9 @@ final class EditorView: NSView {
         case .beginTyping(let id, let caret): beginTyping(id, caret: caret)
         case .endTyping: endTyping()
         case .passPressToText:
+            // NSTextView tracks the drag and the release in its own loop before this returns, so
+            // they never reach the editor.
             guard let event, let field = typingField else { return }
-            pressIsText = true
             field.textView.mouseDown(with: event)
         case .scheduleTimer: scheduleHandOver()
         case .cancelTimer:
@@ -332,7 +330,6 @@ final class EditorView: NSView {
     private func endTyping() {
         guard let field = typingField else { return }
         typingField = nil
-        pressIsText = false
         if window?.firstResponder === field.textView { window?.makeFirstResponder(self) }
         field.textView.removeFromSuperview()
     }
@@ -447,21 +444,14 @@ final class EditorView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        pressIsText = false
         handle(.pointerPressed(pointer(event), clickCount: event.clickCount), event: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        if pressIsText { typingField?.textView.mouseDragged(with: event); return }
         handle(.pointerDragged(pointer(event)))
     }
 
     override func mouseUp(with event: NSEvent) {
-        if pressIsText {
-            pressIsText = false
-            typingField?.textView.mouseUp(with: event)
-            return
-        }
         handle(.pointerReleased(pointer(event)))
     }
 
@@ -582,11 +572,14 @@ final class EditorView: NSView {
 private final class CanvasView: NSView {
     let host = CALayer()
 
+    /// AppKit sets a layer-hosting view's root layer geometry from the view, overwriting a flag set on
+    /// the layer, so the view itself must be flipped for its sublayers to run y down.
+    override var isFlipped: Bool { true }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         layer = host
         wantsLayer = true
-        host.isGeometryFlipped = true
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }

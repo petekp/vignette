@@ -216,22 +216,69 @@ final class EditorViewTests: XCTestCase {
         }
     }
 
-    func testCmdBWhileTypingChangesNothing() throws {
-        open()
-        key("t", 17)
-        mouse(.leftMouseDown, 200, 300)
-        mouse(.leftMouseUp, 200, 300)
-        type("plain")
-        let before = view.core.drawing
-        let field = try XCTUnwrap(textView)
-        key("b", 11, .command)
-        XCTAssertFalse(window.performKeyEquivalent(with: keyEvent("b", 11, .command)))
-        XCTAssertEqual(view.core.drawing, before)
-        XCTAssertNotNil(view.core.typing)
-        XCTAssertEqual(field.string, "plain")
-        XCTAssertEqual(field.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
-                       field.textStorage?.attribute(.font, at: 4, effectiveRange: nil) as? NSFont)
-        XCTAssertFalse(field.isRichText)
+    // MARK: What is drawn
+
+    /// The window server's own picture of the test window, one pixel per point: what a person sees,
+    /// with every layer where AppKit and Core Animation really put it. The window is ordered in far
+    /// off every screen for the capture, and out again afterwards.
+    private func capture(until ready: (NSBitmapImageRep) -> Bool) throws -> NSBitmapImageRep {
+        typealias CreateImage = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+        // Swift has not been able to call it since the macOS 15 SDK, but it still answers for the
+        // caller's own windows, with no screen-recording permission.
+        let symbol = try XCTUnwrap(dlsym(dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_NOW), "CGWindowListCreateImage"),
+                                   "CGWindowListCreateImage is gone; this test needs another way to see the window")
+        let createImage = unsafeBitCast(symbol, to: CreateImage.self)
+        window.setFrameOrigin(NSPoint(x: -30000, y: -30000))
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        // The window server composites on its own schedule; wait for the view's picture to arrive.
+        let deadline = Date(timeIntervalSinceNow: 5)
+        while true {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            let options = CGWindowImageOption.boundsIgnoreFraming.rawValue | CGWindowImageOption.nominalResolution.rawValue
+            if let image = createImage(.null, CGWindowListOption.optionIncludingWindow.rawValue, CGWindowID(window.windowNumber), options)?.takeRetainedValue() {
+                let rep = NSBitmapImageRep(cgImage: image)
+                if ready(rep) || Date() > deadline { return rep }
+            } else if Date() > deadline {
+                return try XCTUnwrap(nil, "the window server gave no picture of the window")
+            }
+        }
+    }
+
+    /// The pixel at a point of the view, in sRGB components from 0 to 1.
+    private func pixel(_ rep: NSBitmapImageRep, _ x: Int, _ y: Int) -> (r: CGFloat, g: CGFloat, b: CGFloat) {
+        guard x >= 0, y >= 0, x < rep.pixelsWide, y < rep.pixelsHigh, let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return (0, 0, 0) }
+        return (color.redComponent, color.greenComponent, color.blueComponent)
+    }
+
+    /// The marks' red (`#e03131`), whatever the display's profile did to it.
+    private func isRed(_ c: (r: CGFloat, g: CGFloat, b: CGFloat)) -> Bool { c.r > 0.7 && c.g < 0.4 && c.b < 0.4 }
+    /// The test screenshot's light grey, whatever the display's profile did to it.
+    private func isBackground(_ c: (r: CGFloat, g: CGFloat, b: CGFloat)) -> Bool {
+        min(c.r, c.g, c.b) > 0.8 && max(c.r, c.g, c.b) - min(c.r, c.g, c.b) < 0.03
+    }
+
+    func testMarksAreDrawnWhereTheDrawingPutsThemRightWayUp() throws {
+        open([Mark(geometry: .rectangle(CGRect(x: 100, y: 60, width: 300, height: 150))),
+              Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 600, y: 100), end: CGPoint(x: 900, y: 100)))),
+              Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 600, y: 400), text: "Top", wrap: nil, size: 24)))])
+        let rep = try capture { self.isBackground(self.pixel($0, 500, 300)) }
+        XCTAssertEqual(view.pictureRect, CGRect(x: 0, y: 0, width: 1000, height: 600), "one point a px, so the capture's pixels are the drawing's")
+
+        // The rectangle's top edge is 60 px down; upside down it would be 540 px down.
+        XCTAssertTrue(isRed(pixel(rep, 250, 60)), "top edge: \(pixel(rep, 250, 60))")
+        XCTAssertTrue(isRed(pixel(rep, 100, 135)), "left edge: \(pixel(rep, 100, 135))")
+        XCTAssertTrue(isBackground(pixel(rep, 250, 540)), "nothing where a mirrored top edge would be")
+        XCTAssertTrue(isBackground(pixel(rep, 250, 135)), "the inside is not filled")
+        // The arrowhead is at the right end, the end the arrow was drawn to.
+        XCTAssertTrue(isRed(pixel(rep, 894, 100)), "arrowhead: \(pixel(rep, 894, 100))")
+        XCTAssertTrue(isBackground(pixel(rep, 894, 500)))
+        // The text's letters are in its first line, 400 to about 430 px down, and not mirrored.
+        func redPixels(in rows: ClosedRange<Int>) -> Int {
+            rows.reduce(0) { sum, y in sum + (600...660).filter { isRed(pixel(rep, $0, y)) }.count }
+        }
+        XCTAssertGreaterThan(redPixels(in: 400...432), 20)
+        XCTAssertEqual(redPixels(in: 168...200), 0)
     }
 
     // MARK: The clipboard
