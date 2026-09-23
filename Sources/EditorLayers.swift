@@ -358,15 +358,16 @@ final class EditorPicture {
     /// part in view.
     private func schedule(_ record: TextMark, _ state: State) {
         guard record.pending == nil else { return }
-        let part: Part, target: TextTarget
-        var source: IOSurface?
+        let part: Part, target: TextTarget, source: IOSurface?
         if let want = record.wantWhole, want != record.drawn {
             (part, target) = (.whole, want)
             if let drawn = record.drawn, drawn.mark == want.mark, drawn.region == want.region, want.scale < drawn.scale {
                 source = record.whole.contents as? IOSurface
+            } else {
+                source = nil
             }
         } else if let want = record.wantDetail, want != record.detailDrawn {
-            (part, target) = (.detail, want)
+            (part, target, source) = (.detail, want, nil)
         } else {
             return
         }
@@ -374,13 +375,12 @@ final class EditorPicture {
         let session = self.session, wanted = record.wanted, identity = ObjectIdentifier(record)
         let pointScale = state.drawing.pointScale, imageWidth = CGFloat(state.drawing.pixels.width), style = state.style
         Self.textQueue.async { [weak self] in
-            var result = Result.skipped
-            if wanted.contains(target) {
-                result = .drawn(source.map { EditorPicture.scaled($0, to: target.region, scale: target.scale) }
-                                ?? EditorPicture.bitmap(of: target.mark, pointScale: pointScale, imageWidth: imageWidth, region: target.region,
-                                                        scale: target.scale, style: style))
-            }
-            DispatchQueue.main.async {
+            let result: Result = wanted.contains(target)
+                ? .drawn(source.map { EditorPicture.scaled($0, to: target.region, scale: target.scale) }
+                         ?? EditorPicture.bitmap(of: target.mark, pointScale: pointScale, imageWidth: imageWidth, region: target.region,
+                                                 scale: target.scale, style: style))
+                : .skipped
+            DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated { self?.arrived(result, part: part, target: target, for: identity, session: session) }
             }
         }
