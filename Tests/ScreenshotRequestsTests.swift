@@ -10,6 +10,7 @@ final class ScreenshotRequestsTests: XCTestCase {
     private var built: [[AgentMark]] = []
     private var buildFails = false
     private var presented: [URL] = []
+    private var toasts: [String] = []
     /// Set to hold the answer: the completion lands here instead of being called, which is what a
     /// real `addMarks` does while it makes its colour sample off the main thread.
     private var heldBuild: ((Drawings.Failure?) -> Void)?
@@ -30,7 +31,7 @@ final class ScreenshotRequestsTests: XCTestCase {
             },
             present: { [unowned self] shot in self.presented.append(shot.url) },
             watchFolder: { [unowned self] in self.folder },
-            feedback: { _ in })
+            feedback: { [unowned self] words in self.toasts.append(words) })
     }
 
     override func tearDownWithError() throws {
@@ -263,23 +264,30 @@ final class ScreenshotRequestsTests: XCTestCase {
     }
 
     /// `addMarks` answers later, once its colour sample is made. A clear in that window cancels the
-    /// import, and the answer arriving afterwards must not publish it anyway.
+    /// import, and the answer arriving afterwards must not publish it anyway. The clear takes the
+    /// file back, so the real answer is a failure, and that must not turn the cancellation into one.
     func testAClearDuringABuildCancelsTheImportInsteadOfPublishingIt() throws {
-        let record = try makeRequest()
-        heldBuild = { _ in }             // hold the next build's answer
-        requests.receiveReply(envelope: try stageReply(record))
-        let id = try replyID(in: record)
-        let published = folder.appendingPathComponent(ReplyProtocol.replyFileName(id))
-        let answer = try XCTUnwrap(heldBuild)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: published.path), "the name is reserved while the build runs")
+        let gone = Drawings.Failure(code: .unreadableImage, description: "the file is gone")
+        for outcome in [nil, gone] {
+            let record = try makeRequest()
+            toasts = []                      // the send's own, from a request with no connection
+            heldBuild = { _ in }             // hold the next build's answer
+            requests.receiveReply(envelope: try stageReply(record))
+            let id = try replyID(in: record)
+            let published = folder.appendingPathComponent(ReplyProtocol.replyFileName(id))
+            let answer = try XCTUnwrap(heldBuild)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: published.path), "the name is reserved while the build runs")
 
-        requests.run(clear: record.id)
-        answer(nil)
+            requests.run(clear: record.id)
+            answer(outcome)
 
-        XCTAssertEqual(presented, [], "a cleared reply makes no card")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: published.path), "and leaves no hidden file behind")
-        let replies = (requests.stateJSON["replies"] as? [[String: Any]]) ?? []
-        XCTAssertEqual(replies.first { $0["id"] as? String == id }?["stage"] as? String, "cancelled")
+            XCTAssertEqual(presented, [], "a cleared reply makes no card")
+            XCTAssertEqual(toasts, [], "and no toast: the person cleared it")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: published.path), "and leaves no hidden file behind")
+            let reply = (requests.stateJSON["replies"] as? [[String: Any]])?.first { $0["id"] as? String == id }
+            XCTAssertEqual(reply?["stage"] as? String, "cancelled")
+            XCTAssertEqual(reply?["error"] as? String, "request-cleared")
+        }
     }
 
     /// A reply id is answered from its record. The record has to belong to the request the attempt

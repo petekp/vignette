@@ -44,6 +44,9 @@ final class AnnotationController {
     private let outsideClick = OutsideClick()
     /// The colour pass's sample of the screenshot in the editor, once it is made.
     private var colorSample: (key: String, sample: ColorSample)?
+    /// Counts `open`s, so a decode or a sample only lands on the open that asked for it: the same
+    /// file can be closed and opened again while the first decode is still on its way.
+    private var openGeneration = 0
     /// Where the Send menu's pick goes once the editor hands over the drawing.
     private var sendingTo: AgentDestination?
 
@@ -153,6 +156,8 @@ final class AnnotationController {
     /// the editor when it is ready. The drawing opens at once either way, so the keys work from here.
     private func open(_ shot: Screenshot, started: CFTimeInterval) {
         let key = shot.url.path, name = shot.url.lastPathComponent
+        openGeneration += 1
+        let generation = openGeneration
         guard let pixels = PixelSize(imageAt: shot.url) else {
             Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(name)")
             cancel()
@@ -177,7 +182,7 @@ final class AnnotationController {
         if decoded != nil { loaded(key, started: started) }
         else {
             Thumbnailer.load(at: shot.url, maxPixel: maxPixel) { [weak self] image in
-                guard let self, current?.url.path == key else { return }
+                guard let self, openGeneration == generation, current?.url.path == key else { return }
                 guard let cg = image.flatMap(Self.cgImage) else {
                     Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(name)")
                     cancel()
@@ -191,7 +196,7 @@ final class AnnotationController {
         DispatchQueue.global(qos: .userInitiated).async {
             let sample = ColorSample(imageAt: url)
             DispatchQueue.main.async { MainActor.assumeIsolated { [weak self] in
-                guard let self, let sample, current?.url.path == key else { return }
+                guard let self, let sample, openGeneration == generation, current?.url.path == key else { return }
                 colorSample = (key, sample)
                 editor.colorSampleArrived()
             } }

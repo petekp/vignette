@@ -289,6 +289,12 @@ final class DrawingsTests: XCTestCase {
 
         view.undo(nil)
         XCTAssertEqual(view.core.drawing.marks.map(\.geometry), [theirs.geometry], "one undo takes the whole push back")
+
+        // The push answers from the hand-over's write, not from the marks having joined.
+        try FileManager.default.removeItem(at: shot)
+        XCTAssertThrowsError(try drawings.add(pushed, to: shot, editor: view, sample: nil, style: .standard, newPointScale: 2)) { error in
+            XCTAssertEqual((error as? Drawings.Failure)?.code, .writeFailed)
+        }
     }
 
     func testALaunchRemovesTheOldDraftsFolders() throws {

@@ -458,6 +458,9 @@ final class ScreenshotRequests {
         guard !reply.marks.isEmpty else { return commit(reply, at: destination, done: done) }
         callbacks.addMarks(Screenshot(url: destination), reply.marks) { [weak self] failure in
             guard let self else { return }
+            // A clear during the colour sample took the file back, so the marks had nothing to join:
+            // the import ends cancelled, as the clear said, rather than failed.
+            guard stillReserved(reply, at: destination) else { return done() }
             if let failure {
                 // The codes stay the ones receipts have always carried for these two failures.
                 let code = failure.code == .writeFailed ? "draft-store-failed" : "draft-failed"
@@ -472,14 +475,7 @@ final class ScreenshotRequests {
     /// The single publication point: the PNG and the drawing it needs are both there, so the record
     /// goes to `published` and only then is the file an ordinary one with a card.
     private func commit(_ reply: Reply, at url: URL, done: @escaping () -> Void) {
-        // The record may have moved since this import started: its marks are added off the main
-        // thread, and a clear cancels the import in that time. The stage on disk decides, not the
-        // copy this import has been carrying, and the reserved file goes with the cancellation.
-        guard replies[reply.id]?.stage == .reserved else {
-            try? FileManager.default.removeItem(at: url)
-            Log.write("[reply] dropped \(reply.fileName); the request was cleared")
-            return done()
-        }
+        guard stillReserved(reply, at: url) else { return done() }
         var reply = reply
         reply.stage = .published
         reply.errorCode = nil
@@ -490,6 +486,19 @@ final class ScreenshotRequests {
         callbacks.present(Screenshot(url: url))
         callbacks.feedback("\(requests[reply.requestID]?.destinationName ?? "An agent") replied")
         done()
+    }
+
+    /// Whether the import may go on. The record may have moved since it started: its marks are
+    /// added after a colour sample made off the main thread, and a clear cancels the import in that
+    /// time. The stage on disk decides, not the copy this import has been carrying, and the reserved
+    /// file goes with the cancellation.
+    private func stillReserved(_ reply: Reply, at url: URL) -> Bool {
+        guard replies[reply.id]?.stage == .reserved else {
+            try? FileManager.default.removeItem(at: url)
+            Log.write("[reply] dropped \(reply.fileName); the request was cleared")
+            return false
+        }
+        return true
     }
 
     /// Stops one import with a reason, keeping the payload and the exclusion. The receipt is

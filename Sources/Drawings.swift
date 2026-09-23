@@ -10,6 +10,9 @@ final class Drawings {
     private(set) var keys: Set<String>
     /// The set changed.
     var onChange: ((Set<String>) -> Void)?
+    /// The last drawing `write` was given, and whether it is on disk: how a push to the open drawing
+    /// learns what the editor's hand-over did with it.
+    private var lastWrite: (key: String, written: Bool)?
 
     init(store: DrawingStore) {
         self.store = store
@@ -27,8 +30,10 @@ final class Drawings {
     @discardableResult
     func write(_ drawing: Drawing, reason: String) -> Bool {
         let name = (drawing.key as NSString).lastPathComponent
+        lastWrite = (drawing.key, false)
         if !drawing.marks.isEmpty, !FileManager.default.fileExists(atPath: drawing.key) { return false }
         do { try store.write(drawing) } catch { return false }
+        lastWrite = (drawing.key, true)
         if drawing.marks.isEmpty {
             guard keys.remove(drawing.key) != nil else { return true }
             Log.write("[drawing] removed \(name)")
@@ -74,19 +79,26 @@ final class Drawings {
     }
 
     /// Adds an agent's marks to the drawing of the screenshot at `url`, and answers how many joined.
-    /// When `editor` has that screenshot open, the marks join its drawing as one undo step, and its
-    /// hand-over writes the file. Otherwise they are added to the stored drawing, or a new one at
-    /// `newPointScale`, the colour pass runs over the ones without a named colour, and the file is
-    /// written before this returns. `sample` is the colour pass's sample of that screenshot; without
-    /// one the marks keep the colour they start in.
+    /// When `editor` has that screenshot open, the marks join its drawing as one undo step, and the
+    /// editor hands the drawing over at once, which must reach `write`. Otherwise they are added to
+    /// the stored drawing, or a new one at `newPointScale`, and the colour pass runs over the ones
+    /// without a named colour. Either way the file is written before this returns, or it throws.
+    /// `sample` is the colour pass's sample of that screenshot; without one the marks keep the
+    /// colour they start in.
     func add(_ agentMarks: [AgentMark], to url: URL, editor: EditorView?, sample: ColorSample?,
              style: TextStyle, newPointScale: CGFloat) throws -> Int {
         let name = url.lastPathComponent
         if let editor, editor.core.isOpen, editor.core.drawing.key == url.path {
             let open = editor.core.drawing
             let made = marks(agentMarks, in: open.pixels, pointScale: open.pointScale, style: editor.core.style, name: name)
+            lastWrite = nil
             editor.addAgentMarks(made)
-            return made.count
+            let joined = editor.core.drawing.marks.count - open.marks.count
+            guard joined > 0 else { return 0 }
+            guard let lastWrite, lastWrite.key == url.path, lastWrite.written else {
+                throw Failure(code: .writeFailed, description: "the drawing for \(name) could not be written")
+            }
+            return joined
         }
         guard let pixels = PixelSize(imageAt: url) else {
             throw Failure(code: .unreadableImage, description: "\(name) is not an image this Mac can read")
