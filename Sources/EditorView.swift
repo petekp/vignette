@@ -255,7 +255,11 @@ final class EditorView: NSView {
             let origin = imagePoint(forViewPoint: shown.origin)
             visible = CGRect(x: origin.x, y: origin.y, width: shown.width / zoom, height: shown.height / zoom).intersection(core.drawing.pixels.bounds)
         }
-        return EditorPicture.Resolution(scale: zoom * backingScale, visible: visible, moving: zoomMoving)
+        let room = shown.isNull || shown.isEmpty ? bounds : shown
+        let view = bounds.isEmpty ? placedPicture : bounds, image = core.drawing.pixels.bounds
+        let fit = image.isEmpty ? 0 : min(view.width / image.width, view.height / image.height) * backingScale
+        return EditorPicture.Resolution(scale: zoom * backingScale, visible: visible, pixels: room.width * room.height * backingScale * backingScale,
+                                        fit: fit, moving: zoomMoving)
     }
 
     /// A zoom step: everything follows at once, and the texts are drawn for the new zoom once it rests.

@@ -26,10 +26,12 @@ enum EditorStyle {
 ///
 /// A text is a bitmap the renderer draws, because only the renderer draws its outline. It is drawn
 /// at the zoom's resolution, and drawn again once the zoom rests if that changed and the text is in
-/// view. No text bitmap has more pixels than the part of the image in view has at the zoom's
-/// resolution, which bounds each one by the view's own size in device pixels: a text too large for
-/// that is drawn whole at the resolution that fits, and its part in view is drawn at the zoom's
-/// resolution over it once the zoom rests.
+/// view. No text bitmap has more pixels than the part of the view the picture fills: a text too
+/// large for that is drawn whole at the resolution that fits, and its part in view is drawn at the
+/// zoom's resolution over it once the zoom rests. A text out of view at rest keeps no more than
+/// the resolution of the whole image fitted to the view. So a text holds at most two bitmaps, each
+/// no larger than the view in device pixels, and the texts out of view no more than they need at
+/// the fit.
 @MainActor
 final class EditorPicture {
     /// Units are image px from the top-left corner, y down; the owner sets its transform.
@@ -108,6 +110,12 @@ final class EditorPicture {
         var scale: CGFloat
         /// The part of the image in view, in px.
         var visible: CGRect
+        /// The most device px one text bitmap may have: those of the part of the view the picture
+        /// fills, or of the whole view while none of it is in view.
+        var pixels: CGFloat
+        /// Device px per image px with the whole image fitted to the view: the most a text out of
+        /// view keeps once the zoom rests.
+        var fit: CGFloat
         /// A zoom or a resize is moving: no text is drawn again for the zoom until it rests.
         var moving: Bool
     }
@@ -198,13 +206,10 @@ final class EditorPicture {
             record.mark = mark
             return
         }
-        // No more pixels than the part of the image in view has at the zoom's resolution.
-        let budget = resolution.visible.isNull || resolution.visible.isEmpty
-            ? .infinity : resolution.visible.width * resolution.visible.height * resolution.scale * resolution.scale
-        let fits = (budget / (whole.width * whole.height)).squareRoot()
-        let scale = min(resolution.scale, fits)
+        let fits = (resolution.pixels / (whole.width * whole.height)).squareRoot()
         let inView = whole.intersection(resolution.visible)
         let visible = !inView.isNull && !inView.isEmpty
+        let scale = visible ? min(resolution.scale, fits) : min(resolution.scale, fits, resolution.fit)
 
         if record.mark != mark {
             if gesture, let old = record.mark, let offset = Self.translation(from: old, to: mark, geometry: geometry) {
@@ -219,8 +224,15 @@ final class EditorPicture {
             record.mark = mark
         } else if !gesture, record.slid {
             draw(record, mark, whole: whole, scale: scale, in: drawing, style: style)
-        } else if !resolution.moving, !gesture, visible, abs(record.scale - scale) > scale * 0.01 {
-            draw(record, mark, whole: whole, scale: scale, in: drawing, style: style)
+        } else if !resolution.moving, !gesture, abs(record.scale - scale) > scale * 0.01 {
+            if visible {
+                draw(record, mark, whole: whole, scale: scale, in: drawing, style: style)
+            } else if record.scale > scale, let image = record.whole.contents.map({ $0 as! CGImage }) {
+                // Out of view it only has to be there while a pan brings it back, so the bitmap it
+                // has is scaled down, several times faster than the renderer draws it again.
+                record.whole.contents = Self.scaled(image, to: record.region, scale: scale)
+                record.scale = scale
+            }
         }
 
         // The part in view at the zoom's own resolution, while the whole is coarser and nothing moves.
@@ -278,6 +290,17 @@ final class EditorPicture {
         let minX = (rect.minX * scale).rounded(.down) / scale, minY = (rect.minY * scale).rounded(.down) / scale
         let maxX = (rect.maxX * scale).rounded(.up) / scale, maxY = (rect.maxY * scale).rounded(.up) / scale
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    /// `image`, which covers `region`, redrawn at `scale` device px to a px.
+    private static func scaled(_ image: CGImage, to region: CGRect, scale: CGFloat) -> CGImage? {
+        let width = Int((region.width * scale).rounded()), height = Int((region.height * scale).rounded())
+        guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return ctx.makeImage()
     }
 
     /// `mark` drawn by the renderer over `region` of the image, `scale` device px to a px.
