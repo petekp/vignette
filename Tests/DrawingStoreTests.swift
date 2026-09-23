@@ -298,7 +298,7 @@ final class DrawingsTests: XCTestCase {
     }
 
     func testALaunchRemovesWhatTheWebEditorLeft() throws {
-        // The drafts folders and WebKit's two, as a launch names them, inside a stand-in home.
+        // The drafts folders and WebKit's two, as a launch names them, inside a scratch home.
         let left = ["Application Support/app/drafts", "Caches/app/drafts", "Caches/app/WebKit/NetworkCache", "WebKit/app/WebsiteData"]
         for path in left {
             try FileManager.default.createDirectory(at: dir.appendingPathComponent(path), withIntermediateDirectories: true)
