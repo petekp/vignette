@@ -7,9 +7,10 @@ final class EditorCoreTests: XCTestCase {
     private static let image = PixelSize(width: 1000, height: 600)
 
     private func core(_ marks: [Mark] = [], pixels: PixelSize = image, scale: CGFloat = 1, zoom: CGFloat = 1,
-                      pick: @escaping Core.ColorPick = { _ in nil }) -> Core {
+                      metrics: EditorMetrics = .standard, pick: @escaping Core.ColorPick = { _ in nil }) -> Core {
         var core = Core()
-        _ = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: pixels, pointScale: scale, marks: marks), style: .standard, pickColor: pick))
+        _ = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: pixels, pointScale: scale, marks: marks), style: .standard,
+                              metrics: metrics, pickColor: pick))
         _ = core.reduce(.zoomChanged(zoom))
         return core
     }
@@ -23,7 +24,7 @@ final class EditorCoreTests: XCTestCase {
     }
 
     private func text(_ words: String, _ x: CGFloat, _ y: CGFloat) -> Mark {
-        Mark(geometry: .text(Mark.Text(origin: CGPoint(x: x, y: y), text: words, wrap: nil, size: Mark.Text.defaultSize)))
+        Mark(geometry: .text(Mark.Text(origin: CGPoint(x: x, y: y), text: words, wrap: nil, size: EditorMetrics.standard.newTextSize)))
     }
 
     private func frame(_ mark: Mark?) -> CGRect? {
@@ -52,7 +53,7 @@ final class EditorCoreTests: XCTestCase {
 
     func testAFreshScreenshotOpensOnRectangleAndADragDrawsFromThePressToTheRelease() {
         var core = Core()
-        let opened = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: Self.image, pointScale: 1, marks: []), style: .standard, pickColor: { _ in nil }))
+        let opened = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: Self.image, pointScale: 1, marks: []), style: .standard, metrics: .standard, pickColor: { _ in nil }))
         XCTAssertEqual(core.tool, .rectangle)
         XCTAssertTrue(opened.contains(.tool(.rectangle)))
         core.drag(from: (100, 100), to: (300, 250))
@@ -97,6 +98,20 @@ final class EditorCoreTests: XCTestCase {
         core.drag(from: (100, 100), to: (150, 101.5))
         XCTAssertTrue(core.drawing.marks.isEmpty)
         XCTAssertEqual(core.undoSteps.count, 0)
+    }
+
+    func testTheDragDistanceTheHostPassesDecidesWhenAPressDraws() {
+        var standard = core()
+        standard.drag(from: (100, 100), to: (112, 112))
+        XCTAssertEqual(standard.drawing.marks.count, 1)
+        var metrics = EditorMetrics.standard
+        metrics.dragDistance = 20
+        var tuned = core(metrics: metrics)
+        // 17 pt: past the spec's 4, short of 20.
+        tuned.drag(from: (100, 100), to: (112, 112))
+        XCTAssertTrue(tuned.drawing.marks.isEmpty)
+        tuned.drag(from: (100, 100), to: (130, 130))
+        XCTAssertEqual(tuned.drawing.marks.count, 1)
     }
 
     func testARectangleDraggedPastTheImageStopsAtItsEdge() {
@@ -174,7 +189,7 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertTrue(effects.contains(.beginTyping(mark.id, .end)))
         XCTAssertEqual(core.typing?.id, mark.id)
         let text = try XCTUnwrap(textOf(mark))
-        let lineHeight = Mark.Text.defaultSize * TextStyle.standard.lineHeight
+        let lineHeight = EditorMetrics.standard.newTextSize * TextStyle.standard.lineHeight
         XCTAssertEqual(text.origin.x, 200)
         XCTAssertEqual(text.origin.y + lineHeight / 2, 300, accuracy: 1e-9)
     }
@@ -311,12 +326,12 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(wrapped.wrap), before.box.width * 0.6, accuracy: 1e-9)
         XCTAssertEqual(wrapped.origin, CGPoint(x: 100, y: 100), "the top stays")
         XCTAssertEqual(core.geometry.layout(wrapped).lines.count, 2)
-        XCTAssertEqual(wrapped.size, Mark.Text.defaultSize)
+        XCTAssertEqual(wrapped.size, EditorMetrics.standard.newTextSize)
 
         let box = core.geometry.layout(wrapped).box
         core.drag(from: (box.maxX, box.maxY), to: (box.maxX + box.width, box.maxY + box.height))
         let scaled = try XCTUnwrap(textOf(core.mark(id)))
-        XCTAssertEqual(scaled.size, Mark.Text.defaultSize * 2, accuracy: 1e-9)
+        XCTAssertEqual(scaled.size, EditorMetrics.standard.newTextSize * 2, accuracy: 1e-9)
         XCTAssertEqual(scaled.origin, CGPoint(x: 100, y: 100))
         XCTAssertEqual(core.undoSteps.count, 2)
     }
@@ -643,7 +658,7 @@ final class EditorCoreTests: XCTestCase {
         let text = try XCTUnwrap(textOf(core.drawing.marks.first))
         XCTAssertEqual(text.text, "from another app")
         XCTAssertEqual(text.origin.x, 300)
-        XCTAssertEqual(text.origin.y + Mark.Text.defaultSize * TextStyle.standard.lineHeight / 2, 200, accuracy: 1e-9)
+        XCTAssertEqual(text.origin.y + EditorMetrics.standard.newTextSize * TextStyle.standard.lineHeight / 2, 200, accuracy: 1e-9)
         XCTAssertEqual(core.selection, [core.drawing.marks[0].id])
         XCTAssertEqual(core.undoSteps.count, 1)
     }
