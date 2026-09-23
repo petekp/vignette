@@ -277,7 +277,7 @@ final class ZoomTests: XCTestCase {
 
     func testEachSideGrowsFirstAndIsMagnifiedOnlyAfterIt() {
         let reach = CGSize(width: 4, height: 2)
-        // Under both limits nothing is magnified: the page is not asked for anything at all.
+        // Under both limits nothing is magnified: only the window grows.
         let low = Zoom.split(level: 1.9, reach: reach, pull: 0.3)
         XCTAssertEqual(low.window, CGSize(width: 1.9, height: 1.9))
         XCTAssertEqual(low.camera, Zoom.none)
@@ -298,7 +298,7 @@ final class ZoomTests: XCTestCase {
     }
 
     func testAPullBelowTheFittedSizeShowsAFractionOfItself() {
-        // The window gives a little and the page is not involved, which is what springs back.
+        // The window gives a little and nothing is magnified, which is what springs back.
         let pulled = Zoom.split(level: 0.5, reach: CGSize(width: 2, height: 2), pull: 0.3)
         XCTAssertEqual(pulled.window.width, 0.85, accuracy: 1e-9)
         XCTAssertEqual(pulled.window.height, 0.85, accuracy: 1e-9, "and evenly, so nothing is cropped")

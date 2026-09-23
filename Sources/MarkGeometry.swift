@@ -167,7 +167,7 @@ struct TextLayout {
         /// Starts at the mark's left edge, as wide as its words without the spaces after them, and
         /// `lineHeight` tall.
         let rect: CGRect
-        /// Where the glyphs stand: centred in the line's height, as CSS centres them.
+        /// Where the glyphs stand: the font's ascent and descent centred in the line's height.
         let baseline: CGFloat
         let ctLine: CTLine
     }

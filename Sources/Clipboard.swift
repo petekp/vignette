@@ -2,13 +2,6 @@ import AppKit
 
 @MainActor
 enum Clipboard {
-    /// PNG and TIFF, matching what Apple's Copy does, so every paste target accepts it.
-    static func copyPNG(_ png: Data) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.writeObjects([imageItem(png: png)])
-    }
-
     /// One pasteboard that works everywhere: a file URL per file (chat apps attach them all),
     /// the paths as text (terminals paste them), and the first file's pixels when it is an image
     /// (single-image targets). A recording goes on as its file only; reading one whole to offer its

@@ -17,8 +17,8 @@ import QuartzCore
 /// `park` none is.
 @MainActor
 final class MarkLayers {
-    /// Where the editor's and the flights' texts are drawn: apart from any export's, so a long export
-    /// never delays the screen.
+    /// Where the editor's and the flights' texts are drawn: apart from the renderings of Done, Copy
+    /// Drawing and Send, so a long rendering never delays the screen.
     nonisolated static let textQueue = DispatchQueue(label: "vignette.editor-texts", qos: .userInteractive)
     /// Where the cards' texts are drawn: apart from the editor's, so a stack of long texts never
     /// delays the one being edited.
