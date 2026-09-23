@@ -442,7 +442,7 @@ enum DrawingJSON {
 /// Marks on the clipboard, in a pasteboard type of Vignette's own: the marks as a drawing file holds
 /// them, and the point scale of the drawing they came from, so a paste keeps their sizes in pt. Any
 /// app can write the type, so the marks go through the same validator as a file's.
-struct CopiedMarks {
+struct CopiedMarks: Equatable {
     static let pasteboardType = NSPasteboard.PasteboardType(Identity.bundleID + ".marks")
 
     let pointScale: CGFloat
