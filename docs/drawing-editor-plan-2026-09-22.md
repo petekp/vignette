@@ -158,6 +158,13 @@ New files only. Nothing is wired into the annotator yet.
 | Cmd+C with nothing selected gives Done's clipboard, and writes the `-annotated.png`. | Decision 10 says it is the same PNG as Done's. |
 | Card previews were deleted in 4b. | They existed only to show drafts. |
 | Reply receipts keep the codes `draft-failed` and `draft-store-failed`. | They are part of the reply protocol. |
+| The editor, the cards and the flights draw marks with one drawer, `MarkLayers`. A flight and the editor share text bitmaps. | One implementation of what a mark looks like on screen, and nothing steps when the flight hands over to the editor. |
+| A card's marks live in its existing `DragSource` view, rasterized at the card's size at rest and scaled while the stack narrows. | SwiftUI updates every AppKit view in the stack on every animation frame. One view per card, rasterized, cost the least main-thread time measured. |
+| A stitch draws each piece's marks into its pixels, and has no drawing of its own. Pete decided the first part on 2026-09-23. | A stroke is a fixed 3.5 pt, so marks copied into a new drawing would look thicker wherever a piece is scaled down. |
+| A stitch is composed off the main thread. | It used to run on the main thread. |
+| The editor's sizes, the text's weight and line height, and the arrowhead's proportions are live tweaks. The weight snaps to the nine named weights, 100 to 900. | The rounded system font draws only its nine named weights. |
+| `textDragDelay` is a threshold, not motion, so the motion scale does not shorten it. | Scaling it would change what a gesture means: at `motion: 0` every Text press followed by a sideways drag would set a width. |
+| Done, Send, Copy Drawing and `add?marks=` lay text out with the live tweaks. | A copy breaks its lines where the person saw them break. |
 
 ### Delete in 4b
 
