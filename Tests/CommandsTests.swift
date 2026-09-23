@@ -55,14 +55,6 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(Commands.parse(URL(string: "vignette://add?agent=\(String(repeating: "x", count: 200))")!).agent?.count, Agent.maxLength)
     }
 
-    func testSendParsesItsTargetAndWords() {
-        let r = Commands.parse(URL(string: "vignette://send?file=/tmp/x.png&to=reviewer&text=the%20header%20scrolls")!)
-        XCTAssertEqual(r.to, "reviewer")
-        XCTAssertEqual(r.text, "the header scrolls")
-        XCTAssertNil(Commands.parse(URL(string: "vignette://send?file=/tmp/x.png")!).to)
-        XCTAssertTrue(Commands.needsDebug("send"))
-    }
-
     func testInstallSkillParsesItsRoot() {
         XCTAssertEqual(Commands.parse(URL(string: "vignette://install-skill?root=/tmp/agent%20home")!).root,
                        URL(fileURLWithPath: "/tmp/agent home"))

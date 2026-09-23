@@ -83,7 +83,7 @@ the measurements and the reasoning; a rule here points at its note.
    before that worktree is rebuilt; a rebuild rewrites the bundle under the running process.
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
-   folder, and `eval`, `show-editor`, `tweaks`, and `send` are refused, unless settings.json has
+   folder, and `eval`, `show-editor`, and `tweaks` are refused, unless settings.json has
    `"debug": true`. `add` is the exception, and it takes two paths the folder rule does not cover.
    `add?file=` copies an image in from anywhere and the watcher then reports it like a capture,
    minus the copy and annotate toggles (`&annotate` opens the editor). `&agent=<name>` says which
@@ -187,8 +187,8 @@ the same driven sequence; a single run varies.
   `LocalServer.swift` serves `web/dist` on 127.0.0.1 to give the page that http origin. Do not
   switch to file:// or a custom scheme. The license reserves development environments for
   internal use, so the app ships only with a key: `App.tsx` passes `VITE_TLDRAW_LICENSE_KEY`
-  from the build environment as the `licenseKey` prop, and the Hobby key waits until the repo
-  is public (docs/foundation-review-2026-09-15.md, step 1).
+  from the build environment as the `licenseKey` prop. A public download waits on the native
+  editor that replaces tldraw (docs/drawing-editor-plan-2026-09-22.md).
 - The tldraw watermark stays, whatever it says. The license forbids interfering with license
   key enforcement, and `LICENSE-tldraw.md` must ship verbatim in the bundle (project.yml).
 - The screenshot is served by the same `LocalServer`: the page turns the file path in `load`
@@ -353,8 +353,7 @@ the same driven sequence; a single run varies.
   the panel stays clear, so a click there still reaches the window underneath.
 - The strip's labels are out for as long as a selection exists, whichever hand built it: a
   selection is the moment the rows' names and shortcuts are wanted, and a strip that folded back to
-  icons when the pointer moved onto a card read as the strip losing interest (it used to reveal on
-  hover and on a keyboard selection, `docs/hover-reveal-2026-09-17.md`). Each row draws its shortcut
+  icons when the pointer moved onto a card read as the strip losing interest. Each row draws its shortcut
   after the label from `ShotAction.Key.glyphs`, and `stripReveal(rows:)` measures both, so the
   panel's room holds them. Copy on a card still reveals on hover and grows to the right from an
   icon that does not move; the strip keeps its right edge and grows to the left, so a label never
@@ -673,8 +672,10 @@ the same driven sequence; a single run varies.
   its session id, which herdr reports per pane; herdr's submission API takes a pane and has no
   expected-session parameter, so Vignette re-lists and checks the pane still holds that exact
   session immediately before submitting (`AddressGuard.preflight`). A session in no pane is an
-  error and never another pane. The two tiers are recorded on every request and reported in
-  `[state] requests`; `docs/closed-agent-loop-implementation-2026-09-20.md` says why the weaker one
+  error and never another pane. The image travels as a path the session opens itself, so a Claude
+  Code session that may not read it stops on a permission prompt. herdr reports that pane as
+  `blocked`, and Vignette records the request as not submitted, with `send-failed`. The two tiers
+  are recorded on every request and reported in `[state] requests`; `docs/closed-agent-loop-implementation-2026-09-20.md` says why the weaker one
   is still allowed to submit.
 - A `vignette://` URL has no authenticated sender, so a reply is authorized by a per-request bearer
   secret in the request's own directory. The ticket's path travels in the request line; the secret
@@ -707,14 +708,6 @@ the same driven sequence; a single run varies.
   queue carries on to the next card: a list of files to annotate is something the person asked for,
   and handing one of them to an agent does not withdraw the rest. Esc is the one that empties the
   queue, because that is a person stopping.
-- `send` (`Send.swift`, debug only) shells out to herdr, which is the only thing on the machine that
-  knows which panes hold a coding agent: `herdr agent list` names them, `herdr agent prompt` types
-  one line into one of them. The image travels as a path the agent opens itself, so the agent must
-  already be allowed to read it or it stops on a permission prompt and herdr reports it as
-  `blocked`. The herdr calls are socket round trips, so they run off the main thread and the
-  `[send]` line arrives when herdr answers. Without herdr the command is one `no-agent` error;
-  nothing else in the app depends on it. `docs/send-to-agent-exploration-2026-09-17.md` has the
-  routes that were measured and why the others were refused.
 - The first launch opens the setup window (`SetupWindow.swift`), and it has that launch to itself:
   the agent-skill offer waits for the next one rather than competing for a first-time user. Its job
   is the shortcut, because the default is `double-rshift` and that needs Accessibility. Nothing else
@@ -751,9 +744,10 @@ the same driven sequence; a single run varies.
   rewrites every copy that is there and differs from the bundle's, installs nothing new, and removes
   nothing; the Agents tab's per-agent buttons and `install-skill` are the only things that put the
   skill somewhere or take it away. An older file holding `on` is read as `off` (`validated()`).
-  `docs/agent-skill-2026-09-18.md` says why the app carries the skill at all;
-  `docs/menu-settings-revamp-2026-09-20.md` is the installer as it works now, and replaces that
-  note's marker file, `foreign` state, `not-ours`, and `linked-root`.
+  The app carries the skill because someone who downloads Vignette needs their agent to learn the
+  `vignette://` contract, and the app is the one thing they are sure to have and the one thing that
+  knows which commands its version supports. `docs/menu-settings-revamp-2026-09-20.md` is the
+  installer as it works now.
 
 ## Adding things
 

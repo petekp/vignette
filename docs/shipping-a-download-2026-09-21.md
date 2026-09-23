@@ -19,36 +19,12 @@ Five steps, no terminal, no Xcode, no "cannot be opened because the developer ca
 
 Four things, in the order they block.
 
-### 1. The tldraw license key (Pete's action, and it is a form)
+### 1. The native drawing editor
 
-The blocker recorded in `foundation-review-2026-09-15.md` was that the Hobby key waits until the
-repo is public. It is public now, so this is unblocked and smaller than it looked.
-
-tldraw's Hobby license is free and discretionary, for "personal projects and early experiments;
-student work, research, side projects, prototypes, and ideas that aren't a business yet". The form
-asks for name, email, project website, project domain, and a project description. Vignette has all
-of those. Projects on a Hobby key must show the "made with tldraw" watermark on the canvas, which
-Vignette already does and already treats as non-negotiable (`AGENTS.md`).
-
-Review time is not published; the page says a team member looks at each application.
-
-- **An evaluation key cannot be shipped.** Verified in `@tldraw/editor@5.4.2` source, not guessed:
-  an evaluation license expires with no grace period (`LicenseManager.ts:78`), and the expired
-  branch is the one check in `getLicenseState` with no `isDevelopment` guard
-  (`LicenseManager.ts:625`). Serving on `http://127.0.0.1` does not save it; that escape hatch
-  applies only to an unparseable key (`LicenseManager.ts:591`). The state resolves to `expired`,
-  `shouldHideEditorAfterDelay` returns true for it (`LicenseProvider.tsx:34`), and five seconds
-  after mount the provider renders a hidden div (`LicenseProvider.tsx:66`). The annotator goes
-  blank, on every copy already downloaded, with no updater to fix them.
-
-  So the download waits on the Hobby key. Building and running locally on an evaluation key is
-  fine, because a rebuild takes a new one.
-- **Worth knowing now:** Hobby is for projects that are not a business. If Vignette ever charges,
-  that path needs a commercial license, which tldraw prices privately (public
-  reports put it around $6k/year). That is a constraint on the product's future, not on this release.
-
-Nothing below can ship publicly until one of these keys is in hand. The key goes in as
-`VITE_TLDRAW_LICENSE_KEY` in the build environment (`web/src/App.tsx:166`).
+tldraw's license allows a public download only with a key tldraw grants at its discretion, and an
+expired key hides the editor in every copy already downloaded. So Vignette replaces tldraw with an
+editor of its own before the first download. `drawing-editor-plan-2026-09-22.md` has the order of
+the work.
 
 ### 2. There is no artifact (my work, needs approval)
 
@@ -99,7 +75,7 @@ is already in his keychain. For a project with zero releases so far, a script he
 path that meets the requirement. If releases become frequent enough that running a script is the
 annoying part, that is the moment to move it to CI.
 
-The script would: build web with the license key in the environment, build Release, sign, package
+The script would: build Release, sign, package
 the dmg, notarize, staple, verify, and print the artifact path. Tagging and uploading to GitHub
 Releases can be part of it or stay a separate `gh release create`.
 
@@ -115,8 +91,8 @@ if it is forgotten.
 
 ## Order
 
-1. Apply for the tldraw Hobby key. Everything else is blocked on it, and it costs 15 minutes.
-2. Set up `notarytool` credentials. Independent of the key, can happen the same day.
+1. Finish the native drawing editor. The download is blocked on it.
+2. Set up `notarytool` credentials. Independent of the editor, can happen any day.
 3. Build the release script and cut `v0.1.0` as a private dry run: notarize, staple, install from
    the dmg on a second Mac or a fresh user account, confirm it opens with no dialog.
 4. Put the download on the site and the README, replacing "There is no download yet."

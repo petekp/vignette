@@ -29,7 +29,6 @@ open -g vignette://help                       # list every command in the log
 open -g vignette://settings                   # open the Settings window
 open -g vignette://install-skill              # install the agent skill for Claude Code and Codex
 open -g vignette://restore-apple-defaults     # put Apple's screencapture defaults back
-open -g "vignette://send?to=reviewer&text=why%20is%20this%20clipped"  # hand the path to an agent herdr is running (needs "debug": true)
 open -g vignette://tweaks                     # live UI tweaks panel (needs "debug": true)
 open -g vignette://show-editor                # the editor window without an image (needs "debug": true)
 open -g "vignette://eval?return%201%2B1"      # JavaScript in the editor page (needs "debug": true)

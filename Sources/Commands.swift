@@ -46,9 +46,6 @@ struct CommandRequest: Equatable {
     let agent: String?
     /// `marks=` from the query, as given: a path to a JSON file, or the JSON itself. See `Commands.marks(from:)`.
     let marks: String?
-    /// `to=` and `text=` from the query: which agent `send` hands the image to, and the words with it.
-    let to: String?
-    let text: String?
     /// `root=` from the query: the one directory `install-skill` writes into instead of the agent
     /// directories. Needs `debug`, so a live check points it at a scratch directory.
     let root: URL?
@@ -79,7 +76,6 @@ enum Commands {
         Fixed(name: "reply", summary: "an agent's reply to a screenshot request: \(Identity.urlScheme)://reply?file=<attempt envelope>; the bundled reply helper writes that envelope and waits for the receipt Vignette writes back"),
         Fixed(name: "requests", summary: "list the open screenshot requests; &clear=<id or all> stops one taking replies, cancels its unpublished imports, and removes the files Vignette owns"),
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Vignette first recorded"),
-        Fixed(name: "send", summary: "hand a screenshot's path to a coding agent herdr is running: \(Identity.urlScheme)://send?file=<path>&to=<agent or pane>&text=<words>; the focused pane's agent when no target is given", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "show-editor", summary: "open the editor window without an image", needsDebug: true),
         Fixed(name: "eval", summary: "run JavaScript in the editor page: \(Identity.urlScheme)://eval?<code>", needsDebug: true),
@@ -95,7 +91,6 @@ enum Commands {
                               tag: items.first { $0.name == "tag" }?.value, annotate: annotate,
                               agent: Agent.clean(items.first { $0.name == "agent" }.map { $0.value ?? "" }),
                               marks: items.first { $0.name == "marks" }?.value,
-                              to: items.first { $0.name == "to" }?.value, text: items.first { $0.name == "text" }?.value,
                               root: items.first { $0.name == "root" }?.value.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) },
                               clear: items.first { $0.name == "clear" }?.value)
     }

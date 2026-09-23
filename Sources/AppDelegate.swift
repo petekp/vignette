@@ -525,7 +525,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             requests.receiveReply(envelope: file)
         case "requests": requests.run(clear: request.clear)
         case "restore-apple-defaults": restoreAppleDefaults()
-        case "send": sendToAgent(request)
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
         case "show-editor": annotator.presentEmpty(); Commands.ok("show-editor")
         case "dismiss": thumbnail.dismiss(); Commands.ok("dismiss")
@@ -833,40 +832,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// What an `[add] ok` line says about the request beyond the file name.
     private func detail(_ request: CommandRequest) -> String {
         (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "")
-    }
-
-    /// Hands one screenshot to a coding agent in a herdr pane. The herdr calls are socket round
-    /// trips, so they run off the main thread and the `[send]` line arrives when herdr answers.
-    private func sendToAgent(_ request: CommandRequest) {
-        guard let file = request.files.first ?? newestShot() else {
-            Commands.error("send", .missingFile, "no file given and no screenshot in \(watchFolder.path)"); return
-        }
-        guard FileManager.default.fileExists(atPath: file.path) else { Commands.error("send", .missingFile, file.path); return }
-        guard let herdr = Send.binary() else {
-            Commands.error("send", .noAgent, "no herdr at \(Send.binaryPaths.joined(separator: " "))"); return
-        }
-        let message = Send.message(text: request.text, file: file)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let list = Send.run(herdr, ["agent", "list"])
-            guard let list, list.status == 0 else {
-                Commands.error("send", .noAgent, "herdr agent list: \(Send.detail(list?.output) ?? "did not run")"); return
-            }
-            let targets = Send.targets(fromAgentList: Data(list.output.utf8))
-            guard let target = Send.choose(targets, to: request.to) else {
-                let known = targets.map { "\($0.id)(\($0.kind))" }.joined(separator: " ")
-                Commands.error("send", .noAgent, request.to.map { "no agent \"\($0)\"; herdr has: \(known)" }
-                    ?? (targets.isEmpty ? "herdr is running no agents" : "no focused agent; name one with to=: \(known)"))
-                return
-            }
-            guard target.status != "blocked" else {
-                Commands.error("send", .sendFailed, "\(target.id) is waiting on a prompt of its own; answer it first"); return
-            }
-            let sent = Send.run(herdr, ["agent", "prompt", target.id, message])
-            guard let sent, sent.status == 0 else {
-                Commands.error("send", .sendFailed, "\(target.id): \(Send.detail(sent?.output) ?? "herdr did not run")"); return
-            }
-            Commands.ok("send", "\(target.id) kind=\(target.kind) pane=\(target.pane) file=\(file.lastPathComponent)")
-        }
     }
 
     // MARK: Screenshot requests: Send, replies, and which files a reply owns. See ScreenshotRequests.

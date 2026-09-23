@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// How Vignette reaches one agent session. The terminal a session happens to be displayed in is
 /// not part of this: a destination is a conversation, and a connection is the native call that
@@ -104,6 +105,45 @@ protocol AgentConnection: Sendable {
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome
 }
 
+// MARK: Running a command
+
+/// How the connections run the command line tools they talk through.
+enum Subprocess {
+    /// Runs a command and returns its status, its combined output, and whether the watchdog had to
+    /// stop it; nil when it cannot start. It blocks, so callers keep it off the main thread. A
+    /// command killed on the deadline may still have been accepted by whatever it was talking to, so
+    /// a caller that has to tell a definite failure from an uncertain one reads `timedOut` rather
+    /// than the exit status.
+    static func run(_ binary: String, _ arguments: [String], timeout: TimeInterval)
+        -> (status: Int32, output: String, timedOut: Bool)? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binary)
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do { try process.run() } catch { return nil }
+        let killed = OSAllocatedUnfairLock(initialState: false)
+        let watchdog = DispatchWorkItem {
+            guard process.isRunning else { return }
+            killed.withLock { $0 = true }
+            process.terminate()
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        watchdog.cancel()
+        return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "", killed.withLock { $0 })
+    }
+
+    /// A command's own words as one short log detail; nil when it said nothing. Errors often come
+    /// as JSON on stderr, which the log line carries as it is.
+    static func detail(_ output: String?) -> String? {
+        let text = (output ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : String(text.prefix(200))
+    }
+}
+
 // MARK: Claude Code, through herdr
 
 /// Claude Code has no local command that puts a message into a session that is already running.
@@ -114,22 +154,62 @@ protocol AgentConnection: Sendable {
 struct ClaudeCodeConnection: AgentConnection {
     let client = AgentClient.claude
     /// Where herdr may be, and how long one call may take. Injected so tests never run herdr.
-    var binary: () -> String? = { Send.binary() }
+    var binary: () -> String? = { ClaudeCodeConnection.binary() }
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
-        Send.launch($0, $1, timeout: $2)
+        Subprocess.run($0, $1, timeout: $2)
     }
 
     static let listTimeout: TimeInterval = 10
     static let promptTimeout: TimeInterval = 20
 
+    /// One agent herdr is running, as `herdr agent list` reports it.
+    struct HerdrAgent: Equatable {
+        /// The name herdr answers to: the agent's name, or its pane id when it has none.
+        let id: String
+        let pane: String
+        /// claude, codex, cursor, … whichever herdr recognized.
+        let kind: String
+        let cwd: String
+        /// idle, working, blocked, or unknown.
+        let status: String
+        /// The agent session herdr says this pane is running, when it knows one: for Claude Code
+        /// that is the conversation's own id. A pane hosts different sessions over time, so this,
+        /// and not the pane, is what a screenshot request is addressed to.
+        var session: String? = nil
+        /// What the pane's title says it is doing. Only a label; two panes may share it.
+        var title: String = ""
+    }
+
+    /// Where herdr may be. The app is launched by LaunchServices, so it inherits no shell PATH.
+    static let binaryPaths = ["\(NSHomeDirectory())/.local/bin/herdr", "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr"]
+
+    static func binary(exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
+        binaryPaths.first(where: exists)
+    }
+
+    /// The agents in a `herdr agent list` answer. An unparseable answer is no agents.
+    static func agents(fromAgentList data: Data) -> [HerdrAgent] {
+        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let agents = ((root?["result"] as? [String: Any])?["agents"] as? [[String: Any]]) ?? []
+        return agents.compactMap { agent in
+            guard let pane = agent["pane_id"] as? String, let kind = agent["agent"] as? String else { return nil }
+            let name = (agent["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let session = (agent["agent_session"] as? [String: Any])?["value"] as? String
+            return HerdrAgent(id: name ?? pane, pane: pane, kind: kind, cwd: agent["cwd"] as? String ?? "",
+                              status: agent["agent_status"] as? String ?? "unknown",
+                              session: (session?.isEmpty ?? true) ? nil : session,
+                              title: agent["terminal_title_stripped"] as? String ?? "")
+        }
+    }
+
     func destinations() -> [AgentDestination] {
-        targets().compactMap(Self.destination)
+        claudeAgents().compactMap(Self.destination)
     }
 
     /// One Claude Code pane as a destination, or nil for a pane whose session herdr cannot name.
     /// The name is the pane's title, which says what that session is doing; the detail is the
     /// project it is in, for two panes with the same title.
-    static func destination(_ target: Send.Target) -> AgentDestination? {
+    static func destination(_ target: HerdrAgent) -> AgentDestination? {
         guard let session = target.session else { return nil }
         return AgentDestination(
             id: session,
@@ -140,9 +220,9 @@ struct ClaudeCodeConnection: AgentConnection {
 
     /// Every Claude Code session herdr is running. A session herdr cannot identify is left out: a
     /// pane id is not a conversation, and addressing one would be the thing this route must not do.
-    private func targets() -> [Send.Target] {
+    private func claudeAgents() -> [HerdrAgent] {
         guard let herdr = binary(), let list = run(herdr, ["agent", "list"], Self.listTimeout), list.status == 0 else { return [] }
-        return Send.targets(fromAgentList: Data(list.output.utf8)).filter { $0.kind == "claude" && $0.session != nil }
+        return Self.agents(fromAgentList: Data(list.output.utf8)).filter { $0.kind == "claude" && $0.session != nil }
     }
 
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
@@ -150,17 +230,17 @@ struct ClaudeCodeConnection: AgentConnection {
             return .notSubmitted(code: .noAgent, detail: "not a Claude Code destination")
         }
         guard let herdr = binary() else {
-            return .notSubmitted(code: .noAgent, detail: "no herdr at \(Send.binaryPaths.joined(separator: " "))")
+            return .notSubmitted(code: .noAgent, detail: "no herdr at \(Self.binaryPaths.joined(separator: " "))")
         }
         guard let list = run(herdr, ["agent", "list"], Self.listTimeout) else {
             return .notSubmitted(code: .noAgent, detail: "herdr agent list did not run")
         }
         guard list.status == 0 else {
-            return .notSubmitted(code: .noAgent, detail: "herdr agent list: \(Send.detail(list.output) ?? "no output")")
+            return .notSubmitted(code: .noAgent, detail: "herdr agent list: \(Subprocess.detail(list.output) ?? "no output")")
         }
         // The guard: the pane has to be running this exact session now, not a session it ran
         // before. A session in no pane is an error; it is never redirected to another one.
-        let agents = Send.targets(fromAgentList: Data(list.output.utf8))
+        let agents = Self.agents(fromAgentList: Data(list.output.utf8))
         guard let target = agents.first(where: { $0.session == session }) else {
             return .destinationChanged(detail: "Claude Code session \(session) is in no herdr pane now")
         }
@@ -174,7 +254,7 @@ struct ClaudeCodeConnection: AgentConnection {
             return .uncertain(detail: "herdr agent prompt did not answer in \(Int(Self.promptTimeout)) s")
         }
         guard sent.status == 0 else {
-            let detail = Send.detail(sent.output) ?? "herdr said nothing"
+            let detail = Subprocess.detail(sent.output) ?? "herdr said nothing"
             // herdr checks the pane again on its own side. Only `agent_not_found` says the session
             // is gone; `agent_blocked` says it is there, waiting on a prompt of its own, which is
             // the same non-submission the preflight above reports and is worth retrying.
@@ -200,7 +280,7 @@ struct CodexConnection: AgentConnection {
     let client = AgentClient.codex
     var binary: () -> String? = { CodexConnection.binary() }
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
-        Send.launch($0, $1, timeout: $2)
+        Subprocess.run($0, $1, timeout: $2)
     }
     /// One stdio conversation with an app-server. Injected so a test never spawns codex.
     var converse: @Sendable (String, [String], [String]) -> [String] = {
@@ -265,7 +345,7 @@ struct CodexConnection: AgentConnection {
     /// What a nonzero `codex queue` means. A thread the server does not have, or a server that is
     /// not there, is the destination having changed; anything else is a definite non-submission.
     static func failure(output: String, thread: String) -> SubmissionOutcome {
-        let detail = Send.detail(output) ?? "codex said nothing"
+        let detail = Subprocess.detail(output) ?? "codex said nothing"
         let lower = detail.lowercased()
         let gone = ["thread not found", "no such thread", "session not found", "unknown thread",
                     "connection refused", "failed to connect", "connection reset"]

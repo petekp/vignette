@@ -42,6 +42,33 @@ final class AgentConnectionTests: XCTestCase {
 
     // MARK: Claude Code, by session rather than by pane
 
+    /// Trimmed from a real `herdr agent list` answer: two agents, one of them named.
+    private let namedAgentList = Data("""
+    {"id":"cli:agent:list","result":{"type":"agent_list","agents":[
+      {"agent":"claude","agent_status":"idle","cwd":"/Users/p/Code/one","focused":false,
+       "name":"reviewer","pane_id":"w9:p3","tab_id":"w9:t2","workspace_id":"w9"},
+      {"agent":"codex","agent_status":"working","cwd":"/Users/p/Code/two","focused":true,
+       "pane_id":"w9:p6","tab_id":"w9:t5","workspace_id":"w9"}]}}
+    """.utf8)
+
+    func testReadsEachAgentHerdrLists() {
+        let agents = ClaudeCodeConnection.agents(fromAgentList: namedAgentList)
+        XCTAssertEqual(agents.map(\.id), ["reviewer", "w9:p6"])
+        XCTAssertEqual(agents.map(\.kind), ["claude", "codex"])
+        XCTAssertEqual(agents.map(\.status), ["idle", "working"])
+        XCTAssertEqual(agents[1].cwd, "/Users/p/Code/two")
+    }
+
+    func testAnswerThatIsNotAnAgentListIsNoAgents() {
+        XCTAssertEqual(ClaudeCodeConnection.agents(fromAgentList: Data("not json".utf8)), [])
+        XCTAssertEqual(ClaudeCodeConnection.agents(fromAgentList: Data(#"{"error":{"code":"no_server"}}"#.utf8)), [])
+    }
+
+    func testTheHerdrBinaryIsTheFirstOneThatExists() {
+        XCTAssertEqual(ClaudeCodeConnection.binary { $0 == ClaudeCodeConnection.binaryPaths[1] }, ClaudeCodeConnection.binaryPaths[1])
+        XCTAssertNil(ClaudeCodeConnection.binary { _ in false })
+    }
+
     func testOnlyClaudePanesWithASessionAreOffered() {
         let (connection, _) = claude(["agent": (0, agentList(session: session), false)])
         let found = connection.destinations()

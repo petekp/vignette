@@ -53,7 +53,7 @@ launch at another file, which is how tests and agents keep away from the real on
 - **`copyOnCapture`** puts every new screenshot on the clipboard as it lands: the image, plus its
   file URL and path for apps that take those. It is on by default. An image that arrives through
   `add` skips this and Draw on New Screenshots, since a push from an agent is not a capture.
-- **`debug`** unlocks `eval`, `show-editor`, `tweaks`, `send`, and `file=` outside the watch folder.
+- **`debug`** unlocks `eval`, `show-editor`, `tweaks`, and `file=` outside the watch folder.
 - **`agentSkill`** records only whether the app has offered the skill for coding agents:
   `unasked` until the offer, then `off`. Whether the skill is installed is read from disk, and the
   Agents tab installs or removes it per agent. An older file holding `on` is read as `off`

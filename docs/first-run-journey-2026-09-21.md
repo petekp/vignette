@@ -39,9 +39,8 @@ stage 2 is currently reachable only by people who own Xcode.
 
 Three things stand between here and a download:
 
-- **The tldraw key.** The stated blocker is that the Hobby key waits until the repo is public
-  (`foundation-review-2026-09-15.md`, step 1). The repo is public now, so this condition may already
-  be met. Worth confirming before designing anything else in this stage.
+- **The drawing editor.** A download waits on the native editor that replaces tldraw
+  (`drawing-editor-plan-2026-09-22.md`).
 - **Packaging.** `scripts/build.sh` has no zip, dmg, notarize, or staple step. There is no artifact
   to hand anyone.
 - **Gatekeeper.** The hardened runtime is on and the build is Developer ID signed, so notarizing is

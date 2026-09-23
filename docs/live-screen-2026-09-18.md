@@ -107,9 +107,6 @@ first build should log which fields an agent reads.
 
 ## Related
 
-- `docs/comment-markers-exploration-2026-09-15.md`: numbered markers with comments, and how
-  Codex packages context around a request.
-- `docs/send-to-agent-exploration-2026-09-17.md`: which agent, and how the image gets in.
 - `docs/stitch-2026-09-17.md`: the reader scale that sizes a crop.
 - The latent-potential assessment of 2026-09-18: the return leg (a structured readback and a
   waiting `ask`) is the piece both directions here depend on.
