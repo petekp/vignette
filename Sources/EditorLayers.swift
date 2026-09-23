@@ -1,4 +1,5 @@
 import AppKit
+import IOSurface
 import QuartzCore
 
 /// How the editor's own marks on the canvas look: the selection, hover, handles, dots and brush.
@@ -135,12 +136,14 @@ final class EditorPicture {
         }
     }
 
-    /// What a draw on the queue came back with.
+    /// What a draw on the queue came back with. A bitmap is an IOSurface, which Core Animation shows
+    /// as it is: an image it copies at the commit that shows it, several ms on the main thread for a
+    /// text the size of the view, and as much memory again.
     private enum Result {
         /// Its text no longer wanted it when its turn came.
         case skipped
         /// Nil when there was nothing to draw into.
-        case drawn(CGImage?)
+        case drawn(IOSurface?)
     }
 
     /// How finely the owner wants the picture drawn.
@@ -356,11 +359,11 @@ final class EditorPicture {
     private func schedule(_ record: TextMark, _ state: State) {
         guard record.pending == nil else { return }
         let part: Part, target: TextTarget
-        var source: CGImage?
+        var source: IOSurface?
         if let want = record.wantWhole, want != record.drawn {
             (part, target) = (.whole, want)
             if let drawn = record.drawn, drawn.mark == want.mark, drawn.region == want.region, want.scale < drawn.scale {
-                source = record.whole.contents.map { $0 as! CGImage }
+                source = record.whole.contents as? IOSurface
             }
         } else if let want = record.wantDetail, want != record.detailDrawn {
             (part, target) = (.detail, want)
@@ -440,33 +443,57 @@ final class EditorPicture {
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
-    /// `image`, which covers `region`, redrawn at `scale` device px to a px.
-    nonisolated private static func scaled(_ image: CGImage, to region: CGRect, scale: CGFloat) -> CGImage? {
+    nonisolated private static let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+
+    /// A bitmap covering `region` at `scale` device px to a px, with what `draw` puts in a context
+    /// whose units are the image's px, y down.
+    nonisolated private static func bitmap(region: CGRect, scale: CGFloat, draw: (CGContext) -> Void) -> IOSurface? {
+        guard !region.isNull else { return nil }
         let width = Int((region.width * scale).rounded()), height = Int((region.height * scale).rounded())
         guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.interpolationQuality = .high
-        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return ctx.makeImage()
+              let surface = IOSurface(properties: [.width: width, .height: height, .bytesPerElement: 4, .pixelFormat: 0x4247_5241])  // BGRA
+        else { return nil }
+        surface.lock(options: [], seed: nil)
+        defer { surface.unlock(options: [], seed: nil) }
+        guard let ctx = CGContext(data: surface.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: surface.bytesPerRow,
+                                  space: space, bitmapInfo: bitmapInfo) else { return nil }
+        ctx.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: scale, y: -scale)
+        ctx.translateBy(x: -region.minX, y: -region.minY)
+        draw(ctx)
+        if let colors = space.copyPropertyList() { IOSurfaceSetValue(surface, kIOSurfaceColorSpace, colors) }
+        return surface
+    }
+
+    /// `source`, which covers `region`, drawn again at `scale` device px to a px.
+    nonisolated private static func scaled(_ source: IOSurface, to region: CGRect, scale: CGFloat) -> IOSurface? {
+        source.lock(options: .readOnly, seed: nil)
+        defer { source.unlock(options: .readOnly, seed: nil) }
+        // Read in place, while the lock holds; the image goes before the lock does.
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let provider = CGDataProvider(dataInfo: nil, data: source.baseAddress, size: source.bytesPerRow * source.height, releaseData: { _, _, _ in }),
+              let image = CGImage(width: source.width, height: source.height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: source.bytesPerRow,
+                                  space: space, bitmapInfo: CGBitmapInfo(rawValue: bitmapInfo), provider: provider, decode: nil,
+                                  shouldInterpolate: true, intent: .defaultIntent)
+        else { return nil }
+        return bitmap(region: region, scale: scale) { ctx in
+            // An image is drawn with its top at its rect's greatest y; here y runs down.
+            ctx.translateBy(x: 0, y: region.minY + region.maxY)
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.interpolationQuality = .high
+            ctx.draw(image, in: region)
+        }
     }
 
     /// `mark` drawn by the renderer over `region` of an image `imageWidth` px wide, `scale` device px
     /// to a px.
     nonisolated private static func bitmap(of mark: Mark, pointScale: CGFloat, imageWidth: CGFloat, region: CGRect, scale: CGFloat,
-                                           style: TextStyle) -> CGImage? {
-        guard !region.isNull else { return nil }
-        let width = Int((region.width * scale).rounded()), height = Int((region.height * scale).rounded())
-        guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        // From here on the context's units are the image's px, y down, as the renderer expects.
-        ctx.translateBy(x: 0, y: CGFloat(height))
-        ctx.scaleBy(x: scale, y: -scale)
-        ctx.translateBy(x: -region.minX, y: -region.minY)
-        // A text has no arrowhead.
-        mark.draw(in: ctx, pointScale: pointScale, imageWidth: imageWidth, style: style, arrowhead: .standard)
-        return ctx.makeImage()
+                                           style: TextStyle) -> IOSurface? {
+        bitmap(region: region, scale: scale) { ctx in
+            // A text has no arrowhead.
+            mark.draw(in: ctx, pointScale: pointScale, imageWidth: imageWidth, style: style, arrowhead: .standard)
+        }
     }
 }
 
