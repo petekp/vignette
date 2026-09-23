@@ -124,42 +124,61 @@ extension Drawing {
     }
 }
 
+/// A rectangle's, an ellipse's or an arrow's drawn geometry, in px: `stroked` is stroked `lineWidth`
+/// wide with round caps and joins, and `filled` is filled, both in the mark's colour. The renderer
+/// draws these paths, and the editor shows the same ones in shape layers.
+struct MarkShape {
+    let stroked: CGPath?
+    let filled: CGPath?
+    let lineWidth: CGFloat
+}
+
 extension Mark {
+    /// The mark's paths for a drawing of `pointScale`. Nil for a text, whose letters only the
+    /// renderer draws.
+    func shape(pointScale: CGFloat, arrowhead: ArrowheadStyle) -> MarkShape? {
+        let lineWidth = Self.strokeWidth * pointScale
+        switch geometry {
+        case .rectangle(let frame):
+            return MarkShape(stroked: CGPath(rect: frame, transform: nil), filled: nil, lineWidth: lineWidth)
+        case .ellipse(let frame):
+            return MarkShape(stroked: CGPath(ellipseIn: frame, transform: nil), filled: nil, lineWidth: lineWidth)
+        case .arrow(let arrow):
+            let body = arrow.body(pointScale: pointScale)
+            let head = Arrowhead(body: body, strokeWidth: lineWidth, style: arrowhead)
+            return MarkShape(stroked: head.bodyEnd > 0 ? body.path(upTo: head.bodyEnd) : nil, filled: head.path, lineWidth: lineWidth)
+        case .text:
+            return nil
+        }
+    }
+
     /// Draws the mark in its colour, as `Drawing.draw` does, for a drawing of `pointScale` on an
     /// image `imageWidth` px wide.
     func draw(in ctx: CGContext, pointScale: CGFloat, imageWidth: CGFloat, style: TextStyle, arrowhead: ArrowheadStyle) {
-        let strokeWidth = Self.strokeWidth * pointScale
         ctx.saveGState()
         defer { ctx.restoreGState() }
-        ctx.setLineWidth(strokeWidth)
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
         ctx.setStrokeColor(color.cgColor)
         ctx.setFillColor(color.cgColor)
-        switch geometry {
-        case .rectangle(let frame):
-            ctx.addRect(frame)
-            ctx.strokePath()
-        case .ellipse(let frame):
-            ctx.addEllipse(in: frame)
-            ctx.strokePath()
-        case .arrow(let arrow):
-            let body = arrow.body(pointScale: pointScale)
-            let head = Arrowhead(body: body, strokeWidth: strokeWidth, style: arrowhead)
-            if head.bodyEnd > 0 {
-                ctx.addPath(body.path(upTo: head.bodyEnd))
+        if let shape = shape(pointScale: pointScale, arrowhead: arrowhead) {
+            ctx.setLineWidth(shape.lineWidth)
+            if let stroked = shape.stroked {
+                ctx.addPath(stroked)
                 ctx.strokePath()
             }
-            ctx.addPath(head.path)
-            ctx.fillPath()
-        case .text(let text):
+            if let filled = shape.filled {
+                ctx.addPath(filled)
+                ctx.fillPath()
+            }
+        } else if case .text(let text) = geometry {
             Self.draw(TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: style),
                       color: color.cgColor, outline: 2 * Text.outlineWidth * pointScale, in: ctx)
         }
     }
 
-    /// The letters as one path, stroked `outline` px wide for the outline and then filled over it, so
-    /// the fill covers the outline's inner half and the two are one shape. A glyph with no outline,
+    /// Every letter's outline stroked `outline` px wide, then every letter filled over the outlines
+    /// with the same paths, so the fill covers each outline's inner half. A glyph with no outline,
     /// such as a colour emoji, is drawn as the font draws it, in its own colours and without an
     /// outline.
     private static func draw(_ layout: TextLayout, color: CGColor, outline: CGFloat, in ctx: CGContext) {
@@ -167,13 +186,16 @@ extension Mark {
             ((CTLineGetGlyphRuns(line.ctLine) as? [CTRun]) ?? []).compactMap { GlyphRun($0, at: CGPoint(x: line.rect.minX, y: line.baseline)) }
         }
         let letters = CGMutablePath()
-        for run in runs {
-            for case let path? in run.outlines { letters.addPath(path) }
-        }
         ctx.setLineWidth(outline)
         ctx.setStrokeColor(Text.outlineColor)
-        ctx.addPath(letters)
-        ctx.strokePath()
+        for run in runs {
+            for case let path? in run.outlines {
+                // One glyph at a time: Core Graphics strokes many letters as one path several times slower.
+                ctx.addPath(path)
+                ctx.strokePath()
+                letters.addPath(path)
+            }
+        }
         ctx.setFillColor(color)
         ctx.addPath(letters)
         ctx.fillPath()

@@ -302,12 +302,11 @@ final class EditorOverlayLayers {
             switch mark.geometry {
             case .rectangle(let frame): path.addRect(frame)
             case .ellipse(let frame): path.addEllipse(in: frame)
-            case .arrow(let arrow):
+            case .arrow:
                 // The outline follows the body and the head as the renderer draws them.
-                let body = arrow.body(pointScale: geometry.pointScale)
-                let head = Arrowhead(body: body, strokeWidth: Mark.strokeWidth * geometry.pointScale, style: arrowhead)
-                if head.bodyEnd > 0 { path.addPath(body.path(upTo: head.bodyEnd)) }
-                path.addPath(head.path)
+                if let shape = mark.shape(pointScale: geometry.pointScale, arrowhead: arrowhead) {
+                    for part in [shape.stroked, shape.filled].compactMap({ $0 }) { path.addPath(part) }
+                }
             case .text: path.addRect(geometry.extent(of: mark))
             }
             return path.copy(using: &transform)
