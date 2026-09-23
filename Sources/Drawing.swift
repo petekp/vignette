@@ -255,10 +255,12 @@ extension Mark {
 
 extension Mark {
     /// This mark inside `image`: moved in where it fits, and cut to the image where it does not. A text
-    /// without a wrap width near the right edge moves left (`TextLayout.leftEdge`), and a text wider or
-    /// taller than the image keeps its start showing. Nil when the mark has a number that is not
-    /// finite, or an arrow's ends meet at an edge.
-    func placed(in image: PixelSize, pointScale: CGFloat, style: TextStyle) -> Mark? {
+    /// without a wrap width near the right edge moves left (`TextLayout.leftEdge`), except with
+    /// `keepingLines`, for a text the editor moved: the move already stopped where its lines keep their
+    /// breaks, and moving it left then would make it jump. A text wider or taller than the image keeps
+    /// its start showing. Nil when the mark has a number that is not finite, a rectangle or ellipse has
+    /// no area, or an arrow's ends meet at an edge.
+    func placed(in image: PixelSize, pointScale: CGFloat, style: TextStyle, keepingLines: Bool = false) -> Mark? {
         let bounds = image.bounds
         var placed = self
         switch geometry {
@@ -267,6 +269,8 @@ extension Mark {
             let x = Self.fit(frame.minX, frame.width, within: bounds.width)
             let y = Self.fit(frame.minY, frame.height, within: bounds.height)
             let inside = CGRect(x: x.origin, y: y.origin, width: x.length, height: y.length)
+            // A paste that scales a very thin side down can leave it 0.
+            guard inside.width > 0, inside.height > 0 else { return nil }
             placed.geometry = kind == .rectangle ? .rectangle(inside) : .ellipse(inside)
         case .arrow(var arrow):
             guard [arrow.start.x, arrow.start.y, arrow.end.x, arrow.end.y, arrow.bend].allSatisfy(\.isFinite) else { return nil }
@@ -279,7 +283,9 @@ extension Mark {
             guard [text.origin.x, text.origin.y, text.size, text.wrap ?? 0].allSatisfy(\.isFinite),
                   (text.size * pointScale).isFinite else { return nil }
             if let wrap = text.wrap, wrap > bounds.width { text.wrap = bounds.width }
-            text.origin.x = TextLayout.leftEdge(of: text, imageWidth: bounds.width, pointScale: pointScale, style: style)
+            if !keepingLines {
+                text.origin.x = TextLayout.leftEdge(of: text, imageWidth: bounds.width, pointScale: pointScale, style: style)
+            }
             func layoutBox() -> CGRect { TextLayout(text, imageWidth: bounds.width, pointScale: pointScale, style: style).box }
             var box = layoutBox()
             if box.minX < 0 || box.maxX > bounds.maxX {
@@ -308,10 +314,16 @@ extension Mark {
     /// Two ends on one axis moved together inside `0...limit` when the gap between them fits, else
     /// each stopped at the edge.
     private static func fitEnds(_ a: CGFloat, _ b: CGFloat, within limit: CGFloat) -> (CGFloat, CGFloat) {
-        let low = min(a, b), high = max(a, b)
-        guard high - low <= limit else { return (min(max(a, 0), limit), min(max(b, 0), limit)) }
-        let shift = low < 0 ? -low : (high > limit ? limit - high : 0)
+        guard let shift = shiftInside(from: min(a, b), to: max(a, b), within: limit) else {
+            return (min(max(a, 0), limit), min(max(b, 0), limit))
+        }
         return (a + shift, b + shift)
+    }
+
+    /// How far a span from `low` to `high` moves to lie inside `0...limit`, or nil when it is longer.
+    static func shiftInside(from low: CGFloat, to high: CGFloat, within limit: CGFloat) -> CGFloat? {
+        guard high - low <= limit else { return nil }
+        return low < 0 ? -low : (high > limit ? limit - high : 0)
     }
 }
 

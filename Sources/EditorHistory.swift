@@ -1,7 +1,7 @@
 import Foundation
 
 /// A mark and its place in the drawing's order.
-struct PlacedMark: Equatable {
+struct PlacedMark {
     var mark: Mark
     var index: Int
 }

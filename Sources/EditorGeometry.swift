@@ -11,6 +11,7 @@ struct EditorGeometry {
     let metrics: EditorMetrics
     /// Screen pt per image px.
     let zoom: CGFloat
+    let layouts: TextLayoutCache
 
     var image: CGRect { pixels.bounds }
 
@@ -21,7 +22,7 @@ struct EditorGeometry {
     func pt(_ points: CGFloat) -> CGFloat { points * pointScale }
 
     func layout(_ text: Mark.Text) -> TextLayout {
-        TextLayout(text, imageWidth: image.width, pointScale: pointScale, style: style)
+        layouts.layout(text, imageWidth: image.width, pointScale: pointScale, style: style)
     }
 
     /// The rect a mark covers: a frame, an arrow's body with its arc, or a text's box. The same rect
@@ -38,9 +39,27 @@ struct EditorGeometry {
         marks.map(extent(of:)).reduce(nil) { union, rect in union?.union(rect) ?? rect }
     }
 
-    /// The mark kept inside the image, or nil when it cannot be.
+    /// The rect that stays inside the image while a mark moves: its extent, and for a text with no wrap
+    /// width the margin beyond its box too, so the box stops at the margin and its lines keep their breaks.
+    func movingExtent(of mark: Mark) -> CGRect {
+        let extent = extent(of: mark)
+        guard case .text(let text) = mark.geometry, text.wrap == nil else { return extent }
+        return CGRect(x: extent.minX, y: extent.minY, width: extent.width + image.width * TextLayout.margin, height: extent.height)
+    }
+
+    func movingExtent(of marks: [Mark]) -> CGRect? {
+        marks.map(movingExtent(of:)).reduce(nil) { union, rect in union?.union(rect) ?? rect }
+    }
+
+    /// A mark from outside the editor, or a text that grows, kept inside the image by `Mark.placed`.
+    /// Nil when it cannot be.
     func placed(_ mark: Mark) -> Mark? {
         mark.placed(in: pixels, pointScale: pointScale, style: style)
+    }
+
+    /// A mark the editor moved or changed, kept inside the image with a text's lines as they are.
+    func placedKeepingLines(_ mark: Mark) -> Mark? {
+        mark.placed(in: pixels, pointScale: pointScale, style: style, keepingLines: true)
     }
 
     func translated(_ mark: Mark, by offset: CGVector) -> Mark {
@@ -70,16 +89,17 @@ struct EditorGeometry {
     }
 
     /// `marks` moved by `offset` as a group, shifted back inside the image together when the group
-    /// fits, and each then kept inside on its own.
-    func placedGroup(_ marks: [Mark], offset: CGVector) -> [Mark] {
+    /// fits, and each then kept inside on its own: as marks from outside, or, `keepingLines`, as
+    /// copies of marks on this screenshot, whose texts keep their lines.
+    func placedGroup(_ marks: [Mark], offset: CGVector, keepingLines: Bool) -> [Mark] {
         let moved = marks.map { translated($0, by: offset) }
-        guard let extent = extent(of: moved) else { return [] }
-        func back(_ low: CGFloat, _ high: CGFloat, _ limit: CGFloat) -> CGFloat {
-            guard high - low <= limit else { return 0 }
-            return low < 0 ? -low : (high > limit ? limit - high : 0)
+        guard let extent = keepingLines ? movingExtent(of: moved) : extent(of: moved) else { return [] }
+        let shift = CGVector(dx: Mark.shiftInside(from: extent.minX, to: extent.maxX, within: image.width) ?? 0,
+                             dy: Mark.shiftInside(from: extent.minY, to: extent.maxY, within: image.height) ?? 0)
+        return moved.compactMap { mark in
+            let back = translated(mark, by: shift)
+            return keepingLines ? placedKeepingLines(back) : placed(back)
         }
-        let shift = CGVector(dx: back(extent.minX, extent.maxX, image.width), dy: back(extent.minY, extent.maxY, image.height))
-        return moved.compactMap { placed(translated($0, by: shift)) }
     }
 
     // MARK: What a point hits
@@ -139,15 +159,7 @@ struct EditorGeometry {
     }
 
     static func polylineDistance(from point: CGPoint, along points: [CGPoint]) -> CGFloat {
-        zip(points, points.dropFirst()).map { segmentDistance(from: point, $0, $1) }.min() ?? .infinity
-    }
-
-    static func segmentDistance(from point: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
-        let dx = b.x - a.x, dy = b.y - a.y
-        let lengthSquared = dx * dx + dy * dy
-        guard lengthSquared > 0 else { return hypot(point.x - a.x, point.y - a.y) }
-        let t = min(max(((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared, 0), 1)
-        return hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t))
+        zip(points, points.dropFirst()).map { ArrowBody(start: $0, end: $1, bend: 0).distance(to: point) }.min() ?? .infinity
     }
 
     // MARK: Handles and dots
@@ -155,6 +167,7 @@ struct EditorGeometry {
     /// The resize handles of a single selected mark covering `frame`: the four corners, then the
     /// four edges, in the order a press tries them. Along an axis on which the mark is under
     /// `smallSide` on screen, the hit areas lie outside the mark, so each corner can still be taken.
+    /// A hit area with no room outside the image moves inside it, since the window ends at the image.
     func handles(around frame: CGRect, of id: Mark.ID) -> [EditorCore.Handle] {
         let smallX = frame.width * zoom < metrics.smallSide
         let smallY = frame.height * zoom < metrics.smallSide
@@ -182,30 +195,26 @@ struct EditorGeometry {
                 x = (frame.minX, frame.maxX)
                 y = across(sideY, outward: position.ySide, size: edge, small: smallY)
             }
+            let dx = Mark.shiftInside(from: x.low, to: x.high, within: image.width) ?? 0
+            let dy = Mark.shiftInside(from: y.low, to: y.high, within: image.height) ?? 0
             return EditorCore.Handle(mark: id, position: position, square: square,
-                                     hitArea: CGRect(x: x.low, y: y.low, width: x.high - x.low, height: y.high - y.low))
+                                     hitArea: CGRect(x: x.low + dx, y: y.low + dy, width: x.high - x.low, height: y.high - y.low))
         }
     }
 
     /// Where an arrow's three dots sit. The middle one is at the bend point, pushed out along the
     /// perpendicular on a short arrow until the whole of it is clear of the end dots' hit areas.
     func dotCenters(of arrow: Mark.Arrow) -> [(kind: EditorCore.DotKind, center: CGPoint)] {
-        let dx = arrow.end.x - arrow.start.x, dy = arrow.end.y - arrow.start.y
-        let length = hypot(dx, dy)
+        let length = hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y)
         guard length > 0 else { return [(.start, arrow.start), (.end, arrow.end)] }
-        let normal = CGVector(dx: -dy / length, dy: dx / length)
-        let middle = CGPoint(x: (arrow.start.x + arrow.end.x) / 2, y: (arrow.start.y + arrow.end.y) / 2)
         let clear = screen(metrics.dotHitRadius + metrics.dotRadius)
-        var offset = arrow.bend
-        if hypot(length / 2, offset) < clear {
-            let side: CGFloat = offset < 0 ? -1 : 1
-            offset = side * (clear * clear - length * length / 4).squareRoot()
-            let pushed = CGPoint(x: middle.x + normal.dx * offset, y: middle.y + normal.dy * offset)
+        var middle = arrow
+        if hypot(length / 2, arrow.bend) < clear {
+            middle.bend = (arrow.bend < 0 ? -1 : 1) * (clear * clear - length * length / 4).squareRoot()
             // A straight arrow along an edge has room on one side only.
-            if arrow.bend == 0, !image.encloses(pushed) { offset = -offset }
+            if arrow.bend == 0, !image.encloses(middle.bendPoint) { middle.bend = -middle.bend }
         }
-        return [(.start, arrow.start), (.end, arrow.end),
-                (.middle, CGPoint(x: middle.x + normal.dx * offset, y: middle.y + normal.dy * offset))]
+        return [(.start, arrow.start), (.end, arrow.end), (.middle, middle.bendPoint)]
     }
 
     // MARK: The brush
@@ -329,6 +338,8 @@ struct EditorGeometry {
             let aboutCenter = fromCenter || sides[i] == 0
             fixed[i] = aboutCenter ? axis.center : (sides[i] < 0 ? axis.high : axis.low)
             reach[i] = (sides[i] < 0 ? axis.low : axis.high) - fixed[i]
+            // A side with no length has no scale to take.
+            guard reach[i] != 0, reach[i].isFinite else { return frame }
             if sides[i] != 0 { scale[i] = (fixed[i] + reach[i] + moves[i] - fixed[i]) / reach[i] }
             if aboutCenter {
                 let most = min(fixed[i], axis.limit - fixed[i]) / abs(reach[i])
@@ -413,4 +424,35 @@ extension CGRect {
 
 extension CGPoint {
     func moved(by offset: CGVector) -> CGPoint { CGPoint(x: x + offset.dx, y: y + offset.dy) }
+}
+
+/// Text layouts the editor has made, so a hover, a key or a typed character does not lay every text
+/// out again. A layout depends only on its key, so a stored one is always right. Not safe to share
+/// between threads.
+final class TextLayoutCache {
+    private struct Key: Hashable {
+        let text: String
+        let wrap: CGFloat?
+        let size: CGFloat
+        let x: CGFloat
+        let y: CGFloat
+        let imageWidth: CGFloat
+        let pointScale: CGFloat
+        let weight: CGFloat
+        let lineHeight: CGFloat
+    }
+
+    /// Past this many layouts the cache starts again, so texts moved or typed into leave nothing behind.
+    static let capacity = 256
+    private var layouts: [Key: TextLayout] = [:]
+
+    func layout(_ text: Mark.Text, imageWidth: CGFloat, pointScale: CGFloat, style: TextStyle) -> TextLayout {
+        let key = Key(text: text.text, wrap: text.wrap, size: text.size, x: text.origin.x, y: text.origin.y,
+                      imageWidth: imageWidth, pointScale: pointScale, weight: style.weight.rawValue, lineHeight: style.lineHeight)
+        if let layout = layouts[key] { return layout }
+        let layout = TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: style)
+        if layouts.count >= Self.capacity { layouts.removeAll(keepingCapacity: true) }
+        layouts[key] = layout
+        return layout
+    }
 }

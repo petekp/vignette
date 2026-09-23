@@ -212,6 +212,38 @@ final class EditorCoreTests: XCTestCase {
         let grown = try XCTUnwrap(textOf(core.drawing.marks.last))
         XCTAssertLessThan(grown.origin.y, startY)
         XCTAssertEqual(core.geometry.layout(grown).box.maxY, 600, accuracy: 1e-9)
+        _ = core.reduce(.typingEnded)
+
+        // Started with under 15% of the width to its right, a text moves left as it grows.
+        core.click(900, 100)
+        _ = core.reduce(.typingChanged("hello wonderful world"))
+        let moved = try XCTUnwrap(textOf(core.drawing.marks.last))
+        XCTAssertLessThan(moved.origin.x, 900)
+        XCTAssertEqual(core.geometry.layout(moved).lines.count, 1)
+    }
+
+    func testATextToolDragSetsAWrapOfAtLeastOneEmAndOneBroughtBackIsAClick() throws {
+        var core = core(scale: 2)
+        _ = core.reduce(.setTool(.text))
+        core.press(300, 300, time: 0)
+        core.dragTo(400, 300, time: 0.3)
+        let chosen = try XCTUnwrap(core.overlay.wrap)
+        XCTAssertEqual(chosen.minX, 300)
+        XCTAssertEqual(chosen.width, 100)
+        core.dragTo(310, 300, time: 0.4)
+        core.release(310, 300, time: 0.5)
+        let clicked = try XCTUnwrap(textOf(core.drawing.marks.last))
+        XCTAssertNil(clicked.wrap)
+        _ = core.reduce(.typingChanged("first"))
+        core.key(.escape)
+
+        // 30 px is past the drag distance and under one em of a 24 pt text at point scale 2.
+        core.press(500, 450, time: 1)
+        core.dragTo(530, 450, time: 1.3)
+        core.release(530, 450, time: 1.4)
+        let narrow = try XCTUnwrap(textOf(core.drawing.marks.last))
+        XCTAssertEqual(narrow.wrap, 48)
+        XCTAssertEqual(narrow.origin.x, 500)
     }
 
     func testATextClickOnAnExistingTextEditsIt() {
@@ -315,6 +347,26 @@ final class EditorCoreTests: XCTestCase {
         }
     }
 
+    func testTheHandlesOfAMarkInTheImagesCornerCanAllBeTakenInsideTheImage() {
+        let core = core([rect(0, 0, 10, 10)])
+        let id = core.drawing.marks[0].id
+        let handles = core.overlay.handles
+        XCTAssertEqual(handles.count, 8)
+        for handle in handles {
+            XCTAssertTrue(CGRect(x: 0, y: 0, width: 1000, height: 600).contains(handle.hitArea), "\(handle.position)")
+            let width: CGFloat = handle.position.isCorner ? 13.5 : handle.position.xSide != 0 ? 9 : 10
+            XCTAssertEqual(handle.hitArea.width, width, "\(handle.position)")
+        }
+        for corner in handles where corner.position.isCorner {
+            // The hit area's outer corner.
+            let point = CGPoint(x: corner.position.xSide < 0 ? corner.hitArea.minX : corner.hitArea.maxX,
+                                y: corner.position.ySide < 0 ? corner.hitArea.minY : corner.hitArea.maxY)
+            XCTAssertEqual(core.target(at: point), .handle(id, corner.position))
+        }
+        XCTAssertEqual(handles.first { $0.position == .topLeft }?.square?.midX, 0)
+        XCTAssertEqual(handles.first { $0.position == .topLeft }?.square?.midY, 0)
+    }
+
     func testDraggingATextsRightEdgeSetsItsWrapWidthAndDraggingItsCornerScalesItsFont() throws {
         var core = core([text("hello world", 100, 100)])
         let id = core.drawing.marks[0].id
@@ -336,20 +388,32 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(core.undoSteps.count, 2)
     }
 
-    func testAnArrowsMiddleDotBendsItEvenOnAThirtyScreenPointArrow() throws {
+    func testOnAThirtyPointArrowAPressOnTheMiddleDotBendsItAndOneOnAnEndDotMovesThatEnd() throws {
         var core = core([arrow(100, 300, 130, 300)])
         let id = core.drawing.marks[0].id
         let middle = try XCTUnwrap(core.overlay.dots.first { $0.kind == .middle })
-        for end in core.overlay.dots where end.kind != .middle {
-            XCTAssertGreaterThanOrEqual(hypot(middle.center.x - end.center.x, middle.center.y - end.center.y),
-                                        end.hitRadius + middle.radius - 1e-9, "the middle dot sits clear of the end dots")
-        }
-        XCTAssertEqual(core.target(at: middle.center), .dot(id, .middle))
         core.drag(from: (middle.center.x, middle.center.y), to: (115, 340))
         let bent = try XCTUnwrap(arrowOf(core.mark(id)))
         XCTAssertEqual(bent.bend, 40, accuracy: 1e-9)
         XCTAssertEqual(bent.start, CGPoint(x: 100, y: 300))
         XCTAssertEqual(bent.end, CGPoint(x: 130, y: 300))
+        let end = try XCTUnwrap(core.overlay.dots.first { $0.kind == .end })
+        core.drag(from: (end.center.x, end.center.y), to: (160, 250))
+        let moved = try XCTUnwrap(arrowOf(core.mark(id)))
+        XCTAssertEqual(moved.start, CGPoint(x: 100, y: 300))
+        XCTAssertEqual(moved.end, CGPoint(x: 160, y: 250))
+    }
+
+    func testDotsShowOnlyWhileOneArrowIsSelected() {
+        var core = core([arrow(100, 100, 300, 100), arrow(100, 300, 300, 300)])
+        XCTAssertEqual(core.overlay.dots.count, 3)
+        core.key(.character("a"), .command)
+        XCTAssertTrue(core.overlay.dots.isEmpty)
+        // A drag from an arrow's end moves the whole selection rather than that end.
+        core.drag(from: (300, 300), to: (320, 320))
+        XCTAssertEqual(arrowOf(core.drawing.marks[0])?.start, CGPoint(x: 120, y: 120))
+        XCTAssertEqual(arrowOf(core.drawing.marks[1])?.start, CGPoint(x: 120, y: 320))
+        XCTAssertEqual(arrowOf(core.drawing.marks[1])?.end, CGPoint(x: 320, y: 320))
     }
 
     func testOptionDragLeavesTheOriginalAndMovesACopy() {
@@ -376,6 +440,42 @@ final class EditorCoreTests: XCTestCase {
         core.drag(from: (50, 100), to: (-150, 100))
         XCTAssertEqual(frame(core.drawing.marks[0]), CGRect(x: 0, y: 50, width: 100, height: 100))
         XCTAssertEqual(frame(core.drawing.marks[1]), CGRect(x: 250, y: 100, width: 100, height: 100))
+    }
+
+    func testATextDraggedTowardTheRightEdgeStopsThereWithItsLines() throws {
+        var core = core([text("hello wonderful world", 800, 300)])
+        let id = core.drawing.marks[0].id
+        let start = try XCTUnwrap(textOf(core.mark(id)))
+        let lines = core.geometry.layout(start).lines.count
+        let box = core.geometry.layout(start).box
+        core.press(box.minX + 5, box.midY)
+        var x = start.origin.x
+        for step in 1...30 {
+            core.dragTo(box.minX + 5 + CGFloat(step * 5), box.midY)
+            let text = try XCTUnwrap(textOf(core.mark(id)))
+            XCTAssertGreaterThanOrEqual(text.origin.x, x)
+            XCTAssertEqual(core.geometry.layout(text).lines.count, lines)
+            x = text.origin.x
+        }
+        core.release(box.minX + 155, box.midY)
+        let moved = try XCTUnwrap(textOf(core.mark(id)))
+        XCTAssertEqual(core.geometry.layout(moved).box.maxX, 1000 * (1 - TextLayout.margin), accuracy: 1e-6)
+    }
+
+    func testATextNudgedTowardTheRightEdgeStopsThereWithItsLines() throws {
+        var core = core([text("a longer sentence that wraps into several lines near the edge", 800, 200)])
+        let id = core.drawing.marks[0].id
+        let lines = core.geometry.layout(try XCTUnwrap(textOf(core.mark(id)))).lines.count
+        var x = try XCTUnwrap(textOf(core.mark(id))).origin.x
+        for press in 0..<20 {
+            core.key(.right, .shift, isRepeat: press > 0)
+            let text = try XCTUnwrap(textOf(core.mark(id)))
+            XCTAssertGreaterThanOrEqual(text.origin.x, x)
+            XCTAssertEqual(core.geometry.layout(text).lines.count, lines)
+            x = text.origin.x
+        }
+        let moved = try XCTUnwrap(textOf(core.mark(id)))
+        XCTAssertEqual(core.geometry.layout(moved).box.maxX, 1000 * (1 - TextLayout.margin), accuracy: 1e-6)
     }
 
     // MARK: Keys
@@ -663,6 +763,31 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(core.undoSteps.count, 1)
     }
 
+    func testPastingMarksSomeOfWhoseOriginalsAreGoneStepsPastTheOnesStillThere() throws {
+        var core = core([rect(100, 100, 50, 50), rect(300, 100, 50, 50)])
+        core.key(.character("a"), .command)
+        let payload = try XCTUnwrap(copied(core.key(.character("c"), .command)))
+        core.click(300, 125)
+        core.key(.delete)
+        _ = core.reduce(.paste(.marks(payload)))
+        XCTAssertEqual(core.drawing.marks.suffix(2).map(frame), [CGRect(x: 110, y: 110, width: 50, height: 50), CGRect(x: 310, y: 110, width: 50, height: 50)])
+    }
+
+    func testAMarkPastedTooThinToHaveAnAreaIsDropped() {
+        // 5e-324 px passes the validator; from point scale 8 to 0.5 it is scaled to nothing.
+        var core = core(scale: 0.5)
+        _ = core.reduce(.paste(.marks(CopiedMarks(pointScale: 8, marks: [rect(0, 100, 5e-324, 100)]))))
+        XCTAssertTrue(core.drawing.marks.isEmpty)
+        // Where its left handle would be, a drag now meets empty space.
+        core.drag(from: (0, 150), to: (40, 150))
+        for mark in core.drawing.marks {
+            XCTAssertGreaterThan(frame(mark)?.width ?? 1, 0)
+            XCTAssertGreaterThan(frame(mark)?.height ?? 1, 0)
+        }
+        let flat = CGRect(x: 0, y: 100, width: 0, height: 100)
+        XCTAssertEqual(core.geometry.resized(flat, by: .left, delta: CGVector(dx: 40, dy: 0), proportional: false, fromCenter: false), flat)
+    }
+
     func testCmdVOfAnImageAddsNothingAndSaysSo() {
         var core = core()
         let effects = core.reduce(.paste(.image))
@@ -746,6 +871,18 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(core.drawing.marks.count, 2, "undo takes the text and leaves the agent's marks")
         core.key(.character("z"), .command)
         XCTAssertTrue(core.drawing.marks.isEmpty)
+    }
+
+    func testAColourTheCopyOfTheDrawingChangesGoesToTheHost() {
+        var answer: MarkColor?
+        var core = core(pick: { _ in answer })
+        core.drag(from: (100, 100), to: (300, 250))
+        _ = core.reduce(.timerFired)
+        answer = .yellow
+        core.click(600, 500)
+        let effects = core.key(.character("c"), .command)
+        XCTAssertEqual(core.drawing.marks[0].color, .yellow)
+        XCTAssertTrue(effects.contains(.scheduleTimer))
     }
 
     func testAControlClickDoesNothing() {

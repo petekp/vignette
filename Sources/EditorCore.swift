@@ -36,7 +36,8 @@ struct EditorMetrics: Equatable {
 
 /// Everything the drawing editor decides, as a reducer with no view in it. The view turns events
 /// into `Input`s, runs the `Effect`s each one returns in order, and draws `drawing`, `overlay` and
-/// the text being typed. It hit-tests nothing itself: `overlay` is what a press is tested against.
+/// the text being typed. It hit-tests nothing itself: `target(at:)` tests a press against the
+/// overlay's handles and dots as drawn, then against the marks by `EditorGeometry.hit`.
 ///
 /// Locations are image px from the image's top-left corner, y down. A size the spec gives in screen
 /// pt becomes px through `zoom`, so it keeps its size on screen; one in pt becomes px through the
@@ -317,6 +318,8 @@ struct EditorCore {
         var handles: [Handle] = []
         var dots: [Dot] = []
         var brush: CGRect?
+        /// The width a Text tool drag is choosing, as the new text's first line.
+        var wrap: CGRect?
     }
 
     /// What a press would act on.
@@ -338,6 +341,7 @@ struct EditorCore {
     private(set) var drawing = Drawing(key: "", pixels: PixelSize(width: 0, height: 0), pointScale: 1, marks: [])
     private(set) var style = TextStyle.standard
     private(set) var metrics = EditorMetrics.standard
+    private let layouts = TextLayoutCache()
     private var pickColor: ColorPick = { _ in nil }
     private(set) var tool = Tool.rectangle
     private(set) var selection: Set<Mark.ID> = []
@@ -418,7 +422,7 @@ struct EditorCore {
     }
 
     var geometry: EditorGeometry {
-        EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: style, metrics: metrics, zoom: zoom)
+        EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: style, metrics: metrics, zoom: zoom, layouts: layouts)
     }
 
     var canUndo: Bool { !undoSteps.isEmpty }
@@ -598,7 +602,7 @@ struct EditorCore {
             colorOwed.remove(mark.id)
             if color != mark.color {
                 drawing.marks[index].color = color
-                unsaved = true
+                changed()
             }
         }
     }
@@ -611,14 +615,14 @@ struct EditorCore {
 
     /// Replaces the mark with the same id, kept inside the image, noting it in the open edit.
     private mutating func replace(_ mark: Mark) {
-        guard let index = index(of: mark.id), let placed = geometry.placed(mark) else { return }
+        guard let index = index(of: mark.id), let placed = geometry.placedKeepingLines(mark) else { return }
         edit?.note(mark.id)
         drawing.marks[index] = placed
     }
 
     /// Puts a new mark on top, kept inside the image, noting it in the open edit.
     private mutating func add(_ mark: Mark) {
-        guard index(of: mark.id) == nil, let placed = geometry.placed(mark) else { return }
+        guard index(of: mark.id) == nil, let placed = geometry.placedKeepingLines(mark) else { return }
         edit?.note(mark.id)
         drawing.marks.append(placed)
     }
@@ -869,7 +873,9 @@ struct EditorCore {
             case .arrow:
                 return
             }
-            replace(mark)
+            // A text scaled from a corner grows, so it moves left near the edge as a typed one does.
+            guard let resized = geometry.placed(mark) else { return }
+            replace(resized)
         case .draggingEnd(let id, let kind):
             guard var mark = edit?.original(id), case .arrow(var arrow) = mark.geometry else { return }
             let other = kind == .start ? arrow.end : arrow.start
@@ -898,7 +904,7 @@ struct EditorCore {
     private mutating func move(originals: [Mark.ID], copies: [Mark.ID], by delta: CGVector) {
         guard let edit else { return }
         let starts = originals.compactMap { edit.original($0) }
-        guard let extent = geometry.extent(of: starts) else { return }
+        guard let extent = geometry.movingExtent(of: starts) else { return }
         var delta = delta
         if modifiers.contains(.shift) {
             if abs(delta.dx) >= abs(delta.dy) { delta.dy = 0 } else { delta.dx = 0 }
@@ -955,9 +961,13 @@ struct EditorCore {
             }
         case .wrapping:
             guard event != nil else { return }
-            let left = min(max(min(press.location.x, gesture.pointer.x), 0), geometry.image.width)
-            let right = min(max(max(press.location.x, gesture.pointer.x), 0), geometry.image.width)
-            newText(at: CGPoint(x: left, y: press.location.y), wrap: max(right - left, 1))
+            let span = wrapSpan(gesture)
+            // Brought back under the drag distance, the drag is a click.
+            if span.width * zoom < metrics.textDragDistance {
+                newText(at: press.location, wrap: nil)
+            } else {
+                newText(at: CGPoint(x: span.minX, y: press.location.y), wrap: max(span.width, geometry.pt(metrics.newTextSize)))
+            }
         case .drawing(let id):
             guard let mark = mark(id) else {
                 revertEdit()
@@ -1016,8 +1026,7 @@ struct EditorCore {
                 break
             }
         }
-        for mark in chosen.reversed() {
-            guard case .arrow(let arrow) = mark.geometry else { continue }
+        if chosen.count == 1, let mark = chosen.first, case .arrow(let arrow) = mark.geometry {
             for (kind, center) in geometry.dotCenters(of: arrow) {
                 overlay.dots.append(Dot(mark: mark.id, kind: kind, center: center, radius: geometry.screen(metrics.dotRadius),
                                         hitRadius: geometry.screen(metrics.dotHitRadius), hovered: hover == .dot(mark.id, kind)))
@@ -1027,7 +1036,20 @@ struct EditorCore {
             let a = gesture.press.location, b = gesture.pointer
             overlay.brush = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
         }
+        if let gesture, gesture.phase == .wrapping {
+            let span = wrapSpan(gesture), size = metrics.newTextSize
+            let top = geometry.textOrigin(at: geometry.inside(gesture.press.location), size: size).y
+            overlay.wrap = CGRect(x: span.minX, y: top, width: span.width, height: geometry.pt(size) * style.lineHeight)
+        }
         return overlay
+    }
+
+    /// The part of the image a Text tool drag spans across, from the press to the pointer.
+    private func wrapSpan(_ gesture: Gesture) -> (minX: CGFloat, width: CGFloat) {
+        let width = geometry.image.width
+        let left = min(max(min(gesture.press.location.x, gesture.pointer.x), 0), width)
+        let right = min(max(max(gesture.press.location.x, gesture.pointer.x), 0), width)
+        return (left, right - left)
     }
 
     /// What a press at `point` acts on: a handle or dot of the selection first, with end dots before
@@ -1141,7 +1163,8 @@ struct EditorCore {
         text.text = Self.capped(string)
         text.origin = typing.anchor
         mark.geometry = .text(text)
-        replace(mark)
+        guard let grown = geometry.placed(mark) else { return }
+        replace(grown)
         changed()
     }
 
@@ -1265,7 +1288,7 @@ struct EditorCore {
     /// edges. The presses and repeats of one hold are one undo step.
     private mutating func nudge(by points: CGFloat) {
         let marks = drawing.marks.filter { selection.contains($0.id) }
-        guard let extent = geometry.extent(of: marks) else { return }
+        guard let extent = geometry.movingExtent(of: marks) else { return }
         var direction = CGVector.zero
         for key in heldArrows { if let d = key.direction { direction.dx += d.dx; direction.dy += d.dy } }
         let offset = geometry.clamped(CGVector(dx: direction.dx * geometry.pt(points), dy: direction.dy * geometry.pt(points)), keeping: extent)
@@ -1296,7 +1319,7 @@ struct EditorCore {
         let marks = drawing.marks.filter { selection.contains($0.id) }
         guard !marks.isEmpty else { return }
         let offset = geometry.pt(Self.copyOffset)
-        insert(geometry.placedGroup(marks.map(Self.fresh), offset: CGVector(dx: offset, dy: offset)))
+        insert(geometry.placedGroup(marks.map(Self.fresh), offset: CGVector(dx: offset, dy: offset), keepingLines: true))
     }
 
     /// Puts `marks` on top as one step, selected.
@@ -1346,7 +1369,8 @@ struct EditorCore {
             let at = pointer.flatMap { image.encloses($0) ? $0 : nil } ?? CGPoint(x: image.midX, y: image.midY)
             let size = metrics.newTextSize
             let text = Mark.Text(origin: geometry.textOrigin(at: at, size: size), text: words, wrap: nil, size: size)
-            insert([Mark(geometry: .text(text))])
+            guard let mark = geometry.placed(Mark(geometry: .text(text))) else { return }
+            insert([mark])
         case .image:
             emit(.toast("Images can't be pasted here"))
         case .other:
@@ -1356,7 +1380,8 @@ struct EditorCore {
 
     /// Copied marks keep their size and place in pt. On the same screenshot, while the marks they
     /// came from are still there, they land 10 pt right and down, and 10 pt more for each copy
-    /// already there; anywhere else, where the originals were.
+    /// already there, with their texts' lines as they were; anywhere else, where the originals were,
+    /// placed as marks from outside.
     private mutating func pasteMarks(_ copied: CopiedMarks) {
         let factor = drawing.pointScale / copied.pointScale
         let converted = copied.marks.map { mark -> Mark in
@@ -1376,15 +1401,19 @@ struct EditorCore {
             }
             return mark
         }
+        // A mark already where one of them would land means the originals, or copies of them, are here.
+        func present(_ marks: [Mark]) -> Bool {
+            marks.contains { candidate in drawing.marks.contains { $0.geometry == candidate.geometry } }
+        }
+        guard present(converted) else {
+            return insert(geometry.placedGroup(converted, offset: .zero, keepingLines: false))
+        }
         let step = geometry.pt(Self.copyOffset)
         func landing(_ copies: Int) -> [Mark] {
-            geometry.placedGroup(converted, offset: CGVector(dx: step * CGFloat(copies), dy: step * CGFloat(copies)))
+            geometry.placedGroup(converted, offset: CGVector(dx: step * CGFloat(copies), dy: step * CGFloat(copies)), keepingLines: true)
         }
-        func present(_ marks: [Mark]) -> Bool {
-            !marks.isEmpty && marks.allSatisfy { candidate in drawing.marks.contains { $0.geometry == candidate.geometry } }
-        }
-        var copies = 0
-        var candidate = landing(0)
+        var copies = 1
+        var candidate = landing(1)
         while present(candidate), copies < 1000 {
             copies += 1
             let next = landing(copies)
