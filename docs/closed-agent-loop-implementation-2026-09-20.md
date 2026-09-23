@@ -105,6 +105,10 @@ An adversarial read of the whole feature found sixteen things. Nine were changed
 recorded under Known limits or were already what they should be. Each change has a test that fails
 without it.
 
+The rows about the canvas and `render` are history: they describe the web editor, which the native
+editor replaced on 2026-09-22. A reply's marks now join the screenshot's drawing through
+`Drawings.add`, which never waits for the editor, and `canvasMaybeFreed` is gone.
+
 | Found | Change |
 | --- | --- |
 | A reply carrying its own image was refused `store-failed` unless a marks-only reply had already created `payloads/`. Every first `--image` reply to a request failed. | The directory is created before the image is written. Verified live: a `--image` reply is now accepted, reserved, and published, and the card carries the agent's own picture. |

@@ -6,6 +6,11 @@ The card flies from its slot in the stack to the annotator's frame while the ann
 image behind a hidden window. This note says what an Esc or a click on another card did during that
 flight, what it does now, and what the camera saw.
 
+The measurements were made on the web editor, which the native editor replaced on 2026-09-22.
+"What it did" and "What the camera saw" are that history. The reducer's branch and the flight's
+turnaround are unchanged; what `abandon` does, and what the editor is left holding, are written
+here for the native editor.
+
 ## What it did
 
 `prepare` sends the card out and the reducer sits in `flyingOut` until the flight's `arrived`
@@ -38,9 +43,11 @@ the same turn:
 | `close`, from a lone thumbnail | `abandon(a)`, `hideAnnotator` |
 | `annotate(b)` | `abandon(a)`, `returnCard(a)`, `prepare(b)` |
 
-`abandon` is `AnnotationController.abandon()`: the page lets the image go, the canvas is reset, the
-stand-in's session ends and the window — which was never ordered in — is taken down. Nothing is
-written, so the stored draft the page was told to load is exactly as it was.
+`abandon` is `AnnotationController.abandon()`: the editor parks the drawing and stores it, and the
+window, which was never shown, is taken down with no fit-out. It stores the drawing because the
+editor holds the keys from `prepare`, so a key pressed during the flight can change it. It skips the
+fit-out because no zoom can have happened: the zoom keys are ignored until the window is up. With
+nothing changed, the stored drawing is written back as it was.
 
 `returnCard` re-aims the flight that is already in the air. `TransitionLayer.fly` on an id it
 already holds keeps the frame, puts the old path in `previousPath` and animates `blend` back to 1,
@@ -51,17 +58,20 @@ two flights, one each way, the same pair the annotation queue's handover runs.
 card's offscreen slot before it sends the event, and `hideAnnotator` would end that flight; the
 park keeps the card in the layer until the column has slid out.
 
-`finish` also still parks. Done renders on the page, so it cannot come from a window that never
-appeared; if it ever does, there is a rendering and the draft behind it is worth storing.
+`finish` also still parks. The editor holds the keys from `prepare`, so Return can finish before
+the window is up; the drawing is parked as usual and the card comes back marked copied.
 
 ### Why a branch rather than a park that answers at once
 
 `AnnotationController.hide` could have answered immediately for a window that never came up, and
-the reducer would not have changed. Two reasons against it. The turnaround would still be a
-callback the page's own state can delay, which is the failure this item is about. And `parked`
-would then arrive inside the `send` that emitted `park`, re-entering the effect loop that the
-annotation queue's handover runs in. The branch says the rule where it belongs: a session nobody
-saw has nothing to store.
+the reducer would not have changed. When this was written, two reasons stood against it. The
+turnaround would still have been a callback the web page's own state could delay, which is the
+failure this item is about. And `parked` would then have arrived inside the `send` that emitted
+`park`, re-entering the effect loop that the annotation queue's handover runs in.
+
+The native editor parks synchronously, so a park now does answer inside that `send`, and
+`ThumbnailController.send` holds the answer until the event that asked for it is done. The branch
+stays because it skips the fit-out, which a window nobody saw cannot need.
 
 ## What the camera saw
 
@@ -97,10 +107,12 @@ taken after each.
 
 Afterwards `stack.cards` held t1 with `out: false` — home in its slot — and t2 out, in the annotator.
 
-**A draft survives.** A rectangle was drawn on the fixture and parked (`[draft] parked Screenshot
-t1.png`, `[drafts] 21`). Reopening that card and cancelling 136 ms into the flight logged
-`close -> idle effects=abandon returnCard` and no `[draft]` line at all; the card still read
-`draft: true` and the store still held it.
+**A draft survives.** On the web editor, a rectangle was drawn on the fixture and parked
+(`[draft] parked Screenshot t1.png`, `[drafts] 21`). Reopening that card and cancelling 136 ms into
+the flight logged `close -> idle effects=abandon returnCard` and no `[draft]` line at all; the card
+still read `draft: true` and the store still held it. The native editor's `abandon` writes the
+drawing instead, so the same sequence now logs `[drawing] parked`, and the drawing is the one the
+card had unless a key changed it during the flight.
 
 **`ui.motion: 0`.** `expandDuration` is 0, so the flight lands in the turn after it starts and
 `flyingOut` is over before a cancel or a second annotate can reach it: both went through
@@ -108,12 +120,10 @@ t1.png`, `[drafts] 21`). Reopening that card and cancelling 136 ms into the flig
 (`annotate -> flyingOut`, `shown -> annotating`, `close -> parking`, `parked -> idle`, all inside
 36 ms).
 
-## What the page is left holding
+## What the editor is left holding
 
-`loadImageQuietly` puts the image on the canvas at once but reports `loaded` from a double
-`requestAnimationFrame`, and WebKit pauses frames while the window is hidden. An abandoned load
-therefore leaves that callback pending; it fires the next time the annotator window appears and
-posts a `loaded` for a key that is no longer in the annotator, which the log shows as a stale
-`[annotate] loaded <n>ms` beside the real one. `pageLoaded` lifts a flight only for the key the
-reducer says is `annotating`, and `prepare` clears `loadedKeys` for the key it opens, so the next
-annotate starts clean. `abandon` clears that key too.
+A decode or a colour sample that answers after its image was abandoned is dropped:
+`AnnotationController.open` counts opens in `openGeneration`, and each answer checks it. A flight's
+image is lifted only for the key the reducer says is `annotating` (`ThumbnailController.editorLoaded`),
+`prepare` clears `loadedKeys` for the key it opens, and `abandon` clears that key too, so the next
+annotate of it waits for its own `loaded`.
