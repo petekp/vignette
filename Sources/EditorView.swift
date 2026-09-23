@@ -65,6 +65,9 @@ final class EditorView: NSView {
     private var placedPicture = CGRect.zero
     private var screenshotName = ""
     private var typingField: TypingField?
+    /// The text view of a typing session that ended, kept over its text until the text's bitmap is
+    /// on its layer, so the words are on screen in every frame.
+    private var lingering: TypingField?
     private var handOverTimer: Timer?
     private var restTimer: Timer?
     private var zoomMoving = false
@@ -84,6 +87,9 @@ final class EditorView: NSView {
         addSubview(canvas)
         canvas.host.addSublayer(picture.layer)
         canvas.host.addSublayer(overlay.layer)
+        picture.onTextDrawn = { [weak self] id in
+            if self?.lingering?.id == id { self?.settleLingering() }
+        }
         registerForDraggedTypes([.fileURL] + NSImage.imageTypes.map { NSPasteboard.PasteboardType($0) })
     }
 
@@ -98,7 +104,8 @@ final class EditorView: NSView {
     /// Opens a screenshot with its drawing, an empty one when it has none. `image` is the screenshot
     /// decoded at any size; it fills the drawing's `pixels`, shown at `picture` in the view.
     /// `pickColor` is the colour pass's pick, which may answer nil until its sample exists
-    /// (`colorSampleArrived`).
+    /// (`colorSampleArrived`). The strokes are on screen when this returns; each text follows a
+    /// moment later, once its bitmap is drawn off the main thread.
     func open(_ drawing: Drawing, image: CGImage, picture: CGRect, style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle,
               pickColor: @escaping EditorCore.ColorPick) {
         stopTimers()
@@ -107,6 +114,7 @@ final class EditorView: NSView {
         self.picture.open(image, pixels: drawing.pixels)
         placedPicture = picture
         handle(.open(drawing, style: style, metrics: metrics, arrowhead: arrowhead, pickColor: pickColor))
+        dropLingering()
         guard core.isOpen else {
             Log.write("[editor] error open-refused \(screenshotName): pixels=\(drawing.pixels.width)x\(drawing.pixels.height) pointScale=\(drawing.pointScale)")
             return
@@ -116,7 +124,8 @@ final class EditorView: NSView {
     }
 
     /// The drawing to store, at once: a gesture ends as if released, typing ends, and the colour pass
-    /// runs. Nil when nothing is open. The editor then ignores every input until the next `open`.
+    /// runs. Nil when nothing is open. The editor then ignores every input until the next `open`, and
+    /// what it shows stays as it is: a text bitmap still being drawn is never put on screen.
     func park() -> Drawing? {
         guard core.isOpen else { return nil }
         var parked: Drawing?
@@ -125,6 +134,7 @@ final class EditorView: NSView {
         }
         heldArrows = []
         refresh()
+        picture.park()
         return parked
     }
 
@@ -237,10 +247,11 @@ final class EditorView: NSView {
         let transform = toView
         let geometry = core.geometry
         picture.layer.setAffineTransform(transform)
-        picture.show(core.drawing, typing: core.typing?.id, geometry: geometry, style: core.style,
+        picture.show(core.drawing, typing: core.typing?.id, covered: lingering?.id, geometry: geometry, style: core.style,
                      resolution: resolution, gesture: core.gesture != nil)
         overlay.show(core.overlay, drawing: core.drawing, geometry: geometry, transform: transform)
         placeTypingField()
+        settleLingering()
         CATransaction.commit()
     }
 
@@ -309,6 +320,7 @@ final class EditorView: NSView {
         guard let mark = core.mark(id), case .text(let text) = mark.geometry else { return }
         if typingField?.id != id {
             endTyping()
+            dropLingering()
             let field = TypingField(id: id, text: text, color: mark.color, pointScale: core.drawing.pointScale,
                                     imageWidth: CGFloat(core.drawing.pixels.width), style: core.style)
             field.onChange = { [weak self] words in self?.handle(.typingChanged(words)) }
@@ -331,7 +343,25 @@ final class EditorView: NSView {
         guard let field = typingField else { return }
         typingField = nil
         if window?.firstResponder === field.textView { window?.makeFirstResponder(self) }
-        field.textView.removeFromSuperview()
+        dropLingering()
+        field.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        field.textView.isEditable = false
+        field.textView.isSelectable = false
+        lingering = field
+    }
+
+    /// Takes the ended session's text view away once its text's bitmap shows the text, or the text is
+    /// gone; until then it follows the zoom over the text.
+    private func settleLingering() {
+        guard let field = lingering else { return }
+        guard case .text(let text)? = core.mark(field.id)?.geometry, !picture.isDrawn(field.id) else { return dropLingering() }
+        let transform = toView
+        field.place(text, box: core.geometry.layout(text).box, imageWidth: CGFloat(core.drawing.pixels.width)) { $0.applying(transform) }
+    }
+
+    private func dropLingering() {
+        lingering?.textView.removeFromSuperview()
+        lingering = nil
     }
 
     /// Puts the text view over the core's box for the text, which may have moved as it grew.

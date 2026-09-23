@@ -24,22 +24,35 @@ enum EditorStyle {
 /// (`Mark.shape`). Core Animation draws it sharp at any zoom with nothing redrawn, and a change to it
 /// is a new path, however large the mark.
 ///
-/// A text is a bitmap the renderer draws, because only the renderer draws its outline. It is drawn
-/// at the zoom's resolution, and drawn again once the zoom rests if that changed and the text is in
-/// view. No text bitmap has more pixels than the part of the view the picture fills: a text too
+/// A text is a bitmap the renderer draws on `textQueue`, because only the renderer draws its outline.
+/// It is drawn at the zoom's resolution, and drawn again once the zoom rests if that changed and the
+/// text is in view. Until a new bitmap arrives the old one stays, scaled, and a text that only moved
+/// slides it. No text bitmap has more pixels than the part of the view the picture fills: a text too
 /// large for that is drawn whole at the resolution that fits, and its part in view is drawn at the
-/// zoom's resolution over it once the zoom rests. A text out of view at rest keeps no more than
-/// the resolution of the whole image fitted to the view. So a text holds at most two bitmaps, each
-/// no larger than the view in device pixels, and the texts out of view no more than they need at
-/// the fit.
+/// zoom's resolution over it once the zoom rests. A text out of view at rest keeps no more than the
+/// resolution of the whole image fitted to the view. A text holds at most two bitmaps, the one on its
+/// way included, each no larger than the view in device pixels.
 @MainActor
 final class EditorPicture {
+    /// Where the texts' bitmaps are drawn: one serial queue for what the editor shows, apart from any
+    /// export's, so a long export never delays the screen.
+    nonisolated static let textQueue = DispatchQueue(label: "vignette.editor-texts", qos: .userInteractive)
+
     /// Units are image px from the top-left corner, y down; the owner sets its transform.
     let layer = CALayer()
+    /// A text's bitmap has just arrived and shows the text as it is. Called inside the transaction
+    /// that put it on its layer, so whatever covered the text can go in the same frame.
+    var onTextDrawn: ((Mark.ID) -> Void)?
     private let screenshot = CALayer()
     private var shapes: [Mark.ID: ShapeMark] = [:]
     private var texts: [Mark.ID: TextMark] = [:]
     private var contentsScale: CGFloat = 2
+    /// The last `show`, by which a bitmap that arrives later is placed.
+    private var state: State?
+    /// Counts `open` and `park`: a draw asked for before either is never shown.
+    private var session = 0
+    /// After `park`, nothing changes until the next `open`.
+    private var parked = false
 
     /// A rectangle's, an ellipse's or an arrow's layers: the stroke, and over it the arrowhead's fill.
     private final class ShapeMark {
@@ -69,22 +82,41 @@ final class EditorPicture {
         }
     }
 
+    /// What a text bitmap is drawn for: the mark, the part of the image it covers, in px, and its
+    /// resolution, in device px per px.
+    private struct TextTarget: Equatable {
+        let mark: Mark
+        let region: CGRect
+        let scale: CGFloat
+    }
+
+    private enum Part { case whole, detail }
+
+    /// What a text wants drawn now. A queued draw reads it before it starts, and is skipped when its
+    /// text no longer wants it.
+    private final class Wanted: @unchecked Sendable {
+        private let lock = NSLock()
+        private var targets: [TextTarget] = []
+
+        func set(_ targets: [TextTarget]) { lock.withLock { self.targets = targets } }
+        func contains(_ target: TextTarget) -> Bool { lock.withLock { targets.contains(target) } }
+    }
+
     /// A text's bitmap, and the bitmap of its part in view when the whole is drawn coarser than the
     /// zoom needs. The part in view covers everything in view, so the whole is hidden under it while
     /// nothing moves: the coarse bitmap's softer edges would show around the sharp letters.
     private final class TextMark {
         let whole = CALayer()
         let detail = CALayer()
-        /// The mark as drawn; nil until it is.
-        var mark: Mark?
-        /// What `whole` covers, in px, and its resolution, in device px per px.
-        var region = CGRect.null
-        var scale: CGFloat = 0
-        /// `whole` was slid with a move instead of drawn again, so it may sit between device pixels.
-        var slid = false
-        /// What `detail` covers, in px, and its resolution; `.null` and 0 when it is not shown.
-        var detailRegion = CGRect.null
-        var detailScale: CGFloat = 0
+        /// What `whole` and `detail` show; nil when they show nothing.
+        var drawn: TextTarget?
+        var detailDrawn: TextTarget?
+        /// What they should show, as of the last update.
+        var wantWhole: TextTarget?
+        var wantDetail: TextTarget?
+        /// The one draw on its way for this text.
+        var pending: (part: Part, target: TextTarget)?
+        let wanted = Wanted()
 
         init() {
             for bitmap in [whole, detail] {
@@ -99,9 +131,16 @@ final class EditorPicture {
         func clearDetail() {
             detail.contents = nil
             detail.isHidden = true
-            detailRegion = .null
-            detailScale = 0
+            detailDrawn = nil
         }
+    }
+
+    /// What a draw on the queue came back with.
+    private enum Result {
+        /// Its text no longer wanted it when its turn came.
+        case skipped
+        /// Nil when there was nothing to draw into.
+        case drawn(CGImage?)
     }
 
     /// How finely the owner wants the picture drawn.
@@ -120,6 +159,16 @@ final class EditorPicture {
         var moving: Bool
     }
 
+    private struct State {
+        let drawing: Drawing
+        let geometry: EditorGeometry
+        let style: TextStyle
+        let resolution: Resolution
+        let gesture: Bool
+        let typing: Mark.ID?
+        let covered: Mark.ID?
+    }
+
     init() {
         layer.anchorPoint = .zero
         layer.position = .zero
@@ -132,8 +181,12 @@ final class EditorPicture {
 
     /// A new screenshot: its image, decoded at any size, fills `pixels`.
     func open(_ image: CGImage, pixels: PixelSize) {
+        session += 1
+        parked = false
+        state = nil
         for record in shapes.values { record.stroke.removeFromSuperlayer() }
         for record in texts.values {
+            record.wanted.set([])
             record.whole.removeFromSuperlayer()
             record.detail.removeFromSuperlayer()
         }
@@ -142,6 +195,16 @@ final class EditorPicture {
         layer.bounds = pixels.bounds
         screenshot.frame = pixels.bounds
         screenshot.contents = image
+    }
+
+    /// Keeps what is on screen as it is until the next `open`: no bitmap on its way is shown.
+    func park() {
+        session += 1
+        parked = true
+        for record in texts.values {
+            record.wanted.set([])
+            record.pending = nil
+        }
     }
 
     /// The device pixels per point of the screen the picture is on, for the shape layers.
@@ -155,23 +218,21 @@ final class EditorPicture {
 
     /// Shows `drawing` without the mark being typed. `gesture` is true while one is under way: a
     /// text that only moved slides its bitmap along, and is drawn again once the gesture is over.
-    func show(_ drawing: Drawing, typing: Mark.ID?, geometry: EditorGeometry, style: TextStyle, resolution: Resolution, gesture: Bool) {
+    /// `covered` is a text something else shows until its bitmap arrives, which stays hidden until then.
+    func show(_ drawing: Drawing, typing: Mark.ID?, covered: Mark.ID?, geometry: EditorGeometry, style: TextStyle, resolution: Resolution,
+              gesture: Bool) {
+        guard !parked else { return }
+        let state = State(drawing: drawing, geometry: geometry, style: style, resolution: resolution, gesture: gesture, typing: typing, covered: covered)
+        self.state = state
         var layers: [CALayer] = [screenshot]
         var seen = Set<Mark.ID>()
+        var inView: [TextMark] = [], outOfView: [TextMark] = []
         for mark in drawing.marks {
             seen.insert(mark.id)
             if case .text(let text) = mark.geometry {
                 let record = texts[mark.id] ?? TextMark()
-                if mark.id == typing {
-                    // Drawn again from scratch when typing ends.
-                    record.mark = nil
-                    record.clearDetail()
-                    record.whole.isHidden = true
-                } else {
-                    show(record, mark, text, in: drawing, geometry: geometry, style: style, resolution: resolution, gesture: gesture)
-                    record.whole.isHidden = !record.detail.isHidden && !resolution.moving
-                }
                 texts[mark.id] = record
+                if update(record, mark, text, state) { inView.append(record) } else { outOfView.append(record) }
                 layers.append(record.whole)
                 layers.append(record.detail)
             } else {
@@ -188,6 +249,7 @@ final class EditorPicture {
             shapes[id] = nil
         }
         for id in texts.keys where !seen.contains(id) {
+            texts[id]?.wanted.set([])
             texts[id]?.whole.removeFromSuperlayer()
             texts[id]?.detail.removeFromSuperlayer()
             texts[id] = nil
@@ -195,69 +257,155 @@ final class EditorPicture {
         if layer.sublayers.map({ $0.map(ObjectIdentifier.init) }) != layers.map(ObjectIdentifier.init) {
             layer.sublayers = layers
         }
+        // The texts in view are drawn first.
+        for record in inView + outOfView { schedule(record, state) }
     }
 
-    private func show(_ record: TextMark, _ mark: Mark, _ text: Mark.Text, in drawing: Drawing, geometry: EditorGeometry, style: TextStyle,
-                      resolution: Resolution, gesture: Bool) {
-        let whole = Self.padded(text, geometry: geometry).intersection(drawing.pixels.bounds)
+    /// Whether the text's bitmap on screen shows it as it is now.
+    func isDrawn(_ id: Mark.ID) -> Bool {
+        guard let record = texts[id] else { return false }
+        return record.drawn == record.wantWhole
+    }
+
+    /// Decides what a text's layers should show and places what they have. True when the text is in view.
+    @discardableResult
+    private func update(_ record: TextMark, _ mark: Mark, _ text: Mark.Text, _ state: State) -> Bool {
+        if mark.id == state.typing {
+            // The text view shows the words; the bitmap is brought up to date when typing ends.
+            record.wantWhole = nil
+            record.wantDetail = nil
+            record.wanted.set([])
+            record.clearDetail()
+            record.whole.isHidden = true
+            return true
+        }
+        let resolution = state.resolution, gesture = state.gesture
+        let whole = Self.padded(text, geometry: state.geometry).intersection(state.drawing.pixels.bounds)
         guard !whole.isNull, !whole.isEmpty, resolution.scale > 0 else {
             record.whole.contents = nil
+            record.drawn = nil
             record.clearDetail()
-            record.mark = mark
-            return
+            record.wantWhole = nil
+            record.wantDetail = nil
+            record.wanted.set([])
+            return false
         }
         let fits = (resolution.pixels / (whole.width * whole.height)).squareRoot()
         let inView = whole.intersection(resolution.visible)
         let visible = !inView.isNull && !inView.isEmpty
         let scale = visible ? min(resolution.scale, fits) : min(resolution.scale, fits, resolution.fit)
+        let settled = !resolution.moving && !gesture
 
-        if record.mark != mark {
-            if gesture, let old = record.mark, let offset = Self.translation(from: old, to: mark, geometry: geometry) {
-                record.region = record.region.offsetBy(dx: offset.dx, dy: offset.dy)
-                record.whole.frame = record.region
-                // The part in view would slide out of view; the whole shows until the gesture ends.
-                record.clearDetail()
-                record.slid = true
-            } else {
-                draw(record, mark, whole: whole, scale: scale, in: drawing, style: style)
+        // The bitmap it has, where it belongs: a text that only moved slides it.
+        var slid = false
+        if let drawn = record.drawn {
+            var frame = drawn.region
+            if drawn.mark != mark, let offset = Self.translation(from: drawn.mark, to: mark, geometry: state.geometry) {
+                frame = frame.offsetBy(dx: offset.dx, dy: offset.dy)
+                slid = true
             }
-            record.mark = mark
-        } else if !gesture, record.slid {
-            draw(record, mark, whole: whole, scale: scale, in: drawing, style: style)
-        } else if !resolution.moving, !gesture, abs(record.scale - scale) > scale * 0.01 {
-            if visible {
-                draw(record, mark, whole: whole, scale: scale, in: drawing, style: style)
-            } else if record.scale > scale, let image = record.whole.contents.map({ $0 as! CGImage }) {
+            record.whole.frame = frame.isNull ? .zero : frame
+        }
+
+        let fresh = TextTarget(mark: mark, region: Self.aligned(whole, scale: scale), scale: scale)
+        let onItsWay = record.pending?.part == .whole ? record.pending?.target : nil
+        let want: TextTarget
+        if let drawn = record.drawn, drawn.mark == mark {
+            if settled, abs(drawn.scale - scale) > scale * 0.01, visible || drawn.scale > scale {
                 // Out of view it only has to be there while a pan brings it back, so the bitmap it
                 // has is scaled down, several times faster than the renderer draws it again.
-                record.whole.contents = Self.scaled(image, to: record.region, scale: scale)
-                record.scale = scale
+                want = visible ? fresh : TextTarget(mark: mark, region: drawn.region, scale: scale)
+            } else if !settled, let onItsWay, onItsWay.mark == mark {
+                // A zoom that moves on still takes the bitmap drawn for its last rest.
+                want = onItsWay
+            } else {
+                want = drawn
             }
+        } else if slid, gesture, let drawn = record.drawn {
+            want = drawn
+        } else {
+            want = fresh
         }
+        record.wantWhole = want
 
-        // The part in view at the zoom's own resolution, while the whole is coarser and nothing moves.
-        guard !resolution.moving, !gesture, visible, record.scale < resolution.scale * 0.99 else {
-            if resolution.moving || gesture { return }
-            record.clearDetail()
-            return
+        // The part in view at the zoom's own resolution, once the whole is drawn coarser than that
+        // and nothing moves. While the zoom moves the one it has stays, and the whole shows around it.
+        var wantDetail: TextTarget?
+        if settled, visible, want == record.drawn, want.scale < resolution.scale * 0.99 {
+            let covers = { (target: TextTarget) in target.mark == mark && target.scale == resolution.scale && target.region.contains(inView) }
+            if let shown = record.detailDrawn, covers(shown) {
+                wantDetail = shown
+            } else if let pending = record.pending, pending.part == .detail, covers(pending.target) {
+                wantDetail = pending.target
+            } else {
+                wantDetail = TextTarget(mark: mark, region: Self.aligned(inView, scale: resolution.scale), scale: resolution.scale)
+            }
+        } else if !settled, !slid, let shown = record.detailDrawn, shown.mark == mark {
+            wantDetail = shown
         }
-        let region = Self.aligned(inView, scale: resolution.scale)
-        if record.detailScale == resolution.scale, record.detailRegion.contains(inView) { return }
-        record.detail.frame = region
-        record.detail.contents = Self.bitmap(of: mark, in: drawing, region: region, scale: resolution.scale, style: style)
-        record.detail.isHidden = false
-        record.detailRegion = region
-        record.detailScale = resolution.scale
+        record.wantDetail = wantDetail
+        // Let go before its replacement comes, so the text never holds more than two bitmaps.
+        if record.detailDrawn != wantDetail { record.clearDetail() }
+        record.wanted.set([want] + (wantDetail.map { [$0] } ?? []))
+        record.whole.isHidden = (state.covered == mark.id && record.drawn != want) || (!record.detail.isHidden && !resolution.moving)
+        return visible
     }
 
-    /// Draws the whole text at `scale` over `whole`, grown to whole device pixels.
-    private func draw(_ record: TextMark, _ mark: Mark, whole: CGRect, scale: CGFloat, in drawing: Drawing, style: TextStyle) {
-        record.region = Self.aligned(whole, scale: scale)
-        record.whole.frame = record.region.isNull ? .zero : record.region
-        record.whole.contents = Self.bitmap(of: mark, in: drawing, region: record.region, scale: scale, style: style)
-        record.scale = scale
-        record.slid = false
-        record.clearDetail()
+    /// Sends the text's next draw to the queue when none is on its way: the whole first, then the
+    /// part in view.
+    private func schedule(_ record: TextMark, _ state: State) {
+        guard record.pending == nil else { return }
+        let part: Part, target: TextTarget
+        var source: CGImage?
+        if let want = record.wantWhole, want != record.drawn {
+            (part, target) = (.whole, want)
+            if let drawn = record.drawn, drawn.mark == want.mark, drawn.region == want.region, want.scale < drawn.scale {
+                source = record.whole.contents.map { $0 as! CGImage }
+            }
+        } else if let want = record.wantDetail, want != record.detailDrawn {
+            (part, target) = (.detail, want)
+        } else {
+            return
+        }
+        record.pending = (part, target)
+        let session = self.session, wanted = record.wanted, identity = ObjectIdentifier(record)
+        let pointScale = state.drawing.pointScale, imageWidth = CGFloat(state.drawing.pixels.width), style = state.style
+        Self.textQueue.async { [weak self] in
+            var result = Result.skipped
+            if wanted.contains(target) {
+                result = .drawn(source.map { EditorPicture.scaled($0, to: target.region, scale: target.scale) }
+                                ?? EditorPicture.bitmap(of: target.mark, pointScale: pointScale, imageWidth: imageWidth, region: target.region,
+                                                        scale: target.scale, style: style))
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.arrived(result, part: part, target: target, for: identity, session: session) }
+            }
+        }
+    }
+
+    /// A draw came back. It is shown only if its text, in this session, still wants exactly it.
+    private func arrived(_ result: Result, part: Part, target: TextTarget, for identity: ObjectIdentifier, session: Int) {
+        guard session == self.session, let record = texts[target.mark.id], ObjectIdentifier(record) == identity else { return }
+        record.pending = nil
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if case .drawn(let image) = result {
+            if part == .whole, target == record.wantWhole {
+                record.whole.contents = image
+                record.drawn = target
+            } else if part == .detail, target == record.wantDetail {
+                record.detail.frame = target.region
+                record.detail.contents = image
+                record.detail.isHidden = false
+                record.detailDrawn = target
+            }
+        }
+        if let state, let mark = state.drawing.marks.first(where: { $0.id == target.mark.id }), case .text(let text) = mark.geometry {
+            update(record, mark, text, state)
+            schedule(record, state)
+        }
+        if isDrawn(target.mark.id) { onTextDrawn?(target.mark.id) }
+        CATransaction.commit()
     }
 
     /// The offset that takes `old` to `new`, when that is all that changed and the renderer would
@@ -293,7 +441,7 @@ final class EditorPicture {
     }
 
     /// `image`, which covers `region`, redrawn at `scale` device px to a px.
-    private static func scaled(_ image: CGImage, to region: CGRect, scale: CGFloat) -> CGImage? {
+    nonisolated private static func scaled(_ image: CGImage, to region: CGRect, scale: CGFloat) -> CGImage? {
         let width = Int((region.width * scale).rounded()), height = Int((region.height * scale).rounded())
         guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
               let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
@@ -303,8 +451,10 @@ final class EditorPicture {
         return ctx.makeImage()
     }
 
-    /// `mark` drawn by the renderer over `region` of the image, `scale` device px to a px.
-    private static func bitmap(of mark: Mark, in drawing: Drawing, region: CGRect, scale: CGFloat, style: TextStyle) -> CGImage? {
+    /// `mark` drawn by the renderer over `region` of an image `imageWidth` px wide, `scale` device px
+    /// to a px.
+    nonisolated private static func bitmap(of mark: Mark, pointScale: CGFloat, imageWidth: CGFloat, region: CGRect, scale: CGFloat,
+                                           style: TextStyle) -> CGImage? {
         guard !region.isNull else { return nil }
         let width = Int((region.width * scale).rounded()), height = Int((region.height * scale).rounded())
         guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
@@ -315,7 +465,7 @@ final class EditorPicture {
         ctx.scaleBy(x: scale, y: -scale)
         ctx.translateBy(x: -region.minX, y: -region.minY)
         // A text has no arrowhead.
-        mark.draw(in: ctx, pointScale: drawing.pointScale, imageWidth: CGFloat(drawing.pixels.width), style: style, arrowhead: .standard)
+        mark.draw(in: ctx, pointScale: pointScale, imageWidth: imageWidth, style: style, arrowhead: .standard)
         return ctx.makeImage()
     }
 }
