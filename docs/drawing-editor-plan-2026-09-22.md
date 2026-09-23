@@ -86,12 +86,13 @@ New files only. Nothing is wired into the annotator yet.
 
 - An AppKit view that hosts the core. It turns mouse, key and modifier events into the core's
   inputs, runs its effects in order, and draws what the core's state says. It decides nothing.
-- It draws with Core Animation layers: the screenshot, the marks through the renderer, and the
-  core's overlay of outlines, handles, dots and the brush. Zoom scales the picture's layers. The
-  overlay is redrawn at the same size on screen in the same frame.
+- It draws with Core Animation layers: the screenshot, the marks, and the core's overlay of
+  outlines, handles, dots and the brush. Rectangles, ellipses and arrows are shape layers holding
+  the renderer's own paths. Texts are bitmaps the renderer draws off the main thread. Zoom scales
+  the picture's layers. The overlay is redrawn at the same size on screen in the same frame.
 - Text is typed in a plain-text `NSTextView` with every automatic substitution off. It is laid out
-  at the layout's font size in px, scaled by the zoom, and shifted by the difference between
-  TextKit's baseline and `TextLayout`'s, so a text does not move when typing ends.
+  at the layout's font size in px and scaled by the zoom. Each line's baseline is `TextLayout`'s,
+  so a text does not move when typing ends.
 - Cursors, the short confirmations, the clipboard, and VoiceOver.
 
 ### 4b: the switch
@@ -112,9 +113,7 @@ New files only. Nothing is wired into the annotator yet.
 ### 4c: cards and flights
 
 - A card and a card in flight draw the drawing's marks over the image with the renderer. No
-  preview images are stored or cached.
-- The preview code goes: `previews`, `setPreview`, the preview producers, and the Thumbnailer
-  functions only they used.
+  preview images are stored or cached. 4b already deleted the preview code.
 
 ### 4d: tweaks, inspection, and the driven round
 
@@ -130,13 +129,35 @@ New files only. Nothing is wired into the annotator yet.
 |---|---|
 | The transition reducer's `parking` phase stays. | Park still waits for the zoom to spring back to fit, so the card flies home from the fitted frame. Without a zoom, park answers in the same turn. |
 | The annotator's window still comes up invisible at `prepare`. | It holds the keys during the flight, so Esc during the flight turns the card around. |
-| The flight's wait for `loaded` stays only if the editor's image decode is asynchronous. | 4b measures it. A wait that never waits is deleted. |
+| The flight's wait for `loaded` stays, with the editor as its source. | 4b measured it. At motion 0 the flight arrived 34 ms before the screenshot's decode. |
 | `dismiss` sets `slidingOut` before it sends the event. | A park that answers in the same turn otherwise ends the card's flight offscreen. |
 | A drawing made from agents' marks keeps the stored drawing's point scale. A new one takes the main screen's, inside `Drawing.pointScales`. | Decision 8's best guess when no annotator is open. |
 | Replies waiting at launch are imported as soon as their records load. | Today the page's `ready` starts them. A build no longer waits for anything. |
 | `FocusReturn` is created at launch by `AppDelegate`. | The web view's preload was the only thing that created it early enough to record the frontmost app. |
 | The drafts folders are removed at every launch they exist, with no flag. | Once they are gone, the check costs one lookup. |
 | Cards draw marks live over the image, rather than keeping a composited image. | A card is current the moment its drawing parks and sharp at any size, with nothing to invalidate. |
+
+### Decisions made while building 4a and 4b
+
+`reports/` in the run folder has the measurements behind each one.
+
+| Decision | Why |
+|---|---|
+| Rectangles, ellipses and arrows are shape layers built from `Mark.shape`, the paths the renderer draws. | They stay sharp at any zoom with nothing redrawn. A bitmap per mark cost 20 ms per drag step when zoomed in, and 25 MB for a rectangle that spans the image. |
+| Texts are bitmaps the renderer draws on a serial queue of their own, off the main thread. | A long text held the main thread for up to 1.9 s. Done, Send and Copy Drawing use another queue, so a long export never delays the screen. |
+| Text bitmaps are IOSurfaces. No text bitmap has more pixels than the view, and a text holds at most two. | Core Animation copied a `CGImage` on the main thread, up to 22 ms, and doubled its memory. The cap bounds memory at any zoom. |
+| When typing ends, the text view stays until the text's bitmap is on screen. | The words never vanish for a frame. |
+| The selection and hover outline runs outside the mark's ink, and the handles sit on its corners. | On the stroke, the outline's light edge hid the mark's colour. |
+| The renderer strokes each letter's outline on its own, then fills every letter. | Stroking all the letters as one path took 240 ms for 2,000 characters. Now it takes 61 ms. |
+| A Command key the core has no command for, such as Cmd+W, goes to the app's menu. | The editor otherwise took Cmd+W, Cmd+Q and Cmd+, away from the menu. |
+| The clipboard is read in this order: copied marks, a file, text, a URL, an image. | Finder puts a file's name as text beside its URL. Pasting a copied file must not add its name as a text mark. |
+| The editor opens at `prepare`, before the screenshot's decode arrives. | Its keys work during the flight, so Esc turns the card around. An agent's push while the card flies joins the open drawing. |
+| `abandon` parks and writes the drawing. | A key pressed during the flight can change it. |
+| A toast is a small dark capsule at the bottom centre of the frame. | It shows where the eye already is, and nothing in the toolbar moves for it. |
+| A plain scroll pans a magnified picture. The zoom keys and smart zoom do nothing during the flight. | tldraw panned on scroll. A zoom during the flight would move the frame the card is landing on. |
+| Cmd+C with nothing selected gives Done's clipboard, and writes the `-annotated.png`. | Decision 10 says it is the same PNG as Done's. |
+| Card previews were deleted in 4b. | They existed only to show drafts. |
+| Reply receipts keep the codes `draft-failed` and `draft-store-failed`. | They are part of the reply protocol. |
 
 ### Delete in 4b
 

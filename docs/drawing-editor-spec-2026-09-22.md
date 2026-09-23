@@ -150,9 +150,9 @@ of the image. The fractions become px when the marks arrive. A reply's marks tak
 | Arrowhead | A filled triangle at the tip, per Decision 18 |
 | Text | SF Pro Rounded at 24 pt, left-aligned, in the mark's colour. Weight and line height are tuned in the tweaks panel, starting at Medium and 1.35 times the size. |
 | Text outline | Near-black `hsl(240 5% 6.5%)`, 1 pt outside the letters, on screen and in every rendering |
-| Selection outline | 1.5 screen pt, `#3182ed`, with a light edge so it shows on blue and dark screenshots. The frame around several selected marks uses the same line. |
+| Selection outline | 1.5 screen pt, `#3182ed`, with a light edge so it shows on blue and dark screenshots. It runs outside the mark's ink, so the mark's colour shows. The frame around several selected marks uses the same line. |
 | Hover | Lighter than the selection outline, so the two can be told apart |
-| Resize handles | 8 screen pt squares with a near-black fill and a 1.5 screen pt blue stroke, at the four corners |
+| Resize handles | 8 screen pt squares with a near-black fill and a 1.5 screen pt blue stroke, at the four corners of the selection outline |
 | Arrow dots | Circles of radius 4 screen pt, white fill, 1.5 screen pt blue stroke. A hovered dot gets a 12 screen pt halo, blue at 20% opacity. |
 | Brush | A rectangle with a 1 screen pt stroke, grey at 25% opacity, over a grey fill at 10% |
 | Caret while typing | Near-white, whatever the text's colour |
