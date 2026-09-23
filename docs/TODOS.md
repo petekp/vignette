@@ -4,10 +4,8 @@ Things decided or raised but not built. Each entry says what, why, and what it w
 
 ## Public release (raised 2026-09-19)
 
-A downloadable build waits on three things, in order:
+A downloadable build waits on two things, in order:
 
-- The native drawing editor, which replaces tldraw and its license key.
-  docs/drawing-editor-plan-2026-09-22.md has the order of the work.
 - Notarization. `scripts/signing.env` names the Developer ID certificate, so a Release build is
   signed, but a download is refused by Gatekeeper until it is notarized: `xcrun notarytool submit`
   with a keychain profile for the App Store Connect API key, then `xcrun stapler staple`. No profile
@@ -67,8 +65,6 @@ Waits on two things, either way:
   if the push loop proves itself in use.
 - A name convention for pushed files, `Agent <what> <state>.png`, so the card reads at a glance.
 - Folding Copy Drawing into Copy, so one Copy gives the image as the card shows it.
-- AGENTS.md is long enough that a rule in it is easy to miss. The drawing editor plan's step 5
-  reviews it as a whole, which is the time to shorten it.
 
 ## Known costs, left alone
 
