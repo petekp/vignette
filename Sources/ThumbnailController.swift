@@ -172,6 +172,9 @@ final class ThumbnailController: NSObject {
     /// Keys whose screenshot the editor has at the screen's size. The flight image lifts once the
     /// annotator is visible and its key is here, so an editor still waiting for its decode is never seen.
     private var loadedKeys: Set<String> = []
+    /// Cards made in this turn whose stored drawings are still to be read. A stack opening makes
+    /// every card in one turn, and reading theirs together gives the column one change of `cards`.
+    private var drawingReads: [URL] = []
     /// True when the session ends by the user's hand, so focus returns to their app once the annotator is gone.
     private var restoreFocusOnEnd = false
     /// The file whose Done failed to copy before its card came home, so the card takes no copied mark.
@@ -465,13 +468,27 @@ final class ThumbnailController: NSObject {
 
     /// The screenshot at `key` has this drawing now, or none: its card draws it at once, and so does
     /// the card in the annotator, which a lone thumbnail keeps out of the column.
-    func setDrawing(_ drawing: Drawing?, for key: String) {
-        for index in model.cards.indices where model.cards[index].shot.url.path == key {
-            let marks = marks(drawing, on: model.cards[index])
-            if marks !== model.cards[index].marks { model.cards[index].marks = marks }
+    func setDrawing(_ drawing: Drawing?, for key: String) { setDrawings([key: drawing]) }
+
+    /// Each key's drawing, or none, reaching the column in one change of `cards`.
+    private func setDrawings(_ drawings: [String: Drawing?]) {
+        var cards = model.cards, changed = false
+        for index in cards.indices {
+            guard let drawing = drawings[cards[index].shot.url.path] else { continue }
+            let marks = marks(drawing, on: cards[index])
+            if marks !== cards[index].marks { cards[index].marks = marks; changed = true }
         }
-        guard let card = sessionCard, card.shot.url.path == key else { return }
+        if changed { model.cards = cards }
+        guard let card = sessionCard, let drawing = drawings[card.shot.url.path] else { return }
         sessionCard?.marks = model.cards.first { $0.id == card.id }.map(\.marks) ?? marks(drawing, on: card)
+    }
+
+    /// Reads the drawings of the cards made since the last read, together.
+    private func readDrawings() {
+        let urls = drawingReads
+        drawingReads = []
+        guard let drawings, !urls.isEmpty else { return }
+        drawings.load(urls, style: ui.textStyle) { [weak self] loaded in self?.setDrawings(loaded) }
     }
 
     /// `card`'s marks for `drawing`: the ones it has, shown anew, while they are on the same image.
@@ -844,10 +861,9 @@ final class ThumbnailController: NSObject {
         case .park:
             parkedMarks = annotatorMarks()
             onAnnotatorHide? { [weak self] in self?.send(.parked) }
-        case .abandon(let key):
-            // Nothing was loaded on screen, so nothing reported `loaded`; the next annotate of this
-            // key has to wait for its own report rather than lifting its flight straight away.
-            loadedKeys.remove(key)
+        case .abandon:
+            // Before the editor lets its marks go: the flight home carries what the abandon parks.
+            parkedMarks = annotatorMarks()
             onAnnotatorAbandon?()
         case .returnCard(let key):
             guard let card = sessionCard, card.shot.url.path == key else { return }
@@ -923,8 +939,8 @@ final class ThumbnailController: NSObject {
         return flightMarks(drawing, scale: scale, adopting: [flights.marks(of: card.id), card.marks, editor])
     }
 
-    /// The flight from the annotator back to `card` carries the drawing the editor parked, or the one
-    /// the flight out carried when it turned around before anything was parked.
+    /// The flight from the annotator back to `card` carries the drawing the editor parked, a flight
+    /// turned around in mid-air included; the flight's own, or the card's, when the editor had none.
     private func homeFlightMarks(for card: Card) -> MarkLayers? {
         let key = card.shot.url.path
         let editor = [parkedMarks, annotatorMarks()].compactMap { $0 }.first { $0.drawing?.key == key }
@@ -1256,7 +1272,8 @@ final class ThumbnailController: NSObject {
         }
         // Read off the main thread; the card is in the column by the time its drawing arrives.
         if let drawings, drawings.keys.contains(shot.url.path) {
-            drawings.load(shot.url, style: ui.textStyle) { [weak self] drawing in self?.setDrawing(drawing, for: shot.url.path) }
+            if drawingReads.isEmpty { DispatchQueue.main.async { [weak self] in self?.readDrawings() } }
+            drawingReads.append(shot.url)
         }
         return card
     }

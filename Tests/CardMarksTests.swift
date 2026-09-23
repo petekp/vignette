@@ -142,7 +142,8 @@ final class CardMarksTests: XCTestCase {
         }
         let marks = MarkLayers(pixels: pixels, queue: MarkLayers.cardQueue)
         show(marks, over: try thumbnail(pixels, square: .zero))
-        // The old text's bitmap is drawn and waits on the main queue; the new one's waits on the card queue.
+        // The old text's bitmap is drawn and waits on the main queue. The new one is queued only once
+        // the old one arrives, and then waits on the suspended card queue.
         marks.show(drawing("Old words", cardY: 20), filling: Self.card.size, backingScale: 2, style: .standard, arrowhead: .standard)
         MarkLayers.cardQueue.sync {}
         MarkLayers.cardQueue.suspend()
@@ -228,7 +229,7 @@ final class CardMarksTests: XCTestCase {
         settle(marks)
 
         XCTAssertTrue(model.cards.isEmpty)
-        XCTAssertEqual(marks.map(\.bitmapPixels), [0, 0], "the drawn bitmap is let go, and the one on its way is not shown")
+        XCTAssertEqual(marks.map(\.bitmapPixels), [0, 0], "neither card keeps a bitmap, the one drawn or the one that was on its way")
         XCTAssertEqual(marks.map { $0.layer.sublayers?.count ?? 0 }, [0, 0])
     }
 }

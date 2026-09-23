@@ -3,9 +3,10 @@ import SwiftUI
 
 /// The AppKit overlay on a card's image. It draws the drawing's marks, `picture` being the shape of
 /// the image under them. A click runs `onClick`; dragging past a few points starts a real file drag so
-/// cards can be dropped on chat apps, Finder, or a terminal. The marks are here rather than in an
-/// overlay of their own because SwiftUI updates every AppKit view in the stack on every frame of its
-/// animations, so a second one a card is paid for on every frame of a slide-in or a narrowing.
+/// cards can be dropped on chat apps, Finder, or a terminal. The marks are drawn here rather than in an
+/// AppKit view of their own because SwiftUI updates every AppKit view in the stack on every frame of
+/// its animations: a second view per card would add its update to every frame of a slide-in or a
+/// narrowing.
 struct DragSource: NSViewRepresentable {
     let urls: () -> [URL]
     let image: NSImage
@@ -14,6 +15,8 @@ struct DragSource: NSViewRepresentable {
     var marks: MarkLayers? = nil
     var picture: CGSize? = nil
     var corner: CGFloat = 0
+    /// The card's size at rest, which the marks are drawn at however narrow the stack is.
+    var restSize: CGSize? = nil
 
     func makeNSView(context: Context) -> DragSourceView { DragSourceView() }
     func updateNSView(_ view: DragSourceView, context: Context) {
@@ -21,7 +24,7 @@ struct DragSource: NSViewRepresentable {
         view.image = image
         view.onPress = onPress
         view.onClick = onClick
-        view.show(marks, picture: picture, corner: corner)
+        view.show(marks, picture: picture, corner: corner, restSize: restSize)
     }
 }
 
@@ -36,7 +39,7 @@ final class DragSourceView: NSView, NSDraggingSource {
     private var marksView: MarksView?
 
     /// Draws `marks` over the card, clipped to its corners, or nothing for a screenshot with no drawing.
-    func show(_ marks: MarkLayers?, picture: CGSize?, corner: CGFloat) {
+    func show(_ marks: MarkLayers?, picture: CGSize?, corner: CGFloat, restSize: CGSize?) {
         guard let marks else {
             marksView?.removeFromSuperview()
             marksView = nil
@@ -52,6 +55,7 @@ final class DragSourceView: NSView, NSDraggingSource {
         view.marks = marks
         view.picture = picture
         view.corner = corner
+        view.restSize = restSize
     }
 
     /// The stack panel is not key while the annotator is; a click on a card must still count.
@@ -70,12 +74,36 @@ final class DragSourceView: NSView, NSDraggingSource {
         onPress(false)
         let files = urls()
         guard !files.isEmpty else { return }
+        let picture = image.map(dragImage)
         let items = files.map { url -> NSDraggingItem in
             let item = NSDraggingItem(pasteboardWriter: url as NSURL)
-            item.setDraggingFrame(bounds, contents: image)
+            item.setDraggingFrame(bounds, contents: picture)
             return item
         }
         beginDraggingSession(with: items, event: event, source: self)
+    }
+
+    /// The card as it is drawn: its image filling it, over the matte, clipped to its corners, and the
+    /// marks over it in the live style.
+    private func dragImage(_ picture: NSImage) -> NSImage {
+        let drawing = marksView?.marks?.drawing, corner = marksView?.corner ?? 0, ui = Settings.shared.data.ui
+        return NSImage(size: bounds.size, flipped: true) { rect in
+            guard let ctx = NSGraphicsContext.current?.cgContext, picture.size.width > 0, picture.size.height > 0 else { return false }
+            NSBezierPath(roundedRect: rect, xRadius: corner, yRadius: corner).addClip()
+            Config.matte.setFill()
+            rect.fill()
+            let fill = max(rect.width / picture.size.width, rect.height / picture.size.height)
+            let drawn = CGRect(x: (rect.width - picture.size.width * fill) / 2, y: (rect.height - picture.size.height * fill) / 2,
+                               width: picture.size.width * fill, height: picture.size.height * fill)
+            picture.draw(in: drawn, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            if let drawing, drawing.pixels.width > 0, drawing.pixels.height > 0 {
+                // The drawing's px, from the image's top-left with y down, onto the picture's rect.
+                ctx.translateBy(x: drawn.minX, y: drawn.minY)
+                ctx.scaleBy(x: drawn.width / CGFloat(drawing.pixels.width), y: drawn.height / CGFloat(drawing.pixels.height))
+                drawing.draw(in: ctx, style: ui.textStyle, arrowhead: ui.arrowhead)
+            }
+            return true
+        }
     }
 
     override func mouseUp(with event: NSEvent) {

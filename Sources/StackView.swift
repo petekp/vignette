@@ -200,7 +200,7 @@ private struct CardView: View {
                         DragSource(urls: { dragURLs() }, image: card.image ?? NSImage(size: size),
                                    onPress: { down in model.pressedCard = down ? card.id : (model.pressedCard == card.id ? nil : model.pressedCard) },
                                    onClick: { model.onClickImage(card) },
-                                   marks: card.marks, picture: card.image?.size, corner: ui.cardCornerRadius)
+                                   marks: card.marks, picture: card.image?.size, corner: ui.cardCornerRadius, restSize: card.size)
                     )
                     // The image itself never fades: a card landing from the annotator takes over
                     // from its flight in one frame, and the hover state around it is what animates.

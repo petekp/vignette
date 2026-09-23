@@ -308,14 +308,14 @@ final class DrawingsTests: XCTestCase {
         var changed: [Drawing?] = [], loaded: [Drawing?] = []
         drawings.onChange = { _, drawing in changed.append(drawing) }
 
-        drawings.load(shot, style: .standard) { loaded.append($0) }
+        drawings.load([shot], style: .standard) { loaded.append(contentsOf: $0.values) }
         drawings.write(new, reason: "saved")
         Drawings.loads.sync(flags: .barrier) {}
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         XCTAssertEqual(changed.map { $0?.marks }, [new.marks])
         XCTAssertTrue(loaded.isEmpty, "the load read the old drawing, or the new one, and either way the write already said")
 
-        drawings.load(shot, style: .standard) { loaded.append($0) }
+        drawings.load([shot], style: .standard) { loaded.append(contentsOf: $0.values) }
         Drawings.loads.sync(flags: .barrier) {}
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         XCTAssertEqual(loaded.map { $0?.marks.map(\.geometry) }, [new.marks.map(\.geometry)], "read from disk, so the ids are new")

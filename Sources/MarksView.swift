@@ -24,8 +24,8 @@ final class MarksView: NSView {
         didSet { if picture != oldValue { place() } }
     }
 
-    /// The picture's corner radius, when the marks are clipped here rather than by SwiftUI: continuous
-    /// corners, the curve SwiftUI's `RoundedRectangle(style: .continuous)` draws.
+    /// The picture's corner radius, with continuous corners, the curve SwiftUI's
+    /// `RoundedRectangle(style: .continuous)` draws.
     var corner: CGFloat? {
         didSet {
             guard corner != oldValue else { return }
@@ -35,11 +35,17 @@ final class MarksView: NSView {
         }
     }
 
-    /// Draws the marks as one picture, at the largest size they have been placed at, and scales that
-    /// picture below it: a card's, which a narrowing stack shrinks on every frame and which would
-    /// otherwise draw every shape again at each new size.
+    /// Draws the marks as one picture, at the largest size they have been placed at or `restSize`,
+    /// and scales that picture below it: a card's, which a narrowing stack shrinks on every frame and
+    /// which would otherwise draw every shape again at each new size.
     var flattened = false {
         didSet { if flattened != oldValue { place() } }
+    }
+
+    /// The view's size when nothing narrows it, a card's at rest: a card first placed in a narrowed
+    /// stack is drawn at this size from the start, rather than again on every frame of the widening.
+    var restSize: CGSize? {
+        didSet { if restSize != oldValue { place() } }
     }
 
     private let host = CALayer()
@@ -77,37 +83,47 @@ final class MarksView: NSView {
         let image = CGSize(width: marks.pixels.width, height: marks.pixels.height)
         let shape = picture.flatMap { $0.width > 0 && $0.height > 0 ? $0 : nil } ?? image
         guard image.width > 0, image.height > 0, shape.width > 0, shape.height > 0 else { return }
-        let fill = max(bounds.width / shape.width, bounds.height / shape.height)
-        let drawn = CGSize(width: shape.width * fill, height: shape.height * fill)
+        let fill = { (size: CGSize) in max(size.width / shape.width, size.height / shape.height) }
+        let drawn = CGSize(width: shape.width * fill(bounds.size), height: shape.height * fill(bounds.size))
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         marks.layer.setAffineTransform(CGAffineTransform(a: drawn.width / image.width, b: 0, c: 0, d: drawn.height / image.height,
                                                          tx: (bounds.width - drawn.width) / 2, ty: (bounds.height - drawn.height) / 2))
-        let scale = drawn.width / image.width * backingScale
-        if !flattened {
+        if flattened {
+            let largest = max(fill(bounds.size), restSize.map(fill) ?? 0)
+            let scale = shape.width * largest / image.width * backingScale
+            if !marks.layer.shouldRasterize || scale > marks.layer.rasterizationScale {
+                marks.layer.shouldRasterize = true
+                marks.layer.rasterizationScale = scale
+            }
+        } else if marks.layer.shouldRasterize {
             marks.layer.shouldRasterize = false
-        } else if !marks.layer.shouldRasterize || scale > marks.layer.rasterizationScale {
-            marks.layer.shouldRasterize = true
-            marks.layer.rasterizationScale = scale
         }
         CATransaction.commit()
     }
 }
 
-private struct MarksOverlay: NSViewRepresentable {
+/// Animatable, so its corner follows the flight's in every frame of the flight's animation.
+private struct MarksOverlay: NSViewRepresentable, Animatable {
     let marks: MarkLayers
     let picture: CGSize?
+    var corner: CGFloat
+
+    nonisolated var animatableData: CGFloat {
+        get { corner }
+        set { corner = newValue }
+    }
 
     func makeNSView(context: Context) -> MarksView {
         let view = MarksView(frame: .zero)
-        view.marks = marks
-        view.picture = picture
+        updateNSView(view, context: context)
         return view
     }
 
     func updateNSView(_ view: MarksView, context: Context) {
         view.marks = marks
         view.picture = picture
+        view.corner = corner
     }
 }
 
@@ -120,8 +136,7 @@ extension View {
     func marks(_ marks: MarkLayers?, picture: CGSize?, corner: CGFloat) -> some View {
         overlay {
             if let marks {
-                MarksOverlay(marks: marks, picture: picture)
-                    .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+                MarksOverlay(marks: marks, picture: picture, corner: corner)
                     .allowsHitTesting(false)
             }
         }

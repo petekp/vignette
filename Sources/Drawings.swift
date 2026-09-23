@@ -29,18 +29,20 @@ final class Drawings {
         store.read(key: url.path, pixels: pixels, style: style)
     }
 
-    /// The stored drawing for the screenshot at `url`, read off the main thread: checking and placing
-    /// a drawing of long texts takes milliseconds. `completion` runs on the main thread, and not at all
-    /// when the drawing was written or removed while it was read, since `onChange` said then what it
-    /// is now.
-    func load(_ url: URL, style: TextStyle, completion: @escaping @MainActor @Sendable (Drawing?) -> Void) {
-        let key = url.path, revision = revisions[key, default: 0], store = store
+    /// The stored drawings for the screenshots at `urls`, read together off the main thread: checking
+    /// and placing a drawing of long texts takes milliseconds. `completion` runs once on the main
+    /// thread with each key's drawing, or nil, and leaves out a key whose drawing was written or
+    /// removed while it was read, since `onChange` said then what it is now.
+    func load(_ urls: [URL], style: TextStyle, completion: @escaping @MainActor @Sendable ([String: Drawing?]) -> Void) {
+        let keys = urls.map(\.path), started = keys.map { revisions[$0, default: 0] }, store = store
         Self.loads.async {
-            let drawing = PixelSize(imageAt: url).flatMap { store.read(key: key, pixels: $0, style: style) }
+            let read = urls.map { url in PixelSize(imageAt: url).flatMap { store.read(key: url.path, pixels: $0, style: style) } }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { [weak self] in
-                    guard let self, revisions[key, default: 0] == revision else { return }
-                    completion(drawing)
+                    guard let self else { return }
+                    var current: [String: Drawing?] = [:]
+                    for (i, key) in keys.enumerated() where revisions[key, default: 0] == started[i] { current[key] = read[i] }
+                    if !current.isEmpty { completion(current) }
                 }
             }
         }
