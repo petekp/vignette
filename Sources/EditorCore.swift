@@ -1118,11 +1118,17 @@ struct EditorCore {
 
     // MARK: Typing
 
-    /// Whether the editor takes this key while a text is being typed; every other key belongs to the
-    /// text view. Return with Shift or Option is a new line there, and so is Return during an input
-    /// method's composition, which the view keeps for the text view whatever this says.
+    /// Whether the editor takes this key. While a text is being typed it takes Esc, Return without
+    /// Shift or Option, and the zoom keys; every other key belongs to the text view, where Return with
+    /// Shift or Option is a new line, and so is Return during an input method's composition, which
+    /// the view keeps for the text view whatever this says. Otherwise it takes every key but a Command
+    /// key it has no command for, such as Cmd+W, which is the app's; during a gesture it takes that
+    /// too, since every key but a zoom key cancels the gesture.
     func takesKey(_ key: Key, _ modifiers: Modifiers) -> Bool {
-        guard typing != nil else { return true }
+        guard typing != nil else {
+            guard gesture == nil, modifiers.contains(.command), case .character(let character) = key else { return true }
+            return Command(rawValue: character) != nil || Self.zoomRequest(for: character) != nil
+        }
         switch key {
         case .escape: return true
         case .returnKey: return modifiers.isDisjoint(with: [.shift, .option])
@@ -1250,24 +1256,30 @@ struct EditorCore {
         case .delete, .forwardDelete:
             deleteSelection()
         case .character(let character) where command:
-            switch character {
-            case "z":
+            switch Command(rawValue: character) {
+            case .undo:
                 if modifiers.contains(.shift) { redo() } else { undo() }
-            case "a": selection = Set(drawing.marks.map(\.id))
-            case "c": copy(verb: "Copied")
-            case "x":
+            case .selectAll: selection = Set(drawing.marks.map(\.id))
+            case .copy: copy(verb: "Copied")
+            case .cut:
                 // Unlike Copy, Cut never falls back to the drawing, which it could not delete.
                 guard !selection.isEmpty else { break }
                 copy(verb: "Cut")
                 deleteSelection()
-            case "v": emit(.readClipboard)
-            case "d": duplicate()
-            default:
+            case .paste: emit(.readClipboard)
+            case .duplicate: duplicate()
+            case nil:
                 if let request = Self.zoomRequest(for: character) { emit(.zoom(request)) }
             }
         default:
             if let tool = toolKey(key, modifiers) { self.tool = tool }
         }
+    }
+
+    /// The editor's own Command keys when nothing is typed, by the character held with Command.
+    /// Shift+Cmd+Z is `undo` with Shift, which redoes.
+    private enum Command: Character {
+        case undo = "z", selectAll = "a", copy = "c", cut = "x", paste = "v", duplicate = "d"
     }
 
     private func toolKey(_ key: Key, _ modifiers: Modifiers) -> Tool? {

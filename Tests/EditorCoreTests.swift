@@ -529,6 +529,24 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertTrue(core.takesKey(.character("="), .command), "the host's zoom")
     }
 
+    func testCommandKeysTheEditorHasNoUseForAreLeftForTheApp() {
+        var core = core([rect(100, 100, 100, 100)])
+        for character in ["z", "a", "c", "x", "v", "d", "=", "+", "-", "0"] as [Character] {
+            XCTAssertTrue(core.takesKey(.character(character), .command), "Cmd+\(character)")
+        }
+        XCTAssertTrue(core.takesKey(.character("z"), [.command, .shift]))
+        XCTAssertTrue(core.takesKey(.left, .command))
+        XCTAssertTrue(core.takesKey(.returnKey, .command))
+        XCTAssertTrue(core.takesKey(.character("w"), []), "a plain key is the editor's, even one it does nothing with")
+        XCTAssertFalse(core.takesKey(.character("w"), .command), "Cmd+W is the app's")
+        XCTAssertFalse(core.takesKey(.character("q"), .command))
+        core.press(100, 150)
+        core.dragTo(300, 300)
+        XCTAssertTrue(core.takesKey(.character("w"), .command), "any key cancels a gesture")
+        core.key(.character("w"), .command)
+        XCTAssertNil(core.gesture)
+    }
+
     func testArrowKeysNudgeAMarkSelectedOnReopenWithNoClickFirst() {
         var core = core([rect(100, 100, 100, 100)], scale: 2)
         core.key(.right)
