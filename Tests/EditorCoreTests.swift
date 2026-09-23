@@ -10,7 +10,7 @@ final class EditorCoreTests: XCTestCase {
                       metrics: EditorMetrics = .standard, pick: @escaping Core.ColorPick = { _ in nil }) -> Core {
         var core = Core()
         _ = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: pixels, pointScale: scale, marks: marks), style: .standard,
-                              metrics: metrics, pickColor: pick))
+                              metrics: metrics, arrowhead: .standard, pickColor: pick))
         _ = core.reduce(.zoomChanged(zoom))
         return core
     }
@@ -53,7 +53,8 @@ final class EditorCoreTests: XCTestCase {
 
     func testAFreshScreenshotOpensOnRectangleAndADragDrawsFromThePressToTheRelease() {
         var core = Core()
-        let opened = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: Self.image, pointScale: 1, marks: []), style: .standard, metrics: .standard, pickColor: { _ in nil }))
+        let opened = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: Self.image, pointScale: 1, marks: []), style: .standard, metrics: .standard,
+                                       arrowhead: .standard, pickColor: { _ in nil }))
         XCTAssertEqual(core.tool, .rectangle)
         XCTAssertTrue(opened.contains(.tool(.rectangle)))
         core.drag(from: (100, 100), to: (300, 250))
@@ -352,9 +353,12 @@ final class EditorCoreTests: XCTestCase {
         let id = core.drawing.marks[0].id
         let handles = core.overlay.handles
         XCTAssertEqual(handles.count, 8)
+        // The frame runs outside the stroke except where the image ends, where it stays inside by
+        // half the outline's width, so all of the outline is seen.
+        XCTAssertEqual(core.overlay.frame, CGRect(x: 1.75, y: 1.75, width: 11.75, height: 11.75))
         for handle in handles {
             XCTAssertTrue(CGRect(x: 0, y: 0, width: 1000, height: 600).contains(handle.hitArea), "\(handle.position)")
-            let width: CGFloat = handle.position.isCorner ? 13.5 : handle.position.xSide != 0 ? 9 : 10
+            let width: CGFloat = handle.position.isCorner ? 13.5 : handle.position.xSide != 0 ? 9 : 11.75
             XCTAssertEqual(handle.hitArea.width, width, "\(handle.position)")
         }
         for corner in handles where corner.position.isCorner {
@@ -363,8 +367,8 @@ final class EditorCoreTests: XCTestCase {
                                 y: corner.position.ySide < 0 ? corner.hitArea.minY : corner.hitArea.maxY)
             XCTAssertEqual(core.target(at: point), .handle(id, corner.position))
         }
-        XCTAssertEqual(handles.first { $0.position == .topLeft }?.square?.midX, 0)
-        XCTAssertEqual(handles.first { $0.position == .topLeft }?.square?.midY, 0)
+        XCTAssertEqual(handles.first { $0.position == .topLeft }?.square?.midX, 1.75)
+        XCTAssertEqual(handles.first { $0.position == .topLeft }?.square?.midY, 1.75)
     }
 
     func testDraggingATextsRightEdgeSetsItsWrapWidthAndDraggingItsCornerScalesItsFont() throws {

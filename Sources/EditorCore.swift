@@ -28,10 +28,13 @@ struct EditorMetrics: Equatable {
     var textDragDistance: CGFloat
     /// The size a new text starts at, typed or pasted, in pt.
     var newTextSize: CGFloat
+    /// The selection outline's whole width on screen, its light edge included. It runs this far
+    /// outside a mark's ink, so the mark's colour shows.
+    var selectionOutlineWidth: CGFloat
 
     static let standard = EditorMetrics(dragDistance: 4, hitMargin: 4, cornerHitSize: 13.5, edgeHitSize: 9, smallSide: 16,
                                         handleSize: 8, dotRadius: 4, dotHitRadius: 12, smallestRectangle: 4, shortestArrow: 8,
-                                        textDragDelay: 0.15, textDragDistance: 24, newTextSize: 24)
+                                        textDragDelay: 0.15, textDragDistance: 24, newTextSize: 24, selectionOutlineWidth: 3.5)
 }
 
 /// Everything the drawing editor decides, as a reducer with no view in it. The view turns events
@@ -66,7 +69,8 @@ struct EditorCore {
 
     enum Input {
         /// A screenshot opens with its drawing, or an empty one whose point scale is the display's.
-        case open(Drawing, style: TextStyle, metrics: EditorMetrics, pickColor: ColorPick)
+        /// `arrowhead` is the renderer's, which the selection frame goes around.
+        case open(Drawing, style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle, pickColor: ColorPick)
         /// The pointer moved with no button held.
         case pointerMoved(Pointer)
         /// The pointer left the canvas.
@@ -341,6 +345,7 @@ struct EditorCore {
     private(set) var drawing = Drawing(key: "", pixels: PixelSize(width: 0, height: 0), pointScale: 1, marks: [])
     private(set) var style = TextStyle.standard
     private(set) var metrics = EditorMetrics.standard
+    private(set) var arrowhead = ArrowheadStyle.standard
     private let layouts = TextLayoutCache()
     private var pickColor: ColorPick = { _ in nil }
     private(set) var tool = Tool.rectangle
@@ -422,7 +427,8 @@ struct EditorCore {
     }
 
     var geometry: EditorGeometry {
-        EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: style, metrics: metrics, zoom: zoom, layouts: layouts)
+        EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: style, metrics: metrics, zoom: zoom, layouts: layouts,
+                       arrowhead: arrowhead)
     }
 
     var canUndo: Bool { !undoSteps.isEmpty }
@@ -432,8 +438,8 @@ struct EditorCore {
 
     mutating func reduce(_ input: Input) -> [Effect] {
         effects = []
-        if case .open(let drawing, let style, let metrics, let pickColor) = input {
-            open(drawing, style: style, metrics: metrics, pickColor: pickColor)
+        if case .open(let drawing, let style, let metrics, let arrowhead, let pickColor) = input {
+            open(drawing, style: style, metrics: metrics, arrowhead: arrowhead, pickColor: pickColor)
         } else if isOpen {
             if !input.keepsNudge { nudging = false }
             handle(input)
@@ -512,7 +518,8 @@ struct EditorCore {
 
     // MARK: Opening, parking and handing over
 
-    private mutating func open(_ drawing: Drawing, style: TextStyle, metrics: EditorMetrics, pickColor: @escaping ColorPick) {
+    private mutating func open(_ drawing: Drawing, style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle,
+                               pickColor: @escaping ColorPick) {
         if typing != nil { emit(.endTyping) }
         let zoom = self.zoom, pending = effects
         self = EditorCore()
@@ -523,6 +530,7 @@ struct EditorCore {
         self.drawing = drawing
         self.style = style
         self.metrics = metrics
+        self.arrowhead = arrowhead
         self.pickColor = pickColor
         tool = drawing.marks.isEmpty ? .rectangle : .select
         // The newest mark the person drew, never an agent's.
@@ -754,7 +762,7 @@ struct EditorCore {
                 return
             }
             if tool == .select, selection.count > 1, !event.modifiers.contains(.shift),
-               let frame = geometry.extent(of: drawing.marks.filter { selection.contains($0.id) }), frame.encloses(at) {
+               let frame = geometry.selectionFrame(of: drawing.marks.filter { selection.contains($0.id) }), frame.encloses(at) {
                 press(.frame)
                 return
             }
@@ -1012,16 +1020,19 @@ struct EditorCore {
         var overlay = Overlay(selected: chosen.map(\.id))
         if case .mark(let id)? = hover, id != typing?.id { overlay.hovered = id }
         if chosen.count > 1 {
-            overlay.frame = geometry.extent(of: chosen)
+            overlay.frame = geometry.selectionFrame(of: chosen)
         } else if let only = chosen.first {
+            // The handles sit on the frame's corners, outside the mark's ink with the outline.
             switch only.geometry {
             case .rectangle(let frame), .ellipse(let frame):
-                overlay.frame = frame
-                overlay.handles = geometry.handles(around: frame, of: only.id)
+                let outline = geometry.selectionFrame(of: [only]) ?? frame
+                overlay.frame = outline
+                overlay.handles = geometry.handles(around: outline, of: only.id, markSize: frame.size)
             case .text(let text):
                 let box = geometry.layout(text).box
-                overlay.frame = box
-                if typing?.id != only.id { overlay.handles = geometry.handles(around: box, of: only.id) }
+                let outline = geometry.selectionFrame(of: [only]) ?? box
+                overlay.frame = outline
+                if typing?.id != only.id { overlay.handles = geometry.handles(around: outline, of: only.id, markSize: box.size) }
             case .arrow:
                 break
             }

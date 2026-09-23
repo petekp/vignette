@@ -63,7 +63,6 @@ final class EditorView: NSView {
     private let picture = EditorPicture()
     private let overlay = EditorOverlayLayers()
     private var placedPicture = CGRect.zero
-    private var arrowhead = ArrowheadStyle.standard
     private var screenshotName = ""
     private var typingField: TypingField?
     private var handOverTimer: Timer?
@@ -102,13 +101,12 @@ final class EditorView: NSView {
     /// (`colorSampleArrived`).
     func open(_ drawing: Drawing, image: CGImage, picture: CGRect, style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle,
               pickColor: @escaping EditorCore.ColorPick) {
-        self.arrowhead = arrowhead
         stopTimers()
         heldArrows = []
         screenshotName = URL(fileURLWithPath: drawing.key).deletingPathExtension().lastPathComponent
         self.picture.open(image, pixels: drawing.pixels)
         placedPicture = picture
-        handle(.open(drawing, style: style, metrics: metrics, pickColor: pickColor))
+        handle(.open(drawing, style: style, metrics: metrics, arrowhead: arrowhead, pickColor: pickColor))
         guard core.isOpen else {
             Log.write("[editor] error open-refused \(screenshotName): pixels=\(drawing.pixels.width)x\(drawing.pixels.height) pointScale=\(drawing.pointScale)")
             return
@@ -239,9 +237,9 @@ final class EditorView: NSView {
         let transform = toView
         let geometry = core.geometry
         picture.layer.setAffineTransform(transform)
-        picture.show(core.drawing, typing: core.typing?.id, geometry: geometry, style: core.style, arrowhead: arrowhead,
+        picture.show(core.drawing, typing: core.typing?.id, geometry: geometry, style: core.style,
                      resolution: resolution, gesture: core.gesture != nil)
-        overlay.show(core.overlay, drawing: core.drawing, geometry: geometry, arrowhead: arrowhead, transform: transform)
+        overlay.show(core.overlay, drawing: core.drawing, geometry: geometry, transform: transform)
         placeTypingField()
         CATransaction.commit()
     }

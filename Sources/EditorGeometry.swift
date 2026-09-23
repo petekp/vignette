@@ -12,6 +12,7 @@ struct EditorGeometry {
     /// Screen pt per image px.
     let zoom: CGFloat
     let layouts: TextLayoutCache
+    let arrowhead: ArrowheadStyle
 
     var image: CGRect { pixels.bounds }
 
@@ -162,15 +163,72 @@ struct EditorGeometry {
         zip(points, points.dropFirst()).map { ArrowBody(start: $0, end: $1, bend: 0).distance(to: point) }.min() ?? .infinity
     }
 
+    // MARK: The selection outline
+
+    /// How far outside a mark's ink the selection outline's centre line runs, in px: half the
+    /// outline's width on screen, so all of it lies outside the mark.
+    var outlineOffset: CGFloat { screen(metrics.selectionOutlineWidth) / 2 }
+
+    /// The rect a mark's ink covers, in px: a stroke's whole width, an arrowhead, and a text's
+    /// letters with their outline.
+    func inkExtent(of mark: Mark) -> CGRect {
+        if case .text(let text) = mark.geometry {
+            let outline = pt(Mark.Text.outlineWidth)
+            return layout(text).box.insetBy(dx: -outline, dy: -outline)
+        }
+        guard let shape = mark.shape(pointScale: pointScale, arrowhead: arrowhead) else { return extent(of: mark) }
+        var ink = CGRect.null
+        if let stroked = shape.stroked { ink = ink.union(stroked.boundingBoxOfPath.insetBy(dx: -shape.lineWidth / 2, dy: -shape.lineWidth / 2)) }
+        if let filled = shape.filled { ink = ink.union(filled.boundingBoxOfPath) }
+        return ink
+    }
+
+    /// The frame drawn around selected marks: their ink grown by `outlineOffset`, so the outline lies
+    /// outside every stroke. Each side stays that far inside the image, where the window ends, so it
+    /// is seen; there it crosses a stroke that runs along the image's edge.
+    func selectionFrame(of marks: [Mark]) -> CGRect? {
+        guard let ink = marks.map(inkExtent(of:)).reduce(nil, { $0?.union($1) ?? $1 }), !ink.isNull else { return nil }
+        let grown = ink.insetBy(dx: -outlineOffset, dy: -outlineOffset)
+        let room = image.insetBy(dx: outlineOffset, dy: outlineOffset)
+        let minX = max(grown.minX, room.minX), maxX = min(grown.maxX, room.maxX)
+        let minY = max(grown.minY, room.minY), maxY = min(grown.maxY, room.maxY)
+        guard maxX > minX, maxY > minY else { return grown }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    /// One mark's selection or hover outline, in px: a rectangle's or a text's selection frame, and the
+    /// outer edge of an ellipse's or an arrow's ink grown by `outlineOffset`, so it runs outside the stroke.
+    func outline(of mark: Mark) -> CGPath {
+        let frame = { CGPath(rect: selectionFrame(of: [mark]) ?? extent(of: mark), transform: nil) }
+        var parts: [CGPath] = []
+        switch mark.geometry {
+        case .rectangle, .text: return frame()
+        case .ellipse(let bounds): parts.append(CGPath(ellipseIn: bounds, transform: nil))  // fills the ring's hole
+        case .arrow: break
+        }
+        guard let shape = mark.shape(pointScale: pointScale, arrowhead: arrowhead) else { return frame() }
+        let grow = 2 * outlineOffset
+        if let stroked = shape.stroked {
+            parts.append(stroked.copy(strokingWithWidth: shape.lineWidth + grow, lineCap: .round, lineJoin: .round, miterLimit: 10))
+        }
+        if let filled = shape.filled {
+            parts.append(filled)
+            parts.append(filled.copy(strokingWithWidth: grow, lineCap: .round, lineJoin: .round, miterLimit: 10))
+        }
+        guard let first = parts.first else { return frame() }
+        return parts.dropFirst().reduce(first) { $0.union($1) }
+    }
+
     // MARK: Handles and dots
 
-    /// The resize handles of a single selected mark covering `frame`: the four corners, then the
-    /// four edges, in the order a press tries them. Along an axis on which the mark is under
-    /// `smallSide` on screen, the hit areas lie outside the mark, so each corner can still be taken.
-    /// A hit area with no room outside the image moves inside it, since the window ends at the image.
-    func handles(around frame: CGRect, of id: Mark.ID) -> [EditorCore.Handle] {
-        let smallX = frame.width * zoom < metrics.smallSide
-        let smallY = frame.height * zoom < metrics.smallSide
+    /// The resize handles of a single selected mark, on `frame`, the frame drawn around it: the four
+    /// corners, then the four edges, in the order a press tries them. Along an axis on which the
+    /// mark, `markSize` px, is under `smallSide` on screen, the hit areas lie outside the frame, so
+    /// each corner can still be taken. A hit area with no room outside the image moves inside it,
+    /// since the window ends at the image.
+    func handles(around frame: CGRect, of id: Mark.ID, markSize: CGSize) -> [EditorCore.Handle] {
+        let smallX = markSize.width * zoom < metrics.smallSide
+        let smallY = markSize.height * zoom < metrics.smallSide
         // The span a hit area of `size` covers across a side at `at`: centred on it, or outside the
         // mark, on the side `outward` points to.
         func across(_ at: CGFloat, outward: Int, size: CGFloat, small: Bool) -> (low: CGFloat, high: CGFloat) {

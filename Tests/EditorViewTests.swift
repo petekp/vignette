@@ -283,6 +283,26 @@ final class EditorViewTests: XCTestCase {
         XCTAssertEqual(redPixels(in: 168...200), 0)
     }
 
+    /// The selection's blue (`#3182ed`), whatever the display's profile did to it.
+    private func isBlue(_ c: (r: CGFloat, g: CGFloat, b: CGFloat)) -> Bool { c.b > 0.8 && c.r < 0.4 && c.g < 0.7 }
+
+    func testSelectedMarksKeepTheirColourAlongTheWholeStrokeWithTheOutlineOutsideIt() throws {
+        open([Mark(geometry: .rectangle(CGRect(x: 100, y: 60, width: 300, height: 150))),
+              Mark(geometry: .ellipse(CGRect(x: 500, y: 60, width: 300, height: 150))),
+              Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 100, y: 400), end: CGPoint(x: 400, y: 400))))])
+        key("a", 0, .command)
+        XCTAssertEqual(view.core.selection.count, 3)
+        let rep = try capture { self.isBlue(self.pixel($0, 250, 56)) }
+
+        // Each stroke is 3.5 px about its line, so its colour covers the two rows either side of the
+        // line whole, and the outline's 3.5 pt run outside it, the blue in their middle.
+        for (x, y, outside) in [(250, 60, -1), (250, 210, 1), (650, 60, -1), (650, 210, 1), (180, 400, -1), (180, 400, 1)] {
+            for row in y - 1...y { XCTAssertTrue(isRed(pixel(rep, x, row)), "stroke at \(x),\(row): \(pixel(rep, x, row))") }
+            let blue = y + outside * 4 - (outside < 0 ? 0 : 1)
+            XCTAssertTrue(isBlue(pixel(rep, x, blue)), "outline at \(x),\(blue): \(pixel(rep, x, blue))")
+        }
+    }
+
     /// Along a line of pixels, how many are soft, in between the colours `kinds` name, and how many
     /// edges from one colour to another the line crosses. A shape drawn at the screen's resolution
     /// has about one soft pixel an edge; a magnified bitmap has several.

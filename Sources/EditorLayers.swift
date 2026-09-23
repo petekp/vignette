@@ -4,10 +4,10 @@ import QuartzCore
 /// How the editor's own marks on the canvas look: the selection, hover, handles, dots and brush.
 enum EditorStyle {
     static let selectionBlue = NSColor(srgbRed: 0x31 / 255.0, green: 0x82 / 255.0, blue: 0xed / 255.0, alpha: 1)
-    /// Under the selection's blue, so the outline shows on blue and dark screenshots.
+    /// Under the selection's blue, so the outline shows on blue and dark screenshots. It is
+    /// `EditorMetrics.selectionOutlineWidth` wide, and the core puts the outline outside the mark by half that.
     static let lightEdge = NSColor(white: 1, alpha: 0.9)
     static let outlineWidth: CGFloat = 1.5
-    static let lightEdgeWidth: CGFloat = outlineWidth + 2
     /// The hover outline is the selection's, this faint.
     static let hoverOpacity: Float = 0.5
     static let handleFill = NSColor(srgbRed: 0.06175, green: 0.06175, blue: 0.06825, alpha: 1)
@@ -147,8 +147,7 @@ final class EditorPicture {
 
     /// Shows `drawing` without the mark being typed. `gesture` is true while one is under way: a
     /// text that only moved slides its bitmap along, and is drawn again once the gesture is over.
-    func show(_ drawing: Drawing, typing: Mark.ID?, geometry: EditorGeometry, style: TextStyle, arrowhead: ArrowheadStyle,
-              resolution: Resolution, gesture: Bool) {
+    func show(_ drawing: Drawing, typing: Mark.ID?, geometry: EditorGeometry, style: TextStyle, resolution: Resolution, gesture: Bool) {
         var layers: [CALayer] = [screenshot]
         var seen = Set<Mark.ID>()
         for mark in drawing.marks {
@@ -169,7 +168,7 @@ final class EditorPicture {
                 layers.append(record.detail)
             } else {
                 let record = shapes[mark.id] ?? ShapeMark(scale: contentsScale)
-                if record.mark != mark, let shape = mark.shape(pointScale: drawing.pointScale, arrowhead: arrowhead) {
+                if record.mark != mark, let shape = mark.shape(pointScale: drawing.pointScale, arrowhead: geometry.arrowhead) {
                     record.show(mark, shape)
                 }
                 shapes[mark.id] = record
@@ -316,10 +315,7 @@ final class EditorOverlayLayers {
     private var shown: (overlay: EditorCore.Overlay, marks: [Mark], transform: CGAffineTransform)?
 
     init() {
-        for edge in [hoverEdge, selectionEdge] {
-            edge.strokeColor = EditorStyle.lightEdge.cgColor
-            edge.lineWidth = EditorStyle.lightEdgeWidth
-        }
+        for edge in [hoverEdge, selectionEdge] { edge.strokeColor = EditorStyle.lightEdge.cgColor }
         for line in [hoverLine, selectionLine] {
             line.strokeColor = EditorStyle.selectionBlue.cgColor
             line.lineWidth = EditorStyle.outlineWidth
@@ -353,27 +349,18 @@ final class EditorOverlayLayers {
     }
 
     /// Draws `overlay` for `drawing`, with `transform` taking image px to the editor's coordinates.
-    func show(_ overlay: EditorCore.Overlay, drawing: Drawing, geometry: EditorGeometry, arrowhead: ArrowheadStyle, transform: CGAffineTransform) {
+    func show(_ overlay: EditorCore.Overlay, drawing: Drawing, geometry: EditorGeometry, transform: CGAffineTransform) {
         let ids = overlay.selected + (overlay.hovered.map { [$0] } ?? [])
         let marks = drawing.marks.filter { ids.contains($0.id) }
         if let shown, shown.overlay == overlay, shown.marks == marks, shown.transform == transform { return }
         shown = (overlay, marks, transform)
         var transform = transform
         let zoom = transform.a
+        hoverEdge.lineWidth = geometry.metrics.selectionOutlineWidth
+        selectionEdge.lineWidth = geometry.metrics.selectionOutlineWidth
         func outline(_ id: Mark.ID) -> CGPath? {
             guard let mark = drawing.marks.first(where: { $0.id == id }) else { return nil }
-            let path = CGMutablePath()
-            switch mark.geometry {
-            case .rectangle(let frame): path.addRect(frame)
-            case .ellipse(let frame): path.addEllipse(in: frame)
-            case .arrow:
-                // The outline follows the body and the head as the renderer draws them.
-                if let shape = mark.shape(pointScale: geometry.pointScale, arrowhead: arrowhead) {
-                    for part in [shape.stroked, shape.filled].compactMap({ $0 }) { path.addPath(part) }
-                }
-            case .text: path.addRect(geometry.extent(of: mark))
-            }
-            return path.copy(using: &transform)
+            return geometry.outline(of: mark).copy(using: &transform)
         }
 
         let hovered = CGMutablePath()

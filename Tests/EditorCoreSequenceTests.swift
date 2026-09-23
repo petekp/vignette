@@ -64,13 +64,14 @@ private struct SequenceRun {
         var drawing = Drawing(key: "/tmp/sequence.png",
                               pixels: PixelSize(width: Int.random(in: 240...1800, using: &rng), height: Int.random(in: 160...1400, using: &rng)),
                               pointScale: [1, 1.5, 2, 3].randomElement(using: &rng)!, marks: [])
-        let geometry = EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: .standard, metrics: .standard, zoom: 1, layouts: TextLayoutCache())
+        let geometry = EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: .standard, metrics: .standard, zoom: 1, layouts: TextLayoutCache(),
+                                      arrowhead: .standard)
         drawing.marks = (0..<Int.random(in: 0...5, using: &rng)).compactMap { _ in geometry.placed(randomMark(in: drawing.pixels, agent: Bool.random(using: &rng))) }
         return drawing
     }
 
     static func open(_ drawing: Drawing) -> Core.Input {
-        .open(drawing, style: .standard, metrics: .standard, pickColor: { mark in Self.pick(mark) })
+        .open(drawing, style: .standard, metrics: .standard, arrowhead: .standard, pickColor: { mark in Self.pick(mark) })
     }
 
     /// Opens `drawing` outside the sequence, as the host does after a park.
