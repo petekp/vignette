@@ -176,6 +176,22 @@ final class MarkLayers {
         texts = [:]
     }
 
+    /// The text style or the arrowhead is about to change: the next `show` draws every mark again.
+    /// Each text shows the bitmap it has until its new one arrives. It gets a new record for that,
+    /// because a target does not name the style: a draw already on its way for the old record is
+    /// then dropped when it arrives, instead of being taken for the new style's.
+    func restyle() {
+        guard !isParked else { return }
+        for record in shapes.values { record.mark = nil }
+        for (id, old) in texts {
+            old.wanted.set([])
+            let record = Text()
+            record.whole.contents = old.whole.contents
+            record.whole.frame = old.whole.frame
+            texts[id] = record
+        }
+    }
+
     /// The device pixels per point of the screen the marks are on, for the shape layers.
     func setScale(_ scale: CGFloat) {
         contentsScale = scale

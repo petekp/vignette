@@ -182,6 +182,24 @@ final class EditorView: NSView {
         if !core.colorOwed.isEmpty { handle(.timerFired) }
     }
 
+    /// The tweaks changed: the text style, the sizes and the arrowhead replace the ones `open` gave,
+    /// and the drawing, the selection, the history and a typing session stay. The strokes take a new
+    /// arrowhead at once. Each text keeps its bitmap until one in the new style arrives, and a text
+    /// being typed is laid out again where it is.
+    func applyTweaks(style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle) {
+        guard core.isOpen, style != core.style || metrics != core.metrics || arrowhead != core.arrowhead else { return }
+        if style != core.style || arrowhead != core.arrowhead { marks.restyle() }
+        let restyled = style != core.style
+        for effect in core.reduce(.tweaksChanged(style: style, metrics: metrics, arrowhead: arrowhead)) { run(effect, event: nil) }
+        if restyled {
+            for field in [typingField, lingering].compactMap({ $0 }) {
+                guard case .text(let text)? = core.mark(field.id)?.geometry else { continue }
+                field.setStyle(style, size: text.size, pointScale: core.drawing.pointScale, imageWidth: CGFloat(core.drawing.pixels.width))
+            }
+        }
+        refresh()
+    }
+
     // MARK: Coordinates
 
     /// Screen pt per image px.

@@ -86,6 +86,10 @@ struct EditorCore {
         case setTool(Tool)
         /// The host's zoom: screen pt per image px.
         case zoomChanged(CGFloat)
+        /// The text style, sizes and arrowhead the host uses now, in place of the ones `open` gave. The
+        /// drawing, the selection, the history, a gesture and a typing session stay; a text keeps its
+        /// origin, and its lines break where the new style breaks them.
+        case tweaksChanged(style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle)
         /// The text of the typing session is now this.
         case typingChanged(String)
         /// The text view ended the session on its own.
@@ -475,6 +479,10 @@ struct EditorCore {
             self.tool = tool
         case .zoomChanged(let zoom):
             if zoom > 0, zoom.isFinite { self.zoom = zoom }
+        case .tweaksChanged(let style, let metrics, let arrowhead):
+            self.style = style
+            self.metrics = metrics
+            self.arrowhead = arrowhead
         case .typingChanged(let text): typed(text)
         case .typingEnded: endTyping()
         case .timerFired: timerFired()
@@ -1503,7 +1511,7 @@ private extension EditorCore.Input {
     var keepsNudge: Bool {
         switch self {
         case .keyDown(let key, _, _): return key.direction != nil
-        case .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .timerFired: return true
+        case .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .tweaksChanged, .timerFired: return true
         default: return false
         }
     }

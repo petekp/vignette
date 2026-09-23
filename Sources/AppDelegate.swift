@@ -136,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func settingsChanged(_ old: SettingsData, _ new: SettingsData) {
-        if new.ui != old.ui { thumbnail.applyTweaks(); warmThumbnails() }
+        if new.ui != old.ui { thumbnail.applyTweaks(); annotator.applyTweaks(); warmThumbnails() }
         if new.recentCount != old.recentCount { warmThumbnails() }
         if new.screenshotsFolder != old.screenshotsFolder { startWatching() }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }

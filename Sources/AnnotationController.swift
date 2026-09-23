@@ -613,6 +613,13 @@ final class AnnotationController {
     /// A short message over the picture, where the editor's own confirmations appear.
     func showToast(_ words: String) { toast.show(words) }
 
+    /// The tweaks changed: the open editor takes their text style, sizes and arrowhead at once.
+    func applyTweaks() {
+        let ui = Settings.shared.data.ui
+        textStyle = ui.textStyle
+        editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, arrowhead: ui.arrowhead)
+    }
+
     /// What the Send menu offers for the image that is opening, and the session a reply belongs
     /// back to. Read once per image: the list comes from subprocesses, and a menu that re-read it
     /// on every click would stall the bar.

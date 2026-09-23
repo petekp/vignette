@@ -17,24 +17,16 @@ final class TypingField: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
 
     /// Where `TextLayout` puts each line's baseline below the line's top, in px. TextKit would put it
     /// lower (27.4 px against 25.27 at 24 px); every line fragment is given this one instead.
-    private let baseline: CGFloat
+    private var baseline: CGFloat = 0
     /// Room around the box, in px, for the outline and for glyphs that reach past their line.
-    private let margin: CGFloat
+    private var margin: CGFloat = 0
 
     init(id: Mark.ID, text: Mark.Text, color: MarkColor, pointScale: CGFloat, imageWidth: CGFloat, style: TextStyle) {
         self.id = id
-        let probe = TextLayout(Mark.Text(origin: .zero, text: "", wrap: nil, size: text.size), imageWidth: imageWidth, pointScale: pointScale, style: style)
-        baseline = probe.lines[0].baseline
-        let outline = 2 * Mark.Text.outlineWidth * pointScale
-        margin = outline + CTFontGetSize(probe.font) / 4
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = probe.lineHeight
-        paragraph.maximumLineHeight = probe.lineHeight
-        let attributes: [NSAttributedString.Key: Any] = [.font: probe.font as NSFont, .paragraphStyle: paragraph,
-                                                         .foregroundColor: NSColor(cgColor: color.cgColor) ?? .red]
-        let storage = NSTextStorage(string: text.text, attributes: attributes)
+        let colored: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor(cgColor: color.cgColor) ?? .red]
+        let storage = NSTextStorage(string: text.text, attributes: colored)
         let layoutManager = OutlinedLayoutManager()
-        layoutManager.outlineWidth = outline
+        layoutManager.outlineWidth = 2 * Mark.Text.outlineWidth * pointScale
         storage.addLayoutManager(layoutManager)
         let container = NSTextContainer(size: CGSize(width: 1, height: CGFloat.greatestFiniteMagnitude))
         container.lineFragmentPadding = 0
@@ -45,10 +37,26 @@ final class TypingField: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
         super.init()
         layoutManager.delegate = self
         textView.delegate = self
-        textView.typingAttributes = attributes
-        textView.textContainerInset = CGSize(width: margin, height: margin)
+        textView.typingAttributes = colored
+        setStyle(style, size: text.size, pointScale: pointScale, imageWidth: imageWidth)
         textView.configurePlainText()
         textView.onResign = { [weak self] in self?.onResign?() }
+    }
+
+    /// Sets the words in `style` at `size` pt, as `TextLayout` sets them. For a new style while
+    /// typing, the words, the caret, the selection and the undo stay, and `place` puts the view where
+    /// the text's new box is.
+    func setStyle(_ style: TextStyle, size: CGFloat, pointScale: CGFloat, imageWidth: CGFloat) {
+        let probe = TextLayout(Mark.Text(origin: .zero, text: "", wrap: nil, size: size), imageWidth: imageWidth, pointScale: pointScale, style: style)
+        baseline = probe.lines[0].baseline
+        margin = 2 * Mark.Text.outlineWidth * pointScale + CTFontGetSize(probe.font) / 4
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = probe.lineHeight
+        paragraph.maximumLineHeight = probe.lineHeight
+        let attributes: [NSAttributedString.Key: Any] = [.font: probe.font as NSFont, .paragraphStyle: paragraph]
+        if let storage = textView.textStorage { storage.addAttributes(attributes, range: NSRange(location: 0, length: storage.length)) }
+        textView.typingAttributes.merge(attributes) { $1 }
+        textView.textContainerInset = CGSize(width: margin, height: margin)
     }
 
     /// Puts the view over `box`, the core's box for the text, with its words wrapping where
@@ -99,7 +107,8 @@ final class TypingField: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
     nonisolated func layoutManager(_ layoutManager: NSLayoutManager, shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
                        lineFragmentUsedRect: UnsafeMutablePointer<NSRect>, baselineOffset: UnsafeMutablePointer<CGFloat>,
                        in textContainer: NSTextContainer, forGlyphRange glyphRange: NSRange) -> Bool {
-        baselineOffset.pointee = baseline
+        // Laid out on the main thread, as the text view that asks for it is.
+        baselineOffset.pointee = MainActor.assumeIsolated { baseline }
         return true
     }
 }
