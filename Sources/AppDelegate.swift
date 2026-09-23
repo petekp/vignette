@@ -293,9 +293,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotate([Screenshot(url: url)])
     }
 
+    /// Each piece carries its drawing into the stitch: the editor's own for the image open in it, as
+    /// Copy Drawing does, else the stored one.
     func stitch(_ shots: [Screenshot]) {
         guard shots.count >= 2 else { Commands.error("stitch", .notEnoughFiles, "needs 2, got \(shots.count)"); return }
-        guard let composed = Stitch.compose(shots.map(\.url), longSideLimit: Settings.shared.data.ui.stitchLongSide) else {
+        let pieces = shots.map { shot in
+            Stitch.Piece(url: shot.url, drawing: annotator.openDrawing(of: shot.url)
+                ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: .standard) })
+        }
+        let style = TextStyle.standard, limit = Settings.shared.data.ui.stitchLongSide
+        DispatchQueue.global(qos: .userInitiated).async {
+            let composed = Stitch.compose(pieces, style: style, longSideLimit: limit)
+            DispatchQueue.main.async { MainActor.assumeIsolated { [weak self] in self?.finishStitch(shots, composed) } }
+        }
+    }
+
+    private func finishStitch(_ shots: [Screenshot], _ composed: Stitch.Composition?) {
+        guard let composed else {
             Commands.error("stitch", .unreadableImage, shots.map(\.url.lastPathComponent).joined(separator: ", ")); return
         }
         // A file that would not decode is not in the picture, and one image is not a stitch.
