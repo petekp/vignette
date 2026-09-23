@@ -1,7 +1,7 @@
 # Drawing editor plan
 
 2026-09-22. Vignette's drawing editor moves from a web page to Swift. [The
-spec](drawing-editor-spec-2026-09-22.md) says how the editor behaves. This plan sets the order of the
+spec](editor.md), now `docs/editor.md`, says how the editor behaves. This plan sets the order of the
 work and lists what each step deletes.
 
 ## Why
