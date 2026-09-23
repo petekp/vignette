@@ -49,6 +49,8 @@ final class AnnotationController {
     private var openGeneration = 0
     /// Where the Send menu's pick goes once the editor hands over the drawing.
     private var sendingTo: AgentDestination?
+    /// The text style of the tweaks, which the colour pass lays a text out in to sample under it.
+    private var textStyle = TextStyle.standard
 
     /// Room the annotator needs below its window: the toolbar and its gap.
     var spaceBelow: CGFloat { AnnotatorToolbar.height + Settings.shared.data.ui.annotationToolbarGap }
@@ -170,14 +172,15 @@ final class AnnotationController {
         let maxPixel = Thumbnailer.screenPixels(on: screen)
         let decoded = Thumbnailer.cached(at: shot.url, maxPixel: maxPixel).flatMap(Self.cgImage)
         colorSample = nil
-        let style = TextStyle.standard
+        let ui = Settings.shared.data.ui
+        textStyle = ui.textStyle
         // Read here and captured: the pick runs inside the core's own reduce, where the editor's core
         // cannot be read.
         let scale = drawing.pointScale
-        editor.open(drawing, image: decoded, picture: container?.bounds ?? .zero, style: style, metrics: .standard, arrowhead: .standard,
-                    pickColor: { [weak self] mark in
-                        guard let sample = self?.colorSample, sample.key == key else { return nil }
-                        return sample.sample.pick(for: mark, pointScale: scale, style: style)
+        editor.open(drawing, image: decoded, picture: container?.bounds ?? .zero, style: textStyle, metrics: ui.editorMetrics,
+                    arrowhead: ui.arrowhead, pickColor: { [weak self] mark in
+                        guard let self, let sample = colorSample, sample.key == key else { return nil }
+                        return sample.sample.pick(for: mark, pointScale: scale, style: textStyle)
                     })
         if decoded != nil { loaded(key, started: started) }
         else {

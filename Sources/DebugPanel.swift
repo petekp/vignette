@@ -166,6 +166,34 @@ struct DebugPanelView: View {
                     Tweak("Zoom edge band", \.zoomEdgeBandPoints, 0...400, step: 5, unit: "pt")
                     Tweak("Zoom edge pull", \.zoomEdgePull, 0...1, step: 0.05)
                 }
+                Section("Editor") {
+                    Tweak("Drag starts after", \.dragDistance, 0...20, step: 0.5, unit: "pt")
+                    Tweak("Stroke hit margin", \.hitMargin, 0...20, step: 0.5, unit: "pt")
+                    Tweak("Corner hit area", \.cornerHitSize, 0...40, step: 0.5, unit: "pt")
+                    Tweak("Edge hit area", \.edgeHitSize, 0...40, step: 0.5, unit: "pt")
+                    Tweak("Small mark", \.smallSide, 0...60, unit: "pt")
+                    Text("A mark shorter than this along a side keeps its handles' hit areas outside it.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Tweak("Handle size", \.handleSize, 2...24, step: 0.5, unit: "pt")
+                    Tweak("Arrow dot radius", \.dotRadius, 1...16, step: 0.5, unit: "pt")
+                    Tweak("Arrow dot hit radius", \.dotHitRadius, 2...40, step: 0.5, unit: "pt")
+                    Tweak("Selection outline", \.selectionOutlineWidth, 0...12, step: 0.5, unit: "pt")
+                    Tweak("Smallest rectangle", \.smallestRectangle, 0...40, unit: "pt")
+                    Tweak("Shortest arrow", \.shortestArrow, 0...40, unit: "pt")
+                    Tweak("Text drag wait", \.textDragDelay, 0...1, step: 0.05, unit: "s")
+                    Tweak("Text drag distance", \.textDragDistance, 0...80, unit: "pt")
+                    Text("Sizes are screen points, the same at any zoom. A press with the Text tool sets how wide the text wraps if it is held this long and then dragged this far sideways.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Marks") {
+                    Tweak("New text size", \.newTextSize, 8...96, unit: "pt")
+                    Tweak("Text weight", \.textWeight, 100...900, step: 100)
+                    Tweak("Line height", \.textLineHeight, 1...2, step: 0.05)
+                    Tweak("Arrowhead length", \.arrowheadLength, 1...10, step: 0.25)
+                    Tweak("Arrowhead width", \.arrowheadWidth, 1...10, step: 0.25)
+                    Text("New text size is in the drawing's points. Text weight runs from 100, Ultralight, to 900, Black. 500 is Medium. Line height is a multiple of the text's size. The arrowhead's length and width are multiples of the stroke width.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section("Stitch") {
                     Tweak("Long side", \.stitchLongSide, 512...8192, step: 128, unit: "px")
                 }

@@ -140,7 +140,8 @@ struct TextStyle: Equatable, @unchecked Sendable {
     /// are safe to share between threads.
     private let face: CTFontDescriptor
 
-    static let standard = TextStyle(weight: .medium, lineHeight: 1.35)
+    /// The tweaks' defaults.
+    static let standard = UITweaks().textStyle
 
     init(weight: NSFont.Weight, lineHeight: CGFloat) {
         self.weight = weight

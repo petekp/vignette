@@ -32,9 +32,8 @@ struct EditorMetrics: Equatable {
     /// outside a mark's ink, so the mark's colour shows.
     var selectionOutlineWidth: CGFloat
 
-    static let standard = EditorMetrics(dragDistance: 4, hitMargin: 4, cornerHitSize: 13.5, edgeHitSize: 9, smallSide: 16,
-                                        handleSize: 8, dotRadius: 4, dotHitRadius: 12, smallestRectangle: 4, shortestArrow: 8,
-                                        textDragDelay: 0.15, textDragDistance: 24, newTextSize: 24, selectionOutlineWidth: 3.5)
+    /// The tweaks' defaults.
+    static let standard = UITweaks().editorMetrics
 }
 
 /// Everything the drawing editor decides, as a reducer with no view in it. The view turns events
