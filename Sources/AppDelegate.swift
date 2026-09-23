@@ -566,6 +566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             "agentSkill": ["setting": settings.data.agentSkill, "installed": installedSkillPaths()] as [String: Any],
         ] as [String: Any]
         report.sections["annotator"] = annotator.stateJSON
+        report.sections["editor"] = annotator.editor.core.inspection
         report.sections["drawings"] = drawings.keys.sorted()
         report.sections["requests"] = requests.stateJSON
         report.sections["memory"] = ["rss": residentBytes(), "thumbnails": Thumbnailer.cacheBytes]

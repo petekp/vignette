@@ -668,8 +668,6 @@ final class AnnotationController {
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.panel.frame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
             "tool": toolbar.model.tool?.rawValue as Any,
-            // The colour pass picks every mark's colour, so the next one always starts in this.
-            "color": MarkColor.start.rawValue,
         ]
     }
 }

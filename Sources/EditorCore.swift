@@ -1474,8 +1474,9 @@ struct EditorCore {
 
     // MARK: Inspecting
 
-    /// The `editor` section of `[state]`: the tool, each mark's type and frame in px, the selection
-    /// as indexes into the marks, whether a text is being typed, and the undo and redo depth.
+    /// The `editor` section of `[state]`: the tool, each mark's type, frame in px and whether an agent
+    /// drew it, the selection as indexes into the marks, whether a text is being typed, and the undo
+    /// and redo depth. Never a text's words.
     var inspection: [String: Any] {
         let geometry = self.geometry
         return [
@@ -1483,7 +1484,8 @@ struct EditorCore {
             "tool": tool.rawValue,
             "marks": drawing.marks.map { mark -> [String: Any] in
                 let frame = geometry.extent(of: mark)
-                return ["type": mark.kind.rawValue, "frame": [frame.minX, frame.minY, frame.width, frame.height].map { Int($0.rounded()) }]
+                return ["type": mark.kind.rawValue, "frame": [frame.minX, frame.minY, frame.width, frame.height].map { Int($0.rounded()) },
+                        "agent": mark.agent]
             },
             "selection": drawing.marks.indices.filter { selection.contains(drawing.marks[$0].id) },
             "typing": typing != nil,
