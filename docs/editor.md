@@ -161,6 +161,7 @@ of the image. The fractions become px when the marks arrive. A reply's marks tak
 | Selected text while typing | Blue background, white letters, no outline |
 | Cursors | The system's: a crosshair while drawing, the arrow in Select, resize cursors on handles, an open hand on arrow dots, a closed hand while moving |
 | Confirmation | A small dark capsule at the bottom centre of the frame, over the picture. It stays up for `ui.toastSeconds` and takes no clicks. |
+| Behind the image | `#1a1a1a`, so a screenshot's transparent pixels are never see-through: in the editor, on a card and in flight |
 
 Marks, text and the outline scale with the zoom. Handles, selection and hover outlines, dots, the
 brush and hit areas stay the same size on screen. Each step of a zoom moves both in the same frame.
@@ -550,8 +551,10 @@ Return still copies the drawing and closes the editor. It stays the main way to 
 ### Cards and flights
 
 - A card whose screenshot has a drawing draws the marks over its thumbnail, with the editor's
-  renderer, at the card's size. A card in flight does the same. Per Decision 16, no preview images
-  are stored.
+  renderer, at the card's size. A card in flight does the same, and so does the image of a card
+  dragged out of the stack. Per Decision 16, no preview images are stored.
+- Cards, flights, stitches and dragged cards draw in the live text style and arrowhead, as the
+  editor does.
 
 ### The colour pass
 

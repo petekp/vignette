@@ -19,8 +19,10 @@ the measurements and the reasoning; a rule here points at its note.
   the copy offset, the snap angle, the 0.3 s hand-over), the editor's own colours (`EditorStyle`),
   the stroke width and the text outline (`Mark.strokeWidth`, `Mark.Text.outlineWidth`), and the
   colour pass (`ColorPass.swift`). The editor's sizes, its text's weight and line height, and the
-  arrowhead's proportions are `UITweaks`, the Editor and Marks sections of the panel, and a change
-  reaches an open editor at once (`AnnotationController.applyTweaks`). What a user would tune belongs in `UITweaks`
+  arrowhead's proportions are `UITweaks`, the Editor and Marks sections of the panel. A change
+  reaches every place that draws marks at once: the open editor (`AnnotationController.applyTweaks`),
+  the cards and flights (`ThumbnailController.applyTweaks`), and the next stitch, drag image and
+  rendering, which read the settings when they draw. What a user would tune belongs in `UITweaks`
   with a `Bound` and a slider; when in doubt, put it there. Editing the file is a supported way to
   change settings; the app reloads it within a second. It is the user's real config: never test
   against it. `VIGNETTE_SETTINGS=<path>` in the environment
@@ -244,9 +246,12 @@ the same driven sequence; a single run varies.
   hidden behind the flight image until `arrived`. That is what makes the editor take the pointer
   the moment the card looks still: the toolbar and the outside-click monitor start with the window,
   and a shadow is the one thing that would show, because it falls outside the frame it is cast
-  from. The keys come earlier: `prepare` orders the window in invisible and ignoring the mouse and
-  makes it key, so a tool key or Esc pressed during the flight already reaches the editor. Done or
-  Esc is accepted between the two moments, so the `arrived` callback is
+  from. The keys come earlier: `prepare` orders the window in at alpha 0 and makes it key, so a
+  tool key or Esc pressed during the flight already reaches the editor. The pointer does not: the
+  window server passes presses through a window at alpha 0, and after `show` sets alpha 1 it took
+  about 21 ms to send them to the window (measured). A press during the flight or in those first
+  milliseconds goes to the app behind and never reaches the editor. The gap is known and not closed.
+  Done or Esc is accepted between the two moments, so the `arrived` callback is
   guarded on the key, not the phase. A flight can also go without arriving, and a third callback,
   `dropped`, runs then, so the window never keeps a shadow that is switched off. The window is at
   the fitted frame by then whatever the zoom was: `hide` springs the level back to 1 first and
@@ -382,6 +387,15 @@ the same driven sequence; a single run varies.
   the window server does not report the new window under the cursor for a few milliseconds, and a
   press inside the frame then reads as outside. That is a race, not motion, so the scale does not
   touch it.
+- A screenshot's transparent pixels are never see-through. The annotator's frame, a card
+  (`StackView`) and a flight (`TransitionLayer`) paint `Config.matte`, `#1a1a1a`, behind the
+  image, so nothing changes when one takes over from another. The matte is also what routes the
+  annotator's clicks. Its window spans the screen's visible frame and is clear outside the frame,
+  and the window server gives a press to a window only where its pixel is not clear. So every press
+  on the frame reaches the editor, and a click outside it reaches the app behind, where the
+  annotator's `OutsideClick` sees it and closes the editor. That holds only while
+  `ignoresMouseEvents` is never set: set either way, the window takes or passes every press,
+  whatever its pixels.
 - Which image is in the annotator, where it came from, and what is in flight has one owner:
   `AnnotatorTransition` (a pure reducer) held by `ThumbnailController`. Controllers send events
   (annotate, shown, parked, close, finish, newShot, dismiss, remove) and run the effects it returns
@@ -409,7 +423,9 @@ the same driven sequence; a single run varies.
   already flying keeps the frame and blends the bow). `abandon` is `AnnotationController.abandon()`:
   it parks the drawing and stores it, since the editor holds the keys during the flight and a key
   pressed then can change the drawing, and it takes the window down with no fit-out, since no zoom
-  can have happened. `dismiss` and `remove` still park from `flyingOut`, because the panel aims that
+  can have happened. The controller's `.abandon` keeps the parked marks (`parkedMarks`), as `.park`
+  does, so the flight home carries the drawing as it was parked, not as it left. `dismiss` and
+  `remove` still park from `flyingOut`, because the panel aims that
   same flight offscreen before the event arrives. Esc is the user's way in: the annotator's window
   holds the keys from `prepare`, so the editor sees it and asks through `onClosed`, which the
   controller sends as `close`. `docs/flight-interrupt-2026-09-18.md` has the frames.
@@ -465,18 +481,24 @@ the same driven sequence; a single run varies.
   texts never delays the one being edited. The bitmap is an `IOSurface`: Core Animation copies a
   `CGImage` at the commit that shows it, which took up to 22 ms on the main thread for a text the
   size of the view and doubled its memory. A bitmap is shown only while its text is the same record
-  and still wants exactly that `Target` (mark, region, scale); a draw no longer wanted is skipped
-  before it starts, and after `park()` nothing is shown. `restyle()` gives every text a new record,
-  because a target does not name the style. A text keeps at most two bitmaps, a whole and a sharper
+  and still wants exactly that `Target` (mark, region, scale, style); a draw no longer wanted is
+  skipped before it starts, and after `park()` nothing is shown. The shared bitmaps and
+  `take(from:)` match on the style too, so a bitmap never crosses styles. A card's or a flight's
+  marks take a new style through `restyle(_:arrowhead:)`, and each text keeps the bitmap it has
+  until its new one arrives. A text keeps at most two bitmaps, a whole and a sharper
   detail, the one on its way included. Each owner's plan caps them: the editor's at the view's size
   in device pixels, a card's at the part of the image the card shows at its rest size. The editor
   and the flight into it ask for the same targets, so the second shows the first's bitmap
   (`adopt(from:)`) instead of drawing it again. The typed text's view stays until its bitmap
   arrives (`onTextDrawn`), so the words are on screen in every frame. A card's marks sit inside its
-  `DragSource` view and are flattened at the largest size the card has been placed at, so a
-  narrowing stack redraws nothing; a flight carries them as a SwiftUI `.marks` overlay after the
-  shadow, because SwiftUI draws the shadow of a view holding an AppKit view a level or two
-  differently, and a card's shadow has to match its flight's.
+  `DragSource` view and are flattened at the larger of the biggest size the card has been placed at
+  and its rest size (`MarksView.restSize`), so a narrowing stack redraws nothing and a card first
+  placed in a narrowed one is sharp when it widens. A flight carries them as a SwiftUI `.marks`
+  overlay after the shadow, because SwiftUI draws the shadow of a view holding an AppKit view a
+  level or two differently, and a card's shadow has to match its flight's. The overlay clips on its
+  own layer's corner (`MarksView.corner`), which follows the flight's corner in every frame. The
+  drag image is the card as drawn: `DragSourceView.dragImage` draws the image over the matte,
+  clipped to the card's corner, and draws the drawing over it with `Drawing.draw` in the live style.
 - Drawings are owned by the app, and every write goes through `Drawings` (`Drawings.swift`, with
   `DrawingStore` for the files): one JSON file per screenshot under
   `~/Library/Application Support/<bundle id>/drawings/`, named by a hash of the file path the app
@@ -484,10 +506,12 @@ the same driven sequence; a single run varies.
   never while a button is held (`[drawing] saved`), and once more when it parks (`parked`);
   agents' marks arrive through `Drawings.add` (`built`, or `saved` when they join the open
   drawing). A drawing with no marks removes its file. `onChange` hands each card its drawing, so a
-  write reaches the card at once; `load` reads off the main thread and drops a read that began
-  before a write. A file that does not parse is set aside as `<id>.json.invalid`; a newer build's
-  file, another screenshot's, or one made on an image of another size is read as no drawing and
-  left where it is. A launch sweeps the drawings whose screenshot is gone. It also removes what the
+  write reaches the card at once. `load` takes a list and reads it in one job off the main thread,
+  and a stack opening reads its cards' drawings in one such job per turn and changes `cards` once
+  (`ThumbnailController.setDrawings`). A key written or removed while it was read is left out of
+  the answer, since `onChange` already said what it is. A file that does not parse is set aside as
+  `<id>.json.invalid`; a newer build's file, another screenshot's, or one made on an image of
+  another size is read as no drawing and left where it is. A launch sweeps the drawings whose screenshot is gone. It also removes what the
   web editor left, its drafts and WebKit's data, where they are still there
   (`Drawings.removeWebEditorData`, one `[app] removed web editor data <path>` line each); drafts are
   not carried over.

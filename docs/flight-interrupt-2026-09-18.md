@@ -49,6 +49,11 @@ editor holds the keys from `prepare`, so a key pressed during the flight can cha
 fit-out because no zoom can have happened: the zoom keys are ignored until the window is up. With
 nothing changed, the stored drawing is written back as it was.
 
+The flight home carries the drawing as it was parked. `ThumbnailController` keeps the parked marks
+on `.abandon`, as it does on `.park`, so a mark deleted during the flight out is gone from the card
+that comes back. Before that fix the flight home showed the drawing it left with, and the deleted
+text vanished only at the lift.
+
 `returnCard` re-aims the flight that is already in the air. `TransitionLayer.fly` on an id it
 already holds keeps the frame, puts the old path in `previousPath` and animates `blend` back to 1,
 so the card crosses from one bow to the other and keeps its velocity into the new target. A swap is
@@ -125,5 +130,5 @@ card had unless a key changed it during the flight.
 A decode or a colour sample that answers after its image was abandoned is dropped:
 `AnnotationController.open` counts opens in `openGeneration`, and each answer checks it. A flight's
 image is lifted only for the key the reducer says is `annotating` (`ThumbnailController.editorLoaded`),
-`prepare` clears `loadedKeys` for the key it opens, and `abandon` clears that key too, so the next
-annotate of it waits for its own `loaded`.
+and every `prepare` clears `loadedKeys` for the key it opens, so the next annotate of an abandoned
+key waits for its own `loaded`.

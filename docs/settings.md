@@ -110,8 +110,8 @@ says otherwise, so they look the same at any zoom.
 | `arrowheadLength` | 4.5 | A multiple of the stroke width |
 | `arrowheadWidth` | 4 | A multiple of the stroke width |
 
-`textWeight`, `textLineHeight` and the arrowhead apply in the editor and in what Done, Send and Copy
-Drawing render. Cards, flights and stitches still draw with the defaults.
+`textWeight`, `textLineHeight` and the arrowhead apply wherever marks are drawn: the editor, the
+cards, a card in flight, a stitch, a dragged card, and what Done, Send and Copy Drawing render.
 
 ## Invalid files
 
