@@ -297,12 +297,16 @@ final class DrawingsTests: XCTestCase {
         }
     }
 
-    func testALaunchRemovesTheOldDraftsFolders() throws {
-        let drafts = dir.appendingPathComponent("drafts")
-        try FileManager.default.createDirectory(at: drafts, withIntermediateDirectories: true)
-        try Data("{}".utf8).write(to: drafts.appendingPathComponent("a.json"))
-        Drawings.removeDrafts(in: [drafts, dir.appendingPathComponent("never-made")])
-        XCTAssertFalse(FileManager.default.fileExists(atPath: drafts.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.path), "only the drafts folder goes")
+    func testALaunchRemovesWhatTheWebEditorLeft() throws {
+        // The drafts folders and WebKit's two, as a launch names them, inside a stand-in home.
+        let left = ["Application Support/app/drafts", "Caches/app/drafts", "Caches/app/WebKit/NetworkCache", "WebKit/app/WebsiteData"]
+        for path in left {
+            try FileManager.default.createDirectory(at: dir.appendingPathComponent(path), withIntermediateDirectories: true)
+            try Data("{}".utf8).write(to: dir.appendingPathComponent(path).appendingPathComponent("a.json"))
+        }
+        let folders = ["Application Support/app/drafts", "Caches/app/drafts", "Caches/app/WebKit", "WebKit/app"].map(dir.appendingPathComponent)
+        Drawings.removeWebEditorData(folders + [dir.appendingPathComponent("never-made")])
+        for folder in folders { XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path), folder.path) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("Caches/app").path), "only those folders go")
     }
 }

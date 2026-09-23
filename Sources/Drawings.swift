@@ -128,17 +128,18 @@ final class Drawings {
         return made.marks
     }
 
-    // MARK: Drafts
+    // MARK: What the web editor left
 
-    /// Removes the drafts folders the previous editor kept, where they are still there: its drafts
-    /// are not carried over. Every launch asks; once they are gone that is one lookup each.
-    static func removeDrafts(in folders: [URL]) {
+    /// Removes the folders the web editor kept, where they are still there: its drafts, which are
+    /// not carried over, and WebKit's data. Nothing reads them now. Every launch asks; once they are
+    /// gone that is one lookup each.
+    static func removeWebEditorData(_ folders: [URL]) {
         for folder in folders where FileManager.default.fileExists(atPath: folder.path) {
             do {
                 try FileManager.default.removeItem(at: folder)
-                Log.write("[drawings] removed old drafts \(folder.path)")
+                Log.write("[app] removed web editor data \(folder.path)")
             } catch {
-                Log.write("[drawings] error write-failed could not remove old drafts \(folder.path): \(error.localizedDescription)")
+                Log.write("[app] error write-failed could not remove web editor data \(folder.path): \(error.localizedDescription)")
             }
         }
     }

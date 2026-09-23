@@ -315,11 +315,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     private lazy var drawings = Drawings(store: DrawingStore(directory: Identity.applicationSupportURL.appendingPathComponent("drawings")))
 
-    /// Clears out what the previous editor left, removes the drawings whose screenshot is gone, and
-    /// tells the stack which cards have one.
+    /// Clears out what the web editor left, removes the drawings whose screenshot is gone, and tells
+    /// the stack which cards have one.
     private func startDrawings() {
-        Drawings.removeDrafts(in: [Identity.applicationSupportURL.appendingPathComponent("drafts"),
-                                   Identity.cachesURL.appendingPathComponent("drafts")])
+        Drawings.removeWebEditorData([
+            Identity.applicationSupportURL.appendingPathComponent("drafts"),
+            Identity.cachesURL.appendingPathComponent("drafts"),
+            Identity.cachesURL.appendingPathComponent("WebKit"),
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/WebKit/\(Identity.bundleID)"),
+        ])
         drawings.onChange = { [weak self] keys in self?.thumbnail.setDrawings(keys) }
         drawings.sweep { FileManager.default.fileExists(atPath: $0) }
     }

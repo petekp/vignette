@@ -12,7 +12,7 @@ anywhere.
 ```
 open -g vignette://copy                       # copy to clipboard
 open -g vignette://annotate                   # open the annotator
-open -g vignette://copy-annotated             # copy with the draft rendered in, if there is one
+open -g vignette://copy-annotated             # copy with the drawing rendered in, if there is one
 open -g vignette://paths                      # copy the path as text
 open -g vignette://open                       # open the newest recording in the app that plays movies
 open -g "vignette://trash?file=~/Dropbox/Screenshots/x.png"
@@ -23,15 +23,13 @@ open -g "vignette://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a 
 open -g "vignette://add?file=/tmp/agent/x.png&marks=/tmp/agent/marks.json"  # the same, with the agent's drawing on it
 open -g vignette://recent                     # toggle the recent stack (same as the hotkey)
 open -g vignette://dismiss                    # close the thumbnail or the stack
-open -g vignette://cancel                     # close the annotator without exporting, as Esc would
+open -g vignette://cancel                     # close the annotator without copying, as Esc would
 open -g "vignette://state?tag=t1"             # one [state] {json} line in the log, tag echoed
 open -g vignette://help                       # list every command in the log
 open -g vignette://settings                   # open the Settings window
 open -g vignette://install-skill              # install the agent skill for Claude Code and Codex
 open -g vignette://restore-apple-defaults     # put Apple's screencapture defaults back
 open -g vignette://tweaks                     # live UI tweaks panel (needs "debug": true)
-open -g vignette://show-editor                # the editor window without an image (needs "debug": true)
-open -g "vignette://eval?return%201%2B1"      # JavaScript in the editor page (needs "debug": true)
 ```
 
 ## Marks
@@ -50,23 +48,22 @@ The types are `ellipse`, `rectangle`, `arrow`, and `text`. The toolbar has no el
 an agent can push one anyway. `ellipse` and `rectangle` take `x`, `y`, `w`, `h`. `arrow` takes
 `x`, `y`, `x2`, `y2`. `text` takes `x`, `y`, `text`, and an optional `w`, the box the words wrap in. Without
 `w` the box runs from `x` to the right edge. Text is sized for the image. A box that would run off
-is widened and moved inside. Text too long to fit is logged as `[web] pushed text too long`, and
-[pushed-text-2026-09-19.md](pushed-text-2026-09-19.md) has the numbers.
+is widened and moved inside. Text too long to fit is cut off at the edge and logged as
+`[marks] text too long`, and [pushed-text-2026-09-19.md](pushed-text-2026-09-19.md) has the numbers.
 
-`color` is optional. A mark may name any colour in `CANDIDATES` (`web/src/config.ts`) and keeps it.
-A mark that names none is coloured from what it covers, like your own marks. Pushed marks become a
-draft before the card appears, so the card and Copy Drawing show them, and the editor can move,
-retype, or delete them. A marked push is refused with `page-not-ready` from the moment the
-annotator takes an image until it has given it back, and while a Copy Drawing is rendering.
+`color` is optional. A mark may name `red`, `yellow`, `light-blue`, `white`, or `violet`, and keeps
+it. A mark that names none is coloured from what it covers, like your own marks. Pushed marks join
+the image's drawing before the card appears, so the card and Copy Drawing show them, and the editor
+can move, retype, or delete them. A push to the image open in the editor joins its drawing as one
+undo step.
 
 ## The log
 
 Every command answers with one line in `~/Library/Logs/Vignette.log` (menu bar → Open Log):
 `[<command>] ok <detail>` or `[<command>] error <code> <detail>`. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`, `unreadable-image`,
-`page-not-ready`, `export-timeout`, `export-failed`, `settings-invalid`, `debug-disabled`,
-`no-apple-original`, `eval-failed`, `write-failed`, `unsupported-type`, `invalid-marks`, `no-agent`,
-`send-failed`. The log has one event per line,
+`settings-invalid`, `debug-disabled`, `no-apple-original`, `write-failed`, `unsupported-type`,
+`invalid-marks`, `no-agent`, `send-failed`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
 ## Input events

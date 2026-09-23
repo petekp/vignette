@@ -1,6 +1,7 @@
 #!/bin/zsh
 # Rebuilds, then relaunches the app. Waits for the old process to exit before opening the new
-# build, so the new instance never finds an older one to replace. Drafts die with the old process.
+# build, so the new instance never finds an older one to replace. Drawings live on disk. The kill
+# skips the app's own quit, so the editor loses only a change from its last 0.3 s.
 set -e
 cd "$(dirname "$0")/.."
 ./scripts/build.sh "$@"
