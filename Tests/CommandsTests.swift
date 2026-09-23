@@ -109,6 +109,7 @@ final class CommandsTests: XCTestCase {
             ("[{\"type\":\"text\",\"x\":0.1,\"y\":0.1,\"text\":\"" + String(repeating: "x", count: 2001) + "\"}]", "text is longer than 2000 characters"),
             (#"[{"type":"ellipse","x":0.1,"y":0.1,"w":0.1,"h":0.1,"color":"blue"}]"#, "mark 1: color must be one of red, yellow, light-blue, white, violet"),
             (#"[{"type":"ellipse","x":true,"y":0.1,"w":0.1,"h":0.1}]"#, "x must be a number from 0 to 1"),
+            (#"[{"type":"ellipse","x":0.1,"y":0.1,"w":0.1,"h":0.1},{"type":"ellipse","x":0.1,"y":1e999,"w":0.1,"h":0.1}]"#, "mark 2: y must be a number from 0 to 1"),
         ]
         for (value, expected) in cases {
             XCTAssertThrowsError(try AgentMark.parse(value), value) { error in

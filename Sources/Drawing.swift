@@ -16,6 +16,10 @@ struct Drawing: Equatable {
     /// The file format's version. `DrawingStore` leaves a file with a newer one alone.
     static let version = 1
 
+    /// The point scales a drawing file or copied marks may carry. Displays are 1 to 3 px per pt;
+    /// far outside that, a text is too large to lay out or too small to see.
+    static let pointScales: ClosedRange<CGFloat> = 0.5...8
+
     /// The screenshot's path.
     let key: String
     let pixels: PixelSize
@@ -83,9 +87,9 @@ struct Mark: Equatable, Identifiable {
     }
 
     enum Geometry: Equatable {
-        /// The frame, whose width and height are more than 0.
+        /// The frame. Its width and height are more than 0 in a mark read from a file or a paste.
         case rectangle(CGRect)
-        /// Fills its frame, whose width and height are more than 0.
+        /// Fills its frame. Its width and height are more than 0 in a mark read from a file or a paste.
         case ellipse(CGRect)
         case arrow(Arrow)
         case text(Text)
@@ -103,7 +107,8 @@ struct Mark: Equatable, Identifiable {
     struct Text: Equatable {
         /// The top-left corner of the box.
         var origin: CGPoint
-        /// Plain text, possibly several lines. Not empty, and at most `MarkFields.maxTextLength` characters.
+        /// Plain text, possibly several lines. A mark read from a file or a paste holds some, within
+        /// `MarkFields`' limits; the editor holds an empty one while it is being typed.
         var text: String
         /// The width the words wrap at, in px. Nil wraps them at the image's edge (`TextLayout.lineWidth`).
         var wrap: CGFloat?
@@ -112,6 +117,8 @@ struct Mark: Equatable, Identifiable {
 
         /// The size a text made with the Text tool starts at, in pt.
         static let defaultSize: CGFloat = 24
+        /// The largest size a text read from a file or a paste may have, in pt.
+        static let maxSize: CGFloat = 1000
     }
 
     var kind: MarkKind {
@@ -142,6 +149,8 @@ struct MarkFields {
     enum Unit { case px, fraction }
 
     static let maxTextLength = 2000
+    /// A limit on the bytes as well, since one character can carry any number of combining marks.
+    static let maxTextBytes = 100_000
 
     let item: [String: Any]
     let unit: Unit
@@ -185,6 +194,7 @@ struct MarkFields {
         guard let text = item["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw MarkProblem("text is missing")
         }
+        guard text.utf8.count <= Self.maxTextBytes else { throw MarkProblem("text is longer than \(Self.maxTextBytes) bytes") }
         guard text.count <= Self.maxTextLength else { throw MarkProblem("text is longer than \(Self.maxTextLength) characters") }
         return text
     }
@@ -234,8 +244,10 @@ extension Mark {
             let ends = try fields.arrowEnds()
             geometry = .arrow(Arrow(start: ends.start, end: ends.end, bend: try fields.optionalNumber("bend") ?? 0))
         case .text:
+            let size = try fields.size("size")
+            guard size <= Text.maxSize else { throw MarkProblem("size must be at most \(Int(Text.maxSize))") }
             geometry = .text(Text(origin: CGPoint(x: try fields.number("x"), y: try fields.number("y")),
-                                  text: try fields.text(), wrap: try fields.optionalSize("wrap"), size: try fields.size("size")))
+                                  text: try fields.text(), wrap: try fields.optionalSize("wrap"), size: size))
         }
         self.init(geometry: geometry, color: color, agent: try fields.flag("agent"), colorChosen: try fields.flag("colorChosen"))
     }
@@ -245,8 +257,9 @@ extension Mark {
 
 extension Mark {
     /// This mark inside `image`: moved in where it fits, and cut to the image where it does not. A text
-    /// wider or taller than the image keeps its start showing. Nil when the mark has a number that is
-    /// not finite, or an arrow's ends meet at an edge.
+    /// without a wrap width near the right edge moves left (`TextLayout.leftEdge`), and a text wider or
+    /// taller than the image keeps its start showing. Nil when the mark has a number that is not
+    /// finite, or an arrow's ends meet at an edge.
     func placed(in image: PixelSize, pointScale: CGFloat, style: TextStyle) -> Mark? {
         let bounds = image.bounds
         var placed = self
@@ -268,6 +281,7 @@ extension Mark {
             guard [text.origin.x, text.origin.y, text.size, text.wrap ?? 0].allSatisfy(\.isFinite),
                   (text.size * pointScale).isFinite else { return nil }
             if let wrap = text.wrap, wrap > bounds.width { text.wrap = bounds.width }
+            text.origin.x = TextLayout.leftEdge(of: text, imageWidth: bounds.width, pointScale: pointScale, style: style)
             func layoutBox() -> CGRect { TextLayout(text, imageWidth: bounds.width, pointScale: pointScale, style: style).box }
             var box = layoutBox()
             if box.minX < 0 || box.maxX > bounds.maxX {
@@ -448,9 +462,13 @@ struct CopiedMarks {
     init?(data: Data) {
         guard let object = (try? DrawingJSON.object(from: data)) as? [String: Any],
               let version = DrawingJSON.wholeNumber(object["version"]), (1...Drawing.version).contains(version),
-              let scale = DrawingJSON.number(object["pointScale"]), scale > 0,
+              let scale = DrawingJSON.number(object["pointScale"]), Drawing.pointScales.contains(scale),
               let list = object["marks"] as? [Any] else {
             Log.write("[paste] error the clipboard's marks are not ones this build reads")
+            return nil
+        }
+        guard !list.isEmpty else {
+            Log.write("[paste] error the clipboard's marks list is empty")
             return nil
         }
         var marks: [Mark] = []
@@ -510,7 +528,7 @@ struct AgentMark: Codable, Equatable {
             guard let read = try? Data(contentsOf: url) else { throw MarkProblem("cannot read \(url.path)") }
             data = read
         }
-        guard let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
+        guard let list = (try? DrawingJSON.object(from: data)) as? [[String: Any]] else {
             throw MarkProblem("expected a JSON array of marks")
         }
         guard !list.isEmpty else { throw MarkProblem("no marks in it") }

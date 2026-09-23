@@ -35,6 +35,8 @@ final class DrawingTests: XCTestCase {
             (#"{"type": "text", "x": 1, "y": 1, "text": "\#(long)", "size": 24, "color": "red"}"#, "text is longer than 2000 characters"),
             (#"{"type": "text", "x": 1, "y": 1, "text": "a", "color": "red"}"#, "size must be a finite number"),
             (#"{"type": "text", "x": 1, "y": 1, "text": "a", "size": 0, "color": "red"}"#, "size must be more than 0"),
+            (#"{"type": "text", "x": 1, "y": 1, "text": "a", "size": 1000.5, "color": "red"}"#, "size must be at most 1000"),
+            (#"{"type": "text", "x": 1, "y": 1, "text": "a", "size": 1e300, "color": "red"}"#, "size must be at most 1000"),
             (#"{"type": "text", "x": 1, "y": 1, "text": "a", "size": 24, "wrap": 0, "color": "red"}"#, "wrap must be more than 0"),
         ]
         for (json, expected) in cases {
@@ -44,7 +46,17 @@ final class DrawingTests: XCTestCase {
             }
         }
         let longest = String(repeating: "字", count: MarkFields.maxTextLength)
-        XCTAssertNoThrow(try Mark(validating: ["type": "text", "x": 1, "y": 1, "text": longest, "size": 24, "color": "red"]))
+        XCTAssertNoThrow(try Mark(validating: ["type": "text", "x": 1, "y": 1, "text": longest, "size": 1000, "color": "red"]))
+    }
+
+    /// One character can carry any number of combining marks, so the character count alone would
+    /// let a single "a" hold megabytes.
+    func testATextOverTheByteLimitIsRefusedWhateverItsCharacterCount() {
+        let heavy = "a" + String(repeating: "\u{0301}", count: 2_000_000)
+        XCTAssertEqual(heavy.count, 1)
+        XCTAssertThrowsError(try Mark(validating: ["type": "text", "x": 1, "y": 1, "text": heavy, "size": 24, "color": "red"])) { error in
+            XCTAssertTrue("\(error)".contains("text is longer than 100000 bytes"), "\(error)")
+        }
     }
 
     func testAnOverflowingNumberBecomesNullOutsideStringsOnly() throws {
@@ -102,6 +114,39 @@ final class DrawingTests: XCTestCase {
         XCTAssertEqual(cut.origin.x, 0)
     }
 
+    /// A text with less than 15% of the image's width to its right moves left instead of wrapping
+    /// into a column of single characters.
+    func testATextNearTheRightEdgeMovesLeftInsteadOfWrappingIntoAColumn() throws {
+        let wide = PixelSize(width: 1600, height: 1000)
+        func place(_ text: Mark.Text, in image: PixelSize, pointScale: CGFloat) throws -> (text: Mark.Text, layout: TextLayout) {
+            let mark = try XCTUnwrap(Mark(geometry: .text(text)).placed(in: image, pointScale: pointScale, style: .standard))
+            guard case .text(let placed) = mark.geometry else { throw MarkProblem("placing a text gave another kind of mark") }
+            return (placed, TextLayout(placed, imageWidth: CGFloat(image.width), pointScale: pointScale, style: .standard))
+        }
+
+        let header = try place(Mark.Text(origin: CGPoint(x: 1560, y: 100), text: "The header should not scroll", size: 24), in: wide, pointScale: 2)
+        XCTAssertEqual(header.layout.lines.count, 1)
+        XCTAssertLessThan(header.text.origin.x, 1560)
+        XCTAssertGreaterThanOrEqual(header.layout.box.minX, 0)
+        XCTAssertLessThanOrEqual(header.layout.box.maxX, 1600 * 0.98 + 0.001, "its right edge is on the margin")
+        XCTAssertEqual(header.text.origin.y, 100)
+
+        let hello = try place(Mark.Text(origin: CGPoint(x: 380, y: 10), text: "Hello there", size: 24), in: image, pointScale: 1)
+        XCTAssertEqual(hello.layout.lines.count, 1)
+        XCTAssertLessThan(hello.text.origin.x, 380)
+
+        // With 20% of the width to its right a text keeps its place and wraps there.
+        let roomy = try place(Mark.Text(origin: CGPoint(x: 1248, y: 100), text: "The header should not scroll", size: 24), in: wide, pointScale: 2)
+        XCTAssertEqual(roomy.text.origin.x, 1248)
+        XCTAssertGreaterThan(roomy.layout.lines.count, 1)
+
+        // A text with a wrap width keeps its x; one wider than the image starts at its left edge.
+        let wrapped = Mark.Text(origin: CGPoint(x: 1560, y: 100), text: "The header", wrap: 30, size: 24)
+        XCTAssertEqual(TextLayout.leftEdge(of: wrapped, imageWidth: 1600, pointScale: 2, style: .standard), 1560)
+        let long = Mark.Text(origin: CGPoint(x: 1560, y: 100), text: String(repeating: "the header should not scroll ", count: 6), size: 24)
+        XCTAssertEqual(TextLayout.leftEdge(of: long, imageWidth: 1600, pointScale: 2, style: .standard), 0)
+    }
+
     // MARK: Copied marks
 
     func testCopiedMarksComeBackThroughTheValidator() throws {
@@ -121,7 +166,8 @@ final class DrawingTests: XCTestCase {
         let written = #"{"version": 1, "pointScale": 1, "marks": [{"type": "rectangle", "x": 1e999, "y": 0, "w": 1, "h": 1, "color": "red"}, {"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1, "color": "red"}]}"#
         XCTAssertEqual(CopiedMarks(data: Data(written.utf8))?.marks.map(\.geometry), [.rectangle(CGRect(x: 0, y: 0, width: 1, height: 1))])
         XCTAssertNil(CopiedMarks(data: Data(#"{"version": 2, "pointScale": 1, "marks": []}"#.utf8)), "a newer build's marks")
-        XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 0, "marks": []}"#.utf8)))
+        XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 9, "marks": [{"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1, "color": "red"}]}"#.utf8)))
+        XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 1, "marks": []}"#.utf8)))
         XCTAssertNil(CopiedMarks(data: Data("plain words".utf8)))
         XCTAssertEqual(CopiedMarks.pasteboardType.rawValue, Identity.bundleID + ".marks")
     }

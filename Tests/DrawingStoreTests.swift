@@ -130,6 +130,19 @@ final class DrawingStoreTests: XCTestCase {
         XCTAssertEqual(lines.all.count, 2)
     }
 
+    func testAPointScaleOutsideHalfToEightMakesTheFileInvalid() throws {
+        for scale in ["0.1", "9", "1e300", "1e-300"] {
+            try put(#"{"version": 1, "key": "\#(key)", "pixels": [3024, 1964], "pointScale": \#(scale), "marks": [{"type": "rectangle", "x": 1, "y": 1, "w": 5, "h": 5, "color": "red"}]}"#)
+            XCTAssertNil(read(), scale)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: store.url(for: key).appendingPathExtension("invalid").path), scale)
+            XCTAssertTrue(lines.all.last?.contains("pointScale must be a number from 0.5 to 8") == true, "\(lines.all)")
+        }
+        for scale in ["0.5", "8"] {
+            try put(#"{"version": 1, "key": "\#(key)", "pixels": [3024, 1964], "pointScale": \#(scale), "marks": [{"type": "rectangle", "x": 1, "y": 1, "w": 5, "h": 5, "color": "red"}]}"#)
+            XCTAssertNotNil(read(), scale)
+        }
+    }
+
     func testADrawingWhosePixelsDifferIsDropped() throws {
         let drawing = Drawing(key: key, pixels: pixels, pointScale: 2,
                               marks: [Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 50)))])

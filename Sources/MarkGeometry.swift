@@ -60,7 +60,8 @@ struct ArrowBody {
         let sweep: CGFloat
     }
 
-    /// Straight when `bend` is 0 or the ends meet.
+    /// The exact arc, straight only when `bend` is 0 or the ends meet. The renderer, the colour pass
+    /// and the editor get a body through `Mark.Arrow.body(pointScale:)`, which applies the 8 pt rule.
     init(start: CGPoint, end: CGPoint, bend: CGFloat) {
         self.start = start
         self.end = end
@@ -192,10 +193,27 @@ struct TextLayout {
     /// as tall as its lines. A text that ends in a line break, or holds nothing, has an empty last line.
     let box: CGRect
 
+    /// The least room a text without a wrap width wraps in, as a fraction of the image's width. One
+    /// that starts with less to its right moves left instead of wrapping into a narrow column.
+    static let minimumRoom: CGFloat = 0.15
+
     /// The widest a line of `text` may be: its wrap width, or the room from its left edge to the
     /// image's right edge less the margin.
     static func lineWidth(of text: Mark.Text, imageWidth: CGFloat) -> CGFloat {
         text.wrap ?? imageWidth * (1 - margin) - text.origin.x
+    }
+
+    /// The x a text should start at. A text without a wrap width that has less than `minimumRoom`
+    /// to its right moves left until its widest line, broken only at its hard line breaks, fits
+    /// before the margin, and no further left than 0, where a text wider than the image keeps its
+    /// start showing. Any other text keeps its x.
+    static func leftEdge(of text: Mark.Text, imageWidth: CGFloat, pointScale: CGFloat, style: TextStyle) -> CGFloat {
+        let right = imageWidth * (1 - margin)
+        guard text.wrap == nil, right - text.origin.x < imageWidth * minimumRoom else { return text.origin.x }
+        var unwrapped = text
+        unwrapped.wrap = .greatestFiniteMagnitude
+        let widest = TextLayout(unwrapped, imageWidth: imageWidth, pointScale: pointScale, style: style).lines.map(\.rect.width).max() ?? 0
+        return max(0, min(text.origin.x, right - widest))
     }
 
     init(_ text: Mark.Text, imageWidth: CGFloat, pointScale: CGFloat, style: TextStyle) {

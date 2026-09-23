@@ -3,7 +3,8 @@ import Foundation
 
 /// Drawings on disk, owned by the app: one JSON file per screenshot at `<directory>/<id>.json`.
 /// Builds from different worktrees share the folder, so a file from a newer build is read as no
-/// drawing and is never written over or removed. Every problem it meets is one `[drawing]` line.
+/// drawing and is never written over or removed. Every problem a read or a write meets is one
+/// `[drawing]` line.
 struct DrawingStore {
     let directory: URL
     private let log: @Sendable (String) -> Void
@@ -75,7 +76,7 @@ struct DrawingStore {
                 guard let placed = mark.placed(in: pixels, pointScale: stored.pointScale, style: style) else {
                     throw MarkProblem("nothing of it fits inside the image")
                 }
-                if placed != mark { log("[drawing] moved mark=\(index + 1) \(name): it was partly outside the image") }
+                if placed != mark { log("[drawing] moved mark=\(index + 1) \(name): it did not fit where it was") }
                 marks.append(placed)
             } catch {
                 log("[drawing] dropped mark=\(index + 1) \(name): \(error)")
@@ -174,8 +175,9 @@ struct DrawingStore {
               width > 0, height > 0 else {
             return .invalid("pixels must be two whole numbers above 0")
         }
-        guard let pointScale = DrawingJSON.number(object["pointScale"]), pointScale > 0 else {
-            return .invalid("pointScale must be a number above 0")
+        guard let pointScale = DrawingJSON.number(object["pointScale"]), Drawing.pointScales.contains(pointScale) else {
+            let range = Drawing.pointScales
+            return .invalid("pointScale must be a number from \(String(format: "%g", range.lowerBound)) to \(String(format: "%g", range.upperBound))")
         }
         guard let marks = object["marks"] as? [Any] else { return .invalid("marks must be a list") }
         return .stored(Stored(key: key, pixels: PixelSize(width: width, height: height), pointScale: pointScale, marks: marks))
