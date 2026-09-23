@@ -47,9 +47,11 @@ on its pixel size:
 The types are `ellipse`, `rectangle`, `arrow`, and `text`. The toolbar has no ellipse button, and
 an agent can push one anyway. `ellipse` and `rectangle` take `x`, `y`, `w`, `h`. `arrow` takes
 `x`, `y`, `x2`, `y2`. `text` takes `x`, `y`, `text`, and an optional `w`, the box the words wrap in. Without
-`w` the box runs from `x` to the right edge. Text is sized for the image. A box that would run off
-is widened and moved inside. Text too long to fit is cut off at the edge and logged as
-`[marks] text too long`, and [pushed-text-2026-09-19.md](pushed-text-2026-09-19.md) has the numbers.
+`w` the box runs from `x` to the right edge. Every mark is moved inside the image, and a mark with
+nothing inside it is dropped. Text is sized for the image, and a box that would run off the bottom
+is widened first. Text too long to fit is cut off at the edge and logged as
+`[marks] text too long for <name>`, and [pushed-text-2026-09-19.md](pushed-text-2026-09-19.md) has
+the numbers.
 
 `color` is optional. A mark may name `red`, `yellow`, `light-blue`, `white`, or `violet`, and keeps
 it. A mark that names none is coloured from what it covers, like your own marks. Pushed marks join
@@ -62,8 +64,8 @@ undo step.
 Every command answers with one line in `~/Library/Logs/Vignette.log` (menu bar → Open Log):
 `[<command>] ok <detail>` or `[<command>] error <code> <detail>`. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`, `unreadable-image`,
-`settings-invalid`, `debug-disabled`, `no-apple-original`, `write-failed`, `unsupported-type`,
-`invalid-marks`, `no-agent`, `send-failed`. The log has one event per line,
+`debug-disabled`, `no-apple-original`, `write-failed`, `unsupported-type`, `invalid-marks`,
+`no-agent`, `send-failed`, `reply-refused`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
 ## Input events

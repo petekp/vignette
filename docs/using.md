@@ -73,21 +73,27 @@ afterwards still takes all of them. Selecting another card while one is open add
 that run, and deselecting it takes it out. Esc, or closing the stack, drops the rest of the queue.
 
 A card on its way to the annotator can be turned around. In the stack, press Esc or click another
-card, and it goes straight home from wherever it is. A drawing you parked earlier stays as it was.
+card, and it goes straight home from wherever it is. Anything drawn on it is kept.
 
-Pinch, Cmd+scroll, or Cmd+plus and Cmd+minus zoom the image. Cmd+0 fits it again. The window grows
-with the image: each side widens or heightens until it reaches the edge of the space the annotator
-has. A two-finger double tap, or a double-click with the selection tool, zooms in twice on the point
-you are on, and comes home to the fitted size from anywhere above it. A double-click on a mark
-belongs to the editor, not the zoom.
+The editor has four tools: V selects, R draws rectangles, A arrows, and T text. A fresh image opens
+on the rectangle tool. Reopening a card you have already drawn on opens on the selection tool with
+the mark you drew last already selected, so a drag, an arrow key or Delete acts on it without a
+click first. Return copies the drawing and sends the card home. Esc cancels a drag in progress, and
+at rest closes the editor without copying. [The drawing editor](editor.md) lists every key and
+gesture.
+
+Cmd+C with nothing selected copies the drawing, the same image Return copies, and leaves the editor
+open. With marks selected it copies the marks, which paste into this image or another one.
 
 A mark is drawn in red unless red is what it sits on. Then it is drawn in yellow, light blue, white
-or violet, whichever is far enough from the pixels under it. The colour is measured when you draw
-the mark and again when you let go of it.
+or violet, whichever is far enough from the pixels under it. The colour is picked a moment after you
+stop changing a mark, and for a text when you stop typing.
 
-A fresh image opens on the rectangle tool. Reopening a card you have already drawn on opens on the
-selection tool with the mark you drew last already picked up, so a drag or Delete acts on it without
-a click first.
+Pinch, Cmd+scroll, or Cmd+plus and Cmd+minus zoom the image. Cmd+0 fits it again. A plain scroll
+moves around a zoomed-in image. The window grows with the image: each side widens or heightens until
+it reaches the edge of the space the annotator has. A two-finger double tap, or a double-click on
+empty space with the selection tool, zooms in twice on the point you are on, and comes home to the
+fitted size from anywhere above it. A double-click on a text edits it instead.
 
 A card whose drawing you parked with Esc or a swap shows the drawing in its thumbnail. Reopen the
 card and the drawing is back. Copy Drawing renders it without opening the editor.

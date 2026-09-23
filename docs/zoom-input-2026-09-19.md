@@ -7,6 +7,12 @@ at its left edge, recorded with `screencapture -x -v` at 60 fps around the frame
 per frame as the leftmost and rightmost bright column (retina pixels). The build before is
 b741d27; the runs were made with the recent stack closed and open, on a scratch settings file.
 
+This note is history in part. It was measured on the web editor, which the native editor replaced
+on 2026-09-22. The anchor fix, the display-link fix and the phase handling still hold: the native
+editor hands a pinch and a wheel to `AnnotationController` through `EditorView.onZoomGesture`, and
+the same code runs from there. What the note says about the web process's input path, the page
+laid out at the room, and the stand-in describes the web editor only.
+
 ## The glitch: a zoom-out stepped sideways at the fit
 
 Zooming out from 1.75 through the fitted size, the frame's left edge moved, per 60 fps frame:
@@ -77,6 +83,9 @@ and 1.0000 after the lift with the stand-in down; a mouse wheel in 1.4918 and ou
 
 ## The page is laid out once, at the room
 
+History: the web editor only. The native editor has no page and no stand-in; `moveFrame` sets the
+frame and the picture inside it in one turn.
+
 Before, every rest resized the WKWebView to the frame's size (rounded up to whole points), then
 sent the view and waited for the resize to reach the web process (`waited` frames) before the
 page could paint. A WKWebView resize is a relayout in another process, and a trackpad with
@@ -99,6 +108,8 @@ and that times the magnification above it (measured: 2 px at 2.7x). The mismatch
 is that, so it fires for a real disagreement only.
 
 ## An input that moves nothing
+
+This still holds; the stand-in it mentions is gone.
 
 A notch out at the fit, or cmd+0 at rest, used to raise the stand-in and hand the picture
 straight back (one of those hand-overs took 483 ms behind the page's other work). `zoom` now

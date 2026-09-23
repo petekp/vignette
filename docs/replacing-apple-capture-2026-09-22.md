@@ -156,7 +156,8 @@ folder could differ.
 ## Order
 
 The public download is blocked on the tldraw Hobby key, so nothing here reaches a user until that
-arrives. That window is the room to do this in the right order.
+arrives. (No longer: the native editor replaced tldraw later on 2026-09-22.) That window is the
+room to do this in the right order.
 
 1. Items 1, 2 and 4, plus the launch reconcile. Small, and they fix the capture that decides whether
    a new user keeps the app.

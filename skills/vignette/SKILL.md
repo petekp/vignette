@@ -20,7 +20,7 @@ open -g "vignette://add?file=$path&agent=claude"
 - `add` copies the file into the watch folder and shows its thumbnail. It leaves the clipboard
   alone and does not open the editor, whatever the user's capture settings say. Add `&annotate`
   to open the editor instead, only when you are asking for marks right away.
-- `&agent=<name>` says who pushed it. The card gets a badge naming you.
+- `&agent=<name>` says who pushed it. The card gets a tab naming you.
 - `open -g` keeps the focus where it is. Always percent-encode the path yourself; `open` will not.
 - The file may be anywhere. Every other command takes files inside the watch folder only.
 - Wait for `[add] ok <name>` in the log. The name gains a counter (`x 2.png`) when one is taken.
@@ -43,6 +43,8 @@ its size, `x2`,`y2` an arrow's head.
 ```
 
 - Types: `ellipse`, `rectangle`, `arrow`, `text`. At most 100 marks and 256 KB.
+- Every mark is moved inside the image. A mark with nothing inside it is dropped, with a
+  `[marks] dropped` line.
 - A text mark's `w` is the box its words wrap in, and it is optional: the default is the room
   between `x` and the right edge. Write the sentence you mean; it is sized for the image, wrapped,
   widened until the words fit the image's height, and moved inside it.
@@ -89,8 +91,11 @@ python3 "<helper>" --ticket "<ticket>" --marks /tmp/reply.json
 ## Read back what they drew
 
 The user draws and presses Return. Vignette writes `<name>-annotated.png` beside the copy in the
-watch folder and logs `[annotate] done <name>-annotated.png …`. Read that file. The folder is
-`screenshotsFolder` in `~/.config/vignette/settings.json`.
+watch folder when the rendering finishes, a moment later, and then logs
+`[annotate] done <name>-annotated.png <bytes> bytes, copied`. Read that file once the line is
+there. If the user drew nothing, no file is written and the line is
+`[annotate] done <name> nothing drawn, original copied`. The folder is `screenshotsFolder` in
+`~/.config/vignette/settings.json`.
 
 Nothing arrives if the user ignores the thumbnail, so do not block on it. Ask for the drawing when
 you need it, then carry on and look for the file.

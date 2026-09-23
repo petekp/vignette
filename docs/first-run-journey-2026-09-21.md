@@ -39,8 +39,8 @@ stage 2 is currently reachable only by people who own Xcode.
 
 Three things stand between here and a download:
 
-- **The drawing editor.** A download waits on the native editor that replaces tldraw
-  (`drawing-editor-plan-2026-09-22.md`).
+- **The drawing editor.** A download waits on the native editor that replaces tldraw. (Done on
+  2026-09-22: the native editor replaced tldraw, and `editor.md` describes it.)
 - **Packaging.** `scripts/build.sh` has no zip, dmg, notarize, or staple step. There is no artifact
   to hand anyone.
 - **Gatekeeper.** The hardened runtime is on and the build is Developer ID signed, so notarizing is
@@ -117,6 +117,7 @@ user who reaches for the shortcut daily will find them, and a user who does not 
 
 1. Stage 2 is worth more than every other stage combined right now, because it gates them. Confirm
    the tldraw Hobby key situation first, since it decides whether stage 2 is a week or a quarter.
+   (Moot since 2026-09-22: the native editor replaced tldraw, so no key is needed.)
 2. Stage 5's two problems are small, self-contained, and affect every user who ever gets that far.
    They can be fixed before stage 2 is solved.
 3. Stage 4 has a plan and is ready to build.
