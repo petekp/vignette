@@ -6,6 +6,11 @@ enum Config {
     /// Appended to the original file name when an annotated copy is saved next to it.
     static let annotatedSuffix = "-annotated"
 
+    /// What shows through a screenshot's transparent pixels, such as a window capture's shadow, on a
+    /// card, in flight and in the annotator's frame, so the three look the same when one takes over
+    /// from another. The frame also needs it to be opaque; see `AnnotationController.makeWindow`.
+    static let matte = NSColor(srgbRed: 0x1a / 255.0, green: 0x1a / 255.0, blue: 0x1a / 255.0, alpha: 1)
+
     /// Everything you can do to screenshots. Each action is a hover button on a card, an entry in the
     /// selection strip, a keyboard shortcut inside the recent stack, and a `vignette://<id>` URL, according
     /// to its `placement` and `key`. Actions always receive a list: the cards in the order they were

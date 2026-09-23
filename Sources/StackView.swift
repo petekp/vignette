@@ -192,6 +192,7 @@ private struct CardView: View {
                     }
                 }
                     .frame(width: size.width, height: size.height)
+                    .background(Color(nsColor: Config.matte))
                     .clipShape(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous))
                     .shadow(color: .black.opacity(ui.cardShadowOpacity), radius: ui.cardShadowRadius, y: ui.cardShadowY)
                     .overlay(

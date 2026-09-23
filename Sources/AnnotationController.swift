@@ -128,9 +128,9 @@ final class AnnotationController {
 
     /// Sizes the window to `frame`, opens the image in the editor, and takes the keys, so a key
     /// pressed during the flight already reaches the editor and Esc turns the card around. The
-    /// window is ordered in invisible and ignoring the mouse until `show`: a press still lands on the
-    /// flight image, whose picture is not where the editor's is yet. `room` is the rect the frame may
-    /// grow within: the visible screen, less any strip its owner keeps for itself.
+    /// window is ordered in invisible until `show`, and the window server passes every press through
+    /// a window it draws nothing of. `room` is the rect the frame may grow within: the visible
+    /// screen, less any strip its owner keeps for itself.
     func prepare(_ shot: Screenshot, in frame: NSRect, room: NSRect) {
         let started = CACurrentMediaTime()
         current = shot
@@ -147,7 +147,6 @@ final class AnnotationController {
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         win.alphaValue = 0
-        win.ignoresMouseEvents = true
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         open(shot, started: started)
@@ -464,7 +463,6 @@ final class AnnotationController {
     func show() {
         guard let win = window, current != nil else { return }
         win.alphaValue = 1
-        win.ignoresMouseEvents = false
         frameView?.layer?.shadowOpacity = 0
         win.makeKeyAndOrderFront(nil)
         if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
@@ -575,6 +573,12 @@ final class AnnotationController {
         let container = NSView()
         container.wantsLayer = true
         container.layer?.masksToBounds = true
+        // The window server gives a press to the window whose pixel under it is not clear, so this
+        // opaque frame takes every press on it, over a screenshot's transparent pixels too, and the
+        // clear rest of the window passes presses to the app behind, where `OutsideClick` sees them.
+        // That holds only while `ignoresMouseEvents` is never set: once set either way, the window
+        // takes or passes every press, whatever its pixels.
+        container.layer?.backgroundColor = Config.matte.cgColor
         // Sized by hand, with its picture, in `moveFrame`: a size set without the picture would lay
         // the editor out at a size its picture does not fill.
         editor.autoresizingMask = []

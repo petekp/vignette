@@ -303,6 +303,7 @@ private struct FlightsView: View {
                     .interpolation(.high)
                     .scaledToFill()
                     .frame(width: f.frame.width, height: f.frame.height)
+                    .background(Color(nsColor: Config.matte))
                     .clipShape(RoundedRectangle(cornerRadius: f.look.corner, style: .continuous))
                     // The shadow of whichever end the flight is nearest, so nothing pops when the
                     // card or the annotator window takes over. Cast by the clipped image, before
