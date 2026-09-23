@@ -59,7 +59,7 @@ enum Stitch {
     /// `longSideLimit` caps the composition's long side; the app passes `ui.stitchLongSide`. Each
     /// piece's drawing is drawn as Done draws it, scaled with the piece, so its marks sit on the
     /// pixels they were drawn on. The app calls this off the main thread.
-    static func compose(_ pieces: [Piece], style: TextStyle, longSideLimit: CGFloat) -> Composition? {
+    static func compose(_ pieces: [Piece], style: TextStyle, arrowhead: ArrowheadStyle, longSideLimit: CGFloat) -> Composition? {
         // Sizes come from the files' headers, so the layout is chosen without decoding anything and
         // only the piece being drawn is ever in memory: six 5K screenshots held at once as bitmaps
         // is several hundred megabytes.
@@ -100,7 +100,7 @@ enum Stitch {
                 // The drawing's px, from the piece's top-left with y down, onto the piece's rect.
                 ctx.translateBy(x: rect.minX, y: rect.maxY)
                 ctx.scaleBy(x: rect.width / CGFloat(cg.width), y: -rect.height / CGFloat(cg.height))
-                drawing.draw(in: ctx, style: style, arrowhead: .standard)
+                drawing.draw(in: ctx, style: style, arrowhead: arrowhead)
                 ctx.restoreGState()
             }
             drawBadge(number: i + 1, on: rect, diameter: badgeDiameter(for: sizes[i]) * scale, in: ctx)

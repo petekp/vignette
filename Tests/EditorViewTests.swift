@@ -296,6 +296,10 @@ final class EditorViewTests: XCTestCase {
         flight.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: .standard, arrowhead: .standard, adopting: [view.marks])
         XCTAssertTrue(flight.isDrawn(drawing.marks[0].id), "the editor's bitmap is the one the flight wants")
         XCTAssertEqual(flight.bitmapPixels, view.marks.bitmapPixels)
+        let restyled = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.textQueue)
+        restyled.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: TextStyle(weight: .bold, lineHeight: 2), arrowhead: .standard,
+                      adopting: [view.marks])
+        XCTAssertFalse(restyled.isDrawn(drawing.marks[0].id), "a bitmap in another style is never taken")
 
         let editor = view.marks
         _ = view.park()

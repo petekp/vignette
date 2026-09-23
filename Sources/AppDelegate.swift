@@ -300,13 +300,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Copy Drawing does, else the stored one.
     func stitch(_ shots: [Screenshot]) {
         guard shots.count >= 2 else { Commands.error("stitch", .notEnoughFiles, "needs 2, got \(shots.count)"); return }
+        let ui = settings.data.ui, style = ui.textStyle, arrowhead = ui.arrowhead, limit = ui.stitchLongSide
         let pieces = shots.map { shot in
             Stitch.Piece(url: shot.url, drawing: annotator.openDrawing(of: shot.url)
-                ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: .standard) })
+                ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: style) })
         }
-        let style = TextStyle.standard, limit = Settings.shared.data.ui.stitchLongSide
         DispatchQueue.global(qos: .userInitiated).async {
-            let composed = Stitch.compose(pieces, style: style, longSideLimit: limit)
+            let composed = Stitch.compose(pieces, style: style, arrowhead: arrowhead, longSideLimit: limit)
             DispatchQueue.main.async { MainActor.assumeIsolated { [weak self] in self?.finishStitch(shots, composed) } }
         }
     }

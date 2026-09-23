@@ -37,6 +37,8 @@ final class MarkLayers {
     private var texts: [Mark.ID: Text] = [:]
     private var contentsScale: CGFloat = 2
     private var shown: Shown?
+    /// The scale and the part of the image of the last `show(_:scale:bound:…)`, for `restyle`.
+    private var wholeShow: (scale: CGFloat, bound: CGRect)?
     /// After `park`, nothing changes.
     private(set) var isParked = false
 
@@ -45,7 +47,6 @@ final class MarkLayers {
     typealias Plan = (Text, Mark, Mark.Text) -> Bool
 
     private struct Shown {
-        let style: TextStyle
         let layout: (Mark.Text) -> TextLayout
         let plan: Plan
     }
@@ -55,6 +56,7 @@ final class MarkLayers {
         let stroke = CAShapeLayer()
         let fill = CAShapeLayer()
         var mark: Mark?
+        var arrowhead: ArrowheadStyle?
 
         init(scale: CGFloat) {
             for shape in [stroke, fill] {
@@ -68,23 +70,25 @@ final class MarkLayers {
             stroke.addSublayer(fill)
         }
 
-        func show(_ mark: Mark, _ shape: MarkShape) {
+        func show(_ mark: Mark, _ shape: MarkShape, arrowhead: ArrowheadStyle) {
             stroke.path = shape.stroked
             stroke.lineWidth = shape.lineWidth
             stroke.strokeColor = mark.color.cgColor
             fill.path = shape.filled
             fill.fillColor = mark.color.cgColor
             self.mark = mark
+            self.arrowhead = arrowhead
         }
     }
 
-    /// What a text bitmap is drawn for: the mark, the part of the image it may cover, in px, and its
-    /// resolution, in device px per px. It covers as much of `region` as the text's letters may
-    /// touch, grown to whole device pixels.
+    /// What a text bitmap is drawn for: the mark, the part of the image it may cover, in px, its
+    /// resolution, in device px per px, and the style its words are set in. It covers as much of
+    /// `region` as the text's letters may touch, grown to whole device pixels.
     struct Target: Equatable {
         let mark: Mark
         let region: CGRect
         let scale: CGFloat
+        let style: TextStyle
     }
 
     enum Part { case whole, detail }
@@ -93,16 +97,16 @@ final class MarkLayers {
     /// at the same scale, and the second to ask shows the first one's rather than drawing it again.
     fileprivate final class Recent: @unchecked Sendable {
         private struct Entry {
-            let target: Target, pointScale: CGFloat, imageWidth: CGFloat, style: TextStyle, frame: CGRect
+            let target: Target, pointScale: CGFloat, imageWidth: CGFloat, frame: CGRect
             weak var surface: IOSurface?
         }
         private let lock = NSLock()
         private var entries: [Entry] = []
 
-        func find(_ target: Target, pointScale: CGFloat, imageWidth: CGFloat, style: TextStyle) -> (IOSurface, CGRect)? {
+        func find(_ target: Target, pointScale: CGFloat, imageWidth: CGFloat) -> (IOSurface, CGRect)? {
             lock.withLock {
                 for entry in entries where entry.target.region == target.region && entry.target.scale == target.scale
-                    && entry.pointScale == pointScale && entry.imageWidth == imageWidth && entry.style == style
+                    && entry.target.style == target.style && entry.pointScale == pointScale && entry.imageWidth == imageWidth
                     && MarkLayers.alike(entry.target.mark, target.mark) {
                     if let surface = entry.surface { return (surface, entry.frame) }
                 }
@@ -110,10 +114,10 @@ final class MarkLayers {
             }
         }
 
-        func add(_ surface: IOSurface, frame: CGRect, for target: Target, pointScale: CGFloat, imageWidth: CGFloat, style: TextStyle) {
+        func add(_ surface: IOSurface, frame: CGRect, for target: Target, pointScale: CGFloat, imageWidth: CGFloat) {
             lock.withLock {
                 entries.removeAll { $0.surface == nil }
-                entries.append(Entry(target: target, pointScale: pointScale, imageWidth: imageWidth, style: style, frame: frame, surface: surface))
+                entries.append(Entry(target: target, pointScale: pointScale, imageWidth: imageWidth, frame: frame, surface: surface))
             }
         }
     }
@@ -208,20 +212,11 @@ final class MarkLayers {
         texts = [:]
     }
 
-    /// The text style or the arrowhead is about to change: the next `show` draws every mark again.
-    /// Each text shows the bitmap it has until its new one arrives. It gets a new record for that,
-    /// because a target does not name the style: a draw already on its way for the old record is
-    /// then dropped when it arrives, instead of being taken for the new style's.
-    func restyle() {
-        guard !isParked else { return }
-        for record in shapes.values { record.mark = nil }
-        for (id, old) in texts {
-            old.wanted.set([])
-            let record = Text()
-            record.whole.contents = old.whole.contents
-            record.whole.frame = old.whole.frame
-            texts[id] = record
-        }
+    /// Marks shown at one scale over a part of the image, a card's or a flight's, shown again in a
+    /// new text style and arrowhead. Each text keeps the bitmap it has until its new one arrives.
+    func restyle(_ style: TextStyle, arrowhead: ArrowheadStyle) {
+        guard let drawing, let wholeShow else { return }
+        show(drawing, scale: wholeShow.scale, bound: wholeShow.bound, style: style, arrowhead: arrowhead)
     }
 
     /// The device pixels per point of the screen the marks are on, for the shape layers.
@@ -234,14 +229,15 @@ final class MarkLayers {
     }
 
     /// Shows `drawing`'s marks in order, the newest on top. `plan` says what each text wants drawn,
-    /// here and again whenever one of its bitmaps arrives. `layout` is the text's layout, which a
-    /// text that only moved sideways is checked against. A text new here shows the bitmap one of
-    /// `sources` has of the same words in the same place, until its own arrives.
-    func show(_ drawing: Drawing, style: TextStyle, arrowhead: ArrowheadStyle, layout: @escaping (Mark.Text) -> TextLayout,
+    /// here and again whenever one of its bitmaps arrives, in the style of `layout`, the text's
+    /// layout, which a text that only moved sideways is checked against. A text new here shows the
+    /// bitmap one of `sources` has of the same words in the same place and style, until its own
+    /// arrives.
+    func show(_ drawing: Drawing, arrowhead: ArrowheadStyle, layout: @escaping (Mark.Text) -> TextLayout,
               adopting sources: [MarkLayers] = [], plan: @escaping Plan) {
         guard !isParked, drawing.pixels == pixels else { return }
         self.drawing = drawing
-        shown = Shown(style: style, layout: layout, plan: plan)
+        shown = Shown(layout: layout, plan: plan)
         var layers: [CALayer] = []
         var seen = Set<Mark.ID>()
         var inView: [Text] = [], outOfView: [Text] = []
@@ -265,8 +261,8 @@ final class MarkLayers {
                 layers.append(record.detail)
             } else {
                 let record = shapes[mark.id] ?? ShapeMark(scale: contentsScale)
-                if record.mark != mark, let shape = mark.shape(pointScale: drawing.pointScale, arrowhead: arrowhead) {
-                    record.show(mark, shape)
+                if record.mark != mark || record.arrowhead != arrowhead, let shape = mark.shape(pointScale: drawing.pointScale, arrowhead: arrowhead) {
+                    record.show(mark, shape, arrowhead: arrowhead)
                 }
                 shapes[mark.id] = record
                 layers.append(record.stroke)
@@ -292,10 +288,12 @@ final class MarkLayers {
     /// Shows `drawing` with every text drawn whole at `scale` device px to a px, over the part of
     /// `bound` its letters may touch: the plan for a picture that does not zoom.
     func show(_ drawing: Drawing, scale: CGFloat, bound: CGRect, style: TextStyle, arrowhead: ArrowheadStyle, adopting sources: [MarkLayers] = []) {
+        guard !isParked else { return }
+        wholeShow = (scale, bound)
         let imageWidth = CGFloat(drawing.pixels.width), pointScale = drawing.pointScale
-        show(drawing, style: style, arrowhead: arrowhead, layout: { TextLayout($0, imageWidth: imageWidth, pointScale: pointScale, style: style) },
+        show(drawing, arrowhead: arrowhead, layout: { TextLayout($0, imageWidth: imageWidth, pointScale: pointScale, style: style) },
              adopting: sources) { record, mark, _ in
-            record.wantWhole = Target(mark: mark, region: bound, scale: scale)
+            record.wantWhole = Target(mark: mark, region: bound, scale: scale, style: style)
             return true
         }
     }
@@ -342,7 +340,7 @@ final class MarkLayers {
         guard let (id, record) = gone.first(where: { alike($0.value.drawn) }) else { return nil }
         gone[id] = nil
         texts[id] = nil
-        let retarget = { (drawn: Target?) in drawn.map { Target(mark: mark, region: $0.region, scale: $0.scale) } }
+        let retarget = { (drawn: Target?) in drawn.map { Target(mark: mark, region: $0.region, scale: $0.scale, style: $0.style) } }
         record.drawn = retarget(record.drawn)
         record.detailDrawn = alike(record.detailDrawn) ? retarget(record.detailDrawn) : nil
         if record.detailDrawn == nil { record.clearDetail() }
@@ -351,18 +349,18 @@ final class MarkLayers {
         return record
     }
 
-    /// Puts `source`'s bitmap of the same words in the same place on `record`, when it is nearer the
-    /// resolution `record` wants than the one it has. True when it did.
+    /// Puts `source`'s bitmap of the same words in the same place and style on `record`, when it is
+    /// nearer the resolution `record` wants than the one it has. True when it did.
     @discardableResult
     private func take(from source: MarkLayers, into record: Text, _ mark: Mark) -> Bool {
-        guard source !== self, source.pixels == pixels, source.drawing?.pointScale == drawing?.pointScale,
+        guard source !== self, source.pixels == pixels, source.drawing?.pointScale == drawing?.pointScale, let want = record.wantWhole,
               let found = source.texts.values.first(where: { other in
-                  other.whole.contents != nil && other.drawn.map { Self.alike($0.mark, mark) } == true
+                  other.whole.contents != nil && other.drawn.map { Self.alike($0.mark, mark) && $0.style == want.style } == true
               }),
               let theirs = found.drawn else { return false }
-        if let own = record.drawn, let want = record.wantWhole, abs(own.scale - want.scale) <= abs(theirs.scale - want.scale) { return false }
+        if let own = record.drawn, own.style == want.style, abs(own.scale - want.scale) <= abs(theirs.scale - want.scale) { return false }
         record.whole.contents = found.whole.contents
-        record.drawn = Target(mark: mark, region: theirs.region, scale: theirs.scale)
+        record.drawn = Target(mark: mark, region: theirs.region, scale: theirs.scale, style: theirs.style)
         record.drawnFrame = found.drawnFrame
         return true
     }
@@ -392,11 +390,11 @@ final class MarkLayers {
     /// Sends the text's next draw to the queue when none is on its way: the whole first, then the
     /// part in view.
     private func schedule(_ record: Text) {
-        guard record.pending == nil, let drawing, let shown else { return }
+        guard record.pending == nil, let drawing, shown != nil else { return }
         let part: Part, target: Target, source: IOSurface?
         if let want = record.wantWhole, want != record.drawn {
             (part, target) = (.whole, want)
-            if let drawn = record.drawn, drawn.mark == want.mark, drawn.region == want.region, want.scale < drawn.scale {
+            if let drawn = record.drawn, drawn.mark == want.mark, drawn.region == want.region, drawn.style == want.style, want.scale < drawn.scale {
                 source = record.whole.contents as? IOSurface
             } else {
                 source = nil
@@ -408,20 +406,20 @@ final class MarkLayers {
         }
         record.pending = (part, target)
         let wanted = record.wanted, identity = ObjectIdentifier(record), sourceFrame = record.drawnFrame
-        let pointScale = drawing.pointScale, imageWidth = CGFloat(drawing.pixels.width), style = shown.style
+        let pointScale = drawing.pointScale, imageWidth = CGFloat(drawing.pixels.width)
         queue.async { [weak self] in
             let result: Result
             if !wanted.contains(target) {
                 result = .skipped
             } else if let source {
                 result = .drawn(MarkLayers.scaled(source, to: sourceFrame, scale: target.scale), sourceFrame)
-            } else if let (surface, region) = MarkLayers.recent.find(target, pointScale: pointScale, imageWidth: imageWidth, style: style) {
+            } else if let (surface, region) = MarkLayers.recent.find(target, pointScale: pointScale, imageWidth: imageWidth) {
                 result = .drawn(surface, region)
             } else {
-                let region = MarkLayers.covered(by: target, pointScale: pointScale, imageWidth: imageWidth, style: style)
+                let region = MarkLayers.covered(by: target, pointScale: pointScale, imageWidth: imageWidth)
                 let surface = MarkLayers.bitmap(of: target.mark, pointScale: pointScale, imageWidth: imageWidth, region: region,
-                                                scale: target.scale, style: style)
-                if let surface { MarkLayers.recent.add(surface, frame: region, for: target, pointScale: pointScale, imageWidth: imageWidth, style: style) }
+                                                scale: target.scale, style: target.style)
+                if let surface { MarkLayers.recent.add(surface, frame: region, for: target, pointScale: pointScale, imageWidth: imageWidth) }
                 result = .drawn(surface, region)
             }
             DispatchQueue.main.async { [weak self] in
@@ -489,9 +487,9 @@ final class MarkLayers {
     }
 
     /// The rect a bitmap for `target` covers, in px: the part of its region the text may touch.
-    nonisolated private static func covered(by target: Target, pointScale: CGFloat, imageWidth: CGFloat, style: TextStyle) -> CGRect {
+    nonisolated private static func covered(by target: Target, pointScale: CGFloat, imageWidth: CGFloat) -> CGRect {
         guard case .text(let text) = target.mark.geometry else { return .null }
-        let box = TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: style).box
+        let box = TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: target.style).box
         return aligned(padded(text, box: box, pointScale: pointScale).intersection(target.region), scale: target.scale)
     }
 

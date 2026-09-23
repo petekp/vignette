@@ -487,7 +487,7 @@ final class ThumbnailController: NSObject {
             marks?.setScale(screen.backingScaleFactor)
         }
         // At the card's size at rest: a stack narrowed for the annotator shows the same bitmaps smaller.
-        marks?.show(drawing, filling: card.size, backingScale: screen.backingScaleFactor)
+        marks?.show(drawing, filling: card.size, backingScale: screen.backingScaleFactor, style: ui.textStyle, arrowhead: ui.arrowhead)
         return marks
     }
 
@@ -512,11 +512,17 @@ final class ThumbnailController: NSObject {
 
     /// Re-applies layout tweaks to whatever is on screen. Called when settings.ui changes.
     func applyTweaks() {
+        let style = ui.textStyle, arrowhead = ui.arrowhead
+        // Marks drawn outside the column: in flight, and a lone thumbnail's while its image is in the annotator.
+        flights.restyle(style, arrowhead: arrowhead)
+        sessionCard?.marks?.restyle(style, arrowhead: arrowhead)
         guard visible else { return }
         model.cards = model.cards.map { card in
             let size = layout.cardSize(for: card.pointSize)
             let image = Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize)) ?? card.image
-            if let marks = card.marks, let drawing = marks.drawing { marks.show(drawing, filling: size, backingScale: screen.backingScaleFactor) }
+            if let marks = card.marks, let drawing = marks.drawing {
+                marks.show(drawing, filling: size, backingScale: screen.backingScaleFactor, style: style, arrowhead: arrowhead)
+            }
             return card.with(size: size).with(image: image)
         }
         relayout()
@@ -904,7 +910,7 @@ final class ThumbnailController: NSObject {
         guard let drawing, !drawing.marks.isEmpty else { return nil }
         let marks = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.textQueue)
         marks.setScale(screen.backingScaleFactor)
-        marks.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: .standard, arrowhead: .standard, adopting: sources.compactMap { $0 })
+        marks.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: ui.textStyle, arrowhead: ui.arrowhead, adopting: sources.compactMap { $0 })
         return marks
     }
 
@@ -1250,7 +1256,7 @@ final class ThumbnailController: NSObject {
         }
         // Read off the main thread; the card is in the column by the time its drawing arrives.
         if let drawings, drawings.keys.contains(shot.url.path) {
-            drawings.load(shot.url, style: .standard) { [weak self] drawing in self?.setDrawing(drawing, for: shot.url.path) }
+            drawings.load(shot.url, style: ui.textStyle) { [weak self] drawing in self?.setDrawing(drawing, for: shot.url.path) }
         }
         return card
     }

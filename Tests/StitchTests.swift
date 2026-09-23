@@ -47,7 +47,7 @@ final class StitchTests: XCTestCase {
     func testPiecesAreDrawnInOrderEachWithItsOwnBadge() throws {
         let first = try piece(600, 400, .blue)
         let second = try piece(600, 400, .green)
-        let composed = try XCTUnwrap(Stitch.compose(plain([first, second]), style: .standard, longSideLimit: 8192))
+        let composed = try XCTUnwrap(Stitch.compose(plain([first, second]), style: .standard, arrowhead: .standard, longSideLimit: 8192))
         let image = try XCTUnwrap(NSBitmapImageRep(data: composed.png))
         XCTAssertEqual(composed.size, CGSize(width: image.pixelsWide, height: image.pixelsHigh))
 
@@ -67,7 +67,7 @@ final class StitchTests: XCTestCase {
 
     func testACompositionLongerThanTheLimitIsScaledDownToIt() throws {
         let pieces = [try piece(600, 400, .blue), try piece(600, 400, .green)]
-        let composed = try XCTUnwrap(Stitch.compose(plain(pieces), style: .standard, longSideLimit: 400))
+        let composed = try XCTUnwrap(Stitch.compose(plain(pieces), style: .standard, arrowhead: .standard, longSideLimit: 400))
         XCTAssertEqual(max(composed.size.width, composed.size.height), 400)
         let full = Stitch.layout([CGSize(width: 600, height: 400), CGSize(width: 600, height: 400)]).size
         XCTAssertEqual(composed.size.width / composed.size.height, full.width / full.height, accuracy: 0.01,
@@ -83,7 +83,7 @@ final class StitchTests: XCTestCase {
         let drawing = Drawing(key: first.path, pixels: PixelSize(width: 600, height: 400), pointScale: 2,
                               marks: [Mark(geometry: .rectangle(box), color: .red)])
         let composed = try XCTUnwrap(Stitch.compose([Stitch.Piece(url: first, drawing: drawing), Stitch.Piece(url: second, drawing: nil)],
-                                                    style: .standard, longSideLimit: 400))
+                                                    style: .standard, arrowhead: .standard, longSideLimit: 400))
         let image = try XCTUnwrap(NSBitmapImageRep(data: composed.png))
         let plan = Stitch.layout([CGSize(width: 600, height: 400), CGSize(width: 600, height: 400)])
         let scale = composed.size.width / plan.size.width

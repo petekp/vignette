@@ -231,6 +231,11 @@ final class TransitionLayer {
         model.flights.first { $0.id == id }?.marks
     }
 
+    /// Every flight's marks shown again in a new text style and arrowhead.
+    func restyle(_ style: TextStyle, arrowhead: ArrowheadStyle) {
+        for flight in model.flights { flight.marks?.restyle(style, arrowhead: arrowhead) }
+    }
+
     func setImage(id: UUID, _ image: NSImage) {
         guard let i = model.flights.firstIndex(where: { $0.id == id }) else { return }
         model.flights[i].image = image

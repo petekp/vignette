@@ -98,7 +98,7 @@ final class CardMarksTests: XCTestCase {
             Mark(geometry: .rectangle(px(cut))),
         ])
         let marks = MarkLayers(pixels: pixels, queue: MarkLayers.cardQueue)
-        marks.show(drawing, filling: Self.card.size, backingScale: 2)
+        marks.show(drawing, filling: Self.card.size, backingScale: 2, style: .standard, arrowhead: .standard)
         show(marks, over: try thumbnail(pixels, square: px(square)))
         let rep = try window.capture { self.isRed(self.pixel($0, 100, 50)) && self.isBlack(self.pixel($0, 100, 100)) }
 
@@ -143,12 +143,12 @@ final class CardMarksTests: XCTestCase {
         let marks = MarkLayers(pixels: pixels, queue: MarkLayers.cardQueue)
         show(marks, over: try thumbnail(pixels, square: .zero))
         // The old text's bitmap is drawn and waits on the main queue; the new one's waits on the card queue.
-        marks.show(drawing("Old words", cardY: 20), filling: Self.card.size, backingScale: 2)
+        marks.show(drawing("Old words", cardY: 20), filling: Self.card.size, backingScale: 2, style: .standard, arrowhead: .standard)
         MarkLayers.cardQueue.sync {}
         MarkLayers.cardQueue.suspend()
         var suspended = true
         defer { if suspended { MarkLayers.cardQueue.resume() } }
-        marks.show(drawing("New", cardY: 120), filling: Self.card.size, backingScale: 2)
+        marks.show(drawing("New", cardY: 120), filling: Self.card.size, backingScale: 2, style: .standard, arrowhead: .standard)
 
         let between = try window.capture { _ in true }
         XCTAssertEqual(red(between, x: 20...100, y: 20...44), 0, "the old drawing's text is dropped")
@@ -171,7 +171,7 @@ final class CardMarksTests: XCTestCase {
         let words = Mark.Geometry.text(Mark.Text(origin: CGPoint(x: 240, y: 40), text: "Kept", wrap: nil, size: 24))
         let marks = MarkLayers(pixels: pixels, queue: MarkLayers.cardQueue)
         marks.show(Drawing(key: "/tmp/Screenshot card.png", pixels: pixels, pointScale: 2, marks: [Mark(geometry: words)]),
-                   filling: Self.card.size, backingScale: 2)
+                   filling: Self.card.size, backingScale: 2, style: .standard, arrowhead: .standard)
         settle([marks])
         let drawn = marks.bitmapPixels
         XCTAssertGreaterThan(drawn, 0)
@@ -180,7 +180,7 @@ final class CardMarksTests: XCTestCase {
         defer { MarkLayers.cardQueue.resume() }
         let again = Drawing(key: "/tmp/Screenshot card.png", pixels: pixels, pointScale: 2,
                             marks: [Mark(geometry: words), Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 240, y: 240), text: "New", wrap: nil, size: 24)))])
-        marks.show(again, filling: Self.card.size, backingScale: 2)
+        marks.show(again, filling: Self.card.size, backingScale: 2, style: .standard, arrowhead: .standard)
         XCTAssertEqual(marks.bitmapPixels, drawn, "the unchanged text is on screen while the new one is drawn")
         XCTAssertTrue(marks.isDrawn(again.marks[0].id))
         XCTAssertFalse(marks.isDrawn(again.marks[1].id))
@@ -198,7 +198,7 @@ final class CardMarksTests: XCTestCase {
         let pixels = PixelSize(width: 3024, height: 1964)
         let marks = MarkLayers(pixels: pixels, queue: MarkLayers.cardQueue)
         let card = CGSize(width: 200, height: 130)
-        marks.show(longText(pixels), filling: card, backingScale: 2)
+        marks.show(longText(pixels), filling: card, backingScale: 2, style: .standard, arrowhead: .standard)
         settle([marks])
         XCTAssertGreaterThan(marks.bitmapPixels, 0)
         // The card's own device pixels, and the one at each side a bitmap grows by to meet whole pixels.
@@ -214,14 +214,14 @@ final class CardMarksTests: XCTestCase {
             Card(id: UUID(), shot: Screenshot(url: URL(fileURLWithPath: "/tmp/shot \(i).png")), image: nil,
                  pointSize: NSSize(width: 200, height: 130), size: NSSize(width: 200, height: 130), agent: nil, marks: marks)
         }
-        marks[0].show(longText(pixels), filling: CGSize(width: 200, height: 130), backingScale: 2)
+        marks[0].show(longText(pixels), filling: CGSize(width: 200, height: 130), backingScale: 2, style: .standard, arrowhead: .standard)
         settle(marks)
         XCTAssertGreaterThan(marks[0].bitmapPixels, 0)
 
         MarkLayers.cardQueue.suspend()
         var suspended = true
         defer { if suspended { MarkLayers.cardQueue.resume() } }
-        marks[1].show(longText(pixels), filling: CGSize(width: 200, height: 130), backingScale: 2)
+        marks[1].show(longText(pixels), filling: CGSize(width: 200, height: 130), backingScale: 2, style: .standard, arrowhead: .standard)
         model.removeCards { _ in true }
         MarkLayers.cardQueue.resume()
         suspended = false

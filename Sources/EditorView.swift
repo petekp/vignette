@@ -188,7 +188,6 @@ final class EditorView: NSView {
     /// being typed is laid out again where it is.
     func applyTweaks(style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle) {
         guard core.isOpen, style != core.style || metrics != core.metrics || arrowhead != core.arrowhead else { return }
-        if style != core.style || arrowhead != core.arrowhead { marks.restyle() }
         let restyled = style != core.style
         for effect in core.reduce(.tweaksChanged(style: style, metrics: metrics, arrowhead: arrowhead)) { run(effect, event: nil) }
         if restyled {
@@ -292,8 +291,8 @@ final class EditorView: NSView {
         let transform = toView
         let geometry = core.geometry
         picture.layer.setAffineTransform(transform)
-        picture.show(core.drawing, typing: core.typing?.id, covered: lingering?.id, geometry: geometry, style: core.style,
-                     resolution: resolution, gesture: core.gesture != nil)
+        picture.show(core.drawing, typing: core.typing?.id, covered: lingering?.id, geometry: geometry, resolution: resolution,
+                     gesture: core.gesture != nil)
         overlay.show(core.overlay, drawing: core.drawing, geometry: geometry, transform: transform)
         placeTypingField()
         settleLingering()

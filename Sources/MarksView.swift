@@ -132,12 +132,12 @@ extension MarkLayers {
     /// Shows `drawing` over a picture `size` points across that shows the image with aspect fill,
     /// centred: every text drawn once at that size, over the part of the image the picture shows, so a
     /// text bitmap covers no more device pixels than the picture does.
-    func show(_ drawing: Drawing, filling size: CGSize, backingScale: CGFloat) {
+    func show(_ drawing: Drawing, filling size: CGSize, backingScale: CGFloat, style: TextStyle, arrowhead: ArrowheadStyle) {
         let image = drawing.pixels.bounds.size
         guard image.width > 0, image.height > 0, size.width > 0, size.height > 0 else { return }
         let fill = max(size.width / image.width, size.height / image.height)
         let shown = CGSize(width: size.width / fill, height: size.height / fill)
         let bound = CGRect(x: (image.width - shown.width) / 2, y: (image.height - shown.height) / 2, width: shown.width, height: shown.height)
-        show(drawing, scale: fill * backingScale, bound: bound, style: .standard, arrowhead: .standard)
+        show(drawing, scale: fill * backingScale, bound: bound, style: style, arrowhead: arrowhead)
     }
 }

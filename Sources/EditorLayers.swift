@@ -109,10 +109,9 @@ final class EditorPicture {
     /// Shows `drawing` without the mark being typed. `gesture` is true while one is under way: a
     /// text that only moved slides its bitmap along, and is drawn again once the gesture is over.
     /// `covered` is a text something else shows until its bitmap arrives, which stays hidden until then.
-    func show(_ drawing: Drawing, typing: Mark.ID?, covered: Mark.ID?, geometry: EditorGeometry, style: TextStyle, resolution: Resolution,
-              gesture: Bool) {
+    func show(_ drawing: Drawing, typing: Mark.ID?, covered: Mark.ID?, geometry: EditorGeometry, resolution: Resolution, gesture: Bool) {
         let state = State(drawing: drawing, geometry: geometry, resolution: resolution, gesture: gesture, typing: typing, covered: covered)
-        marks.show(drawing, style: style, arrowhead: geometry.arrowhead, layout: geometry.layout) { record, mark, text in
+        marks.show(drawing, arrowhead: geometry.arrowhead, layout: geometry.layout) { record, mark, text in
             Self.plan(record, mark, text, state)
         }
     }
@@ -130,7 +129,7 @@ final class EditorPicture {
             record.whole.isHidden = true
             return true
         }
-        let resolution = state.resolution, gesture = state.gesture
+        let resolution = state.resolution, gesture = state.gesture, style = state.geometry.style
         let whole = MarkLayers.padded(text, box: state.geometry.layout(text).box, pointScale: state.geometry.pointScale)
             .intersection(state.drawing.pixels.bounds)
         guard !whole.isNull, !whole.isEmpty, resolution.scale > 0 else {
@@ -148,21 +147,21 @@ final class EditorPicture {
 
         // The whole image, as a flight's is: the bitmap covers the part its letters touch either way,
         // so a flight's bitmap and the editor's are one target and either can take the other's.
-        let fresh = MarkLayers.Target(mark: mark, region: state.drawing.pixels.bounds, scale: scale)
+        let fresh = MarkLayers.Target(mark: mark, region: state.drawing.pixels.bounds, scale: scale, style: style)
         let onItsWay = record.pending?.part == .whole ? record.pending?.target : nil
         let want: MarkLayers.Target
-        if let drawn = record.drawn, drawn.mark == mark {
+        if let drawn = record.drawn, drawn.mark == mark, drawn.style == style {
             if settled, abs(drawn.scale - scale) > scale * 0.01, visible || drawn.scale > scale {
                 // Out of view it only has to be there while a pan brings it back, so the bitmap it
                 // has is scaled down, several times faster than the renderer draws it again.
-                want = visible ? fresh : MarkLayers.Target(mark: mark, region: drawn.region, scale: scale)
-            } else if !settled, let onItsWay, onItsWay.mark == mark {
+                want = visible ? fresh : MarkLayers.Target(mark: mark, region: drawn.region, scale: scale, style: style)
+            } else if !settled, let onItsWay, onItsWay.mark == mark, onItsWay.style == style {
                 // A zoom that moves on still takes the bitmap drawn for its last rest.
                 want = onItsWay
             } else {
                 want = drawn
             }
-        } else if record.slid, gesture, let drawn = record.drawn {
+        } else if record.slid, gesture, let drawn = record.drawn, drawn.style == style {
             want = drawn
         } else {
             want = fresh
@@ -173,15 +172,18 @@ final class EditorPicture {
         // and nothing moves. While the zoom moves the one it has stays, and the whole shows around it.
         var wantDetail: MarkLayers.Target?
         if settled, visible, want == record.drawn, want.scale < resolution.scale * 0.99 {
-            let covers = { (target: MarkLayers.Target) in target.mark == mark && target.scale == resolution.scale && target.region.contains(inView) }
+            let covers = { (target: MarkLayers.Target) in
+                target.mark == mark && target.style == style && target.scale == resolution.scale && target.region.contains(inView)
+            }
             if let shown = record.detailDrawn, covers(shown) {
                 wantDetail = shown
             } else if let pending = record.pending, pending.part == .detail, covers(pending.target) {
                 wantDetail = pending.target
             } else {
-                wantDetail = MarkLayers.Target(mark: mark, region: MarkLayers.aligned(inView, scale: resolution.scale), scale: resolution.scale)
+                wantDetail = MarkLayers.Target(mark: mark, region: MarkLayers.aligned(inView, scale: resolution.scale), scale: resolution.scale,
+                                               style: style)
             }
-        } else if !settled, !record.slid, let shown = record.detailDrawn, shown.mark == mark {
+        } else if !settled, !record.slid, let shown = record.detailDrawn, shown.mark == mark, shown.style == style {
             wantDetail = shown
         }
         record.wantDetail = wantDetail
