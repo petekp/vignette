@@ -120,6 +120,8 @@ final class ThumbnailController: NSObject {
     var onAnnotatorAbandon: (() -> Void)?
     /// Space the annotator needs below its window, for the toolbar.
     var annotatorBelow: () -> CGFloat = { 0 }
+    /// The editor's marks, whose text bitmaps a flight to or from the annotator takes.
+    var annotatorMarks: () -> MarkLayers? = { nil }
 
     private let panel = ThumbnailPanel()
     private let backdrop = BackdropPanel()
@@ -164,6 +166,9 @@ final class ThumbnailController: NSObject {
     private var sessionCard: Card?
     private var annotating: Card? { transition.isActive ? sessionCard : nil }
     private var annotationFrame: NSRect = .zero
+    /// The editor's marks as its park left them, until the flight home has taken their texts. The
+    /// editor lets them go once it is hidden, which is before the card is sent home.
+    private var parkedMarks: MarkLayers?
     /// Keys whose screenshot the editor has at the screen's size. The flight image lifts once the
     /// annotator is visible and its key is here, so an editor still waiting for its decode is never seen.
     private var loadedKeys: Set<String> = []
@@ -452,7 +457,10 @@ final class ThumbnailController: NSObject {
     /// The editor has the screenshot for `key`.
     func editorLoaded(_ key: String) {
         loadedKeys.insert(key)
-        if case .annotating(let k) = transition.phase, k == key, let card = sessionCard { flights.lift(id: card.id) }
+        if case .annotating(let k) = transition.phase, k == key, let card = sessionCard {
+            takeFlightTexts(card)
+            flights.lift(id: card.id)
+        }
     }
 
     /// The screenshot at `key` has this drawing now, or none: its card draws it at once, and so does
@@ -528,8 +536,14 @@ final class ThumbnailController: NSObject {
         guard visible, model.isStack, !transition.isActive, pieces.count > 1 else { return false }
         let cards = pieces.compactMap { shot in model.cards.first { $0.shot.url == shot.url } }
         guard cards.count == pieces.count, let result = makeStitchedCard(url), let stitched = result.image else { return false }
-        // Where each card is now, while the selection bar is still part of the column.
-        let flying = cards.map { (id: $0.id, image: flightImage(for: $0), from: cardFrame(of: $0)) }
+        // Where each card is now, while the selection bar is still part of the column, with its marks
+        // made before the card lets its own go.
+        let flying = cards.map { card in
+            let drawing = card.marks?.drawing
+            let scale = drawing.map { max(cardTextScale(card.size, $0.pixels), cardTextScale(result.size, $0.pixels)) } ?? 0
+            return (id: card.id, image: flightImage(for: card), marks: flightMarks(drawing, scale: scale, adopting: [card.marks]),
+                    from: cardFrame(of: card))
+        }
         let ids = Set(cards.map(\.id))
         model.forming.formUnion(ids)
         model.forming.insert(result.id)
@@ -636,7 +650,8 @@ final class ThumbnailController: NSObject {
             // The image in the annotator leaves with the stack while the annotator parks its drawing.
             var slot = cardFrame(of: card)
             slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
-            flights.fly(id: card.id, image: flightImage(for: currentCard(card)), from: annotationFrame, to: slot,
+            flights.fly(id: card.id, image: flightImage(for: currentCard(card)), marks: homeFlightMarks(for: currentCard(card)),
+                        from: annotationFrame, to: slot,
                         lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
                 self?.flights.end(id: card.id)
             })
@@ -777,6 +792,7 @@ final class ThumbnailController: NSObject {
             let target = targetFrame(for: card)
             annotationFrame = target
             dim.show(on: screen)
+            parkedMarks = nil
             onAnnotatorPrepare?(card.shot, target, annotatorRoom)
             // After the annotator's window has taken the keys, so they pass from one to the other
             // rather than being nobody's: a tool key or Esc pressed during the flight reaches the
@@ -790,7 +806,7 @@ final class ThumbnailController: NSObject {
             // frame: the window draws the same ring and shadow there, so handing either over while
             // the spring still had a few points to go would step against the picture the flight is
             // showing.
-            flights.fly(id: card.id, image: flightImage(for: card), from: from, to: target,
+            flights.fly(id: card.id, image: flightImage(for: card), marks: outFlightMarks(for: card, to: target), from: from, to: target,
                         lookFrom: .card(ui), lookTo: .annotator(ui), on: screen, covered: { [weak self] in
                 guard let self, self.transition.phase == .flyingOut(key) else { return }
                 self.send(.shown)
@@ -800,7 +816,10 @@ final class ThumbnailController: NSObject {
                 guard let self, self.transition.key == key, let card = self.sessionCard else { return }
                 self.onAnnotatorLanded?()
                 self.flights.dropShadow(id: card.id)
-                if self.loadedKeys.contains(key) { self.flights.lift(id: card.id) }   // else editorLoaded lifts it
+                if self.loadedKeys.contains(key) {   // else editorLoaded lifts it
+                    self.takeFlightTexts(card)
+                    self.flights.lift(id: card.id)
+                }
             }, dropped: { [weak self] in
                 // The layer went down between the two moments — a new capture presenting the panel
                 // anew while a lone thumbnail is being annotated. Nothing covers the window now.
@@ -817,6 +836,7 @@ final class ThumbnailController: NSObject {
                 if model.cards.isEmpty { visible = false; panel.orderOut(nil) } else { relayout() }
             }
         case .park:
+            parkedMarks = annotatorMarks()
             onAnnotatorHide? { [weak self] in self?.send(.parked) }
         case .abandon(let key):
             // Nothing was loaded on screen, so nothing reported `loaded`; the next annotate of this
@@ -835,6 +855,7 @@ final class ThumbnailController: NSObject {
             // A lone thumbnail's panel has no such flight.
             if let card = sessionCard, !(model.slidingOut && model.isStack) { model.outCards.remove(card.id); flights.end(id: card.id) }
             sessionCard = nil
+            parkedMarks = nil
             dim.hide()
             endSession()
         case .markCopied(let key):
@@ -863,7 +884,7 @@ final class ThumbnailController: NSObject {
         // The card takes its slot back only once the flight has settled on it: the card draws at the
         // exact slot, so a card and a shadow put there while the flight still had a few points to
         // go would both step. Nothing is visible before then; the flight covers the slot.
-        flights.fly(id: card.id, image: flightImage(for: card), from: annotationFrame, to: cardFrame(of: card),
+        flights.fly(id: card.id, image: flightImage(for: card), marks: homeFlightMarks(for: card), from: annotationFrame, to: cardFrame(of: card),
                     lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
             guard let self else { return }
             self.model.outCards.remove(card.id)
@@ -874,6 +895,57 @@ final class ThumbnailController: NSObject {
             // A lone thumbnail leaves on its own; the copied mark usually sets a shorter timer first.
             if !self.model.isStack, self.dismissTimer == nil { self.scheduleDismiss(after: self.ui.thumbnailSeconds) }
         })
+    }
+
+    /// The marks a flight carries: `drawing` with every text drawn at `scale` device px to a px, the
+    /// larger of the flight's two ends, over the whole image, and showing the bitmaps `sources` have
+    /// until its own arrive. Nil for a drawing with no marks.
+    private func flightMarks(_ drawing: Drawing?, scale: CGFloat, adopting sources: [MarkLayers?]) -> MarkLayers? {
+        guard let drawing, !drawing.marks.isEmpty else { return nil }
+        let marks = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.textQueue)
+        marks.setScale(screen.backingScaleFactor)
+        marks.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: .standard, arrowhead: .standard, adopting: sources.compactMap { $0 })
+        return marks
+    }
+
+    /// The flight from `card` to the annotator at `frame` carries the drawing the editor has just
+    /// opened, which is what it hands over to; the card's own until the editor has one.
+    private func outFlightMarks(for card: Card, to frame: NSRect) -> MarkLayers? {
+        let editor = annotatorMarks().flatMap { $0.drawing?.key == card.shot.url.path ? $0 : nil }
+        guard let drawing = editor?.drawing ?? card.marks?.drawing else { return nil }
+        let scale = max(annotatorTextScale(frame, drawing.pixels), cardTextScale(card.size, drawing.pixels))
+        return flightMarks(drawing, scale: scale, adopting: [flights.marks(of: card.id), card.marks, editor])
+    }
+
+    /// The flight from the annotator back to `card` carries the drawing the editor parked, or the one
+    /// the flight out carried when it turned around before anything was parked.
+    private func homeFlightMarks(for card: Card) -> MarkLayers? {
+        let key = card.shot.url.path
+        let editor = [parkedMarks, annotatorMarks()].compactMap { $0 }.first { $0.drawing?.key == key }
+        parkedMarks = nil
+        let flying = flights.marks(of: card.id)
+        guard let drawing = editor?.drawing ?? flying?.drawing ?? card.marks?.drawing else { return nil }
+        let scale = max(annotatorTextScale(annotationFrame, drawing.pixels), cardTextScale(card.size, drawing.pixels))
+        return flightMarks(drawing, scale: scale, adopting: [editor, flying, card.marks])
+    }
+
+    /// The editor takes over from the flight into it: a text whose bitmap the editor has not drawn yet
+    /// shows the flight's until it has, so no text goes missing when the flight lifts.
+    private func takeFlightTexts(_ card: Card) {
+        guard let flying = flights.marks(of: card.id), let editor = annotatorMarks(), editor.drawing?.key == card.shot.url.path else { return }
+        editor.adopt(from: flying)
+    }
+
+    /// Device px per image px of the editor's texts in the annotator at `frame`, fitted: the editor's
+    /// own sum, so a flight's texts and the editor's are the same bitmaps.
+    private func annotatorTextScale(_ frame: NSRect, _ pixels: PixelSize) -> CGFloat {
+        pixels.width > 0 ? frame.width / CGFloat(pixels.width) * screen.backingScaleFactor : 0
+    }
+
+    /// Device px per image px of a card's texts, at the card's `size` at rest.
+    private func cardTextScale(_ size: NSSize, _ pixels: PixelSize) -> CGFloat {
+        guard pixels.width > 0, pixels.height > 0 else { return 0 }
+        return max(size.width / CGFloat(pixels.width), size.height / CGFloat(pixels.height)) * screen.backingScaleFactor
     }
 
     private func targetFrame(for card: Card) -> NSRect {

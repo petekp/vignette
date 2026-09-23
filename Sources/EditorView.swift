@@ -35,6 +35,10 @@ final class EditorView: NSView {
     /// Everything the editor decides; the host reads it for `[state]`.
     private(set) var core = EditorCore()
 
+    /// The marks of the image open now, or of the one just parked until `clear`: a flight takes their
+    /// text bitmaps.
+    var marks: MarkLayers { picture.marks }
+
     /// Where the picture sits in the view: `open` places it, and the host's zoom sets it on every
     /// step. The zoom, in screen pt per image px, is its width over the image's, and the marks, the
     /// overlay and the text being typed follow it in the same turn.

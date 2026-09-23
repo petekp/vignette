@@ -35,6 +35,8 @@ final class TransitionLayer {
     struct Flight: Identifiable {
         let id: UUID
         var image: NSImage
+        /// The drawing's marks over the image, or nil when it has none.
+        var marks: MarkLayers?
         var frame: CGRect      // top-left origin, in the layer's own coordinates
         var look: Look
         var opacity: Double = 1
@@ -89,12 +91,12 @@ final class TransitionLayer {
     /// behind it. `arrived` runs when the spring has really settled on the target; whatever takes
     /// the flight's place draws at the exact target, so it has to appear then or it steps by what
     /// the spring still had to go.
-    func fly(id: UUID, image: NSImage, from: NSRect, to: NSRect, lookFrom: Look, lookTo: Look,
+    func fly(id: UUID, image: NSImage, marks: MarkLayers? = nil, from: NSRect, to: NSRect, lookFrom: Look, lookTo: Look,
              on screen: NSScreen, covered: @escaping () -> Void = {}, arrived: @escaping () -> Void = {},
              dropped: (() -> Void)? = nil) {
         let ui = Settings.shared.motionUI
         showPanel(on: screen)
-        let gen = start(id: id, image: image, from: from, to: to, look: lookFrom, ui: ui, dropped: dropped)
+        let gen = start(id: id, image: image, marks: marks, from: from, to: to, look: lookFrom, ui: ui, dropped: dropped)
         let travel = max(abs(to.minX - from.minX), abs(to.minY - from.minY),
                          abs(to.width - from.width), abs(to.height - from.height))
         let settleTime = Anim.settle(ui.expandDuration, bounce: Anim.flightBounce, distance: travel, within: Self.arrivalTolerance)
@@ -141,14 +143,14 @@ final class TransitionLayer {
     /// finished image fades in under them as they arrive and fade. `completion` runs once the
     /// result is the only thing drawn, so the caller can put the real card in that slot; the
     /// result's own flight lifts after that, unless something has aimed it elsewhere meanwhile.
-    func converge(pieces: [(id: UUID, image: NSImage, from: NSRect)],
+    func converge(pieces: [(id: UUID, image: NSImage, marks: MarkLayers?, from: NSRect)],
                   result: (id: UUID, image: NSImage, frame: NSRect),
                   look: Look, on screen: NSScreen, completion: @escaping () -> Void) {
         let ui = Settings.shared.motionUI
         showPanel(on: screen)
         let fade = ui.expandDuration * 0.45
         // The finished image waits in the slot, under the pieces, until they are nearly there.
-        model.flights.removeAll { $0.id == result.id }
+        remove { $0.id == result.id }
         arrivedFlights.remove(result.id)
         pendingLift.remove(result.id)
         let resting = Flight(id: result.id, image: result.image, frame: local(result.frame), look: look, opacity: 0)
@@ -180,7 +182,7 @@ final class TransitionLayer {
             }
         }
         for piece in pieces {
-            fly(id: piece.id, image: piece.image, from: piece.from, to: result.frame,
+            fly(id: piece.id, image: piece.image, marks: piece.marks, from: piece.from, to: result.frame,
                 lookFrom: look, lookTo: look, on: screen, arrived: land, dropped: land)
         }
         let flying = Set(pieces.map(\.id))
@@ -198,7 +200,7 @@ final class TransitionLayer {
     /// Adds the flight, or aims an existing one down a new path, and returns its generation.
     /// The curve is fixed when the path is, so a flight keeps the motion scale it started with.
     /// Aiming again keeps the old path and resets `blend`, which `fly` then animates back to 1.
-    private func start(id: UUID, image: NSImage, from: NSRect, to: NSRect, look: Look, ui: UITweaks,
+    private func start(id: UUID, image: NSImage, marks: MarkLayers?, from: NSRect, to: NSRect, look: Look, ui: UITweaks,
                        dropped: (() -> Void)? = nil) -> Int {
         let path = Path(from: center(local(from)), to: center(local(to)), curve: FlightCurve(ui: ui))
         // It is going somewhere else now, so it has not arrived and any lift waits for the new end.
@@ -211,15 +213,22 @@ final class TransitionLayer {
         if let i = model.flights.firstIndex(where: { $0.id == id }) {
             model.flights[i].generation = gen
             model.flights[i].image = image
+            if let old = model.flights[i].marks, old !== marks { old.clear() }
+            model.flights[i].marks = marks
             model.flights[i].previousPath = model.flights[i].path
             model.flights[i].path = path
             model.flights[i].blend = 0
             model.flights[i].dropped = dropped
             return gen
         }
-        model.flights.append(Flight(id: id, image: image, frame: local(from), look: look,
+        model.flights.append(Flight(id: id, image: image, marks: marks, frame: local(from), look: look,
                                     path: path, previousPath: path, generation: gen, dropped: dropped))
         return gen
+    }
+
+    /// The marks the flight `id` shows, while it is in the air.
+    func marks(of id: UUID) -> MarkLayers? {
+        model.flights.first { $0.id == id }?.marks
     }
 
     func setImage(id: UUID, _ image: NSImage) {
@@ -245,7 +254,7 @@ final class TransitionLayer {
     /// Removes the flight. Call once whatever it was flying toward is drawn.
     func end(id: UUID) {
         let dropped = model.flights.first { $0.id == id && !arrivedFlights.contains($0.id) }?.dropped
-        model.flights.removeAll { $0.id == id }
+        remove { $0.id == id }
         arrivedFlights.remove(id)
         pendingLift.remove(id)
         if model.flights.isEmpty { panel.orderOut(nil) }
@@ -254,11 +263,17 @@ final class TransitionLayer {
 
     func endAll() {
         let dropped = model.flights.filter { !arrivedFlights.contains($0.id) }.compactMap(\.dropped)
-        model.flights = []
+        remove { _ in true }
         arrivedFlights = []
         pendingLift = []
         panel.orderOut(nil)
         for handler in dropped { handler() }
+    }
+
+    /// Takes flights off the layer, and lets their marks go with every text still being drawn for them.
+    private func remove(where leaves: (Flight) -> Bool) {
+        for flight in model.flights where leaves(flight) { flight.marks?.clear() }
+        model.flights.removeAll(where: leaves)
     }
 
     private func showPanel(on screen: NSScreen) {
@@ -294,6 +309,7 @@ private struct FlightsView: View {
                     // the ring: a card casts its shadow from the same shape, and the two have to
                     // match at the ends or the shadow steps when one takes the other's place.
                     .shadow(color: .black.opacity(f.look.shadowOpacity), radius: f.look.shadowRadius, y: f.look.shadowY)
+                    .marks(f.marks, picture: f.image.size, corner: f.look.corner)
                     // The card's ring travels with the image, and the annotator window carries it on.
                     .overlay(RoundedRectangle(cornerRadius: f.look.corner, style: .continuous).stroke(.white.opacity(ui.cardBorderOpacity), lineWidth: ui.cardBorderWidth))
                     .modifier(Bow(center: CGPoint(x: f.frame.midX, y: f.frame.midY), path: f.path, previous: f.previousPath, blend: f.blend))

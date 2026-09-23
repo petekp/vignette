@@ -283,6 +283,27 @@ final class EditorViewTests: XCTestCase {
         }
     }
 
+    /// A flight to or from the annotator draws its texts as the fitted editor does, the frame's width
+    /// over the image's, over the whole image: the two take each other's bitmaps as they are, so
+    /// nothing steps when one takes the other's place and nothing is drawn twice.
+    func testAFlightAndTheFittedEditorShowTheSameTextBitmaps() {
+        open([Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 100), text: "Handed over", wrap: nil, size: 24)))])
+        settleTexts()
+        XCTAssertGreaterThan(view.marks.bitmapPixels, 0)
+        let drawing = view.core.drawing
+        let flight = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.textQueue)
+        let scale = view.bounds.width / CGFloat(drawing.pixels.width) * window.backingScaleFactor
+        flight.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: .standard, arrowhead: .standard, adopting: [view.marks])
+        XCTAssertTrue(flight.isDrawn(drawing.marks[0].id), "the editor's bitmap is the one the flight wants")
+        XCTAssertEqual(flight.bitmapPixels, view.marks.bitmapPixels)
+
+        let editor = view.marks
+        _ = view.park()
+        let home = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.textQueue)
+        home.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: .standard, arrowhead: .standard, adopting: [editor])
+        XCTAssertTrue(home.isDrawn(drawing.marks[0].id), "the parked editor's bitmap goes home as it is")
+    }
+
     func testABitmapThatArrivesAfterItsTextMovedIsNotShown() throws {
         open([Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 100), text: "Moved", wrap: nil, size: 24)))])
         // The first bitmap is drawn and waits on the main queue; the next draw waits on the text queue.

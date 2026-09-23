@@ -146,7 +146,9 @@ final class EditorPicture {
         let scale = visible ? min(resolution.scale, fits) : min(resolution.scale, fits, resolution.fit)
         let settled = !resolution.moving && !gesture
 
-        let fresh = MarkLayers.Target(mark: mark, region: MarkLayers.aligned(whole, scale: scale), scale: scale)
+        // The whole image, as a flight's is: the bitmap covers the part its letters touch either way,
+        // so a flight's bitmap and the editor's are one target and either can take the other's.
+        let fresh = MarkLayers.Target(mark: mark, region: state.drawing.pixels.bounds, scale: scale)
         let onItsWay = record.pending?.part == .whole ? record.pending?.target : nil
         let want: MarkLayers.Target
         if let drawn = record.drawn, drawn.mark == mark {

@@ -2,9 +2,9 @@ import AppKit
 import IOSurface
 import QuartzCore
 
-/// A drawing's marks as Core Animation layers, in image px: how the editor and a card draw them. The
-/// owner sets the layer's transform from px to where the image is shown, and says what each text is
-/// drawn for.
+/// A drawing's marks as Core Animation layers, in image px: how the editor, a card and a flight draw
+/// them. The owner sets the layer's transform from px to where the image is shown, and says what each
+/// text is drawn for.
 ///
 /// A rectangle, an ellipse or an arrow is a shape layer holding the renderer's own paths
 /// (`Mark.shape`). Core Animation draws it sharp at any scale with nothing redrawn, and a change to it
@@ -12,12 +12,12 @@ import QuartzCore
 ///
 /// A text is a bitmap the renderer draws on a serial queue, because only the renderer draws its
 /// outline. Until a new bitmap arrives the old one stays, scaled, and a text that only moved slides
-/// it. A bitmap is shown only if its text is still here, as the same record, and still wants exactly
+/// it; a text new here may show another picture's bitmap of it meanwhile (`adopt`). A bitmap is shown only if its text is still here, as the same record, and still wants exactly
 /// it; after `park` none is.
 @MainActor
 final class MarkLayers {
-    /// Where the editor's texts are drawn: apart from any export's, so a long export never delays the
-    /// screen.
+    /// Where the editor's and the flights' texts are drawn: apart from any export's, so a long export
+    /// never delays the screen.
     nonisolated static let textQueue = DispatchQueue(label: "vignette.editor-texts", qos: .userInteractive)
     /// Where the cards' texts are drawn: apart from the editor's, so a stack of long texts never
     /// delays the one being edited.
@@ -187,9 +187,10 @@ final class MarkLayers {
 
     /// Shows `drawing`'s marks in order, the newest on top. `plan` says what each text wants drawn,
     /// here and again whenever one of its bitmaps arrives. `layout` is the text's layout, which a
-    /// text that only moved sideways is checked against.
+    /// text that only moved sideways is checked against. A text new here shows the bitmap one of
+    /// `sources` has of the same words in the same place, until its own arrives.
     func show(_ drawing: Drawing, style: TextStyle, arrowhead: ArrowheadStyle, layout: @escaping (Mark.Text) -> TextLayout,
-              plan: @escaping Plan) {
+              adopting sources: [MarkLayers] = [], plan: @escaping Plan) {
         guard !isParked, drawing.pixels == pixels else { return }
         self.drawing = drawing
         shown = Shown(style: style, layout: layout, plan: plan)
@@ -201,7 +202,15 @@ final class MarkLayers {
         for mark in drawing.marks {
             seen.insert(mark.id)
             if case .text(let text) = mark.geometry {
-                let record = texts[mark.id] ?? renamed(mark, from: &gone) ?? Text()
+                let record: Text
+                if let kept = texts[mark.id] ?? renamed(mark, from: &gone) {
+                    record = kept
+                } else {
+                    record = Text()
+                    // What it wants first, so it takes the bitmap nearest that.
+                    update(record, mark, text)
+                    for source in sources { take(from: source, into: record, mark) }
+                }
                 texts[mark.id] = record
                 if update(record, mark, text) { inView.append(record) } else { outOfView.append(record) }
                 layers.append(record.whole)
@@ -234,13 +243,27 @@ final class MarkLayers {
 
     /// Shows `drawing` with every text drawn whole at `scale` device px to a px, over the part of
     /// `bound` its letters may touch: the plan for a picture that does not zoom.
-    func show(_ drawing: Drawing, scale: CGFloat, bound: CGRect, style: TextStyle, arrowhead: ArrowheadStyle) {
+    func show(_ drawing: Drawing, scale: CGFloat, bound: CGRect, style: TextStyle, arrowhead: ArrowheadStyle, adopting sources: [MarkLayers] = []) {
         let imageWidth = CGFloat(drawing.pixels.width), pointScale = drawing.pointScale
-        show(drawing, style: style, arrowhead: arrowhead, layout: { TextLayout($0, imageWidth: imageWidth, pointScale: pointScale, style: style) }) {
-            record, mark, _ in
+        show(drawing, style: style, arrowhead: arrowhead, layout: { TextLayout($0, imageWidth: imageWidth, pointScale: pointScale, style: style) },
+             adopting: sources) { record, mark, _ in
             record.wantWhole = Target(mark: mark, region: bound, scale: scale)
             return true
         }
+    }
+
+    /// Every text that has not got the bitmap it wants takes the one `source` has of the same words
+    /// in the same place, when that is nearer what it wants than its own, until its own arrives.
+    func adopt(from source: MarkLayers) {
+        guard !isParked, let drawing else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for mark in drawing.marks {
+            guard case .text(let text) = mark.geometry, let record = texts[mark.id], record.drawn != record.wantWhole,
+                  take(from: source, into: record, mark) else { continue }
+            update(record, mark, text)
+        }
+        CATransaction.commit()
     }
 
     /// The pixels in the text bitmaps held now, for the memory they take.
@@ -259,12 +282,15 @@ final class MarkLayers {
         return record.drawn == record.wantWhole
     }
 
+    /// The same mark but for its id, which a drawing read from its file gives every mark anew.
+    private static func alike(_ a: Mark, _ b: Mark) -> Bool {
+        a.geometry == b.geometry && a.color == b.color && a.agent == b.agent && a.colorChosen == b.colorChosen
+    }
+
     /// The text whose mark is gone but whose bitmap shows `mark` exactly, now under `mark`'s id: a
     /// drawing read from its file names every mark anew, and its texts keep the bitmaps they have.
     private func renamed(_ mark: Mark, from gone: inout [Mark.ID: Text]) -> Text? {
-        let alike = { (drawn: Target?) in
-            drawn.map { Mark(id: mark.id, geometry: $0.mark.geometry, color: $0.mark.color, agent: $0.mark.agent, colorChosen: $0.mark.colorChosen) == mark } ?? false
-        }
+        let alike = { (drawn: Target?) in drawn.map { Self.alike($0.mark, mark) } ?? false }
         guard let (id, record) = gone.first(where: { alike($0.value.drawn) }) else { return nil }
         gone[id] = nil
         texts[id] = nil
@@ -275,6 +301,22 @@ final class MarkLayers {
         // A draw on its way comes back under the old id and is dropped.
         record.pending = nil
         return record
+    }
+
+    /// Puts `source`'s bitmap of the same words in the same place on `record`, when it is nearer the
+    /// resolution `record` wants than the one it has. True when it did.
+    @discardableResult
+    private func take(from source: MarkLayers, into record: Text, _ mark: Mark) -> Bool {
+        guard source !== self, source.pixels == pixels, source.drawing?.pointScale == drawing?.pointScale,
+              let found = source.texts.values.first(where: { other in
+                  other.whole.contents != nil && other.drawn.map { Self.alike($0.mark, mark) } == true
+              }),
+              let theirs = found.drawn else { return false }
+        if let own = record.drawn, let want = record.wantWhole, abs(own.scale - want.scale) <= abs(theirs.scale - want.scale) { return false }
+        record.whole.contents = found.whole.contents
+        record.drawn = Target(mark: mark, region: theirs.region, scale: theirs.scale)
+        record.drawnFrame = found.drawnFrame
+        return true
     }
 
     /// Places what the text's layers have and asks the plan what they should show. True when the
@@ -293,7 +335,9 @@ final class MarkLayers {
             record.whole.frame = frame.isNull ? .zero : frame
         }
         let inView = shown.plan(record, mark, text)
-        record.wanted.set([record.wantWhole, record.wantDetail].compactMap { $0 })
+        // A draw of what its layer already shows, as a bitmap taken from elsewhere can, is skipped.
+        record.wanted.set([record.wantWhole == record.drawn ? nil : record.wantWhole,
+                           record.wantDetail == record.detailDrawn ? nil : record.wantDetail].compactMap { $0 })
         return inView
     }
 
