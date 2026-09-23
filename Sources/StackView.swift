@@ -194,6 +194,7 @@ private struct CardView: View {
                     .frame(width: size.width, height: size.height)
                     .clipShape(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous))
                     .shadow(color: .black.opacity(ui.cardShadowOpacity), radius: ui.cardShadowRadius, y: ui.cardShadowY)
+                    .marks(card.marks, picture: card.image?.size, corner: ui.cardCornerRadius)
                     .overlay(
                         // Drag out as files; a plain click goes to the model (annotate, or toggle in selection mode).
                         DragSource(urls: { dragURLs() }, image: card.image ?? NSImage(size: size),

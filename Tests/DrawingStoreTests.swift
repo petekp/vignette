@@ -297,6 +297,34 @@ final class DrawingsTests: XCTestCase {
         }
     }
 
+    /// A card reads its drawing off the main thread; a write while it reads says what the drawing is
+    /// now, and the read's older answer is dropped.
+    func testALoadThatBeganBeforeAWriteDoesNotAnswer() throws {
+        let shot = try redShot()
+        let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
+        let old = Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))])
+        let new = Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [Mark(geometry: .rectangle(CGRect(x: 90, y: 90, width: 50, height: 40)))])
+        drawings.write(old, reason: "saved")
+        var changed: [Drawing?] = [], loaded: [Drawing?] = []
+        drawings.onChange = { _, drawing in changed.append(drawing) }
+
+        drawings.load(shot, style: .standard) { loaded.append($0) }
+        drawings.write(new, reason: "saved")
+        Drawings.loads.sync(flags: .barrier) {}
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        XCTAssertEqual(changed.map { $0?.marks }, [new.marks])
+        XCTAssertTrue(loaded.isEmpty, "the load read the old drawing, or the new one, and either way the write already said")
+
+        drawings.load(shot, style: .standard) { loaded.append($0) }
+        Drawings.loads.sync(flags: .barrier) {}
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        XCTAssertEqual(loaded.map { $0?.marks.map(\.geometry) }, [new.marks.map(\.geometry)], "read from disk, so the ids are new")
+
+        drawings.remove([shot])
+        XCTAssertEqual(changed.count, 2)
+        XCTAssertNil(changed[1], "a removal says there is no drawing")
+    }
+
     func testALaunchRemovesWhatTheWebEditorLeft() throws {
         // The drafts folders and WebKit's two, as a launch names them, inside a scratch home.
         let left = ["Application Support/app/drafts", "Caches/app/drafts", "Caches/app/WebKit/NetworkCache", "WebKit/app/WebsiteData"]

@@ -9,9 +9,13 @@ struct Card: Identifiable {
     let size: NSSize          // the card on screen
     let agent: String?        // the agent that added the file (see Agent); nil for a capture
     var duration: TimeInterval? = nil   // a recording's length, for its badge; nil for an image
+    /// The drawing's marks, drawn over the thumbnail; nil for a screenshot with no drawing.
+    var marks: MarkLayers? = nil
 
-    func with(image: NSImage?) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration) }
-    func with(size: NSSize) -> Card { Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration) }
+    func with(image: NSImage?) -> Card { var card = self; card.image = image; return card }
+    func with(size: NSSize) -> Card {
+        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
+    }
 }
 
 /// Why the selection strip's labels are out. The cursor on the strip brings them out; so does a
@@ -25,7 +29,6 @@ final class StackModel: ObservableObject {
     var slidingOut = false                     // picks the exit stagger order and curve for `offscreen`
     @Published var outCards: Set<UUID> = []    // cards currently in the annotator; their slots stay empty
     @Published var forming: Set<UUID> = []     // cards whose image is in the transition layer, mid-stitch; drawn as nothing
-    @Published var drawings: Set<String> = []  // file paths that have a drawing
     @Published var feedback: String? = nil
     @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
     @Published var pressedCard: UUID? = nil
@@ -63,6 +66,13 @@ final class StackModel: ObservableObject {
     /// cards that left it.
     var onSelectionChanged: (_ added: [UUID], _ removed: [UUID]) -> Void = { _, _ in }
 
+    /// Takes cards out of the column for good and lets their marks go, with every text still being
+    /// drawn for them. A lone thumbnail that leaves for the annotator comes back, and does not come here.
+    func removeCards(where leaves: (Card) -> Bool) {
+        for card in cards where leaves(card) { card.marks?.clear() }
+        cards.removeAll(where: leaves)
+    }
+
     /// Cards for a bulk action, in the order they were selected.
     func selectedCards() -> [Card] { selection.compactMap { id in cards.first { $0.id == id } } }
     /// Where the selected cards sit in the column; 0 is the newest, at the bottom.
@@ -95,6 +105,8 @@ final class StackModel: ObservableObject {
 @MainActor
 final class ThumbnailController: NSObject {
     weak var actions: Actions?
+    /// Which screenshots have a drawing, and each one read for its card.
+    var drawings: Drawings?
     /// A card starts travelling to `frame`; the annotator loads the image there while hidden.
     /// `room` is the rect its frame may grow within, which a zoom may not leave.
     var onAnnotatorPrepare: ((Screenshot, NSRect, NSRect) -> Void)?
@@ -301,7 +313,7 @@ final class ThumbnailController: NSObject {
                     let card = model.cards[i]
                     return ["file": card.shot.url.path, "frame": StateReport.topLeft(cardFrame(i), primaryHeight: h),
                             "out": model.outCards.contains(card.id), "forming": model.forming.contains(card.id),
-                            "drawing": model.drawings.contains(card.shot.url.path), "agent": card.agent as Any,
+                            "drawing": drawings?.keys.contains(card.shot.url.path) ?? false, "agent": card.agent as Any,
                             "kind": card.shot.kind == .recording ? "recording" : "image"]
                 },
                 "selected": model.selectedCards().map(\.shot.url.path),
@@ -443,9 +455,32 @@ final class ThumbnailController: NSObject {
         if case .annotating(let k) = transition.phase, k == key, let card = sessionCard { flights.lift(id: card.id) }
     }
 
-    /// The screenshots that have a drawing.
-    func setDrawings(_ paths: Set<String>) {
-        model.drawings = paths
+    /// The screenshot at `key` has this drawing now, or none: its card draws it at once, and so does
+    /// the card in the annotator, which a lone thumbnail keeps out of the column.
+    func setDrawing(_ drawing: Drawing?, for key: String) {
+        for index in model.cards.indices where model.cards[index].shot.url.path == key {
+            let marks = marks(drawing, on: model.cards[index])
+            if marks !== model.cards[index].marks { model.cards[index].marks = marks }
+        }
+        guard let card = sessionCard, card.shot.url.path == key else { return }
+        sessionCard?.marks = model.cards.first { $0.id == card.id }.map(\.marks) ?? marks(drawing, on: card)
+    }
+
+    /// `card`'s marks for `drawing`: the ones it has, shown anew, while they are on the same image.
+    private func marks(_ drawing: Drawing?, on card: Card) -> MarkLayers? {
+        guard let drawing else {
+            card.marks?.clear()
+            return nil
+        }
+        var marks = card.marks
+        if marks?.pixels != drawing.pixels || marks?.isParked == true {
+            marks?.clear()
+            marks = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.cardQueue)
+            marks?.setScale(screen.backingScaleFactor)
+        }
+        // At the card's size at rest: a stack narrowed for the annotator shows the same bitmaps smaller.
+        marks?.show(drawing, filling: card.size, backingScale: screen.backingScaleFactor)
+        return marks
     }
 
     /// Drops cards whose files no longer exist.
@@ -459,7 +494,7 @@ final class ThumbnailController: NSObject {
         for url in urls { send(.remove(url.path)) }
         for card in model.cards where urls.contains(card.shot.url) { flights.end(id: card.id) }
         endSweep()
-        model.cards.removeAll { urls.contains($0.shot.url) }
+        model.removeCards { urls.contains($0.shot.url) }
         model.setSelection(model.selection.filter { id in model.cards.contains { $0.id == id } })
         if model.cards.isEmpty { dismiss(); return }
         // The focused card is where keys act; when its file goes, the newest takes the focus.
@@ -473,6 +508,7 @@ final class ThumbnailController: NSObject {
         model.cards = model.cards.map { card in
             let size = layout.cardSize(for: card.pointSize)
             let image = Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize)) ?? card.image
+            if let marks = card.marks, let drawing = marks.drawing { marks.show(drawing, filling: size, backingScale: screen.backingScaleFactor) }
             return card.with(size: size).with(image: image)
         }
         relayout()
@@ -497,7 +533,7 @@ final class ThumbnailController: NSObject {
         let ids = Set(cards.map(\.id))
         model.forming.formUnion(ids)
         model.forming.insert(result.id)
-        model.cards.removeAll { ids.contains($0.id) }
+        model.removeCards { ids.contains($0.id) }
         model.clearSelection()
         endSweep()   // the pieces leave the column and the new card takes index 0: the anchor moved
         if let focused = model.focused, ids.contains(focused) { model.focused = nil }
@@ -569,7 +605,7 @@ final class ThumbnailController: NSObject {
             }
             return
         }
-        model.cards = []
+        model.removeCards { _ in true }
         model.clearSelection()
         model.outCards = []
         model.forming = []
@@ -616,7 +652,7 @@ final class ThumbnailController: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + (model.cards.isEmpty ? ui.slideOutDuration : total)) { [weak self] in
             guard let self, self.dismissGeneration == gen, !self.visible else { return }
             self.panel.orderOut(nil)
-            self.model.cards = []
+            self.model.removeCards { _ in true }
             self.model.clearSelection()
             self.model.offscreen = []
             self.model.outCards = []
@@ -775,6 +811,7 @@ final class ThumbnailController: NSObject {
             guard let card = sessionCard else { return }
             if !model.isStack {
                 // A lone thumbnail has nothing to keep open behind the annotator; cards that joined stay.
+                // Its marks stay with it: it comes back to the corner when the session ends.
                 model.cards.removeAll { $0.id == card.id }
                 model.outCards.remove(card.id)
                 if model.cards.isEmpty { visible = false; panel.orderOut(nil) } else { relayout() }
@@ -1139,6 +1176,10 @@ final class ThumbnailController: NSObject {
                 self.replaceImage(of: card, with: image)
             }
         }
+        // Read off the main thread; the card is in the column by the time its drawing arrives.
+        if let drawings, drawings.keys.contains(shot.url.path) {
+            drawings.load(shot.url, style: .standard) { [weak self] drawing in self?.setDrawing(drawing, for: shot.url.path) }
+        }
         return card
     }
 
@@ -1180,6 +1221,7 @@ final class ThumbnailController: NSObject {
             // A lone thumbnail that is part of the stack stays where it is; the rest slides in above it.
             let staying = (visible && !wasStack && stack) ? model.cards.first { existing in cards.contains { $0.shot.url == existing.shot.url } } : nil
             let next = cards.map { card in card.shot.url == staying?.shot.url ? staying! : card }
+            model.removeCards { card in !next.contains { $0.id == card.id } }
             model.cards = next
             model.offscreen = entrance == .inPlace ? [] : Set(next.map(\.id)).subtracting(staying.map { [$0.id] } ?? [])
         }
@@ -1215,7 +1257,7 @@ final class ThumbnailController: NSObject {
         guard !model.cards.contains(where: { $0.shot.url == card.shot.url }) else { return }
         dismissGeneration += 1
         endSweep()   // the new card takes index 0 and shifts every other, the sweep's anchor included
-        if model.feedback != nil && !model.isStack { model.feedback = nil; model.cards = [] }
+        if model.feedback != nil && !model.isStack { model.feedback = nil; model.removeCards { _ in true } }
         if entrance != .inPlace { _ = model.offscreen.insert(card.id) }
         model.slidingOut = false
         // One card joining a visible column moves through `ui.insertDuration`, the card and the room
@@ -1225,7 +1267,7 @@ final class ThumbnailController: NSObject {
         if joining { model.entering = card.id }
         model.cards.insert(card, at: 0)
         if model.cards.count > Settings.shared.data.recentCount, let last = model.cards.last {
-            model.cards.removeLast()
+            model.removeCards { $0.id == last.id }
             model.deselect([last.id])
         }
         withAnimation(Anim.spring(duration)) { model.scroll = 0 }

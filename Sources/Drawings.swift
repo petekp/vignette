@@ -8,11 +8,16 @@ final class Drawings {
     let store: DrawingStore
     /// The screenshots with a drawing on disk, by path.
     private(set) var keys: Set<String>
-    /// The set changed.
-    var onChange: ((Set<String>) -> Void)?
+    /// A screenshot's drawing changed on disk: written, with the drawing as it is now, or removed
+    /// (nil). Every write and removal calls it, whether or not the set of keys changed.
+    var onChange: ((_ key: String, _ drawing: Drawing?) -> Void)?
     /// The last drawing `write` was given, and whether it is on disk: how a push to the open drawing
     /// learns what the editor's hand-over did with it.
     private var lastWrite: (key: String, written: Bool)?
+    /// Counts the writes and removals of each key, so a `load` that began before one is dropped.
+    private var revisions: [String: Int] = [:]
+    /// Where `load` reads, several at once, so the cards of a stack are read together.
+    nonisolated static let loads = DispatchQueue(label: "vignette.drawing-loads", qos: .userInitiated, attributes: .concurrent)
 
     init(store: DrawingStore) {
         self.store = store
@@ -22,6 +27,23 @@ final class Drawings {
     /// The stored drawing for the screenshot at `url`, whose size as displayed is `pixels`.
     func read(_ url: URL, pixels: PixelSize, style: TextStyle) -> Drawing? {
         store.read(key: url.path, pixels: pixels, style: style)
+    }
+
+    /// The stored drawing for the screenshot at `url`, read off the main thread: checking and placing
+    /// a drawing of long texts takes milliseconds. `completion` runs on the main thread, and not at all
+    /// when the drawing was written or removed while it was read, since `onChange` said then what it
+    /// is now.
+    func load(_ url: URL, style: TextStyle, completion: @escaping @MainActor @Sendable (Drawing?) -> Void) {
+        let key = url.path, revision = revisions[key, default: 0], store = store
+        Self.loads.async {
+            let drawing = PixelSize(imageAt: url).flatMap { store.read(key: key, pixels: $0, style: style) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { [weak self] in
+                    guard let self, revisions[key, default: 0] == revision else { return }
+                    completion(drawing)
+                }
+            }
+        }
     }
 
     /// Writes a drawing, or removes its file when it has no marks. `reason` names the moment in the
@@ -37,11 +59,13 @@ final class Drawings {
         if drawing.marks.isEmpty {
             guard keys.remove(drawing.key) != nil else { return true }
             Log.write("[drawing] removed \(name)")
+            Log.write("[drawings] \(keys.count)")
+            changed(drawing.key, nil)
         } else {
             Log.write("[drawing] \(reason) \(name)")
-            guard keys.insert(drawing.key).inserted else { return true }
+            if keys.insert(drawing.key).inserted { Log.write("[drawings] \(keys.count)") }
+            changed(drawing.key, drawing)
         }
-        changed()
         return true
     }
 
@@ -49,9 +73,11 @@ final class Drawings {
     func remove(_ urls: [URL]) {
         let had = urls.filter { keys.contains($0.path) }
         guard !had.isEmpty else { return }
-        for url in had where (try? store.remove(key: url.path)) != nil { keys.remove(url.path) }
+        let removed = had.filter { (try? store.remove(key: $0.path)) != nil }
+        for url in removed { keys.remove(url.path) }
         Log.write("[drawing] removed \(had.map(\.lastPathComponent).joined(separator: ", "))")
-        changed()
+        Log.write("[drawings] \(keys.count)")
+        for url in removed { changed(url.path, nil) }
     }
 
     /// Removes the drawings whose screenshot is gone. Once, at launch.
@@ -60,14 +86,14 @@ final class Drawings {
             guard (try? store.remove(key: key)) != nil else { continue }
             keys.remove(key)
             Log.write("[drawing] swept \((key as NSString).lastPathComponent)")
+            changed(key, nil)
         }
         Log.write("[drawings] \(keys.count) dir=\(store.directory.path)")
-        onChange?(keys)
     }
 
-    private func changed() {
-        Log.write("[drawings] \(keys.count)")
-        onChange?(keys)
+    private func changed(_ key: String, _ drawing: Drawing?) {
+        revisions[key, default: 0] += 1
+        onChange?(key, drawing)
     }
 
     // MARK: Agents' marks

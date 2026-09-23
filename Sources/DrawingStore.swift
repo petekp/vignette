@@ -5,7 +5,7 @@ import Foundation
 /// Builds from different worktrees share the folder, so a file from a newer build is read as no
 /// drawing and is never written over or removed. Every problem a read or a write meets is one
 /// `[drawing]` line.
-struct DrawingStore {
+struct DrawingStore: Sendable {
     let directory: URL
     private let log: @Sendable (String) -> Void
 

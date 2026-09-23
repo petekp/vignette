@@ -315,8 +315,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     private lazy var drawings = Drawings(store: DrawingStore(directory: Identity.applicationSupportURL.appendingPathComponent("drawings")))
 
-    /// Clears out what the web editor left, removes the drawings whose screenshot is gone, and tells
-    /// the stack which cards have one.
+    /// Clears out what the web editor left, removes the drawings whose screenshot is gone, and gives
+    /// the stack the drawings, so every card draws its own and a write reaches its card at once.
     private func startDrawings() {
         Drawings.removeWebEditorData([
             Identity.applicationSupportURL.appendingPathComponent("drafts"),
@@ -324,7 +324,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Identity.cachesURL.appendingPathComponent("WebKit"),
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/WebKit/\(Identity.bundleID)"),
         ])
-        drawings.onChange = { [weak self] keys in self?.thumbnail.setDrawings(keys) }
+        thumbnail.drawings = drawings
+        drawings.onChange = { [weak self] key, drawing in self?.thumbnail.setDrawing(drawing, for: key) }
         drawings.sweep { FileManager.default.fileExists(atPath: $0) }
     }
 

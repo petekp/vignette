@@ -2,8 +2,9 @@ import AppKit
 import IOSurface
 import QuartzCore
 
-/// A drawing's marks as Core Animation layers, in image px. The owner sets the layer's transform from
-/// px to where the image is shown, and says what each text is drawn for.
+/// A drawing's marks as Core Animation layers, in image px: how the editor and a card draw them. The
+/// owner sets the layer's transform from px to where the image is shown, and says what each text is
+/// drawn for.
 ///
 /// A rectangle, an ellipse or an arrow is a shape layer holding the renderer's own paths
 /// (`Mark.shape`). Core Animation draws it sharp at any scale with nothing redrawn, and a change to it
@@ -18,6 +19,9 @@ final class MarkLayers {
     /// Where the editor's texts are drawn: apart from any export's, so a long export never delays the
     /// screen.
     nonisolated static let textQueue = DispatchQueue(label: "vignette.editor-texts", qos: .userInteractive)
+    /// Where the cards' texts are drawn: apart from the editor's, so a stack of long texts never
+    /// delays the one being edited.
+    nonisolated static let cardQueue = DispatchQueue(label: "vignette.card-texts", qos: .userInitiated)
     /// Units are image px from the top-left corner, y down; the owner sets its transform.
     let layer = CALayer()
     /// The image the marks are drawn on.
@@ -33,7 +37,7 @@ final class MarkLayers {
     private var contentsScale: CGFloat = 2
     private var shown: Shown?
     /// After `park`, nothing changes.
-    private var parked = false
+    private(set) var isParked = false
 
     /// Decides what a text wants drawn: sets its `wantWhole` and `wantDetail`, and whether its layers
     /// are hidden. True when the text is in view, which is drawn first.
@@ -156,11 +160,20 @@ final class MarkLayers {
 
     /// Keeps what is on screen as it is: no bitmap on its way is shown, and `show` changes nothing.
     func park() {
-        parked = true
+        isParked = true
         for record in texts.values {
             record.wanted.set([])
             record.pending = nil
         }
+    }
+
+    /// Lets every layer and bitmap go, and stops every draw on its way: nothing here is on screen any
+    /// more.
+    func clear() {
+        park()
+        layer.sublayers = nil
+        shapes = [:]
+        texts = [:]
     }
 
     /// The device pixels per point of the screen the marks are on, for the shape layers.
@@ -177,16 +190,18 @@ final class MarkLayers {
     /// text that only moved sideways is checked against.
     func show(_ drawing: Drawing, style: TextStyle, arrowhead: ArrowheadStyle, layout: @escaping (Mark.Text) -> TextLayout,
               plan: @escaping Plan) {
-        guard !parked, drawing.pixels == pixels else { return }
+        guard !isParked, drawing.pixels == pixels else { return }
         self.drawing = drawing
         shown = Shown(style: style, layout: layout, plan: plan)
         var layers: [CALayer] = []
         var seen = Set<Mark.ID>()
         var inView: [Text] = [], outOfView: [Text] = []
+        let ids = Set(drawing.marks.map(\.id))
+        var gone = texts.filter { !ids.contains($0.key) }
         for mark in drawing.marks {
             seen.insert(mark.id)
             if case .text(let text) = mark.geometry {
-                let record = texts[mark.id] ?? Text()
+                let record = texts[mark.id] ?? renamed(mark, from: &gone) ?? Text()
                 texts[mark.id] = record
                 if update(record, mark, text) { inView.append(record) } else { outOfView.append(record) }
                 layers.append(record.whole)
@@ -217,10 +232,49 @@ final class MarkLayers {
         for record in inView + outOfView { schedule(record) }
     }
 
+    /// Shows `drawing` with every text drawn whole at `scale` device px to a px, over the part of
+    /// `bound` its letters may touch: the plan for a picture that does not zoom.
+    func show(_ drawing: Drawing, scale: CGFloat, bound: CGRect, style: TextStyle, arrowhead: ArrowheadStyle) {
+        let imageWidth = CGFloat(drawing.pixels.width), pointScale = drawing.pointScale
+        show(drawing, style: style, arrowhead: arrowhead, layout: { TextLayout($0, imageWidth: imageWidth, pointScale: pointScale, style: style) }) {
+            record, mark, _ in
+            record.wantWhole = Target(mark: mark, region: bound, scale: scale)
+            return true
+        }
+    }
+
+    /// The pixels in the text bitmaps held now, for the memory they take.
+    var bitmapPixels: Int {
+        texts.values.reduce(0) { sum, record in
+            sum + [record.whole, record.detail].reduce(0) { sum, bitmap in
+                guard let surface = bitmap.contents as? IOSurface else { return sum }
+                return sum + surface.width * surface.height
+            }
+        }
+    }
+
     /// Whether the text's bitmap on screen shows it as it is now.
     func isDrawn(_ id: Mark.ID) -> Bool {
         guard let record = texts[id] else { return false }
         return record.drawn == record.wantWhole
+    }
+
+    /// The text whose mark is gone but whose bitmap shows `mark` exactly, now under `mark`'s id: a
+    /// drawing read from its file names every mark anew, and its texts keep the bitmaps they have.
+    private func renamed(_ mark: Mark, from gone: inout [Mark.ID: Text]) -> Text? {
+        let alike = { (drawn: Target?) in
+            drawn.map { Mark(id: mark.id, geometry: $0.mark.geometry, color: $0.mark.color, agent: $0.mark.agent, colorChosen: $0.mark.colorChosen) == mark } ?? false
+        }
+        guard let (id, record) = gone.first(where: { alike($0.value.drawn) }) else { return nil }
+        gone[id] = nil
+        texts[id] = nil
+        let retarget = { (drawn: Target?) in drawn.map { Target(mark: mark, region: $0.region, scale: $0.scale) } }
+        record.drawn = retarget(record.drawn)
+        record.detailDrawn = alike(record.detailDrawn) ? retarget(record.detailDrawn) : nil
+        if record.detailDrawn == nil { record.clearDetail() }
+        // A draw on its way comes back under the old id and is dropped.
+        record.pending = nil
+        return record
     }
 
     /// Places what the text's layers have and asks the plan what they should show. True when the
@@ -282,7 +336,7 @@ final class MarkLayers {
 
     /// A draw came back. It is shown only if its text, before any park, still wants exactly it.
     private func arrived(_ result: Result, part: Part, target: Target, for identity: ObjectIdentifier) {
-        guard !parked, let record = texts[target.mark.id], ObjectIdentifier(record) == identity else { return }
+        guard !isParked, let record = texts[target.mark.id], ObjectIdentifier(record) == identity else { return }
         record.pending = nil
         CATransaction.begin()
         CATransaction.setDisableActions(true)
