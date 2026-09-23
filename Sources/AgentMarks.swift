@@ -22,7 +22,7 @@ extension AgentMark {
         var tooLong: [Int] = []
         for (index, agentMark) in agentMarks.enumerated() {
             guard var geometry = agentMark.geometry(in: pixels, pointScale: pointScale) else {
-                Log.write("[marks] dropped mark=\(index + 1): its fields do not make a \(agentMark.type.rawValue)")
+                Log.write("[marks] dropped mark=\(index + 1): its fields do not make a mark of type=\(agentMark.type.rawValue)")
                 continue
             }
             if case .text(let text) = geometry {
@@ -58,11 +58,11 @@ extension AgentMark {
             return .arrow(Mark.Arrow(start: origin, end: end))
         case .text:
             guard let text, let checked = try? MarkFields(item: ["text": text], unit: .fraction).text(), w.map({ $0 > 0 }) ?? true else { return nil }
+            var mark = Mark.Text(origin: origin, text: checked, size: min(Self.textSize * width / pointScale, Mark.Text.maxSize))
             // It wraps in its `w`, or in the room to the image's right edge less the margin, but
             // never in less than the least room a text is given.
-            let room = width * (1 - TextLayout.margin) - origin.x
-            return .text(Mark.Text(origin: origin, text: checked, wrap: w.map { $0 * width } ?? max(TextLayout.minimumRoom * width, room),
-                                   size: min(Self.textSize * width / pointScale, Mark.Text.maxSize)))
+            mark.wrap = w.map { $0 * width } ?? max(TextLayout.minimumRoom * width, TextLayout.lineWidth(of: mark, imageWidth: width))
+            return .text(mark)
         }
     }
 

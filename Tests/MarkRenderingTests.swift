@@ -116,14 +116,8 @@ final class MarkRenderingTests: XCTestCase {
 
     func testATextWithChineseCharactersAndAnEmojiDrawsInkForBoth() throws {
         let text = Mark.Text(origin: CGPoint(x: 10, y: 10), text: "这个😀", size: 24)
-        let drawing = Drawing(key: "", pixels: PixelSize(width: 300, height: 100), pointScale: 2, marks: [Mark(geometry: .text(text), color: .lightBlue)])
-        let sRGB = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
-        let ctx = try XCTUnwrap(CGContext(data: nil, width: 300, height: 100, bitsPerComponent: 8, bytesPerRow: 0, space: sRGB,
-                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-        ctx.translateBy(x: 0, y: 100)
-        ctx.scaleBy(x: 1, y: -1)
-        drawing.draw(in: ctx, style: .standard, arrowhead: .standard)
-        let drawn = try pixels(of: XCTUnwrap(ctx.makeImage()))
+        let drawn = try marksAlone(Drawing(key: "", pixels: PixelSize(width: 300, height: 100), pointScale: 2,
+                                           marks: [Mark(geometry: .text(text), color: .lightBlue)]))
 
         let line = try XCTUnwrap(TextLayout(text, imageWidth: 300, pointScale: 2, style: .standard).lines.first)
         let chineseEnd = line.rect.minX + CTLineGetOffsetForStringIndex(line.ctLine, 2, nil)
@@ -143,28 +137,67 @@ final class MarkRenderingTests: XCTestCase {
                              "the emoji draws in its own yellow")
     }
 
+    /// The letters are filled with the path their outline is stroked on, so the outline is as wide on
+    /// one side of a stroke as on the other, wherever between pixels the text starts.
+    func testTheOutlineIsCentredOnTheLetters() throws {
+        for pointScale: CGFloat in [1, 2] {
+            let text = Mark.Text(origin: CGPoint(x: 20.3, y: 10.7), text: "I -", size: 24)
+            let pixels = PixelSize(width: 300, height: 150)
+            let drawn = try marksAlone(Drawing(key: "", pixels: pixels, pointScale: pointScale, marks: [Mark(geometry: .text(text), color: .white)]))
+            let layout = TextLayout(text, imageWidth: 300, pointScale: pointScale, style: .standard)
+            let line = try XCTUnwrap(layout.lines.first)
+            func offset(_ index: Int) -> CGFloat { line.rect.minX + CTLineGetOffsetForStringIndex(line.ctLine, index, nil) }
+            // How much of each pixel along a row or a column is letter and how much is outline, from
+            // its alpha and its red: the letter is #f3f3f3 and the outline's red is 15.75 of 255.
+            func rings(_ points: [(x: Int, y: Int)]) -> (before: CGFloat, after: CGFloat) {
+                let samples = points.map { point -> (letter: CGFloat, outline: CGFloat) in
+                    let i = (point.y * pixels.width + point.x) * 4
+                    let alpha = CGFloat(drawn[i + 3]) / 255, red = CGFloat(drawn[i]) / 255
+                    let letter = (red - alpha * 15.75 / 255) / ((243 - 15.75) / 255)
+                    return (letter, alpha - letter)
+                }
+                let middle = samples.indices.reduce(0) { $0 + CGFloat($1) * samples[$1].letter } / samples.reduce(0) { $0 + $1.letter }
+                return (samples.indices.filter { CGFloat($0) < middle }.reduce(0) { $0 + samples[$1].outline },
+                        samples.indices.filter { CGFloat($0) > middle }.reduce(0) { $0 + samples[$1].outline })
+            }
+            // Across the I's stem, halfway up it.
+            let row = Int(line.baseline - CTFontGetCapHeight(layout.font) / 2)
+            let stem = rings((Int(offset(0)) - 3...Int(offset(1)) + 3).map { (x: $0, y: row) })
+            XCTAssertEqual(stem.before, pointScale, accuracy: 0.3, "1 pt of outline left of the stem at scale \(pointScale)")
+            XCTAssertEqual(stem.before, stem.after, accuracy: 0.25, "and as much right of it, at scale \(pointScale)")
+            // Down through the middle of the hyphen.
+            let column = Int((offset(2) + offset(3)) / 2)
+            let bar = rings((Int(line.rect.minY)...Int(line.rect.maxY)).map { (x: column, y: $0) })
+            XCTAssertEqual(bar.before, pointScale, accuracy: 0.3, "1 pt of outline above the hyphen at scale \(pointScale)")
+            XCTAssertEqual(bar.before, bar.after, accuracy: 0.25, "and as much below it, at scale \(pointScale)")
+        }
+    }
+
     /// The head is aimed from the point on the body one head-length back from the tip, and the body
     /// stops there, so its round cap never shows past the tip or through a side, however tight the arc.
     func testTheArrowheadIsAimedAlongTheBodyAndCoversItsEnd() {
         let stroke = Mark.strokeWidth * 2
-        let arrows = [
-            Mark.Arrow(start: CGPoint(x: 10, y: 10), end: CGPoint(x: 400, y: 10)),
-            Mark.Arrow(start: CGPoint(x: 400, y: 300), end: CGPoint(x: 20, y: 40)),
-            Mark.Arrow(start: CGPoint(x: 10, y: 200), end: CGPoint(x: 410, y: 200), bend: 60),
+        let full = ArrowheadStyle.standard.length * stroke
+        let arrows: [(Mark.Arrow, headLength: CGFloat)] = [
+            (Mark.Arrow(start: CGPoint(x: 10, y: 10), end: CGPoint(x: 400, y: 10)), full),
+            (Mark.Arrow(start: CGPoint(x: 400, y: 300), end: CGPoint(x: 20, y: 40)), full),
+            (Mark.Arrow(start: CGPoint(x: 10, y: 200), end: CGPoint(x: 410, y: 200), bend: 60), full),
             // Half circles whose radius is 8 strokes, and 4, tighter than 6.
-            Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 100 + 16 * stroke, y: 100), bend: -8 * stroke),
-            Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 100 + 8 * stroke, y: 100), bend: 4 * stroke),
+            (Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 100 + 16 * stroke, y: 100), bend: -8 * stroke), full),
+            (Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 100 + 8 * stroke, y: 100), bend: 4 * stroke), full),
             // Bent past a half circle, with a radius of about 3.6 strokes.
-            Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 140, y: 100), bend: 40),
+            (Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 140, y: 100), bend: 40), full),
+            // A radius of 10.625 px, 1.5 strokes: the head is as long as the circle is wide.
+            (Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 110, y: 100), bend: 20), 21.25),
         ]
-        for arrow in arrows {
+        for (arrow, headLength) in arrows {
             let body = arrow.body(pointScale: 2)
             XCTAssertEqual(body.arc != nil, arrow.bend != 0, "the bent ones are drawn as arcs")
             let head = Arrowhead(body: body, strokeWidth: stroke, style: .standard)
             XCTAssertEqual(head.tip, arrow.end)
             // The middle of the base is on the body, a head's length from the tip.
             let base = CGPoint(x: (head.corners.0.x + head.corners.1.x) / 2, y: (head.corners.0.y + head.corners.1.y) / 2)
-            XCTAssertEqual(hypot(arrow.end.x - base.x, arrow.end.y - base.y), ArrowheadStyle.standard.length * stroke, accuracy: 1e-9, "\(arrow)")
+            XCTAssertEqual(hypot(arrow.end.x - base.x, arrow.end.y - base.y), headLength, accuracy: 1e-9, "\(arrow)")
             XCTAssertLessThan(body.distance(to: base), 1e-9, "\(arrow)")
             // The stroke stops there, and everything of its round cap ahead of the base is inside the head.
             let end = body.point(at: head.bodyEnd)
@@ -187,6 +220,17 @@ final class MarkRenderingTests: XCTestCase {
         XCTAssertEqual(abs(head.corners.0.y - head.corners.1.y) / (arrow.end.x - baseX),
                        ArrowheadStyle.standard.width / ArrowheadStyle.standard.length, accuracy: 1e-9)
         XCTAssertGreaterThan(head.bodyEnd, 0, "some body still shows")
+    }
+
+    /// The drawing's marks over transparent pixels, as RGBA bytes in sRGB.
+    private func marksAlone(_ drawing: Drawing) throws -> [UInt8] {
+        let sRGB = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        let ctx = try XCTUnwrap(CGContext(data: nil, width: drawing.pixels.width, height: drawing.pixels.height, bitsPerComponent: 8,
+                                          bytesPerRow: 0, space: sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        ctx.translateBy(x: 0, y: CGFloat(drawing.pixels.height))
+        ctx.scaleBy(x: 1, y: -1)
+        drawing.draw(in: ctx, style: .standard, arrowhead: .standard)
+        return try pixels(of: XCTUnwrap(ctx.makeImage()))
     }
 
     private func decode(_ data: Data) throws -> CGImage {

@@ -77,7 +77,10 @@ struct Arrowhead {
 
     init(body: ArrowBody, strokeWidth: CGFloat, style: ArrowheadStyle) {
         let bodyLength = body.length
-        let shrink = min(1, bodyLength * ArrowheadStyle.maxShareOfBody / max(style.length * strokeWidth, .ulpOfOne))
+        // Past an arc's diameter no point of the body is a head's length from the tip, so the head
+        // could not be aimed from one.
+        let longest = min(bodyLength * ArrowheadStyle.maxShareOfBody, body.arc.map { 2 * $0.radius } ?? .infinity)
+        let shrink = min(1, longest / max(style.length * strokeWidth, .ulpOfOne))
         let length = style.length * strokeWidth * shrink
         let halfWidth = style.width * strokeWidth * shrink / 2
         // The point on the body `length` from the tip, where an arc crosses the circle of that radius
@@ -155,54 +158,62 @@ extension Mark {
         }
     }
 
-    /// The outline first, stroked `outline` px wide on the letters' edges, then the letters over it,
-    /// so the inner half of the outline is covered and the letters keep their full shape. Emoji and
-    /// other colour glyphs have no outline to stroke and draw in their own colours.
+    /// The letters as one path, stroked `outline` px wide for the outline and then filled over it, so
+    /// the fill covers the outline's inner half and the two are one shape. A glyph with no outline,
+    /// such as a colour emoji, is drawn as the font draws it, in its own colours and without an
+    /// outline.
     private static func draw(_ layout: TextLayout, color: CGColor, outline: CGFloat, in ctx: CGContext) {
         let runs = layout.lines.flatMap { line in
             ((CTLineGetGlyphRuns(line.ctLine) as? [CTRun]) ?? []).compactMap { GlyphRun($0, at: CGPoint(x: line.rect.minX, y: line.baseline)) }
         }
-        let edges = CGMutablePath()
+        let letters = CGMutablePath()
         for run in runs {
-            for (glyph, position) in zip(run.glyphs, run.positions) {
-                // Glyph outlines are drawn with y up; the image's px run down from the top.
-                var transform = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: run.origin.x + position.x, ty: run.origin.y - position.y)
-                if let path = CTFontCreatePathForGlyph(run.font, glyph, &transform) { edges.addPath(path) }
-            }
+            for case let path? in run.outlines { letters.addPath(path) }
         }
-        ctx.setShouldSmoothFonts(false)
         ctx.setLineWidth(outline)
         ctx.setStrokeColor(Text.outlineColor)
-        ctx.addPath(edges)
+        ctx.addPath(letters)
         ctx.strokePath()
         ctx.setFillColor(color)
+        ctx.addPath(letters)
+        ctx.fillPath()
         for run in runs {
+            let pictures = run.outlines.indices.filter { run.outlines[$0] == nil }
+            guard !pictures.isEmpty else { continue }
             ctx.saveGState()
             ctx.translateBy(x: run.origin.x, y: run.origin.y)
             ctx.scaleBy(x: 1, y: -1)
             ctx.textMatrix = .identity
-            CTFontDrawGlyphs(run.font, run.glyphs, run.positions, run.glyphs.count, ctx)
+            CTFontDrawGlyphs(run.font, pictures.map { run.glyphs[$0] }, pictures.map { run.positions[$0] }, pictures.count, ctx)
             ctx.restoreGState()
         }
     }
 
-    /// One run of a laid-out line: its font, its glyphs, and their positions from `origin`, the
-    /// line's left end on its baseline.
+    /// One run of a laid-out line: its font, its glyphs, their positions from `origin`, the line's left
+    /// end on its baseline, and each glyph's outline in the image's px, or nil for a glyph the font
+    /// draws as a picture.
     private struct GlyphRun {
         let font: CTFont
         let glyphs: [CGGlyph]
         let positions: [CGPoint]
         let origin: CGPoint
+        let outlines: [CGPath?]
 
         init?(_ run: CTRun, at origin: CGPoint) {
             guard let value = (CTRunGetAttributes(run) as NSDictionary)[kCTFontAttributeName],
                   CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() else { return nil }
+            let font = value as! CTFont
             let count = CTRunGetGlyphCount(run)
             var glyphs = [CGGlyph](repeating: 0, count: count)
             var positions = [CGPoint](repeating: .zero, count: count)
             CTRunGetGlyphs(run, CFRange(location: 0, length: 0), &glyphs)
             CTRunGetPositions(run, CFRange(location: 0, length: 0), &positions)
-            font = value as! CTFont
+            outlines = zip(glyphs, positions).map { glyph, position in
+                // Glyph outlines are drawn with y up; the image's px run down from the top.
+                var transform = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: origin.x + position.x, ty: origin.y - position.y)
+                return CTFontCreatePathForGlyph(font, glyph, &transform)
+            }
+            self.font = font
             self.glyphs = glyphs
             self.positions = positions
             self.origin = origin

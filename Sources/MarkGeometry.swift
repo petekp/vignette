@@ -114,19 +114,6 @@ struct ArrowBody {
         let xs = points.map(\.x), ys = points.map(\.y)
         return CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
     }
-
-    var path: CGPath {
-        let path = CGMutablePath()
-        if let arc {
-            // `clockwise` means the angle falls, whichever way y points.
-            path.addArc(center: arc.center, radius: arc.radius, startAngle: arc.startAngle,
-                        endAngle: arc.startAngle + arc.sweep, clockwise: arc.sweep < 0)
-        } else {
-            path.move(to: start)
-            path.addLine(to: end)
-        }
-        return path
-    }
 }
 
 extension ArrowBody.Arc {
@@ -143,18 +130,29 @@ extension ArrowBody.Arc {
 }
 
 /// How a text mark's words are set: SF Pro Rounded at a weight, with lines `lineHeight` times the
-/// font size apart. Both are tuned live, so every layout takes the style it is given.
-struct TextStyle: Equatable {
-    var weight: NSFont.Weight
+/// font size apart. Both are tuned live, so every layout takes the style it is given. Make a style on
+/// the main thread, where AppKit gives the rounded face; after that it lays text out on any thread,
+/// since a size becomes a font through Core Text alone.
+struct TextStyle: Equatable, @unchecked Sendable {
+    let weight: NSFont.Weight
     var lineHeight: CGFloat
+    /// The system font with the rounded design, at `weight`. Immutable, and Core Text's descriptors
+    /// are safe to share between threads.
+    private let face: CTFontDescriptor
 
     static let standard = TextStyle(weight: .medium, lineHeight: 1.35)
 
-    /// SF Pro Rounded at `size`, from the system font with the rounded design.
-    func font(size: CGFloat) -> NSFont {
-        let system = NSFont.systemFont(ofSize: size, weight: weight)
-        return system.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: size) } ?? system
+    init(weight: NSFont.Weight, lineHeight: CGFloat) {
+        self.weight = weight
+        self.lineHeight = lineHeight
+        let system = NSFont.systemFont(ofSize: 0, weight: weight).fontDescriptor
+        face = (system.withDesign(.rounded) ?? system) as CTFontDescriptor
     }
+
+    /// SF Pro Rounded at `size`.
+    func font(size: CGFloat) -> CTFont { CTFontCreateWithFontDescriptor(face, size, nil) }
+
+    static func == (a: TextStyle, b: TextStyle) -> Bool { a.weight == b.weight && a.lineHeight == b.lineHeight }
 }
 
 /// A text mark set in lines, in px. Core Text, so a rendering can lay text out off the main thread.
@@ -174,7 +172,7 @@ struct TextLayout {
     }
 
     /// The font, at the text's size in px.
-    let font: NSFont
+    let font: CTFont
     let lineHeight: CGFloat
     let lines: [Line]
     /// From the mark's origin: as wide as its wrap width or its widest line, whichever is wider, and

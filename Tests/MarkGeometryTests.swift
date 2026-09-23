@@ -41,7 +41,7 @@ final class MarkGeometryTests: XCTestCase {
             XCTAssertLessThan(body.distance(to: arrow.bendPoint), 1e-9)
             XCTAssertLessThan(body.distance(to: arrow.start), 1e-9)
             // The drawn path goes through the bend point, and not through its mirror across the line.
-            let stroke = body.path.copy(strokingWithWidth: 2, lineCap: .round, lineJoin: .round, miterLimit: 10)
+            let stroke = body.path(upTo: 1).copy(strokingWithWidth: 2, lineCap: .round, lineJoin: .round, miterLimit: 10)
             XCTAssertTrue(stroke.contains(arrow.bendPoint), "\(arrow)")
             let mirror = CGPoint(x: arrow.start.x + arrow.end.x - arrow.bendPoint.x, y: arrow.start.y + arrow.end.y - arrow.bendPoint.y)
             XCTAssertFalse(stroke.contains(mirror), "\(arrow)")
@@ -124,7 +124,7 @@ final class MarkGeometryTests: XCTestCase {
     func testLinesAreTheLineHeightApart() {
         let text = Mark.Text(origin: CGPoint(x: 10, y: 30), text: "one\ntwo", size: 24)
         let layout = TextLayout(text, imageWidth: 2000, pointScale: 2, style: TextStyle(weight: .medium, lineHeight: 1.5))
-        XCTAssertEqual(layout.font.pointSize, 48, "the size in pt times the point scale")
+        XCTAssertEqual(CTFontGetSize(layout.font), 48, "the size in pt times the point scale")
         XCTAssertEqual(layout.lineHeight, 72)
         XCTAssertEqual(layout.lines.map(\.rect.minY), [30, 102])
         XCTAssertEqual(layout.box, CGRect(x: 10, y: 30, width: layout.box.width, height: 144))
