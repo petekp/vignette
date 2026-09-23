@@ -4,8 +4,8 @@
 #   scripts/release.sh 0.1.0             a full release: notarized and stapled
 #   scripts/release.sh 0.1.0 --dry-run   everything but notarization, for checking the pipeline
 #
-# Needs scripts/signing.env with a Developer ID identity, VITE_TLDRAW_LICENSE_KEY in web/.env.local,
-# and (unless --dry-run) notarytool credentials stored under $NOTARY_PROFILE. See docs/building.md.
+# Needs scripts/signing.env with a Developer ID identity, and (unless --dry-run) notarytool
+# credentials stored under $NOTARY_PROFILE. See docs/building.md.
 set -e
 cd "$(dirname "$0")/.."
 
@@ -46,15 +46,6 @@ if [[ -z "${DEVELOPMENT_TEAM:-}" ]]; then
   echo "DEVELOPMENT_TEAM is not set in scripts/signing.env; the export needs a team id" >&2; exit 1
 fi
 
-# Without a key tldraw renders its "get a license for production" watermark, and the license
-# forbids shipping that way. The value is never echoed.
-if [[ -f web/.env.local ]]; then
-  key=$(sed -n 's/^VITE_TLDRAW_LICENSE_KEY=//p' web/.env.local | tr -d '"'"'"' \r')
-fi
-if [[ -z "$key" ]]; then
-  echo "VITE_TLDRAW_LICENSE_KEY is not set in web/.env.local; see docs/building.md" >&2; exit 1
-fi
-
 # The artifact has to be reproducible from the tag it is released under.
 if ! $dry_run && [[ -n "$(git status --porcelain)" ]]; then
   echo "the working tree is dirty; commit or stash before cutting a release" >&2; exit 1
@@ -66,11 +57,8 @@ fi
 
 # --- build -----------------------------------------------------------------------------------
 
-echo "==> web"
-(cd web && pnpm build)
-xcodegen generate >/dev/null   # also writes Info.plist; web/dist must exist first
-
 echo "==> app ($version, Release, $CODE_SIGN_IDENTITY)"
+xcodegen generate >/dev/null   # also writes Info.plist
 rm -rf build/release "$out"
 mkdir -p "$out"
 # archive and export, not `xcodebuild build`: a plain build is signed for development and carries
