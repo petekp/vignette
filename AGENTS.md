@@ -95,18 +95,16 @@ the measurements and the reasoning; a rule here points at its note.
    agent is pushing it: the name is recorded on the copy as the `com.petepetrash.vignette.agent`
    extended attribute (`Agent.swift`, `xattr -l` shows it) and the card gets a white "From <Name>" tab
    with the vendor's logo when `Resources/agents/<name>.svg` has one (`Agent.logo(for:)`).
-   `&marks=<json file>` pushes the agent's own annotations with the image (`docs/commands.md` has the format):
-   they join the screenshot's drawing before the card appears (`Drawings.add`), so the human edits
-   them like their own, and the command answers once that drawing is written. That JSON file may
-   also be anywhere; it is read on the main thread, so it is capped at 256 KB, and an error line
-   names the mark and the field without quoting what the file said. Every mark is moved inside the
-   image (`Mark.placed`). A text mark is sized from the image's width, wrapped, and widened until
-   the words fit the image's height; one too long to fit even across the whole picture is cut at
-   the edge and named in a `[marks] text too long for <name>` line, which is the only thing that
-   says so, since `[add]` still answers `ok` (`docs/pushed-text-2026-09-19.md`).
+   `&marks=<json file>` pushes the agent's own annotations with the image: they join the
+   screenshot's drawing before the card appears (`Drawings.add`), and the command answers once that
+   drawing is written. That JSON file may also be anywhere; it is read on the main thread, so it is
+   capped at 256 KB, and an error line names the mark and the field without quoting what the file
+   said. A text too long to fit even across the whole picture is cut at the edge and named in a
+   `[marks] text too long for <name>` line, which is the only thing that says so, since `[add]`
+   still answers `ok`. `docs/commands.md` has the format and the rest.
    `[annotate] loaded <ms>ms <name>` reports when the editor has the screen-size decode of the
    image, and `[annotate] takes events after=<n>ms reached=true|false` when its window starts
-   taking presses; the flight's image waits for both before it lifts.
+   taking presses.
 4. Look: `screencapture -x -R x,y,w,h /tmp/s.png` captures just that region; then read the PNG.
    To crop a full capture, use Python. Do not use `sips`: it ignores `--cropOffset` and crops from
    the centre.
@@ -266,56 +264,39 @@ the same driven sequence; a single run varies.
   whatever the zoom was: `hide` springs the level back to 1 first and comes down once that has
   arrived (`AnnotationController.fitBeforeHide`). `docs/shadow-2026-09-17.md` and
   `docs/handover-2026-09-18.md` have the frames and what each moment cost.
-- The flight layer takes the presses on a flying card or a swallow rect, and passes every other
-  press. `TransitionLayer`'s panel covers the screen and is clear outside those, so the window
-  server gives it only the presses on their pixels; a flight's shadow passes them, as the matte rule
-  below says. Its content view, `PressCatcher`, takes each press with its drags and its release, and
-  `FlightPress`, a pure state machine, decides where they go. A press on the card flying into the
-  editor, while the reducer is in `flyingOut` or `annotating` for it, is held until the editor's
-  window takes presses, then handed to the editor with every drag since, in order, and the rest of
-  the press follows it there (`ThumbnailController.flightPressed`, `AnnotationController.take`,
-  `EditorView.take`). A held event lands on the point of the picture that was under the pointer when
-  it happened: each flight carries a `FlightSpotView`, placed before the `Bow`, and
-  `FlightSpotView.fraction(of:in:picture:)` maps the press onto the aspect-filled picture. After the
-  handover, the rest of the press is placed by where the pointer is on screen. Marks drawn before
-  the flight lifts appear when it lifts. A press handed over onto the text being typed goes to the
-  text. `pressText` places the caret, or selects the word or the paragraph as the click count says;
-  a drag extends that, and Shift extends the current selection. The text view cannot track that
-  press itself, because its tracking loop would read the drag and the release from the event queue,
-  where they are the flight layer's, in that window's coordinates. So such a press cannot drag
-  selected text to move it. A double-click handed over does not zoom before the landing (the zoom
-  rule below). A press on any other flight, such as a card flying home, one leaving with the stack
-  or a stitch's pieces, is swallowed up to its release. So is the rest of a press held for an image
-  that turns back, after Esc, a `cancel` or another image opening. For `NSEvent.doubleClickInterval`
-  after a click opens a card in the editor, or swaps the editor to one, the layer also swallows
-  presses on that card's slot, as the hovered card drew it
-  (`ThumbnailController.swallowSecondClick(on:)`, `StackLayout.hovered`,
+- The flight layer takes the presses on a flying card or a swallow rect, and nothing else; the matte
+  rule below says why nothing else reaches it. Its content view, `PressCatcher`, takes each press
+  with its drags and its release, and `FlightPress` decides where they go. Its comment and
+  `FlightPressTests` have the cases. In short, a press on the card flying into the editor is held
+  until the editor's window takes presses, then handed to the editor (`AnnotationController.take`,
+  `EditorView.take`), and a press on any other flight is swallowed up to its release. A held event
+  lands on the point of the picture that was under the pointer when it happened (`FlightSpotView`);
+  after the handover, the pointer's place on screen decides. Marks drawn before the flight lifts
+  appear when it lifts. A press handed over onto the text being typed goes to the text
+  (`pressText`). The text view cannot track that press itself, because its tracking loop would read
+  the drag and the release from the event queue, where they are the flight layer's, in that window's
+  coordinates. So such a press cannot drag selected text to move it. A double-click handed over does
+  not zoom before the landing (the zoom rule below).
+
+  For `NSEvent.doubleClickInterval` after a click opens a card in the editor, or swaps the editor to
+  one, the layer also swallows presses on that card's slot, as the hovered card drew it, before any
+  flight over it (`ThumbnailController.swallowSecondClick(on:)`,
   `TransitionLayer.swallowPresses(in:for:on:)`). The `SwallowRect` is drawn with the column's hair
-  of alpha, so the window server gives the layer the presses there, above the stack. A press there
-  is swallowed with its drag and release, before any flight over it. Opening a card narrows the
-  stack away from its slot and can slide the card above into it, so without this the second click of
-  a double-click reached the app behind the narrowed stack, or opened the card that slid into the
-  slot. Return and URL opens have no click and swallow nothing. The layer orders out once it has no
-  flights, no swallow rects and no press down (`orderOutIfIdle`). It waits for the release because
-  the window server sends a press's drag and release to the window that took the press. A release
-  that never arrives would leave the editor mid-stroke and the layer up: in driven presses on
-  flights home, 4 releases in 29 reached no window at all. So `watchRelease` reads
-  `NSEvent.pressedMouseButtons` every 50 ms while a press is down, and after two readings of up in a
-  row it ends the press and logs `[flight] release missed`. A stack presented while the layer is up
-  with no flights is ordered above it at the same level, so the first flight or swallow rect on a
-  layer with no flights brings it back to the front (`showPanel`). A pointer over a flight is over
-  the flight layer's window, so the stack gets a hover exit. A card landing from the editor
-  therefore takes its hover from where the pointer is (`ThumbnailController.hover(landing:)`):
-  hovered when the pointer is on its frame and the topmost window there is this app's, and not
-  hovered otherwise. Two limits remain. The window server applies a window's new pixels 6 to about
-  30 ms late, and a press in that interval reaches what was drawn there before. At motion 0, one
-  press on the card flying into the editor reached the window behind. The likely cause, not
-  confirmed, is that lag: at motion 0 the flight layer and the editor's alpha reach the window
-  server within two run-loop turns of each other, and both are new to it. It needs no fix: `show`
-  comes 45 to 60 ms after the click that opened the card, a press falls through only if it lands
-  where the editor appears within about 30 ms of `show`, and a double-click's second click lands on
-  the card's slot, which swallows it. Reduce Motion forces motion 0, so this is a user's case too,
-  not only a script's. `docs/flight-press-2026-09-23.md` has the measurements.
+  of alpha, so the window server gives the layer the presses there, above the stack. Opening a card
+  narrows the stack away from its slot and can slide the card above into it, so without this the
+  second click of a double-click reached the app behind the narrowed stack, or opened the card that
+  slid into the slot. Return and URL opens have no click and swallow nothing.
+
+  The layer orders out once it has no flights, no swallow rects and no press down
+  (`orderOutIfIdle`), because the window server sends a press's drag and release to the window that
+  took the press. `watchRelease` ends a press whose release never arrives, from the button's own
+  state, and logs `[flight] release missed`. A stack presented while the layer is up with no flights
+  is ordered above it at the same level, so the first flight or swallow rect on a layer with no
+  flights brings it back to the front (`showPanel`). A pointer over a flight gives the stack a hover
+  exit, so a card landing from the editor takes its hover from where the pointer is
+  (`ThumbnailController.hover(landing:)`). `docs/flight-press-2026-09-23.md` has the measurements
+  and the two limits that remain: the window server's lag of 6 to about 30 ms, and a press at
+  motion 0 that passed through, which needs no fix.
 - The stack runs to the bottom of the screen and steps around the Dock. `StackLayout.area` builds
   one `StackArea` from the screen: `bounds` takes its sides and top from `visibleFrame` and its
   bottom from the screen's own `frame`; `safeBottom` is the height AppKit reserves for a bottom
@@ -419,19 +400,17 @@ the same driven sequence; a single run varies.
   `[state] stack.strip` is the grown frame, null while a card is in the annotator.
 - The recent stack narrows to make room for the annotator. One number says how wide it is drawn:
   `StackLayout.widthScale`, 1 at rest and never below `ui.stackMinScale`. The cards are drawn at
-  that width (`drawn`) and the column with them; their right edge does not move. The panel is
-  always the size the stack needs at rest, and transparent outside the column, so nothing has to be
-  resized while the stack narrows; the scroll follows the column's height so the same cards stay in
-  view and the column comes back to the same place. The rect the annotator fits and grows within is
-  the visible frame less the strip the stack keeps at its narrowest, `ui.stackGap` beside it
+  that width (`drawn`) and the column with them; their right edge does not move. The panel is always
+  the size the stack needs at rest, and transparent outside the column, so nothing has to be resized
+  while the stack narrows; the scroll follows the column's height so the same cards stay in view and
+  the column comes back to the same place. The rect the annotator fits and grows within is the
+  visible frame less the strip the stack keeps at its narrowest, `ui.stackGap` beside it
   (`annotatorRoom`), so the frame can never reach the cards however far a zoom grows it. In between,
   every time the annotator's frame moves the stack takes the widest value that still clears it by
   the gap (`widthScale(clearing:visibleFrame:)`). Opening and closing spring it through
   `ui.relayoutDuration`; a zoom sets it straight, in the same turn as the frame. Only the recent
   stack does this: a lone thumbnail leaves the panel when the annotator opens, and a
-  `vignette://annotate` with no stack showing gets the whole visible frame. Because the narrowing
-  moves a card away from where it was clicked, a click that opens a card swallows presses on its
-  slot for a double-click's interval (the flight-layer rule above).
+  `vignette://annotate` with no stack showing gets the whole visible frame.
   `docs/stack-room-2026-09-17.md` has the numbers, and `docs/stack-narrowing-2026-09-23.md` what a
   frame of the narrowing costs and the options for making it cheaper.
 - The click hint (Draw on a screenshot, Open on a recording) goes out over the card's two corner
@@ -472,14 +451,13 @@ the same driven sequence; a single run varies.
   joins the panel instead of closing the editor. Every event logs one
   `[transition] <event> -> <phase> effects=…` line. The annotator never hides itself: Esc, a click
   outside, Cmd+W and Done ask through `onClosed` and `onFinished`, and the reducer decides. `show`
-  is the window coming up behind the flight; the flight image lifts once the editor has reported
-  `loaded`, its window takes presses, and the flight has arrived. The editor parks synchronously, so
-  an effect can answer inside the event that asked for it: at zoom 1 there is no fit-out, and
-  `parked` comes back in the same turn as `park`. `ThumbnailController.send` queues an event that
-  arrives while another is being handled and runs it once that one is done, so the reducer's events
-  stay in order. The `parking` phase stays for the zoomed case, where the window springs back to the
-  fit before it comes down. `dismiss` sets `model.slidingOut` before it sends, so a park that
-  answers in that turn leaves the flight it just aimed offscreen to the slide-out. Add a sequence to
+  is the window coming up behind the flight. The editor parks synchronously, so an effect can answer
+  inside the event that asked for it: at zoom 1 there is no fit-out, and `parked` comes back in the
+  same turn as `park`. `ThumbnailController.send` queues an event that arrives while another is
+  being handled and runs it once that one is done, so the reducer's events stay in order. The
+  `parking` phase stays for the zoomed case, where the window springs back to the fit before it
+  comes down. `dismiss` sets `model.slidingOut` before it sends, so a park that answers in that turn
+  leaves the flight it just aimed offscreen to the slide-out. Add a sequence to
   `AnnotatorTransitionTests` before changing the table; the random-sequence test checks the
   invariants, with same-turn answers among its sequences.
 - The flight to the annotator can be interrupted. In `flyingOut` the window has not come up, so
@@ -490,10 +468,9 @@ the same driven sequence; a single run varies.
   pressed then can change the drawing, and it takes the window down with no fit-out, since no zoom
   can have happened. The controller's `.abandon` keeps the parked marks (`parkedMarks`), as `.park`
   does, so the flight home carries the drawing as it was parked, not as it left. `dismiss` and
-  `remove` still park from `flyingOut`, because the panel aims that
-  same flight offscreen before the event arrives. Esc is the user's way in: the annotator's window
-  holds the keys from `prepare`, so the editor sees it and asks through `onClosed`, which the
-  controller sends as `close`. `docs/flight-interrupt-2026-09-18.md` has the frames.
+  `remove` still park from `flyingOut`, because the panel aims that same flight offscreen before the
+  event arrives. Esc during the flight comes back through `onClosed` as `close`.
+  `docs/flight-interrupt-2026-09-18.md` has the frames.
 - Annotating a list is a queue (`ThumbnailController.queue`, `stack.queue` in the state report):
   the first file opens and the rest wait, and finishing one opens the next until the list is done.
   The controller takes the next file in the turn `parked` comes back and sends `annotate` after the
@@ -542,29 +519,18 @@ the same driven sequence; a single run varies.
   line's baseline from `TextLayout` through its layout manager's delegate, so typing and the drawn
   text meet within half a point.
 - `MarkLayers` is the one on-screen drawer for marks: the editor (`EditorPicture`), a card
-  (`MarksView`) and a flight. A text is a bitmap the renderer draws off the main thread, on
+  (`MarksView`) and a flight, so a mark looks the same in each and nothing steps when a flight hands
+  over to the editor. A text is a bitmap the renderer draws off the main thread, on
   `MarkLayers.textQueue` for the editor and flights and `cardQueue` for cards, so a stack of long
-  texts never delays the one being edited. The bitmap is an `IOSurface`: Core Animation copies a
-  `CGImage` at the commit that shows it, which took up to 22 ms on the main thread for a text the
-  size of the view and doubled its memory (`docs/native-editor-2026-09-23.md`). A bitmap is shown
-  only while its text is the same record and still wants exactly that `Target` (mark, region, scale,
-  style); a draw no longer wanted is skipped before it starts, and after `park()` nothing is shown.
-  The shared bitmaps and `take(from:)` match on the style too, so a bitmap never crosses styles. A
-  card's or a flight's marks take a new style through `restyle(_:arrowhead:)`, and each text keeps
-  the bitmap it has until its new one arrives. A text keeps at most two bitmaps, a whole and a
-  sharper detail, the one on its way included. Each owner's plan caps them: the editor's at the
-  view's size in device pixels, a card's at the part of the image the card shows at its rest size.
-  The editor and the flight into it ask for the same targets, so the second shows the first's bitmap
-  (`adopt(from:)`) instead of drawing it again. The typed text's view stays until its bitmap arrives
-  (`onTextDrawn`), so the words are on screen in every frame. A card's marks sit inside its
-  `DragSource` view and are flattened at the larger of the biggest size the card has been placed at
-  and its rest size (`MarksView.restSize`), so a narrowing stack redraws nothing and a card first
-  placed in a narrowed one is sharp when it widens. A flight carries them as a SwiftUI `.marks`
-  overlay after the shadow, because SwiftUI draws the shadow of a view holding an AppKit view a
-  level or two differently, and a card's shadow has to match its flight's. The overlay clips on its
-  own layer's corner (`MarksView.corner`), which follows the flight's corner in every frame. The
-  drag image is the card as drawn: `DragSourceView.dragImage` draws the image over the matte,
-  clipped to the card's corner, and draws the drawing over it with `Drawing.draw` in the live style.
+  texts never delays the one being edited. The bitmap is an `IOSurface`, because Core Animation
+  copies a `CGImage` on the main thread at the commit that shows it and doubles its memory
+  (`docs/native-editor-2026-09-23.md` has the cost). A bitmap is shown only while its text still
+  wants exactly that `Target` (mark, region, scale, style), so a bitmap never crosses styles, and
+  none is shown after `park()`. A text keeps at most two bitmaps, a whole and a sharper detail, the
+  one on its way included. Each owner's plan caps them: the editor's at the view's size in device
+  pixels, a card's at the part of the image the card shows at its rest size. The comments in
+  `MarkLayers.swift` and `MarksView.swift` say how bitmaps are shared between the editor and a
+  flight, restyled, and flattened on a card.
 - Drawings are owned by the app, and every write goes through `Drawings` (`Drawings.swift`, with
   `DrawingStore` for the files): one JSON file per screenshot under
   `~/Library/Application Support/<bundle id>/drawings/`, named by a hash of the file path the app
@@ -591,14 +557,12 @@ the same driven sequence; a single run varies.
   card's copied mark back (`takeBackCopied`), with the toast "Could not copy the drawing; see the
   log". `[annotate] done <file> <n> bytes, copied` is logged when the file is written. A drawing
   with no marks copies the original file and writes nothing.
-- A mark's colour is picked by the colour pass, not by the user. `ColorSample` draws the screenshot
-  at 320 px on its long side, off the main thread, and `pick(for:pointScale:style:)` keeps the first
-  colour in `MarkColor.allCases` whose CIELAB distance from the pixels under the mark is at least
-  `minDistance`. The core runs it outside undo history when the hand-over timer fires, when typing
-  ends, and before a park, Done, Send or a copy of the drawing; never at open, and never on a mark an
-  agent named a colour for (`colorChosen`). A mark whose sample has not arrived stays owed
-  (`colorOwed`) until `colorSampleArrived()`. `docs/annotation-colour-2026-09-17.md` has the numbers
-  and why the measure is not a WCAG ratio.
+- A mark's colour is picked by the colour pass (`ColorPass.swift`), not by the user. The core runs
+  it outside undo history when the hand-over timer fires, when typing ends, and before a park, Done,
+  Send or a copy of the drawing; never at open, and never on a mark an agent named a colour for
+  (`colorChosen`). A mark whose sample has not arrived stays owed (`colorOwed`) until
+  `colorSampleArrived()`. `docs/editor.md` has the sample and the measure, and
+  `docs/annotation-colour-2026-09-17.md` the numbers and why the measure is not a WCAG ratio.
 - A drawing's sizes are in points of its own `pointScale`. A new drawing in the annotator takes the
   backing scale of the screen it opens on; one an agent's marks create takes `NSScreen.main`'s, the
   best guess with no annotator open. Both are clamped to `Drawing.pointScales`. A stored drawing
@@ -606,57 +570,34 @@ the same driven sequence; a single run varies.
 - Zoom belongs to the annotator, not the editor. A pinch, a two-finger double tap and a wheel over
   the editor go straight to `AnnotationController` through `onZoomGesture`, with the trackpad's
   phases: a pinch and a wheel with cmd or ctrl held zoom, and a plain wheel pans a magnified
-  picture (`pan` moves `zoomCenter` and sets `editor.pictureRect`). The zoom keys, cmd+plus/minus/0,
-  and a double-click on empty space with the select tool are the core's to recognise, and it sends
-  them as a `ZoomRequest` through `onZoom`. Those are ignored until the flight has landed
-  (`landed` sets `hasLanded`, and the next `prepare` clears it): the editor takes keys from
-  `prepare` and presses handed over from the flight, and a zoom before the landing would grow the
-  window under a flight image still at the fitted frame. All of them reach
-  `AnnotationController.zoom(by:at:as:)`, which moves one number, `zoomLevel`: how far the image is
-  magnified past the frame it opened in. The picture is magnified uniformly by that level, so the
-  image is never stretched; the frame is not, and each of its sides grows with the level until that
-  side fills the room it was given (the visible screen, less the strip the recent stack keeps).
-  `Zoom.split` divides the level in one place, one division per side, so `window * camera` is the
-  level in each direction: a side's growth is `min(level, reach)` and the magnification in that
-  direction takes what is left. The two sides reach the room at different levels, so between them
-  the frame does not carry the image's shape and the visible part of the image is a different
-  fraction in each direction. Zooming out reverses that and stops at the fitted size. Only a hand
-  pulls below it, with a short pull that springs back when the fingers lift (the pinch's and the
-  wheel's `ended` phase, `release`); a key or a mouse wheel's notch, which has no phases, stops at
-  the fit, and an input that moves nothing is dropped. One spring
-  carries the level, ticked by the screen's display link and retargeted in place by every input
-  (`Tween.animate` keeps its link and its last tick, because a link made anew per input fired at
-  an arbitrary part of the refresh and read as uneven steps); a gesture's spring is short, a
-  key's, a double tap's and a fit's longer, and a step aimed elsewhere mid-spring blends its anchor
-  (`ZoomAim`) instead of stepping sideways. The window's growth is not aimed: each side grows into
-  the room beside it, which leaves exactly one anchor per direction (`Zoom.anchor(fitted:within:)`),
-  read off the frame on screen at every step (`Zoom.anchor(reproducing:fitting:or:)`) so a nudged
-  frame does not carry its error forward. Below the fit the frame keeps the line it is on (the
-  room's for a zoom-out that runs on through the fit, the cursor's for a pull from rest); an anchor
-  worked out to hold the cursor's point divided by the shrink, which passes through zero at the
-  fit, and stepped the frame 40 points sideways (`docs/zoom-input-2026-09-19.md`).
-  The cursor names which part of the image is magnified once a side has filled the room
-  (`ZoomPan`), and a cursor near an edge of the picture is pulled onto it first
-  (`Zoom.pulledToEdges`, `ui.zoomEdgeBandPoints`, `ui.zoomEdgePull`) so that edge stays in view; the
-  pull runs in both directions on every input, because one side can be cropped while the other is
-  still growing. The cursor is a fraction of the window (`at`, y from the top); a keyboard step has
-  none and zooms about the middle. A two-finger double tap zooms twofold at the tap, or back to the
-  fitted size from anywhere above it (`smartZoom`), and a double-click with the select tool asks
-  for the same step: the core decides, because it knows the tool and what is under the pointer, so
-  a double-click on a text still edits it. Zoom's springs are in code rather than the tweaks, but
-  the motion scale still shortens them. `Sources/Zoom.swift` is the geometry, and its comments say
-  why it is shaped this way.
+  picture. The zoom keys, cmd+plus/minus/0, and a double-click on empty space with the select tool
+  are the core's to recognise, because it knows the tool and what is under the pointer, and it sends
+  them as a `ZoomRequest` through `onZoom`. Those are ignored until the flight has landed (`landed`
+  sets `hasLanded`, and the next `prepare` clears it): the editor takes keys from `prepare` and
+  presses handed over from the flight, and a zoom before the landing would grow the window under a
+  flight image still at the fitted frame.
 
-  One process draws the frame and the picture, so a zoom step is one commit. Each tick sets the
-  frame's rect from `Zoom.frame` and the picture's rect inside it from `Zoom.picture` in one run
-  loop turn: `moveFrame` is the only place the frame's rect is set, and it hands the editor its new
-  size and picture together (`EditorView.setSize(_:picture:)`), so the marks, the overlay and the
-  text being typed follow in that same turn. `frameOnScreen` reads the rect back. The texts are
-  drawn again for the new zoom once the picture has stayed put for `EditorView.restDelay`. The
-  state report's `annotator.zoomLevel` is the one number, `annotator.zoom` and
-  `annotator.canvasZoom` its two halves per direction, `annotator.zoomAnchor` the point the window
-  grows away from, `annotator.zoomCenter` the middle of the visible part, and `annotator.room` the
-  rect the frame may grow within.
+  All of them move one number, `zoomLevel`: how far the image is magnified past the frame it opened
+  in (`AnnotationController.zoom(by:at:as:)`). The picture is magnified uniformly by that level, so
+  the image is never stretched. The frame is not: each of its sides grows with the level until that
+  side fills the room it was given, the visible screen less the strip the recent stack keeps.
+  `Zoom.split` divides the level in one place, one division per side, so `window * camera` is the
+  level in each direction. Zooming out stops at the fitted size. Only a hand pulls below it, with a
+  short pull that springs back when the fingers lift; a key or a mouse wheel's notch stops at the
+  fit. Zoom's springs are in code rather than the tweaks, but the motion scale still shortens them.
+  `Sources/Zoom.swift` is the geometry. Its comments, and those on `aim`, `aimPan` and `Tween`, say
+  how the spring, the anchors and the edge pull work, and `docs/zoom-input-2026-09-19.md` has the
+  measurements behind the anchor.
+
+  One process draws the frame and the picture, so a zoom step is one commit. `moveFrame` is the only
+  place the frame's rect is set. In one run loop turn it sets the frame from `Zoom.frame` and the
+  picture inside it from `Zoom.picture`, and hands the editor its new size and picture together
+  (`EditorView.setSize(_:picture:)`), so the marks, the overlay and the text being typed follow in
+  that same turn. The texts are drawn again for the new zoom once the picture has stayed put for
+  `EditorView.restDelay`. The state report's `annotator.zoomLevel` is the one number,
+  `annotator.zoom` and `annotator.canvasZoom` its two halves per direction, `annotator.zoomAnchor`
+  the point the window grows away from, `annotator.zoomCenter` the middle of the visible part, and
+  `annotator.room` the rect the frame may grow within.
 - Memory is bounded where images are held. `Thumbnailer` keeps decoded images under `budgetBytes`,
   least recently used out first, and screen-size flight decodes are dropped whenever the stack
   hides. Every image that reaches a card, a flight or the editor is decoded before it gets there
@@ -823,5 +764,6 @@ the same driven sequence; a single run varies.
 - An editor tool: add an `EditorCore.Tool` case with its label, key and SF Symbol, and handle it
   in the core's presses and drags. The toolbar shows every case.
 - A colour: add a `MarkColor` case with its hex. The order of `MarkColor.allCases` is the colour
-  pass's order, and a case's raw value is what the file format and an agent's `marks=` name. There
-  is no palette in the toolbar.
+  pass's order, and a case's raw value is what the file format and an agent's `marks=` name.
+  `docs/editor.md`, `docs/commands.md` and the skill list the ids, so add the new one there too.
+  There is no palette in the toolbar.
