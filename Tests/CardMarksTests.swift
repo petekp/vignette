@@ -43,7 +43,7 @@ final class CardMarksTests: XCTestCase {
             Image(nsImage: thumbnail).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
                 .frame(width: card.width, height: card.height)
                 .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-                .overlay(DragSource(urls: { [] }, image: thumbnail, onPress: { _ in }, onClick: {}, marks: marks, picture: thumbnail.size, corner: corner))
+                .overlay(DragSource(items: { [] }, image: thumbnail, onPress: { _ in }, onClick: {}, marks: marks, picture: thumbnail.size, corner: corner))
                 .padding(.leading, card.minX)
                 .padding(.top, card.minY)
         }

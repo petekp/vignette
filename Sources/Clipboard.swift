@@ -25,22 +25,29 @@ enum Clipboard {
         pb.writeObjects(items)
     }
 
-    /// Done's clipboard, before its rendering exists: the same kinds of data `copyFiles` puts on for
-    /// the rendered file. The path goes on as text at once; the PNG, the TIFF and the file's URL are
-    /// promised, so a paste that comes before the rendering finishes waits for it. A rendering that
-    /// fails takes the whole clipboard back, unless something else was copied since: its path names
-    /// a file that never appears.
+    /// Done's clipboard, before its rendering exists: `renderingItem`. A rendering that fails takes
+    /// the whole clipboard back, unless something else was copied since: its path names a file that
+    /// never appears.
     static func copyRendering(_ rendering: PendingRendering, file: URL, to pasteboard: NSPasteboard = .general) {
-        let item = NSPasteboardItem()
-        item.setString(pathsText([file]), forType: .string)
-        item.setDataProvider(RenderingProvider(rendering: rendering), forTypes: [.png, .tiff, .fileURL])
         pasteboard.clearContents()
-        pasteboard.writeObjects([item])
+        pasteboard.writeObjects([renderingItem(rendering, file: file)])
         let written = pasteboard.changeCount
         rendering.whenDone { output in
             guard output.failure != nil, pasteboard.changeCount == written else { return }
             pasteboard.clearContents()
         }
+    }
+
+    /// A rendering as one pasteboard item, before it exists, for Done's clipboard and for a card with
+    /// a drawing dragged out of the stack: the same kinds of data `copyFiles` puts on for the rendered
+    /// file. The path goes on as text at once; the PNG, the TIFF and the file's URL are promised, so a
+    /// paste or a drop that comes before the rendering finishes waits for it, and one after a
+    /// rendering that failed gets none of the three.
+    static func renderingItem(_ rendering: PendingRendering, file: URL) -> NSPasteboardItem {
+        let item = NSPasteboardItem()
+        item.setString(pathsText([file]), forType: .string)
+        item.setDataProvider(RenderingProvider(rendering: rendering), forTypes: [.png, .tiff, .fileURL])
+        return item
     }
 
     static func copyText(_ text: String) {
@@ -79,10 +86,10 @@ private final class TIFFProvider: NSObject, NSPasteboardItemDataProvider, @unche
     }
 }
 
-/// Answers a paste of a rendering that may still be running: it waits for it, then gives the PNG,
-/// its TIFF, or the written file's URL. A rendering that failed gives nothing. The callback runs on
-/// the main thread, which the rendering never needs, so waiting there cannot deadlock, but the app
-/// stands still for as long as it waits.
+/// Answers a paste or a drop of a rendering that may still be running: it waits for it, then gives
+/// the PNG, its TIFF, or the written file's URL. A rendering that failed gives nothing. The callback
+/// runs on the main thread, which the rendering never needs, so waiting there cannot deadlock, but
+/// the app stands still for as long as it waits.
 private final class RenderingProvider: NSObject, NSPasteboardItemDataProvider, @unchecked Sendable {
     private let rendering: PendingRendering
     /// How long a paste waits before it gives up and gets nothing. Done's rendering goes ahead of
@@ -95,9 +102,12 @@ private final class RenderingProvider: NSObject, NSPasteboardItemDataProvider, @
 
     func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
         guard let output = rendering.wait(timeout: Self.patience) else {
-            Log.write("[clipboard] error the rendering took longer than \(Int(Self.patience)) s; the paste got nothing")
+            Log.write("[clipboard] error the rendering took longer than \(Int(Self.patience)) s; the paste or drop got nothing")
             return
         }
+        // A PNG with a failure is a rendering whose file could not be written. It failed, so it
+        // gives nothing, as Done's cleared clipboard and a drag's error line say.
+        guard output.failure == nil else { return }
         switch type {
         case .png: if let png = output.png { item.setData(png, forType: .png) }
         case .tiff: if let tiff = output.png.flatMap({ NSImage(data: $0)?.tiffRepresentation }) { item.setData(tiff, forType: .tiff) }

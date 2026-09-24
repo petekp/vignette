@@ -116,6 +116,7 @@ final class MarkRenderingTests: XCTestCase {
 
     /// Done puts the path on the clipboard at once and promises the image, so a paste that comes
     /// before the rendering finishes waits for it instead of finding nothing or the old clipboard.
+    /// A card with a drawing dragged out of the stack drops the same item.
     @MainActor
     func testThePromisedClipboardAnswersOnceTheRenderingIsDone() throws {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("com.petepetrash.vignette.tests.\(UUID().uuidString)"))
@@ -160,6 +161,16 @@ final class MarkRenderingTests: XCTestCase {
         pasteboard.setString("copied since", forType: .string)
         answered(overtaken)
         XCTAssertEqual(pasteboard.string(forType: .string), "copied since")
+
+        // A drop has no clipboard to take back, so the item itself gives nothing for a rendering
+        // that failed, even one that made its PNG and could not write the file.
+        let unwritten = PendingRendering()
+        pasteboard.clearContents()
+        pasteboard.writeObjects([Clipboard.renderingItem(unwritten, file: file)])
+        unwritten.finish(png: png, file: nil, failure: .writeFailed("could not write the file"))
+        XCTAssertNil(pasteboard.data(forType: .png))
+        XCTAssertNil(pasteboard.data(forType: .tiff))
+        XCTAssertNil(pasteboard.string(forType: .fileURL))
     }
 
     // MARK: Marks

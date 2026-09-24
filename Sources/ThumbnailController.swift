@@ -61,6 +61,9 @@ final class StackModel: ObservableObject {
     var onSweep: (CGFloat) -> Void = { _ in }       // y from the column top, during a drag from a circle
     var onSweepEnd: () -> Void = {}
     var onClickImage: (Card) -> Void = { _ in }
+    /// What the cards a drag out of the stack carries drop, one item per card, asked for as the drag
+    /// begins. Each card's file unless the owner says otherwise.
+    var dragItems: ([Card]) -> [NSPasteboardWriting] = { cards in cards.map { $0.shot.url as NSURL } }
     var onHover: (UUID?) -> Void = { _ in }
     /// The selection changed: the cards that joined it, in the order they were picked, and the
     /// cards that left it.
@@ -124,6 +127,11 @@ final class ThumbnailController: NSObject {
     var annotatorMarks: () -> MarkLayers? = { nil }
     /// A press begun on the card flying into the editor, for the image with this key; see `FlightPress`.
     var onAnnotatorPress: ((FlightPress.Event, String) -> Void)?
+    /// What the cards a drag out of the stack carries drop; see `StackModel.dragItems`.
+    var dragItems: ([Card]) -> [NSPasteboardWriting] {
+        get { model.dragItems }
+        set { model.dragItems = newValue }
+    }
 
     private let panel = ThumbnailPanel()
     private let backdrop = BackdropPanel()

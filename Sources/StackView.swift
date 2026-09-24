@@ -196,8 +196,8 @@ private struct CardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous))
                     .shadow(color: .black.opacity(ui.cardShadowOpacity), radius: ui.cardShadowRadius, y: ui.cardShadowY)
                     .overlay(
-                        // Drag out as files; a plain click goes to the model (annotate, or toggle in selection mode).
-                        DragSource(urls: { dragURLs() }, image: card.image ?? NSImage(size: size),
+                        // Drag out as files or drawings; a plain click goes to the model (annotate, or toggle in selection mode).
+                        DragSource(items: { model.dragItems(dragCards()) }, image: card.image ?? NSImage(size: size),
                                    onPress: { down in model.pressedCard = down ? card.id : (model.pressedCard == card.id ? nil : model.pressedCard) },
                                    onClick: { model.onClickImage(card) },
                                    marks: card.marks, picture: card.image?.size, corner: ui.cardCornerRadius, restSize: card.size)
@@ -332,9 +332,8 @@ private struct CardView: View {
     }
 
     /// Dragging a selected card carries the whole selection, in the order it was selected.
-    private func dragURLs() -> [URL] {
-        if selected { return model.selectedCards().map(\.shot.url) }
-        return [card.shot.url]
+    private func dragCards() -> [Card] {
+        selected ? model.selectedCards() : [card]
     }
 }
 
