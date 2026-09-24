@@ -4,16 +4,12 @@ Things decided or raised but not built. Each entry says what, why, and what it w
 
 ## Public release (raised 2026-09-19)
 
-A downloadable build waits on two things, in order:
-
-- Notarization. `scripts/signing.env` names the Developer ID certificate, so a Release build is
-  signed, but a download is refused by Gatekeeper until it is notarized: `xcrun notarytool submit`
-  with a keychain profile for the App Store Connect API key, then `xcrun stapler staple`. No profile
-  exists on this Mac yet.
-- The release itself: a Release configuration build, zipped with `ditto -c -k --keepParent`, and a
-  GitHub Release carrying the zip, with the README's Get it section and the site's download line
-  pointing at it. Whether that is a script or a workflow is a separate decision; nothing is
-  committed for it yet.
+A downloadable build waits on its first release. `scripts/release.sh <version>` builds the disk
+image, notarizes it and staples it, and `docs/building.md` has the steps. The script refuses to run
+until notarytool credentials are stored under the profile `vignette`, or the one `NOTARY_PROFILE`
+names. If they are not on this Mac yet, store them first, as `docs/building.md` says. The tag and
+`gh release create` come after, and the script prints both. The README and the site link to
+`/releases/latest`, so they go live with the first release.
 
 After the release, publish `skills/vignette/SKILL.md` on skills.sh from the public repo, as herdr
 does, so Cursor and other agents can install it without the app.
@@ -65,7 +61,22 @@ Waits on two things, either way:
   if the push loop proves itself in use.
 - A name convention for pushed files, `Agent <what> <state>.png`, so the card reads at a glance.
 - Folding Copy Drawing into Copy, so one Copy gives the image as the card shows it.
-- Shortening AGENTS.md. It is about 750 lines, and a rule in it is easy to miss.
+- Reorganising AGENTS.md. It is 769 lines, and a rule in it is easy to miss. The final docs review
+  of 2026-09-23 proposed:
+  - Open The loop with a short "Before you drive the app" list: use a scratch settings file; check
+    `app.bundle` and `app.settingsFile` in `[state]`; launch one at a time behind the lock; send no
+    synthetic Esc; delete test files from the real watch folder.
+  - Move the rules it found buried: never testing against the real settings file, now mid-bullet in
+    Layout; the lock for parallel agents and putting the user's build back, mid-step 3; never
+    sending Escape to close the stack, inside step 4; and a swap keeping the slot drawn empty, in
+    the toolbar rule, which belongs in the transition or queue rule.
+  - Group the rules under subheadings: Shortcut and capture; The stack; Flights and presses; The
+    annotator and its reducer; The editor and drawings; Zoom; Memory; Build, signing and Apple
+    defaults; Agents.
+  - Merge the build bullets (Swift mode, signing, `Info.plist`) into one. They repeat `project.yml`,
+    `.gitignore` and `docs/building.md`.
+
+  Pete, 2026-09-23: later.
 
 ## Known costs, left alone
 
