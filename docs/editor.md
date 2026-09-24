@@ -504,6 +504,11 @@ Return still copies the drawing and closes the editor. It stays the main way to 
 - The tool and the selection follow section 3.
 - The editor opens when the card starts its flight, before the image is decoded, so it has the keys
   from the first moment. The image appears when its decode arrives.
+- A press on the card while it flies in draws, as a press in the editor would. The stroke starts at
+  the point of the picture that was under the pointer, then follows the pointer. It shows when the
+  card lands.
+- If the card turns back while the button is down, after Esc or another image opening, that press
+  draws nothing.
 
 ### The toolbar
 
@@ -555,6 +560,12 @@ Return still copies the drawing and closes the editor. It stays the main way to 
   dragged out of the stack. Per Decision 16, no preview images are stored.
 - Cards, flights, stitches and dragged cards draw in the live text style and arrowhead, as the
   editor does.
+- A press on a card flying anywhere but into the editor does nothing, up to its release. That is a
+  card flying home, or one leaving with the stack. The card takes clicks again once it lands.
+- A press on a flying card's shadow, or beside the card, reaches whatever is under it. Right-click
+  and scroll on a flying card do nothing.
+- [flight-press-2026-09-23.md](flight-press-2026-09-23.md) has the measurements, and two cases in
+  which a press can still pass through a flying card.
 
 ### The colour pass
 
