@@ -1,10 +1,9 @@
 # A press on a card in flight (2026-09-23)
 
-A press on the card flying into the editor now draws there. Before step 4e, the flight layer ignored
-the mouse, and the editor's window passed every press through until about 21 ms after `show`. A
-press during the flight reached the app behind it. Step 4e of
-[drawing-editor-plan-2026-09-22.md](drawing-editor-plan-2026-09-22.md), which Pete asked for on
-2026-09-23, closed that.
+A press on the card flying into the editor now draws there. Before this change, the flight layer
+ignored the mouse, and the editor's window passed every press through until about 21 ms after
+`show`. A press during the flight reached the app behind it, and Pete asked on 2026-09-23 for that
+to be fixed.
 
 This note records what each press does now, the measurements the design rests on, and the two
 limits still open. The code is `Sources/FlightPress.swift`, the press handling in

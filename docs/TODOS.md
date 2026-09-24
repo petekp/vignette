@@ -78,3 +78,9 @@ Waits on two things, either way:
 - A stitch draws a piece with an orientation flag unturned, and skips that piece's marks, because
   the drawing's size is the turned one. `Rendering` applies the flag; `Stitch` does not. Only an
   image pushed through `add` can carry one: screenshots never do. Pete, 2026-09-23: left for now.
+- The stack drops frames while it narrows to make room for the editor, and while it widens back.
+  After a click, the pointer rests on the column, so SwiftUI re-checks hover and redraws cards on
+  every frame. Every card is also laid out on every frame, though only about six are in view.
+  `docs/stack-narrowing-2026-09-23.md` has the measurements and five options. The recommended pair
+  is to pause hover while the column moves and to lay out only the visible cards. Pete, 2026-09-23:
+  left for now, to take up later.

@@ -1,10 +1,10 @@
 # What a frame of the stack's narrowing costs (2026-09-23)
 
 When a card opens in the editor, the recent stack narrows to make room for it, and it widens again
-when the editor closes. The `AGENTS.md` rule on the stack narrowing describes the mechanism. Step 4e
-of [drawing-editor-plan-2026-09-22.md](drawing-editor-plan-2026-09-22.md) measured what each frame
-of that motion costs, because the long commits left in opening and closing a card are this motion.
-Nothing was built. The note ends with five options and the builder's recommendation.
+when the editor closes. The `AGENTS.md` rule on the stack narrowing describes the mechanism. This
+note measures what each frame of that motion costs, because the long commits left in opening and
+closing a card come from it. It ends with five options, the builder's recommendation, and Pete's
+decision to leave it for now.
 
 Hover is the biggest single cost of a narrowing frame, then the layout of every card in the column.
 
@@ -141,4 +141,4 @@ summed them only read traces, and they were not committed.
 
 ## Decision
 
-Pete has not chosen yet.
+Pete, 2026-09-23: left for now, to take up later. Nothing was built. `docs/TODOS.md` lists it.
