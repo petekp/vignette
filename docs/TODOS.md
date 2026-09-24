@@ -2,17 +2,16 @@
 
 Things decided or raised but not built. Each entry says what, why, and what it waits on.
 
-## Public release (raised 2026-09-19)
+## Publish the skill on skills.sh (raised 2026-09-19)
 
-A downloadable build waits on its first release. `scripts/release.sh <version>` builds the disk
-image, notarizes it and staples it, and `docs/building.md` has the steps. The script refuses to run
-until notarytool credentials are stored under the profile `vignette`, or the one `NOTARY_PROFILE`
-names. If they are not on this Mac yet, store them first, as `docs/building.md` says. The tag and
-`gh release create` come after, and the script prints both. The README and the site link to
-`/releases/latest`, so they go live with the first release.
+0.1.0 went out on 2026-09-24. Publish `skills/vignette/SKILL.md` on skills.sh from the public repo,
+as herdr does, so Cursor and other agents can install it without the app.
 
-After the release, publish `skills/vignette/SKILL.md` on skills.sh from the public repo, as herdr
-does, so Cursor and other agents can install it without the app.
+## A new demo video (raised 2026-09-24)
+
+The tldraw-era video left the site and the README with the native editor, and a still of the stack
+and the editor leads in its place (`site/stack-and-editor.png`). A new recording replaces the still
+when Pete makes one.
 
 ## Xcode's JSON project format (raised 2026-09-21)
 
