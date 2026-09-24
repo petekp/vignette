@@ -82,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotator.onDrawing = { [weak self] drawing, reason in self?.drawings.write(drawing, reason: reason) }
         annotator.onSend = { [weak self] shot, drawing, destination in self?.sendDrawing(drawing, of: shot, to: destination) }
         annotator.onCopyDrawing = { [weak self] shot, drawing in self?.copyDrawing(drawing, of: shot) }
+        thumbnail.dragItems = { [weak self] cards in self?.dragItems(cards) ?? [] }
         settingsWindow.callbacks = SettingsWindowController.Callbacks(
             restoreAppleDefaults: { [weak self] in self?.restoreAppleDefaults() },
             openTweaks: { [weak self] in self?.debugPanel.toggle() },
@@ -481,6 +482,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Log.write("[annotate] \(verb) \(file.lastPathComponent) \(png.count) bytes, copied")
             }
         }
+    }
+
+    /// A drag out of the stack drops each card as it shows it: a card with a drawing drops the
+    /// drawing, rendered from the moment the drag begins and written beside its screenshot, through
+    /// the item Done's clipboard uses, and a card without one drops its file. The drawing is the
+    /// editor's for the card open in it, which is ahead of the stored one until the next hand-over,
+    /// and otherwise the card's own, which every write and removal reaches at once (`onChange`).
+    /// In turn on the queue, so Done's promise keeps its bound: a drop comes after the pointer has
+    /// travelled, which is time a paste does not have.
+    private func dragItems(_ cards: [Card]) -> [NSPasteboardWriting] {
+        let ui = settings.data.ui
+        var drawn = 0
+        let items = cards.map { card -> NSPasteboardWriting in
+            let shot = card.shot, name = shot.url.lastPathComponent
+            guard let drawing = annotator.openDrawing(of: shot.url) ?? card.marks?.drawing, !drawing.marks.isEmpty else {
+                return shot.url as NSURL
+            }
+            drawn += 1
+            let file = annotatedURL(for: shot)
+            let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: ui.textStyle, arrowhead: ui.arrowhead)
+            rendering.whenDone { output in
+                if let failure = output.failure {
+                    Log.write("[drag] error \(failure.code.rawValue) \(name): \(failure); the drop gets no image for it")
+                } else if let file = output.file, let png = output.png {
+                    Log.write("[drag] rendered \(file.lastPathComponent) \(png.count) bytes")
+                }
+            }
+            return Clipboard.renderingItem(rendering, file: file)
+        }
+        Log.write("[drag] cards=\(cards.count) drawings=\(drawn)")
+        return items
     }
 
     // MARK: URL commands: vignette://<command>[?file=/path&file=/other]. See Commands.swift.

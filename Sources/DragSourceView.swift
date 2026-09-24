@@ -2,13 +2,13 @@ import AppKit
 import SwiftUI
 
 /// The AppKit overlay on a card's image. It draws the drawing's marks, `picture` being the shape of
-/// the image under them. A click runs `onClick`; dragging past a few points starts a real file drag so
-/// cards can be dropped on chat apps, Finder, or a terminal. The marks are drawn here rather than in an
-/// AppKit view of their own because SwiftUI updates every AppKit view in the stack on every frame of
-/// its animations: a second view per card would add its update to every frame of a slide-in or a
-/// narrowing.
+/// the image under them. A click runs `onClick`; dragging past a few points starts a real drag of
+/// `items`, asked for then, so cards can be dropped on chat apps, Finder, or a terminal. The marks
+/// are drawn here rather than in an AppKit view of their own because SwiftUI updates every AppKit
+/// view in the stack on every frame of its animations: a second view per card would add its update
+/// to every frame of a slide-in or a narrowing.
 struct DragSource: NSViewRepresentable {
-    let urls: () -> [URL]
+    let items: () -> [NSPasteboardWriting]
     let image: NSImage
     let onPress: (Bool) -> Void
     let onClick: () -> Void
@@ -20,7 +20,7 @@ struct DragSource: NSViewRepresentable {
 
     func makeNSView(context: Context) -> DragSourceView { DragSourceView() }
     func updateNSView(_ view: DragSourceView, context: Context) {
-        view.urls = urls
+        view.items = items
         view.image = image
         view.onPress = onPress
         view.onClick = onClick
@@ -30,7 +30,7 @@ struct DragSource: NSViewRepresentable {
 
 @MainActor
 final class DragSourceView: NSView, NSDraggingSource {
-    var urls: () -> [URL] = { [] }
+    var items: () -> [NSPasteboardWriting] = { [] }
     var image: NSImage?
     var onPress: (Bool) -> Void = { _ in }
     var onClick: () -> Void = {}
@@ -72,15 +72,15 @@ final class DragSourceView: NSView, NSDraggingSource {
         guard hypot(event.locationInWindow.x - start.x, event.locationInWindow.y - start.y) > 5 else { return }
         dragging = true
         onPress(false)
-        let files = urls()
-        guard !files.isEmpty else { return }
+        let writers = items()
+        guard !writers.isEmpty else { return }
         let picture = image.map(dragImage)
-        let items = files.map { url -> NSDraggingItem in
-            let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+        let dragged = writers.map { writer -> NSDraggingItem in
+            let item = NSDraggingItem(pasteboardWriter: writer)
             item.setDraggingFrame(bounds, contents: picture)
             return item
         }
-        beginDraggingSession(with: items, event: event, source: self)
+        beginDraggingSession(with: dragged, event: event, source: self)
     }
 
     /// The card as it is drawn: its image filling it, over the matte, clipped to its corners, and the
