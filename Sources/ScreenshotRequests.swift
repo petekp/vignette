@@ -14,12 +14,11 @@ final class ScreenshotRequests {
     /// What the coordinator needs from the rest of the app. Closures, like ThumbnailController's,
     /// so nothing here reaches into the annotator or the stack.
     struct Callbacks {
-        /// Why the page's canvas cannot be borrowed, or nil when it is free.
-        var canvasRefusal: () -> String? = { "no editor" }
-        /// Turns marks into a draft without showing anything (`AnnotationController.buildDraft`).
-        var buildDraft: (Screenshot, [Mark], @escaping (ParkResult?, String?) -> Void) -> Void = { _, _, done in done(nil, "no editor") }
-        /// Stores a draft and its preview durably, or throws. Publication waits for this to succeed.
-        var saveDraft: (String, Any, Data?) throws -> Void = { _, _, _ in }
+        /// Adds marks to a screenshot's drawing and stores it, without showing anything, then answers
+        /// nil, or why not. Publication waits for the answer, so a card never appears without its marks.
+        var addMarks: (Screenshot, [AgentMark], @escaping (Drawings.Failure?) -> Void) -> Void = { _, _, done in
+            done(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings"))
+        }
         /// Shows a published reply's card. Managed replies never reach the watcher's capture path.
         var present: (Screenshot) -> Void = { _ in }
         var watchFolder: () -> URL = { FileManager.default.temporaryDirectory }
@@ -39,8 +38,8 @@ final class ScreenshotRequests {
     let root: URL
     private var requests: [String: Record] = [:]
     private var replies: [String: Reply] = [:]
-    /// Replies waiting for the page's canvas to be free. In arrival order within a launch; a
-    /// relaunch rebuilds it from the stored records, whose order is the store's.
+    /// Accepted replies not yet published, imported one at a time. In arrival order within a launch;
+    /// a relaunch rebuilds it from the stored records, whose order is the store's.
     private var pendingImports: [String] = []
     private var importing = false
 
@@ -91,7 +90,7 @@ final class ScreenshotRequests {
         let digest: String
         /// True when the reply supplied its own PNG; false means it draws on the request's image.
         let hasImage: Bool
-        let marks: [Mark]
+        let marks: [AgentMark]
         var stage: Stage
         /// The person deleted the published file. Publication still happened and is not undone.
         var deleted = false
@@ -130,6 +129,7 @@ final class ScreenshotRequests {
     /// any file action can happen: until it has, nothing knows which managed files are unfinished.
     /// A record that will not decode is dropped from memory and left on disk, which keeps its file
     /// name excluded (an unknown managed name is hidden) rather than turning it into a capture.
+    /// Replies an earlier launch accepted and did not publish are imported from here.
     func load() {
         let fm = FileManager.default
         var loadedRequests = 0, loadedReplies = 0, unreadable = 0
@@ -156,6 +156,7 @@ final class ScreenshotRequests {
             }
         }
         Log.write("[requests] loaded \(loadedRequests) requests \(loadedReplies) replies pending=\(pendingImports.count)\(unreadable > 0 ? " unreadable=\(unreadable)" : "") dir=\(root.path)")
+        importNext()
     }
 
     // MARK: What the rest of the app asks
@@ -405,11 +406,7 @@ final class ScreenshotRequests {
 
     // MARK: Importing
 
-    /// The page's canvas is free again: a session ended, a build finished, or the page came up.
-    func canvasBecameAvailable() { importNext() }
-
-    /// Publishes the next pending reply, one at a time. A reply whose canvas work is refused stays
-    /// at the head of the queue for the next time the canvas is free.
+    /// Publishes the next pending reply, one at a time.
     private func importNext() {
         guard !importing, let id = pendingImports.first, let reply = replies[id] else { return }
         guard let request = requests[reply.requestID], request.takesReplies else {
@@ -422,9 +419,6 @@ final class ScreenshotRequests {
         publish(reply) { [weak self] in
             guard let self else { return }
             self.importing = false
-            // A reply that is still waiting for the canvas stays at the head of the queue: only a
-            // finished one leaves it, and only then is there any point trying the next.
-            guard let stage = self.replies[id]?.stage, stage != .accepted, stage != .reserved else { return }
             self.pendingImports.removeAll { $0 == id }
             self.importNext()
         }
@@ -460,40 +454,28 @@ final class ScreenshotRequests {
         do { try bytes.write(to: destination, options: .atomic) }
         catch { fail(reply.id, stage: .failed, code: "copy-failed"); return done() }
 
-        // 3. The marks, as a draft the person edits like their own. An image-only reply needs none.
+        // 3. The marks, in a drawing the person edits like their own. An image-only reply needs none.
         guard !reply.marks.isEmpty else { return commit(reply, at: destination, done: done) }
-        if let refusal = callbacks.canvasRefusal() {
-            Log.write("[reply] waiting \(reply.id): \(refusal)")
-            return done()
-        }
-        callbacks.buildDraft(Screenshot(url: destination), reply.marks) { [weak self] parked, error in
+        callbacks.addMarks(Screenshot(url: destination), reply.marks) { [weak self] failure in
             guard let self else { return }
-            guard error == nil, let snapshot = parked?.snapshot else {
-                Log.write("[reply] error draft-failed \(reply.id): \(error ?? "the page built no snapshot")")
-                self.fail(reply.id, stage: .failed, code: "draft-failed")
-                return done()
-            }
-            do { try self.callbacks.saveDraft(destination.path, snapshot, parked?.preview) }
-            catch {
-                Log.write("[reply] error draft-failed \(reply.id): \(error.localizedDescription)")
-                self.fail(reply.id, stage: .failed, code: "draft-store-failed")
+            // A clear during the colour sample took the file back, so the marks had nothing to join:
+            // the import ends cancelled, as the clear said, rather than failed.
+            guard stillReserved(reply, at: destination) else { return done() }
+            if let failure {
+                // The codes stay the ones receipts have always carried for these two failures.
+                let code = failure.code == .writeFailed ? "draft-store-failed" : "draft-failed"
+                Log.write("[reply] error \(code) \(reply.id): \(failure)")
+                self.fail(reply.id, stage: .failed, code: code)
                 return done()
             }
             self.commit(reply, at: destination, done: done)
         }
     }
 
-    /// The single publication point: the PNG, the draft it needs, and its preview are all there, so
-    /// the record goes to `published` and only then is the file an ordinary one with a card.
+    /// The single publication point: the PNG and the drawing it needs are both there, so the record
+    /// goes to `published` and only then is the file an ordinary one with a card.
     private func commit(_ reply: Reply, at url: URL, done: @escaping () -> Void) {
-        // The record may have moved since this import started: `buildDraft` can be outstanding for
-        // seconds, and a clear cancels it in that time. The stage on disk decides, not the copy
-        // this import has been carrying, and the reserved file goes with the cancellation.
-        guard replies[reply.id]?.stage == .reserved else {
-            try? FileManager.default.removeItem(at: url)
-            Log.write("[reply] dropped \(reply.fileName); the request was cleared")
-            return done()
-        }
+        guard stillReserved(reply, at: url) else { return done() }
         var reply = reply
         reply.stage = .published
         reply.errorCode = nil
@@ -504,6 +486,19 @@ final class ScreenshotRequests {
         callbacks.present(Screenshot(url: url))
         callbacks.feedback("\(requests[reply.requestID]?.destinationName ?? "An agent") replied")
         done()
+    }
+
+    /// Whether the import may go on. The record may have moved since it started: its marks are
+    /// added after a colour sample made off the main thread, and a clear cancels the import in that
+    /// time. The stage on disk decides, not the copy this import has been carrying, and the reserved
+    /// file goes with the cancellation.
+    private func stillReserved(_ reply: Reply, at url: URL) -> Bool {
+        guard replies[reply.id]?.stage == .reserved else {
+            try? FileManager.default.removeItem(at: url)
+            Log.write("[reply] dropped \(reply.fileName); the request was cleared")
+            return false
+        }
+        return true
     }
 
     /// Stops one import with a reason, keeping the payload and the exclusion. The receipt is

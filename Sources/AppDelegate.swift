@@ -33,9 +33,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// the file like a capture; this is what makes that report skip the capture toggles.
     private struct PendingAdd {
         var annotate = false
-        /// The page is still turning the push's marks into a draft. The presentation waits for it,
-        /// so the card's first image carries the marks and the annotator opens with them.
-        var buildingDraft = false
+        /// The push's marks are still joining the screenshot's drawing. The presentation waits for
+        /// it, so the annotator opens with them.
+        var addingMarks = false
         /// The file, once there is something to present: the watcher's report, or the file itself
         /// when it was already in the folder and no report is coming.
         var waiting: Screenshot?
@@ -54,7 +54,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[settings] warning Apple screencapture type=\(type) is a format the watcher ignores")
         }
         updateStatusItem()
-        annotator.preload()
+        // It records the frontmost app from the moment it exists, which has to be before the first
+        // window of ours can take the focus.
+        _ = FocusReturn.shared
         thumbnail.actions = self
         thumbnail.onAnnotatorPrepare = { [weak self] shot, frame, room in
             guard let self else { return }
@@ -65,28 +67,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.onAnnotatorShow = { [weak self] in self?.annotator.show() }
         thumbnail.onAnnotatorLanded = { [weak self] in self?.annotator.landed() }
         thumbnail.annotatorBelow = { [weak self] in self?.annotator.spaceBelow ?? 0 }
+        thumbnail.annotatorMarks = { [weak self] in self?.annotator.editor.marks }
         thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide { hidden() } }
         thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }
-        annotator.onFinished = { [weak self] shot, pngData in self?.finishAnnotation(shot, pngData) }
+        thumbnail.onAnnotatorPress = { [weak self] event, key in self?.annotator.take(event, for: key) }
+        annotator.onTakesEvents = { [weak self] key in self?.thumbnail.annotatorTakesEvents(key) }
+        annotator.onFinished = { [weak self] shot, drawing in self?.finishAnnotation(shot, drawing) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
-        annotator.onLoaded = { [weak self] key in self?.thumbnail.pageLoaded(key) }
-        annotator.onProblem = { [weak self] text in self?.thumbnail.showFeedback(text) }
-        annotator.fileAccess.update(folder: watchFolder, unrestricted: settings.data.debug)
-        annotator.onDraftPreview = { [weak self] path, png in self?.storeDonePreview(path, png) }
-        annotator.draftSnapshot = { [weak self] key in self?.drafts.snapshot(for: key) }
-        annotator.onDraft = { [weak self] key, snapshot in self?.storeDraft(key, snapshot: snapshot) }
-        annotator.onParked = { [weak self] key, parked in
-            self?.storeDraft(key, snapshot: parked.snapshot, reason: "parked")
-            if let png = parked.preview { self?.storePreview(key, png) }
+        annotator.onLoaded = { [weak self] key in self?.thumbnail.editorLoaded(key) }
+        annotator.storedDrawing = { [weak self] url, pixels in
+            guard let self else { return nil }
+            return drawings.read(url, pixels: pixels, style: settings.data.ui.textStyle)
         }
-        annotator.onPageReady = { [weak self] in
-            guard let self else { return }
-            self.renderMissingPreviews(self.drafts.keysWithoutPreview())
-        }
-        // A reply's marks need the page's canvas, and every owner of it releases at its own moment:
-        // a session ending, an export answering, a push finishing, the page coming back.
-        annotator.onCanvasFree = { [weak self] in self?.requests.canvasBecameAvailable() }
-        annotator.onSend = { [weak self] destination in self?.sendDrawing(to: destination) }
+        annotator.onDrawing = { [weak self] drawing, reason in self?.drawings.write(drawing, reason: reason) }
+        annotator.onSend = { [weak self] shot, drawing, destination in self?.sendDrawing(drawing, of: shot, to: destination) }
+        annotator.onCopyDrawing = { [weak self] shot, drawing in self?.copyDrawing(drawing, of: shot) }
         settingsWindow.callbacks = SettingsWindowController.Callbacks(
             restoreAppleDefaults: { [weak self] in self?.restoreAppleDefaults() },
             openTweaks: { [weak self] in self?.debugPanel.toggle() },
@@ -94,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             removeAgentSkill: { [weak self] root in self?.removeAgentSkill(from: [root]) })
         // Before the watcher, so a capture taken during launch already lands the way Vignette needs.
         settings.reconcileApple()
-        loadDrafts()
+        startDrawings()
         startRequests()
         startWatching()
         registerHotKey()
@@ -114,11 +109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         } else {
             startAgentSkill()
         }
-        // The contract for agents: after this line every command answers. The page reports `[web] ready` on its own.
-        Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) port=\(annotator.port) watching=\(watchFolder.path)")
+        // The contract for agents: after this line every command answers.
+        Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) watching=\(watchFolder.path)")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        annotator.storeForQuit()
         settings.flush()
         Log.write("[app] terminating pid=\(ProcessInfo.processInfo.processIdentifier)")
     }
@@ -142,12 +138,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func settingsChanged(_ old: SettingsData, _ new: SettingsData) {
-        if new.ui != old.ui { thumbnail.applyTweaks(); warmThumbnails() }
+        if new.ui != old.ui { thumbnail.applyTweaks(); annotator.applyTweaks(); warmThumbnails() }
         if new.recentCount != old.recentCount { warmThumbnails() }
         if new.screenshotsFolder != old.screenshotsFolder { startWatching() }
-        if new.screenshotsFolder != old.screenshotsFolder || new.debug != old.debug {
-            annotator.fileAccess.update(folder: new.folderURL, unrestricted: new.debug)
-        }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
         if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
@@ -305,9 +298,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotate([Screenshot(url: url)])
     }
 
+    /// Each piece carries its drawing into the stitch: the editor's own for the image open in it, as
+    /// Copy Drawing does, else the stored one.
     func stitch(_ shots: [Screenshot]) {
         guard shots.count >= 2 else { Commands.error("stitch", .notEnoughFiles, "needs 2, got \(shots.count)"); return }
-        guard let composed = Stitch.compose(shots.map(\.url), longSideLimit: Settings.shared.data.ui.stitchLongSide) else {
+        let ui = settings.data.ui, style = ui.textStyle, arrowhead = ui.arrowhead, limit = ui.stitchLongSide
+        let pieces = shots.map { shot in
+            Stitch.Piece(url: shot.url, drawing: annotator.openDrawing(of: shot.url)
+                ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: style) })
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let composed = Stitch.compose(pieces, style: style, arrowhead: arrowhead, longSideLimit: limit)
+            DispatchQueue.main.async { MainActor.assumeIsolated { [weak self] in self?.finishStitch(shots, composed) } }
+        }
+    }
+
+    private func finishStitch(_ shots: [Screenshot], _ composed: Stitch.Composition?) {
+        guard let composed else {
             Commands.error("stitch", .unreadableImage, shots.map(\.url.lastPathComponent).joined(separator: ", ")); return
         }
         // A file that would not decode is not in the picture, and one image is not a stitch.
@@ -324,86 +331,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if !thumbnail.stitched(shots, into: out) { thumbnail.showFeedback("Stitched \(composed.pieces) images, copied") }
     }
 
-    // MARK: Drafts
+    // MARK: Drawings
 
-    private lazy var drafts = DraftStore(
-        directory: Identity.applicationSupportURL.appendingPathComponent("drafts"),
-        previewDirectory: Identity.cachesURL.appendingPathComponent("drafts"))
+    private lazy var drawings = Drawings(store: DrawingStore(directory: Identity.applicationSupportURL.appendingPathComponent("drawings")))
 
-    /// Drops drafts whose screenshot is gone, then shows the rest on their cards.
-    private func loadDrafts() {
-        let swept = drafts.sweep { FileManager.default.fileExists(atPath: $0) }
-        for key in swept { Log.write("[draft] swept \((key as NSString).lastPathComponent)") }
-        thumbnail.setDrafts(drafts.keys)
-        for key in drafts.keys { if let png = drafts.preview(for: key) { thumbnail.setPreview(key, png) } }
-        Log.write("[drafts] \(drafts.keys.count) dir=\(drafts.directory.path)")
+    /// Clears out what the web editor left, removes the drawings whose screenshot is gone, and gives
+    /// the stack the drawings, so every card draws its own and a write reaches its card at once.
+    private func startDrawings() {
+        Drawings.removeWebEditorData([
+            Identity.applicationSupportURL.appendingPathComponent("drafts"),
+            Identity.cachesURL.appendingPathComponent("drafts"),
+            Identity.cachesURL.appendingPathComponent("WebKit"),
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/WebKit/\(Identity.bundleID)"),
+        ])
+        thumbnail.drawings = drawings
+        drawings.onChange = { [weak self] key, drawing in self?.thumbnail.setDrawing(drawing, for: key) }
+        drawings.sweep(watchFolder: watchFolder) { FileManager.default.fileExists(atPath: $0) }
     }
 
-    /// A nil snapshot means the annotations were all removed. A draft for a file that no longer
-    /// exists is dropped: the page can report one after the file was trashed.
-    private func storeDraft(_ key: String, snapshot: Any?, reason: String = "saved") {
-        let name = (key as NSString).lastPathComponent
-        if let snapshot, FileManager.default.fileExists(atPath: key) {
-            do { try drafts.save(key: key, snapshot: snapshot); Log.write("[draft] \(reason) \(name)") }
-            catch { Log.write("[draft] error write-failed \(key): \(error.localizedDescription)") }
-        } else if drafts.keys.contains(key) {
-            drafts.forget([key])
-            Log.write("[draft] forgot \(name)")
-        }
-        draftsChanged()
-    }
-
-    /// Pushes the draft set to the cards and logs its size, after every change.
-    private func draftsChanged() {
-        thumbnail.setDrafts(drafts.keys)
-        Log.write("[drafts] \(drafts.keys.count)")
-    }
-
-    /// The Done rendering is full resolution; the card keeps a copy no larger than a park preview.
-    private func storeDonePreview(_ key: String, _ png: Data) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let small = Thumbnailer.downsampled(png: png, maxPixel: Config.previewMaxPixel)
-            DispatchQueue.main.async { MainActor.assumeIsolated {
-                guard let small else { Log.write("[draft] error preview downsample failed \((key as NSString).lastPathComponent)"); return }
-                self.storePreview(key, small)
-            } }
-        }
-    }
-
-    /// A parked draft shows on its card as the preview PNG beside it, and macOS can clear the
-    /// folder those live in. Each draft that lost its preview is rendered again from the stored
-    /// annotations, one at a time, once the page is up. Nothing is shown and nothing is logged when
-    /// there is nothing to render. The canvas is the annotator's the moment it takes an image, so a
-    /// refusal leaves the rest for the next launch rather than queueing behind a drawing session.
-    private func renderMissingPreviews(_ keys: [String]) {
-        guard let key = keys.first, annotator.canvasRefusal == nil else { return }
-        let rest = Array(keys.dropFirst())
-        guard let snapshot = drafts.snapshot(for: key) else { renderMissingPreviews(rest); return }
-        let name = (key as NSString).lastPathComponent
-        annotator.exportDrafts([(key: key, snapshot: snapshot)]) { [weak self] pngs, error in
-            guard let self else { return }
-            if let png = pngs[key] {
-                Log.write("[draft] preview \(name)")
-                self.storeDonePreview(key, png)
-            } else {
-                Log.write("[draft] error preview-failed \(name): \(error ?? "no rendering")")
+    /// Agents' marks joining a screenshot's drawing: the one open in the editor, or the stored one.
+    /// The colour pass's sample is made off the main thread first, and `done` answers once the
+    /// drawing is written, with how many marks joined it. A new drawing takes the main screen's
+    /// point scale, the best guess with no annotator open.
+    private func addMarks(_ marks: [AgentMark], to url: URL, done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
+        Task {
+            let sample = await Self.colorSample(of: url)
+            do {
+                done(.success(try drawings.add(marks, to: url, editor: annotator.editor, sample: sample, style: settings.data.ui.textStyle,
+                                               newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)))
+            } catch let failure as Drawings.Failure {
+                done(.failure(failure))
+            } catch {
+                done(.failure(Drawings.Failure(code: .writeFailed, description: "\(error)")))
             }
-            self.renderMissingPreviews(rest)
         }
     }
 
-    private func storePreview(_ key: String, _ png: Data) {
-        guard drafts.keys.contains(key) else { return }
-        do { try drafts.savePreview(key: key, png: png) } catch { Log.write("[draft] error write-failed preview \(key): \(error.localizedDescription)") }
-        thumbnail.setPreview(key, png)
+    private nonisolated static func colorSample(of url: URL) async -> ColorSample? {
+        ColorSample(imageAt: url)
     }
 
-    private func forgetDrafts(_ shots: [Screenshot]) {
-        let had = shots.filter { drafts.keys.contains($0.url.path) }
-        guard !had.isEmpty else { return }
-        drafts.forget(had.map(\.url.path))
-        Log.write("[draft] forgot \(had.map(\.url.lastPathComponent).joined(separator: ", "))")
-        draftsChanged()
+    /// Where a screenshot's rendering is written: `<name>-annotated.png` beside it.
+    private func annotatedURL(for shot: Screenshot) -> URL {
+        let base = shot.url.deletingPathExtension().lastPathComponent
+        return shot.url.deletingLastPathComponent().appendingPathComponent("\(base)\(Config.annotatedSuffix).png")
     }
 
     func open(_ shots: [Screenshot]) {
@@ -424,64 +395,91 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         }
         thumbnail.remove(shots)
-        forgetDrafts(shots)
+        drawings.remove(shots.map(\.url))
         if failed.isEmpty { Commands.ok("trash", trashed.joined(separator: ", ")) }
         else { Commands.error("trash", .writeFailed, "\(failed.joined(separator: "; ")); trashed \(trashed.count) of \(shots.count)") }
     }
 
+    /// Copy Drawing: each card's drawing, rendered and written beside its screenshot, and the
+    /// original file for a card without one. The card open in the editor renders the editor's own
+    /// drawing, which is ahead of the stored one until the next hand-over. The queue renders these
+    /// in the order asked, so once the last rendering is done every one is.
     func copyAnnotated(_ shots: [Screenshot]) {
-        let items = shots.compactMap { shot in drafts.snapshot(for: shot.url.path).map { (key: shot.url.path, snapshot: $0) } }
-        guard !items.isEmpty else { finishCopyAnnotated(shots, pngs: [:]); return }
-        annotator.exportDrafts(items) { [weak self] pngs, error in
-            guard let self else { return }
-            if let error {
-                Commands.error("copy-annotated", error.hasPrefix("timeout") ? .exportTimeout : .exportFailed, error)
-                self.thumbnail.showFeedback("Could not render the drawing; see the log")
+        let ui = settings.data.ui, style = ui.textStyle
+        let renderings = shots.map { shot -> (shot: Screenshot, rendering: PendingRendering?) in
+            let drawing = annotator.openDrawing(of: shot.url)
+                ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: style) }
+            guard let drawing, !drawing.marks.isEmpty else { return (shot, nil) }
+            return (shot, RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: annotatedURL(for: shot),
+                                                       style: style, arrowhead: ui.arrowhead))
+        }
+        if let last = renderings.compactMap(\.rendering).last {
+            last.whenDone { [weak self] _ in self?.finishCopyAnnotated(renderings) }
+        } else {
+            finishCopyAnnotated(renderings)
+        }
+    }
+
+    private func finishCopyAnnotated(_ renderings: [(shot: Screenshot, rendering: PendingRendering?)]) {
+        var urls: [URL] = []
+        for (shot, rendering) in renderings {
+            guard let rendering else { urls.append(shot.url); continue }
+            let output = rendering.wait(timeout: 0)
+            guard let file = output?.file else {
+                let failure = output?.failure ?? .writeFailed("no rendering")
+                Commands.error("copy-annotated", failure.code, "\(shot.url.lastPathComponent): \(failure)")
+                thumbnail.showFeedback("Could not render the drawing; see the log")
                 return
             }
-            self.finishCopyAnnotated(shots, pngs: pngs)
-        }
-    }
-
-
-    private func finishCopyAnnotated(_ shots: [Screenshot], pngs: [String: Data]) {
-        var urls: [URL] = []
-        var annotated = 0
-        for shot in shots {
-            if let png = pngs[shot.url.path], let out = writeAnnotated(shot, png) { urls.append(out); annotated += 1 }
-            else { urls.append(shot.url) }
+            urls.append(file)
         }
         Clipboard.copyFiles(urls)
-        Commands.ok("copy-annotated", "\(urls.map(\.lastPathComponent).joined(separator: ", ")); \(annotated) with annotations")
-        thumbnail.showCopied(shots)
+        let drawn = renderings.filter { $0.rendering != nil }.count
+        Commands.ok("copy-annotated", "\(urls.map(\.lastPathComponent).joined(separator: ", ")); \(drawn) with annotations")
+        thumbnail.showCopied(renderings.map(\.shot))
     }
 
-    /// Done: the annotated file goes on the clipboard as a file, an image, and its path as text,
-    /// so a terminal pastes the path and a chat app pastes the image.
-    private func finishAnnotation(_ shot: Screenshot, _ png: Data?) {
-        if let png {
-            if let out = writeAnnotated(shot, png) {
-                Clipboard.copyFiles([out])
-                Log.write("[annotate] done \(out.lastPathComponent) \(png.count) bytes, copied")
-            } else {
-                Clipboard.copyPNG(png)
-            }
-        } else {
-            Clipboard.copyFiles([shot.url])
-            Log.write("[annotate] done \(shot.url.lastPathComponent) nothing drawn, original copied")
-        }
+    /// Done: the rendering goes on the clipboard at once as a promise and the card goes home; the
+    /// file is written when the rendering finishes. With nothing drawn, the original file is copied.
+    private func finishAnnotation(_ shot: Screenshot, _ drawing: Drawing) {
+        copyRendering(of: drawing, shot: shot, verb: "done")
         // Quick annotate: the drawing was the point; nothing comes back.
         if settings.data.quickAnnotate { Log.write("[annotate] quick close") }
         thumbnail.annotationFinished(quick: settings.data.quickAnnotate)
     }
 
-    /// Writes `<name>-annotated.png` next to the screenshot.
-    private func writeAnnotated(_ shot: Screenshot, _ png: Data) -> URL? {
-        let base = shot.url.deletingPathExtension().lastPathComponent
-        let out = shot.url.deletingLastPathComponent().appendingPathComponent("\(base)\(Config.annotatedSuffix).png")
-        do { try png.write(to: out); return out } catch {
-            Log.write("[annotate] save failed: \(error.localizedDescription)")
-            return nil
+    /// Cmd+C in the editor with nothing selected: the same clipboard Done gives, and the editor stays open.
+    private func copyDrawing(_ drawing: Drawing, of shot: Screenshot) {
+        copyRendering(of: drawing, shot: shot, verb: "copied")
+    }
+
+    /// The annotated file on the clipboard as a file, an image, and its path as text, so a terminal
+    /// pastes the path and a chat app pastes the image. The file is promised, so nothing waits for
+    /// the rendering but a paste that comes before it, and the rendering goes ahead of any that has
+    /// not started. `verb` names the moment in the log line.
+    private func copyRendering(of drawing: Drawing, shot: Screenshot, verb: String) {
+        let name = shot.url.lastPathComponent
+        guard !drawing.marks.isEmpty else {
+            Clipboard.copyFiles([shot.url])
+            Log.write("[annotate] \(verb) \(name) nothing drawn, original copied")
+            return
+        }
+        let file = annotatedURL(for: shot)
+        let ui = settings.data.ui
+        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: ui.textStyle, arrowhead: ui.arrowhead,
+                                                     order: .first)
+        Clipboard.copyRendering(rendering, file: file)
+        rendering.whenDone { [weak self] output in
+            guard let self else { return }
+            if let failure = output.failure {
+                Log.write("[annotate] error \(failure.code.rawValue) \(name): \(failure)")
+                // The clipboard took its promise back; the card must not say otherwise.
+                let words = "Could not copy the drawing; see the log"
+                thumbnail.takeBackCopied(shot)
+                if !thumbnail.stackShowing, annotator.currentKey != nil { annotator.showToast(words) } else { thumbnail.showFeedback(words) }
+            } else if let file = output.file, let png = output.png {
+                Log.write("[annotate] \(verb) \(file.lastPathComponent) \(png.count) bytes, copied")
+            }
         }
     }
 
@@ -502,14 +500,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if Commands.needsDebug(cmd) && !settings.data.debug {
             Commands.error(cmd, .debugDisabled, "set \"debug\": true in settings.json"); return
         }
-        // Only these three need the editor page. A loading page queues annotate one deep; the others wait for [web] ready.
-        switch (cmd, annotator.pageState) {
-        case ("annotate", .unavailable), ("copy-annotated", .unavailable), ("eval", .unavailable):
-            Commands.error(cmd, .pageNotReady, "the editor page is unavailable; see the [web] lines"); return
-        case ("copy-annotated", .loading), ("eval", .loading):
-            Commands.error(cmd, .pageNotReady, "the editor page is still loading; wait for [web] ready"); return
-        default: break
-        }
         switch cmd {
         case "help":
             for line in Commands.helpLines() { Log.write("[help] \(line)") }
@@ -526,10 +516,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case "requests": requests.run(clear: request.clear)
         case "restore-apple-defaults": restoreAppleDefaults()
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
-        case "show-editor": annotator.presentEmpty(); Commands.ok("show-editor")
         case "dismiss": thumbnail.dismiss(); Commands.ok("dismiss")
         case "cancel": Commands.ok("cancel", annotator.cancelForDebug() ? "" : "nothing was open")
-        case "eval": annotator.evalForDebug(request.query ?? "")   // answers when the page does
         default:
             guard let action = Config.action(id: cmd) else { return }
             var targets = request.files
@@ -549,9 +537,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 if let code = Commands.policyError(for: file, watchFolder: watchFolder, debug: settings.data.debug) {
                     Commands.error(cmd, code, file.path); return
                 }
-                // A reserved reply is Vignette's own until its import commits: opening it would take
-                // the canvas the import is waiting for, and trashing it would delete the file the
-                // import is about to draw on. The listings hide it; so does naming it.
+                // A reserved reply is Vignette's own until its import commits: opening it would show
+                // a drawing still missing its marks, and trashing it would delete the file the import
+                // is about to draw on. The listings hide it; so does naming it.
                 guard requests.isVisible(file) else {
                     Commands.error(cmd, .missingFile, "\(file.path): an agent reply that is not imported yet"); return
                 }
@@ -578,7 +566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         return result == KERN_SUCCESS ? Int(info.resident_size) : 0
     }
 
-    /// One `[state] {json}` line, written once the page has answered or after a second without it.
+    /// One `[state] {json}` line, written at once.
     private func dumpState(tag: String?) {
         var report = StateReport()
         report.sections = thumbnail.stateJSON
@@ -593,13 +581,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             "agentSkill": ["setting": settings.data.agentSkill, "installed": installedSkillPaths()] as [String: Any],
         ] as [String: Any]
         report.sections["annotator"] = annotator.stateJSON
-        report.sections["drafts"] = drafts.keys.sorted()
+        report.sections["editor"] = annotator.editor.core.inspection
+        report.sections["drawings"] = drawings.keys.sorted()
         report.sections["requests"] = requests.stateJSON
         report.sections["memory"] = ["rss": residentBytes(), "thumbnails": Thumbnailer.cacheBytes]
-        annotator.queryPage(timeout: 1) { page in
-            report.sections["page"] = page ?? "unavailable"
-            Log.write("[state] \(report.rendered())")
-        }
+        Log.write("[state] \(report.rendered())")
     }
 
     /// Accessory apps have no menu bar, but key equivalents like Cmd+W and Cmd+C in the Settings
@@ -754,23 +740,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// `add?file=<path>[&annotate][&agent=<name>][&marks=<json>]`: a copy of an image from anywhere
     /// lands in the watch folder, where the watcher reports it like a capture; `pendingAdds` makes
     /// that report skip the capture toggles. `agent=` is recorded on the copy, which is what puts
-    /// the badge on its card. `marks=` becomes a draft before the card appears, so the user opens
-    /// the agent's drawing and edits it like their own.
+    /// the badge on its card. `marks=` joins the screenshot's drawing before the card appears, so the
+    /// user opens the agent's drawing and edits it like their own.
     private func addImage(_ request: CommandRequest) {
         guard let source = request.files.first else { Commands.error("add", .missingFile, "no file given"); return }
         guard Commands.isReadableImage(source) else { Commands.error("add", .unreadableImage, source.path); return }
-        var marks: [Mark] = []
+        var marks: [AgentMark] = []
         if let value = request.marks {
             // Checked before anything is copied: a push with bad marks is one error line and no file.
-            do { marks = try Commands.marks(from: value) } catch { Commands.error("add", .invalidMarks, "\(error)"); return }
-            // Before the color check: the colors come from the page, so without one the answer is
-            // that the page is not ready, not that the color is wrong.
-            if let refused = annotator.canvasRefusal {
-                Commands.error("add", .pageNotReady, "\(refused); marks need the editor free"); return
-            }
-            if let unknown = marks.compactMap(\.color).first(where: { !annotator.colorIDs.contains($0) }) {
-                Commands.error("add", .invalidMarks, "unknown color \"\(unknown)\"; the editor has \(annotator.colorIDs.joined(separator: ", "))"); return
-            }
+            do { marks = try AgentMark.parse(value) } catch { Commands.error("add", .invalidMarks, "\(error)"); return }
         }
         let inFolder = Commands.policyError(for: source, watchFolder: watchFolder, debug: false) == nil
         var destination = source
@@ -787,7 +765,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         let name = destination.lastPathComponent
         // Already in the folder means no watcher report is coming, so the file itself waits here.
-        pendingAdds[name] = PendingAdd(annotate: request.annotate, buildingDraft: !marks.isEmpty,
+        pendingAdds[name] = PendingAdd(annotate: request.annotate, addingMarks: !marks.isEmpty,
                                        waiting: inFolder ? Screenshot(url: destination) : nil)
         if !inFolder {
             do {
@@ -803,28 +781,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request))")
             return
         }
-        annotator.buildDraft(Screenshot(url: destination), marks: marks) { [weak self] parked, error in
+        addMarks(marks, to: destination) { [weak self] result in
             guard let self else { return }
-            // A build that answers without a snapshot built nothing; storing that nil would forget
-            // the image's existing draft, so it is a failure and not "the annotations were removed".
-            if let snapshot = error == nil ? parked?.snapshot : nil {
-                self.storeDraft(destination.path, snapshot: snapshot, reason: "built")
-                if let png = parked?.preview { self.storePreview(destination.path, png) }
-                Commands.ok("add", "\(name)\(self.detail(request)) marks=\(marks.count)")
-            } else {
-                let why = error ?? "the page built no snapshot"
-                Commands.error("add", why.hasPrefix("timeout") ? .exportTimeout : .exportFailed,
-                               "\(name): the image is in the folder, its marks are not: \(why)")
+            switch result {
+            case .success(let joined):
+                Commands.ok("add", "\(name)\(detail(request)) marks=\(joined)")
+            case .failure(let failure):
+                Commands.error("add", failure.code, "\(name): the image is in the folder, its marks are not: \(failure)")
             }
-            self.pendingAdds[name]?.buildingDraft = false
-            self.presentAdd(name)
+            pendingAdds[name]?.addingMarks = false
+            presentAdd(name)
         }
     }
 
     /// Shows the added file once nothing is owed on it: the watcher has reported it and its marks,
-    /// if any, are a stored draft.
+    /// if any, are in its stored drawing.
     private func presentAdd(_ name: String) {
-        guard let pending = pendingAdds[name], !pending.buildingDraft, let shot = pending.waiting else { return }
+        guard let pending = pendingAdds[name], !pending.addingMarks, let shot = pending.waiting else { return }
         pendingAdds[name] = nil
         present(shot, annotate: pending.annotate)
     }
@@ -843,25 +816,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         requests.connections = [.claude: ClaudeCodeConnection(),
                                 .codex: CodexConnection()]
         requests.callbacks = ScreenshotRequests.Callbacks(
-            // Not `self?.annotator.canvasRefusal ?? …`: optional chaining on an already-optional
-            // property flattens, so a free canvas (nil) would read as the fallback and every
-            // import would wait forever.
-            canvasRefusal: { [weak self] in
-                guard let self else { return "the app is gone" }
-                return self.annotator.canvasRefusal
-            },
-            buildDraft: { [weak self] shot, marks, done in
-                guard let self else { return done(nil, "the app is gone") }
-                self.annotator.buildDraft(shot, marks: marks, completion: done)
-            },
-            saveDraft: { [weak self] key, snapshot, preview in
-                guard let self else { throw ReplyProtocol.Problem(.storeFailed, "the app is gone") }
-                // The throwing store, not `storeDraft`: publication may only commit once the draft
-                // is really on disk, and a logged failure is not an acknowledgement.
-                try self.drafts.save(key: key, snapshot: snapshot)
-                if let preview { try self.drafts.savePreview(key: key, png: preview) }
-                self.draftsChanged()
-                if let preview { self.thumbnail.setPreview(key, preview) }
+            addMarks: { [weak self] shot, marks, done in
+                guard let self else { return done(Drawings.Failure(code: .writeFailed, description: "the app is gone")) }
+                addMarks(marks, to: shot.url) { result in
+                    if case .failure(let failure) = result { done(failure) } else { done(nil) }
+                }
             },
             present: { [weak self] shot in self?.thumbnail.show(shot) },
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
@@ -903,41 +862,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Send, from the annotator's toolbar. The drawing is rendered without closing anything; the
     /// image leaves the editor only once that rendering and the request are stored, so a failure
     /// anywhere before then leaves the drawing exactly where the hand left it.
-    private func sendDrawing(to destination: AgentDestination) {
-        guard !annotator.sending else { return }
-        annotator.sending = true
-        annotator.snapshotCurrent { [weak self] key, png, error in
-            guard let self else { return }
-            self.annotator.sending = false
-            guard !key.isEmpty else {
-                Commands.error("send", .pageNotReady, error ?? "no image in the editor"); return
-            }
-            // A rendering that answers after the person moved to another image belongs to neither
-            // of them: it is dropped, and nothing is sent and nothing closed.
-            guard self.annotator.currentKey == key else {
-                Log.write("[send] dropped \((key as NSString).lastPathComponent); the editor moved on"); return
-            }
-            let source = URL(fileURLWithPath: key)
-            if let error {
-                Commands.error("send", error.hasPrefix("timeout") ? .exportTimeout : .exportFailed, "\(source.lastPathComponent): \(error)")
-                self.thumbnail.showFeedback("Could not render the drawing; see the log")
+    private func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination) {
+        guard !annotator.sending, let session = annotator.session else { return }
+        let name = shot.url.lastPathComponent
+        // Nothing drawn is a send of the screenshot itself, which is what the person is looking at.
+        // Through PNG whatever the capture format is: a reply copies these bytes to a `.png`
+        // name, and an agent opening a file whose name and content disagree may not cope.
+        guard !drawing.marks.isEmpty else {
+            guard let bytes = Thumbnailer.png(from: shot.url) else {
+                Commands.error("send", .unreadableImage, shot.url.path)
+                thumbnail.showFeedback("Could not read \(name)")
                 return
             }
-            // Nothing drawn is a send of the screenshot itself, which is what the person is looking at.
-            // Through PNG whatever the capture format is: a reply copies these bytes to a `.png`
-            // name, and an agent opening a file whose name and content disagree may not cope.
-            guard let bytes = png ?? Thumbnailer.png(from: source) else {
-                Commands.error("send", .unreadableImage, source.path)
-                self.thumbnail.showFeedback("Could not read \(source.lastPathComponent)")
-                return
-            }
-            guard self.requests.send(png: bytes, source: source, to: destination) != nil else {
-                self.thumbnail.showFeedback("Could not store the request; see the log"); return
-            }
-            // Stored, so the request survives whatever the client does next. The image goes home
-            // and takes no copied mark: copying is Done's contract. A queued run carries on.
-            self.thumbnail.annotationSent()
+            return submit(bytes, of: shot, to: destination)
         }
+        annotator.sending = true
+        let ui = settings.data.ui
+        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: nil, style: ui.textStyle, arrowhead: ui.arrowhead)
+        rendering.whenDone { [weak self] output in
+            guard let self else { return }
+            // A rendering that answers after the session that pressed Send has ended belongs to no
+            // image now, even the same one opened again: it is dropped, and nothing is sent and
+            // nothing closed. The session open now has its own `sending`, which this leaves alone.
+            guard annotator.session == session else {
+                Log.write("[send] dropped \(name); the editor moved on"); return
+            }
+            annotator.sending = false
+            guard let png = output.png, output.failure == nil else {
+                let failure = output.failure ?? .writeFailed("the rendering made no image")
+                Commands.error("send", failure.code, "\(name): \(failure)")
+                thumbnail.showFeedback("Could not render the drawing; see the log")
+                return
+            }
+            submit(png, of: shot, to: destination)
+        }
+    }
+
+    private func submit(_ png: Data, of shot: Screenshot, to destination: AgentDestination) {
+        guard requests.send(png: png, source: shot.url, to: destination) != nil else {
+            thumbnail.showFeedback("Could not store the request; see the log"); return
+        }
+        // Stored, so the request survives whatever the client does next. The image goes home
+        // and takes no copied mark: copying is Done's contract. A queued run carries on.
+        thumbnail.annotationSent()
     }
 
     private func present(_ shot: Screenshot, annotate: Bool) {
@@ -973,10 +940,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             let name = url.lastPathComponent
             if self.pendingAdds[name] != nil {
                 self.pendingAdds[name]?.waiting = shot
-                self.presentAdd(name)   // waits when the push's marks are still becoming a draft
+                self.presentAdd(name)   // waits when the push's marks are still joining its drawing
                 return
             }
-            // An agent's reply is shown once by its own import, when every byte and its draft are
+            // An agent's reply is shown once by its own import, when every byte and its drawing are
             // stored. A watcher report for one — the copy that made it, or a later rescan — is
             // never a capture, so it neither goes to the clipboard nor opens the editor.
             guard self.requests.isCapture(url) else { return }
@@ -988,7 +955,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }, onRemoved: { [weak self] urls in
             Log.write("[watcher] removed \(urls.map(\.lastPathComponent).joined(separator: ", "))")
             self?.thumbnail.remove(urls.map(Screenshot.init))
-            self?.forgetDrafts(urls.map(Screenshot.init))
+            self?.drawings.remove(urls)
             for url in urls { self?.requests.fileRemoved(url) }
         })
         warmThumbnails()

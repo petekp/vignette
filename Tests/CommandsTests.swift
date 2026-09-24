@@ -26,13 +26,6 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(r.files, [URL(fileURLWithPath: NSHomeDirectory() + "/Desktop/s.png")])
     }
 
-    func testEvalKeepsTheDecodedQuery() {
-        let r = Commands.parse(URL(string: "vignette://eval?return%201%2B1")!)
-        XCTAssertEqual(r.name, "eval")
-        XCTAssertEqual(r.query, "return 1+1")
-        XCTAssertEqual(r.files, [])
-    }
-
     func testTagIsReadFromTheQuery() {
         XCTAssertEqual(Commands.parse(URL(string: "vignette://state?tag=t%201")!).tag, "t 1")
         XCTAssertNil(Commands.parse(URL(string: "vignette://state")!).tag)
@@ -78,14 +71,16 @@ final class CommandsTests: XCTestCase {
         let file = dir.appendingPathComponent("marks.json")
         try Data(#"[{"type":"ellipse","x":0.1,"y":0.2,"w":0.3,"h":0.4,"color":"red"}]"#.utf8).write(to: file)
         XCTAssertEqual(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&marks=/tmp/m.json")!).marks, "/tmp/m.json")
-        XCTAssertEqual(try Commands.marks(from: file.path), [Mark(type: .ellipse, x: 0.1, y: 0.2, w: 0.3, h: 0.4, color: "red")])
-        XCTAssertEqual(try Commands.marks(from: #"[{"type":"arrow","x":0.5,"y":0.5,"x2":0.7,"y2":0.6}]"#),
-                       [Mark(type: .arrow, x: 0.5, y: 0.5, x2: 0.7, y2: 0.6)])
-        XCTAssertEqual(try Commands.marks(from: #"[{"type":"text","x":0.1,"y":0.8,"text":"Header should not scroll"}]"#),
-                       [Mark(type: .text, x: 0.1, y: 0.8, text: "Header should not scroll")])
-        // A text mark may name the box its words wrap in; without one the page uses the room to the edge.
-        XCTAssertEqual(try Commands.marks(from: #"[{"type":"text","x":0.1,"y":0.8,"w":0.4,"text":"Header should not scroll"}]"#),
-                       [Mark(type: .text, x: 0.1, y: 0.8, w: 0.4, text: "Header should not scroll")])
+        XCTAssertEqual(try AgentMark.parse(file.path), [AgentMark(type: .ellipse, x: 0.1, y: 0.2, w: 0.3, h: 0.4, color: "red")])
+        XCTAssertEqual(try AgentMark.parse(#"[{"type":"arrow","x":0.5,"y":0.5,"x2":0.7,"y2":0.6}]"#),
+                       [AgentMark(type: .arrow, x: 0.5, y: 0.5, x2: 0.7, y2: 0.6)])
+        XCTAssertEqual(try AgentMark.parse(#"[{"type":"text","x":0.1,"y":0.8,"text":"Header should not scroll"}]"#),
+                       [AgentMark(type: .text, x: 0.1, y: 0.8, text: "Header should not scroll")])
+        // A text mark may name the box its words wrap in; without one it takes the room to the edge.
+        XCTAssertEqual(try AgentMark.parse(#"[{"type":"text","x":0.1,"y":0.8,"w":0.4,"text":"Header should not scroll"}]"#),
+                       [AgentMark(type: .text, x: 0.1, y: 0.8, w: 0.4, text: "Header should not scroll")])
+        XCTAssertEqual(try AgentMark.parse(#"[{"type":"rectangle","x":0,"y":1,"w":1,"h":0.5,"color":"light-blue"}]"#),
+                       [AgentMark(type: .rectangle, x: 0, y: 1, w: 1, h: 0.5, color: "light-blue")])
     }
 
     func testMarksNameTheOneThingWrong() throws {
@@ -93,19 +88,24 @@ final class CommandsTests: XCTestCase {
             ("/tmp/does-not-exist.json", "cannot read"),
             ("[]", "no marks"),
             (#"{"type":"ellipse"}"#, "expected a JSON array"),
-            ("[" + String(repeating: #"{"type":"text","x":0,"y":0,"text":"x"},"#, count: Commands.maxMarks) + #"{"type":"text","x":0,"y":0,"text":"x"}]"#, "at most \(Commands.maxMarks)"),
+            ("[" + String(repeating: #"{"type":"text","x":0,"y":0,"text":"x"},"#, count: AgentMark.maxCount) + #"{"type":"text","x":0,"y":0,"text":"x"}]"#, "at most \(AgentMark.maxCount)"),
             (#"[{"type":"ellipse","x":0,"y":0,"w":0.1,"h":0.1},{"type":"circle","x":0,"y":0}]"#, "mark 2: unknown type"),
             (#"[{"type":"ellipse","x":340,"y":120,"w":0.1,"h":0.1}]"#, "x must be a number from 0 to 1, a fraction of the image"),
             (#"[{"type":"ellipse","x":"0.5","y":0,"w":0.1,"h":0.1}]"#, "x must be a number from 0 to 1"),
-            ("[" + String(repeating: " ", count: Commands.maxMarksBytes) + "]", "at most \(Commands.maxMarksBytes / 1024) KB"),
+            ("[" + String(repeating: " ", count: AgentMark.maxBytes) + "]", "at most \(AgentMark.maxBytes / 1024) KB"),
             (#"[{"type":"ellipse","x":0,"y":0,"w":0,"h":0.1}]"#, "w must be more than 0"),
             (#"[{"type":"arrow","x":0.1,"y":0.1,"x2":0.1,"y2":0.1}]"#, "ends where it starts"),
             (#"[{"type":"text","x":0.1,"y":0.1}]"#, "text is missing"),
             (#"[{"type":"text","x":0.1,"y":0.1,"w":1.4,"text":"x"}]"#, "w must be a number from 0 to 1"),
             (#"[{"type":"text","x":0.1,"y":0.1,"w":0,"text":"x"}]"#, "w must be more than 0"),
+            (#"[{"type":"text","x":0.1,"y":0.1,"text":"  \n "}]"#, "text is missing"),
+            ("[{\"type\":\"text\",\"x\":0.1,\"y\":0.1,\"text\":\"" + String(repeating: "x", count: 2001) + "\"}]", "text is longer than 2000 characters"),
+            (#"[{"type":"ellipse","x":0.1,"y":0.1,"w":0.1,"h":0.1,"color":"blue"}]"#, "mark 1: color must be one of red, yellow, light-blue, white, violet"),
+            (#"[{"type":"ellipse","x":true,"y":0.1,"w":0.1,"h":0.1}]"#, "x must be a number from 0 to 1"),
+            (#"[{"type":"ellipse","x":0.1,"y":0.1,"w":0.1,"h":0.1},{"type":"ellipse","x":0.1,"y":1e999,"w":0.1,"h":0.1}]"#, "mark 2: y must be a number from 0 to 1"),
         ]
         for (value, expected) in cases {
-            XCTAssertThrowsError(try Commands.marks(from: value), value) { error in
+            XCTAssertThrowsError(try AgentMark.parse(value), value) { error in
                 XCTAssertTrue("\(error)".contains(expected), "\(value) gave \"\(error)\", wanted \"\(expected)\"")
             }
         }
@@ -118,7 +118,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertTrue(Commands.isKnown("copy"))
         XCTAssertFalse(Commands.isKnown("bogus"))
         XCTAssertFalse(Commands.isKnown(""))
-        XCTAssertTrue(Commands.needsDebug("eval"))
+        XCTAssertTrue(Commands.needsDebug("tweaks"))
         XCTAssertFalse(Commands.needsDebug("recent"))
         XCTAssertFalse(Commands.needsDebug("copy"))
     }

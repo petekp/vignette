@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds the web bundle, regenerates the Xcode project, and builds the app.
+# Regenerates the Xcode project and builds the app.
 # `--test` also runs the VignetteTests unit tests after the build and names any that fail.
 set -e
 cd "$(dirname "$0")/.."
@@ -11,8 +11,7 @@ for arg in "$@"; do
   esac
 done
 scheme=$(sed -n 's/^name: *//p' project.yml)
-(cd web && pnpm build)
-xcodegen generate >/dev/null   # also writes Info.plist; web/dist must exist first
+xcodegen generate >/dev/null   # also writes Info.plist
 # The git stamp (CFBundleVersion, VignetteBuild) is a build phase in project.yml.
 build=$(git describe --always --dirty 2>/dev/null || echo local)
 # scripts/signing.env (gitignored) names a certificate; without it the build is ad-hoc signed.

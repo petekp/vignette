@@ -10,7 +10,8 @@ import ImageIO
 /// `@unchecked Sendable`: every access to the mutable state below is inside `lock`/`unlock`, which
 /// is what actually makes it safe across the concurrent `queue`.
 enum Thumbnailer: @unchecked Sendable {
-    private struct Entry { let modified: Date; let maxPixel: Int; let image: NSImage; let bytes: Int }
+    /// `space` is the colour space the decode was asked for, nil for the file's own.
+    private struct Entry { let modified: Date; let maxPixel: Int; let space: CGColorSpace?; let image: NSImage; let bytes: Int }
     private static let lock = NSLock()
     // Guarded by `lock`, not by an actor: reads happen inline on the caller's thread (`cached`) as
     // well as after a background decode (`image`), and only the lock's mutual exclusion keeps that safe.
@@ -86,57 +87,13 @@ enum Thumbnailer: @unchecked Sendable {
         return NSSize(width: w * 72 / (dpiX > 0 ? dpiX : 72), height: h * 72 / (dpiY > 0 ? dpiY : 72))
     }
 
-    /// The screenshot's size in pixels, from the file header only.
-    static func pixelSize(of url: URL) -> (width: Int, height: Int)? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int,
-              w > 0, h > 0 else { return nil }
-        return (w, h)
-    }
-
-    /// A fully decoded image from PNG bytes, sized in points like `pointSize`. `NSImage(data:)` would
-    /// defer the decode to Core Animation's first commit of the layer, on the main thread.
-    static func decode(png: Data) -> NSImage? {
-        guard let source = CGImageSourceCreateWithData(png as CFData, nil),
-              let cg = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { return nil }
-        let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
-        let dpiX = props[kCGImagePropertyDPIWidth] as? Double ?? 72
-        let dpiY = props[kCGImagePropertyDPIHeight] as? Double ?? 72
-        let size = NSSize(width: Double(cg.width) * 72 / (dpiX > 0 ? dpiX : 72), height: Double(cg.height) * 72 / (dpiY > 0 ? dpiY : 72))
-        return NSImage(cgImage: cg, size: size)
-    }
-
-    /// `decode(png:)` off the main thread, handed back on it.
-    static func decode(png: Data, completion: @escaping @MainActor @Sendable (NSImage?) -> Void) {
-        queue.async {
-            let image = decode(png: png)
-            DispatchQueue.main.async { MainActor.assumeIsolated { completion(image) } }
-        }
-    }
-
-    /// A cached decode of at least `maxPixel` on the longest side, if the file has not changed.
-    static func cached(at url: URL, maxPixel: Int) -> NSImage? {
+    /// A cached decode of at least `maxPixel` on the longest side in `space`, if the file has not changed.
+    static func cached(at url: URL, maxPixel: Int, space: CGColorSpace?) -> NSImage? {
         lock.lock(); defer { lock.unlock() }
-        guard let entry = cache[url.path], entry.maxPixel >= maxPixel, entry.modified == modified(url) else { return nil }
+        guard let entry = cache[url.path], entry.maxPixel >= maxPixel, entry.space == space,
+              entry.modified == modified(url) else { return nil }
         touch(url.path)
         return entry.image
-    }
-
-    /// PNG bytes of the image in `png`, downscaled so its longest side is at most `maxPixel`. Used for
-    /// the Done rendering, so a card preview never holds a full-resolution decode.
-    static func downsampled(png: Data, maxPixel: Int) -> Data? {
-        guard let source = CGImageSourceCreateWithData(png as CFData, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-        ]
-        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        let out = NSMutableData()
-        guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(dest, cg, nil)
-        return CGImageDestinationFinalize(dest) ? out as Data : nil
     }
 
     /// The file's pixels as PNG, whatever format it is stored in. Returns the bytes unchanged when
@@ -151,23 +108,24 @@ enum Thumbnailer: @unchecked Sendable {
         return CGImageDestinationFinalize(dest) ? out as Data : nil
     }
 
-    /// The `maxPixel` for an image drawn at screen size: a card in flight and the zoom stand-in's
-    /// screenshot. Both ask for it so the cache holds one decode for the two of them; the cache is
-    /// keyed on `maxPixel`, so two expressions that drifted apart would silently hold two.
+    /// The `maxPixel` for an image drawn at screen size: a card in flight and the screenshot in the
+    /// editor. Both ask for it so the cache holds one decode for the two of them; the cache is keyed
+    /// on `maxPixel` and the colour space, so two expressions that drifted apart would silently hold two.
     static func screenPixels(on screen: NSScreen) -> Int {
         Int(ceil(max(screen.visibleFrame.width, screen.visibleFrame.height) * screen.backingScaleFactor))
     }
 
-    /// A decoded copy whose longest side is at most `maxPixel` pixels. Cached. For a recording, its
-    /// first frame.
-    static func image(at url: URL, maxPixel: Int) -> NSImage? {
-        if let hit = cached(at: url, maxPixel: maxPixel) { return hit }
+    /// A decoded copy whose longest side is at most `maxPixel` pixels, in `space`: the colour space
+    /// of the screen it will be shown on (`NSScreen.colorSpace`), or nil for the file's own. Cached.
+    /// For a recording, its first frame.
+    static func image(at url: URL, maxPixel: Int, space: CGColorSpace?) -> NSImage? {
+        if let hit = cached(at: url, maxPixel: maxPixel, space: space) { return hit }
         let decoded = Screenshot(url: url).kind == .recording ? posterFrame(url, maxPixel: maxPixel) : thumbnail(url, maxPixel: maxPixel)
-        guard let cg = decoded else { return nil }
+        guard let cg = decoded.map({ converted($0, to: space) }) else { return nil }
         let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
         if let modified = modified(url) {
             lock.lock()
-            insert(url.path, Entry(modified: modified, maxPixel: maxPixel, image: image, bytes: cg.width * cg.height * 4))
+            insert(url.path, Entry(modified: modified, maxPixel: maxPixel, space: space, image: image, bytes: cg.width * cg.height * 4))
             lock.unlock()
         }
         return image
@@ -182,6 +140,20 @@ enum Thumbnailer: @unchecked Sendable {
             kCGImageSourceThumbnailMaxPixelSize: maxPixel,
         ]
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
+    /// The image redrawn in `space`. Core Animation converts an image in any other space at the first
+    /// commit that shows it, on the main thread: 21 ms for a 3024x1964 sRGB image, against 0.05 ms
+    /// once redrawn here (measured 2026-09-23). The redraw is 8-bit, so a deeper image is left as it is.
+    private static func converted(_ image: CGImage, to space: CGColorSpace?) -> CGImage {
+        guard let space, image.colorSpace != space, image.bitsPerComponent == 8 else { return image }
+        let opaque = [.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
+        let info = CGBitmapInfo.byteOrder32Little.rawValue
+            | (opaque ? CGImageAlphaInfo.noneSkipFirst : .premultipliedFirst).rawValue
+        guard let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: space, bitmapInfo: info) else { return image }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return context.makeImage() ?? image
     }
 
     /// About 90 ms, most of it decoding video, so it runs where `image` runs: on `queue` for a card.
@@ -224,18 +196,18 @@ enum Thumbnailer: @unchecked Sendable {
     }
 
     /// Decodes off the main thread and hands the image back on it.
-    static func load(at url: URL, maxPixel: Int, completion: @escaping @MainActor @Sendable (NSImage?) -> Void) {
+    static func load(at url: URL, maxPixel: Int, space: CGColorSpace?, completion: @escaping @MainActor @Sendable (NSImage?) -> Void) {
         queue.async {
-            let image = self.image(at: url, maxPixel: maxPixel)
+            let image = self.image(at: url, maxPixel: maxPixel, space: space)
             // Hopping back from this background queue, as documented on `completion`'s callers.
             DispatchQueue.main.async { MainActor.assumeIsolated { completion(image) } }
         }
     }
 
     /// Fills the cache in the background for files not yet in it.
-    static func warm(_ items: [(url: URL, maxPixel: Int)]) {
-        for item in items where cached(at: item.url, maxPixel: item.maxPixel) == nil {
-            queue.async { _ = image(at: item.url, maxPixel: item.maxPixel) }
+    static func warm(_ items: [(url: URL, maxPixel: Int)], space: CGColorSpace?) {
+        for item in items where cached(at: item.url, maxPixel: item.maxPixel, space: space) == nil {
+            queue.async { _ = image(at: item.url, maxPixel: item.maxPixel, space: space) }
         }
     }
 

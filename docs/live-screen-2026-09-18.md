@@ -88,9 +88,9 @@ sent to agents between August and September 2026 were hand-made crops, median 84
 - Privacy: the live screen has everything. The crop limits exposure; a clip to the target
   window's bounds limits it further. State the rule: nothing outside the window drawn on leaves
   the machine.
-- A live mark is ephemeral; at Return it becomes a card like any capture, with a draft. Then the
+- A live mark is ephemeral; at Return it becomes a card like any capture, with a drawing. Then the
   live mode is a capture whose region was chosen by drawing, with anchors attached, and the
-  stack, the draft, copy, and send are unchanged.
+  stack, the drawing, copy, and send are unchanged.
 - Where it goes is the same question as `send`: the clipboard today, the `ask` command later,
   where the agent asked first and the drawing is the answer.
 - Anchors are only as good as the app: a terminal gives recognized text and nothing else, which

@@ -9,7 +9,7 @@ import CoreGraphics
 /// screenshot's frame therefore widens to the room's width while the whole width of the picture is
 /// still inside it, and only then is the picture cropped sideways. Pure geometry: no view and no
 /// settings, so the math stands on its own. An anchor is a fraction of the frame, x from the left
-/// and y from the top, which is how the page reports a cursor; frames count y up from the bottom,
+/// and y from the top, as the editor reports a cursor; frames count y up from the bottom,
 /// so the two directions meet here.
 enum Zoom {
     /// The middle of the frame: the anchor a keyboard step uses, and the one an image opens with.
@@ -136,7 +136,7 @@ enum Zoom {
         return fraction + (edge - fraction) * max(0, taken)
     }
 
-    /// A point the page or a gesture reported, kept inside the frame it is a fraction of.
+    /// A point the editor or a gesture reported, kept inside the frame it is a fraction of.
     static func clamped(_ cursor: CGPoint) -> CGPoint {
         CGPoint(x: min(max(cursor.x, 0), 1), y: min(max(cursor.y, 0), 1))
     }
@@ -170,8 +170,8 @@ enum Zoom {
     }
 
     /// Where the whole picture sits inside the frame, in the frame's own coordinates, so that the
-    /// visible part of it fills the frame. The stand-in is laid out with this and the page is given
-    /// the same view, so the two draw the same picture. y counts up, as a view's frame does.
+    /// visible part of it fills the frame. The editor draws its picture in this rect. y counts up, as
+    /// a view's frame does.
     static func picture(in bounds: CGRect, camera: CGSize, center: CGPoint) -> CGRect {
         let v = visible(center: center, camera: camera)
         let w = bounds.width / v.width, h = bounds.height / v.height

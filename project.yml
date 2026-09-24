@@ -13,13 +13,7 @@ targets:
     platform: macOS
     sources:
       - path: Sources
-      - path: web/dist
-        type: folder
-        buildPhase: resources
-      # tldraw's license requires a verbatim copy in any distribution; ship both licenses in the bundle.
       - path: LICENSE
-        buildPhase: resources
-      - path: LICENSE-tldraw.md
         buildPhase: resources
       # The agent skill the app offers to install; SkillInstaller copies this folder out.
       - path: skills/vignette
@@ -97,10 +91,6 @@ targets:
       - path: Tests
       - path: Sources
         excludes: [AppDelegate.swift]
-      # The render test loads the built page over the loopback server, as the app does.
-      - path: web/dist
-        type: folder
-        buildPhase: resources
     settings:
       base:
         SWIFT_VERSION: "5.10"

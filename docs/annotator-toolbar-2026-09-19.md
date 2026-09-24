@@ -26,9 +26,11 @@ The exit waits. `hideWindows` asks through `hideSoon`, which schedules the fade 
 loop later; the next `place` cancels it. That one turn is enough for every swap the app can make,
 because the park's answer and the next `prepare` are in the same turn:
 
-- A click on another card: `annotating(a)` takes `annotate(b)`, parks, and the page's answer runs
+- A click on another card: `annotating(a)` takes `annotate(b)`, parks, and the editor's answer runs
   `hideWindows` and then, inside the same block, `parked -> flyingOut(b)` with `returnCard(a)` and
-  `prepare(b)`.
+  `prepare(b)`. (This was measured on the web editor, where the answer came back from the page. The
+  native editor parks synchronously, and `ThumbnailController.send` runs `parked` once `park`'s
+  batch is done, which is still the same turn.)
 - The annotation queue: `parked -> idle` with `returnCard(a)`, and `ThumbnailController.send` sends
   the next `annotate` after that batch's effects, in the same call.
 
@@ -40,7 +42,7 @@ which the reducer knows nothing about, on purpose — would still not have been 
 What is left to do when the bar really goes: `hideWindows` detaches the panel from the window before
 ordering the window out, because AppKit orders a child window out with its parent. The panel then
 floats on its own until either `hideSoon` takes it down or `show` makes it a child of the next
-window. Its tool state follows the incoming image as before, from the page's `tool` message.
+window. Its tool state follows the incoming image as before, from the editor's `onTool`.
 
 `[state] annotator.toolbar` is the panel's frame in the state report, or null when it is off screen,
 which is how the numbers below were taken.

@@ -23,7 +23,7 @@ enum Log {
         queue.async { append("\(stamp.string(from: now)) \(oneLine(message)) date=\(dateStamp.string(from: now))\n", to: url, rotateAt: rotateAtBytes) }
     }
 
-    /// Newlines and carriage returns become spaces; error descriptions and eval results carry them.
+    /// Newlines and carriage returns become spaces; error descriptions carry them.
     static func oneLine(_ text: String) -> String {
         text.replacingOccurrences(of: "\r\n", with: " ").replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
     }

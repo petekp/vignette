@@ -23,8 +23,8 @@ Four things, in the order they block.
 
 tldraw's license allows a public download only with a key tldraw grants at its discretion, and an
 expired key hides the editor in every copy already downloaded. So Vignette replaces tldraw with an
-editor of its own before the first download. `drawing-editor-plan-2026-09-22.md` has the order of
-the work.
+editor of its own before the first download. Done on 2026-09-22: the native editor replaced tldraw,
+and `editor.md` describes it.
 
 ### 2. There is no artifact (my work, needs approval)
 

@@ -49,7 +49,7 @@ struct SettingsData: Codable, Equatable {
     var quickAnnotate = false                // Done copies the result and closes the annotator and the stack at once
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
-    var debug = false                        // unlocks eval, show-editor, tweaks, and file= outside the watch folder
+    var debug = false                        // unlocks tweaks, install-skill root=, and file= outside the watch folder
     var agentSkill = AgentSkill.unasked.rawValue  // whether the skill was offered: unasked, then off
     var setup = SetupState.unasked.rawValue  // whether the setup window has run: unasked, then done
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
@@ -192,6 +192,26 @@ struct UITweaks: Codable, Equatable {
     var annotationScreenInset = 65.0
     var zoomEdgeBandPoints = 120.0   // how far from each edge of the picture a zoom holds that edge
     var zoomEdgePull = 0.5           // the part of that band in which the edge is held exactly
+    // The editor (`EditorMetrics`): screen pt, the same size at any zoom, unless it says otherwise
+    var dragDistance = 4.0           // how far a press travels before it is a drag
+    var hitMargin = 4.0              // added to a stroke's half-width to make its hit band
+    var cornerHitSize = 13.5         // a corner handle's hit area, a square centred on the corner
+    var edgeHitSize = 9.0            // an edge handle's hit area, a strip along the whole side
+    var smallSide = 16.0             // a mark shorter than this keeps its handles' hit areas outside it
+    var handleSize = 8.0             // the corner square drawn
+    var dotRadius = 4.0              // an arrow dot's drawn radius
+    var dotHitRadius = 12.0          // an arrow dot's hit radius, and its halo's
+    var smallestRectangle = 4.0      // a new rectangle's shortest side
+    var shortestArrow = 8.0          // a new arrow's shortest length
+    var textDragDelay = 0.15         // seconds a Text tool press waits before a sideways drag sets a wrap width; a threshold, not motion
+    var textDragDistance = 24.0      // and the sideways travel it needs
+    var newTextSize = 24.0           // pt of the drawing, not of the screen
+    var selectionOutlineWidth = 3.5  // the whole outline, light edge included; it runs this far outside a mark
+    // Marks
+    var textWeight = 500.0           // 100 Ultralight to 900 Black, as the nearest of the system font's nine weights
+    var textLineHeight = 1.35        // a multiple of the text's size
+    var arrowheadLength = 4.5        // multiples of the stroke width
+    var arrowheadWidth = 4.0
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
 
@@ -255,10 +275,41 @@ struct UITweaks: Codable, Equatable {
         // `Zoom.pulledToEdges` caps the band at half a side, so any value past a frame's own size
         // behaves the same; this is that, not a design limit. 0...400 is the slider's range.
         Bound("zoomEdgeBandPoints", \.zoomEdgeBandPoints, 0...2000), Bound("zoomEdgePull", \.zoomEdgePull, 0...1),
+        Bound("dragDistance", \.dragDistance, 0...1000), Bound("hitMargin", \.hitMargin, 0...1000),
+        Bound("cornerHitSize", \.cornerHitSize, 0...1000), Bound("edgeHitSize", \.edgeHitSize, 0...1000),
+        Bound("smallSide", \.smallSide, 0...10_000), Bound("handleSize", \.handleSize, 0...1000),
+        Bound("dotRadius", \.dotRadius, 0...1000), Bound("dotHitRadius", \.dotHitRadius, 0...1000),
+        Bound("smallestRectangle", \.smallestRectangle, 0...10_000), Bound("shortestArrow", \.shortestArrow, 0...10_000),
+        Bound("textDragDelay", \.textDragDelay, 0...60), Bound("textDragDistance", \.textDragDistance, 0...10_000),
+        // A drawing file refuses a text larger than `Mark.Text.maxSize`, so a new one past it would be
+        // dropped when the drawing is read again.
+        Bound("newTextSize", \.newTextSize, 1...Double(Mark.Text.maxSize)),
+        Bound("selectionOutlineWidth", \.selectionOutlineWidth, 0...1000),
+        Bound("textWeight", \.textWeight, 100...900), Bound("textLineHeight", \.textLineHeight, 0.1...10),
+        Bound("arrowheadLength", \.arrowheadLength, 0...100), Bound("arrowheadWidth", \.arrowheadWidth, 0...100),
         // The floor is the slider's, because below it a stitch is not a smaller picture but a
         // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
     ]
+}
+
+extension UITweaks {
+    var editorMetrics: EditorMetrics {
+        EditorMetrics(dragDistance: dragDistance, hitMargin: hitMargin, cornerHitSize: cornerHitSize, edgeHitSize: edgeHitSize,
+                      smallSide: smallSide, handleSize: handleSize, dotRadius: dotRadius, dotHitRadius: dotHitRadius,
+                      smallestRectangle: smallestRectangle, shortestArrow: shortestArrow, textDragDelay: textDragDelay,
+                      textDragDistance: textDragDistance, newTextSize: newTextSize, selectionOutlineWidth: selectionOutlineWidth)
+    }
+
+    /// The style every text is set in. The system font draws only its nine named weights, whatever
+    /// weight it is asked for (measured on macOS 15), so `textWeight` picks one: 100 is the first.
+    var textStyle: TextStyle {
+        let weights: [NSFont.Weight] = [.ultraLight, .thin, .light, .regular, .medium, .semibold, .bold, .heavy, .black]
+        let weight = textWeight.isFinite ? min(max(textWeight, 100), 900) : UITweaks().textWeight
+        return TextStyle(weight: weights[Int((weight / 100).rounded()) - 1], lineHeight: textLineHeight)
+    }
+
+    var arrowhead: ArrowheadStyle { ArrowheadStyle(length: arrowheadLength, width: arrowheadWidth) }
 }
 
 /// The `com.apple.screencapture` values Vignette found before it wrote any of its own, so

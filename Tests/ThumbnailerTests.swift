@@ -41,33 +41,36 @@ final class ThumbnailerTests: XCTestCase {
         // Each decode is 100x100 RGBA = 40 000 bytes; room for two.
         Thumbnailer.budgetBytes = 90_000
         let a = try png("a.png", w: 100, h: 100), b = try png("b.png", w: 100, h: 100), c = try png("c.png", w: 100, h: 100)
-        XCTAssertNotNil(Thumbnailer.image(at: a, maxPixel: 100))
-        XCTAssertNotNil(Thumbnailer.image(at: b, maxPixel: 100))
-        XCTAssertNotNil(Thumbnailer.cached(at: a, maxPixel: 100), "touching a makes b the oldest")
-        XCTAssertNotNil(Thumbnailer.image(at: c, maxPixel: 100))
-        XCTAssertNil(Thumbnailer.cached(at: b, maxPixel: 100), "b was least recently used")
-        XCTAssertNotNil(Thumbnailer.cached(at: a, maxPixel: 100))
-        XCTAssertNotNil(Thumbnailer.cached(at: c, maxPixel: 100))
+        XCTAssertNotNil(Thumbnailer.image(at: a, maxPixel: 100, space: nil))
+        XCTAssertNotNil(Thumbnailer.image(at: b, maxPixel: 100, space: nil))
+        XCTAssertNotNil(Thumbnailer.cached(at: a, maxPixel: 100, space: nil), "touching a makes b the oldest")
+        XCTAssertNotNil(Thumbnailer.image(at: c, maxPixel: 100, space: nil))
+        XCTAssertNil(Thumbnailer.cached(at: b, maxPixel: 100, space: nil), "b was least recently used")
+        XCTAssertNotNil(Thumbnailer.cached(at: a, maxPixel: 100, space: nil))
+        XCTAssertNotNil(Thumbnailer.cached(at: c, maxPixel: 100, space: nil))
         XCTAssertLessThanOrEqual(Thumbnailer.cacheBytes, 90_000)
     }
 
     func testAnEntryLargerThanTheBudgetStillServesOnce() throws {
         Thumbnailer.budgetBytes = 1_000
         let big = try png("big.png", w: 100, h: 100)
-        XCTAssertNotNil(Thumbnailer.image(at: big, maxPixel: 100))
-        XCTAssertNotNil(Thumbnailer.cached(at: big, maxPixel: 100), "the newest entry is kept even over budget")
+        XCTAssertNotNil(Thumbnailer.image(at: big, maxPixel: 100, space: nil))
+        XCTAssertNotNil(Thumbnailer.cached(at: big, maxPixel: 100, space: nil), "the newest entry is kept even over budget")
         let next = try png("next.png", w: 10, h: 10)
-        XCTAssertNotNil(Thumbnailer.image(at: next, maxPixel: 10))
-        XCTAssertNil(Thumbnailer.cached(at: big, maxPixel: 100), "and goes as soon as something newer arrives")
+        XCTAssertNotNil(Thumbnailer.image(at: next, maxPixel: 10, space: nil))
+        XCTAssertNil(Thumbnailer.cached(at: big, maxPixel: 100, space: nil), "and goes as soon as something newer arrives")
     }
 
-    func testDownsampledPNGKeepsAspectWithinMaxPixel() throws {
-        let data = try Data(contentsOf: png("wide.png", w: 3000, h: 1000))
-        let small = try XCTUnwrap(Thumbnailer.downsampled(png: data, maxPixel: 1600))
-        let rep = try XCTUnwrap(NSBitmapImageRep(data: small))
-        XCTAssertEqual(rep.pixelsWide, 1600)
-        XCTAssertEqual(rep.pixelsHigh, 533)
-        XCTAssertNil(Thumbnailer.downsampled(png: Data("not a png".utf8), maxPixel: 100))
+    /// Core Animation converts an image in any other colour space at the first commit that shows it,
+    /// on the main thread, so a decode for a screen comes back in that screen's space and is cached
+    /// under it.
+    func testADecodeForAScreenIsInThatScreensColorSpace() throws {
+        let file = try png("space.png", w: 40, h: 20)
+        let p3 = try XCTUnwrap(CGColorSpace(name: CGColorSpace.displayP3))
+        let image = try XCTUnwrap(Thumbnailer.image(at: file, maxPixel: 40, space: p3))
+        XCTAssertEqual(image.cgImage(forProposedRect: nil, context: nil, hints: nil)?.colorSpace, p3)
+        XCTAssertNotNil(Thumbnailer.cached(at: file, maxPixel: 40, space: p3))
+        XCTAssertNil(Thumbnailer.cached(at: file, maxPixel: 40, space: nil), "a decode for another space is another decode")
     }
 
     /// A drawing sent to an agent is stored as `image.png`, and a reply copies those bytes to a

@@ -5,12 +5,11 @@ import AppKit
 enum Config {
     /// Appended to the original file name when an annotated copy is saved next to it.
     static let annotatedSuffix = "-annotated"
-    /// Longest side of a card preview, in pixels. The page renders park previews at this size; it
-    /// crosses in the `load` payload, so this is the only place it is written.
-    static let previewMaxPixel = 1600
-    /// Longest side, in pixels, of the annotations the page renders for the zoom stand-in. One at
-    /// a time, for the image in the annotator only, so this is what it costs to hold.
-    static let overlayMaxPixel = 2048
+
+    /// What shows through a screenshot's transparent pixels, such as a window capture's shadow, on a
+    /// card, in flight and in the annotator's frame, so the three look the same when one takes over
+    /// from another. The frame also needs it to be opaque; see `AnnotationController.makeWindow`.
+    static let matte = NSColor(srgbRed: 0x1a / 255.0, green: 0x1a / 255.0, blue: 0x1a / 255.0, alpha: 1)
 
     /// Everything you can do to screenshots. Each action is a hover button on a card, an entry in the
     /// selection strip, a keyboard shortcut inside the recent stack, and a `vignette://<id>` URL, according
@@ -136,7 +135,7 @@ protocol Actions: AnyObject {
     /// Opens the first of `shots` and queues the rest, since the annotator holds one image:
     /// finishing one opens the next until the list is done.
     func annotate(_ shots: [Screenshot])
-    /// Exports each screenshot's draft (or uses the file as is when it has none) and copies the set.
+    /// Renders each screenshot's drawing (or uses the file as is when it has none) and copies the set.
     func copyAnnotated(_ shots: [Screenshot])
     func stitch(_ shots: [Screenshot])
     func moveToTrash(_ shots: [Screenshot])

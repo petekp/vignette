@@ -1,4 +1,0 @@
-html, body, #root { margin: 0; height: 100%; background: #1a1a1a; overflow: hidden; }
-/* The host places the editor at the annotator's frame inside a page laid out at the whole room. */
-.editor { position: fixed; left: 0; top: 0; width: 100%; height: 100%; }
-.editor .tl-background { background: #1a1a1a !important; }

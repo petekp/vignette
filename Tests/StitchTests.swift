@@ -47,7 +47,7 @@ final class StitchTests: XCTestCase {
     func testPiecesAreDrawnInOrderEachWithItsOwnBadge() throws {
         let first = try piece(600, 400, .blue)
         let second = try piece(600, 400, .green)
-        let composed = try XCTUnwrap(Stitch.compose([first, second], longSideLimit: 8192))
+        let composed = try XCTUnwrap(Stitch.compose(plain([first, second]), style: .standard, arrowhead: .standard, longSideLimit: 8192))
         let image = try XCTUnwrap(NSBitmapImageRep(data: composed.png))
         XCTAssertEqual(composed.size, CGSize(width: image.pixelsWide, height: image.pixelsHigh))
 
@@ -67,12 +67,38 @@ final class StitchTests: XCTestCase {
 
     func testACompositionLongerThanTheLimitIsScaledDownToIt() throws {
         let pieces = [try piece(600, 400, .blue), try piece(600, 400, .green)]
-        let composed = try XCTUnwrap(Stitch.compose(pieces, longSideLimit: 400))
+        let composed = try XCTUnwrap(Stitch.compose(plain(pieces), style: .standard, arrowhead: .standard, longSideLimit: 400))
         XCTAssertEqual(max(composed.size.width, composed.size.height), 400)
         let full = Stitch.layout([CGSize(width: 600, height: 400), CGSize(width: 600, height: 400)]).size
         XCTAssertEqual(composed.size.width / composed.size.height, full.width / full.height, accuracy: 0.01,
                        "scaled down, not cropped or stretched")
     }
+
+    /// A piece's drawing is drawn over it where it sits in the stitch, at the piece's scale there, and
+    /// a piece without one is left as it is.
+    func testAPiecesDrawingIsDrawnOverItWhereItSits() throws {
+        let first = try piece(600, 400, .blue)
+        let second = try piece(600, 400, .green)
+        let box = CGRect(x: 100, y: 100, width: 200, height: 120)
+        let drawing = Drawing(key: first.path, pixels: PixelSize(width: 600, height: 400), pointScale: 2,
+                              marks: [Mark(geometry: .rectangle(box), color: .red)])
+        let composed = try XCTUnwrap(Stitch.compose([Stitch.Piece(url: first, drawing: drawing), Stitch.Piece(url: second, drawing: nil)],
+                                                    style: .standard, arrowhead: .standard, longSideLimit: 400))
+        let image = try XCTUnwrap(NSBitmapImageRep(data: composed.png))
+        let plan = Stitch.layout([CGSize(width: 600, height: 400), CGSize(width: 600, height: 400)])
+        let scale = composed.size.width / plan.size.width
+        XCTAssertLessThan(scale, 1, "the piece is scaled down in the stitch, and its marks with it")
+        // A point of the piece, in px, where it lands in the stitch.
+        let at = { (frame: CGRect, point: CGPoint) in CGPoint(x: (frame.minX + point.x) * scale, y: (frame.minY + point.y) * scale) }
+        for edge in [CGPoint(x: box.minX, y: box.midY), CGPoint(x: box.maxX, y: box.midY), CGPoint(x: box.midX, y: box.minY), CGPoint(x: box.midX, y: box.maxY)] {
+            XCTAssertEqual(strongest(image, at: at(plan.frames[0], edge)), .red, "the rectangle's edge at \(edge)")
+            XCTAssertEqual(strongest(image, at: at(plan.frames[1], edge)), .green, "the second piece has no drawing")
+        }
+        XCTAssertEqual(strongest(image, at: at(plan.frames[0], CGPoint(x: box.midX, y: box.midY))), .blue, "inside the outline")
+        XCTAssertEqual(strongest(image, at: at(plan.frames[0], CGPoint(x: box.minX - 12, y: box.midY))), .blue, "outside it")
+    }
+
+    private func plain(_ urls: [URL]) -> [Stitch.Piece] { urls.map { Stitch.Piece(url: $0, drawing: nil) } }
 
     /// A solid PNG on disk, one of the pieces a stitch is made of.
     private func piece(_ width: Int, _ height: Int, _ color: NSColor) throws -> URL {

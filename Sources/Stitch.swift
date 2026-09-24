@@ -5,6 +5,12 @@ import ImageIO
 /// is at the top left and wears badge 1. The composition is aimed at the model that will read it,
 /// which resizes an image before it looks: `docs/stitch-2026-09-17.md` has the rules and why.
 enum Stitch {
+    /// A screenshot to stitch, and its drawing, which is drawn into the stitch over it.
+    struct Piece {
+        let url: URL
+        let drawing: Drawing?
+    }
+
     /// What a vision model does to an image before reading it, from Anthropic's vision docs
     /// (standard tier, the smallest of the three vendors'): it scales the image to the largest size
     /// whose long edge is at most 1568 px and whose cost, in visual tokens of 28 x 28 px, is at
@@ -50,14 +56,16 @@ enum Stitch {
         let readerScale: CGFloat
     }
 
-    /// `longSideLimit` caps the composition's long side; the app passes `ui.stitchLongSide`.
-    static func compose(_ urls: [URL], longSideLimit: CGFloat) -> Composition? {
+    /// `longSideLimit` caps the composition's long side; the app passes `ui.stitchLongSide`. Each
+    /// piece's drawing is drawn as Done draws it, scaled with the piece, so its marks sit on the
+    /// pixels they were drawn on. The app calls this off the main thread.
+    static func compose(_ pieces: [Piece], style: TextStyle, arrowhead: ArrowheadStyle, longSideLimit: CGFloat) -> Composition? {
         // Sizes come from the files' headers, so the layout is chosen without decoding anything and
         // only the piece being drawn is ever in memory: six 5K screenshots held at once as bitmaps
         // is several hundred megabytes.
-        let sources = urls.compactMap { url -> (url: URL, size: CGSize)? in
-            guard let size = pixelSize(of: url) else { return nil }
-            return (url, size)
+        let sources = pieces.compactMap { piece -> (url: URL, size: CGSize, drawing: Drawing?)? in
+            guard let size = pixelSize(of: piece.url) else { return nil }
+            return (piece.url, size, piece.drawing)
         }
         guard !sources.isEmpty else { return nil }
         let sizes = sources.map(\.size)
@@ -87,6 +95,14 @@ enum Stitch {
             let rect = CGRect(x: frame.minX * scale, y: (plan.size.height - frame.maxY) * scale,
                               width: frame.width * scale, height: frame.height * scale)
             ctx.draw(cg, in: rect)
+            if let drawing = source.drawing, drawing.pixels == PixelSize(width: cg.width, height: cg.height) {
+                ctx.saveGState()
+                // The drawing's px, from the piece's top-left with y down, onto the piece's rect.
+                ctx.translateBy(x: rect.minX, y: rect.maxY)
+                ctx.scaleBy(x: rect.width / CGFloat(cg.width), y: -rect.height / CGFloat(cg.height))
+                drawing.draw(in: ctx, style: style, arrowhead: arrowhead)
+                ctx.restoreGState()
+            }
             drawBadge(number: i + 1, on: rect, diameter: badgeDiameter(for: sizes[i]) * scale, in: ctx)
         }
         NSGraphicsContext.restoreGraphicsState()

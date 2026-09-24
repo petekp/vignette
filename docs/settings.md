@@ -53,7 +53,7 @@ launch at another file, which is how tests and agents keep away from the real on
 - **`copyOnCapture`** puts every new screenshot on the clipboard as it lands: the image, plus its
   file URL and path for apps that take those. It is on by default. An image that arrives through
   `add` skips this and Draw on New Screenshots, since a push from an agent is not a capture.
-- **`debug`** unlocks `eval`, `show-editor`, `tweaks`, and `file=` outside the watch folder.
+- **`debug`** unlocks `tweaks`, `install-skill?root=`, and `file=` outside the watch folder.
 - **`agentSkill`** records only whether the app has offered the skill for coding agents:
   `unasked` until the offer, then `off`. Whether the skill is installed is read from disk, and the
   Agents tab installs or removes it per agent. An older file holding `on` is read as `off`
@@ -67,7 +67,8 @@ launch at another file, which is how tests and agents keep away from the real on
 ## The ui section
 
 The `ui` section holds the design numbers: card sizes, corners, shadows, hover buttons, animation
-durations and curves, backdrop blur and tint, and the annotator window's limits. It also holds the
+durations and curves, backdrop blur and tint, the annotator window's limits, and the drawing
+editor's sizes. It also holds the
 behaviour those numbers drive: how far a card bows and swells on its way to the annotator, how
 narrow the stack goes to make room for it and how far it stays from it, how deep the drag-select's
 edge band is and how fast it scrolls there, and how near an edge of the image a zoom holds that
@@ -81,6 +82,36 @@ ignored, and a key you leave out takes its default, so a line you no longer want
 With `debug` on, Tweak UI… in the Settings window's Developer tab, or `open -g vignette://tweaks`,
 opens a floating panel of sliders that edits these live. It has buttons to summon the thumbnail,
 stack, toast, and annotator while you tweak.
+
+### The drawing editor's numbers
+
+These set how the editor feels and how a mark looks. The panel has them in its Editor and Marks
+sections, and a change reaches an open editor at once. Sizes are in screen points unless the table
+says otherwise, so they look the same at any zoom.
+
+| Key | Default | What it sets |
+|---|---|---|
+| `dragDistance` | 4 | How far a press travels before it is a drag |
+| `hitMargin` | 4 | Added to half a stroke's width to make the band that hits it |
+| `cornerHitSize` | 13.5 | A corner handle's hit area, a square centred on the corner |
+| `edgeHitSize` | 9 | An edge handle's hit area, a strip along the whole side |
+| `smallSide` | 16 | A mark shorter than this on a side keeps its handles' hit areas outside it |
+| `handleSize` | 8 | The corner square drawn |
+| `dotRadius` | 4 | An arrow dot's drawn radius |
+| `dotHitRadius` | 12 | An arrow dot's hit radius, and its halo's |
+| `smallestRectangle` | 4 | A new rectangle's shortest side |
+| `shortestArrow` | 8 | A new arrow's shortest length |
+| `textDragDelay` | 0.15 | Seconds a Text tool press waits before a sideways drag sets a wrap width. `motion` does not change it. |
+| `textDragDistance` | 24 | The sideways travel that drag needs |
+| `newTextSize` | 24 | A new text's size, in points of the drawing |
+| `selectionOutlineWidth` | 3.5 | The selection outline's whole width, light edge included |
+| `textWeight` | 500 | From 100 to 900, rounded to the nearest of the system font's nine weights |
+| `textLineHeight` | 1.35 | A multiple of the text's size |
+| `arrowheadLength` | 4.5 | A multiple of the stroke width |
+| `arrowheadWidth` | 4 | A multiple of the stroke width |
+
+`textWeight`, `textLineHeight` and the arrowhead apply wherever marks are drawn: the editor, the
+cards, a card in flight, a stitch, a dragged card, and what Done, Send and Copy Drawing render.
 
 ## Invalid files
 

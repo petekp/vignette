@@ -17,7 +17,7 @@ enum ReplyProtocol {
 
     /// The most a bundle or an attempt file may be. Marks are a few kilobytes; anything near this
     /// is a mistake, and both files are read on the main thread.
-    static let maxBundleBytes = Commands.maxMarksBytes + 16 * 1024
+    static let maxBundleBytes = AgentMark.maxBytes + 16 * 1024
     static let maxAttemptBytes = 16 * 1024
     /// The most an accepted reply image may be. A screenshot is well under this.
     static let maxImageBytes = 64 * 1024 * 1024
@@ -114,7 +114,7 @@ enum ReplyProtocol {
         /// True when the reply supplies its own PNG, which sits beside the bundle as `image.png`.
         /// False means the marks go on the request's own fixed image.
         let hasImage: Bool
-        let marks: [Mark]
+        let marks: [AgentMark]
     }
 
     /// One dispatch of a bundle. Carries the authorization and the digest; never the payload.
@@ -227,13 +227,13 @@ enum ReplyProtocol {
             throw Problem(.protocolMismatch, "bundle protocol \(bundleVersion), app \(version)")
         }
         let hasImage = object["hasImage"] as? Bool ?? false
-        var marks: [Mark] = []
+        var marks: [AgentMark] = []
         if let list = object["marks"] as? [[String: Any]], !list.isEmpty {
             guard let json = try? JSONSerialization.data(withJSONObject: list),
                   let text = String(data: json, encoding: .utf8) else {
                 throw Problem(.badPayload, "the bundle's marks are not readable")
             }
-            do { marks = try Commands.marks(from: text) }
+            do { marks = try AgentMark.parse(text) }
             catch { throw Problem(.badPayload, "\(error)") }
         }
         var image: Data?

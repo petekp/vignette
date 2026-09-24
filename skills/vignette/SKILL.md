@@ -20,21 +20,21 @@ open -g "vignette://add?file=$path&agent=claude"
 - `add` copies the file into the watch folder and shows its thumbnail. It leaves the clipboard
   alone and does not open the editor, whatever the user's capture settings say. Add `&annotate`
   to open the editor instead, only when you are asking for marks right away.
-- `&agent=<name>` says who pushed it. The card gets a badge naming you.
+- `&agent=<name>` says who pushed it. The card gets a tab naming you.
 - `open -g` keeps the focus where it is. Always percent-encode the path yourself; `open` will not.
 - The file may be anywhere. Every other command takes files inside the watch folder only.
 - Wait for `[add] ok <name>` in the log. The name gains a counter (`x 2.png`) when one is taken.
   Errors end with `missing-file`, `unreadable-image`, `unsupported-type` (png, jpg, jpeg, or heic
-  only, and never a `-annotated` name), `write-failed`, `invalid-marks`, or `page-not-ready`.
+  only, and never a `-annotated` name), `write-failed`, or `invalid-marks`.
 - Push what the user should see, not every image you make. Name the file for them: what it shows,
   at what size or state.
 
 ## Draw on it yourself
 
-`&marks=` takes the path to a JSON file, or the JSON itself. The marks become a draft before the
-card appears, so the card shows them and the user edits them like their own. Every number is a
-fraction of the image: `x`,`y` is a shape's top-left corner or an arrow's tail, `w`,`h` its size,
-`x2`,`y2` an arrow's head.
+`&marks=` takes the path to a JSON file, or the JSON itself. The marks join the image's drawing
+before the card appears, so the card shows them and the user edits them like their own. Every
+number is a fraction of the image: `x`,`y` is a shape's top-left corner or an arrow's tail, `w`,`h`
+its size, `x2`,`y2` an arrow's head.
 
 ```json
 [{"type": "ellipse", "x": 0.12, "y": 0.30, "w": 0.20, "h": 0.10},
@@ -43,17 +43,19 @@ fraction of the image: `x`,`y` is a shape's top-left corner or an arrow's tail, 
 ```
 
 - Types: `ellipse`, `rectangle`, `arrow`, `text`. At most 100 marks and 256 KB.
+- Every mark is moved inside the image. A mark with nothing inside it is dropped, with a
+  `[marks] dropped` line.
 - A text mark's `w` is the box its words wrap in, and it is optional: the default is the room
   between `x` and the right edge. Write the sentence you mean; it is sized for the image, wrapped,
   widened until the words fit the image's height, and moved inside it.
 - A sentence too long to fit even across the whole picture **is cut off at the edge**, and `[add]`
-  still answers `ok`. The log says which one: `[web] pushed text too long for this image: mark N is
-  cut off at its edge`. Short marks on a wide image are the safe case; a paragraph on a short one is
+  still answers `ok`. The log says which one: `[marks] text too long for <name>: mark N is cut off
+  at its edge`. Short marks on a wide image are the safe case; a paragraph on a short one is
   not. Keep a pushed text to a sentence, and check the log if it mattered.
 - A mark with no `color` is coloured from the pixels it covers. To choose: `red`, `yellow`,
   `light-blue`, `white`, `violet`.
-- `[add] ok <name> … marks=<n>` says they landed. `invalid-marks` names the mark and the field.
-- `page-not-ready` means the editor is busy with the user's own image. Wait and send it again.
+- In `[add] ok <name> … marks=<n>`, `n` counts the marks that joined the drawing. Dropped marks are
+  not counted. `invalid-marks` names the mark and the field.
 
 ## When the user sends you a drawing
 
@@ -90,8 +92,11 @@ python3 "<helper>" --ticket "<ticket>" --marks /tmp/reply.json
 ## Read back what they drew
 
 The user draws and presses Return. Vignette writes `<name>-annotated.png` beside the copy in the
-watch folder and logs `[annotate] done <name>-annotated.png …`. Read that file. The folder is
-`screenshotsFolder` in `~/.config/vignette/settings.json`.
+watch folder when the rendering finishes, a moment later, and then logs
+`[annotate] done <name>-annotated.png <bytes> bytes, copied`. Read that file once the line is
+there. If the user drew nothing, no file is written and the line is
+`[annotate] done <name> nothing drawn, original copied`. The folder is `screenshotsFolder` in
+`~/.config/vignette/settings.json`.
 
 Nothing arrives if the user ignores the thumbnail, so do not block on it. Ask for the drawing when
 you need it, then carry on and look for the file.

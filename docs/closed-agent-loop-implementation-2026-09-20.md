@@ -91,7 +91,8 @@ session already running.
 
 Two defects were found by running it and fixed: the reply going to whichever build LaunchServices
 registered last, and a free canvas reading as "the app is gone" (optional chaining flattened
-`canvasRefusal`'s own nil), which left every import waiting forever.
+`canvasRefusal`'s own nil), which left every import waiting forever. The second is history: the
+canvas and `canvasRefusal` were the web editor's.
 
 Unit coverage is in `Tests/ReplyProtocolTests.swift`, `Tests/ScreenshotRequestsTests.swift`, and
 `Tests/AgentConnectionTests.swift`: envelope location and link refusal, digest recomputation, the
@@ -104,6 +105,10 @@ classification. `./scripts/build.sh --test`: 253 pass.
 An adversarial read of the whole feature found sixteen things. Nine were changed; the rest are
 recorded under Known limits or were already what they should be. Each change has a test that fails
 without it.
+
+The rows about the canvas and `render` are history: they describe the web editor, which the native
+editor replaced on 2026-09-22. A reply's marks now join the screenshot's drawing through
+`Drawings.add`, which never waits for the editor, and `canvasMaybeFreed` is gone.
 
 | Found | Change |
 | --- | --- |

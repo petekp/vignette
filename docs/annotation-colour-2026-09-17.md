@@ -4,13 +4,19 @@ Pete: "Hide the colour palette by default and draw in red only. Then look into a
 picks a different colour from the background under the drawn shape, so a minimum contrast ratio is
 always met (red on a red or dark-red region would switch), without the user choosing."
 
+This note was written for the web editor, which the native editor replaced on 2026-09-22. The
+measure, the threshold, the candidates and the sample carried over to Swift unchanged, in
+`ColorSample` (`Sources/ColorPass.swift`) and `MarkColor` (`Sources/Drawing.swift`), and the
+sections below name the Swift constants. What the note says about the page, tldraw's theme and the
+palette is history.
+
 Two things landed. The toolbar's swatches are off (`SHOW_COLORS` in `web/src/config.ts`), so the
 page sends an empty colour list in `ready` and the bar is tools, one divider, Done. And the page
 picks each mark's colour from the pixels it covers, so red is what a mark is unless red is what it
 sits on.
 
-The pick lives in `web/src/contrast.ts`. It has to: the page holds the screenshot, and the host
-never sees the pixels.
+The pick lived in `web/src/contrast.ts`, because the page held the screenshot. It is now
+`ColorSample.pick(for:pointScale:style:)`.
 
 ## The measure is a colour distance, not a contrast ratio
 
@@ -21,7 +27,7 @@ switched. No threshold on that number separates them.
 
 CIELAB does. The measure is the CIE76 distance in CIELAB (`ΔE`, the straight line between two
 colours in a space where equal steps look about equally different), and the threshold is
-`MIN_COLOR_DISTANCE = 55` in `config.ts`. Every candidate against representative backgrounds:
+`ColorSample.minDistance`, 55. Every candidate against representative backgrounds:
 
 | background | red | yellow | light-blue | white | violet | red, WCAG |
 |---|---|---|---|---|---|---|
@@ -43,36 +49,36 @@ measure that could not be used.
 
 ## The candidates
 
-`CANDIDATES` in `config.ts`, in order: `red`, `yellow`, `light-blue`, `white`, `violet`. The first
+`MarkColor.allCases`, in order: `red`, `yellow`, `light-blue`, `white`, `violet`. The first
 one far enough from the pixels under the mark wins, so red is the answer unless it is not.
 Yellow and white carry the dark and red backgrounds; light-blue carries the warm ones (it is the
 only candidate that clears 55 over orange); violet is the fallback for a light blue-grey region.
 
-The hexes are tldraw's **dark theme** strokes, which is what the editor draws: `App.tsx` sets
-`colorScheme: 'dark'`. That also rules out `black` as a candidate — in that theme tldraw renders
-`black` as `#f2f2f2`, a near-white four units from `white`, so it would add nothing. If the editor
-ever draws in the light theme these hexes have to change with it, or the measure is judging a
-colour the user never sees.
+The hexes are tldraw's **dark theme** strokes, which is what the web editor drew: `App.tsx` set
+`colorScheme: 'dark'`. The native editor draws the same hexes (`MarkColor.hex`). That also rules out `black` as a candidate — in that theme tldraw renders
+`black` as `#f2f2f2`, a near-white four units from `white`, so it would add nothing. The native
+editor has no theme, and the colour pass measures the same hexes it draws: `MarkColor.sRGB` reads
+`MarkColor.hex`. The order and `minDistance` were tuned on these five hexes, so a change to one
+means checking them again.
 
 ## The sample
 
-`prepareSample` decodes the screenshot once per load into an offscreen canvas whose long side is
-320 px and keeps the pixels. Three reasons for 320: the downscale blends text into its background,
+`ColorSample` decodes the screenshot once per open, off the main thread, into a bitmap whose long
+side is 320 px (`ColorSample.longSide`), and keeps the pixels. Three reasons for 320: the downscale blends text into its background,
 which is what a mark is drawn across rather than the glyphs; one decode costs a few milliseconds;
 and 320 x 200 pixels is 256 KB held for the length of one image.
 
 A pick samples what the mark's ink covers, not what its bounding box spans. The box is the same
 rectangle for a diagonal arrow and for the rectangle drawn between the same two corners, and the
 arrow touches almost none of it: a red banner in a corner of that box would turn an arrow that runs
-nowhere near it yellow. So the sample follows the shape (`Area` in `contrast.ts`):
+nowhere near it yellow. So the sample follows the shape:
 
-- **a line** for an arrow — 41 points along it, each with one to either side, a strip
-  `LINE_BAND` (1% of the screenshot's long side) wide, taken from the arrow's own ends through its
-  page transform rather than from its box;
-- **a border band** for a shape drawn with no fill — the grid, keeping the points within
-  `BORDER_BAND` (15% of the shorter side) of an edge, which is where the stroke is. A box too small
+- **a line** for an arrow — 41 points along its drawn body, arc included, each with one to either
+  side, a strip `lineBand` (1% of the screenshot's long side) wide;
+- **a border band** for a rectangle or an ellipse — the grid, keeping the points within
+  `borderBand` (15% of the shorter side) of an edge, which is where the stroke is. A box too small
   for a band keeps the whole grid;
-- **the whole box** for anything filled, and for text, which covers its box closely enough.
+- **each line's box** for a text.
 
 Either way the points are at most a 20 x 20 grid, expressed as fractions of the image and clamped
 to it.
@@ -80,55 +86,59 @@ to it.
 The score for a candidate is **not** its distance from the mean colour of the sample. A mean is a
 colour that need not appear anywhere in the picture: black and white average to a grey that is
 nothing like either, and a mark drawn across both would be coloured for a background that is not
-there. The score is the distance the closest tenth of the sampled pixels are within (`TOLERANCE =
-0.1`). So at most a tenth of what a mark covers may be nearer to its colour than the threshold, and
+there. The score is the distance the closest tenth of the sampled pixels are within (`tolerance`,
+0.1). So at most a tenth of what a mark covers may be nearer to its colour than the threshold, and
 a stray red pixel under a mark drawn on white does not move it off red.
 
 ## When it runs
 
-- When a mark is created, and again when the user has finished moving or resizing it. Both arrive
-  through the store listener, which notes the marks a change touched.
-- The picks run on the same 300 ms quiet period as the draft, and never while `editor.inputs
-  .isPointing`: a drag is one motion, not its frames, and the colour is decided for where the mark
-  ends up.
-- Before a `park` and before a Done rendering, so the stored draft, the card's preview, and the
+The native editor runs it at these moments:
+
+- 300 ms after the last change to a mark, on the editor's hand-over timer, and never while the
+  button is held: a drag is one motion, not its frames, and the colour is decided for where the
+  mark ends up.
+- For a text, when typing ends.
+- Before a park, Done, Send and Cmd+C of the drawing, so the stored drawing, the card, and the
   copied PNG all carry the colour the user saw.
-- For a mark an agent pushed with `add?marks=` and no `color`, inside `build`, before the snapshot
-  is taken. A mark that names a colour keeps it.
+- For a mark an agent pushed with `add?marks=` and no `color`, before the drawing is written. A
+  mark that names a colour keeps it.
+- Never when a drawing opens.
+
+On the web editor the picks ran on the page's store listener, on the same 300 ms quiet period.
 
 ## Whose colour it is
 
-A colour the user picked is the user's: `setColor` marks those shapes `meta.colorChosen`, and the
-heuristic never touches them again. So does a pushed mark that named a colour. Everything else is
-the heuristic's for as long as it lives.
+A colour the user picked was the user's: on the web editor, `setColor` marked those shapes
+`meta.colorChosen`, and the heuristic never touched them again. A pushed mark that names a colour
+still does that, through `colorChosen` on the mark. Everything else is the heuristic's for as long
+as it lives.
 
-The `ready` message carries two colour lists for this reason: `colors`, the swatches the toolbar
+History: the `ready` message carried two colour lists for this reason: `colors`, the swatches the toolbar
 shows, which is empty while the palette is hidden, and `markColors`, every colour the page can draw
 a mark in (`MARK_COLORS`). `add?marks=` checks a mark's `color` against the second. Against the
 first, hiding the palette refused every coloured push with `invalid-marks unknown color "red"; the
 editor has` and nothing after it. The protocol went to 8 with that field.
 
-The pick is applied **outside undo history** (`editor.run(fn, { history: 'ignore' })`). The colour
-belongs to where the mark is, not to an edit of its own: one Cmd+Z removes the mark or puts it back
-where it was, rather than taking two presses to undo one action, and the undo itself is a change
-the listener notes, so the mark is coloured again for where it lands.
+The pick is applied **outside undo history**: the core changes the colour without making an undo
+step. The colour belongs to where the mark is, not to an edit of its own: one Cmd+Z removes the mark
+or puts it back where it was, rather than taking two presses to undo one action, and the next pass
+colours the mark again for where it lands.
 
 ## What it does not do
 
 - It judges the band, not the stroke. A rectangle's border band is 15% of its shorter side, which
   is many times the stroke's own width, so an outline running along a red line on a white card
   stays red: nine tenths of the band is white.
-- It has no dark candidate. In tldraw's dark theme nothing in the palette is dark, so a mark over a
-  pale washed-out region gets violet, the darkest thing available, at `ΔE` 59 over pink.
+- It has no dark candidate. Nothing in the palette is dark, so a mark over a pale washed-out
+  region gets violet, the darkest thing available, at `ΔE` 59 over pink.
 - It does not re-pick when the image behind the mark changes, because it cannot: one screenshot is
-  one image for the life of a draft.
-- `MIN_COLOR_DISTANCE`, `SAMPLE_LONG_SIDE`, `GRID`, `TOLERANCE`, `BORDER_BAND`, and `LINE_BAND`
-  are page constants, not settings keys: they are the heuristic, not a preference, and a user who
-  wants a colour has the palette (`SHOW_COLORS`).
+  one image for the life of a drawing.
+- `minDistance`, `longSide`, `grid`, `tolerance`, `borderBand`, and `lineBand` are constants in
+  `ColorPass.swift`, not settings keys: they are the heuristic, not a preference.
 
 ## Verified
 
-Fixture `Screenshot quadrants.png`, 1200 x 800: white top left, red `#e03131` top right, dark grey
+On the web editor. Fixture `Screenshot quadrants.png`, 1200 x 800: white top left, red `#e03131` top right, dark grey
 `#3c3c3c` bottom left, dark red `#7a1212` bottom right. Four rectangles created through
 `vignette://eval`, one over each quadrant, every one of them created `red`. What came back, with
 each candidate's distance from the pixels under the mark:
@@ -145,6 +155,8 @@ under the threshold). Moving the mark on white onto the red block turned it yell
 the move. The toolbar showed four tools, one divider, and Done, with no swatches.
 
 ## The palette is gone (2026-09-18)
+
+History: the web editor. The native toolbar has never had a palette.
 
 Pete: "you can delete the palette code." `SHOW_COLORS` had only ever been `false`, so the whole
 swatch path was unreachable: the page sent an empty `colors` list in `ready`, the toolbar's swatch
