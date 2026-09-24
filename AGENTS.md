@@ -105,7 +105,8 @@ the measurements and the reasoning; a rule here points at its note.
    the edge and named in a `[marks] text too long for <name>` line, which is the only thing that
    says so, since `[add]` still answers `ok` (`docs/pushed-text-2026-09-19.md`).
    `[annotate] loaded <ms>ms <name>` reports when the editor has the screen-size decode of the
-   image; the flight's image waits for it before it lifts.
+   image, and `[annotate] takes events after=<n>ms` when its window starts taking presses; the
+   flight's image waits for both before it lifts.
 4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.
    Send keys with `osascript -e 'tell application "System Events" to key code 36 using command down'`
    (Return finishes annotating, Cmd+Return too while typing, key code 53 is Esc). The recent stack
@@ -231,32 +232,63 @@ the same driven sequence; a single run varies.
   `Look.annotator`, so the two ends cannot drift apart. `dropShadow(id:)` zeroes a flight's shadow
   in the same run-loop turn the card appears or the annotator turns its own shadow on, so the
   shadow is never drawn twice and never missing for a frame.
-- Nothing takes a flight's place until it has arrived; the annotator hides behind it before then.
-  A spring's tail runs well past its nominal duration, so anything put at the exact target on a
-  timer steps by what the spring still had to go. `fly` therefore answers on `arrived`, at
-  `Anim.settle` (the spring within half a point of the target, with the flight put exactly on it in
-  that turn): the card retakes its slot, the annotator takes the shadow back
-  (`AnnotationController.landed`), and `lift(id:)` removes the flight image then, or later when the
-  editor reports `loaded` (`ThumbnailController.editorLoaded`, `loadedKeys`). That wait stays: at
-  motion 1 the image was in 1 to 50 ms after `annotate` and the window came up 213 to 234 ms after,
-  but at motion 0 the flight arrived 34 ms before the image, and lifting it then would show an empty
-  editor. `fly` answers a second time, earlier, at `Anim.passesTarget`: from the
-  moment a bouncing spring first reaches its target the flight's rect contains the target on every
-  side, so the annotator's window comes up there, with its own shadow off (`AnnotationController.show`),
-  hidden behind the flight image until `arrived`. That is what makes the editor take the pointer
-  the moment the card looks still: the toolbar and the outside-click monitor start with the window,
-  and a shadow is the one thing that would show, because it falls outside the frame it is cast
-  from. The keys come earlier: `prepare` orders the window in at alpha 0 and makes it key, so a
-  tool key or Esc pressed during the flight already reaches the editor. The pointer does not: the
-  window server passes presses through a window at alpha 0, and after `show` sets alpha 1 it took
-  about 21 ms to send them to the window (measured). A press during the flight or in those first
-  milliseconds goes to the app behind and never reaches the editor. The gap is known and not closed.
-  Done or Esc is accepted between the two moments, so the `arrived` callback is
-  guarded on the key, not the phase. A flight can also go without arriving, and a third callback,
-  `dropped`, runs then, so the window never keeps a shadow that is switched off. The window is at
-  the fitted frame by then whatever the zoom was: `hide` springs the level back to 1 first and
-  comes down once that has arrived (`AnnotationController.fitBeforeHide`). `docs/shadow-2026-09-17.md`
-  and `docs/handover-2026-09-18.md` have the frames and what each moment cost.
+- Nothing takes a flight's place until it has arrived; the annotator hides behind it before then. A
+  spring's tail runs well past its nominal duration, so anything put at the exact target on a timer
+  steps by what the spring still had to go. `fly` therefore answers on `arrived`, at `Anim.settle`
+  (the spring within half a point of the target, with the flight put exactly on it in that turn):
+  the card retakes its slot, and the annotator takes the shadow back
+  (`AnnotationController.landed`). The flight into the editor lifts at the last of three moments
+  (`ThumbnailController.liftIntoEditor`): `arrived`, which `lift(id:)` waits for itself; the
+  editor's `loaded` (`editorLoaded`, `loadedKeys`); and its window taking presses
+  (`annotatorTakesEvents`, `takingEvents`). The wait for `loaded` matters at motion 0: at motion 1
+  the image was in 1 to 50 ms after `annotate` and the window came up 213 to 234 ms after, but at
+  motion 0 the flight arrived 34 ms before the image, and lifting it then would show an empty
+  editor. The wait for presses keeps the flight over the window until the window takes presses
+  itself, so a press there never falls through to the app behind. `fly` answers a second time,
+  earlier, at `Anim.passesTarget`: from the moment a bouncing spring first reaches its target the
+  flight's rect contains the target on every side, so the annotator's window comes up there, with
+  its own shadow off (`AnnotationController.show`), hidden behind the flight image until `arrived`.
+  That is what makes the editor take the pointer the moment the card looks still: the toolbar and
+  the outside-click monitor start with the window, and a shadow is the one thing that would show,
+  because it falls outside the frame it is cast from. The keys come earlier: `prepare` orders the
+  window in at alpha 0 and makes it key, so a tool key or Esc pressed during the flight already
+  reaches the editor. Presses come later: the window server passes every press through a window at
+  alpha 0, and starts giving the window its presses 6 to 39 ms after `show` sets alpha 1, or up to
+  97 ms under load. Nothing announces that moment, so `AnnotationController.probeEvents` asks
+  the window server every millisecond from `show` whether a press at the frame's centre reaches the
+  window, looking through this app's windows above it. It gives up after 0.5 s, and
+  `[annotate] takes events after=<n>ms` reports the answer, with ` deadline` appended when it gave
+  up. Until then the flight takes the presses (the next rule). Done or Esc is accepted between the
+  two moments, so the `arrived` callback is guarded on the key, not the phase. A flight can also go
+  without arriving, and a third callback, `dropped`, runs then, so the window never keeps a shadow
+  that is switched off. The window is at the fitted frame by then whatever the zoom was: `hide`
+  springs the level back to 1 first and comes down once that has arrived
+  (`AnnotationController.fitBeforeHide`). `docs/shadow-2026-09-17.md` and
+  `docs/handover-2026-09-18.md` have the frames and what each moment cost.
+- The flight layer takes the presses on a flying card and passes every other press.
+  `TransitionLayer`'s panel covers the screen and is clear outside its flights, so the window server
+  gives it only the presses on a flight's pixels; a flight's shadow passes them, as the matte rule
+  below says. Its content view, `PressCatcher`, takes each press with its drags and its release, and
+  `FlightPress`, a pure state machine, decides where they go. A press on the card flying into the
+  editor, while the reducer is in `flyingOut` or `annotating` for it, is held until the editor's
+  window takes presses, then handed to the editor with every drag since, in order, and the rest of
+  the press follows it there (`ThumbnailController.flightPressed`, `AnnotationController.take`,
+  `EditorView.take`). A held event lands on the point of the picture that was under the pointer when
+  it happened: each flight carries a `FlightSpotView`, placed before the `Bow`, and
+  `FlightSpotView.fraction(of:in:picture:)` maps the press onto the aspect-filled picture. After the
+  handover, the rest of the press is placed by where the pointer is on screen. Marks drawn before
+  the flight lifts appear when it lifts. A press on any other flight, a card flying home or one
+  leaving with the stack, is swallowed up to its release. So is the rest of a press held for an
+  image that turns back, after Esc, a `cancel` or another image opening. The panel stays ordered in
+  until a press's release, because the window server sends the drag and the release to the window
+  that took the press. A release that never arrives would leave the editor mid-stroke and the panel
+  up: in driven presses on flights home, 4 releases in 29 reached no window at all. So
+  `watchRelease` reads `NSEvent.pressedMouseButtons` every 50 ms while a press is down, and after
+  two readings of up in a row it ends the press and logs `[flight] release missed`. Two limits
+  remain. The window server applies a window's new pixels 6 to about 30 ms late, and a press in that
+  interval reaches what was drawn there before. At motion 0, one press on the card flying into the
+  editor reached the window behind, and the cause is not found. `docs/flight-press-2026-09-23.md`
+  has the measurements.
 - The stack runs to the bottom of the screen and steps around the Dock. `StackLayout.area` builds
   one `StackArea` from the screen: `bounds` takes its sides and top from `visibleFrame` and its
   bottom from the screen's own `frame`; `safeBottom` is the height AppKit reserves for a bottom
@@ -371,7 +403,8 @@ the same driven sequence; a single run varies.
   `ui.relayoutDuration`; a zoom sets it straight, in the same turn as the frame. Only the recent
   stack does this: a lone thumbnail leaves the panel when the annotator opens, and a
   `vignette://annotate` with no stack showing gets the whole visible frame.
-  `docs/stack-room-2026-09-17.md` has the numbers.
+  `docs/stack-room-2026-09-17.md` has the numbers, and `docs/stack-narrowing-2026-09-23.md` what a
+  frame of the narrowing costs and the options for making it cheaper.
 - The click hint (Draw on a screenshot, Open on a recording) goes out over the card's two corner
   buttons and nowhere else (`CardView.overCornerButton`): each button's frame plus its padding, not
   the whole band along the bottom, so the hint stays up over the middle of the band and a click
@@ -388,14 +421,17 @@ the same driven sequence; a single run varies.
   press inside the frame then reads as outside. That is a race, not motion, so the scale does not
   touch it.
 - A screenshot's transparent pixels are never see-through. The annotator's frame, a card
-  (`StackView`) and a flight (`TransitionLayer`) paint `Config.matte`, `#1a1a1a`, behind the
-  image, so nothing changes when one takes over from another. The matte is also what routes the
-  annotator's clicks. Its window spans the screen's visible frame and is clear outside the frame,
-  and the window server gives a press to a window only where its pixel is not clear. So every press
-  on the frame reaches the editor, and a click outside it reaches the app behind, where the
-  annotator's `OutsideClick` sees it and closes the editor. That holds only while
-  `ignoresMouseEvents` is never set: set either way, the window takes or passes every press,
-  whatever its pixels.
+  (`StackView`) and a flight (`TransitionLayer`) paint `Config.matte`, `#1a1a1a`, behind the image,
+  so nothing changes when one takes over from another. The matte is also what routes the annotator's
+  clicks. Its window spans the screen's visible frame and is clear outside the frame, and the window
+  server gives a press to a window only where its pixel is not clear. So every press on the frame
+  reaches the editor, and a click outside it reaches the app behind, where the annotator's
+  `OutsideClick` sees it and closes the editor. A shadow passes presses too: asked about points from
+  1 to 64 pt outside a card, the window server named the window behind every time, for a layer
+  shadow like the annotator's and a SwiftUI shadow like a flight's. So the annotator's shadow and a
+  flight's are click-through. All of this holds for the annotator and the flight layer only while
+  `ignoresMouseEvents` is never set on either: set either way, the window takes or passes every
+  press, whatever its pixels.
 - Which image is in the annotator, where it came from, and what is in flight has one owner:
   `AnnotatorTransition` (a pure reducer) held by `ThumbnailController`. Controllers send events
   (annotate, shown, parked, close, finish, newShot, dismiss, remove) and run the effects it returns
@@ -408,13 +444,13 @@ the same driven sequence; a single run varies.
   `[transition] <event> -> <phase> effects=…` line. The annotator never hides itself: Esc, a click
   outside, Cmd+W and Done ask through `onClosed` and `onFinished`, and the reducer decides. `show`
   is the window coming up behind the flight; the flight image lifts once the editor has reported
-  `loaded` and the flight has arrived. The editor parks synchronously, so an effect can answer
-  inside the event that asked for it: at zoom 1 there is no fit-out, and `parked` comes back in the
-  same turn as `park`. `ThumbnailController.send` holds an event that arrives while another is
-  being handled and runs it once that one is done, so the reducer's events stay in order. The
-  `parking` phase stays for the zoomed case, where the window springs back to the fit before it
-  comes down. `dismiss` sets `model.slidingOut` before it sends, so a park that answers in that
-  turn leaves the flight it just aimed offscreen to the slide-out. Add a sequence to
+  `loaded`, its window takes presses, and the flight has arrived. The editor parks synchronously,
+  so an effect can answer inside the event that asked for it: at zoom 1 there is no fit-out, and
+  `parked` comes back in the same turn as `park`. `ThumbnailController.send` holds an event that
+  arrives while another is being handled and runs it once that one is done, so the reducer's events
+  stay in order. The `parking` phase stays for the zoomed case, where the window springs back to the
+  fit before it comes down. `dismiss` sets `model.slidingOut` before it sends, so a park that
+  answers in that turn leaves the flight it just aimed offscreen to the slide-out. Add a sequence to
   `AnnotatorTransitionTests` before changing the table; the random-sequence test checks the
   invariants, with same-turn answers among its sequences.
 - The flight to the annotator can be interrupted. In `flyingOut` the window has not come up, so
@@ -589,16 +625,24 @@ the same driven sequence; a single run varies.
   `annotator.canvasZoom` its two halves per direction, `annotator.zoomAnchor` the point the window
   grows away from, `annotator.zoomCenter` the middle of the visible part, and `annotator.room` the
   rect the frame may grow within.
-- Memory is bounded where images are held. `Thumbnailer` keeps decoded images under
-  `budgetBytes`, least recently used out first, and screen-size flight decodes are dropped whenever
-  the stack hides. Every image that reaches a card is decoded before it gets there (`Thumbnailer`):
-  an `NSImage(data:)` is decoded by Core Animation at its first commit, on the main thread. The
-  editor shows the screenshot decoded no larger than the visible screen in device pixels, which is
-  the same decode a flight asks for and is counted in the thumbnail cache's budget (both ask
-  `Thumbnailer.screenPixels(on:)`); `editor.clear()` lets it and the marks' layers go when the
-  annotator hides, and `removeCards` lets a card's marks go when it leaves the column. Text bitmaps
-  are capped by their owner's plan (the `MarkLayers` rule above), and renderings run one at a time
-  (`RenderingQueue`). A stitch decodes one piece at a time and draws at the capped output size.
+- Memory is bounded where images are held. `Thumbnailer` keeps decoded images under `budgetBytes`,
+  least recently used out first, and screen-size flight decodes are dropped whenever the stack
+  hides. Every image that reaches a card, a flight or the editor is decoded before it gets there
+  (`Thumbnailer`), in the colour space of the screen it will be shown on (`space:`, from
+  `NSScreen.colorSpace`). Core Animation does any work left at the first commit that shows an
+  image, on the main thread: it decodes an `NSImage(data:)`, and it converts an image in any other
+  colour space. That conversion cost 21 ms for a 3024 by 1964 sRGB image, and 0.05 ms once
+  `Thumbnailer.converted(_:to:)` had redrawn it. A capture from the same display is already in that
+  space; an agent's push, a stitch or a capture from another display can be in another. The redraw
+  is 8-bit, so a deeper image is left as it is. A cache entry records the space it was decoded in,
+  and a lookup in another space misses. Renderings, stitches and the colour pass read the file
+  itself, so their output does not change. The editor shows the screenshot decoded no larger than
+  the visible screen in device pixels, which is the same decode a flight asks for and is counted in
+  the thumbnail cache's budget (both ask `Thumbnailer.screenPixels(on:)` and the screen's colour
+  space); `editor.clear()` lets it and the marks' layers go when the annotator hides, and
+  `removeCards` lets a card's marks go when it leaves the column. Text bitmaps are capped by their
+  owner's plan (the `MarkLayers` rule above), and renderings run one at a time (`RenderingQueue`). A
+  stitch decodes one piece at a time and draws at the capped output size.
 - Swift language mode is 5 (see `project.yml`). No sandbox, on purpose: the app writes Apple's
   `com.apple.screencapture` defaults, watches a folder the user names without security-scoped
   bookmarks, and installs global event monitors. The hardened runtime is on.
