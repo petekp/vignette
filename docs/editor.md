@@ -121,7 +121,9 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   finite, types and colours known, a text's `size` at most 1,000 pt, and a text at most 2,000
   characters and 100,000 bytes. A mark that fails is dropped, with a log line. A mark that no longer
   fits inside the image is moved in, with a log line. A file that does not parse is renamed to
-  `<id>.json.invalid`, with a log line. Nothing in a drawing file can crash the app.
+  `<id>.json.invalid` at launch, with a log line. If a file stops parsing while the app runs, its
+  image opens with no drawing and a log line says so. The file stays where it is until the next
+  launch. Nothing in a drawing file can crash the app.
 
 ### Style
 

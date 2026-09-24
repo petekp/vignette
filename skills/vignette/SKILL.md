@@ -54,7 +54,8 @@ its size, `x2`,`y2` an arrow's head.
   not. Keep a pushed text to a sentence, and check the log if it mattered.
 - A mark with no `color` is coloured from the pixels it covers. To choose: `red`, `yellow`,
   `light-blue`, `white`, `violet`.
-- `[add] ok <name> … marks=<n>` says they landed. `invalid-marks` names the mark and the field.
+- In `[add] ok <name> … marks=<n>`, `n` counts the marks that joined the drawing. Dropped marks are
+  not counted. `invalid-marks` names the mark and the field.
 
 ## When the user sends you a drawing
 

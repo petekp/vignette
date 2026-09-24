@@ -61,7 +61,7 @@ Waits on two things, either way:
   if the push loop proves itself in use.
 - A name convention for pushed files, `Agent <what> <state>.png`, so the card reads at a glance.
 - Folding Copy Drawing into Copy, so one Copy gives the image as the card shows it.
-- Reorganising AGENTS.md. It is 769 lines, and a rule in it is easy to miss. The final docs review
+- Reorganising AGENTS.md. It is 782 lines, and a rule in it is easy to miss. The final docs review
   of 2026-09-23 proposed:
   - Open The loop with a short "Before you drive the app" list: use a scratch settings file; check
     `app.bundle` and `app.settingsFile` in `[state]`; launch one at a time behind the lock; send no

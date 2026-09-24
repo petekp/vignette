@@ -148,9 +148,10 @@ the measurements and the reasoning; a rule here points at its note.
    Log grammar (`Log.swift`): one event per line, `HH:mm:ss.SSS [tag] …`, details as
    `key=value` pairs, never an embedded newline (the logger flattens them); the launch line ends
    with `date=YYYY-MM-DD`; at 5 MB the file rotates to `Vignette.log.1`, replacing the previous
-   one. Drawing events: `[drawing] saved|parked|built|removed|swept <file>`, and `[drawings] <n>`
-   after every change to the set. `[stack] shown cards=… files=… shown=…ms decoding=…` counts the
-   watch folder from the watcher's index.
+   one. Drawing events: `[drawing] saved|parked|built|removed|swept|dropped <file>`, and
+   `[drawings] <n>` after every change to the set.
+   `[stack] shown cards=… files=… shown=…ms decoding=…` counts the watch folder from the
+   watcher's index.
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
 Delete test files afterwards; the watch folder is the user's real screenshot folder. Never retype a
@@ -471,19 +472,21 @@ the same driven sequence; a single run varies.
   `remove` still park from `flyingOut`, because the panel aims that same flight offscreen before the
   event arrives. Esc during the flight comes back through `onClosed` as `close`.
   `docs/flight-interrupt-2026-09-18.md` has the frames.
-- Annotating a list is a queue (`ThumbnailController.queue`, `stack.queue` in the state report):
-  the first file opens and the rest wait, and finishing one opens the next until the list is done.
-  The controller takes the next file in the turn `parked` comes back and sends `annotate` after the
+- Annotating a list is a queue (`ThumbnailController.queue`, `stack.queue` in the state report): the
+  first file opens and the rest wait, and finishing one opens the next until the list is done. The
+  controller takes the next file in the turn `parked` comes back and sends `annotate` after the
   finished card's effects, so the card flies home with its copied mark while the next flies out,
   which is a swap's two flights. The reducer knows nothing of the queue; `returnCard` only ends the
   session, hides the dim, and hands the focus back when nothing follows. Opening a card does not
-  clear the selection, so after the last one Cmd+C or Cmd+S still takes all of them. While a card
-  is in the annotator, selecting another card in the stack queues it next, in the order picked
-  (`[annotate] queued <name> 3 of 3`), and deselecting it takes it back out
-  (`queueFromSelection`, from the model's `onSelectionChanged`). Esc, a dismissal, quick
-  annotate, and a stack presented anew empty the queue; a removed file drops out of it, and a run
-  ends when the file in the annotator is the one that went; any other request to annotate
-  replaces it. `docs/annotation-queue-2026-09-17.md` has the handover.
+  clear the selection, so after the last one Cmd+C or Cmd+S still takes all of them. While a card is
+  in the annotator, selecting another card in the stack queues it next, in the order picked
+  (`[annotate] queued <name> 3 of 3`), and deselecting it takes it back out (`queueFromSelection`,
+  from the model's `onSelectionChanged`). Esc, a dismissal, quick annotate, and a stack presented
+  anew empty the queue; a file that is gone, or whose header does not read, drops out of it
+  (`takeNext`), and a run ends when the file in the annotator is the one that went; any other
+  request to annotate replaces it. A file can pass that check and still fail to make a card. Then
+  `[annotate] error unreadable-image <name>` is logged, and with nothing in the annotator the
+  session ends (`noCard(for:)`). `docs/annotation-queue-2026-09-17.md` has the handover.
 - The annotator's window is borderless and spans the screen's visible frame. The frame inside it is
   sized to the image. Its toolbar is a native panel (`AnnotatorToolbar.swift`) placed under the
   frame. It shows `EditorCore.Tool.allCases`, the editor reports the active tool through `onTool`,
@@ -535,16 +538,24 @@ the same driven sequence; a single run varies.
   `DrawingStore` for the files): one JSON file per screenshot under
   `~/Library/Application Support/<bundle id>/drawings/`, named by a hash of the file path the app
   uses everywhere (`shot.url.path`). The editor hands its drawing over 0.3 s after each change,
-  never while a button is held (`[drawing] saved`), and once more when it parks (`parked`);
-  agents' marks arrive through `Drawings.add` (`built`, or `saved` when they join the open
-  drawing). A drawing with no marks removes its file. `onChange` hands each card its drawing, so a
-  write reaches the card at once. `load` takes a list and reads it in one job off the main thread,
-  and a stack opening reads its cards' drawings in one such job per turn and changes `cards` once
-  (`ThumbnailController.setDrawings`). A key written or removed while it was read is left out of
-  the answer, since `onChange` already said what it is. A file that does not parse is set aside as
-  `<id>.json.invalid`; a newer build's file, another screenshot's, or one made on an image of
-  another size is read as no drawing and left where it is. A launch sweeps the drawings whose screenshot is gone. It also removes what the
-  web editor left, its drafts and WebKit's data, where they are still there
+  never while a button is held (`[drawing] saved`), and once more when it parks (`parked`); agents'
+  marks arrive through `Drawings.add` (`built`, or `saved` when they join the open drawing). A
+  drawing with no marks removes its file. A drawing with marks whose screenshot is gone is not
+  written (`[drawing] dropped <name>: its screenshot is gone`). `onChange` hands each card its
+  drawing, so a write reaches the card at once. `load` takes a list and reads it in one job off the
+  main thread, and a stack opening reads its cards' drawings in one such job per turn and changes
+  `cards` once (`ThumbnailController.setDrawings`). A key written or removed while it was read is
+  left out of the answer, since `onChange` already said what it is. A file that does not parse is
+  set aside as `<id>.json.invalid` only by the launch scan (`DrawingStore.scan`), which runs before
+  anything reads or writes a drawing. A read at any other time logs
+  `[drawing] error invalid <name>: <reason>; opened without it` and leaves the file where it is.
+  Reads run beside the main thread's writes, so a read that moved the file could move a good one a
+  write had just put in its place. A newer build's file, another screenshot's, or one made on an
+  image of another size is read as no drawing and left where it is. A launch sweeps the drawings
+  whose screenshot is gone. It skips the sweep when the watch folder itself is missing, and logs
+  `[drawings] <n> dir=… not swept: the watch folder … is missing`: a volume not mounted yet would
+  read as every screenshot gone, and a swept drawing is deleted, not set aside. The launch also
+  removes what the web editor left, its drafts and WebKit's data, where they are still there
   (`Drawings.removeWebEditorData`, one `[app] removed web editor data <path>` line each); drafts are
   not carried over.
 - Done, Send and Copy Drawing render on `RenderingQueue.shared`, one at a time, off the main thread:
@@ -700,15 +711,17 @@ the same driven sequence; a single run varies.
   that answers `unknown-command` (observed).
 - Send never reuses Done. It renders the drawing on `RenderingQueue` and closes nothing while it
   waits. The request is stored before the image leaves the editor, so a failure anywhere before then
-  leaves the drawing where the hand left it; a rendering that answers after the person moved to
-  another image is dropped rather than closing that one
-  (`[send] dropped <name>; the editor moved on`), and so is a list of sessions that arrives after
-  the editor moved on. A rendering that fails is a refusal, never a send of the bare screenshot:
-  only a drawing with no marks sends the picture itself, and it goes through PNG whatever the
-  capture's own format is. Send closes the editor without a copied mark, and the queue carries on to
-  the next card: a list of files to annotate is something the person asked for, and handing one of
-  them to an agent does not withdraw the rest. Esc is the one that empties the queue, because that
-  is a person stopping.
+  leaves the drawing where the hand left it. A rendering belongs to the annotator session Send was
+  pressed in (`annotator.session`). One that answers after that session ended is dropped, even when
+  the same image is open again, and nothing is sent or closed
+  (`[send] dropped <name>; the editor moved on`). `prepare` resets `sending`, so the next image's
+  toolbar never shows "Sending…" for a send that is not its own. A list of agent sessions that
+  arrives after the editor moved on to another image is dropped as well. A rendering that fails is a
+  refusal, never a send of the bare screenshot: only a drawing with no marks sends the picture
+  itself, and it goes through PNG whatever the capture's own format is. Send closes the editor
+  without a copied mark, and the queue carries on to the next card: a list of files to annotate is
+  something the person asked for, and handing one of them to an agent does not withdraw the rest.
+  Esc is the one that empties the queue, because that is a person stopping.
 - The first launch opens the setup window (`SetupWindow.swift`), and it has that launch to itself:
   the agent-skill offer waits for the next one rather than competing for a first-time user. Its job
   is the shortcut, because the default is `double-rshift` and that needs Accessibility. Nothing else
