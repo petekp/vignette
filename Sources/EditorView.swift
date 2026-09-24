@@ -545,12 +545,42 @@ final class EditorView: NSView {
             guard let window else { return }
             location = imagePoint(forViewPoint: convert(window.convertPoint(fromScreen: event.screen), from: nil))
         }
-        let pointer = EditorCore.Pointer(location: location, modifiers: EditorCore.Modifiers(eventFlags: event.modifiers), time: event.time)
+        let modifiers = EditorCore.Modifiers(eventFlags: event.modifiers)
+        let pointer = EditorCore.Pointer(location: location, modifiers: modifiers, time: event.time)
         switch event.phase {
-        case .pressed(let clickCount): handle(.pointerPressed(pointer, clickCount: clickCount))
-        case .dragged: handle(.pointerDragged(pointer))
-        case .released: handle(.pointerReleased(pointer))
+        case .pressed(let clickCount):
+            textPress = nil
+            if handle(.pointerPressed(pointer, clickCount: clickCount)).contains(.passPressToText) {
+                pressText(at: viewPoint(forImagePoint: location), clickCount: clickCount, extending: modifiers.contains(.shift))
+            }
+        case .dragged:
+            if textPress != nil { dragText(to: viewPoint(forImagePoint: location)) } else { handle(.pointerDragged(pointer)) }
+        case .released:
+            if textPress != nil { dragText(to: viewPoint(forImagePoint: location)); textPress = nil } else { handle(.pointerReleased(pointer)) }
         }
+    }
+
+    /// A relayed press on the text being typed: where its selection started, and what a drag
+    /// selects by. The text view cannot track this press itself. Its tracking loop would take the
+    /// drag and the release from the event queue, where they are the flight layer's, in that
+    /// window's coordinates.
+    private var textPress: (anchor: NSRange, granularity: NSSelectionGranularity)?
+
+    /// Puts the caret where a relayed press landed on the text being typed, or selects the word or
+    /// the paragraph there, as the text view does with a press of its own.
+    private func pressText(at point: CGPoint, clickCount: Int, extending: Bool) {
+        guard let textView = typingField?.textView else { return }
+        let granularity: NSSelectionGranularity = clickCount >= 3 ? .selectByParagraph : clickCount == 2 ? .selectByWord : .selectByCharacter
+        let at = NSRange(location: textView.characterIndexForInsertion(at: textView.convert(point, from: self)), length: 0)
+        let anchor = textView.selectionRange(forProposedRange: extending ? NSUnionRange(textView.selectedRange(), at) : at, granularity: granularity)
+        textPress = (anchor, granularity)
+        textView.setSelectedRange(anchor)
+    }
+
+    private func dragText(to point: CGPoint) {
+        guard let press = textPress, let textView = typingField?.textView else { textPress = nil; return }
+        let at = NSRange(location: textView.characterIndexForInsertion(at: textView.convert(point, from: self)), length: 0)
+        textView.setSelectedRange(textView.selectionRange(forProposedRange: NSUnionRange(press.anchor, at), granularity: press.granularity))
     }
 
     override func mouseExited(with event: NSEvent) {

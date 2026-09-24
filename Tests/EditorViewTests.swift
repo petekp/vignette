@@ -194,6 +194,46 @@ final class EditorViewTests: XCTestCase {
         XCTAssertEqual(view.core.selection, [view.core.drawing.marks[0].id])
     }
 
+    /// A press the flight layer took and handed over while a text is being typed goes to the text,
+    /// as a press through the window does: the caret moves, a drag selects, a double click selects a word.
+    func testARelayedPressOnTheTextBeingTypedMovesTheCaretAndItsDragSelects() throws {
+        open()
+        key("t", 17)
+        mouse(.leftMouseDown, 200, 300)
+        mouse(.leftMouseUp, 200, 300)
+        type("one two three")
+        let field = try XCTUnwrap(textView)
+        let marks = view.core.drawing.marks
+        /// Held events carry the point of the flying picture; the rest carry the pointer on screen.
+        func relay(_ phase: FlightPress.Phase, character index: Int, trailing: Bool = false, held: Bool = false) {
+            let layout = field.layoutManager!, container = field.textContainer!
+            var glyph = layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil),
+                                            in: container)
+            glyph = glyph.offsetBy(dx: field.textContainerOrigin.x, dy: field.textContainerOrigin.y)
+            let point = field.convert(CGPoint(x: trailing ? glyph.maxX - 1 : glyph.minX + 1, y: glyph.midY), to: view)
+            let image = view.imagePoint(forViewPoint: point)
+            time += 0.05
+            view.take(FlightPress.Event(phase: phase, picture: held ? CGPoint(x: image.x / 1000, y: image.y / 600) : nil,
+                                        screen: window.convertPoint(toScreen: view.convert(point, to: nil)), modifiers: 0, time: time))
+        }
+
+        relay(.pressed(clickCount: 1), character: 4, held: true)
+        XCTAssertEqual(field.selectedRange(), NSRange(location: 4, length: 0), "the caret goes where the press landed")
+        relay(.dragged, character: 8)
+        relay(.released, character: 12, trailing: true)
+        XCTAssertEqual(field.selectedRange(), NSRange(location: 4, length: 9), "the drag selects from the press to the release")
+
+        relay(.pressed(clickCount: 1), character: 1)
+        relay(.released, character: 1)
+        relay(.pressed(clickCount: 2), character: 1)
+        relay(.released, character: 1)
+        XCTAssertEqual(field.selectedRange(), NSRange(location: 0, length: 3), "a double click selects the word")
+
+        XCTAssertEqual(view.core.drawing.marks, marks, "nothing is drawn")
+        XCTAssertEqual(text(view.core.drawing.marks.last)?.text, "one two three")
+        XCTAssertTrue(window.firstResponder === field, "typing goes on")
+    }
+
     func testTheTypedWordsSitOnTheBaselineTheDrawingUsesAtZoomOneAndTwo() throws {
         open()
         for zoom in [CGFloat(1), 2] {
