@@ -512,6 +512,10 @@ Return still copies the drawing and closes the editor. It stays the main way to 
   extends the selection. Such a press cannot drag selected text to move it.
 - If the card turns back while the button is down, after Esc or another image opening, that press
   draws nothing.
+- A second click where the card was, within a double-click's interval of the click that opened it,
+  does nothing. Opening narrows the stack and can slide another card into the slot, so the second click
+  would otherwise reach the app behind or open that other card. Opening with Return or a URL has no
+  first click, so nothing is swallowed.
 
 ### The toolbar
 

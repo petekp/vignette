@@ -7,13 +7,15 @@ to be fixed.
 
 This note records what each press does now, the measurements the design rests on, and the two
 limits still open. The code is `Sources/FlightPress.swift`, the press handling in
-`TransitionLayer`, `AnnotationController.probeEvents`, and `ThumbnailController.flightPressed`.
+`TransitionLayer`, `AnnotationController.probeEvents`, `ThumbnailController.flightPressed`, and
+`ThumbnailController.swallowSecondClick(on:)`.
 
 ## What a press does
 
 | Where the press is | What happens |
 |---|---|
 | On the card flying into the editor | It is held until the editor's window takes presses. Then it goes to the editor with every drag since, in order, and the rest of the press follows it there. |
+| On the slot a click just opened a card from, within `NSEvent.doubleClickInterval` | It is swallowed with its drag and release, before any flight over the slot. This is the second click of a double-click. Opening narrows the stack away from the slot and can slide the card above into it, so the click would otherwise reach the app behind or open that card. Return and URL opens have no click and swallow nothing. |
 | On the card flying in, when the image turns back | The image turns back after Esc, a `cancel` or another image opening. What is held goes nowhere, and the rest of the press is swallowed. |
 | On any other flight | It is swallowed up to its release. This covers a card flying home, a card leaving with the stack, and a stitch's pieces. |
 | On a flight's shadow, or beside a flight | It reaches whatever is under it. Beside the card flying into the editor, that is a click outside the editor, which closes it. |
