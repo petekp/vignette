@@ -107,7 +107,9 @@ the measurements and the reasoning; a rule here points at its note.
    `[annotate] loaded <ms>ms <name>` reports when the editor has the screen-size decode of the
    image, and `[annotate] takes events after=<n>ms reached=true|false` when its window starts
    taking presses; the flight's image waits for both before it lifts.
-4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.
+4. Look: `screencapture -x -R x,y,w,h /tmp/s.png` captures just that region; then read the PNG.
+   To crop a full capture, use Python. Do not use `sips`: it ignores `--cropOffset` and crops from
+   the centre.
    Send keys with `osascript -e 'tell application "System Events" to key code 36 using command down'`
    (Return finishes annotating, Cmd+Return too while typing, key code 53 is Esc). The recent stack
    takes key focus, so `keystroke "a" using command down` after `open vignette://recent` selects all.
@@ -240,30 +242,29 @@ the same driven sequence; a single run varies.
   (`AnnotationController.landed`). The flight into the editor lifts at the last of three moments
   (`ThumbnailController.liftIntoEditor`): `arrived`, which `lift(id:)` waits for itself; the
   editor's `loaded` (`editorLoaded`, `loadedKeys`); and its window taking presses
-  (`annotatorTakesEvents`, `takingEvents`). The wait for `loaded` matters at motion 0: at motion 1
-  the image was in 1 to 50 ms after `annotate` and the window came up 213 to 234 ms after, but at
-  motion 0 the flight arrived 34 ms before the image, and lifting it then would show an empty
-  editor. The wait for presses keeps the flight over the window until the window takes presses
-  itself, so a press there never falls through to the app behind. `fly` answers a second time,
-  earlier, at `Anim.passesTarget`: from the moment a bouncing spring first reaches its target the
-  flight's rect contains the target on every side, so the annotator's window comes up there, with
-  its own shadow off (`AnnotationController.show`), hidden behind the flight image until `arrived`.
-  That is what makes the editor take the pointer the moment the card looks still: the toolbar and
-  the outside-click monitor start with the window, and a shadow is the one thing that would show,
-  because it falls outside the frame it is cast from. The keys come earlier: `prepare` orders the
-  window in at alpha 0 and makes it key, so a tool key or Esc pressed during the flight already
-  reaches the editor. Presses come later: the window server passes every press through a window at
-  alpha 0, and starts giving the window its presses 6 to 39 ms after `show` sets alpha 1, or up to
-  97 ms under load. Nothing announces that moment, so `AnnotationController.probeEvents` asks the
-  window server every millisecond from `show` whether a press at the frame's centre reaches the
-  window, looking through this app's windows above it. It gives up after 0.5 s.
-  `[annotate] takes events after=<n>ms reached=true|false` reports the answer, and `reached=false`
-  means it gave up. Until then the flight takes the presses (the next rule). Done or Esc is accepted
-  between the two moments, so the `arrived` callback is guarded on the key, not the phase. A flight
-  can also go without arriving, and a third callback, `dropped`, runs then, so the window never
-  keeps a shadow that is switched off. The window is at the fitted frame by then whatever the zoom
-  was: `hide` springs the level back to 1 first and comes down once that has arrived
-  (`AnnotationController.fitBeforeHide`). `docs/shadow-2026-09-17.md` and
+  (`annotatorTakesEvents`, `takingEvents`). The wait for `loaded` matters at motion 0, where the
+  flight can arrive before the image, and lifting it then would show an empty editor;
+  `docs/native-editor-2026-09-23.md` has the timings. The wait for presses keeps the flight over the
+  window until the window takes presses itself, so a press there never falls through to the app
+  behind. `fly` answers a second time, earlier, at `Anim.passesTarget`: from the moment a bouncing
+  spring first reaches its target the flight's rect contains the target on every side, so the
+  annotator's window comes up there, with its own shadow off (`AnnotationController.show`), hidden
+  behind the flight image until `arrived`. That is what makes the editor take the pointer the moment
+  the card looks still: the toolbar and the outside-click monitor start with the window, and a
+  shadow is the one thing that would show, because it falls outside the frame it is cast from. The
+  keys come earlier: `prepare` orders the window in at alpha 0 and makes it key, so a tool key or
+  Esc pressed during the flight already reaches the editor. Presses come later: the window server
+  passes every press through a window at alpha 0, and starts giving the window its presses 6 to
+  39 ms after `show` sets alpha 1, or up to 97 ms under load. Nothing announces that moment, so
+  `AnnotationController.probeEvents` asks the window server every millisecond from `show` whether a
+  press at the frame's centre reaches the window, looking through this app's windows above it. It
+  gives up after 0.5 s. `[annotate] takes events after=<n>ms reached=true|false` reports the answer,
+  and `reached=false` means it gave up. Until then the flight takes the presses (the next rule).
+  Done or Esc is accepted between the two moments, so the `arrived` callback is guarded on the key,
+  not the phase. A flight can also go without arriving, and a third callback, `dropped`, runs then,
+  so the window never keeps a shadow that is switched off. The window is at the fitted frame by then
+  whatever the zoom was: `hide` springs the level back to 1 first and comes down once that has
+  arrived (`AnnotationController.fitBeforeHide`). `docs/shadow-2026-09-17.md` and
   `docs/handover-2026-09-18.md` have the frames and what each moment cost.
 - The flight layer takes the presses on a flying card or a swallow rect, and passes every other
   press. `TransitionLayer`'s panel covers the screen and is clear outside those, so the window
@@ -393,8 +394,8 @@ the same driven sequence; a single run varies.
 - Which card a key acts on is one variable, `model.focused`. The stack focuses the newest card the
   moment it takes keys (`takeKeys`), so arrows, Space, and Return act on a card without a first
   click, and the pointer moves the focus too: moving onto a card focuses it, and leaving it leaves
-  the focus there. The pointer only moves it while the stack holds the keys and no session is
-  running; while the annotator has them nothing moves. A shortcut runs on the selection when there
+  the focus there. The pointer only moves it while the stack holds the keys and no card is in the
+  annotator; while the annotator has them nothing moves. A shortcut runs on the selection when there
   is one, else on the focused card (`targetCards`). The ring says where the focus is: the accent
   color on a selected card, white on a focused one.
 - The panel widens to the left while cards are selected, to hold the selection strip
@@ -404,18 +405,18 @@ the same driven sequence; a single run varies.
   `ui.selectionStripGap`, measured from the widest selected card (`docs/selection-strip-2026-09-18.md`).
   Only the column carries the hair of alpha that catches clicks and scrolls; the strip's side of
   the panel stays clear, so a click there still reaches the window underneath.
-- The strip's labels are out for as long as a selection exists, whichever hand built it: a
-  selection is the moment the rows' names and shortcuts are wanted, and a strip that folded back to
-  icons when the pointer moved onto a card read as the strip losing interest. Each row draws its shortcut
-  after the label from `ShotAction.Key.glyphs`, and `stripReveal(rows:)` measures both, so the
-  panel's room holds them. Copy on a card still reveals on hover and grows to the right from an
-  icon that does not move; the strip keeps its right edge and grows to the left, so a label never
-  covers a card. A row is one button, icon and label together. The strip stands aside while the annotator has an image,
-  since it hangs inside the room the frame may grow into: the two places that ask for its placement
-  refuse (`ThumbnailController.stripFrame` and `StackView.stripPlacement`), never `showsStrip`,
-  which sizes the panel, because the panel's window is not resized while a session runs. The
-  selection is untouched and the strip springs back when the session ends. `[state] stack.strip` is
-  the grown frame, null while a card is in the annotator.
+- The strip's labels are out for as long as a selection exists, whichever hand built it: a selection
+  is the moment the rows' names and shortcuts are wanted, and a strip that folded back to icons when
+  the pointer moved onto a card read as the strip losing interest. Each row draws its shortcut after
+  the label from `ShotAction.Key.glyphs`, and `stripReveal(rows:)` measures both, so the panel's
+  room holds them. Copy on a card still reveals on hover and grows to the right from an icon that
+  does not move; the strip keeps its right edge and grows to the left, so a label never covers a
+  card. A row is one button, icon and label together. The strip stands aside while the annotator has
+  an image, since it hangs inside the room the frame may grow into: the two places that ask for its
+  placement refuse (`ThumbnailController.stripFrame` and `StackView.stripPlacement`), never
+  `showsStrip`, which sizes the panel, because the panel's window is not resized while a card is in
+  the annotator. The selection is untouched and the strip springs back when the annotator closes.
+  `[state] stack.strip` is the grown frame, null while a card is in the annotator.
 - The recent stack narrows to make room for the annotator. One number says how wide it is drawn:
   `StackLayout.widthScale`, 1 at rest and never below `ui.stackMinScale`. The cards are drawn at
   that width (`drawn`) and the column with them; their right edge does not move. The panel is
@@ -467,14 +468,14 @@ the same driven sequence; a single run varies.
   the card returns and takes the copied mark, and a lone thumbnail, which left the panel when the
   annotator opened, comes back to the corner for it. Esc sends `close`: a stack card returns, a lone
   thumbnail's annotator just hides. Quick draw sends `dismiss`. A `prepare` is never emitted while a
-  park is in flight, which is what serializes rapid swaps; a new screenshot during a lone
-  annotation joins the panel instead of closing the editor. Every event logs one
+  park is in flight, which is what serializes rapid swaps; a new screenshot during a lone annotation
+  joins the panel instead of closing the editor. Every event logs one
   `[transition] <event> -> <phase> effects=…` line. The annotator never hides itself: Esc, a click
   outside, Cmd+W and Done ask through `onClosed` and `onFinished`, and the reducer decides. `show`
   is the window coming up behind the flight; the flight image lifts once the editor has reported
-  `loaded`, its window takes presses, and the flight has arrived. The editor parks synchronously,
-  so an effect can answer inside the event that asked for it: at zoom 1 there is no fit-out, and
-  `parked` comes back in the same turn as `park`. `ThumbnailController.send` holds an event that
+  `loaded`, its window takes presses, and the flight has arrived. The editor parks synchronously, so
+  an effect can answer inside the event that asked for it: at zoom 1 there is no fit-out, and
+  `parked` comes back in the same turn as `park`. `ThumbnailController.send` queues an event that
   arrives while another is being handled and runs it once that one is done, so the reducer's events
   stay in order. The `parking` phase stays for the zoomed case, where the window springs back to the
   fit before it comes down. `dismiss` sets `model.slidingOut` before it sends, so a park that
@@ -506,23 +507,23 @@ the same driven sequence; a single run varies.
   annotate, and a stack presented anew empty the queue; a removed file drops out of it, and a run
   ends when the file in the annotator is the one that went; any other request to annotate
   replaces it. `docs/annotation-queue-2026-09-17.md` has the handover.
-- The annotator window is borderless and sized exactly to the image. Its toolbar is a native
-  panel (`AnnotatorToolbar.swift`) placed under the window. It shows `EditorCore.Tool.allCases`,
-  the editor reports the active tool through `onTool`, and the bar calls `setTool`, `send` and
-  `done` on the editor. The bar is tools, one divider, Send, Done: there is no palette, so which
-  colour a mark is drawn in is the colour pass's, not the user's. Send has
-  no default and no last-used target; its menu groups the agent sessions by project, as sections up
-  to `submenuThreshold` projects and as a submenu each above it, so where a drawing is going is
-  read before it goes. While one image
-  follows another with no gap (a click on another card, or the queue moving on) the bar stays on
-  screen and springs to the next image's place: `place(below:gap:)` slides the panel when it is
-  already up, one `Tween` per direction, over `Anim.passesTarget(ui.expandDuration)`, which is when
-  the next image's window comes up. `hideWindows` asks for the exit through `hideSoon`, which waits
-  one turn of the run loop and is cancelled by the next `place`; a swap's park answer and the next
-  `prepare` land in that same turn, so the reducer says nothing about this. `[state]
-  annotator.toolbar` is the panel's frame, or null when it is off screen.
-  `docs/annotator-toolbar-2026-09-19.md` has the numbers. A swap runs two flights at once, and the
-  stack keeps the slot, drawn empty, so the card flies back to the same place.
+- The annotator's window is borderless and spans the screen's visible frame. The frame inside it is
+  sized to the image. Its toolbar is a native panel (`AnnotatorToolbar.swift`) placed under the
+  frame. It shows `EditorCore.Tool.allCases`, the editor reports the active tool through `onTool`,
+  and the bar calls `setTool`, `send` and `done` on the editor. The bar is tools, one divider, Send,
+  Done: there is no palette, so which colour a mark is drawn in is the colour pass's, not the
+  user's. Send has no default and no last-used target; its menu groups the agent sessions by
+  project, as sections up to `submenuThreshold` projects and as a submenu each above it, so where a
+  drawing is going is read before it goes. While one image follows another with no gap (a click on
+  another card, or the queue moving on) the bar stays on screen and springs to the next image's
+  place: `place(below:gap:)` slides the panel when it is already up, one `Tween` per direction, over
+  `Anim.passesTarget(ui.expandDuration)`, which is when the next image's window comes up.
+  `hideWindows` asks for the exit through `hideSoon`, which waits one turn of the run loop and is
+  cancelled by the next `place`; a swap's park answer and the next `prepare` land in that same turn,
+  so the reducer says nothing about this. `[state] annotator.toolbar` is the panel's frame, or null
+  when it is off screen. `docs/annotator-toolbar-2026-09-19.md` has the numbers. A swap runs two
+  flights at once, and the stack keeps the slot, drawn empty, so the card flies back to the same
+  place.
 - The editor is a pure reducer and a view that decides nothing. `EditorCore.reduce` takes one
   `Input` and returns the `Effect`s to run, in order; `EditorView` turns events into inputs, runs
   those effects, and draws the core's state in one `CATransaction`. What a press hits is
@@ -537,24 +538,25 @@ the same driven sequence; a single run varies.
   `CAShapeLayer`s, so a shape looks the same in the editor, on a card, in flight and in the PNG. A
   text's letters are drawn only by the renderer (`MarkRendering.swift`): its outline is stroked a
   glyph at a time and then filled in one pass, which took a 2,000-character text from 240 ms to
-  about 62 ms. `EditorTextView`, the text being typed, sets every line's baseline from `TextLayout`
-  through its layout manager's delegate, so typing and the drawn text meet within half a point.
+  61 ms (`docs/native-editor-2026-09-23.md`). `EditorTextView`, the text being typed, sets every
+  line's baseline from `TextLayout` through its layout manager's delegate, so typing and the drawn
+  text meet within half a point.
 - `MarkLayers` is the one on-screen drawer for marks: the editor (`EditorPicture`), a card
   (`MarksView`) and a flight. A text is a bitmap the renderer draws off the main thread, on
   `MarkLayers.textQueue` for the editor and flights and `cardQueue` for cards, so a stack of long
   texts never delays the one being edited. The bitmap is an `IOSurface`: Core Animation copies a
   `CGImage` at the commit that shows it, which took up to 22 ms on the main thread for a text the
-  size of the view and doubled its memory. A bitmap is shown only while its text is the same record
-  and still wants exactly that `Target` (mark, region, scale, style); a draw no longer wanted is
-  skipped before it starts, and after `park()` nothing is shown. The shared bitmaps and
-  `take(from:)` match on the style too, so a bitmap never crosses styles. A card's or a flight's
-  marks take a new style through `restyle(_:arrowhead:)`, and each text keeps the bitmap it has
-  until its new one arrives. A text keeps at most two bitmaps, a whole and a sharper
-  detail, the one on its way included. Each owner's plan caps them: the editor's at the view's size
-  in device pixels, a card's at the part of the image the card shows at its rest size. The editor
-  and the flight into it ask for the same targets, so the second shows the first's bitmap
-  (`adopt(from:)`) instead of drawing it again. The typed text's view stays until its bitmap
-  arrives (`onTextDrawn`), so the words are on screen in every frame. A card's marks sit inside its
+  size of the view and doubled its memory (`docs/native-editor-2026-09-23.md`). A bitmap is shown
+  only while its text is the same record and still wants exactly that `Target` (mark, region, scale,
+  style); a draw no longer wanted is skipped before it starts, and after `park()` nothing is shown.
+  The shared bitmaps and `take(from:)` match on the style too, so a bitmap never crosses styles. A
+  card's or a flight's marks take a new style through `restyle(_:arrowhead:)`, and each text keeps
+  the bitmap it has until its new one arrives. A text keeps at most two bitmaps, a whole and a
+  sharper detail, the one on its way included. Each owner's plan caps them: the editor's at the
+  view's size in device pixels, a card's at the part of the image the card shows at its rest size.
+  The editor and the flight into it ask for the same targets, so the second shows the first's bitmap
+  (`adopt(from:)`) instead of drawing it again. The typed text's view stays until its bitmap arrives
+  (`onTextDrawn`), so the words are on screen in every frame. A card's marks sit inside its
   `DragSource` view and are flattened at the larger of the biggest size the card has been placed at
   and its rest size (`MarksView.restSize`), so a narrowing stack redraws nothing and a card first
   placed in a narrowed one is sharp when it widens. A flight carries them as a SwiftUI `.marks`
@@ -692,15 +694,15 @@ the same driven sequence; a single run varies.
   5.6 seconds (measured; `docs/replacing-apple-capture-2026-09-22.md`) and `copyOnCapture` fills the
   clipboard when the watcher reports the file, so with both on a Cmd+V inside that gap pastes what
   was there before. Installing Vignette is choosing what happens after a capture, so that is not a
-  question the setup window asks and there is no toggle for it; `appleOriginal`, captured in the same
-  turn, is the way back. `Settings.reconcileApple()` runs at every launch, before the watcher, and
-  puts back `show-thumbnail`, and `location` when `syncAppleSaveLocation` is on, if something outside
-  the app changed them: those two break Vignette rather than merely differing from it. `type` and
-  `disable-shadow` are never reconciled. The reconcile is silent; the Screenshots tab states that
-  Vignette replaces the thumbnail, a few rows above "Restore macOS Screenshot Settings…", which is
-  the disable path and the only way back in the UI. `appleThumbnail` stays a settings.json key with
-  no control, because `restoreAppleDefaults()` writes Apple's old value into it and that is what
-  makes a restore survive the next launch's reconcile.
+  question the setup window asks and there is no toggle for it; `appleOriginal`, captured in the
+  same turn, is the way back. `Settings.reconcileApple()` runs at every launch, before the watcher,
+  and puts back `show-thumbnail`, and `location` when `syncAppleSaveLocation` is on, if something
+  outside the app changed them: those two break Vignette rather than merely differing from it.
+  `type` and `disable-shadow` are never reconciled. The reconcile is silent; the Screenshots tab
+  states, in the line above "Restore macOS Screenshot Settings…", that Vignette replaces the
+  thumbnail. That button is the disable path and the only way back in the UI. `appleThumbnail` stays
+  a settings.json key with no control, because `restoreAppleDefaults()` writes Apple's old value
+  into it and that is what makes a restore survive the next launch's reconcile.
 - Sending a drawing to an agent session and taking its drawing back is one object,
   `ScreenshotRequests`, and one small boundary, `AgentConnection`. Two things are durable and
   different: **acceptance** means Vignette owns every byte of a reply, and is what the receipt a
@@ -756,15 +758,16 @@ the same driven sequence; a single run varies.
   bundle id LaunchServices registered last, which on a Mac with a second build is a different app
   that answers `unknown-command` (observed).
 - Send never reuses Done. It renders the drawing on `RenderingQueue` and closes nothing while it
-  waits. The request is stored before the image leaves the editor, so a failure anywhere before
-  then leaves the drawing where the hand left it; a rendering that answers after the person moved to
-  another image is dropped rather than closing that one (`[send] dropped <name>; the editor moved
-  on`), and so is a list of sessions that arrives after the editor moved on. A rendering that fails
-  is a refusal, never a send of the bare screenshot: only a drawing with no marks sends the picture
-  itself, and it goes through PNG whatever the capture's own format is. Send ends the session without a copied mark and the
-  queue carries on to the next card: a list of files to annotate is something the person asked for,
-  and handing one of them to an agent does not withdraw the rest. Esc is the one that empties the
-  queue, because that is a person stopping.
+  waits. The request is stored before the image leaves the editor, so a failure anywhere before then
+  leaves the drawing where the hand left it; a rendering that answers after the person moved to
+  another image is dropped rather than closing that one
+  (`[send] dropped <name>; the editor moved on`), and so is a list of sessions that arrives after
+  the editor moved on. A rendering that fails is a refusal, never a send of the bare screenshot:
+  only a drawing with no marks sends the picture itself, and it goes through PNG whatever the
+  capture's own format is. Send closes the editor without a copied mark, and the queue carries on to
+  the next card: a list of files to annotate is something the person asked for, and handing one of
+  them to an agent does not withdraw the rest. Esc is the one that empties the queue, because that
+  is a person stopping.
 - The first launch opens the setup window (`SetupWindow.swift`), and it has that launch to itself:
   the agent-skill offer waits for the next one rather than competing for a first-time user. Its job
   is the shortcut, because the default is `double-rshift` and that needs Accessibility. Nothing else
