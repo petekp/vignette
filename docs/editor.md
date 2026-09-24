@@ -3,6 +3,9 @@
 This is how Vignette's drawing editor behaves. The editor is written in Swift and runs in the app's
 own process. `AGENTS.md` has the rules for changing it.
 
+The host is the app around the editor. It is the annotator (`AnnotationController`), which opens,
+parks and zooms the editor, and the rest of the app, which stores and renders its drawing.
+
 ## Summary
 
 - The editor has four tools: Select, Rectangle, Arrow and Text. It also covers selection, typing,
@@ -45,7 +48,7 @@ All eighteen were decided on 2026-09-22.
 | 11 | Do marks snap to each other and to the image's edges? | Not in the first version. | Marks point at things in the screenshot, so alignment between marks rarely matters. |
 | 12 | Can several selected marks be resized together? | No. Several selected marks can be moved, duplicated and deleted. | A group resize would scale the text but not the strokes, which distorts the group. |
 | 13 | How is a drawing stored? | In a JSON file of Vignette's own, in px, with a version number. Section 1 has the format. | A format in px does not depend on the display. |
-| 14 | How fast does park answer? | At once, in the same turn of the run loop. `ThumbnailController` holds an event that arrives while it is still handling one, and runs it right after. | A swap's park and the next card's opening land in the same frame. Holding the event keeps the transition's events in order. |
+| 14 | How fast does park answer? | At once, in the same turn of the run loop. `ThumbnailController` queues an event that arrives while it is still handling one, and runs it right after. | A swap's park and the next card's opening land in the same frame. Queuing the event keeps the transition's events in order. |
 | 15 | Which colour profile does a rendering use? | The screenshot's own. The marks are drawn into that colour space. | The screenshot's pixels come out unchanged. Converting to sRGB shifts saturated colours, so a note about a wrong colour would ship a different colour. |
 | 16 | How do cards and flights show a drawing? | They draw its marks with the editor's renderer, over the thumbnail. No preview images are stored. | A card is current the moment its drawing parks, and sharp at any card size. Park has no rendering to wait for. |
 | 17 | How does zoom draw? | The editor draws inside the annotator's window, and zoom scales its layers. | One process draws the frame and the drawing, so both move in the same frame. |
@@ -152,7 +155,7 @@ of the image. The fractions become px when the marks arrive. A reply's marks tak
 | Arrowhead | A filled triangle at the tip, per Decision 18 |
 | Text | SF Pro Rounded at 24 pt, left-aligned, in the mark's colour. Weight and line height are tuned in the tweaks panel, starting at Medium and 1.35 times the size. |
 | Text outline | Near-black `hsl(240 5% 6.5%)`, 1 pt outside the letters, on screen and in every rendering |
-| Selection outline | 1.5 screen pt, `#3182ed`, with a light edge so it shows on blue and dark screenshots. It runs outside the mark's ink, so the mark's colour shows. The frame around several selected marks uses the same line. |
+| Selection outline | A 1.5 screen pt line in `#3182ed` over a light edge, so it shows on blue and dark screenshots. The two together are `ui.selectionOutlineWidth` wide, 3.5 screen pt by default. It runs outside the mark's ink, so the mark's colour shows. The frame around several selected marks uses the same line. |
 | Hover | Lighter than the selection outline, so the two can be told apart |
 | Resize handles | 8 screen pt squares with a near-black fill and a 1.5 screen pt blue stroke, at the four corners of the selection outline |
 | Arrow dots | Circles of radius 4 screen pt, white fill, 1.5 screen pt blue stroke. A hovered dot gets a 12 screen pt halo, blue at 20% opacity. |
@@ -504,6 +507,18 @@ Return still copies the drawing and closes the editor. It stays the main way to 
 - The tool and the selection follow section 3.
 - The editor opens when the card starts its flight, before the image is decoded, so it has the keys
   from the first moment. The image appears when its decode arrives.
+- A press on the card while it flies in draws, as a press in the editor would. The stroke starts at
+  the point of the picture that was under the pointer, then follows the pointer. It shows when the
+  card lands.
+- A press on the text being typed, made while the card is still flying, goes to the text. It places
+  the caret, a drag selects, a double-click selects a word and a triple-click a paragraph, and Shift
+  extends the selection. Such a press cannot drag selected text to move it.
+- If the card turns back while the button is down, after Esc or another image opening, that press
+  draws nothing.
+- A second click where the card was, within a double-click's interval of the click that opened it,
+  does nothing. Opening narrows the stack and can slide another card into the slot, so the second click
+  would otherwise reach the app behind or open that other card. Opening with Return or a URL has no
+  first click, so nothing is swallowed.
 
 ### The toolbar
 
@@ -536,7 +551,7 @@ Return still copies the drawing and closes the editor. It stays the main way to 
 | Output | What it is |
 |---|---|
 | Done | The screenshot with its marks, at the screenshot's exact pixel size, in its colour profile and with its DPI. With no marks, the host copies the original file and writes nothing. |
-| Send | The same rendering. The editor stays open. A failed rendering sends nothing, and the drawing stays as it is. |
+| Send | The same rendering. The editor stays open while it renders. Once the request is stored, the card goes home without a copied mark, and a queue opens its next card. A failed rendering sends nothing, and the drawing stays as it is. |
 | Copy Drawing | The same rendering for each selected card, without opening them |
 
 - Renderings run off the main thread, one at a time, drawing straight at the output size. The
@@ -555,6 +570,13 @@ Return still copies the drawing and closes the editor. It stays the main way to 
   dragged out of the stack. Per Decision 16, no preview images are stored.
 - Cards, flights, stitches and dragged cards draw in the live text style and arrowhead, as the
   editor does.
+- A press on a card flying anywhere but into the editor does nothing, up to its release. That is a
+  card flying home, one leaving with the stack, or the pieces of a stitch. The card takes clicks
+  again once it lands.
+- A press on a flying card's shadow, or beside the card, reaches whatever is under it. Right-click
+  and scroll on a flying card do nothing.
+- [flight-press-2026-09-23.md](flight-press-2026-09-23.md) has the measurements, and two cases in
+  which a press can still pass through a flying card.
 
 ### The colour pass
 
@@ -574,8 +596,9 @@ A mark is drawn in red unless red is too close to what it covers:
 
 ### Agents' marks
 
-- `add?marks=` adds to a drawing without showing anything. The marks become px, the colour pass
-  runs, and the host writes the file. The command answers once the file is written.
+- `add?marks=` adds to a drawing without opening the editor. The marks become px, the colour pass
+  runs, and the host writes the file. The command answers once the file is written, and the card
+  appears after that.
 - If the screenshot already has a drawing, the marks are added to it.
 - If the screenshot is open in the editor, the marks join the open drawing as one undo step. Adding
   never waits for the editor and is never refused because of it.
@@ -584,8 +607,8 @@ A mark is drawn in red unless red is too close to what it covers:
 - Agents' marks carry `agent`, so reopening never selects one.
 - An agent's text is sized and fitted like this:
   - Its size is 2.2% of the image's width.
-  - It wraps in its `w`, or in the room to the right edge less a 2% margin, but never narrower than
-    15% of the width.
+  - It wraps in its `w` when it has one, as given. Without `w`, it wraps in the room to the right
+    edge less a 2% margin, and never in less than 15% of the width.
   - It is widened until it fits the image's height, in up to four passes.
   - It is then moved inside the image.
   - A text that still does not fit is cut at the edge and named in one
@@ -598,7 +621,8 @@ A mark is drawn in red unless red is too close to what it covers:
 - The host owns the zoom: pinch, Cmd+scroll or Ctrl+scroll, Cmd+Plus, Cmd+Minus, Cmd+0, and the
   two-finger double tap. A plain scroll pans a zoomed-in image.
 - A double-click with Select on empty space asks the host for smart zoom.
-- The zoom keys and the double-click do nothing while the card is still flying in.
+- The zoom keys and the double-click do nothing until the card has landed, a double-click on the
+  flying card included.
 - The editor draws at whatever zoom the host sets, per Decision 17. The frame and the drawing move in
   the same frame.
 

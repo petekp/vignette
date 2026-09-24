@@ -46,7 +46,7 @@ selection when there is one, and on the focused card otherwise.
 The selected cards get a control strip to their left: Copy, Draw, Stitch, Delete. It stays centered
 between the topmost and the bottommost selected card, and follows the selection. Each button names
 itself and shows its shortcut for as long as anything is selected. The strip hides while you are
-annotating. The cards stay selected and it comes back when you are done.
+drawing. The cards stay selected and it comes back when you are done.
 
 - Cmd+C copies the selection as files, as paths in text, and as the first image's pixels. Chat apps
   attach all of them, and terminals paste the paths.

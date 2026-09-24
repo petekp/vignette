@@ -56,9 +56,10 @@ only candidate that clears 55 over orange); violet is the fallback for a light b
 
 The hexes are tldraw's **dark theme** strokes, which is what the web editor drew: `App.tsx` set
 `colorScheme: 'dark'`. The native editor draws the same hexes (`MarkColor.hex`). That also rules out `black` as a candidate — in that theme tldraw renders
-`black` as `#f2f2f2`, a near-white four units from `white`, so it would add nothing. If the editor
-ever draws in the light theme these hexes have to change with it, or the measure is judging a
-colour the user never sees.
+`black` as `#f2f2f2`, a near-white four units from `white`, so it would add nothing. The native
+editor has no theme, and the colour pass measures the same hexes it draws: `MarkColor.sRGB` reads
+`MarkColor.hex`. The order and `minDistance` were tuned on these five hexes, so a change to one
+means checking them again.
 
 ## The sample
 
