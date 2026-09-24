@@ -32,13 +32,13 @@ https://github.com/user-attachments/assets/cb06c65f-ba08-436f-8e7e-4df31729ad36
 ### Drawing
 
 - **Simple by design**<br>
-  Three tools: rectangle, text, arrow. No colour picker. Vignette picks the colour that stands out
+  Three drawing tools: rectangle, text, arrow. No colour picker. Vignette picks the colour that stands out
   most against the image under your mark.
 - **Non-destructive**<br>
-  Your drawing is a separate file beside the original. Go back, change it, undo it. The original
-  stays as it was.
+  Your drawing is kept in its own file, apart from the original. Go back, change it, undo it. The
+  original stays as it was.
 - **Queue**<br>
-  Annotate several in a row. Open them together and each Done opens the next.
+  Draw on several in a row. Open them together and each Done opens the next.
 
 ### The app
 

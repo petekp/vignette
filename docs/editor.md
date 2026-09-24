@@ -3,6 +3,9 @@
 This is how Vignette's drawing editor behaves. The editor is written in Swift and runs in the app's
 own process. `AGENTS.md` has the rules for changing it.
 
+The host is the app around the editor. It is the annotator (`AnnotationController`), which opens,
+parks and zooms the editor, and the rest of the app, which stores and renders its drawing.
+
 ## Summary
 
 - The editor has four tools: Select, Rectangle, Arrow and Text. It also covers selection, typing,
@@ -152,7 +155,7 @@ of the image. The fractions become px when the marks arrive. A reply's marks tak
 | Arrowhead | A filled triangle at the tip, per Decision 18 |
 | Text | SF Pro Rounded at 24 pt, left-aligned, in the mark's colour. Weight and line height are tuned in the tweaks panel, starting at Medium and 1.35 times the size. |
 | Text outline | Near-black `hsl(240 5% 6.5%)`, 1 pt outside the letters, on screen and in every rendering |
-| Selection outline | 1.5 screen pt, `#3182ed`, with a light edge so it shows on blue and dark screenshots. It runs outside the mark's ink, so the mark's colour shows. The frame around several selected marks uses the same line. |
+| Selection outline | A 1.5 screen pt line in `#3182ed` over a light edge, so it shows on blue and dark screenshots. The two together are `ui.selectionOutlineWidth` wide, 3.5 screen pt by default. It runs outside the mark's ink, so the mark's colour shows. The frame around several selected marks uses the same line. |
 | Hover | Lighter than the selection outline, so the two can be told apart |
 | Resize handles | 8 screen pt squares with a near-black fill and a 1.5 screen pt blue stroke, at the four corners of the selection outline |
 | Arrow dots | Circles of radius 4 screen pt, white fill, 1.5 screen pt blue stroke. A hovered dot gets a 12 screen pt halo, blue at 20% opacity. |
@@ -548,7 +551,7 @@ Return still copies the drawing and closes the editor. It stays the main way to 
 | Output | What it is |
 |---|---|
 | Done | The screenshot with its marks, at the screenshot's exact pixel size, in its colour profile and with its DPI. With no marks, the host copies the original file and writes nothing. |
-| Send | The same rendering. The editor stays open. A failed rendering sends nothing, and the drawing stays as it is. |
+| Send | The same rendering. The editor stays open while it renders. Once the request is stored, the card goes home without a copied mark, and a queue opens its next card. A failed rendering sends nothing, and the drawing stays as it is. |
 | Copy Drawing | The same rendering for each selected card, without opening them |
 
 - Renderings run off the main thread, one at a time, drawing straight at the output size. The
@@ -593,8 +596,9 @@ A mark is drawn in red unless red is too close to what it covers:
 
 ### Agents' marks
 
-- `add?marks=` adds to a drawing without showing anything. The marks become px, the colour pass
-  runs, and the host writes the file. The command answers once the file is written.
+- `add?marks=` adds to a drawing without opening the editor. The marks become px, the colour pass
+  runs, and the host writes the file. The command answers once the file is written, and the card
+  appears after that.
 - If the screenshot already has a drawing, the marks are added to it.
 - If the screenshot is open in the editor, the marks join the open drawing as one undo step. Adding
   never waits for the editor and is never refused because of it.
@@ -603,8 +607,8 @@ A mark is drawn in red unless red is too close to what it covers:
 - Agents' marks carry `agent`, so reopening never selects one.
 - An agent's text is sized and fitted like this:
   - Its size is 2.2% of the image's width.
-  - It wraps in its `w`, or in the room to the right edge less a 2% margin, but never narrower than
-    15% of the width.
+  - It wraps in its `w` when it has one, as given. Without `w`, it wraps in the room to the right
+    edge less a 2% margin, and never in less than 15% of the width.
   - It is widened until it fits the image's height, in up to four passes.
   - It is then moved inside the image.
   - A text that still does not fit is cut at the edge and named in one

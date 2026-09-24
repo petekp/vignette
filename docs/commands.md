@@ -61,8 +61,9 @@ undo step.
 
 ## The log
 
-Every command answers with one line in `~/Library/Logs/Vignette.log` (menu bar → Open Log):
-`[<command>] ok <detail>` or `[<command>] error <code> <detail>`. The codes are fixed:
+Every command answers with one line in `~/Library/Logs/Vignette.log`:
+`[<command>] ok <detail>` or `[<command>] error <code> <detail>`. With `debug` on, Open Log in the
+menu bar opens it. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`, `unreadable-image`,
 `debug-disabled`, `no-apple-original`, `write-failed`, `unsupported-type`, `invalid-marks`,
 `no-agent`, `send-failed`, `reply-refused`. The log has one event per line,
