@@ -482,13 +482,12 @@ private struct FlightSpot: NSViewRepresentable {
 
     func makeNSView(context: Context) -> FlightSpotView { FlightSpotView(id: id, picture: picture) }
     func updateNSView(_ view: FlightSpotView, context: Context) {
-        view.id = id
         view.picture = picture
     }
 }
 
 final class FlightSpotView: NSView {
-    var id: UUID
+    let id: UUID
     /// The picture's shape: the flight fills its frame with it, cropping any excess.
     var picture: CGSize
 

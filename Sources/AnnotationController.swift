@@ -502,7 +502,7 @@ final class AnnotationController {
                 let reached = self.pressReaches(win)
                 guard reached || elapsed > Self.eventProbeDeadline else { return false }
                 self.eventProbe = nil
-                Log.write("[annotate] takes events after=\(Int((elapsed * 1000).rounded()))ms\(reached ? "" : " deadline")")
+                Log.write("[annotate] takes events after=\(Int((elapsed * 1000).rounded()))ms reached=\(reached)")
                 self.onTakesEvents?(key)
                 return true
             }
