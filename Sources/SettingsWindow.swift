@@ -205,7 +205,7 @@ struct SettingsView: View {
             ShortcutSetting()
             if settings.data.usesDoubleTap, !ModifierTap.trusted(prompt: false) {
                 LabeledContent("The double tap needs Accessibility permission.") {
-                    Button("Open System Settings") { Accessibility.openSystemSettings() }
+                    Button("Allow in System Settings") { Accessibility.request() }
                 }
             }
         }
@@ -528,6 +528,34 @@ struct ShortcutSetting: View {
 enum Accessibility {
     static func openSystemSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+    }
+
+    /// Asks for trust the way macOS offers it: its own alert, which lists the app in the pane and
+    /// whose button opens it. The pane is opened here only when that alert has not come up by
+    /// `alertWait`. Opening both at once put the pane in front of the alert, which then waited
+    /// behind it and outlived the grant.
+    @MainActor
+    static func request() {
+        _ = ModifierTap.trusted(prompt: true)
+        Task { @MainActor in
+            let deadline = ContinuousClock.now + alertWait
+            while ContinuousClock.now < deadline {
+                if alertIsUp { return }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            if !alertIsUp { openSystemSettings() }
+        }
+    }
+
+    /// Measured: the alert was up within half a second of the request.
+    private static let alertWait: Duration = .milliseconds(1500)
+
+    /// The alert belongs to macOS's `universalAccessAuthWarn` process. Window owner names need no
+    /// Screen Recording permission. If Apple renames the process, this reads false and the pane
+    /// opens as well, which is how this worked before.
+    private static var alertIsUp: Bool {
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        return windows.contains { $0[kCGWindowOwnerName as String] as? String == "universalAccessAuthWarn" }
     }
 }
 

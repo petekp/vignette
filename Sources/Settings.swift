@@ -367,8 +367,6 @@ final class Settings: ObservableObject {
     let startupNotice: String?
     /// True when the file was written by a newer Vignette. Writes would drop its keys, so none happen.
     private(set) var readOnly = false
-    /// True when this launch created the settings file: the app has never run on this machine.
-    let firstLaunch: Bool
 
     private var directorySource: DispatchSourceFileSystemObject?
     private var fileSource: DispatchSourceFileSystemObject?
@@ -382,7 +380,6 @@ final class Settings: ObservableObject {
         data = boot.data
         startupNotice = boot.notice
         readOnly = boot.readOnly
-        firstLaunch = boot.firstLaunch
         for line in boot.log { Log.write("[settings] \(line)") }
         if let written = boot.written { lastWritten = written }
         lastWrittenData = boot.data
@@ -405,7 +402,6 @@ final class Settings: ObservableObject {
         var log: [String] = []
         var notice: String?
         var readOnly = false
-        var firstLaunch = false
         var written: Data?
     }
 
@@ -444,7 +440,10 @@ final class Settings: ObservableObject {
             // 5.6 seconds (docs/replacing-apple-capture-2026-09-22.md), which makes copy on capture
             // paste what was on the clipboard before. `appleOriginal` above holds the way back.
             d.appleThumbnail = false
-            var boot = Bootstrap(data: d, firstLaunch: true)
+            // With Apple's thumbnail off, a restart that does not bring Vignette back leaves every
+            // capture silent. The setup window shows this switch, and closing it registers the item.
+            d.launchAtLogin = true
+            var boot = Bootstrap(data: d)
             boot.written = (try? encoder().encode(d)).flatMap { write($0, to: url) }
             boot.log.append("created \(url.path)")
             return boot

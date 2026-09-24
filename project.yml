@@ -44,6 +44,11 @@ targets:
         ReleasesURL: https://github.com/petekp/vignette/releases/latest
         LSUIElement: true
         NSHighResolutionCapable: true
+        # Shown in macOS's prompt the first time the app reads a protected folder, which is at
+        # launch when screenshots are saved to one of these.
+        NSDesktopFolderUsageDescription: $(PRODUCT_NAME) shows the screenshots macOS saves to your Desktop.
+        NSDocumentsFolderUsageDescription: $(PRODUCT_NAME) shows the screenshots macOS saves to your Documents folder.
+        NSDownloadsFolderUsageDescription: $(PRODUCT_NAME) shows the screenshots macOS saves to your Downloads folder.
         CFBundleURLTypes:
           - CFBundleURLName: $(PRODUCT_BUNDLE_IDENTIFIER)
             CFBundleURLSchemes: [vignette]

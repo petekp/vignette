@@ -5,6 +5,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     static func main() {
         let app = NSApplication.shared
+        AppLocation.offerMove()
         let delegate = AppDelegate()
         app.delegate = delegate
         app.run()
@@ -46,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         replaceOlderInstances()
+        AppLocation.ejectDiskImageIfAsked()
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppDelegate.makeMainMenu()
         let settingsSource = Settings.isOverridden ? " (VIGNETTE_SETTINGS)" : ""
@@ -96,18 +98,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         registerHotKey()
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
         if let notice = settings.startupNotice { thumbnail.showFeedback(notice) }
-        // The setup window says the watch folder and offers launch at login, so the toast that used
-        // to say both is only for a launch that is not showing it.
-        else if settings.firstLaunch, !setupWindow.isUnasked {
-            thumbnail.showFeedback("\(Identity.name) is watching \(settings.data.screenshotsFolder). Launch at login is off; turn it on in Settings.")
-        }
-        // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
-        LoginItem.apply(settings.data.launchAtLogin)
         // Setup comes first and has the launch to itself: two windows competing for a first-time
         // user is worse than the skill offer waiting until the next launch.
         if setupWindow.isUnasked {
-            setupWindow.show(hasScreenshots: { [weak self] in self?.hasScreenshots ?? false })
+            // The login item waits for the window to close, which applies the switch it shows.
+            setupWindow.show(hasScreenshots: { [weak self] in self?.hasScreenshots ?? false },
+                             folderDenied: { [weak self] in self?.watcher?.isDenied ?? false })
         } else {
+            // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
+            LoginItem.apply(settings.data.launchAtLogin)
             startAgentSkill()
         }
         // The contract for agents: after this line every command answers.

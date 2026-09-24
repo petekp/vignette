@@ -25,7 +25,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     /// when it opens, so a launch quit part way through asks again.
     var isUnasked: Bool { settings.data.setupChoice == .unasked }
 
-    func show(hasScreenshots: @escaping () -> Bool) {
+    func show(hasScreenshots: @escaping () -> Bool, folderDenied: @escaping () -> Bool) {
         if let win = window {
             win.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -36,6 +36,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         // the SwiftUI layout, including the parts that change from the view's own state, which a
         // one-shot measurement at show time cannot see.
         let host = NSHostingController(rootView: SetupView(hasScreenshots: hasScreenshots,
+                                                          folderDenied: folderDenied,
+                                                          granted: { [weak self] in self?.granted() },
                                                           done: { [weak self] in self?.close() }))
         host.sizingOptions = [.preferredContentSize]
         let win = NSWindow(contentViewController: host)
@@ -59,9 +61,18 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
 
     private func close() { window?.performClose(nil) }
 
+    /// The grant is made in System Settings, which leaves this window behind it. What comes next,
+    /// trying the keys, is asked here, so the window comes back.
+    private func granted() {
+        Log.write("[setup] Accessibility granted")
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func windowWillClose(_ notification: Notification) {
         settings.update { $0.setup = SetupState.done.rawValue }
-        Log.write("[setup] done hotkey=\(settings.data.recentHotkey) trusted=\(ModifierTap.trusted(prompt: false))")
+        Log.write("[setup] done hotkey=\(settings.data.recentHotkey) trusted=\(ModifierTap.trusted(prompt: false)) launchAtLogin=\(settings.data.launchAtLogin)")
+        LoginItem.apply(settings.data.launchAtLogin)
         DispatchQueue.main.async { FocusReturn.shared.restore(reason: "setup closed") }
     }
 }
@@ -73,12 +84,15 @@ struct SetupView: View {
     /// Asked again on every poll rather than read once: a folder filled while the window is open
     /// is the case the window is asking the user to create.
     let hasScreenshots: () -> Bool
+    let folderDenied: () -> Bool
+    let granted: () -> Void
     let done: () -> Void
 
     @ObservedObject private var settings = Settings.shared
     @State private var trusted = ModifierTap.trusted(prompt: false)
     @State private var fired = false
     @State private var hasShots = true
+    @State private var denied = false
     /// AXIsProcessTrusted does not announce a change, so the only way to know the user came back
     /// from System Settings having flipped the switch is to look.
     private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -99,6 +113,13 @@ struct SetupView: View {
                         Text(settings.data.screenshotsFolder).lineLimit(1).truncationMode(.middle)
                             .foregroundStyle(.secondary)
                     }
+                    if denied {
+                        label("Vignette isn't allowed to read this folder.",
+                              symbol: "exclamationmark.triangle.fill", tint: .orange)
+                        Button("Allow in System Settings") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)
+                        }
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -109,10 +130,16 @@ struct SetupView: View {
             .padding(.horizontal, 20).padding(.bottom, 20)
         }
         .frame(width: SetupView.width)
-        .onAppear { hasShots = hasScreenshots() }
-        .onReceive(poll) { _ in
-            trusted = ModifierTap.trusted(prompt: false)
+        .onAppear {
             hasShots = hasScreenshots()
+            denied = folderDenied()
+        }
+        .onReceive(poll) { _ in
+            let now = ModifierTap.trusted(prompt: false)
+            if now, !trusted { granted() }
+            trusted = now
+            hasShots = hasScreenshots()
+            denied = folderDenied()
         }
         .onReceive(NotificationCenter.default.publisher(for: .hotKeyFired)) { _ in fired = true }
         .onChange(of: settings.data.usesDoubleTap) { fired = false }
@@ -133,14 +160,10 @@ struct SetupView: View {
         } else if trusted {
             label("Try it: tap Right Shift twice.", symbol: "hand.tap", tint: .accentColor)
         } else {
+            // A step to take, not a fault: nothing has gone wrong on a fresh install.
             label("Vignette needs Accessibility permission to see a double tap.",
-                  symbol: "exclamationmark.triangle.fill", tint: .orange)
-            Button("Allow in System Settings") {
-                // Raising the dialog and opening the pane: the dialog is the shortest route when
-                // macOS still offers it, and the pane is the only one left once it has stopped.
-                _ = ModifierTap.trusted(prompt: true)
-                Accessibility.openSystemSettings()
-            }
+                  symbol: "lock.fill", tint: .secondary)
+            Button("Allow in System Settings") { Accessibility.request() }
         }
     }
 

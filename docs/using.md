@@ -1,5 +1,19 @@
 # Using Vignette
 
+## Installing
+
+Open the disk image and drag Vignette to Applications. If you open Vignette from the disk image
+instead, it offers to move itself to Applications, reopens from there, and ejects the disk image.
+
+The first launch opens a setup window for [the shortcut](#the-shortcut), with Launch at login on.
+Vignette turns off Apple's floating thumbnail, so if Vignette is not running after a restart, a
+capture shows nothing. The window adds the login item when you close it.
+
+If your screenshots save to the Desktop, Documents or Downloads, macOS asks once whether Vignette
+may read that folder. If you answered Don't Allow, the setup window says so, and its button opens
+Privacy & Security → Files and Folders. Switch Vignette on there, and it starts watching the folder
+without a relaunch.
+
 ## The stack
 
 Press the Vignette shortcut to show your recent screenshots in a column in the corner. It holds 30
@@ -101,10 +115,11 @@ card and the drawing is back. Copy Drawing renders it without opening the editor
 ## The shortcut
 
 The shortcut is either a double tap of right Shift, which is the default, or a key combination.
-The first launch opens a window to choose, and that window is the only thing that asks for
-permission: the double tap needs Vignette trusted for Accessibility, under System Settings →
-Privacy & Security → Accessibility. A key combination needs none. The window says when the grant
-lands and waits for you to press the keys once.
+The first launch opens a window to choose. The double tap needs Vignette trusted for
+Accessibility, and a key combination needs no permission. Allow in System Settings brings up
+macOS's request, and its Open System Settings button opens Privacy & Security → Accessibility with
+Vignette listed. Switch it on, and the setup window comes back and waits for you to press the keys
+once.
 
 Hold the key, or the second tap, and the newest screenshot lifts out of the stack into the
 annotator: capture, tap-tap-hold, draw. The menu bar shows the same two commands, Show Recent

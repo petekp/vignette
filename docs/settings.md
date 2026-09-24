@@ -45,7 +45,9 @@ launch at another file, which is how tests and agents keep away from the real on
   The setup window on first launch is where this is normally chosen.
 - **`hideMenuBarIcon`** removes Vignette's menu bar icon. `vignette://settings` still opens the
   Settings window.
-- **`launchAtLogin`** adds Vignette to your login items.
+- **`launchAtLogin`** adds Vignette to your login items. It starts on, because the first launch
+  turns Apple's thumbnail off: after a restart without Vignette, a capture would show nothing.
+  The setup window shows the switch and applies it when you close the window.
 - **`quickAnnotate`** changes what Done does. On, it copies the image you drew on and closes the
   annotator and the stack at once, instead of returning you to the stack.
 - **`annotateOnCapture`** is Draw on New Screenshots: it opens every new screenshot in the annotator

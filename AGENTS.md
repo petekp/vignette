@@ -332,9 +332,20 @@ the same driven sequence; a single run varies.
   Wake from sleep rescans the folder. The watcher keeps an index of the folder (name and
   modification date, from one bulk listing) so opening the stack and finding the newest screenshot
   never list the folder on the main thread. Every stack open asks for a rescan, which is how the
-  index catches a file changed in place. While the folder cannot be watched (a volume not mounted
-  yet) the reads list it directly and each rescan retries the watch. Copying puts the PNG on the
-  pasteboard and promises the TIFF, which is rendered only when a paste target asks.
+  index catches a file changed in place. The first listing runs on the watcher's queue and launch
+  waits for it half a second: macOS holds the first read of a folder it protects (the Desktop,
+  Documents, Downloads) until the user answers its prompt, and done on the main thread that read
+  held the whole launch for as long as the prompt was up (measured: 4 minutes 20 seconds, no setup
+  window and no menu bar icon). Until a listing has worked the reads answer from the empty index.
+  While the folder cannot be watched (a volume not mounted yet, or macOS refused the app the
+  folder) the reads list it directly and the watch is retried every 2 seconds, logging a change of
+  reason rather than every attempt. A folder that was there but unreadable is indexed silently by
+  the first listing that works, so a grant does not report every file in it as a new capture; a
+  missing folder is indexed as empty and what arrives in it is reported. `isDenied` is what the
+  setup window reads. project.yml gives macOS's folder prompt its explanation
+  (`NSDesktopFolderUsageDescription` and the Documents and Downloads keys).
+  `docs/install-2026-09-24.md` has the measurements. Copying puts the PNG on the pasteboard and
+  promises the TIFF, which is rendered only when a paste target asks.
 - A screen recording is a `Screenshot` whose `kind` is `.recording`, read from the `.mov`
   extension alone (`Screenshot.recordingExtensions`). Its card shows the first frame, decoded on
   the thumbnail queue (`Thumbnailer.posterFrame`, about 90 ms), and a badge with its length. Each
@@ -729,10 +740,15 @@ the same driven sequence; a single run varies.
   the agent-skill offer waits for the next one rather than competing for a first-time user. Its job
   is the shortcut, because the default is `double-rshift` and that needs Accessibility. Nothing else
   may raise that dialog: `ModifierTap` is constructed with `prompt: false`, so the only
-  `trusted(prompt: true)` in the app is the window's own button, pressed after the user has chosen
-  the double tap. macOS gives an app few chances at the dialog, and one spent during launch on a
-  question nobody asked is the one people dismiss. The window learns the grant landed by polling
-  (AXIsProcessTrusted announces nothing) and learns the shortcut works from the `.hotKeyFired`
+  `trusted(prompt: true)` in the app is `Accessibility.request()`, which runs from a button the user
+  pressed: this window's, after choosing the double tap, and the Settings window's. A dialog raised
+  during launch, on a question nobody asked, is the one people dismiss. `request()` raises macOS's
+  own alert and nothing else, and opens the pane itself only when no `universalAccessAuthWarn`
+  window is up 1.5 s later (measured: the alert came up within half a second). Opening both at
+  once put the pane in front of the alert, which then waited behind it and outlived the grant, and
+  each further press queued one more alert to come up after it. The window learns the grant landed
+  by polling (AXIsProcessTrusted announces nothing), comes back to the front then, since System
+  Settings was covering it, and learns the shortcut works from the `.hotKeyFired`
   notification, which `registerHotKey`'s `fire` posts: the keys firing is what proves the setup
   worked, since the stack appearing does not on a Mac with no screenshots yet. That same poll reads
   the watch folder's count, and an empty folder asks for a capture first, ahead of the fired state:
@@ -742,7 +758,24 @@ the same driven sequence; a single run varies.
   that silence: both used to answer only in the log. `setup` in
   settings.json records `unasked` then `done`, written when the window closes rather than when it
   opens, so a launch quit part way through asks again. `ShortcutSetting` is the one shortcut
-  control, shared with the Settings window's General tab.
+  control, shared with the Settings window's General tab. A new settings file starts with
+  `launchAtLogin` on: first run turns Apple's thumbnail off, so a restart that does not bring
+  Vignette back leaves every capture silent. The window shows the switch, and the login item is
+  registered when it closes, not during the launch it is showing in. When macOS refused the app
+  the watch folder (`ScreenshotWatcher.isDenied`), the window says so under the folder and its
+  button opens Privacy & Security > Files and Folders.
+- A launch from the disk image offers to move the app to Applications (`AppLocation.swift`),
+  from `main` before `Settings.shared` exists, so the copy on the image never creates the settings
+  file or touches Apple's defaults. "On the disk image" is a read-only volume or a translocated
+  path; a notarized, stapled image is not translocated (observed), so the volume check is the one
+  that fires for a real download. The move copies beside the destination, clears the quarantine
+  flag (the user already answered Gatekeeper for this app), puts an older copy in the Trash, opens
+  the new copy as a new instance, and exits; the new copy replaces the old instance as any launch
+  does and detaches the image with `hdiutil detach`, because `NSWorkspace.unmountAndEjectDevice`
+  unmounted an APFS image's volume and left the image attached, so opening the same file again
+  mounted nothing. `VIGNETTE_SETTINGS` is passed to the moved copy, so a test launch stays on its
+  scratch file. The destination is /Applications, or ~/Applications for a user who cannot write
+  there.
 - The agent skill (`skills/vignette/SKILL.md`) ships in the bundle as a folder resource
   (project.yml), and `SkillInstaller.swift` copies it out. A root is an agent's own directory,
   `~/.claude` or `~/.codex`, and only one that exists; the skill lands in `<root>/skills/vignette`.
