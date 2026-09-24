@@ -265,9 +265,9 @@ the same driven sequence; a single run varies.
   was: `hide` springs the level back to 1 first and comes down once that has arrived
   (`AnnotationController.fitBeforeHide`). `docs/shadow-2026-09-17.md` and
   `docs/handover-2026-09-18.md` have the frames and what each moment cost.
-- The flight layer takes the presses on a flying card and passes every other press.
-  `TransitionLayer`'s panel covers the screen and is clear outside its flights, so the window server
-  gives it only the presses on a flight's pixels; a flight's shadow passes them, as the matte rule
+- The flight layer takes the presses on a flying card or a swallow rect, and passes every other
+  press. `TransitionLayer`'s panel covers the screen and is clear outside those, so the window
+  server gives it only the presses on their pixels; a flight's shadow passes them, as the matte rule
   below says. Its content view, `PressCatcher`, takes each press with its drags and its release, and
   `FlightPress`, a pure state machine, decides where they go. A press on the card flying into the
   editor, while the reducer is in `flyingOut` or `annotating` for it, is held until the editor's
@@ -285,26 +285,36 @@ the same driven sequence; a single run varies.
   selected text to move it. A double-click handed over does not zoom before the landing (the zoom
   rule below). A press on any other flight, such as a card flying home, one leaving with the stack
   or a stitch's pieces, is swallowed up to its release. So is the rest of a press held for an image
-  that turns back, after Esc, a `cancel` or another image opening. The panel stays ordered in until
-  a press's release, because the window server sends the drag and the release to the window that
-  took the press. A release that never arrives would leave the editor mid-stroke and the panel up:
-  in driven presses on flights home, 4 releases in 29 reached no window at all. So `watchRelease`
-  reads `NSEvent.pressedMouseButtons` every 50 ms while a press is down, and after two readings of
-  up in a row it ends the press and logs `[flight] release missed`. A stack presented while the
-  panel is up and empty is ordered above it at the same level, so the first flight on an empty layer
-  brings the layer back to the front (`showPanel`). A pointer over a flight is over the flight
-  layer's window, so the stack gets a hover exit. A card landing from the editor therefore takes its
-  hover from where the pointer is (`ThumbnailController.hover(landing:)`): hovered when the pointer
-  is on its frame and the topmost window there is this app's, and not hovered otherwise. Two limits
-  remain. The window server applies a window's new pixels 6 to about 30 ms late, and a press in that
-  interval reaches what was drawn there before. At motion 0, one press on the card flying into the
-  editor reached the window behind. The likely cause, not confirmed, is that lag: at motion 0 the
-  flight layer and the editor's alpha reach the window server within two run-loop turns of each
-  other, and both are new to it. It needs no fix: `show` comes 45 to 60 ms after the click that
-  opened the card, a press falls through only if it lands where the editor appears within about
-  30 ms of `show`, and a double-click's second click lands on the card. Reduce Motion forces motion 0,
-  so this is a user's case too, not only a script's. `docs/flight-press-2026-09-23.md` has the
-  measurements.
+  that turns back, after Esc, a `cancel` or another image opening. For `NSEvent.doubleClickInterval`
+  after a click opens a card in the editor, or swaps the editor to one, the layer also swallows
+  presses on that card's slot, as the hovered card drew it
+  (`ThumbnailController.swallowSecondClick(on:)`, `StackLayout.hovered`,
+  `TransitionLayer.swallowPresses(in:for:on:)`). The `SwallowRect` is drawn with the column's hair
+  of alpha, so the window server gives the layer the presses there, above the stack. A press there
+  is swallowed with its drag and release, before any flight over it. Opening a card narrows the
+  stack away from its slot and can slide the card above into it, so without this the second click of
+  a double-click reached the app behind the narrowed stack, or opened the card that slid into the
+  slot. Return and URL opens have no click and swallow nothing. The layer orders out once it has no
+  flights, no swallow rects and no press down (`orderOutIfIdle`). It waits for the release because
+  the window server sends a press's drag and release to the window that took the press. A release
+  that never arrives would leave the editor mid-stroke and the layer up: in driven presses on
+  flights home, 4 releases in 29 reached no window at all. So `watchRelease` reads
+  `NSEvent.pressedMouseButtons` every 50 ms while a press is down, and after two readings of up in a
+  row it ends the press and logs `[flight] release missed`. A stack presented while the layer is up
+  with no flights is ordered above it at the same level, so the first flight or swallow rect on a
+  layer with no flights brings it back to the front (`showPanel`). A pointer over a flight is over
+  the flight layer's window, so the stack gets a hover exit. A card landing from the editor
+  therefore takes its hover from where the pointer is (`ThumbnailController.hover(landing:)`):
+  hovered when the pointer is on its frame and the topmost window there is this app's, and not
+  hovered otherwise. Two limits remain. The window server applies a window's new pixels 6 to about
+  30 ms late, and a press in that interval reaches what was drawn there before. At motion 0, one
+  press on the card flying into the editor reached the window behind. The likely cause, not
+  confirmed, is that lag: at motion 0 the flight layer and the editor's alpha reach the window
+  server within two run-loop turns of each other, and both are new to it. It needs no fix: `show`
+  comes 45 to 60 ms after the click that opened the card, a press falls through only if it lands
+  where the editor appears within about 30 ms of `show`, and a double-click's second click lands on
+  the card's slot, which swallows it. Reduce Motion forces motion 0, so this is a user's case too,
+  not only a script's. `docs/flight-press-2026-09-23.md` has the measurements.
 - The stack runs to the bottom of the screen and steps around the Dock. `StackLayout.area` builds
   one `StackArea` from the screen: `bounds` takes its sides and top from `visibleFrame` and its
   bottom from the screen's own `frame`; `safeBottom` is the height AppKit reserves for a bottom
@@ -418,7 +428,9 @@ the same driven sequence; a single run varies.
   the gap (`widthScale(clearing:visibleFrame:)`). Opening and closing spring it through
   `ui.relayoutDuration`; a zoom sets it straight, in the same turn as the frame. Only the recent
   stack does this: a lone thumbnail leaves the panel when the annotator opens, and a
-  `vignette://annotate` with no stack showing gets the whole visible frame.
+  `vignette://annotate` with no stack showing gets the whole visible frame. Because the narrowing
+  moves a card away from where it was clicked, a click that opens a card swallows presses on its
+  slot for a double-click's interval (the flight-layer rule above).
   `docs/stack-room-2026-09-17.md` has the numbers, and `docs/stack-narrowing-2026-09-23.md` what a
   frame of the narrowing costs and the options for making it cheaper.
 - The click hint (Draw on a screenshot, Open on a recording) goes out over the card's two corner
