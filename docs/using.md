@@ -60,8 +60,8 @@ the originals and copied. Two or three pieces stack, and more go in a grid. Each
 the card's circle showed. The selected cards fly together into the new card, which takes their place
 at the bottom of the stack, or opens in the annotator when Draw on New Screenshots is on.
 
-Drag a card out to drop it as a file on a chat window, Finder, or a terminal. A selected card drags
-the whole selection.
+Drag a card out to drop it on a chat window, Finder, or a terminal. A card you drew on drops the
+drawing, and any other card drops the screenshot. A selected card drags the whole selection.
 
 ## The annotator
 

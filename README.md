@@ -9,7 +9,7 @@ behind Vignette.
 
 ## See it
 
-https://github.com/user-attachments/assets/cb06c65f-ba08-436f-8e7e-4df31729ad36
+![Recent screenshots stacked as cards down the right edge of a Mac screen, and one of them open in the editor beside them, with a red rectangle and arrow drawn on it.](site/stack-and-editor.png)
 
 ## What it does
 

@@ -558,12 +558,15 @@ the same driven sequence; a single run varies.
   removes what the web editor left, its drafts and WebKit's data, where they are still there
   (`Drawings.removeWebEditorData`, one `[app] removed web editor data <path>` line each); drafts are
   not carried over.
-- Done, Send and Copy Drawing render on `RenderingQueue.shared`, one at a time, off the main thread:
-  one rendering of the largest capture holds two bitmaps of about 85 MB. Done's rendering, and Cmd+C
-  with nothing selected, go `.first`, ahead of any rendering that has not started, because Done's
-  clipboard is a promise. `Clipboard.copyRendering` puts the path on as text at once and promises
+- Done, Send, Copy Drawing and a drag of a card with a drawing render on `RenderingQueue.shared`, one
+  at a time, off the main thread: one rendering of the largest capture holds two bitmaps of about
+  85 MB. Done's rendering, and Cmd+C with nothing selected, go `.first`, ahead of any rendering that
+  has not started, because Done's clipboard is a promise. `Clipboard.copyRendering` puts the path on as text at once and promises
   the PNG, the TIFF and the file URL; a paste that comes first waits for the rendering on the main
   thread for up to 5 s, then gets nothing and logs `[clipboard] error`. The card goes home at once.
+  A dragged card with a drawing carries the same item (`Clipboard.renderingItem`), rendered in turn
+  from the moment the drag begins and written as `<name>-annotated.png`; a card without one drops
+  its file.
   A rendering that fails clears the clipboard, unless something else was copied since, and takes the
   card's copied mark back (`takeBackCopied`), with the toast "Could not copy the drawing; see the
   log". `[annotate] done <file> <n> bytes, copied` is logged when the file is written. A drawing
