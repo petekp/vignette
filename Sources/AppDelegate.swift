@@ -346,7 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         ])
         thumbnail.drawings = drawings
         drawings.onChange = { [weak self] key, drawing in self?.thumbnail.setDrawing(drawing, for: key) }
-        drawings.sweep { FileManager.default.fileExists(atPath: $0) }
+        drawings.sweep(watchFolder: watchFolder) { FileManager.default.fileExists(atPath: $0) }
     }
 
     /// Agents' marks joining a screenshot's drawing: the one open in the editor, or the stored one.

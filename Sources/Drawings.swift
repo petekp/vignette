@@ -82,8 +82,14 @@ final class Drawings {
         for url in removed { changed(url.path, nil) }
     }
 
-    /// Removes the drawings whose screenshot is gone. Once, at launch.
-    func sweep(keeping exists: (String) -> Bool) {
+    /// Removes the drawings whose screenshot is gone. Once, at launch, and not at all while the watch
+    /// folder itself is missing: a volume that has not mounted yet would read as every screenshot
+    /// gone, and a swept drawing is deleted, not set aside.
+    func sweep(watchFolder: URL, keeping exists: (String) -> Bool) {
+        guard FileManager.default.fileExists(atPath: watchFolder.path) else {
+            Log.write("[drawings] \(keys.count) dir=\(store.directory.path) not swept: the watch folder \(watchFolder.path) is missing")
+            return
+        }
         for key in keys.sorted() where !exists(key) {
             guard (try? store.remove(key: key)) != nil else { continue }
             keys.remove(key)

@@ -325,6 +325,31 @@ final class DrawingsTests: XCTestCase {
         XCTAssertNil(changed[1], "a removal says there is no drawing")
     }
 
+    /// A watch folder on a volume that has not mounted yet reads as every screenshot gone, and a
+    /// swept drawing is deleted. The sweep waits for a launch that can see the folder.
+    func testTheSweepKeepsEveryDrawingWhileTheWatchFolderIsMissing() throws {
+        let folder = dir.appendingPathComponent("Screenshots")
+        let kept = folder.appendingPathComponent("kept.png").path, gone = folder.appendingPathComponent("gone.png").path
+        let marks = [Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))]
+        for key in [kept, gone] {
+            try drawings.store.write(Drawing(key: key, pixels: PixelSize(width: 300, height: 200), pointScale: 1, marks: marks))
+        }
+        let exists = { (path: String) in FileManager.default.fileExists(atPath: path) }
+
+        var launch = Drawings(store: drawings.store)
+        launch.sweep(watchFolder: folder, keeping: exists)
+        XCTAssertEqual(launch.keys, [kept, gone])
+        XCTAssertEqual(Drawings(store: drawings.store).keys, [kept, gone], "nothing was removed from disk")
+
+        // The folder is there at the next launch: only the screenshot that is really gone loses its drawing.
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        XCTAssertTrue(FileManager.default.createFile(atPath: kept, contents: Data()))
+        launch = Drawings(store: drawings.store)
+        launch.sweep(watchFolder: folder, keeping: exists)
+        XCTAssertEqual(launch.keys, [kept])
+        XCTAssertEqual(Drawings(store: drawings.store).keys, [kept])
+    }
+
     func testALaunchRemovesWhatTheWebEditorLeft() throws {
         // The drafts folders and WebKit's two, as a launch names them, inside a scratch home.
         let left = ["Application Support/app/drafts", "Caches/app/drafts", "Caches/app/WebKit/NetworkCache", "WebKit/app/WebsiteData"]
