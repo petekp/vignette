@@ -507,6 +507,9 @@ Return still copies the drawing and closes the editor. It stays the main way to 
 - A press on the card while it flies in draws, as a press in the editor would. The stroke starts at
   the point of the picture that was under the pointer, then follows the pointer. It shows when the
   card lands.
+- A press on the text being typed, made while the card is still flying, goes to the text. It places
+  the caret, a drag selects, a double-click selects a word and a triple-click a paragraph, and Shift
+  extends the selection. Such a press cannot drag selected text to move it.
 - If the card turns back while the button is down, after Esc or another image opening, that press
   draws nothing.
 
@@ -561,7 +564,8 @@ Return still copies the drawing and closes the editor. It stays the main way to 
 - Cards, flights, stitches and dragged cards draw in the live text style and arrowhead, as the
   editor does.
 - A press on a card flying anywhere but into the editor does nothing, up to its release. That is a
-  card flying home, or one leaving with the stack. The card takes clicks again once it lands.
+  card flying home, one leaving with the stack, or the pieces of a stitch. The card takes clicks
+  again once it lands.
 - A press on a flying card's shadow, or beside the card, reaches whatever is under it. Right-click
   and scroll on a flying card do nothing.
 - [flight-press-2026-09-23.md](flight-press-2026-09-23.md) has the measurements, and two cases in
@@ -609,7 +613,8 @@ A mark is drawn in red unless red is too close to what it covers:
 - The host owns the zoom: pinch, Cmd+scroll or Ctrl+scroll, Cmd+Plus, Cmd+Minus, Cmd+0, and the
   two-finger double tap. A plain scroll pans a zoomed-in image.
 - A double-click with Select on empty space asks the host for smart zoom.
-- The zoom keys and the double-click do nothing while the card is still flying in.
+- The zoom keys and the double-click do nothing until the card has landed, a double-click on the
+  flying card included.
 - The editor draws at whatever zoom the host sets, per Decision 17. The frame and the drawing move in
   the same frame.
 

@@ -15,11 +15,12 @@ limits still open. The code is `Sources/FlightPress.swift`, the press handling i
 |---|---|
 | On the card flying into the editor | It is held until the editor's window takes presses. Then it goes to the editor with every drag since, in order, and the rest of the press follows it there. |
 | On the card flying in, when the image turns back | The image turns back after Esc, a `cancel` or another image opening. What is held goes nowhere, and the rest of the press is swallowed. |
-| On any other flight | It is swallowed up to its release. This covers a card flying home and a card leaving with the stack. |
+| On any other flight | It is swallowed up to its release. This covers a card flying home, a card leaving with the stack, and a stitch's pieces. |
 | On a flight's shadow, or beside a flight | It reaches whatever is under it. Beside the card flying into the editor, that is a click outside the editor, which closes it. |
 | Right-click, scroll or another button on a flying card | Nothing. The flight layer takes it, and nothing handles it. |
 
-Keys still reach the editor during the flight, as they did before.
+Keys still reach the editor during the flight, as they did before. A press handed over onto the
+text being typed goes to the text, and `docs/editor.md` says what it does there.
 
 The reasons:
 
@@ -40,6 +41,12 @@ The reasons:
 - **Ink appears when the flight lifts.** The flight covers the editor until it lifts, at `arrived`.
   Ink drawn after the handover stays hidden under it until then, for about 0.1 to 0.2 s at motion 1,
   and appears all at once.
+- **A double-click on the flying card does not zoom.** The editor's zoom keys and double-click wait
+  for the flight to land. A zoom before then would grow the window under a flight image still at
+  the fitted frame, and the new size would show as a step when the flight lifted.
+- **A card landing from the editor takes its hover from the pointer.** A pointer over a flight is
+  over the flight layer's window, so the stack sees the pointer leave. When the card lands, it is
+  hovered if the pointer is on it, and not otherwise.
 
 ## Measurements
 
@@ -67,8 +74,8 @@ trials of a scratch harness, it took presses 5.7 to 25.4 ms after `show` set alp
 notification came with the change, and `CATransaction.flush()` right after setting the alpha did
 not make it sooner. Nothing announces the moment, so the app asks for it. `probeEvents` asks the
 window server every millisecond from `show` which window a press at the frame's centre would reach,
-looking through this app's windows above it. It logs `[annotate] takes events after=<n>ms`. In the
-app, 95 answers came back:
+looking through this app's windows above it. It logs
+`[annotate] takes events after=<n>ms reached=true|false`. In the app, 95 answers came back:
 
 | Answers | Time after `show` | Conditions |
 |---|---|---|
@@ -76,9 +83,9 @@ app, 95 answers came back:
 | 9 | 46 to 97 ms | during traces, with a load average of 15 to 28 |
 | 6 | the 0.5 s deadline | the Mac going to sleep, or asleep |
 
-**The deadline is 0.5 s.** After it, the press is handed over anyway, and the log line ends in
-` deadline`. Relayed events reach the editor whatever the window server says. A flight kept over
-the frame for want of an answer would hide what the editor draws.
+**The deadline is 0.5 s.** After it, the press is handed over anyway, and the log line says
+`reached=false`. Events handed over reach the editor whatever the window server says. A flight
+kept over the frame for want of an answer would hide what the editor draws.
 
 **The flight into the editor lifts no earlier than the answer.** It also still waits for `arrived`
 and the loaded image. At motion 1 the answer comes long before `arrived`, so nothing on screen
@@ -110,9 +117,10 @@ of a drag.
   `idle`. No drawing was stored, and nothing reached the catcher.
 - 14 presses on flights home and 3 on dismissals were all swallowed, with no strays. Each was at a
   point where the window server showed the flight layer at that moment.
-- A stitch's pieces converge inside the stack's column. The stack panel, also at `.statusBar`,
-  already takes every press there, and a press on a converging piece did nothing. The flight layer
-  taking such a press was not shown separately.
+- A stitch's pieces converge inside the stack's column. The flight layer is above the stack's
+  panel during a converge, as a window-server probe showed. So a press on a converging piece
+  reaches the flight layer, which swallows it as it does on any flight but the one into the editor.
+  The first drive reported the stack panel at that point, and that reading was wrong.
 - A press at 60,900, beside a card flying into the editor, reached the catcher. It closed the
   session the way any click outside does.
 
