@@ -135,8 +135,9 @@ Pete asked for this on 2026-09-23, after 4c measured the flights that narrow the
   numbers.
 - A press on a card flying into the editor never reaches the app behind. It goes to the editor once
   the editor is up, so a drag begun during the flight draws. A press on any other flight is
-  swallowed. Built, with the review's fixes. Open: whether the second click of a double-click on a
-  card can land where the narrowing column was, and reach the app behind.
+  swallowed. Built, with the review's fixes. The second click of a double-click on a card could land
+  where the narrowing column had been and reach the app behind; Pete had it fixed, and the card's
+  slot now swallows presses for the double-click interval.
 
 ### Decisions made while planning 4
 
