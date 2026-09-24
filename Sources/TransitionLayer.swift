@@ -5,6 +5,7 @@ import SwiftUI
 /// SwiftUI state, so a flight that is retargeted mid-way turns smoothly instead of restarting. It
 /// takes the presses on a flying card and nothing else: the window server gives a window only the
 /// presses on pixels it draws, and passes one on a clear pixel or on a shadow (measured 2026-09-23).
+/// That holds only while `ignoresMouseEvents` is never set: set to false, it takes clear pixels too.
 @MainActor
 final class TransitionLayer {
     /// The ends of the straight path a flight is on, and the shape it follows along it.
