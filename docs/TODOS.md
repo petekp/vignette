@@ -75,3 +75,6 @@ Waits on two things, either way:
   online-only Dropbox placeholders at a large `recentCount` ever make it show, read the attribute
   where the thumbnail decodes, off the main thread, and let the badge appear with the image.
   Measure on the real folder first.
+- A stitch draws a piece with an orientation flag unturned, and skips that piece's marks, because
+  the drawing's size is the turned one. `Rendering` applies the flag; `Stitch` does not. Only an
+  image pushed through `add` can carry one: screenshots never do. Pete, 2026-09-23: left for now.
