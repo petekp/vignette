@@ -105,8 +105,8 @@ the measurements and the reasoning; a rule here points at its note.
    the edge and named in a `[marks] text too long for <name>` line, which is the only thing that
    says so, since `[add]` still answers `ok` (`docs/pushed-text-2026-09-19.md`).
    `[annotate] loaded <ms>ms <name>` reports when the editor has the screen-size decode of the
-   image, and `[annotate] takes events after=<n>ms` when its window starts taking presses; the
-   flight's image waits for both before it lifts.
+   image, and `[annotate] takes events after=<n>ms reached=true|false` when its window starts
+   taking presses; the flight's image waits for both before it lifts.
 4. Look: `screencapture -x /tmp/s.png`, then crop the corner with `sips` and read the PNG.
    Send keys with `osascript -e 'tell application "System Events" to key code 36 using command down'`
    (Return finishes annotating, Cmd+Return too while typing, key code 53 is Esc). The recent stack
@@ -254,15 +254,15 @@ the same driven sequence; a single run varies.
   window in at alpha 0 and makes it key, so a tool key or Esc pressed during the flight already
   reaches the editor. Presses come later: the window server passes every press through a window at
   alpha 0, and starts giving the window its presses 6 to 39 ms after `show` sets alpha 1, or up to
-  97 ms under load. Nothing announces that moment, so `AnnotationController.probeEvents` asks
-  the window server every millisecond from `show` whether a press at the frame's centre reaches the
-  window, looking through this app's windows above it. It gives up after 0.5 s, and
-  `[annotate] takes events after=<n>ms` reports the answer, with ` deadline` appended when it gave
-  up. Until then the flight takes the presses (the next rule). Done or Esc is accepted between the
-  two moments, so the `arrived` callback is guarded on the key, not the phase. A flight can also go
-  without arriving, and a third callback, `dropped`, runs then, so the window never keeps a shadow
-  that is switched off. The window is at the fitted frame by then whatever the zoom was: `hide`
-  springs the level back to 1 first and comes down once that has arrived
+  97 ms under load. Nothing announces that moment, so `AnnotationController.probeEvents` asks the
+  window server every millisecond from `show` whether a press at the frame's centre reaches the
+  window, looking through this app's windows above it. It gives up after 0.5 s.
+  `[annotate] takes events after=<n>ms reached=true|false` reports the answer, and `reached=false`
+  means it gave up. Until then the flight takes the presses (the next rule). Done or Esc is accepted
+  between the two moments, so the `arrived` callback is guarded on the key, not the phase. A flight
+  can also go without arriving, and a third callback, `dropped`, runs then, so the window never
+  keeps a shadow that is switched off. The window is at the fitted frame by then whatever the zoom
+  was: `hide` springs the level back to 1 first and comes down once that has arrived
   (`AnnotationController.fitBeforeHide`). `docs/shadow-2026-09-17.md` and
   `docs/handover-2026-09-18.md` have the frames and what each moment cost.
 - The flight layer takes the presses on a flying card and passes every other press.
@@ -277,14 +277,25 @@ the same driven sequence; a single run varies.
   it happened: each flight carries a `FlightSpotView`, placed before the `Bow`, and
   `FlightSpotView.fraction(of:in:picture:)` maps the press onto the aspect-filled picture. After the
   handover, the rest of the press is placed by where the pointer is on screen. Marks drawn before
-  the flight lifts appear when it lifts. A press on any other flight, a card flying home or one
-  leaving with the stack, is swallowed up to its release. So is the rest of a press held for an
-  image that turns back, after Esc, a `cancel` or another image opening. The panel stays ordered in
-  until a press's release, because the window server sends the drag and the release to the window
-  that took the press. A release that never arrives would leave the editor mid-stroke and the panel
-  up: in driven presses on flights home, 4 releases in 29 reached no window at all. So
-  `watchRelease` reads `NSEvent.pressedMouseButtons` every 50 ms while a press is down, and after
-  two readings of up in a row it ends the press and logs `[flight] release missed`. Two limits
+  the flight lifts appear when it lifts. A press handed over onto the text being typed goes to the
+  text. `pressText` places the caret, or selects the word or the paragraph as the click count says;
+  a drag extends that, and Shift extends the current selection. The text view cannot track that
+  press itself, because its tracking loop would read the drag and the release from the event queue,
+  where they are the flight layer's, in that window's coordinates. So such a press cannot drag
+  selected text to move it. A double-click handed over does not zoom before the landing (the zoom
+  rule below). A press on any other flight, such as a card flying home, one leaving with the stack
+  or a stitch's pieces, is swallowed up to its release. So is the rest of a press held for an image
+  that turns back, after Esc, a `cancel` or another image opening. The panel stays ordered in until
+  a press's release, because the window server sends the drag and the release to the window that
+  took the press. A release that never arrives would leave the editor mid-stroke and the panel up:
+  in driven presses on flights home, 4 releases in 29 reached no window at all. So `watchRelease`
+  reads `NSEvent.pressedMouseButtons` every 50 ms while a press is down, and after two readings of
+  up in a row it ends the press and logs `[flight] release missed`. A stack presented while the
+  panel is up and empty is ordered above it at the same level, so the first flight on an empty layer
+  brings the layer back to the front (`showPanel`). A pointer over a flight is over the flight
+  layer's window, so the stack gets a hover exit. A card landing from the editor therefore takes its
+  hover from where the pointer is (`ThumbnailController.hover(landing:)`): hovered when the pointer
+  is on its frame and the topmost window there is this app's, and not hovered otherwise. Two limits
   remain. The window server applies a window's new pixels 6 to about 30 ms late, and a press in that
   interval reaches what was drawn there before. At motion 0, one press on the card flying into the
   editor reached the window behind, and the cause is not found. `docs/flight-press-2026-09-23.md`
@@ -578,8 +589,10 @@ the same driven sequence; a single run varies.
   phases: a pinch and a wheel with cmd or ctrl held zoom, and a plain wheel pans a magnified
   picture (`pan` moves `zoomCenter` and sets `editor.pictureRect`). The zoom keys, cmd+plus/minus/0,
   and a double-click on empty space with the select tool are the core's to recognise, and it sends
-  them as a `ZoomRequest` through `onZoom`. Those are ignored until the window is up at full alpha:
-  a zoom during the flight would move a frame the flight is still landing on. All of them reach
+  them as a `ZoomRequest` through `onZoom`. Those are ignored until the flight has landed
+  (`landed` sets `hasLanded`, and the next `prepare` clears it): the editor takes keys from
+  `prepare` and presses handed over from the flight, and a zoom before the landing would grow the
+  window under a flight image still at the fitted frame. All of them reach
   `AnnotationController.zoom(by:at:as:)`, which moves one number, `zoomLevel`: how far the image is
   magnified past the frame it opened in. The picture is magnified uniformly by that level, so the
   image is never stretched; the frame is not, and each of its sides grows with the level until that
