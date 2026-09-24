@@ -298,8 +298,13 @@ the same driven sequence; a single run varies.
   is on its frame and the topmost window there is this app's, and not hovered otherwise. Two limits
   remain. The window server applies a window's new pixels 6 to about 30 ms late, and a press in that
   interval reaches what was drawn there before. At motion 0, one press on the card flying into the
-  editor reached the window behind, and the cause is not found. `docs/flight-press-2026-09-23.md`
-  has the measurements.
+  editor reached the window behind. The likely cause, not confirmed, is that lag: at motion 0 the
+  flight layer and the editor's alpha reach the window server within two run-loop turns of each
+  other, and both are new to it. It needs no fix: `show` comes 45 to 60 ms after the click that
+  opened the card, a press falls through only if it lands where the editor appears within about
+  30 ms of `show`, and a double-click's second click lands on the card. Reduce Motion forces motion 0,
+  so this is a user's case too, not only a script's. `docs/flight-press-2026-09-23.md` has the
+  measurements.
 - The stack runs to the bottom of the screen and steps around the Dock. `StackLayout.area` builds
   one `StackArea` from the screen: `bounds` takes its sides and top from `visibleFrame` and its
   bottom from the screen's own `frame`; `safeBottom` is the height AppKit reserves for a bottom

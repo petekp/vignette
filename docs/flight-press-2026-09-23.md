@@ -134,10 +134,24 @@ about 30 ms late. A press in that interval goes to whatever was drawn there befo
 start of a flight is over the stack's column, which takes presses itself. The leading edge of a fast
 card could let a press through for a frame. That was not measured.
 
-**One press passed through at motion 0.** The cause was not found. The press came 27 ms after
-`show`, 13 ms before the probe answered, and reached the catcher. The flight should have covered
-that point: at motion 0 a flight is still made, and it lifts only after the probe answers. So the
-flight layer's own pixels were not taking presses either. The press came 72 ms after `prepare`, and
-the editor's load held the main thread for 43 ms of that. The likely cause is the window server's
-lag on the flight layer's new pixels, added to that wait. It is not confirmed. That drive ran on the
-working tree before `dd1df6a` was committed, with the lift and the probe already in it.
+**One press passed through at motion 0, and it needs no fix.** The press came 27 ms after `show`,
+13 ms before the probe answered, and reached the catcher. The flight should have covered that point: at
+motion 0 a flight is still made, and it lifts only after the probe answers. So the flight layer's
+own pixels were not taking presses either. That drive ran on the working tree before `dd1df6a` was
+committed, with the lift and the probe already in it.
+
+The likely cause is the window server's lag, not the order of the code, but it is not confirmed. At
+motion 0 the flight layer is ordered in for the first time, and its pixels at the target and the
+editor's alpha reach the window server within two run-loop turns of each other. Both windows are
+new to it, and it applies new pixels 6 to about 30 ms late. The editor's load held the main thread
+for 43 ms of the 72 ms between `prepare` and the press. That delays the flight but does not change
+the order.
+
+The builder's drives show why a hand does not meet it:
+
+- `show` comes 45 to 60 ms after the click that opened the card.
+- A press falls through only if it lands where the editor appears, within about 30 ms of `show`.
+- A double-click's second click lands on the card, not where the editor appears.
+
+Motion 0 is not only a script's setting: Reduce Motion forces it. So the timing above is the reason
+this is left, not that no one runs at motion 0.
