@@ -65,8 +65,7 @@ Waits on two things, either way:
   if the push loop proves itself in use.
 - A name convention for pushed files, `Agent <what> <state>.png`, so the card reads at a glance.
 - Folding Copy Drawing into Copy, so one Copy gives the image as the card shows it.
-- AGENTS.md is long enough that a rule in it is easy to miss. It was reviewed as a whole when the
-  native editor replaced tldraw, and it is still about 750 lines, so shortening it is still open.
+- Shortening AGENTS.md. It is about 750 lines, and a rule in it is easy to miss.
 
 ## Known costs, left alone
 
