@@ -14,6 +14,8 @@ final class AnnotationController {
     var onClosed: (() -> Void)?
     /// The editor has this key's screenshot, decoded at the screen's size.
     var onLoaded: ((String) -> Void)?
+    /// The window server gives this window the presses on its frame now. Once per `show`, with the key.
+    var onTakesEvents: ((String) -> Void)?
     /// A drawing to store: the editor handed it over after a change, or it was parked. `reason`
     /// names which in the log.
     var onDrawing: ((Drawing, _ reason: String) -> Void)?
@@ -42,6 +44,8 @@ final class AnnotationController {
     /// The shot in the editor, from `prepare` until `hide` parks it. Not the session: see AnnotatorTransition.
     private var current: Screenshot?
     private let outsideClick = OutsideClick()
+    /// Asks the window server, from `show` until it answers, whether a press on the frame reaches this window.
+    private var eventProbe: Timer?
     /// The colour pass's sample of the screenshot in the editor, once it is made.
     private var colorSample: (key: String, sample: ColorSample)?
     /// Counts `open`s, so a decode or a sample only lands on the open that asked for it: the same
@@ -475,6 +479,60 @@ final class AnnotationController {
         // long enough to swallow a press that answers the window: it is not on screen until the
         // flight lands on it, and a hand cannot react inside `outsideClickSettling`.
         outsideClick.start(settling: Self.outsideClickSettling) { [weak self] in self?.cancel() }
+        probeEvents()
+    }
+
+    /// Finds the moment the window server starts giving this window the presses on its frame. The
+    /// window is ordered in at alpha 0 in `prepare`, which passes every press through, and alpha 1
+    /// reaches the window server 6 to 25 ms after `show` sets it (measured 2026-09-23). Nothing
+    /// announces it: no occlusion change arrives with the alpha. So this asks, every millisecond,
+    /// which window a press at the frame's centre would reach.
+    private func probeEvents() {
+        eventProbe?.invalidate()
+        guard let win = window, let key = current?.url.path else { return }
+        let started = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 0.001, repeats: true) { [weak self] timer in
+            let answered = MainActor.assumeIsolated { () -> Bool in
+                guard let self, self.current?.url.path == key else { return true }
+                let elapsed = CACurrentMediaTime() - started
+                let reached = self.pressReaches(win)
+                guard reached || elapsed > Self.eventProbeDeadline else { return false }
+                self.eventProbe = nil
+                Log.write("[annotate] takes events after=\(Int((elapsed * 1000).rounded()))ms\(reached ? "" : " deadline")")
+                self.onTakesEvents?(key)
+                return true
+            }
+            if answered { timer.invalidate() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        eventProbe = timer
+    }
+
+    /// How long `probeEvents` asks before it hands over anyway: presses handed over reach the editor
+    /// whatever the window server says, and a flight kept over the frame for want of an answer
+    /// would hide what the editor draws.
+    private static let eventProbeDeadline: TimeInterval = 0.5
+
+    /// Whether a press at the frame's centre reaches `win`. This app's windows above it are looked
+    /// through: the flight layer covers the frame until the flight has settled.
+    private func pressReaches(_ win: NSWindow) -> Bool {
+        guard let frameView else { return false }
+        let point = win.convertPoint(toScreen: NSPoint(x: frameView.frame.midX, y: frameView.frame.midY))
+        var below = 0
+        for _ in 0..<8 {
+            let number = NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: below)
+            if number == win.windowNumber { return true }
+            guard let above = NSApp.window(withWindowNumber: number), above.level > win.level else { return false }
+            below = number
+        }
+        return false
+    }
+
+    /// A press begun on the card flying into this editor, which the flight layer took. Only for the
+    /// image open now: a press held for another has nowhere to go.
+    func take(_ event: FlightPress.Event, for key: String) {
+        guard current?.url.path == key else { return }
+        editor.take(event)
     }
 
     /// How long the annotator ignores clicks after its window is ordered in. A race with the window
@@ -493,6 +551,7 @@ final class AnnotationController {
     func abandon() {
         guard current != nil else { return }
         outsideClick.stop()
+        stopProbe()
         current = nil
         park()
         hideWindows()
@@ -503,12 +562,18 @@ final class AnnotationController {
     /// runs once the window is gone. Called once per `prepare`, by the reducer.
     func hide(then completion: (() -> Void)? = nil) {
         outsideClick.stop()
+        stopProbe()
         current = nil
         park()
         fitBeforeHide { [weak self] in
             self?.hideWindows()
             completion?()
         }
+    }
+
+    private func stopProbe() {
+        eventProbe?.invalidate()
+        eventProbe = nil
     }
 
     private func park() {

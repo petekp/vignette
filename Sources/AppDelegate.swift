@@ -70,6 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.annotatorMarks = { [weak self] in self?.annotator.editor.marks }
         thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide { hidden() } }
         thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }
+        thumbnail.onAnnotatorPress = { [weak self] event, key in self?.annotator.take(event, for: key) }
+        annotator.onTakesEvents = { [weak self] key in self?.thumbnail.annotatorTakesEvents(key) }
         annotator.onFinished = { [weak self] shot, drawing in self?.finishAnnotation(shot, drawing) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
         annotator.onLoaded = { [weak self] key in self?.thumbnail.editorLoaded(key) }

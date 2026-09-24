@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// A full-screen, mouse-transparent layer that flies card images between the stack and the
-/// annotator. Flights are SwiftUI state, so a flight that is retargeted mid-way turns smoothly
-/// instead of restarting.
+/// A full-screen layer that flies card images between the stack and the annotator. Flights are
+/// SwiftUI state, so a flight that is retargeted mid-way turns smoothly instead of restarting. It
+/// takes the presses on a flying card and nothing else: the window server gives a window only the
+/// presses on pixels it draws, and passes one on a clear pixel or on a shadow (measured 2026-09-23).
 @MainActor
 final class TransitionLayer {
     /// The ends of the straight path a flight is on, and the shape it follows along it.
@@ -59,8 +60,19 @@ final class TransitionLayer {
         @Published var flights: [Flight] = []
     }
 
+    /// A press on a flying card, and the drag and release that follow it, with the flight it began
+    /// on: nil when it began beside a picture. `FlightPress` decides where it goes.
+    var onPress: ((UUID?, FlightPress.Event) -> Void)?
+
     private let panel: NSPanel
     private let model = Model()
+    private let hosting: NSHostingView<FlightsView>
+    /// The flight the press now down began on, and whether one is down: the panel stays up until
+    /// its release, since the window server sends the drag and the release to the window that took the press.
+    private var pressedFlight: UUID?
+    private var pressDown = false
+    /// Watches the button while a press is down, for a release that never arrives; see `watchRelease`.
+    private var releaseWatch: Timer?
     private var screen: NSScreen = NSScreen.main ?? NSScreen.screens[0]
     /// Flights whose spring has settled on the target, and flights waiting to be lifted when it does.
     private var arrivedFlights: Set<UUID> = []
@@ -76,11 +88,98 @@ final class TransitionLayer {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.ignoresMouseEvents = true
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.animationBehavior = .none
-        panel.contentView = NSHostingView(rootView: FlightsView(model: model))
+        hosting = NSHostingView(rootView: FlightsView(model: model))
+        let catcher = PressCatcher()
+        hosting.autoresizingMask = [.width, .height]
+        catcher.addSubview(hosting)
+        panel.contentView = catcher
+        catcher.onEvent = { [weak self] event in self?.pressed(event) }
+    }
+
+    private func pressed(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            pressedFlight = flight(at: event.locationInWindow)
+            pressDown = true
+            watchRelease()
+            report(.pressed(clickCount: event.clickCount), at: event.locationInWindow, modifiers: event.modifierFlags, time: event.timestamp)
+        case .leftMouseDragged:
+            report(.dragged, at: event.locationInWindow, modifiers: event.modifierFlags, time: event.timestamp)
+        case .leftMouseUp:
+            released(at: event.locationInWindow, modifiers: event.modifierFlags, time: event.timestamp)
+        default:
+            break
+        }
+    }
+
+    private func released(at point: NSPoint, modifiers: NSEvent.ModifierFlags, time: TimeInterval) {
+        guard pressDown else { return }
+        let flightID = pressedFlight
+        let picture = flightID.flatMap { fraction(of: point, on: $0) }
+        pressedFlight = nil
+        pressDown = false
+        releaseWatch?.invalidate()
+        releaseWatch = nil
+        if model.flights.isEmpty { panel.orderOut(nil) }
+        onPress?(flightID, FlightPress.Event(phase: .released, picture: picture, screen: panel.convertPoint(toScreen: point),
+                                             modifiers: modifiers.rawValue, time: time))
+    }
+
+    /// `point` is in the panel's window coordinates.
+    private func report(_ phase: FlightPress.Phase, at point: NSPoint, modifiers: NSEvent.ModifierFlags, time: TimeInterval) {
+        var picture = pressedFlight.flatMap { fraction(of: point, on: $0) }
+        // A press on the ring's outer half, past the picture's edge, lands on the edge.
+        if case .pressed = phase, let place = picture {
+            picture = CGPoint(x: min(max(place.x, 0), 1), y: min(max(place.y, 0), 1))
+        }
+        onPress?(pressedFlight, FlightPress.Event(phase: phase, picture: picture, screen: panel.convertPoint(toScreen: point),
+                                                  modifiers: modifiers.rawValue, time: time))
+    }
+
+    /// Ends a press whose release never comes, by the button's own state. In driven presses on
+    /// cards flying home the release reached no window at all 4 times in 29 (2026-09-23), which
+    /// would leave the editor mid-stroke and this panel up. The button has to read up on two ticks
+    /// running, so a release still queued behind the first tick is not overtaken.
+    private func watchRelease() {
+        releaseWatch?.invalidate()
+        var upTicks = 0
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                upTicks = NSEvent.pressedMouseButtons & 1 == 0 ? upTicks + 1 : 0
+                guard upTicks >= 2 else { return }
+                Log.write("[flight] release missed")
+                self.released(at: self.panel.convertPoint(fromScreen: NSEvent.mouseLocation), modifiers: NSEvent.modifierFlags,
+                              time: ProcessInfo.processInfo.systemUptime)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        releaseWatch = timer
+    }
+
+    /// The topmost flight whose picture is under `point`, in the panel's window coordinates.
+    private func flight(at point: NSPoint) -> UUID? {
+        let spots = Self.spots(in: hosting)
+        for flight in model.flights.reversed() {
+            guard let spot = spots.first(where: { $0.id == flight.id }) else { continue }
+            // The card's ring strokes half its width outside the picture.
+            if spot.bounds.insetBy(dx: -1, dy: -1).contains(spot.convert(point, from: nil)) { return flight.id }
+        }
+        return nil
+    }
+
+    /// Where `point` (window coordinates) is on flight `id`'s picture, as a fraction of it from its
+    /// top-left corner, or nil once the flight has gone.
+    private func fraction(of point: NSPoint, on id: UUID) -> CGPoint? {
+        guard let spot = Self.spots(in: hosting).first(where: { $0.id == id }) else { return nil }
+        return FlightSpotView.fraction(of: spot.convert(point, from: nil), in: spot.bounds.size, picture: spot.picture)
+    }
+
+    private static func spots(in view: NSView) -> [FlightSpotView] {
+        view.subviews.flatMap { ($0 as? FlightSpotView).map { [$0] } ?? spots(in: $0) }
     }
 
     /// Moves `id` to `to`. A new flight starts at `from`; an existing one turns from where it is.
@@ -262,7 +361,7 @@ final class TransitionLayer {
         remove { $0.id == id }
         arrivedFlights.remove(id)
         pendingLift.remove(id)
-        if model.flights.isEmpty { panel.orderOut(nil) }
+        if model.flights.isEmpty, !pressDown { panel.orderOut(nil) }
         dropped?()
     }
 
@@ -271,7 +370,7 @@ final class TransitionLayer {
         remove { _ in true }
         arrivedFlights = []
         pendingLift = []
-        panel.orderOut(nil)
+        if !pressDown { panel.orderOut(nil) }
         for handler in dropped { handler() }
     }
 
@@ -318,6 +417,8 @@ private struct FlightsView: View {
                     .marks(f.marks, picture: f.image.size, corner: f.look.corner)
                     // The card's ring travels with the image, and the annotator window carries it on.
                     .overlay(RoundedRectangle(cornerRadius: f.look.corner, style: .continuous).stroke(.white.opacity(ui.cardBorderOpacity), lineWidth: ui.cardBorderWidth))
+                    // Before the bow, so the spot is where the picture is on screen, swell and all.
+                    .overlay(FlightSpot(id: f.id, picture: f.image.size))
                     .modifier(Bow(center: CGPoint(x: f.frame.midX, y: f.frame.midY), path: f.path, previous: f.previousPath, blend: f.blend))
                     .opacity(f.opacity)
                     .position(x: f.frame.midX, y: f.frame.midY)
@@ -355,5 +456,57 @@ private struct Bow: GeometryEffect {
             .translatedBy(x: mid.x, y: mid.y)
             .scaledBy(x: placed.scale, y: placed.scale)
             .translatedBy(x: -mid.x, y: -mid.y))
+    }
+}
+
+/// The panel's content. The window server gives the panel only the presses on a flight's pixels,
+/// so it takes every press it gets, with the drag and the release that follow, and none reaches
+/// the flights' SwiftUI views.
+private final class PressCatcher: NSView {
+    var onEvent: ((NSEvent) -> Void)?
+    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { onEvent?(event) }
+    override func mouseDragged(with event: NSEvent) { onEvent?(event) }
+    override func mouseUp(with event: NSEvent) { onEvent?(event) }
+}
+
+/// Marks where a flight's picture is. SwiftUI lays this view out with the flight, the bow's offset
+/// and swell included, so AppKit's own conversion finds a press's place on the picture.
+private struct FlightSpot: NSViewRepresentable {
+    let id: UUID
+    let picture: CGSize
+
+    func makeNSView(context: Context) -> FlightSpotView { FlightSpotView(id: id, picture: picture) }
+    func updateNSView(_ view: FlightSpotView, context: Context) {
+        view.id = id
+        view.picture = picture
+    }
+}
+
+final class FlightSpotView: NSView {
+    var id: UUID
+    /// The picture's shape: the flight fills its frame with it, cropping any excess.
+    var picture: CGSize
+
+    init(id: UUID, picture: CGSize) {
+        self.id = id
+        self.picture = picture
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var isFlipped: Bool { true }
+
+    /// `point` from the top-left of a frame of `size` that a picture of shape `picture` fills,
+    /// cropping any excess, as a fraction of the picture from its top-left corner.
+    nonisolated static func fraction(of point: CGPoint, in size: CGSize, picture: CGSize) -> CGPoint? {
+        guard picture.width > 0, picture.height > 0, size.width > 0, size.height > 0 else { return nil }
+        let scale = max(size.width / picture.width, size.height / picture.height)
+        let filled = CGSize(width: picture.width * scale, height: picture.height * scale)
+        return CGPoint(x: (point.x - (size.width - filled.width) / 2) / filled.width,
+                       y: (point.y - (size.height - filled.height) / 2) / filled.height)
     }
 }

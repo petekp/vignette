@@ -534,6 +534,25 @@ final class EditorView: NSView {
         handle(.pointerMoved(pointer(event)))
     }
 
+    /// A press begun on the card flying into this editor. The flight layer took it from the window
+    /// server, so it arrives here rather than through the window: at the point of the picture the
+    /// flight showed under the pointer, or, once handed over, by where the pointer is on screen.
+    func take(_ event: FlightPress.Event) {
+        let location: CGPoint
+        if let fraction = event.picture {
+            location = CGPoint(x: fraction.x * CGFloat(core.drawing.pixels.width), y: fraction.y * CGFloat(core.drawing.pixels.height))
+        } else {
+            guard let window else { return }
+            location = imagePoint(forViewPoint: convert(window.convertPoint(fromScreen: event.screen), from: nil))
+        }
+        let pointer = EditorCore.Pointer(location: location, modifiers: EditorCore.Modifiers(eventFlags: event.modifiers), time: event.time)
+        switch event.phase {
+        case .pressed(let clickCount): handle(.pointerPressed(pointer, clickCount: clickCount))
+        case .dragged: handle(.pointerDragged(pointer))
+        case .released: handle(.pointerReleased(pointer))
+        }
+    }
+
     override func mouseExited(with event: NSEvent) {
         handle(.pointerExited)
     }

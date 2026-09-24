@@ -122,6 +122,8 @@ final class ThumbnailController: NSObject {
     var annotatorBelow: () -> CGFloat = { 0 }
     /// The editor's marks, whose text bitmaps a flight to or from the annotator takes.
     var annotatorMarks: () -> MarkLayers? = { nil }
+    /// A press begun on the card flying into the editor, for the image with this key; see `FlightPress`.
+    var onAnnotatorPress: ((FlightPress.Event, String) -> Void)?
 
     private let panel = ThumbnailPanel()
     private let backdrop = BackdropPanel()
@@ -172,6 +174,11 @@ final class ThumbnailController: NSObject {
     /// Keys whose screenshot the editor has at the screen's size. The flight image lifts once the
     /// annotator is visible and its key is here, so an editor still waiting for its decode is never seen.
     private var loadedKeys: Set<String> = []
+    /// The image whose editor window the window server gives presses to now. The flight into it
+    /// lifts no earlier: until then a press where the card was would reach the app behind.
+    private var takingEvents: String?
+    /// Where a press on a flying card goes.
+    private var flightPress = FlightPress()
     /// Cards made in this turn whose stored drawings are still to be read. A stack opening makes
     /// every card in one turn, and reading theirs together gives the column one change of `cards`.
     private var drawingReads: [URL] = []
@@ -188,6 +195,7 @@ final class ThumbnailController: NSObject {
         hosting = NSHostingView(rootView: StackView(model: model))
         panel.contentView = hosting
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
+        flights.onPress = { [weak self] id, event in self?.flightPressed(id, event) }
         panel.onScroll = { [weak self] event in self?.scroll(event) }
         model.onAction = { [weak self] action, cards in
             guard let self else { return }
@@ -462,9 +470,46 @@ final class ThumbnailController: NSObject {
     /// The editor has the screenshot for `key`.
     func editorLoaded(_ key: String) {
         loadedKeys.insert(key)
-        if case .annotating(let k) = transition.phase, k == key, let card = sessionCard {
-            takeFlightTexts(card)
-            flights.lift(id: card.id)
+        liftIntoEditor(key)
+    }
+
+    /// The annotator's window for `key` takes presses now: one held on its flight goes to it.
+    func annotatorTakesEvents(_ key: String) {
+        guard transition.key == key else { return }
+        takingEvents = key
+        for event in flightPress.ready(key) { onAnnotatorPress?(event, key) }
+        liftIntoEditor(key)
+    }
+
+    /// The flight into the editor lifts once the editor has its image and its window takes presses,
+    /// and once the flight has arrived, which `lift` waits for itself.
+    private func liftIntoEditor(_ key: String) {
+        guard transition.key == key, loadedKeys.contains(key), takingEvents == key, let card = sessionCard else { return }
+        takeFlightTexts(card)
+        flights.lift(id: card.id)
+    }
+
+    /// A press, drag or release on a flying card. See `FlightPress`.
+    private func flightPressed(_ id: UUID?, _ event: FlightPress.Event) {
+        let key: String?
+        let now: [FlightPress.Event]
+        if case .pressed = event.phase {
+            key = id.flatMap(keyFlyingIn)
+            now = flightPress.press(event, into: key, ready: key != nil && takingEvents == key)
+        } else {
+            key = flightPress.key
+            now = flightPress.move(event)
+        }
+        guard let key else { return }
+        for event in now { onAnnotatorPress?(event, key) }
+    }
+
+    /// The image the flight `id` is carrying into the editor, nil for a flight going anywhere else.
+    private func keyFlyingIn(_ id: UUID) -> String? {
+        guard sessionCard?.id == id else { return nil }
+        switch transition.phase {
+        case .flyingOut(let key), .annotating(let key): return key
+        case .idle, .parking: return nil
         }
     }
 
@@ -743,6 +788,10 @@ final class ThumbnailController: NSObject {
             makeRoom(besides: opening.map { targetFrame(for: $0) }, animated: true)
         }
         for effect in effects { perform(effect, leaving: slot) }
+        // A press held for, or handed to, an image that is no longer on its way in or in the editor.
+        if let key = flightPress.key, transition.phase != .flyingOut(key), transition.phase != .annotating(key) {
+            flightPress.ended(key)
+        }
         if let next = handover {
             handover = nil
             annotate(next)
@@ -811,6 +860,7 @@ final class ThumbnailController: NSObject {
             guard let card = model.cards.first(where: { $0.shot.url.path == key }) else { return }
             sessionCard = card
             loadedKeys.remove(key)
+            takingEvents = nil
             dismissTimer?.invalidate()
             // The selection stays: the card comes back to its slot, and a queued run needs the rest
             // of it to still be there when the last card is done.
@@ -842,10 +892,7 @@ final class ThumbnailController: NSObject {
                 guard let self, self.transition.key == key, let card = self.sessionCard else { return }
                 self.onAnnotatorLanded?()
                 self.flights.dropShadow(id: card.id)
-                if self.loadedKeys.contains(key) {   // else editorLoaded lifts it
-                    self.takeFlightTexts(card)
-                    self.flights.lift(id: card.id)
-                }
+                self.liftIntoEditor(key)
             }, dropped: { [weak self] in
                 // The layer went down between the two moments — a new capture presenting the panel
                 // anew while a lone thumbnail is being annotated. Nothing covers the window now.
