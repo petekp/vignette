@@ -117,6 +117,17 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(layout.cardSpan(index: 1, cards: cards, showsBar: false).bottom, 110)
     }
 
+    /// The slot a click opened a card from is held as the hovered card drew it, so a second click
+    /// on the card's grown edge is held too.
+    func testAHoveredCardCoversItsFrameGrownAboutItsCentre() {
+        var u = ui
+        u.hoverScale = 1.25
+        let frame = NSRect(x: 100, y: 50, width: 200, height: 100)
+        XCTAssertEqual(StackLayout(ui: u).hovered(frame), NSRect(x: 75, y: 37.5, width: 250, height: 125))
+        u.hoverScale = 0.9
+        XCTAssertEqual(StackLayout(ui: u).hovered(frame), frame, "a card that shrinks on hover still lies inside its frame")
+    }
+
     func testDragSelectScrollsOnlyInTheBandsAtTheEndsOfTheColumn() {
         var u = ui
         u.autoScrollZone = 40; u.autoScrollSpeed = 600

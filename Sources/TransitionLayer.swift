@@ -3,8 +3,8 @@ import SwiftUI
 
 /// A full-screen layer that flies card images between the stack and the annotator. Flights are
 /// SwiftUI state, so a flight that is retargeted mid-way turns smoothly instead of restarting. It
-/// takes the presses on a flying card and nothing else: the window server gives a window only the
-/// presses on pixels it draws, and passes one on a clear pixel or on a shadow (measured 2026-09-23).
+/// takes the presses on a flying card or a hold and nothing else: the window server gives a window
+/// only the presses on pixels it draws, and passes one on a clear pixel or on a shadow (measured 2026-09-23).
 /// That holds only while `ignoresMouseEvents` is never set: set to false, it takes clear pixels too.
 @MainActor
 final class TransitionLayer {
@@ -57,8 +57,16 @@ final class TransitionLayer {
         var dropped: (() -> Void)?
     }
 
+    /// A rect that takes every press for a while, whatever is under it.
+    struct Hold: Identifiable {
+        let id = UUID()
+        let rect: NSRect       // on screen
+        let frame: CGRect      // top-left origin, in the layer's own coordinates
+    }
+
     final class Model: ObservableObject {
         @Published var flights: [Flight] = []
+        @Published var holds: [Hold] = []
     }
 
     /// A press on a flying card, and the drag and release that follow it, with the flight it began
@@ -103,7 +111,9 @@ final class TransitionLayer {
     private func pressed(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
-            pressedFlight = flight(at: event.locationInWindow)
+            // A hold takes the press before any flight over it.
+            let onScreen = panel.convertPoint(toScreen: event.locationInWindow)
+            pressedFlight = model.holds.contains { $0.rect.contains(onScreen) } ? nil : flight(at: event.locationInWindow)
             pressDown = true
             watchRelease()
             report(.pressed(clickCount: event.clickCount), at: event.locationInWindow, modifiers: event.modifierFlags, time: event.timestamp)
@@ -124,7 +134,7 @@ final class TransitionLayer {
         pressDown = false
         releaseWatch?.invalidate()
         releaseWatch = nil
-        if model.flights.isEmpty { panel.orderOut(nil) }
+        orderOutIfIdle()
         onPress?(flightID, FlightPress.Event(phase: .released, picture: picture, screen: panel.convertPoint(toScreen: point),
                                              modifiers: modifiers.rawValue, time: time))
     }
@@ -362,16 +372,18 @@ final class TransitionLayer {
         remove { $0.id == id }
         arrivedFlights.remove(id)
         pendingLift.remove(id)
-        if model.flights.isEmpty, !pressDown { panel.orderOut(nil) }
+        orderOutIfIdle()
         dropped?()
     }
 
+    /// Takes every flight and every hold down.
     func endAll() {
         let dropped = model.flights.filter { !arrivedFlights.contains($0.id) }.compactMap(\.dropped)
         remove { _ in true }
+        model.holds = []
         arrivedFlights = []
         pendingLift = []
-        if !pressDown { panel.orderOut(nil) }
+        orderOutIfIdle()
         for handler in dropped { handler() }
     }
 
@@ -381,10 +393,30 @@ final class TransitionLayer {
         model.flights.removeAll(where: leaves)
     }
 
+    /// Takes every press on `rect` (on screen) for `seconds`, drag and release included, and lets
+    /// them go nowhere. Drawn with the column's hair of alpha, which is what makes the window server
+    /// give this panel the presses there, above the stack.
+    func hold(_ rect: NSRect, for seconds: TimeInterval, on screen: NSScreen) {
+        showPanel(on: screen)
+        let hold = Hold(rect: rect, frame: local(rect))
+        model.holds.append(hold)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self else { return }
+            self.model.holds.removeAll { $0.id == hold.id }
+            self.orderOutIfIdle()
+        }
+    }
+
+    /// Down once nothing is drawn on it and no press on it is down: the window server sends a
+    /// press's drag and release to the window that took the press.
+    private func orderOutIfIdle() {
+        if model.flights.isEmpty, model.holds.isEmpty, !pressDown { panel.orderOut(nil) }
+    }
+
     private func showPanel(on screen: NSScreen) {
         self.screen = screen
-        // An empty layer is still up while a press on it is held, and a stack presented meanwhile
-        // is ordered above it; the first flight on it puts it back on top.
+        // An empty layer is still up while a press on it is down, and a stack presented meanwhile
+        // is ordered above it; the first flight or hold on it puts it back on top.
         if !panel.isVisible || panel.frame != screen.frame || model.flights.isEmpty {
             panel.setFrame(screen.frame, display: false)
             panel.orderFrontRegardless()
@@ -404,6 +436,11 @@ private struct FlightsView: View {
         let ui = Settings.shared.data.ui
         return ZStack(alignment: .topLeading) {
             Color.clear
+            ForEach(model.holds) { hold in
+                Color.black.opacity(0.01)
+                    .frame(width: hold.frame.width, height: hold.frame.height)
+                    .position(x: hold.frame.midX, y: hold.frame.midY)
+            }
             ForEach(model.flights) { f in
                 Image(nsImage: f.image)
                     .resizable()
