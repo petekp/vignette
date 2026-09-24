@@ -346,24 +346,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         ])
         thumbnail.drawings = drawings
         drawings.onChange = { [weak self] key, drawing in self?.thumbnail.setDrawing(drawing, for: key) }
-        drawings.sweep { FileManager.default.fileExists(atPath: $0) }
+        drawings.sweep(watchFolder: watchFolder) { FileManager.default.fileExists(atPath: $0) }
     }
 
     /// Agents' marks joining a screenshot's drawing: the one open in the editor, or the stored one.
     /// The colour pass's sample is made off the main thread first, and `done` answers once the
-    /// drawing is written. A new drawing takes the main screen's point scale, the best guess with
-    /// no annotator open.
-    private func addMarks(_ marks: [AgentMark], to url: URL, done: @escaping (Drawings.Failure?) -> Void) {
+    /// drawing is written, with how many marks joined it. A new drawing takes the main screen's
+    /// point scale, the best guess with no annotator open.
+    private func addMarks(_ marks: [AgentMark], to url: URL, done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
         Task {
             let sample = await Self.colorSample(of: url)
             do {
-                _ = try drawings.add(marks, to: url, editor: annotator.editor, sample: sample, style: settings.data.ui.textStyle,
-                                     newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)
-                done(nil)
+                done(.success(try drawings.add(marks, to: url, editor: annotator.editor, sample: sample, style: settings.data.ui.textStyle,
+                                               newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)))
             } catch let failure as Drawings.Failure {
-                done(failure)
+                done(.failure(failure))
             } catch {
-                done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
+                done(.failure(Drawings.Failure(code: .writeFailed, description: "\(error)")))
             }
         }
     }
@@ -782,12 +781,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request))")
             return
         }
-        addMarks(marks, to: destination) { [weak self] failure in
+        addMarks(marks, to: destination) { [weak self] result in
             guard let self else { return }
-            if let failure {
+            switch result {
+            case .success(let joined):
+                Commands.ok("add", "\(name)\(detail(request)) marks=\(joined)")
+            case .failure(let failure):
                 Commands.error("add", failure.code, "\(name): the image is in the folder, its marks are not: \(failure)")
-            } else {
-                Commands.ok("add", "\(name)\(detail(request)) marks=\(marks.count)")
             }
             pendingAdds[name]?.addingMarks = false
             presentAdd(name)
@@ -818,7 +818,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         requests.callbacks = ScreenshotRequests.Callbacks(
             addMarks: { [weak self] shot, marks, done in
                 guard let self else { return done(Drawings.Failure(code: .writeFailed, description: "the app is gone")) }
-                addMarks(marks, to: shot.url, done: done)
+                addMarks(marks, to: shot.url) { result in
+                    if case .failure(let failure) = result { done(failure) } else { done(nil) }
+                }
             },
             present: { [weak self] shot in self?.thumbnail.show(shot) },
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
@@ -861,7 +863,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// image leaves the editor only once that rendering and the request are stored, so a failure
     /// anywhere before then leaves the drawing exactly where the hand left it.
     private func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination) {
-        guard !annotator.sending else { return }
+        guard !annotator.sending, let session = annotator.session else { return }
         let name = shot.url.lastPathComponent
         // Nothing drawn is a send of the screenshot itself, which is what the person is looking at.
         // Through PNG whatever the capture format is: a reply copies these bytes to a `.png`
@@ -879,12 +881,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: nil, style: ui.textStyle, arrowhead: ui.arrowhead)
         rendering.whenDone { [weak self] output in
             guard let self else { return }
-            annotator.sending = false
-            // A rendering that answers after the person moved to another image belongs to neither
-            // of them: it is dropped, and nothing is sent and nothing closed.
-            guard annotator.currentKey == shot.url.path else {
+            // A rendering that answers after the session that pressed Send has ended belongs to no
+            // image now, even the same one opened again: it is dropped, and nothing is sent and
+            // nothing closed. The session open now has its own `sending`, which this leaves alone.
+            guard annotator.session == session else {
                 Log.write("[send] dropped \(name); the editor moved on"); return
             }
+            annotator.sending = false
             guard let png = output.png, output.failure == nil else {
                 let failure = output.failure ?? .writeFailed("the rendering made no image")
                 Commands.error("send", failure.code, "\(name): \(failure)")

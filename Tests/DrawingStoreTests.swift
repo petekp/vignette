@@ -94,7 +94,7 @@ final class DrawingStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.remove(key: key))
         XCTAssertEqual(try String(contentsOf: store.url(for: key), encoding: .utf8), newer)
         XCTAssertEqual(lines.all.count, 4, "one line for the read and one for each refusal: \(lines.all)")
-        XCTAssertEqual(store.keys(), [], "a newer build's drawing is not this build's to sweep")
+        XCTAssertEqual(store.scan(), [], "a newer build's drawing is not this build's to sweep")
     }
 
     func testANonFiniteCoordinateDropsThatMarkWithOneLogLine() throws {
@@ -114,28 +114,37 @@ final class DrawingStoreTests: XCTestCase {
         XCTAssertTrue(lines.all[0].contains("x must be a finite number"), lines.all[0])
     }
 
-    func testAFileThatDoesNotParseIsSetAside() throws {
+    /// Only the launch's scan sets a bad file aside. A read runs off the main thread beside the
+    /// main thread's writes, and a set-aside there could move the good file a write had just put
+    /// in the bad one's place, losing its marks.
+    func testAFileThatDoesNotParseIsSetAsideByTheLaunchScanOnly() throws {
         try put(#"{"version": 1, "key": "#)
         XCTAssertNil(read())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.url(for: key).path), "a read leaves the file where it is")
+        XCTAssertEqual(lines.all.count, 1)
+        XCTAssertTrue(lines.all[0].hasPrefix("[drawing] error invalid"), lines.all[0])
+
+        XCTAssertEqual(store.scan(), [])
         let aside = store.url(for: key).appendingPathExtension("invalid")
         XCTAssertEqual(aside.lastPathComponent, DrawingStore.id(for: key) + ".json.invalid")
         XCTAssertTrue(FileManager.default.fileExists(atPath: aside.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.url(for: key).path))
-        XCTAssertEqual(lines.all.count, 1)
-        XCTAssertTrue(lines.all[0].hasPrefix("[drawing] error invalid"), lines.all[0])
+        XCTAssertEqual(lines.all.count, 2)
+        XCTAssertTrue(lines.all[1].hasPrefix("[drawing] error invalid"), lines.all[1])
 
         // A top level that parses as JSON but is not a drawing is set aside the same way.
         try put(#"{"version": 1, "key": "\#(key)", "pixels": [3024], "pointScale": 2, "marks": []}"#)
         XCTAssertNil(read())
+        XCTAssertEqual(store.scan(), [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.url(for: key).path))
-        XCTAssertEqual(lines.all.count, 2)
+        XCTAssertEqual(lines.all.count, 4)
     }
 
     func testAPointScaleOutsideHalfToEightMakesTheFileInvalid() throws {
         for scale in ["0.1", "9", "1e300", "1e-300"] {
             try put(#"{"version": 1, "key": "\#(key)", "pixels": [3024, 1964], "pointScale": \#(scale), "marks": [{"type": "rectangle", "x": 1, "y": 1, "w": 5, "h": 5, "color": "red"}]}"#)
             XCTAssertNil(read(), scale)
-            XCTAssertTrue(FileManager.default.fileExists(atPath: store.url(for: key).appendingPathExtension("invalid").path), scale)
+            XCTAssertTrue(lines.all.last?.hasPrefix("[drawing] error invalid") == true, "\(lines.all)")
             XCTAssertTrue(lines.all.last?.contains("pointScale must be a number from 0.5 to 8") == true, "\(lines.all)")
         }
         for scale in ["0.5", "8"] {
@@ -182,7 +191,7 @@ final class DrawingStoreTests: XCTestCase {
         try put(#"{"version": 1, "key": "/elsewhere.png", "pixels": [3024, 1964], "pointScale": 2, "marks": [{"type": "rectangle", "x": 1, "y": 1, "w": 5, "h": 5, "color": "red"}]}"#)
         XCTAssertNil(read())
         XCTAssertEqual(lines.all.count, 1)
-        XCTAssertEqual(store.keys(), [], "it is not listed under a key whose name it does not have")
+        XCTAssertEqual(store.scan(), [], "it is not listed under a key whose name it does not have")
     }
 
     func testKeysListTheDrawingsThisBuildCanRead() throws {
@@ -192,10 +201,10 @@ final class DrawingStoreTests: XCTestCase {
         try put(#"{"version": 2, "key": "/c.png"}"#, for: "/c.png")
         try put("not json", for: "/d.png")
         try Data("x".utf8).write(to: dir.appendingPathComponent("notes.txt"))
-        XCTAssertEqual(store.keys(), ["/a.png", "/b.png"])
+        XCTAssertEqual(store.scan(), ["/a.png", "/b.png"])
         try store.remove(key: "/a.png")
-        XCTAssertEqual(store.keys(), ["/b.png"])
-        XCTAssertEqual(DrawingStore(directory: dir.appendingPathComponent("never-made")).keys(), [])
+        XCTAssertEqual(store.scan(), ["/b.png"])
+        XCTAssertEqual(DrawingStore(directory: dir.appendingPathComponent("never-made")).scan(), [])
     }
 
     func testIdIsStableAndFilenameSafe() {
@@ -323,6 +332,31 @@ final class DrawingsTests: XCTestCase {
         drawings.remove([shot])
         XCTAssertEqual(changed.count, 2)
         XCTAssertNil(changed[1], "a removal says there is no drawing")
+    }
+
+    /// A watch folder on a volume that has not mounted yet reads as every screenshot gone, and a
+    /// swept drawing is deleted. The sweep waits for a launch that can see the folder.
+    func testTheSweepKeepsEveryDrawingWhileTheWatchFolderIsMissing() throws {
+        let folder = dir.appendingPathComponent("Screenshots")
+        let kept = folder.appendingPathComponent("kept.png").path, gone = folder.appendingPathComponent("gone.png").path
+        let marks = [Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))]
+        for key in [kept, gone] {
+            try drawings.store.write(Drawing(key: key, pixels: PixelSize(width: 300, height: 200), pointScale: 1, marks: marks))
+        }
+        let exists = { (path: String) in FileManager.default.fileExists(atPath: path) }
+
+        var launch = Drawings(store: drawings.store)
+        launch.sweep(watchFolder: folder, keeping: exists)
+        XCTAssertEqual(launch.keys, [kept, gone])
+        XCTAssertEqual(Drawings(store: drawings.store).keys, [kept, gone], "nothing was removed from disk")
+
+        // The folder is there at the next launch: only the screenshot that is really gone loses its drawing.
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        XCTAssertTrue(FileManager.default.createFile(atPath: kept, contents: Data()))
+        launch = Drawings(store: drawings.store)
+        launch.sweep(watchFolder: folder, keeping: exists)
+        XCTAssertEqual(launch.keys, [kept])
+        XCTAssertEqual(Drawings(store: drawings.store).keys, [kept])
     }
 
     func testALaunchRemovesWhatTheWebEditorLeft() throws {

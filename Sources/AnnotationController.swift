@@ -50,8 +50,8 @@ final class AnnotationController {
     private var hasLanded = false
     /// The colour pass's sample of the screenshot in the editor, once it is made.
     private var colorSample: (key: String, sample: ColorSample)?
-    /// Counts `open`s, so a decode or a sample only lands on the open that asked for it: the same
-    /// file can be closed and opened again while the first decode is still on its way.
+    /// Counts `open`s, so a decode, a sample or a send's rendering only lands on the open that asked
+    /// for it: the same file can be closed and opened again while the first is still on its way.
     private var openGeneration = 0
     /// Where the Send menu's pick goes once the editor hands over the drawing.
     private var sendingTo: AgentDestination?
@@ -140,6 +140,8 @@ final class AnnotationController {
     func prepare(_ shot: Screenshot, in frame: NSRect, room: NSRect) {
         let started = CACurrentMediaTime()
         current = shot
+        // A send still rendering belongs to the session before this one, which its answer will find gone.
+        sending = false
         let win = window ?? makeWindow()
         hasLanded = false
         fittedFrame = frame
@@ -172,7 +174,8 @@ final class AnnotationController {
             return
         }
         let screen = zoomScreen ?? NSScreen.main ?? NSScreen.screens[0]
-        // A new drawing takes the point scale of the screen the annotator opens on (spec, Decision 8).
+        // A new drawing takes the point scale of the screen the annotator opens on: Decision 8 in
+        // docs/editor.md.
         let pointScale = min(max(screen.backingScaleFactor, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
         let drawing = storedDrawing?(shot.url, pixels) ?? Drawing(key: key, pixels: pixels, pointScale: pointScale, marks: [])
         let maxPixel = Thumbnailer.screenPixels(on: screen), space = screen.colorSpace?.cgColorSpace
@@ -673,9 +676,13 @@ final class AnnotationController {
         container?.layer?.borderColor = NSColor.white.withAlphaComponent(ui.cardBorderOpacity).cgColor
     }
 
-    /// The image in the editor, by path, or nil between sessions. A send compares its own answer
-    /// with this, so a rendering that lands after a swap closes nothing.
+    /// The image in the editor, by path, or nil between sessions.
     var currentKey: String? { current?.url.path }
+
+    /// The open the editor is in, or nil between sessions. A send compares its rendering's answer
+    /// with this rather than the path: after Esc and a reopen of the same image, the path matches
+    /// and the session does not.
+    var session: Int? { current == nil ? nil : openGeneration }
 
     /// The drawing open for `url` as the editor would hand it over now, or nil when that screenshot
     /// is not open.

@@ -435,13 +435,26 @@ final class ThumbnailController: NSObject {
         if visible {
             // A shot the panel does not have yet joins it; the flight starts from its offscreen slot.
             if card(for: shot) == nil, let card = makeCard(shot) { insert(card) }
-            if let card = card(for: shot) { annotate(card) }
-            return
+            if let card = card(for: shot) { return annotate(card) }
+        } else if let card = makeCard(shot) {
+            // Not on screen: the card flies straight from its offscreen slot, so nothing waits for a slide-in.
+            present(cards: [card], stack: false, entrance: .stayOffscreen)
+            return annotate(card)
         }
-        // Not on screen: the card flies straight from its offscreen slot, so nothing waits for a slide-in.
-        guard let card = makeCard(shot) else { return }
-        present(cards: [card], stack: false, entrance: .stayOffscreen)
-        annotate(card)
+        noCard(for: shot)
+    }
+
+    /// `shot` has no card and none could be made: its header did not read. A queue's handover kept
+    /// the session open for it (see `.returnCard`), so with nothing in the annotator now the session
+    /// ends here, as it would have had nothing followed.
+    private func noCard(for shot: Screenshot) {
+        Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(shot.url.lastPathComponent)")
+        guard !transition.isActive else { return }
+        endQueue()
+        sessionCard = nil
+        dim.hide()
+        makeRoom(besides: nil, animated: true)
+        endSession()
     }
 
     /// The editor asked to close (Esc, click outside, Cmd+W). The reducer decides what returns.
@@ -830,11 +843,13 @@ final class ThumbnailController: NSObject {
         queueOpened = 0
     }
 
-    /// The next file the queue has for the annotator. Files that have gone since drop out.
+    /// The next file the queue has for the annotator. Files that have gone since, or cannot be read
+    /// now, drop out: a handover to a file with no card would leave the session open with nothing
+    /// in it.
     private func takeNext() -> Screenshot? {
         while !queue.isEmpty {
             let key = queue.removeFirst()
-            guard FileManager.default.fileExists(atPath: key) else { continue }
+            guard Thumbnailer.pointSize(of: URL(fileURLWithPath: key)) != nil else { continue }
             queueOpened += 1
             Log.write("[annotate] next \((key as NSString).lastPathComponent) \(queueOpened) of \(queueTotal)")
             return Screenshot(url: URL(fileURLWithPath: key))

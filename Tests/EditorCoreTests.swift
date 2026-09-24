@@ -1,6 +1,6 @@
 import XCTest
 
-/// The spec's acceptance checks for tools, selection, keys, typing, undo and the clipboard, run
+/// The behaviour `docs/editor.md` gives tools, selection, keys, typing, undo and the clipboard, run
 /// against the editor's core with no view. At point scale 1 and zoom 1, px, pt and screen pt are one.
 final class EditorCoreTests: XCTestCase {
     typealias Core = EditorCore
@@ -108,7 +108,7 @@ final class EditorCoreTests: XCTestCase {
         var metrics = EditorMetrics.standard
         metrics.dragDistance = 20
         var tuned = core(metrics: metrics)
-        // 17 pt: past the spec's 4, short of 20.
+        // 17 pt: past the standard 4, short of 20.
         tuned.drag(from: (100, 100), to: (112, 112))
         XCTAssertTrue(tuned.drawing.marks.isEmpty)
         tuned.drag(from: (100, 100), to: (130, 130))
