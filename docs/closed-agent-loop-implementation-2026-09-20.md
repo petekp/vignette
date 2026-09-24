@@ -91,7 +91,8 @@ session already running.
 
 Two defects were found by running it and fixed: the reply going to whichever build LaunchServices
 registered last, and a free canvas reading as "the app is gone" (optional chaining flattened
-`canvasRefusal`'s own nil), which left every import waiting forever.
+`canvasRefusal`'s own nil), which left every import waiting forever. The second is history: the
+canvas and `canvasRefusal` were the web editor's.
 
 Unit coverage is in `Tests/ReplyProtocolTests.swift`, `Tests/ScreenshotRequestsTests.swift`, and
 `Tests/AgentConnectionTests.swift`: envelope location and link refusal, digest recomputation, the

@@ -62,7 +62,7 @@ Two things make a frame expensive:
 
 ## Options
 
-**A. Hold hover and clicks still on the column while it narrows or widens.**
+**A. Freeze hover and clicks on the column while it narrows or widens.**
 
 - Code: `ThumbnailController.makeRoom` sets a flag on the model for the length of the spring
   (`Anim.settle`). `StackView` applies `.allowsHitTesting(false)` to the column while the flag is
