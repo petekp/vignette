@@ -123,6 +123,17 @@ New files only. Nothing is wired into the annotator yet.
 - The last of the dead code the switch leaves, and a driven round of the acceptance checks that
   need the running app.
 
+### 4e: flights without dropped frames
+
+Pete asked for this on 2026-09-23, after 4c measured the flights that narrow the stack.
+
+- The flight image is decoded in the display's colour space before the flight starts. Core
+  Animation converted it at the flight's first commit: about 20 ms, and 55 ms on the second open.
+- The stack no longer re-lays out in SwiftUI on every frame of a narrowing. Options come to Pete
+  before one is built, because some change how cards look mid-motion.
+- A press on a card flying into the editor never reaches the app behind. It goes to the editor once
+  the editor is up, so a drag begun during the flight draws.
+
 ### Decisions made while planning 4
 
 | Decision | Why |
