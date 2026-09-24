@@ -55,7 +55,10 @@ final class Drawings {
     func write(_ drawing: Drawing, reason: String) -> Bool {
         let name = (drawing.key as NSString).lastPathComponent
         lastWrite = (drawing.key, false)
-        if !drawing.marks.isEmpty, !FileManager.default.fileExists(atPath: drawing.key) { return false }
+        if !drawing.marks.isEmpty, !FileManager.default.fileExists(atPath: drawing.key) {
+            Log.write("[drawing] dropped \(name): its screenshot is gone")
+            return false
+        }
         do { try store.write(drawing) } catch { return false }
         lastWrite = (drawing.key, true)
         if drawing.marks.isEmpty {

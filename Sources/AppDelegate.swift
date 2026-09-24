@@ -351,19 +351,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// Agents' marks joining a screenshot's drawing: the one open in the editor, or the stored one.
     /// The colour pass's sample is made off the main thread first, and `done` answers once the
-    /// drawing is written. A new drawing takes the main screen's point scale, the best guess with
-    /// no annotator open.
-    private func addMarks(_ marks: [AgentMark], to url: URL, done: @escaping (Drawings.Failure?) -> Void) {
+    /// drawing is written, with how many marks joined it. A new drawing takes the main screen's
+    /// point scale, the best guess with no annotator open.
+    private func addMarks(_ marks: [AgentMark], to url: URL, done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
         Task {
             let sample = await Self.colorSample(of: url)
             do {
-                _ = try drawings.add(marks, to: url, editor: annotator.editor, sample: sample, style: settings.data.ui.textStyle,
-                                     newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)
-                done(nil)
+                done(.success(try drawings.add(marks, to: url, editor: annotator.editor, sample: sample, style: settings.data.ui.textStyle,
+                                               newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)))
             } catch let failure as Drawings.Failure {
-                done(failure)
+                done(.failure(failure))
             } catch {
-                done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
+                done(.failure(Drawings.Failure(code: .writeFailed, description: "\(error)")))
             }
         }
     }
@@ -782,12 +781,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request))")
             return
         }
-        addMarks(marks, to: destination) { [weak self] failure in
+        addMarks(marks, to: destination) { [weak self] result in
             guard let self else { return }
-            if let failure {
+            switch result {
+            case .success(let joined):
+                Commands.ok("add", "\(name)\(detail(request)) marks=\(joined)")
+            case .failure(let failure):
                 Commands.error("add", failure.code, "\(name): the image is in the folder, its marks are not: \(failure)")
-            } else {
-                Commands.ok("add", "\(name)\(detail(request)) marks=\(marks.count)")
             }
             pendingAdds[name]?.addingMarks = false
             presentAdd(name)
@@ -818,7 +818,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         requests.callbacks = ScreenshotRequests.Callbacks(
             addMarks: { [weak self] shot, marks, done in
                 guard let self else { return done(Drawings.Failure(code: .writeFailed, description: "the app is gone")) }
-                addMarks(marks, to: shot.url, done: done)
+                addMarks(marks, to: shot.url) { result in
+                    if case .failure(let failure) = result { done(failure) } else { done(nil) }
+                }
             },
             present: { [weak self] shot in self?.thumbnail.show(shot) },
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
