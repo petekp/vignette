@@ -204,8 +204,9 @@ struct SettingsView: View {
         Section {
             ShortcutSetting()
             if settings.data.usesDoubleTap, !ModifierTap.trusted(prompt: false) {
-                caption("Needs Accessibility permission.")
-                Button("Open System Settings") { Accessibility.openSystemSettings() }
+                LabeledContent("The double tap needs Accessibility permission.") {
+                    Button("Open System Settings") { Accessibility.openSystemSettings() }
+                }
             }
         }
         Section {
@@ -226,9 +227,11 @@ struct SettingsView: View {
                 }
             }
             Toggle("Launch at login", isOn: binding(\.launchAtLogin))
-            Toggle("Show in menu bar", isOn: menuBarIcon)
-            if settings.data.hideMenuBarIcon {
-                caption("Reopen Settings with open vignette://settings in Terminal.")
+            Toggle(isOn: menuBarIcon) {
+                Text("Show in menu bar")
+                if settings.data.hideMenuBarIcon {
+                    Text("Reopen Settings with open vignette://settings in Terminal.")
+                }
             }
         }
     }
@@ -252,8 +255,10 @@ struct SettingsView: View {
         }
         Section("After a screenshot") {
             Toggle("Copy to the clipboard", isOn: binding(\.copyOnCapture))
-            Toggle("Open it to draw", isOn: binding(\.annotateOnCapture))
-            caption("Instead of showing a thumbnail.")
+            Toggle(isOn: binding(\.annotateOnCapture)) {
+                Text("Open it to draw")
+                Text("Instead of showing a thumbnail.")
+            }
         }
         Section("When you finish drawing") {
             Picker("When you finish drawing", selection: binding(\.quickAnnotate)) {
@@ -264,12 +269,15 @@ struct SettingsView: View {
             .labelsHidden()
         }
         Section("macOS") {
-            // The only place that says the thumbnail is gone, sitting with the button that brings
+            // The only place that says the thumbnail is gone, in the row of the button that brings
             // it back: someone who misses it comes looking here, not at a toast they already lost.
-            caption("Vignette replaces the macOS screenshot thumbnail, so a capture is saved right away.")
-            Button("Restore macOS Screenshot Settings…") { callbacks.restoreAppleDefaults() }
-                .disabled(settings.data.appleOriginal == nil)
-            caption("Puts back the save location, thumbnail, shadow, and format macOS used before Vignette changed them.")
+            LabeledContent {
+                Button("Restore…") { callbacks.restoreAppleDefaults() }
+                    .disabled(settings.data.appleOriginal == nil)
+            } label: {
+                Text("Original screenshot settings")
+                Text("Vignette replaces the macOS thumbnail, so each capture is saved right away. Restoring puts back the save location, thumbnail, shadow, and format macOS had before.")
+            }
         }
     }
 
@@ -286,7 +294,14 @@ struct SettingsView: View {
                 ForEach(agentRows) { row in
                     LabeledContent {
                         HStack {
-                            Text(row.status)
+                            Group {
+                                if row.installed {
+                                    Label(row.status, systemImage: "checkmark.circle.fill")
+                                        .foregroundStyle(Color.installed)
+                                } else {
+                                    Text(row.status)
+                                }
+                            }
                                 .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -319,7 +334,8 @@ struct SettingsView: View {
                 Button("Open Log") { NSWorkspace.shared.open(Log.url) }
                 Button("Reveal settings.json") { NSWorkspace.shared.activateFileViewerSelecting([Settings.fileURL]) }
             }
-            caption("Shown because debug is on in settings.json.")
+        } footer: {
+            caption("This tab shows because debug is on in settings.json.")
         }
     }
 
@@ -472,9 +488,12 @@ struct ShortcutSetting: View {
     enum Kind { case combination, doubleTap }
 
     var body: some View {
-        Picker("Shortcut", selection: kind) {
+        Picker(selection: kind) {
             Text("Double-tap Right Shift").tag(Kind.doubleTap)
             Text("Key combination").tag(Kind.combination)
+        } label: {
+            Text("Shortcut")
+            Text("Shows your recent screenshots. Hold it to draw on the newest one.")
         }
         .pickerStyle(.segmented)
         if !settings.data.usesDoubleTap {
@@ -486,8 +505,6 @@ struct ShortcutSetting: View {
                 .frame(width: 140, height: 24)
             }
         }
-        Text("Shows your recent screenshots. Hold it to draw on the newest one.")
-            .font(.caption).foregroundStyle(.secondary)
     }
 
     /// Which kind of shortcut is in the file. Choosing the other kind writes a working value of it
@@ -512,4 +529,14 @@ enum Accessibility {
     static func openSystemSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
+}
+
+private extension Color {
+    /// System green is too light to read as text on a light row (2:1 against white), so light mode
+    /// takes Apple's increased-contrast green, 4.4:1. Dark mode keeps system green.
+    static let installed = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? .systemGreen
+            : NSColor(srgbRed: 36 / 255, green: 138 / 255, blue: 61 / 255, alpha: 1)
+    })
 }

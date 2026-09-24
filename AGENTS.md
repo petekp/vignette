@@ -639,7 +639,7 @@ the same driven sequence; a single run varies.
   puts back `show-thumbnail`, and `location` when `syncAppleSaveLocation` is on, if something outside
   the app changed them: those two break Vignette rather than merely differing from it. `type` and
   `disable-shadow` are never reconciled. The reconcile is silent; the Screenshots tab states that
-  Vignette replaces the thumbnail, a few rows above "Restore macOS Screenshot Settings…", which is
+  Vignette replaces the thumbnail in the row of its Restore button, which is
   the disable path and the only way back in the UI. `appleThumbnail` stays a settings.json key with
   no control, because `restoreAppleDefaults()` writes Apple's old value into it and that is what
   makes a restore survive the next launch's reconcile.
