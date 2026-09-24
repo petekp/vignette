@@ -210,10 +210,15 @@ final class ThumbnailController: NSObject {
                 if let open = Config.defaultAction(for: [card.shot]) { self.run(open, on: [card]) }
                 return
             }
+            // Where the card is now, before opening it narrows the stack or takes it out of the column.
+            let slot = self.cardFrame(of: card)
             // A click picks the next image by hand, so it replaces whatever the queue had left.
-            if self.transition.isActive { self.endQueue(); self.annotate(card); return }
+            if self.transition.isActive { self.endQueue(); self.annotate(card); self.swallowSecondClick(on: slot); return }
             if self.model.inSelectionMode { self.toggle(card) }
-            else if let action = Config.defaultAction(for: [card.shot]) { self.run(action, on: [card]) }
+            else if let action = Config.defaultAction(for: [card.shot]) {
+                self.run(action, on: [card])
+                if action.id == "annotate" { self.swallowSecondClick(on: slot) }
+            }
         }
         model.onSweep = { [weak self] y in self?.sweep(toYFromTop: y) }
         model.onSweepEnd = { [weak self] in
@@ -968,6 +973,14 @@ final class ThumbnailController: NSObject {
             // A lone thumbnail leaves on its own; the copied mark usually sets a shorter timer first.
             if !self.model.isStack, self.dismissTimer == nil { self.scheduleDismiss(after: self.ui.thumbnailSeconds) }
         })
+    }
+
+    /// Swallows every press on the slot a click just opened a card from, for as long as a second
+    /// click would make it a double click. Opening narrows the stack away from the slot and can
+    /// slide another card into it, so that second click would reach the app behind or open that
+    /// card. The slot is as the hovered card drew it, since that is where the click was.
+    private func swallowSecondClick(on slot: NSRect) {
+        flights.swallowPresses(in: layout.hovered(slot), for: NSEvent.doubleClickInterval, on: screen)
     }
 
     /// Hovers the card that has just landed when the pointer is on it, and only then. Its flight

@@ -186,6 +186,13 @@ struct StackLayout {
         return NSRect(x: panelFrame.maxX - inset - size.width, y: y, width: size.width, height: size.height)
     }
 
+    /// Where a card at `frame` is drawn while the pointer is on it: the hover scale grows it about
+    /// its centre.
+    func hovered(_ frame: NSRect) -> NSRect {
+        let grow = max(0, ui.hoverScale - 1)
+        return frame.insetBy(dx: -frame.width * grow / 2, dy: -frame.height * grow / 2)
+    }
+
     /// How fast a drag-select scrolls the column, in points a second, from how far the drag point
     /// sits below the top of the visible column. Zero away from the ends, ramping to the top speed
     /// at each end and capped past it. Positive brings older cards down into view, negative newer
