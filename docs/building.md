@@ -69,7 +69,10 @@ installs global event monitors.
 ## Releasing
 
 `scripts/release.sh <version>` builds a Release archive, exports it Developer ID signed, packages a
-disk image with an Applications alias, notarizes it, and staples the ticket.
+disk image with an Applications alias, notarizes it, and staples the ticket. Finder lays out the
+disk image: a small window with the app on the left and Applications on the right. So the first
+run asks for your terminal to control Finder, and the script stops if a volume named Vignette is
+already mounted, because the new image would then mount under another name.
 
 ```
 ./scripts/release.sh 0.1.0 --dry-run   # everything but notarization
@@ -100,7 +103,8 @@ hardened runtime, and for a strict signature before it packages anything.
 A `.dmg` rather than a `.zip` on purpose. An app launched out of a downloaded zip is still
 quarantined, and macOS runs it from a randomized read-only location. Vignette registers a URL
 scheme, writes `~/.config/vignette/settings.json`, and needs an Accessibility grant, none of which
-survive that. Dragging out of a disk image into Applications clears the quarantine.
+survive that. Dragging out of a disk image into Applications clears the quarantine. An app opened
+straight from the disk image offers to move itself to Applications (`AppLocation.swift`).
 
 Publishing is two commands, which the script prints when it finishes:
 

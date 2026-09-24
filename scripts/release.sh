@@ -101,10 +101,50 @@ codesign --verify --deep --strict --verbose=2 "$app"
 
 echo "==> disk image"
 staging=$(mktemp -d)
-trap 'rm -rf "$staging"' EXIT
+device=""
+trap '[[ -n "$device" ]] && hdiutil detach "$device" -quiet 2>/dev/null; rm -rf "$staging" "$staging.rw.dmg"' EXIT
 cp -R "$app" "$staging/"
 ln -s /Applications "$staging/Applications"   # the drag target
-hdiutil create -volname "$scheme" -srcfolder "$staging" -ov -format UDZO -quiet "$dmg"
+# Finder finds the image by its volume name, and a second volume of that name mounts as "$scheme 1".
+if [[ -e "/Volumes/$scheme" ]]; then
+  echo "a volume named $scheme is mounted; eject it before cutting a release" >&2; exit 1
+fi
+# Laid out by Finder on a writable image, then compressed: a small window with the app on the
+# left and Applications on the right. Finder asks once for this terminal to control it.
+hdiutil create -volname "$scheme" -srcfolder "$staging" -ov -format UDRW -quiet "$staging.rw.dmg"
+device=$(hdiutil attach "$staging.rw.dmg" -readwrite -noverify -noautoopen | awk '/\/Volumes\// {print $1; exit}')
+# Finder learns of the new disk a moment after hdiutil returns.
+for _ in {1..50}; do
+  [[ $(osascript -e "tell application \"Finder\" to exists disk \"$scheme\"") == true ]] && break
+  sleep 0.2
+done
+osascript <<OSA
+tell application "Finder"
+  tell disk "$scheme"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {400, 200, 940, 540}
+    set opts to the icon view options of container window
+    set arrangement of opts to not arranged
+    set icon size of opts to 128
+    set text size of opts to 13
+    set position of item "$scheme.app" of container window to {140, 150}
+    set position of item "Applications" of container window to {400, 150}
+    set extension hidden of item "$scheme.app" to true
+    update without registering applications
+    delay 1
+    close
+  end tell
+end tell
+OSA
+# Written by the volume itself, and visible to anyone whose Finder shows hidden files.
+rm -rf "/Volumes/$scheme/.fseventsd"
+sync
+hdiutil detach "$device" -quiet
+device=""
+hdiutil convert "$staging.rw.dmg" -format UDZO -ov -quiet -o "$dmg"
 codesign --sign "$CODE_SIGN_IDENTITY" --timestamp "$dmg"
 
 # --- notarize ----------------------------------------------------------------------------------
