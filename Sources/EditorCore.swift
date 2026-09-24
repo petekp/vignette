@@ -2,7 +2,8 @@ import CoreGraphics
 import Foundation
 
 /// The editor's sizes and timings that a person tunes by feel, given at open from the tweaks.
-/// Sizes are in screen pt unless they say otherwise; `standard` holds the spec's numbers.
+/// Sizes are in screen pt unless they say otherwise; `standard` holds the numbers `docs/editor.md`
+/// gives.
 struct EditorMetrics: Equatable {
     /// How far a press travels before it is a drag.
     var dragDistance: CGFloat
@@ -41,9 +42,9 @@ struct EditorMetrics: Equatable {
 /// the text being typed. It hit-tests nothing itself: `target(at:)` tests a press against the
 /// overlay's handles and dots as drawn, then against the marks by `EditorGeometry.hit`.
 ///
-/// Locations are image px from the image's top-left corner, y down. A size the spec gives in screen
-/// pt becomes px through `zoom`, so it keeps its size on screen; one in pt becomes px through the
-/// drawing's point scale.
+/// Locations are image px from the image's top-left corner, y down. A size in screen pt becomes px
+/// through `zoom`, so it keeps its size on screen; one in pt becomes px through the drawing's point
+/// scale.
 struct EditorCore {
     // MARK: Sizes
 

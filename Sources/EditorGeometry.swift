@@ -3,7 +3,7 @@ import Foundation
 
 /// The editor's measures for one drawing at one zoom: where a mark lies, how a point meets it, the
 /// handles and dots a selection shows, and the shapes the tools make. Everything is in image px;
-/// a size the spec gives in screen pt becomes px through `zoom`, and one in pt through `pointScale`.
+/// a size in screen pt becomes px through `zoom`, and one in pt through `pointScale`.
 struct EditorGeometry {
     let pixels: PixelSize
     let pointScale: CGFloat

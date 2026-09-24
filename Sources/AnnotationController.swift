@@ -174,7 +174,8 @@ final class AnnotationController {
             return
         }
         let screen = zoomScreen ?? NSScreen.main ?? NSScreen.screens[0]
-        // A new drawing takes the point scale of the screen the annotator opens on (spec, Decision 8).
+        // A new drawing takes the point scale of the screen the annotator opens on: Decision 8 in
+        // docs/editor.md.
         let pointScale = min(max(screen.backingScaleFactor, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
         let drawing = storedDrawing?(shot.url, pixels) ?? Drawing(key: key, pixels: pixels, pointScale: pointScale, marks: [])
         let maxPixel = Thumbnailer.screenPixels(on: screen), space = screen.colorSpace?.cgColorSpace
