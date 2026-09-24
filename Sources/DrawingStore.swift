@@ -33,8 +33,9 @@ struct DrawingStore: Sendable {
     func url(for key: String) -> URL { directory.appendingPathComponent(Self.id(for: key) + ".json") }
 
     /// The drawing stored for the screenshot at `key`, whose size is `pixels`, or nil when there is
-    /// none this build can use. A file that does not parse is set aside as `<id>.json.invalid`; any
-    /// other file it cannot use stays where it is. Each mark is checked and placed inside the image.
+    /// none this build can use. A file it cannot use stays where it is: a read runs beside the main
+    /// thread's writes, and a set-aside here could move the file a write had just put in its place.
+    /// Each mark is checked and placed inside the image.
     func read(key: String, pixels: PixelSize, style: TextStyle) -> Drawing? {
         let url = url(for: key)
         let name = (key as NSString).lastPathComponent
@@ -46,14 +47,7 @@ struct DrawingStore: Sendable {
             log("[drawing] error unreadable \(name): \(reason)")
             return nil
         case .invalid(let reason):
-            let aside = url.appendingPathExtension("invalid")
-            try? FileManager.default.removeItem(at: aside)
-            do {
-                try FileManager.default.moveItem(at: url, to: aside)
-                log("[drawing] error invalid \(name): \(reason); kept as \(aside.lastPathComponent)")
-            } catch {
-                log("[drawing] error invalid \(name): \(reason); could not set it aside: \(error.localizedDescription)")
-            }
+            log("[drawing] error invalid \(name): \(reason); opened without it")
             return nil
         case .newer(let version):
             log("[drawing] warning newer \(name): version \(version) is newer than this build's \(Drawing.version); opened without it")
@@ -117,17 +111,35 @@ struct DrawingStore: Sendable {
     }
 
     /// The key of every drawing this build can read, so the drawings of screenshots that are gone
-    /// can be removed. A file that does not parse or is from a newer build is not listed.
-    func keys() -> Set<String> {
+    /// can be removed. A file from a newer build is not listed. A file that does not parse is set
+    /// aside as `<id>.json.invalid`, here and nowhere else: this runs once, at launch, before
+    /// anything reads or writes a drawing, so nothing can have put a good file in its place.
+    func scan() -> Set<String> {
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         var keys = Set<String>()
         for file in files where file.pathExtension == "json" {
-            // A file under another key's name would be read, written and removed as that key's.
-            if case .stored(let stored) = contents(of: file), file.deletingPathExtension().lastPathComponent == Self.id(for: stored.key) {
-                keys.insert(stored.key)
+            switch contents(of: file) {
+            case .stored(let stored):
+                // A file under another key's name would be read, written and removed as that key's.
+                if file.deletingPathExtension().lastPathComponent == Self.id(for: stored.key) { keys.insert(stored.key) }
+            case .invalid(let reason):
+                setAside(file, reason: reason)
+            case .missing, .unreadable, .newer:
+                break
             }
         }
         return keys
+    }
+
+    private func setAside(_ file: URL, reason: String) {
+        let aside = file.appendingPathExtension("invalid")
+        try? FileManager.default.removeItem(at: aside)
+        do {
+            try FileManager.default.moveItem(at: file, to: aside)
+            log("[drawing] error invalid \(file.lastPathComponent): \(reason); kept as \(aside.lastPathComponent)")
+        } catch {
+            log("[drawing] error invalid \(file.lastPathComponent): \(reason); could not set it aside: \(error.localizedDescription)")
+        }
     }
 
     private func refuseNewer(_ url: URL, name: String) throws {

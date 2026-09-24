@@ -21,7 +21,7 @@ final class Drawings {
 
     init(store: DrawingStore) {
         self.store = store
-        keys = store.keys()
+        keys = store.scan()
     }
 
     /// The stored drawing for the screenshot at `url`, whose size as displayed is `pixels`.
