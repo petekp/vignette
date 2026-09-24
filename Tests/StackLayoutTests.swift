@@ -117,8 +117,8 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(layout.cardSpan(index: 1, cards: cards, showsBar: false).bottom, 110)
     }
 
-    /// The slot a click opened a card from is held as the hovered card drew it, so a second click
-    /// on the card's grown edge is held too.
+    /// The slot a click opened a card from swallows presses as the hovered card drew it, so a
+    /// second click on the card's grown edge is swallowed too.
     func testAHoveredCardCoversItsFrameGrownAboutItsCentre() {
         var u = ui
         u.hoverScale = 1.25
