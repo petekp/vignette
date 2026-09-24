@@ -960,6 +960,7 @@ final class ThumbnailController: NSObject {
                     lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
             guard let self else { return }
             self.model.outCards.remove(card.id)
+            self.hover(landing: card)
             self.flights.dropShadow(id: card.id)   // the card draws it now, in this same commit
             // The card view comes back on SwiftUI's next commit; lift the flight image after it.
             DispatchQueue.main.async { self.flights.lift(id: card.id) }
@@ -967,6 +968,16 @@ final class ThumbnailController: NSObject {
             // A lone thumbnail leaves on its own; the copied mark usually sets a shorter timer first.
             if !self.model.isStack, self.dismissTimer == nil { self.scheduleDismiss(after: self.ui.thumbnailSeconds) }
         })
+    }
+
+    /// Hovers the card that has just landed when the pointer is on it, and only then. Its flight
+    /// covered the slot, and a pointer that moved over the flight gave the stack a hover exit
+    /// wherever the pointer was, so the stack's own hover state says nothing about this card.
+    private func hover(landing card: Card) {
+        let point = NSEvent.mouseLocation
+        let over = cardFrame(of: card).contains(point)
+            && NSApp.window(withWindowNumber: NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0)) != nil
+        if over { model.hoveredCard = card.id } else if model.hoveredCard == card.id { model.hoveredCard = nil }
     }
 
     /// The marks a flight carries: `drawing` with every text drawn at `scale` device px to a px, the

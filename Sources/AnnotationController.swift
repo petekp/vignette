@@ -46,6 +46,8 @@ final class AnnotationController {
     private let outsideClick = OutsideClick()
     /// Asks the window server, from `show` until it answers, whether a press on the frame reaches this window.
     private var eventProbe: Timer?
+    /// The flight has put the image down on this frame, from `landed` until the next `prepare`.
+    private var hasLanded = false
     /// The colour pass's sample of the screenshot in the editor, once it is made.
     private var colorSample: (key: String, sample: ColorSample)?
     /// Counts `open`s, so a decode or a sample only lands on the open that asked for it: the same
@@ -139,6 +141,7 @@ final class AnnotationController {
         let started = CACurrentMediaTime()
         current = shot
         let win = window ?? makeWindow()
+        hasLanded = false
         fittedFrame = frame
         self.room = room
         zoomTarget = 1
@@ -259,10 +262,11 @@ final class AnnotationController {
     /// What asked for a zoom: the fingers on a trackpad, or a key, a two-finger double tap, or a fit.
     enum ZoomInput { case gesture, step }
 
-    /// The editor's zoom keys and its double-click on empty space. Only once the window is up: a
-    /// zoom during the flight would move a frame the flight is still landing on.
+    /// The editor's zoom keys and its double-click on empty space. Only once the flight has landed:
+    /// the editor takes keys from `prepare` and relayed presses from the flight, and a zoom before
+    /// the landing would grow the window under a flight image still at the fitted frame.
     private func zoom(_ request: EditorCore.ZoomRequest) {
-        guard window?.isVisible == true, window?.alphaValue == 1 else { return }
+        guard window?.isVisible == true, hasLanded else { return }
         switch request {
         case .zoomIn: zoom(by: keyZoomStep, at: nil, as: .step)
         case .zoomOut: zoom(by: 1 / keyZoomStep, at: nil, as: .step)
@@ -498,7 +502,7 @@ final class AnnotationController {
                 let reached = self.pressReaches(win)
                 guard reached || elapsed > Self.eventProbeDeadline else { return false }
                 self.eventProbe = nil
-                Log.write("[annotate] takes events after=\(Int((elapsed * 1000).rounded()))ms\(reached ? "" : " deadline")")
+                Log.write("[annotate] takes events after=\(Int((elapsed * 1000).rounded()))ms reached=\(reached)")
                 self.onTakesEvents?(key)
                 return true
             }
@@ -542,6 +546,7 @@ final class AnnotationController {
     /// The flight is exactly on this frame and is going. The window draws the shadow from here on,
     /// in the same run loop turn the flight drops its own, so it is never drawn twice or missing.
     func landed() {
+        hasLanded = true
         frameView?.layer?.shadowOpacity = Float(TransitionLayer.Look.annotator(Settings.shared.data.ui).shadowOpacity)
     }
 

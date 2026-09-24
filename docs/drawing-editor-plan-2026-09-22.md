@@ -129,10 +129,14 @@ Pete asked for this on 2026-09-23, after 4c measured the flights that narrow the
 
 - The flight image is decoded in the display's colour space before the flight starts. Core
   Animation converted it at the flight's first commit: about 20 ms, and 55 ms on the second open.
-- The stack no longer re-lays out in SwiftUI on every frame of a narrowing. Options come to Pete
-  before one is built, because some change how cards look mid-motion.
+  Built.
+- The stack's per-frame relayout while it narrows was measured, and the options went to Pete. He
+  left it for later: `docs/TODOS.md` lists it, and `docs/stack-narrowing-2026-09-23.md` has the
+  numbers.
 - A press on a card flying into the editor never reaches the app behind. It goes to the editor once
-  the editor is up, so a drag begun during the flight draws.
+  the editor is up, so a drag begun during the flight draws. A press on any other flight is
+  swallowed. Built, with the review's fixes. Open: whether the second click of a double-click on a
+  card can land where the narrowing column was, and reach the app behind.
 
 ### Decisions made while planning 4
 
