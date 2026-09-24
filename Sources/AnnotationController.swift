@@ -168,8 +168,8 @@ final class AnnotationController {
         // A new drawing takes the point scale of the screen the annotator opens on (spec, Decision 8).
         let pointScale = min(max(screen.backingScaleFactor, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
         let drawing = storedDrawing?(shot.url, pixels) ?? Drawing(key: key, pixels: pixels, pointScale: pointScale, marks: [])
-        let maxPixel = Thumbnailer.screenPixels(on: screen)
-        let decoded = Thumbnailer.cached(at: shot.url, maxPixel: maxPixel).flatMap(Self.cgImage)
+        let maxPixel = Thumbnailer.screenPixels(on: screen), space = screen.colorSpace?.cgColorSpace
+        let decoded = Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space).flatMap(Self.cgImage)
         colorSample = nil
         let ui = Settings.shared.data.ui
         textStyle = ui.textStyle
@@ -183,7 +183,7 @@ final class AnnotationController {
                     })
         if decoded != nil { loaded(key, started: started) }
         else {
-            Thumbnailer.load(at: shot.url, maxPixel: maxPixel) { [weak self] image in
+            Thumbnailer.load(at: shot.url, maxPixel: maxPixel, space: space) { [weak self] image in
                 guard let self, openGeneration == generation, current?.url.path == key else { return }
                 guard let cg = image.flatMap(Self.cgImage) else {
                     Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(name)")

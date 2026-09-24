@@ -233,6 +233,8 @@ final class ThumbnailController: NSObject {
         if let pinned = pinnedScreen, NSScreen.screens.contains(pinned) { return pinned }
         return NSScreen.main ?? NSScreen.screens[0]
     }
+    /// What every card and flight image is decoded in, so no first commit has a colour conversion to do.
+    private var screenSpace: CGColorSpace? { screen.colorSpace?.cgColorSpace }
     /// A display was added, removed, or rearranged. Whatever is showing moves to a screen that exists.
     func screensChanged() {
         guard visible else { return }
@@ -387,7 +389,7 @@ final class ThumbnailController: NSObject {
             guard let pointSize = Thumbnailer.pointSize(of: shot.url) else { return nil }
             return (shot.url, thumbnailPixels(size: layout.cardSize(for: pointSize), pointSize: pointSize))
         }
-        Thumbnailer.warm(items)
+        Thumbnailer.warm(items, space: screenSpace)
     }
 
     /// The panel can refuse key status right after resigning it (a dismissal being reversed), so try twice.
@@ -536,7 +538,8 @@ final class ThumbnailController: NSObject {
         guard visible else { return }
         model.cards = model.cards.map { card in
             let size = layout.cardSize(for: card.pointSize)
-            let image = Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize)) ?? card.image
+            let image = Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize),
+                                          space: screenSpace) ?? card.image
             if let marks = card.marks, let drawing = marks.drawing {
                 marks.show(drawing, filling: size, backingScale: screen.backingScaleFactor, style: style, arrowhead: arrowhead)
             }
@@ -599,7 +602,7 @@ final class ThumbnailController: NSObject {
     private func makeStitchedCard(_ url: URL) -> Card? {
         guard let pointSize = Thumbnailer.pointSize(of: url) else { return nil }
         let size = layout.cardSize(for: pointSize)
-        guard let image = Thumbnailer.image(at: url, maxPixel: thumbnailPixels(size: size, pointSize: pointSize)) else { return nil }
+        guard let image = Thumbnailer.image(at: url, maxPixel: thumbnailPixels(size: size, pointSize: pointSize), space: screenSpace) else { return nil }
         return Card(id: UUID(), shot: Screenshot(url: url), image: image, pointSize: pointSize, size: size,
                     agent: Agent.of(url), duration: Thumbnailer.duration(of: url))
     }
@@ -1026,7 +1029,7 @@ final class ThumbnailController: NSObject {
         guard let id, let card = model.cards.first(where: { $0.id == id }) else { return }
         let path = card.shot.url.path
         guard flightImages[path] == nil else { return }
-        Thumbnailer.load(at: card.shot.url, maxPixel: Thumbnailer.screenPixels(on: screen)) { [weak self] image in
+        Thumbnailer.load(at: card.shot.url, maxPixel: Thumbnailer.screenPixels(on: screen), space: screenSpace) { [weak self] image in
             // `visible`: a decode that lands after the stack hid must not refill the cache it cleared.
             guard let self, let image, self.visible else { return }
             self.flightImages[path] = image
@@ -1262,10 +1265,11 @@ final class ThumbnailController: NSObject {
         guard let pointSize = Thumbnailer.pointSize(of: shot.url) else { return nil }
         let size = layout.cardSize(for: pointSize)
         let maxPixel = thumbnailPixels(size: size, pointSize: pointSize)
-        let card = Card(id: UUID(), shot: shot, image: Thumbnailer.cached(at: shot.url, maxPixel: maxPixel),
+        let space = screenSpace
+        let card = Card(id: UUID(), shot: shot, image: Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space),
                         pointSize: pointSize, size: size, agent: Agent.of(shot.url), duration: Thumbnailer.duration(of: shot.url))
         if card.image == nil {
-            Thumbnailer.load(at: shot.url, maxPixel: maxPixel) { [weak self] image in
+            Thumbnailer.load(at: shot.url, maxPixel: maxPixel, space: space) { [weak self] image in
                 guard let self, let image, self.model.cards.contains(where: { $0.id == card.id }) else { return }
                 self.replaceImage(of: card, with: image)
             }
