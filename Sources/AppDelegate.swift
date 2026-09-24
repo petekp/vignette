@@ -861,7 +861,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// image leaves the editor only once that rendering and the request are stored, so a failure
     /// anywhere before then leaves the drawing exactly where the hand left it.
     private func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination) {
-        guard !annotator.sending else { return }
+        guard !annotator.sending, let session = annotator.session else { return }
         let name = shot.url.lastPathComponent
         // Nothing drawn is a send of the screenshot itself, which is what the person is looking at.
         // Through PNG whatever the capture format is: a reply copies these bytes to a `.png`
@@ -879,12 +879,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: nil, style: ui.textStyle, arrowhead: ui.arrowhead)
         rendering.whenDone { [weak self] output in
             guard let self else { return }
-            annotator.sending = false
-            // A rendering that answers after the person moved to another image belongs to neither
-            // of them: it is dropped, and nothing is sent and nothing closed.
-            guard annotator.currentKey == shot.url.path else {
+            // A rendering that answers after the session that pressed Send has ended belongs to no
+            // image now, even the same one opened again: it is dropped, and nothing is sent and
+            // nothing closed. The session open now has its own `sending`, which this leaves alone.
+            guard annotator.session == session else {
                 Log.write("[send] dropped \(name); the editor moved on"); return
             }
+            annotator.sending = false
             guard let png = output.png, output.failure == nil else {
                 let failure = output.failure ?? .writeFailed("the rendering made no image")
                 Commands.error("send", failure.code, "\(name): \(failure)")
