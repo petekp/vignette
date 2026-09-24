@@ -383,7 +383,9 @@ final class TransitionLayer {
 
     private func showPanel(on screen: NSScreen) {
         self.screen = screen
-        if !panel.isVisible || panel.frame != screen.frame {
+        // An empty layer is still up while a press on it is held, and a stack presented meanwhile
+        // is ordered above it; the first flight on it puts it back on top.
+        if !panel.isVisible || panel.frame != screen.frame || model.flights.isEmpty {
             panel.setFrame(screen.frame, display: false)
             panel.orderFrontRegardless()
         }
