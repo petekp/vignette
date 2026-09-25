@@ -4,7 +4,7 @@ final class AppServerTests: XCTestCase {
     /// A `thread/list` answer as a running app-server really writes it, cut to the fields the
     /// parser reads (captured 2026-09-21 through `codex app-server proxy --sock`).
     private let answer = #"""
-    {"id":2,"result":{"data":[{"id":"01a0c28f-7c24-7a93-82e4-a7906de82cf4","name":"Open drawing","cwd":"/tmp/loop-test","status":{"type":"notLoaded"}},{"id":"01a0c14e-e536-7580-866c-c50622cecd9b","name":"Explore agent screenshot loop","cwd":"/Users/p/Code/vignette","status":{"type":"idle"}}],"nextCursor":null}}
+    {"id":2,"result":{"data":[{"id":"01a0c28f-7c24-7a93-82e4-a7906de82cf4","name":"Open drawing","cwd":"/tmp/loop-test","recencyAt":1789970783,"preview":"Vignette request 08e8b73a: open the drawing","status":{"type":"notLoaded"}},{"id":"01a0c14e-e536-7580-866c-c50622cecd9b","name":"Explore agent screenshot loop","cwd":"/Users/p/Code/vignette","status":{"type":"idle"}}],"nextCursor":null}}
     """#
 
     func testTheThreadsInAnAnswerCarryTheirNameAndProject() {
@@ -13,6 +13,14 @@ final class AppServerTests: XCTestCase {
                                           "01a0c14e-e536-7580-866c-c50622cecd9b"])
         XCTAssertEqual(threads[0].name, "Open drawing")
         XCTAssertEqual(threads[0].cwd, "/tmp/loop-test")
+        XCTAssertEqual(threads[0].recencyAt, Date(timeIntervalSince1970: 1789970783))
+        XCTAssertEqual(threads[0].preview, "Vignette request 08e8b73a: open the drawing")
+    }
+
+    /// An ephemeral thread and a sub-agent's thread are in the store but are nobody's conversation.
+    func testEphemeralAndSubAgentThreadsAreLeftOut() {
+        let listing = #"{"id":2,"result":{"data":[{"id":"a","cwd":"/x","ephemeral":true},{"id":"b","cwd":"/x","parentThreadId":"a"},{"id":"c","cwd":"/x","ephemeral":false,"parentThreadId":null}]}}"#
+        XCTAssertEqual(AppServer.threads(in: [listing]).map(\.id), ["c"])
     }
 
     /// The store pages can overlap, and a thread can have no name.
@@ -35,6 +43,7 @@ final class AppServerTests: XCTestCase {
         XCTAssertTrue(requests[0].contains("\"method\":\"initialize\""))
         XCTAssertFalse(requests[1].contains("\"id\""), "initialized is a notification and is not waited for")
         XCTAssertTrue(requests[2].contains("\"limit\":7"))
+        XCTAssertTrue(requests[2].contains("\"sortKey\":\"recency_at\""), "the threads asked for are the ones used last")
     }
 
     /// The conversation stops as soon as every request carrying an id has been answered, and does

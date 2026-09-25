@@ -14,13 +14,15 @@ command is a `vignette://` URL. Each one answers with one line in `~/Library/Log
 
 ```sh
 path=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "/abs/path/Checkout at 390px.png")
-open -g "vignette://add?file=$path&agent=claude"
+open -g "vignette://add?file=$path&agent=claude&session=$CLAUDE_CODE_SESSION_ID"
 ```
 
 - `add` copies the file into the watch folder and shows its thumbnail. It leaves the clipboard
   alone and does not open the editor, whatever the user's capture settings say. Add `&annotate`
   to open the editor instead, only when you are asking for marks right away.
 - `&agent=<name>` says who pushed it. The card gets a tab naming you.
+- `&session=<id>` names your session, so the user's Reply on the card comes back to you. Claude
+  Code sets `CLAUDE_CODE_SESSION_ID`. Leave it out when your client gives you no session id.
 - `open -g` keeps the focus where it is. Always percent-encode the path yourself; `open` will not.
 - The file may be anywhere. Every other command takes files inside the watch folder only.
 - Wait for `[add] ok <name>` in the log. The name gains a counter (`x 2.png`) when one is taken.
@@ -97,6 +99,10 @@ watch folder when the rendering finishes, a moment later, and then logs
 there. If the user drew nothing, no file is written and the line is
 `[annotate] done <name> nothing drawn, original copied`. The folder is `screenshotsFolder` in
 `~/.config/vignette/settings.json`.
+
+On a card you pushed with `&session=`, Return sends the drawing to your session instead: it
+arrives as a request, as in "When the user sends you a drawing" above, and no `-annotated.png` is
+written.
 
 Nothing arrives if the user ignores the thumbnail, so do not block on it. Ask for the drawing when
 you need it, then carry on and look for the file.

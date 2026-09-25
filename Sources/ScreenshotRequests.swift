@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Sending a drawing to an agent session and taking its drawing back. One object owns all of it:
 /// the fixed sent image, the durable request and reply records, reply validation, the receipts an
@@ -194,14 +195,26 @@ final class ScreenshotRequests {
         return AgentDestination(id: request.destinationID, name: request.destinationName, address: request.address)
     }
 
-    /// Every session that can be addressed right now: the ones each connection enumerates, plus
-    /// the ones configured for a client that cannot. Blocks on a subprocess, so it runs off the
-    /// main thread and answers on it.
-    func destinations(_ completion: @escaping @Sendable @MainActor ([AgentDestination]) -> Void) {
-        let connections = self.connections
-        DispatchQueue.global(qos: .userInitiated).async {
-            let found = connections.values.flatMap { $0.destinations() }.sorted { $0.name < $1.name }
-            DispatchQueue.main.async { MainActor.assumeIsolated { completion(found) } }
+    /// Every session that can be addressed right now, the one used last first. Each client is
+    /// asked at once, off the main thread, and the list is answered on the main thread every time
+    /// one of them answers, with `complete` on the last. herdr answers in milliseconds and Codex's
+    /// listing takes 0.5 to 2 s, so the session in herdr's focused pane is known long before.
+    func destinations(_ completion: @escaping @Sendable @MainActor (_ found: [AgentDestination], _ complete: Bool) -> Void) {
+        let connections = Array(connections.values)
+        guard !connections.isEmpty else { return completion([], true) }
+        let answers = OSAllocatedUnfairLock(initialState: (found: [AgentDestination](), left: connections.count))
+        for connection in connections {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let listed = connection.destinations()
+                // Queued to the main thread while the lock is held, so answers arrive in the order
+                // they were counted and the one with `complete` is last.
+                answers.withLock { state in
+                    state.found = (state.found + listed).sorted(by: AgentDestination.newestFirst)
+                    state.left -= 1
+                    let (found, complete) = (state.found, state.left == 0)
+                    DispatchQueue.main.async { MainActor.assumeIsolated { completion(found, complete) } }
+                }
+            }
         }
     }
 

@@ -32,6 +32,9 @@ struct CommandRequest: Equatable {
     /// `agent=` from the query: which agent is pushing the image. Empty when the parameter carried
     /// no name, which still marks the card; nil when it was not given at all.
     let agent: String?
+    /// `session=` from the query, as given: the agent session `add` is pushing from. `Agent.cleanSession`
+    /// decides whether it is one.
+    var session: String? = nil
     /// `marks=` from the query, as given: a path to a JSON file, or the JSON itself. See `AgentMark.parse`.
     let marks: String?
     /// `root=` from the query: the one directory `install-skill` writes into instead of the agent
@@ -55,7 +58,7 @@ enum Commands {
         Fixed(name: "help", summary: "list every command and action in the log"),
         Fixed(name: "state", summary: "dump app state to the log"),
         Fixed(name: "last", summary: "show the thumbnail for the newest screenshot"),
-        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &marks=<json file> draws on it, as marks the user can edit; ignores copyOnCapture and annotateOnCapture"),
+        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &session=<id> names the Claude Code session it came from, which Reply on the card goes back to; &marks=<json file> draws on it, as marks the user can edit; ignores copyOnCapture and annotateOnCapture"),
         Fixed(name: "recent", summary: "toggle the recent stack"),
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
         Fixed(name: "cancel", summary: "close the annotator without copying, as Esc would"),
@@ -76,6 +79,7 @@ enum Commands {
         return CommandRequest(name: url.host ?? "", files: files,
                               tag: items.first { $0.name == "tag" }?.value, annotate: annotate,
                               agent: Agent.clean(items.first { $0.name == "agent" }.map { $0.value ?? "" }),
+                              session: items.first { $0.name == "session" }?.value,
                               marks: items.first { $0.name == "marks" }?.value,
                               root: items.first { $0.name == "root" }?.value.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) },
                               clear: items.first { $0.name == "clear" }?.value)

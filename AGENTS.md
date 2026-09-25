@@ -95,6 +95,10 @@ the measurements and the reasoning; a rule here points at its note.
    agent is pushing it: the name is recorded on the copy as the `com.petepetrash.vignette.agent`
    extended attribute (`Agent.swift`, `xattr -l` shows it) and the card gets a white "From <Name>" tab
    with the vendor's logo when `Resources/agents/<name>.svg` has one (`Agent.logo(for:)`).
+   `&session=<id>` names the Claude Code session pushing it, recorded beside the name as
+   `com.petepetrash.vignette.session`, so the card's bar is Reply and goes back there
+   (`Agent.origin(of:)`). The id is the pusher's claim; sending to it still checks the session is in
+   a herdr pane. Anything but a UUID is not recorded, and `[add]` still answers `ok`.
    `&marks=<json file>` pushes the agent's own annotations with the image: they join the
    screenshot's drawing before the card appears (`Drawings.add`), and the command answers once that
    drawing is written. That JSON file may also be anywhere; it is read on the main thread, so it is
@@ -501,11 +505,19 @@ the same driven sequence; a single run varies.
 - The annotator's window is borderless and spans the screen's visible frame. The frame inside it is
   sized to the image. Its toolbar is a native panel (`AnnotatorToolbar.swift`) placed under the
   frame. It shows `EditorCore.Tool.allCases`, the editor reports the active tool through `onTool`,
-  and the bar calls `setTool`, `send` and `done` on the editor. The bar is tools, one divider, Send,
-  Done: there is no palette, so which colour a mark is drawn in is the colour pass's, not the
-  user's. Send has no default and no last-used target; its menu groups the agent sessions by
-  project, as sections up to `submenuThreshold` projects and as a submenu each above it, so where a
-  drawing is going is read before it goes. While one image follows another with no gap (a click on
+  and the bar calls `setTool`, `send` and `done` on the editor. The bar is tools, one divider, then
+  what `ToolbarOffer` says the image offers: Copy alone when there is no session to send to; Copy,
+  the target and Send; or Reply alone on a card that names the session it came from (an agent's
+  reply, or a push with `session=`). Copy is Done under a label that says what it does. There is no
+  palette, so which colour a mark is drawn in is the colour pass's, not the user's. Send starts on
+  the session you came from: herdr's focused pane, or the one agent in its tab when that pane runs
+  none (`AgentDestination.defaultTarget`), else the session used last. The target shows the agent's
+  logo and the project, and its menu lists five sessions, the one used last first, then More
+  sessions. The target settles once, from herdr's answer (about 60 ms, before the bar is up) or
+  from the whole list, and after that changes only when its session is gone, so it never changes
+  under the pointer. Return copies and replies only on a card that names its session; Cmd+Return
+  sends or replies (`EditorCore.finishes`). Return never sends to a session Vignette picked.
+  `docs/send-and-reply-2026-09-24.md` has the rules. While one image follows another with no gap (a click on
   another card, or the queue moving on) the bar stays on screen and springs to the next image's
   place: `place(below:gap:)` slides the panel when it is already up, one `Tween` per direction, over
   `Anim.passesTarget(ui.expandDuration)`, which is when the next image's window comes up.
@@ -688,14 +700,24 @@ the same driven sequence; a single run varies.
   thread UUID and nothing else: `codex queue --thread` finds the engine that owns the thread, the
   desktop app's included, and that engine resolves the UUID or fails, which is
   `AddressGuard.runtimeEnforced`. `AppServer.swift` is the only thing that speaks the app-server
-  protocol, and it only reads: it carries one `thread/list` to a `codex app-server` of its own and
-  turns the answer into menu rows, grouped by each thread's own `cwd`. The thread store is on disk,
+  protocol, and it only reads: it carries one `thread/list` to a `codex app-server` of its own,
+  asking for the threads used last (`sortKey: recency_at`), and turns the answer into menu rows, each
+  with the thread's own `cwd` and `recencyAt`. An ephemeral thread and a sub-agent's thread (one with
+  a `parentThreadId`) are left out. A thread with no name is named by its first message. The thread store is on disk,
   so a server started for the length of that one listing answers for every session, whoever owns
   it; the listing's `status` is that server's own memory and says nothing about a session, so it is
   not kept. No `codex` on the machine means no Codex destinations, which is not an error.
   `docs/codex-discovery-2026-09-21.md` has the protocol, the timings behind `listLimit`, and what
   was verified against a live desktop session. Claude Code is addressed by
-  its session id, which herdr reports per pane; herdr's submission API takes a pane and has no
+  its session id, which herdr reports per pane, and only a session in a pane is listed, since only
+  those can receive. `herdr pane list` gives the sessions, the folder each pane runs in, which is
+  its project, and herdr's focus. Its row comes from its transcript, `~/.claude/projects/<folder>/<id>.jsonl`,
+  read from the last 256 KB: the last `ai-title` names it (herdr's pane title is the same title cut
+  to 34 characters, and stands in when there is none), and the last user or assistant entry's
+  `timestamp` is when it was last used. That entry's `cwd` follows the session's shell, so it is the
+  project only when herdr gives none. The file's modification time is
+  not the last use: Claude Code writes entries with no message in them to transcripts it is not
+  using (measured 2026-09-24). herdr's submission API takes a pane and has no
   expected-session parameter, so Vignette re-lists and checks the pane still holds that exact
   session immediately before submitting (`AddressGuard.preflight`). A session in no pane is an
   error and never another pane. The image travels as a path the session opens itself, so a Claude

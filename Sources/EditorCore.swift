@@ -67,6 +67,16 @@ struct EditorCore {
     /// The colour pass's pick for one mark, or nil while it cannot pick yet; the mark stays owed.
     typealias ColorPick = (Mark) -> MarkColor?
 
+    /// What finishing the drawing does: copy it and close (Done), or hand it to an agent session (Send).
+    enum Finish: Equatable { case done, send }
+
+    /// What Return and Cmd+Return finish with. The host sets them from what its bar offers: Send
+    /// needs a session to go to, and Return sends only to a session the image itself names.
+    struct Finishes: Equatable {
+        var returnKey = Finish.done
+        var commandReturn = Finish.done
+    }
+
     enum Input {
         /// A screenshot opens with its drawing, or an empty one whose point scale is the display's.
         /// `arrowhead` is the renderer's, which the selection frame goes around.
@@ -353,6 +363,8 @@ struct EditorCore {
     private let layouts = TextLayoutCache()
     private var pickColor: ColorPick = { _ in nil }
     private(set) var tool = Tool.rectangle
+    /// The host's to set, whenever what its bar offers changes. Opening an image leaves it alone.
+    var finishes = Finishes()
     private(set) var selection: Set<Mark.ID> = []
     private(set) var gesture: Gesture?
     private(set) var hover: Target?
@@ -555,6 +567,11 @@ struct EditorCore {
         if gesture != nil { released(nil) }
         if typing != nil { endTyping() }
         runColorPass()
+    }
+
+    private mutating func finish(_ finish: Finish) {
+        finishForHost()
+        emit(finish == .done ? .done(drawingForHost) : .send(drawingForHost))
     }
 
     private mutating func park() {
@@ -1229,7 +1246,7 @@ struct EditorCore {
             case .escape: endTyping()
             case .returnKey where modifiers.isDisjoint(with: [.shift, .option]):
                 endTyping()
-                if command { finishForHost(); emit(.done(drawingForHost)) }
+                if command { finish(finishes.commandReturn) }
             case .character(let character) where command:
                 if let request = Self.zoomRequest(for: character) { emit(.zoom(request)) }
             default: break
@@ -1255,8 +1272,7 @@ struct EditorCore {
             emit(.close)
         case .returnKey:
             if modifiers.isDisjoint(with: [.shift, .option]) {
-                finishForHost()
-                emit(.done(drawingForHost))
+                finish(command ? finishes.commandReturn : finishes.returnKey)
             } else if selection.count == 1, let id = selection.first, mark(id)?.kind == .text {
                 beginTyping(id, caret: .selectAll, edit: MarkEdit(marks: drawing.marks, selectionBefore: selection))
             }

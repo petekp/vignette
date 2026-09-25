@@ -38,7 +38,7 @@ behind Vignette.
   Your drawing is kept in its own file, apart from the original. Go back, change it, undo it. The
   original stays as it was.
 - **Queue**<br>
-  Draw on several in a row. Open them together and each Done opens the next.
+  Draw on several in a row. Open them together, and each one you copy or send opens the next.
 
 ### The app
 

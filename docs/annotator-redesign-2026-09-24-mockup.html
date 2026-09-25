@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comments Mockup</title>
+<style>
+  :root {
+    --desk: #17181c;
+    --ink: #f2f2f4;
+    --muted: #9a9aa2;
+    --faint: #6d6d75;
+    --bar: rgba(44, 44, 48, 0.9);
+    --hair: rgba(255, 255, 255, 0.14);
+    --chip: rgba(255, 255, 255, 0.08);
+    --field: rgba(0, 0, 0, 0.28);
+    --accent: #0a84ff;
+    --claude: #d97757;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 16px 60px;
+    background: radial-gradient(120% 80% at 50% 0%, #2a2c33 0%, var(--desk) 60%);
+    color: var(--ink);
+    font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header { max-width: 1120px; margin: 0 auto 26px; }
+  h1 { font-size: 20px; margin: 0 0 6px; font-weight: 650; }
+  header p { margin: 0; color: var(--muted); max-width: 76ch; }
+  section {
+    max-width: 1120px; margin: 0 auto 36px; padding: 22px 22px 28px;
+    border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; background: rgba(255,255,255,0.02);
+    overflow: hidden;
+  }
+  section h2 { font-size: 15px; margin: 0 0 4px; font-weight: 650; }
+  section > p { margin: 0 0 20px; color: var(--muted); max-width: 84ch; }
+  @media (max-width: 1100px) { .scene, .copyout { zoom: 0.8; } }
+  @media (max-width: 900px) { .scene, .copyout { zoom: 0.62; } }
+
+  /* Scene: rail | image + bottom row | comments */
+  .scene { display: grid; grid-template-columns: 44px 700px 296px; column-gap: 12px; justify-content: center; align-items: start; }
+  .center { display: flex; flex-direction: column; gap: 10px; }
+
+  .rail {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 0;
+    background: var(--bar); border-radius: 12px;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.35), inset 0 0 0 0.5px var(--hair);
+  }
+  .tool { width: 32px; height: 30px; border-radius: 7px; display: grid; place-items: center; color: var(--ink); }
+  .tool.on { background: var(--accent); color: #fff; }
+  .tool svg { width: 15px; height: 15px; }
+  .aa { font-weight: 600; font-size: 13px; }
+  .hdiv { width: 20px; height: 1px; background: rgba(255,255,255,0.14); margin: 5px 0; }
+
+  /* The screenshot: an invented dashboard */
+  .shot {
+    position: relative; width: 700px; height: 404px; overflow: hidden; border-radius: 10px;
+    background: #f4f5f7; color: #1d1f24;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.45), 0 0 0 0.5px rgba(255,255,255,0.12);
+    font: 11px/1.3 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  }
+  .nav { height: 34px; display: flex; align-items: center; gap: 16px; padding: 0 14px; background: #fff; border-bottom: 1px solid #e6e7ea; }
+  .nav b { font-weight: 650; }
+  .nav .cur { font-weight: 600; }
+  .nav span { color: #8a8d94; position: relative; }
+  .nav .cur { color: #1d1f24; }
+  .card { background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px #eceef1; position: absolute; }
+  .chart { left: 8px; top: 44px; width: 684px; height: 160px; padding: 12px 14px; }
+  .ctitle { font-weight: 600; font-size: 10.5px; position: relative; display: inline-block; }
+  .bars { position: absolute; left: 18px; right: 18px; bottom: 12px; height: 118px; display: flex; align-items: flex-end; justify-content: space-between; }
+  .bw { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 42px; position: relative; }
+  .b { width: 40px; background: #d0d3d9; border-radius: 2px 2px 0 0; }
+  .b.low { background: #a6a9b0; }
+  .bl { font-size: 8.5px; color: #8a8d94; }
+  .stat { top: 212px; height: 184px; padding: 12px 14px; }
+  .stat.l { left: 8px; width: 334px; }
+  .stat.r { left: 350px; width: 342px; }
+  .stitle { font-weight: 600; font-size: 10.5px; }
+  .big { font-size: 22px; font-weight: 500; margin: 10px 0 2px; display: inline-block; position: relative; }
+  .sub { color: #5d6068; font-size: 10.5px; display: inline-block; position: relative; }
+  .rows { margin-top: 10px; position: relative; }
+  .row { display: flex; justify-content: space-between; font-size: 10px; padding: 5px 0; border-top: 1px solid #eef0f2; position: relative; }
+  .row:first-child { border-top: 0; }
+  .val { position: relative; }
+
+  /* Pins and region comments */
+  .pin {
+    position: absolute; width: 22px; height: 22px; border-radius: 11px 11px 11px 2px;
+    display: grid; place-items: center; color: #fff; font: 700 11px/1 -apple-system, sans-serif;
+    box-shadow: 0 0 0 2px #fff, 0 3px 8px rgba(0,0,0,0.35); z-index: 3;
+    transform: translate(0, -100%);
+  }
+  .pin.claude { background: var(--claude); }
+  .pin.you { background: var(--accent); }
+  .pin.hot { box-shadow: 0 0 0 2px #fff, 0 0 0 5px rgba(217,119,87,0.45), 0 3px 8px rgba(0,0,0,0.35); }
+  .pin.new { background: var(--accent); box-shadow: 0 0 0 2px #fff, 0 0 0 5px rgba(10,132,255,0.35), 0 3px 8px rgba(0,0,0,0.35); }
+  .region { position: absolute; border-radius: 4px; z-index: 2; }
+  .region.claude { box-shadow: 0 0 0 2px var(--claude); }
+  .region.you { box-shadow: 0 0 0 2px var(--accent); }
+  .region.hot { background: rgba(217,119,87,0.14); box-shadow: 0 0 0 2.5px var(--claude); }
+
+  /* The comments list */
+  .panel {
+    height: 490px; display: flex; flex-direction: column;
+    background: var(--bar); border-radius: 12px;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.35), inset 0 0 0 0.5px var(--hair);
+    overflow: hidden;
+  }
+  .phead { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 8px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+  .phead b { font-size: 13px; font-weight: 650; }
+  .phead span { color: var(--muted); font-size: 11.5px; }
+  .list { flex: 1; overflow: hidden; padding: 4px 0; position: relative; }
+  .list::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 36px; background: linear-gradient(transparent, rgba(44,44,48,0.95)); }
+  .entry { display: grid; grid-template-columns: 22px 1fr; column-gap: 9px; padding: 8px 14px; }
+  .entry.hot { background: rgba(255,255,255,0.06); }
+  .num {
+    width: 20px; height: 20px; border-radius: 10px 10px 10px 2px; display: grid; place-items: center;
+    color: #fff; font: 700 10.5px/1 -apple-system, sans-serif; margin-top: 1px;
+  }
+  .num.claude { background: var(--claude); }
+  .num.you { background: var(--accent); }
+  .who { display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; margin-bottom: 2px; }
+  .who .when { color: var(--faint); font-weight: 500; }
+  .who svg { width: 11px; height: 11px; fill: var(--claude); }
+  .txt { color: #dcdce0; font-size: 12.5px; line-height: 1.38; }
+  .replylink { color: var(--faint); font-size: 11.5px; margin-top: 4px; }
+  .draft {
+    margin-top: 7px; padding: 6px 8px; border-radius: 7px; background: var(--field);
+    box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.09);
+  }
+  .draft .dwho { font-size: 11px; font-weight: 600; color: #9cc8ff; margin-bottom: 1px; display: flex; gap: 6px; align-items: baseline; }
+  .draft .dwho i { font-style: normal; color: var(--faint); font-weight: 500; }
+  .draft .dtxt { font-size: 12.5px; color: var(--ink); }
+  .editing { box-shadow: inset 0 0 0 1.5px rgba(10,132,255,0.85); background: var(--field); border-radius: 7px; padding: 5px 7px; margin-top: 2px; }
+  .caret { display: inline-block; width: 1.5px; height: 14px; background: var(--ink); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .hint { color: var(--faint); font-size: 11px; margin-top: 5px; }
+
+  /* Bottom row: Copy, then the tabbed composer */
+  .bottom { display: flex; gap: 8px; align-items: flex-end; width: 700px; }
+  .bar {
+    display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 7px;
+    background: var(--bar); border-radius: 12px;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.35), inset 0 0 0 0.5px var(--hair);
+    white-space: nowrap;
+  }
+  .btn { height: 30px; padding: 0 10px; border-radius: 7px; display: inline-flex; align-items: center; gap: 7px; font-weight: 550; }
+  .btn.plain { background: var(--chip); }
+  .btn.primary { background: var(--accent); color: #fff; font-weight: 600; }
+  .key { font-size: 11px; font-weight: 500; opacity: 0.62; }
+  .btn.primary .key { opacity: 0.8; }
+  .count { font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.25); border-radius: 8px; padding: 1px 6px; }
+  .field { flex: 1; height: 30px; border-radius: 7px; padding: 0 9px; display: flex; align-items: center; background: var(--field); box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.09); color: var(--muted); overflow: hidden; }
+  .field.filled { color: var(--ink); }
+  .tabbed { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .tabs { display: flex; gap: 2px; padding: 0 10px; margin-bottom: -1px; overflow: hidden; position: relative; z-index: 1; }
+  .tab {
+    flex: 0 1 auto; min-width: 0; height: 28px; padding: 0 11px 0 9px; border-radius: 9px 9px 0 0;
+    display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 550;
+    background: rgba(44,44,48,0.55);
+    box-shadow: inset 0 0.5px 0 var(--hair), inset 0.5px 0 0 var(--hair), inset -0.5px 0 0 var(--hair);
+  }
+  .tab.sel { flex: none; color: #fff; background: var(--bar); }
+  .tab svg { width: 13px; height: 13px; flex: none; fill: var(--claude); }
+  .tab .pname { min-width: 0; max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cx { flex: none; font: 600 10px/1 ui-monospace, "SF Mono", Menlo, monospace; color: #cfd2d8; background: rgba(255,255,255,0.12); border-radius: 4px; padding: 2px 3px; }
+  .rbadge { flex: none; font-size: 10px; font-weight: 600; color: #fff; background: rgba(255,255,255,0.18); border-radius: 6px; padding: 1px 5px; }
+
+  /* What Copy pastes */
+  .copyout { display: flex; justify-content: center; }
+  .png { display: flex; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 18px 40px rgba(0,0,0,0.45); }
+  .png .shot { border-radius: 0; box-shadow: none; }
+  .margin { width: 250px; padding: 16px 16px; background: #fbfbfc; border-left: 1px solid #e6e7ea; color: #1d1f24; font: 12px/1.4 -apple-system, sans-serif; }
+  .margin .mrow { display: grid; grid-template-columns: 22px 1fr; column-gap: 8px; margin-bottom: 12px; }
+  .margin .mrow .who2 { font-size: 10.5px; font-weight: 650; color: #5d6068; margin-bottom: 1px; }
+  .note { max-width: 84ch; margin: 18px auto 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-comment" viewBox="0 0 16 16"><path d="M8 2.2c3.4 0 6 2.2 6 5s-2.6 5-6 5c-.7 0-1.4-.1-2-.3L2.6 13.4l.9-2.8C2.6 9.7 2 8.5 2 7.2c0-2.8 2.6-5 6-5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-select" viewBox="0 0 16 16"><path d="M3 1.8 12.6 9.3 8.4 9.8 10.7 14.4 8.9 15.2 6.6 10.6 3.4 13.4Z" fill="currentColor"/></symbol>
+    <symbol id="i-rect" viewBox="0 0 16 16"><rect x="1.8" y="3.3" width="12.4" height="9.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 16 16"><path d="M3 13 13 3M6 3h7v7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-claude" viewBox="0 0 94 94"><path d="M18.3658 62.2435L36.7823 51.9165L37.0858 51.012L36.7823 50.5083H35.8716L32.7853 50.3206L22.2616 50.0389L13.1546 49.6634L4.30054 49.194L2.07438 48.7246L0 45.9551L0.202378 44.5938L2.07438 43.3264L4.75589 43.5611L10.6755 43.9836L19.5801 44.5938L26.0056 44.9693L35.568 45.9551H37.0858L37.2882 45.3448L36.7823 44.9693L36.3775 44.5938L27.1693 38.3507L17.2022 31.7789L11.9909 27.9767L9.20822 26.0522L7.79157 24.2684L7.18443 20.3254L9.71416 17.5089L13.1546 17.7436L14.0147 17.9783L17.5057 20.654L24.9431 26.3865L34.6573 33.5334L36.0739 34.7068L36.6423 34.3043L36.7113 34.0209L36.0739 32.9587L30.8121 23.4579L25.1935 13.7703L22.6891 9.75662L22.0319 7.34996C21.7929 6.35931 21.6317 5.54645 21.6317 4.53143L24.5359 0.587946L26.143 0.0719116L30.0203 0.587946L31.6582 2.00787L34.0679 7.52219L37.9676 16.1846L44.0164 27.9767L45.7872 31.4731L46.7328 34.7068L47.0869 35.6926H47.6941V35.1293L48.1917 28.4933L49.1117 20.3444L50.0056 9.8622L50.3157 6.90845L51.7738 3.37683L54.6703 1.46838L56.9357 2.54743L58.7949 5.21924L58.5373 6.94004L57.4312 14.1111L55.2659 25.3665L53.8493 32.9587H54.6703L55.6147 32.0138L59.4509 26.9202L65.8754 18.8905L68.7081 15.6989L72.0142 12.1906L74.1349 10.5116H78.1447L81.0954 14.9011L79.7724 19.4344L75.6414 24.6729L72.2154 29.1174L67.302 35.7334L64.2345 41.0223L64.5157 41.4453L65.2447 41.3749L76.3444 39.0118L82.3405 37.9264L89.497 36.7004L92.7349 38.2139L93.0879 39.7507L91.8136 42.8942L84.1622 44.7765L75.1893 46.5711L61.8264 49.7291L61.6627 49.8461L61.8519 50.0806L67.8718 50.6441L70.4476 50.7823H76.7524L88.4927 51.6572L91.5601 53.6851L93.4003 56.1661L93.0927 58.0555L88.3693 60.4598L81.9964 58.9475L67.1195 55.4104L62.0164 54.1374H61.3104V54.5605L65.563 58.7165L73.3571 65.7539L83.1165 74.8286L83.6149 77.0742L82.3638 78.8408L81.0438 78.6519L72.4887 72.2195L69.1886 69.3226L61.7212 63.0342H61.2253V63.6922L62.9437 66.2066L72.0404 79.8766L72.5129 84.0685L71.8531 85.4318L69.4959 86.2554L66.9058 85.7862L61.5808 78.3136L56.0845 69.8947L51.6516 62.3494L51.1082 62.6594L48.4889 90.8712L47.2618 92.3131L44.4291 93.3988L42.0694 91.6082L40.8162 88.7064L42.0694 82.9678L43.5835 75.4692L44.8119 69.5087L45.9214 62.1052L46.5796 59.6437L46.5362 59.4814L45.9942 59.5518L40.4149 67.2083L31.9278 78.6772L25.2124 85.8612L23.6034 86.4952L20.8173 85.0523L21.0762 82.4776L22.6333 80.1822L31.9278 68.3659L37.5329 61.0374L41.1532 56.8055L41.1276 56.1922H40.9127L16.2425 72.2195L11.8499 72.7828L9.95755 71.0097L10.1907 68.1079L11.0869 67.1682L18.4063 62.1287L18.3658 62.2435Z"/></symbol>
+  </defs>
+</svg>
+
+<template id="dash">
+  <div class="nav"><b>Weekly report</b><span class="cur">Overview</span><span>Sources</span><span data-a="nav">Pages</span><span>Settings</span></div>
+  <div class="card chart">
+    <span class="ctitle" data-a="title">Sessions, last 12 weeks</span>
+    <div class="bars">
+      <div class="bw"><div class="b" style="height:52px"></div><span class="bl">W1</span></div>
+      <div class="bw"><div class="b" style="height:59px"></div><span class="bl">W2</span></div>
+      <div class="bw"><div class="b" style="height:56px"></div><span class="bl">W3</span></div>
+      <div class="bw"><div class="b" style="height:68px"></div><span class="bl">W4</span></div>
+      <div class="bw"><div class="b" style="height:74px"></div><span class="bl">W5</span></div>
+      <div class="bw"><div class="b" style="height:70px"></div><span class="bl">W6</span></div>
+      <div class="bw"><div class="b" style="height:80px"></div><span class="bl">W7</span></div>
+      <div class="bw"><div class="b" style="height:88px"></div><span class="bl">W8</span></div>
+      <div class="bw"><div class="b" style="height:84px"></div><span class="bl">W9</span></div>
+      <div class="bw" data-a="w10"><div class="b low" style="height:22px"></div><span class="bl">W10</span></div>
+      <div class="bw"><div class="b" style="height:92px"></div><span class="bl">W11</span></div>
+      <div class="bw" data-a="w12"><div class="b" style="height:99px"></div><span class="bl">W12</span></div>
+    </div>
+  </div>
+  <div class="card stat l">
+    <div class="stitle">Sessions this week</div>
+    <div class="big">18,402</div><br>
+    <span class="sub" data-a="growth">up 6.1% on last week</span>
+    <div class="rows" data-a="sources">
+      <div class="row"><span>Direct</span><span>7,145</span></div>
+      <div class="row"><span>Search</span><span>6,309</span></div>
+      <div class="row"><span>Referral</span><span>3,288</span></div>
+      <div class="row"><span>Other</span><span>1,660</span></div>
+    </div>
+  </div>
+  <div class="card stat r">
+    <div class="stitle">Median load time</div>
+    <div class="big" data-a="median">412 ms</div><br>
+    <span class="sub">down 28 ms on last week</span>
+    <div class="rows">
+      <div class="row"><span>Home</span><span>288 ms</span></div>
+      <div class="row"><span>Search results</span><span>517 ms</span></div>
+      <div class="row"><span>Article</span><span>361 ms</span></div>
+      <div class="row"><span>Checkout</span><span class="val" data-a="checkout">604 ms</span></div>
+    </div>
+  </div>
+</template>
+
+<header>
+  <h1>Comments, option C</h1>
+  <p>Pins on the image and the full list beside it. The comment tool leads the rail on the left. The bottom row is Copy, then the session tabs over a message about the whole screenshot and Send. Hovering a comment in the list lights its pin, and hovering a pin lights its comment. The screenshot is an invented dashboard.</p>
+</header>
+
+<!-- 1. Reviewing an agent's comments -->
+<section>
+  <h2>1. Claude's review: eight comments, two replies, one message</h2>
+  <p>A card from Claude with eight comments. You've written replies to 2 and 5, which wait as drafts, and a message about the whole screenshot. Reply sends all three at once. The pointer is over comment 4, so its area lights up on the image.</p>
+  <div class="scene" id="s1">
+    <div class="rail">
+      <div class="tool on"><svg><use href="#i-comment"/></svg></div>
+      <div class="hdiv"></div>
+      <div class="tool"><svg><use href="#i-select"/></svg></div>
+      <div class="tool"><svg><use href="#i-rect"/></svg></div>
+      <div class="tool"><svg><use href="#i-arrow"/></svg></div>
+      <div class="tool"><span class="aa">Aa</span></div>
+    </div>
+    <div class="center">
+      <div class="shot" data-dash></div>
+      <div class="bottom">
+        <div class="bar"><div class="btn plain">Copy <span class="key">↩</span></div></div>
+        <div class="tabbed">
+          <div class="tabs">
+            <div class="tab sel"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg><span class="pname">Plan hardening</span><span class="rbadge">Reply</span></div>
+            <div class="tab"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg><span class="pname">Thread item attribution</span></div>
+            <div class="tab"><span class="cx">&gt;_</span><span class="pname">Please assess and improve</span></div>
+            <div class="tab"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg><span class="pname">Smart Inbox Triage</span></div>
+            <div class="tab">+29</div>
+          </div>
+          <div class="bar">
+            <div class="field filled">Fix 1, 2 and 5. Leave the rest for now.</div>
+            <div class="btn primary">Reply <span class="count">3</span> <span class="key">⌘↩</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="phead"><b>8 comments</b><span>2 replies drafted</span></div>
+      <div class="list">
+        <div class="entry"><span class="num claude">1</span><div><div class="who"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg>Claude</div><div class="txt">W10 is the dip you asked about. The ingest job failed on Tuesday, so two days are missing.</div></div></div>
+        <div class="entry"><span class="num claude">2</span><div><div class="who"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg>Claude</div><div class="txt">The axis says W1 to W12. Real dates would read faster.</div>
+          <div class="draft"><div class="dwho">You <i>draft</i></div><div class="dtxt">Yes, use each week's start date.</div></div></div></div>
+        <div class="entry"><span class="num claude">3</span><div><div class="who"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg>Claude</div><div class="txt">This compares against W11, which includes the backfill, so it overstates growth.</div></div></div>
+        <div class="entry hot"><span class="num claude">4</span><div><div class="who"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg>Claude</div><div class="txt">Sources are sorted by size, except Other, which is always last. Keep that?</div><div class="replylink">Reply</div></div></div>
+        <div class="entry"><span class="num claude">5</span><div><div class="who"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg>Claude</div><div class="txt">This is the median. Checkout's p95 is 1.9 s, which this hides.</div>
+          <div class="draft"><div class="dwho">You <i>draft</i></div><div class="dtxt">Show p95 under the median, smaller.</div></div></div></div>
+        <div class="entry"><span class="num claude">6</span><div><div class="who"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg>Claude</div><div class="txt">Checkout is the slowest page, and the only one over 500 ms.</div></div></div>
+        <div class="entry"><span class="num claude">7</span><div><div class="who"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg>Claude</div><div class="txt">The Pages and Sources tabs are empty in this build.</div></div></div>
+        <div class="entry"><span class="num claude">8</span><div><div class="who"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg>Claude</div><div class="txt">W12 is a partial week, four days so far.</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2. Writing your own -->
+<section>
+  <h2>2. Commenting on your own screenshot</h2>
+  <p>A click placed pin 3, and its comment opened at the end of the list with the caret in it. Return finishes it, and the next click places pin 4. A drag makes a box, as pin 1 is. Send goes to the session in front of you.</p>
+  <div class="scene" id="s2">
+    <div class="rail">
+      <div class="tool on"><svg><use href="#i-comment"/></svg></div>
+      <div class="hdiv"></div>
+      <div class="tool"><svg><use href="#i-select"/></svg></div>
+      <div class="tool"><svg><use href="#i-rect"/></svg></div>
+      <div class="tool"><svg><use href="#i-arrow"/></svg></div>
+      <div class="tool"><span class="aa">Aa</span></div>
+    </div>
+    <div class="center">
+      <div class="shot" data-dash></div>
+      <div class="bottom">
+        <div class="bar"><div class="btn plain">Copy <span class="key">↩</span></div></div>
+        <div class="tabbed">
+          <div class="tabs">
+            <div class="tab sel"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg><span class="pname">Plan hardening</span></div>
+            <div class="tab"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg><span class="pname">Thread item attribution</span></div>
+            <div class="tab"><span class="cx">&gt;_</span><span class="pname">Please assess and improve</span></div>
+            <div class="tab"><svg viewBox="0 0 94 94"><use href="#i-claude"/></svg><span class="pname">Smart Inbox Triage</span></div>
+            <div class="tab"><span class="cx">&gt;_</span><span class="pname">Restore Paddock spell check</span></div>
+            <div class="tab">+28</div>
+          </div>
+          <div class="bar">
+            <div class="field">Message about the whole screenshot…</div>
+            <div class="btn primary">Send <span class="count">3</span> <span class="key">⌘↩</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="phead"><b>3 comments</b><span>for Plan hardening</span></div>
+      <div class="list">
+        <div class="entry"><span class="num you">1</span><div><div class="who">You</div><div class="txt">Why the dip here?</div></div></div>
+        <div class="entry"><span class="num you">2</span><div><div class="who">You</div><div class="txt">Is this p50 or p95?</div></div></div>
+        <div class="entry"><span class="num you">3</span><div><div class="who">You</div><div class="editing txt">Checkout feels slow on mob<span class="caret"></span></div><div class="hint">Return to finish · Esc to cancel</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. What Copy pastes -->
+<section>
+  <h2>3. What Copy pastes</h2>
+  <p>The screenshot with its pins and boxes, and the comments drawn in a margin beside it, so the words survive a paste into Claude Code, Slack or a PR. This is the second view's drawing, copied.</p>
+  <div class="copyout">
+    <div class="png">
+      <div class="shot" data-dash id="s3"></div>
+      <div class="margin">
+        <div class="mrow"><span class="num you">1</span><div><div class="who2">Pete</div>Why the dip here?</div></div>
+        <div class="mrow"><span class="num you">2</span><div><div class="who2">Pete</div>Is this p50 or p95?</div></div>
+        <div class="mrow"><span class="num you">3</span><div><div class="who2">Pete</div>Checkout feels slow on mobile.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  // Fill each screenshot with the dashboard, then pin comments to its elements.
+  const tpl = document.getElementById('dash');
+  document.querySelectorAll('[data-dash]').forEach(el => el.appendChild(tpl.content.cloneNode(true)));
+
+  function place(shot, anchor, n, who, opts = {}) {
+    const target = shot.querySelector(`[data-a="${anchor}"]`);
+    const s = shot.getBoundingClientRect(), r = target.getBoundingClientRect();
+    const z = parseFloat(getComputedStyle(shot.closest('.scene, .copyout')).zoom) || 1;
+    const x = (r.left - s.left) / z, y = (r.top - s.top) / z, w = r.width / z, h = r.height / z;
+    if (opts.region) {
+      const pad = opts.pad ?? 4;
+      const box = document.createElement('div');
+      box.className = `region ${who}${opts.hot ? ' hot' : ''}`;
+      Object.assign(box.style, { left: `${x - pad}px`, top: `${y - pad}px`, width: `${w + pad * 2}px`, height: `${h + pad * 2}px` });
+      shot.appendChild(box);
+      addPin(shot, x - pad - 4, y - pad + 4, n, who, opts);
+    } else {
+      addPin(shot, x + (opts.dx ?? w + 3), y + (opts.dy ?? h * 0.55), n, who, opts);
+    }
+  }
+  function addPin(shot, x, y, n, who, opts) {
+    const p = document.createElement('div');
+    p.className = `pin ${who}${opts.hot ? ' hot' : ''}${opts.isNew ? ' new' : ''}`;
+    p.textContent = n;
+    Object.assign(p.style, { left: `${x}px`, top: `${y}px` });
+    shot.appendChild(p);
+  }
+  requestAnimationFrame(() => {
+    const s1 = document.querySelector('#s1 .shot');
+    place(s1, 'w10', 1, 'claude', { region: true });
+    place(s1, 'title', 2, 'claude');
+    place(s1, 'growth', 3, 'claude');
+    place(s1, 'sources', 4, 'claude', { region: true, hot: true });
+    place(s1, 'median', 5, 'claude');
+    place(s1, 'checkout', 6, 'claude', { dx: -26 });
+    place(s1, 'nav', 7, 'claude', { dy: 24 });
+    place(s1, 'w12', 8, 'claude', { dx: 30, dy: 70 });
+
+    for (const shot of [document.querySelector('#s2 .shot'), document.getElementById('s3')]) {
+      place(shot, 'w10', 1, 'you', { region: true });
+      place(shot, 'median', 2, 'you');
+      place(shot, 'checkout', 3, 'you', { dx: -26, isNew: shot.closest('#s2') !== null });
+    }
+  });
+</script>
+</body>
+</html>

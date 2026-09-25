@@ -24,7 +24,7 @@ final class AnnotationController {
     /// The frame moved: it was placed, a zoom stepped it, or it came home on the way out. The
     /// stack follows it, so it narrows as the frame grows towards it.
     var onFrame: ((NSRect) -> Void)?
-    /// The Send menu handed the drawing to this agent session.
+    /// Send or Reply handed the drawing to this agent session.
     var onSend: ((Screenshot, Drawing, AgentDestination) -> Void)?
     /// Cmd+C with nothing selected: this drawing's rendering goes on the clipboard.
     var onCopyDrawing: ((Screenshot, Drawing) -> Void)?
@@ -53,7 +53,8 @@ final class AnnotationController {
     /// Counts `open`s, so a decode, a sample or a send's rendering only lands on the open that asked
     /// for it: the same file can be closed and opened again while the first is still on its way.
     private var openGeneration = 0
-    /// Where the Send menu's pick goes once the editor hands over the drawing.
+    /// Where the toolbar's Send or Reply goes once the editor hands over the drawing. A key that
+    /// sends goes where the bar's filled button would.
     private var sendingTo: AgentDestination?
     /// The text style of the tweaks, which the colour pass lays a text out in to sample under it.
     private var textStyle = TextStyle.standard
@@ -119,7 +120,7 @@ final class AnnotationController {
             onFinished?(shot, drawing)
         }
         editor.onSend = { [weak self] drawing in
-            guard let self, let shot = current, let destination = sendingTo else { return }
+            guard let self, let shot = current, let destination = sendingTo ?? toolbar.model.offer.destination else { return }
             sendingTo = nil
             onSend?(shot, drawing, destination)
         }
@@ -701,12 +702,24 @@ final class AnnotationController {
         editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, arrowhead: ui.arrowhead)
     }
 
-    /// What the Send menu offers for the image that is opening, and the session a reply belongs
-    /// back to. Read once per image: the list comes from subprocesses, and a menu that re-read it
-    /// on every click would stall the bar.
-    func setDestinations(_ list: [AgentDestination], replyTo: AgentDestination?) {
-        toolbar.model.destinations = list
-        toolbar.model.replyTo = replyTo
+    /// A new image opened: `replyTo` is the session it came from, when it names one, and the list
+    /// of sessions is on its way. Read once per image: the list comes from subprocesses, and a menu
+    /// that re-read it on every click would stall the bar.
+    func beginDestinations(replyTo: AgentDestination?) {
+        toolbar.model.begin(replyTo: replyTo)
+        offerChanged()
+    }
+
+    /// Another client answered with its sessions; `complete` on the last.
+    func destinationsAnswered(_ list: [AgentDestination], complete: Bool) {
+        toolbar.model.answered(list, complete: complete)
+        offerChanged()
+    }
+
+    /// Return and Cmd+Return do what the bar offers, and the bar centres again on its new width.
+    private func offerChanged() {
+        editor.finishes = toolbar.model.offer.finishes
+        toolbar.refit()
     }
 
     /// True while a send is rendering or submitting; the button says so and takes no second click.
@@ -749,7 +762,27 @@ final class AnnotationController {
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.panel.frame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
             "tool": toolbar.model.tool?.rawValue as Any,
+            "offer": (current == nil ? nil : offerJSON) as Any,
         ]
+    }
+
+    /// What the bar offers, and where its filled button sends: the session's id, client, project
+    /// and where herdr's focus is, never its title.
+    private var offerJSON: [String: Any] {
+        let offer = toolbar.model.offer
+        var json: [String: Any] = ["listed": toolbar.model.listed]
+        switch offer {
+        case .copy: json["kind"] = "copy"
+        case .send: json["kind"] = "send"
+        case .reply: json["kind"] = "reply"
+        }
+        if let destination = offer.destination {
+            json["session"] = destination.id
+            json["client"] = destination.client.rawValue
+            json["project"] = destination.detail
+            json["focus"] = destination.focus.map { $0 == .pane ? "pane" : "tab" } as Any
+        }
+        return json
     }
 }
 

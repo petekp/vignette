@@ -519,6 +519,24 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertTrue(finished.contains(.done(core.drawing)))
     }
 
+    /// The host says what Return and Cmd+Return finish with. Cmd+Return ends typing first, as Done does.
+    func testReturnAndCmdReturnFinishWithWhatTheHostSays() {
+        var core = core()
+        core.finishes = .init(returnKey: .done, commandReturn: .send)
+        XCTAssertTrue(core.key(.returnKey).contains(.done(core.drawing)))
+        XCTAssertTrue(core.key(.returnKey, .command).contains(.send(core.drawing)))
+        _ = core.reduce(.setTool(.text))
+        core.click(200, 200)
+        _ = core.reduce(.typingChanged("note"))
+        let sent = core.key(.returnKey, .command)
+        XCTAssertEqual(sent.first, .endTyping)
+        XCTAssertTrue(sent.contains(.send(core.drawing)), "the text is in the drawing that is sent")
+        XCTAssertEqual(core.drawing.marks.count, 1)
+
+        core.finishes = .init(returnKey: .send, commandReturn: .send)
+        XCTAssertTrue(core.key(.returnKey).contains(.send(core.drawing)))
+    }
+
     func testOptionReturnAndShiftReturnWhileTypingAreTheTextViewsNewLine() {
         var core = core()
         _ = core.reduce(.setTool(.text))

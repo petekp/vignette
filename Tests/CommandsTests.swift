@@ -247,6 +247,25 @@ final class AgentTests: XCTestCase {
         XCTAssertNil(Agent.of(dir.appendingPathComponent("gone.png")))
     }
 
+    /// A push that names its Claude Code session is answered with Reply, which goes back to that
+    /// session. Anything that is not a session id, or a push from another agent, names nowhere.
+    func testAPushThatNamesItsSessionIsAReplyTarget() throws {
+        let session = "E011FFF1-C791-4934-9E61-9307D840A5EB"
+        XCTAssertEqual(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&agent=claude&session=\(session)")!).session, session)
+        XCTAssertEqual(Agent.cleanSession(session), session.lowercased(), "herdr reports ids in lowercase")
+        XCTAssertNil(Agent.cleanSession(""), "an unset variable sends an empty value")
+        XCTAssertNil(Agent.cleanSession("../../etc"))
+
+        let file = dir.appendingPathComponent("Checkout.png")
+        try Data("png".utf8).write(to: file)
+        Agent.record("claude", on: file)
+        XCTAssertNil(Agent.origin(of: file), "a push that did not say which session is not a reply")
+        Agent.record(session: session.lowercased(), on: file)
+        XCTAssertEqual(Agent.origin(of: file)?.address, .claudeSession(session.lowercased()))
+        Agent.record("codex", on: file)
+        XCTAssertNil(Agent.origin(of: file), "only Claude Code's session id is known")
+    }
+
     func testBadgeLabelNamesTheAgent() {
         XCTAssertEqual(Agent.label(for: "claude"), "From Claude")
         XCTAssertEqual(Agent.label(for: ""), "From an agent")

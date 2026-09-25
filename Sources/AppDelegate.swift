@@ -768,10 +768,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Commands.ok("last", url.lastPathComponent)
     }
 
-    /// `add?file=<path>[&annotate][&agent=<name>][&marks=<json>]`: a copy of an image from anywhere
-    /// lands in the watch folder, where the watcher reports it like a capture; `pendingAdds` makes
-    /// that report skip the capture toggles. `agent=` is recorded on the copy, which is what puts
-    /// the badge on its card. `marks=` joins the screenshot's drawing before the card appears, so the
+    /// `add?file=<path>[&annotate][&agent=<name>][&session=<id>][&marks=<json>]`: a copy of an image
+    /// from anywhere lands in the watch folder, where the watcher reports it like a capture;
+    /// `pendingAdds` makes that report skip the capture toggles. `agent=` is recorded on the copy,
+    /// which is what puts the badge on its card, and `session=` beside it, which is where Reply goes. `marks=` joins the screenshot's drawing before the card appears, so the
     /// user opens the agent's drawing and edits it like their own.
     private func addImage(_ request: CommandRequest) {
         guard let source = request.files.first else { Commands.error("add", .missingFile, "no file given"); return }
@@ -807,6 +807,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         }
         if let agent = request.agent { Agent.record(agent, on: destination) }
+        if let session = Agent.cleanSession(request.session) {
+            Agent.record(session: session, on: destination)
+        } else if !(request.session ?? "").isEmpty {
+            // Not quoted: the value is the caller's, and the log is not a place for it.
+            Log.write("[add] warning \(name): session= is not a session id; Reply on its card will ask where to send")
+        }
         guard !marks.isEmpty else {
             presentAdd(name)
             Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request))")
@@ -836,6 +842,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// What an `[add] ok` line says about the request beyond the file name.
     private func detail(_ request: CommandRequest) -> String {
         (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "")
+            + (Agent.cleanSession(request.session).map { " session=\($0)" } ?? "")
     }
 
     // MARK: Screenshot requests: Send, replies, and which files a reply owns. See ScreenshotRequests.
@@ -875,18 +882,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// this is cheap enough to ask every time the menu opens.
     private var hasScreenshots: Bool { recentShots(limit: 0).files > 0 }
 
-    /// What the Send menu offers while this image is open, and the session a reply belongs back to.
-    /// Reading the sessions runs subprocesses, so it answers later; the bar shows no button until it does.
+    /// Where the bar can send while this image is open, and the session it came from: an agent's
+    /// reply to a request, or a push that named its session. Reading the sessions runs
+    /// subprocesses, so it answers later; the bar offers Send once it has a session to send to.
     private func refreshDestinations(for shot: Screenshot) {
-        let replyTo = requests.origin(of: shot.url)
-        annotator.setDestinations([], replyTo: replyTo)
-        requests.destinations { [weak self] found in
+        annotator.beginDestinations(replyTo: requests.origin(of: shot.url) ?? Agent.origin(of: shot.url))
+        let asked = CACurrentMediaTime()
+        requests.destinations { [weak self] found, complete in
             guard let self else { return }
+            Log.write("[send] sessions \(found.count)\(complete ? " complete" : "") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
             // Listing the sessions runs subprocesses that can take seconds, so two images' answers
             // can arrive out of order. An answer for an image the editor has left would label the
             // one that replaced it, and a reply would go to a session it was never about.
             guard self.annotator.currentKey == shot.url.path else { return }
-            self.annotator.setDestinations(found, replyTo: replyTo)
+            self.annotator.destinationsAnswered(found, complete: complete)
         }
     }
 

@@ -174,6 +174,12 @@ final class EditorView: NSView {
     /// Send in the toolbar, once a destination is chosen; the drawing comes back through `onSend`.
     func send() { handle(.send) }
 
+    /// What Return and Cmd+Return do, from what the toolbar offers.
+    var finishes: EditorCore.Finishes {
+        get { core.finishes }
+        set { core.finishes = newValue }
+    }
+
     /// Agents' marks joining the open drawing, already in px. They go to the host at once.
     func addAgentMarks(_ marks: [Mark]) { handle(.agentMarks(marks)) }
 

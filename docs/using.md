@@ -81,8 +81,8 @@ drawing, and any other card drops the screenshot. A selected card drags the whol
 
 Press Return, or click Draw in the strip, to open a card and draw on it.
 
-Return on several selected cards opens them one after another, in the order you picked them. Each
-Done sends that card home and opens the next. They stay selected the whole time, so Cmd+C or Cmd+S
+Return on several selected cards opens them one after another, in the order you picked them.
+Copying or sending each one sends it home and opens the next. They stay selected the whole time, so Cmd+C or Cmd+S
 afterwards still takes all of them. Selecting another card while one is open adds it to the end of
 that run, and deselecting it takes it out. Esc, or closing the stack, drops the rest of the queue.
 
@@ -95,6 +95,12 @@ the mark you drew last already selected, so a drag, an arrow key or Delete acts 
 click first. Return copies the drawing and sends the card home. Esc cancels a drag in progress, and
 at rest closes the editor without copying. [The drawing editor](editor.md) lists every key and
 gesture.
+
+When a coding agent session can take the drawing, the toolbar shows it beside Send: the agent's
+logo and the project's folder. It starts on the session you were last in, and a click on it picks
+another. Cmd+Return sends. On a card an agent sent you, the toolbar has one button, Reply, and
+Return sends your drawing back to that session. Claude Code sessions can take a drawing only inside
+herdr; Codex threads can anywhere.
 
 Cmd+C with nothing selected copies the drawing, the same image Return copies, and leaves the editor
 open. With marks selected it copies the marks, which paste into this image or another one.

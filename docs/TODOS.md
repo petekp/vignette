@@ -13,6 +13,40 @@ The tldraw-era video left the site and the README with the native editor, and a 
 and the editor leads in its place (`site/stack-and-editor.png`). A new recording replaces the still
 when Pete makes one.
 
+## Type right after drawing a box (raised 2026-09-24)
+
+After drawing a rectangle, typing should start a text at once, with no switch to the Text tool and
+no click to place it. Vignette places the text where it fits beside the box and inside the image.
+Most boxes get a short note, and today that note takes three steps: T, a click, then typing.
+
+To settle first: V, R, A and T pick tools whenever nothing is being typed, so after a box, typing
+"a" picks the Arrow tool today. The feature needs a rule for when a letter is text and when it is a
+tool. It also needs a rule for where the text goes when there's no room beside the box.
+
+## Text runs off the edge of the image (raised 2026-09-24)
+
+Pete has seen words run past the image's edge and get cut off, where they should wrap onto the next
+line. `docs/editor.md` says a text wraps where its right edge would pass the image's right edge, so
+this is a bug or a case that rule misses. First step: reproduce it and find which case it is. For
+example, a long word with no spaces, a text dragged to a wrap width, or an agent's text.
+
+## The annotator's redesign: agent controls and comments (raised 2026-09-24)
+
+Pete wants Send to be first-class and Done to stop being ambiguous, and proposed comments pinned to
+the image, as in Figma, that agents leave and answer too. The design so far: the tools in a rail on
+the left, the comments listed on the right, and along the bottom Copy (in place of Done, on Return)
+beside session tabs, a message field and Send (Cmd+Return). Paused on 2026-09-24 for the promo
+videos. The bar's Send and Reply came forward the same day, with a target beside Send in place of
+tabs: `docs/send-and-reply-2026-09-24.md`. `docs/annotator-redesign-2026-09-24.md` has what's decided, what's open and a mockup. When
+it resumes, settle the Return rule first. It would change the site's pitch and the recordings.
+
+## Agents' marks in their own typeface (raised 2026-09-24)
+
+Tell an agent's marks from a person's by typeface, not colour. Colour stays with the colour pass,
+which picks whatever stands out against the image, and a colour reserved for agents would work
+against that. Every mark already records its author (`agent`), so a text can be set in its
+author's typeface. Open: what marks the difference on a box or an arrow, which have no typeface.
+
 ## Xcode's JSON project format (raised 2026-09-21)
 
 Xcode 27 stores the project configuration as JSON: `project.xcproj` inside the `.xcodeproj`,

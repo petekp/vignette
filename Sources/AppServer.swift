@@ -8,8 +8,8 @@ import os
 /// This is the only thing in the app that knows the app-server protocol. It reads; it never starts
 /// a thread, sends a turn, or changes anything a session holds.
 enum AppServer {
-    /// How many threads discovery asks for, newest first. The store's list call costs about 0.12 s
-    /// for five, 0.50 s for fifteen, and 2.9 s for thirty (measured 2026-09-21), and this runs
+    /// How many threads discovery asks for, the ones used last. The store's list call costs about
+    /// 0.12 s for five, 0.50 s for fifteen, and 2.9 s for thirty (measured 2026-09-21), and this runs
     /// every time an image opens. A menu longer than this is not one a person reads anyway.
     static let listLimit = 15
 
@@ -18,13 +18,17 @@ enum AppServer {
     /// waiting on it.
     static let timeout: TimeInterval = 8
 
-    /// One session the server knows about. `cwd` is the project the menu groups by. The listing's
-    /// `status` is not kept: it is what the answering server holds in memory, and a server started
-    /// for one listing holds nothing, so it says nothing about the session's real state.
+    /// One session the server knows about. `cwd` is its project. The listing's `status` is not
+    /// kept: it is what the answering server holds in memory, and a server started for one listing
+    /// holds nothing, so it says nothing about the session's real state.
     struct Thread: Equatable {
         let id: String
         let name: String?
         let cwd: String
+        /// When the thread was last used: the listing's `recencyAt`, in seconds since 1970.
+        var recencyAt: Date? = nil
+        /// The thread's first message, which names a thread that has no name.
+        var preview: String? = nil
     }
 
     /// The request lines for one discovery: the handshake, then the listing. `initialized` is a
@@ -33,13 +37,15 @@ enum AppServer {
         [
             #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"Vignette","version":"\#(BuildInfo.current.version)"}}}"#,
             #"{"method":"initialized"}"#,
-            #"{"id":2,"method":"thread/list","params":{"limit":\#(limit)}}"#,
+            #"{"id":2,"method":"thread/list","params":{"limit":\#(limit),"sortKey":"recency_at"}}"#,
         ]
     }
 
     /// The threads in an answer to `thread/list`, in the order the server gave them. Anything that
     /// is not that answer is ignored, so a notification arriving mid-conversation is not an error.
-    /// A repeated id is kept once: the store's pages can overlap.
+    /// A repeated id is kept once: the store's pages can overlap. An ephemeral thread and a
+    /// sub-agent's thread (one with a `parentThreadId`) are left out: neither is a session a person
+    /// sends to.
     static func threads(in lines: [String]) -> [Thread] {
         var found: [Thread] = []
         var seen = Set<String>()
@@ -52,8 +58,12 @@ enum AppServer {
             for item in list {
                 guard let id = item["id"] as? String, let cwd = item["cwd"] as? String,
                       !seen.contains(id) else { continue }
+                if item["ephemeral"] as? Bool == true { continue }
+                if let parent = item["parentThreadId"] as? String, !parent.isEmpty { continue }
                 seen.insert(id)
-                found.append(Thread(id: id, name: item["name"] as? String, cwd: cwd))
+                found.append(Thread(id: id, name: item["name"] as? String, cwd: cwd,
+                                    recencyAt: (item["recencyAt"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) },
+                                    preview: item["preview"] as? String))
             }
         }
         return found

@@ -20,6 +20,7 @@ open -g "vignette://stitch?file=/a.png&file=/b.png"
 open -g vignette://last                       # show the thumbnail for the newest screenshot
 open -g "vignette://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a tab naming the agent
+open -g "vignette://add?file=/tmp/agent/x.png&agent=claude&session=$CLAUDE_CODE_SESSION_ID"  # the same, and Reply on the card goes back to that Claude Code session
 open -g "vignette://add?file=/tmp/agent/x.png&marks=/tmp/agent/marks.json"  # the same, with the agent's drawing on it
 open -g vignette://recent                     # toggle the recent stack (same as the hotkey)
 open -g vignette://dismiss                    # close the thumbnail or the stack

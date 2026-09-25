@@ -377,7 +377,7 @@ The double-click interval is the system's setting, for editing and for zoom.
 | While typing, click another text | Typing moves there, caret at the click |
 | While typing, click anywhere else | Typing ends, and the click acts as a normal click |
 | Return | Typing ends. The text stays selected. |
-| Cmd+Return | Typing ends, then Done |
+| Cmd+Return | Typing ends, then what Cmd+Return does in section 6 |
 | Esc | Typing ends and the text is kept. A second Esc closes the editor. |
 | A toolbar tool button | Typing ends |
 | Done in the toolbar | The typed text is in the PNG |
@@ -427,7 +427,8 @@ Keys that act on a selection are in section 4. The rest:
 | Key | Result |
 |---|---|
 | Esc | During a drag, brush, move or resize, cancels it. Otherwise closes the editor. |
-| Return, Cmd+Return | Done |
+| Return | Done. On a card that names the session it came from, Send back to that session, which the toolbar calls Reply. |
+| Cmd+Return | Send to the toolbar's session, or back to the card's. Done when there is no session to send to. |
 | Cmd+Z | Undoes one step |
 | Shift+Cmd+Z | Redoes one step |
 | Cmd+Plus, Cmd+Minus, Cmd+0 | The host's zoom: in, out, back to fit |
@@ -499,7 +500,10 @@ always says what Cmd+C will copy. Two things keep the drawing easy to copy:
   "Copied 1 mark", "Copied 2 marks" or "Cut 2 marks". One key does two different things, and the
   clipboard itself shows nothing.
 
-Return still copies the drawing and closes the editor. It stays the main way to share.
+Return still copies the drawing and closes the editor. It stays the main way to share. The one
+exception is a card that names the session it came from, where Return replies. Return never sends to
+a session the host picked; the host sets both keys from what its toolbar offers
+(`EditorCore.finishes`).
 
 ## 9. Around the editor
 
@@ -524,7 +528,9 @@ Return still copies the drawing and closes the editor. It stays the main way to 
 
 ### The toolbar
 
-- The native toolbar shows the four tools, then Send and Done.
+- The native toolbar shows the four tools, then one of three offers: Copy alone when there is no
+  session to send to; Copy, the target session and Send; or Reply alone on a card that names the
+  session it came from. Copy is Done. `docs/send-and-reply-2026-09-24.md` has the rules.
 - For each tool, the editor supplies an id, a label, a key and an SF Symbol:
 
 | Tool | Key | SF Symbol |

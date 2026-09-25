@@ -65,11 +65,42 @@ struct AgentDestination: Equatable, Identifiable {
     /// from.
     let id: String
     let name: String
-    /// Enough to tell two alike apart: the project folder, or the pane's title.
+    /// The project folder the session works in, shown beside its name.
     var detail: String = ""
     let address: AgentAddress
+    /// When the session was last used, which is the order Send lists sessions in. Nil when its
+    /// client could not say.
+    var lastUsed: Date? = nil
+    /// Where herdr's focus is, when it is on this session: its own pane, or a pane beside it in its
+    /// tab. Nil for every other session, and for every Codex thread, which herdr does not run.
+    var focus: Focus? = nil
+
+    enum Focus: Equatable {
+        /// herdr's focused pane runs this session.
+        case pane
+        /// herdr's focused pane runs no agent, and this is the one session in that pane's tab.
+        case tab
+    }
 
     var client: AgentClient { address.client }
+
+    /// Where Send goes when nobody has chosen: the session you came from, which is where a paste
+    /// would have gone. herdr's focused pane first, then the one session beside it, then the session
+    /// used last. `list` is in Send's order, the session used last first.
+    static func defaultTarget(in list: [AgentDestination]) -> AgentDestination? {
+        list.first { $0.focus == .pane } ?? list.first { $0.focus == .tab } ?? list.first
+    }
+
+    /// Send's order: the session used last first. A session with no time comes after every one
+    /// with a time, and a tie goes by name.
+    static func newestFirst(_ a: AgentDestination, _ b: AgentDestination) -> Bool {
+        switch (a.lastUsed, b.lastUsed) {
+        case let (x?, y?) where x != y: return x > y
+        case (_?, nil): return true
+        case (nil, _?): return false
+        default: return a.name < b.name
+        }
+    }
 }
 
 /// What happened when a request was handed to a client. The four cases are different on purpose:
@@ -150,7 +181,8 @@ enum Subprocess {
 /// herdr, which owns the pane, does: `herdr agent prompt` submits one line to an agent it is
 /// running, refusing one that is waiting on a prompt of its own. herdr also reports each pane's
 /// Claude Code session id, so Vignette addresses the session and resolves it to a pane at send
-/// time; a session that is in no pane is an error and never a different pane's.
+/// time; a session that is in no pane is an error and never a different pane's. What the menu says
+/// about a session comes from its own transcript.
 struct ClaudeCodeConnection: AgentConnection {
     let client = AgentClient.claude
     /// Where herdr may be, and how long one call may take. Injected so tests never run herdr.
@@ -158,6 +190,9 @@ struct ClaudeCodeConnection: AgentConnection {
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
         Subprocess.run($0, $1, timeout: $2)
     }
+    /// Where Claude Code keeps its transcripts, one folder per project. Injected so a test never
+    /// reads the real ones.
+    var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
 
     static let listTimeout: TimeInterval = 10
     static let promptTimeout: TimeInterval = 20
@@ -178,6 +213,19 @@ struct ClaudeCodeConnection: AgentConnection {
         var session: String? = nil
         /// What the pane's title says it is doing. Only a label; two panes may share it.
         var title: String = ""
+        /// The tab the pane is in, and whether it is herdr's focused pane.
+        var tab: String = ""
+        var focused = false
+    }
+
+    /// herdr's focused pane and its tab, from a `herdr pane list` answer, which lists every pane,
+    /// agent or not. Nil when no pane is focused or the answer does not parse.
+    static func focus(fromPaneList data: Data) -> (pane: String, tab: String)? {
+        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let panes = ((root?["result"] as? [String: Any])?["panes"] as? [[String: Any]]) ?? []
+        guard let pane = panes.first(where: { $0["focused"] as? Bool == true }),
+              let id = pane["pane_id"] as? String else { return nil }
+        return (id, pane["tab_id"] as? String ?? "")
     }
 
     /// Where herdr may be. The app is launched by LaunchServices, so it inherits no shell PATH.
@@ -187,10 +235,12 @@ struct ClaudeCodeConnection: AgentConnection {
         binaryPaths.first(where: exists)
     }
 
-    /// The agents in a `herdr agent list` answer. An unparseable answer is no agents.
-    static func agents(fromAgentList data: Data) -> [HerdrAgent] {
+    /// The agents in a `herdr agent list` answer, or in a `herdr pane list` answer with `list`
+    /// "panes": the same fields, and a pane running no agent is left out. An unparseable answer is
+    /// no agents.
+    static func agents(in data: Data, list: String = "agents") -> [HerdrAgent] {
         let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let agents = ((root?["result"] as? [String: Any])?["agents"] as? [[String: Any]]) ?? []
+        let agents = ((root?["result"] as? [String: Any])?[list] as? [[String: Any]]) ?? []
         return agents.compactMap { agent in
             guard let pane = agent["pane_id"] as? String, let kind = agent["agent"] as? String else { return nil }
             let name = (agent["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
@@ -198,31 +248,127 @@ struct ClaudeCodeConnection: AgentConnection {
             return HerdrAgent(id: name ?? pane, pane: pane, kind: kind, cwd: agent["cwd"] as? String ?? "",
                               status: agent["agent_status"] as? String ?? "unknown",
                               session: (session?.isEmpty ?? true) ? nil : session,
-                              title: agent["terminal_title_stripped"] as? String ?? "")
+                              title: agent["terminal_title_stripped"] as? String ?? "",
+                              tab: agent["tab_id"] as? String ?? "",
+                              focused: agent["focused"] as? Bool ?? false)
         }
     }
 
     func destinations() -> [AgentDestination] {
-        claudeAgents().compactMap(Self.destination)
+        guard let herdr = binary(), let list = run(herdr, ["pane", "list"], Self.listTimeout), list.status == 0 else { return [] }
+        let data = Data(list.output.utf8)
+        // A session herdr cannot identify is left out: a pane id is not a conversation, and
+        // addressing one would be the thing this route must not do.
+        let all = Self.agents(in: data, list: "panes")
+        let agents = all.filter { $0.kind == "claude" && $0.session != nil }
+        let folders = (try? FileManager.default.contentsOfDirectory(at: transcripts, includingPropertiesForKeys: nil)) ?? []
+        return Self.markFocus(agents.compactMap { agent in
+            let transcript = agent.session
+                .flatMap { Self.transcriptFile(session: $0, folders: folders) }
+                .flatMap { Self.tail(of: $0) }
+                .map(Self.transcript(tail:))
+            return Self.destination(agent, transcript: transcript ?? Transcript())
+        }, agents: all, focus: Self.focus(fromPaneList: data))
+    }
+
+    /// Marks where herdr's focus is. `agents` is every agent herdr runs, of any kind. A focused pane
+    /// running an agent is that agent's, whether or not it is a destination. One running none, such
+    /// as a browser or a shell beside the session you are working with (observed 2026-09-24), passes
+    /// the focus to the one agent in its tab; a tab with two says nothing about which one.
+    static func markFocus(_ destinations: [AgentDestination], agents: [HerdrAgent],
+                          focus: (pane: String, tab: String)?) -> [AgentDestination] {
+        guard let focus else { return destinations }
+        let focusedAgent = agents.first { $0.pane == focus.pane }
+        let inTab = agents.filter { !focus.tab.isEmpty && $0.tab == focus.tab }
+        return destinations.map { destination in
+            var marked = destination
+            if let focusedAgent {
+                if focusedAgent.session == destination.id { marked.focus = .pane }
+            } else if inTab.count == 1, inTab[0].session == destination.id {
+                marked.focus = .tab
+            }
+            return marked
+        }
     }
 
     /// One Claude Code pane as a destination, or nil for a pane whose session herdr cannot name.
-    /// The name is the pane's title, which says what that session is doing; the detail is the
-    /// project it is in, for two panes with the same title.
-    static func destination(_ target: HerdrAgent) -> AgentDestination? {
+    /// The transcript names it and says when it was last used; the pane's title, which is the same
+    /// title cut short, stands in when the transcript has none. Its project is the folder the pane
+    /// runs Claude Code in. The transcript's `cwd` follows the session's shell, so a session that
+    /// ran `cd .scratch` would read as a project called ".scratch" (observed 2026-09-24).
+    static func destination(_ target: HerdrAgent, transcript: Transcript = Transcript()) -> AgentDestination? {
         guard let session = target.session else { return nil }
         return AgentDestination(
             id: session,
-            name: target.title.isEmpty ? target.id : target.title,
-            detail: (target.cwd as NSString).lastPathComponent,
-            address: .claudeSession(session))
+            name: transcript.title ?? (target.title.isEmpty ? target.id : target.title),
+            detail: ((target.cwd.isEmpty ? transcript.cwd ?? "" : target.cwd) as NSString).lastPathComponent,
+            address: .claudeSession(session),
+            lastUsed: transcript.lastUsed)
     }
 
-    /// Every Claude Code session herdr is running. A session herdr cannot identify is left out: a
-    /// pane id is not a conversation, and addressing one would be the thing this route must not do.
-    private func claudeAgents() -> [HerdrAgent] {
-        guard let herdr = binary(), let list = run(herdr, ["agent", "list"], Self.listTimeout), list.status == 0 else { return [] }
-        return Self.agents(fromAgentList: Data(list.output.utf8)).filter { $0.kind == "claude" && $0.session != nil }
+    /// What a session's transcript says about it.
+    struct Transcript: Equatable {
+        /// The last `ai-title` entry's title. Claude Code rewrites it as the session goes on.
+        var title: String?
+        /// The folder the session's shell was in at its last message. Only the project when herdr
+        /// does not say where the pane runs.
+        var cwd: String?
+        /// The time of the last user or assistant entry. The file's modification time is not it:
+        /// Claude Code writes entries with no message in them to transcripts it is not using.
+        var lastUsed: Date?
+    }
+
+    /// How much of a transcript's end is read. Transcripts run to tens of MB; in the sixty used
+    /// last, the last title was never more than 34 KB from the end (measured 2026-09-24).
+    static let tailBytes: UInt64 = 256 * 1024
+
+    /// A session's transcript, `<project folder>/<session id>.jsonl`. The folder is named for where
+    /// the session started, which the pane may since have left, so every folder is tried. An id
+    /// that is not a UUID is never used as a file name.
+    static func transcriptFile(session: String, folders: [URL]) -> URL? {
+        guard UUID(uuidString: session) != nil else { return nil }
+        return folders.lazy.map { $0.appendingPathComponent("\(session).jsonl") }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// The last `bytes` of a file, starting at a line.
+    static func tail(of file: URL, bytes: UInt64 = tailBytes) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        defer { try? handle.close() }
+        guard let size = try? handle.seekToEnd() else { return nil }
+        let start = size > bytes ? size - bytes : 0
+        guard (try? handle.seek(toOffset: start)) != nil, let data = try? handle.readToEnd() else { return nil }
+        guard start > 0 else { return data }
+        guard let newline = data.firstIndex(of: UInt8(ascii: "\n")) else { return Data() }
+        return data[data.index(after: newline)...]
+    }
+
+    /// Reads a transcript's tail from its end. Each line is one JSON entry; only the lines that
+    /// can hold what is wanted are parsed.
+    static func transcript(tail: Data) -> Transcript {
+        var found = Transcript()
+        let titleMark = Data(#""type":"ai-title""#.utf8)
+        let messageMarks = [Data(#""type":"user""#.utf8), Data(#""type":"assistant""#.utf8)]
+        let timeMark = Data(#""timestamp":""#.utf8)
+        for line in tail.split(separator: UInt8(ascii: "\n")).reversed() {
+            if found.title != nil && found.lastUsed != nil { break }
+            if found.title == nil, line.range(of: titleMark) != nil,
+               let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+               let title = entry["aiTitle"] as? String, !title.isEmpty {
+                found.title = title
+                continue
+            }
+            if found.lastUsed == nil, line.range(of: timeMark) != nil,
+               messageMarks.contains(where: { line.range(of: $0) != nil }),
+               let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+               ["user", "assistant"].contains(entry["type"] as? String),
+               let time = entry["timestamp"] as? String,
+               let date = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(time) {
+                found.lastUsed = date
+                found.cwd = entry["cwd"] as? String
+            }
+        }
+        return found
     }
 
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
@@ -240,7 +386,7 @@ struct ClaudeCodeConnection: AgentConnection {
         }
         // The guard: the pane has to be running this exact session now, not a session it ran
         // before. A session in no pane is an error; it is never redirected to another one.
-        let agents = Self.agents(fromAgentList: Data(list.output.utf8))
+        let agents = Self.agents(in: Data(list.output.utf8))
         guard let target = agents.first(where: { $0.session == session }) else {
             return .destinationChanged(detail: "Claude Code session \(session) is in no herdr pane now")
         }
@@ -311,10 +457,22 @@ struct CodexConnection: AgentConnection {
         return AppServer.threads(in: lines).map { thread in
             AgentDestination(
                 id: thread.id,
-                name: thread.name?.isEmpty == false ? thread.name! : "Codex \(thread.id.prefix(8))",
+                name: Self.name(of: thread),
                 detail: (thread.cwd as NSString).lastPathComponent,
-                address: .codexThread(uuid: thread.id))
+                address: .codexThread(uuid: thread.id),
+                lastUsed: thread.recencyAt)
         }
+    }
+
+    /// A thread's name, or for a thread with none, the first line of its first message without
+    /// a heading's `#`, cut to 60 characters.
+    static func name(of thread: AppServer.Thread) -> String {
+        if let name = thread.name, !name.isEmpty { return name }
+        let line = (thread.preview ?? "").split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "#").union(.whitespaces)) }
+            .first { !$0.isEmpty }
+        guard let line else { return "Codex \(thread.id.prefix(8))" }
+        return line.count > 60 ? line.prefix(59) + "…" : line
     }
 
     /// The argv for one queue call. Built as a list, never a shell line: an image path with spaces
