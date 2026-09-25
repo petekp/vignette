@@ -370,7 +370,9 @@ private struct AgentBadge: View {
     var body: some View {
         HStack(spacing: size * 0.22) {
             if let logo = Agent.logo(for: agent) {
+                // The tab is white in either appearance, so a one-colour logo is drawn black like the name.
                 Image(nsImage: logo).resizable().aspectRatio(contentMode: .fit)
+                    .foregroundStyle(.black.opacity(0.85))
                     .frame(width: size * 0.62, height: size * 0.62)
             } else {
                 Image(systemName: Agent.fallbackSymbol).font(.system(size: size * 0.5, weight: .bold))

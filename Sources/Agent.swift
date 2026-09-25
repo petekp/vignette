@@ -83,10 +83,15 @@ enum Agent {
         let key = name.lowercased()
         if let cached = logos[key] { return cached }
         let image = Bundle.main.url(forResource: key, withExtension: "svg", subdirectory: "agents").flatMap { NSImage(contentsOf: $0) }
+        image?.isTemplate = oneColourLogos.contains(key)
         logos[key] = .some(image)
         return image
     }
     @MainActor private static var logos: [String: NSImage?] = [:]
+
+    /// Vendors whose logo is a single black shape. It is a template image, drawn in the colour of the
+    /// text beside it, since black would vanish on a dark bar or in a dark menu.
+    static let oneColourLogos: Set<String> = ["codex"]
 
     /// The glyph for a vendor without a logo: the closest SF Symbol to the robot this wants to be.
     static let fallbackSymbol = "cpu"

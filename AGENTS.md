@@ -94,7 +94,9 @@ the measurements and the reasoning; a rule here points at its note.
    minus the copy and annotate toggles (`&annotate` opens the editor). `&agent=<name>` says which
    agent is pushing it: the name is recorded on the copy as the `com.petepetrash.vignette.agent`
    extended attribute (`Agent.swift`, `xattr -l` shows it) and the card gets a white "From <Name>" tab
-   with the vendor's logo when `Resources/agents/<name>.svg` has one (`Agent.logo(for:)`).
+   with the vendor's logo when `Resources/agents/<name>.svg` has one (`Agent.logo(for:)`). A logo
+   that is a single black shape, like Codex's, is listed in `Agent.oneColourLogos` and drawn in the
+   colour of the text beside it.
    `&session=<id>` names the Claude Code session pushing it, recorded beside the name as
    `com.petepetrash.vignette.session`, so the card's bar is Reply and goes back there
    (`Agent.origin(of:)`). The id is the pusher's claim; sending to it still checks the session is in

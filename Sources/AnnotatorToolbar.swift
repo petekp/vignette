@@ -398,7 +398,8 @@ private struct ToolbarView: View {
 }
 
 /// An agent's logo from the bundle, or the fallback symbol for a vendor without one. `template`
-/// draws it in the foreground colour, for the white of a filled button.
+/// draws it in the foreground colour, for the white of a filled button. A one-colour logo is always
+/// drawn in the foreground colour.
 private struct AgentLogo: View {
     let client: AgentClient
     let template: Bool
@@ -411,7 +412,7 @@ private struct AgentLogo: View {
             if menu {
                 Image(nsImage: Self.menuSized(logo))
             } else {
-                Image(nsImage: logo).renderingMode(template ? .template : .original).resizable().aspectRatio(contentMode: .fit)
+                Image(nsImage: logo).renderingMode(template || logo.isTemplate ? .template : .original).resizable().aspectRatio(contentMode: .fit)
             }
         } else {
             Image(systemName: Agent.fallbackSymbol).resizable().aspectRatio(contentMode: .fit)
