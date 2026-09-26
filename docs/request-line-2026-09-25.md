@@ -64,6 +64,25 @@ Make this button bigger [From Vignette: "<folder>/image.png". If a drawing would
 - **Not stored.** The message travels in the line only. The request's record and the log leave it
   out, as they leave out a text mark's words.
 
+## The sentence is the person's to change (2026-09-26)
+
+`sendInstructions` in settings.json holds the sentence after the image, with today's as its default:
+
+```json
+"sendInstructions": "If a drawing would answer better than words, you can send one back."
+```
+
+- **Only the sentence.** `From Vignette: "<path>".` stays fixed: the skill loads on
+  "From Vignette:", and the path is the drawing. An edit that broke either would leave an agent
+  unable to find the image, with nothing saying why. The skill tells agents to know the line by
+  those two, not the sentence.
+- **One line.** A line break or a tab becomes a space, and the sentence is capped at a text mark's
+  length, 2,000 characters. Settings logs the correction.
+- **Empty is allowed.** The line is then `From Vignette: "<path>".`, with the message before it as
+  usual.
+- **No control in the window.** It is for someone tuning what their agent reads, which the file
+  serves, and the Agents tab stays about the agents.
+
 ## Unchanged
 
 - One line, because herdr submits it with Return.

@@ -35,8 +35,8 @@ final class AnnotatorToolbar {
         /// The message as it joins the line Send puts in the session, which is one line: its words with
         /// one space between each, whatever line breaks, tabs or spaces were there. Nil when there are none.
         var sentMessage: String? {
-            let words = message.split(whereSeparator: \.isWhitespace)
-            return words.isEmpty ? nil : words.joined(separator: " ")
+            let line = message.asOneLine
+            return line.isEmpty ? nil : line
         }
 
         var offer: ToolbarOffer {

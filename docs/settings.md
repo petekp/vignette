@@ -20,6 +20,7 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   "launchAtLogin": false,
   "quickAnnotate": false,
   "sendWithReturn": false,
+  "sendInstructions": "If a drawing would answer better than words, you can send one back.",
   "annotateOnCapture": false,
   "copyOnCapture": true,
   "debug": false,
@@ -53,6 +54,10 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
 - **`quickAnnotate`** is Close after copying a drawing. On, Done copies the image you drew on and
   closes the annotator and the stack at once, instead of returning you to the stack. It also drops
   any screenshots still waiting to be drawn on.
+- **`sendInstructions`** is the sentence after the image in the line Send and Reply put in a session,
+  with no control in the window. `From Vignette: "<path>".` before it is fixed: the skill loads on
+  "From Vignette:", and the path is the drawing. It is kept to one line, since herdr submits the line
+  with Return, so line breaks and tabs become spaces. An empty one leaves the line at the path.
 - **`sendWithReturn`** is Send with Return, in the Agents tab. On, Return in the message box beside
   Send sends the drawing, as in a chat app. Off, Return there only points at ⌘Return, since Vignette
   picked the session and a Return typed out of habit would hand the drawing to it. ⌘Return sends

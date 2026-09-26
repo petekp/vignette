@@ -1004,7 +1004,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func submit(_ png: Data, of shot: Screenshot, to destination: AgentDestination, message: String?) {
-        guard requests.send(png: png, source: shot.url, to: destination, message: message) != nil else {
+        guard requests.send(png: png, source: shot.url, to: destination, message: message,
+                            instructions: settings.data.sendInstructions) != nil else {
             thumbnail.showFeedback("Could not store the request; see the log"); return
         }
         // Stored, so the request survives whatever the client does next. The image goes home

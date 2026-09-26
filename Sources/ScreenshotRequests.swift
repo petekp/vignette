@@ -273,7 +273,8 @@ final class ScreenshotRequests {
     /// the annotator may close. The submission follows off the main thread and reports through
     /// `[send]` and the toast.
     @discardableResult
-    func send(png: Data, source: URL, to destination: AgentDestination, message: String? = nil) -> Record? {
+    func send(png: Data, source: URL, to destination: AgentDestination, message: String? = nil,
+              instructions: String = SettingsData.defaultSendInstructions) -> Record? {
         let live = requests.values.filter { $0.status != .cleared }.count
         guard live < Self.maxLiveRequests else {
             Log.write("[send] error \(CommandError.writeFailed.rawValue) \(live) requests are open; clear some with \(Identity.urlScheme)://requests?clear=all")
@@ -298,19 +299,19 @@ final class ScreenshotRequests {
         }
         requests[id] = record
         Log.write("[send] prepared \(id) to \(destination.name) (\(destination.address.description)) \(png.count) bytes")
-        submit(record, message: message)
+        submit(record, message: message, instructions: instructions)
         return record
     }
 
     /// Hands one prepared request to its client and records what came back. The message travels in
     /// the line only: it is the person's words, so neither the record nor the log keeps it.
-    private func submit(_ record: Record, message: String?) {
+    private func submit(_ record: Record, message: String?, instructions: String) {
         guard let connection = connections[record.address.client] else {
             finishSubmission(record.id, .notSubmitted(code: .noAgent, detail: "no connection for \(record.address.client.rawValue)"))
             return
         }
         let destination = AgentDestination(id: record.destinationID, name: record.destinationName, address: record.address)
-        let line = Self.requestLine(record: record, root: root, message: message)
+        let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions)
         DispatchQueue.global(qos: .userInitiated).async {
             let outcome = connection.submit(line, to: destination)
             DispatchQueue.main.async { MainActor.assumeIsolated { self.finishSubmission(record.id, outcome) } }
@@ -344,13 +345,16 @@ final class ScreenshotRequests {
     }
 
     /// The one line the agent receives, which arrives in the person's session as their own message.
-    /// It names only the image; the skill says how to answer with a drawing, using the `ticket.json`
-    /// beside it. The person's message, already one line (`AnnotatorToolbar.Model.sentMessage`), leads
-    /// it, as the request, and the Vignette part follows in brackets, as a note on what came with it.
-    /// One line, because herdr submits it with Return. The ticket's secret never travels.
-    static func requestLine(record: Record, root: URL, message: String? = nil) -> String {
+    /// It names only the image, then says `instructions` (`sendInstructions` in settings.json, one
+    /// line); the skill says how to answer with a drawing, using the `ticket.json` beside it. "From Vignette:" and the
+    /// image are fixed, because the skill loads on the one and the drawing is the other. The person's
+    /// message, already one line (`AnnotatorToolbar.Model.sentMessage`), leads, as the request, and
+    /// the Vignette part follows in brackets, as a note on what came with it. One line, because
+    /// herdr submits it with Return. The ticket's secret never travels.
+    static func requestLine(record: Record, root: URL, message: String? = nil,
+                            instructions: String = SettingsData.defaultSendInstructions) -> String {
         let image = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("image.png").path
-        let note = "From Vignette: \"\(image)\". If a drawing would answer better than words, you can send one back."
+        let note = "From Vignette: \"\(image)\"." + (instructions.isEmpty ? "" : " \(instructions)")
         return message.map { "\($0) [\(note)]" } ?? note
     }
 
@@ -660,4 +664,10 @@ final class ScreenshotRequests {
         decoder.dateDecodingStrategy = .iso8601
         return try? decoder.decode(T.self, from: data)
     }
+}
+
+extension String {
+    /// The words with one space between each, whatever line breaks, tabs or spaces were there: what
+    /// the line Send puts in a session can hold, since herdr submits it with Return.
+    var asOneLine: String { split(whereSeparator: \.isWhitespace).joined(separator: " ") }
 }

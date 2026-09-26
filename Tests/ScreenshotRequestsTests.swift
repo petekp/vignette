@@ -109,6 +109,12 @@ final class ScreenshotRequestsTests: XCTestCase {
 
         let asked = ScreenshotRequests.requestLine(record: record, root: root, message: "Make this bigger")
         XCTAssertEqual(asked, "Make this bigger [\(line)]", "the person's message leads, and the Vignette part is a note after it")
+
+        // settings.json's `sendInstructions` replaces the sentence after the image, and an empty one drops it.
+        let image = directory.appendingPathComponent("image.png").path
+        XCTAssertEqual(ScreenshotRequests.requestLine(record: record, root: root, instructions: "Reply with marks."),
+                       "From Vignette: \"\(image)\". Reply with marks.")
+        XCTAssertEqual(ScreenshotRequests.requestLine(record: record, root: root, instructions: ""), "From Vignette: \"\(image)\".")
     }
 
     /// The field takes line breaks from a paste or Option+Return; the line cannot hold them.

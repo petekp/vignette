@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "2"
+  version: "3"
 ---
 
 # Vignette
@@ -76,7 +76,8 @@ part follows in brackets:
 Make this button bigger [From Vignette: "<folder>/image.png". If a drawing would answer better than words, you can send one back.]
 ```
 
-The message is their request about the image.
+The message is their request about the image. The sentence after the image's path is the user's
+to change in Vignette's settings, so know the line by "From Vignette:" and the quoted path.
 
 Open the image. The boxes, arrows and text on it are the user's: they point at what they want you
 to look at or change. When the answer is easier to show than to say, reply with a drawing: the

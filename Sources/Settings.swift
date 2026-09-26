@@ -47,6 +47,7 @@ struct SettingsData: Codable, Equatable {
     var launchAtLogin = false                // registers the app as a login item (System Settings > Login Items)
     var quickAnnotate = false                // Done copies the result and closes the annotator and the stack at once
     var sendWithReturn = false               // Return in the message field beside Send sends; ⌘Return always does
+    var sendInstructions = SettingsData.defaultSendInstructions  // the words after the image in the line Send puts in a session
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
     var debug = false                        // unlocks tweaks, install-skill root=, and file= outside the watch folder
@@ -70,6 +71,9 @@ struct SettingsData: Codable, Equatable {
         if case .doubleTap = HotKeySpec.parse(recentHotkey) { return true }
         return false
     }
+
+    /// What the line Send puts in a session says after the image (`ScreenshotRequests.requestLine`).
+    static let defaultSendInstructions = "If a drawing would answer better than words, you can send one back."
 
     /// What picking "Key combination" writes. The default shortcut is the double tap, so this
     /// cannot be read off a fresh `SettingsData`.
@@ -95,6 +99,9 @@ struct SettingsData: Codable, Equatable {
         if d.agentSkillChoice == .on {
             notes.append("agentSkill \"on\" -> \"off\""); d.agentSkill = AgentSkill.off.rawValue
         }
+        // The line Send puts in a session is one line, since herdr submits it with Return.
+        let instructions = String(d.sendInstructions.asOneLine.prefix(MarkFields.maxTextLength))
+        if instructions != d.sendInstructions { notes.append("sendInstructions made one line of \(instructions.count) characters"); d.sendInstructions = instructions }
         if SetupState(rawValue: d.setup) == nil {
             notes.append("setup \"\(d.setup)\" -> \"\(SetupState.unasked.rawValue)\""); d.setup = SetupState.unasked.rawValue
         }

@@ -790,7 +790,8 @@ the same driven sequence; a single run varies.
   is still allowed to submit.
 - A `vignette://` URL has no authenticated sender, so a reply is authorized by a per-request bearer
   secret in the request's own directory. The request line names only the image
-  (`ScreenshotRequests.requestLine`, "From Vignette: …"), and the skill tells the agent that the
+  (`ScreenshotRequests.requestLine`, "From Vignette: …", then `sendInstructions` from settings.json),
+  and the skill tells the agent that the
   ticket is `ticket.json` beside it and the helper is the skill's own `scripts/reply`, so an agent
   without the skill can read the drawing but not answer with one. The secret never travels in the
   line, because `[url]` logs every URL. Holding the ticket permits replies to that one request
