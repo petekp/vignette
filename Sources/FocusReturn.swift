@@ -6,6 +6,9 @@ import AppKit
 final class FocusReturn {
     static let shared = FocusReturn()
     private(set) var previousApp: NSRunningApplication?
+    /// Vignette's own titled window (Settings, setup, the tweaks) that was key when the stack or the
+    /// annotator came up. Closing those goes back to it; going to another app forgets it.
+    private weak var ownWindow: NSWindow?
     private var observer: Any?
 
     private init() {
@@ -16,12 +19,28 @@ final class FocusReturn {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app != NSRunningApplication.current else { return }
             // NSWorkspace delivers notifications registered with queue: .main on the main thread.
-            MainActor.assumeIsolated { self?.previousApp = app }
+            MainActor.assumeIsolated {
+                self?.previousApp = app
+                self?.ownWindow = nil
+            }
         }
     }
 
-    /// Activates the previous app if Vignette is currently the active one.
+    /// The stack or the annotator is coming up. Called before either takes the keys, while the
+    /// window the person was in is still key.
+    func sessionStarting() {
+        guard NSApp.isActive, let window = NSApp.keyWindow, window.styleMask.contains(.titled) else { return }
+        ownWindow = window
+    }
+
+    /// Goes back to the Vignette window the session started in, or else activates the previous app
+    /// if Vignette is currently the active one.
     func restore(reason: String) {
+        if let window = ownWindow, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            Log.write("[focus] \(reason): returned to \(window.title)")
+            return
+        }
         guard NSApp.isActive, let app = previousApp, !app.isTerminated else { return }
         app.activate()
         Log.write("[focus] \(reason): returned to \(app.localizedName ?? "?")")

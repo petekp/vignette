@@ -4,12 +4,13 @@
 you or your agent. Open it from the menu bar under Settings…, or with `open -g vignette://settings`.
 It has three tabs, General, Screenshots and Agents, plus Developer when `debug` is on. The app
 reloads the file within a second of a save. `VIGNETTE_SETTINGS=<path>` in the environment points a
-launch at another file, which is how tests and agents keep away from the real one.
+launch at another file, which is how tests and agents keep away from the real one. That launch also
+keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
+`com.apple.screencapture`, so it never moves where your screenshots are saved.
 
 ```json
 {
   "screenshotsFolder": "~/Dropbox/Screenshots",
-  "syncAppleSaveLocation": true,
   "appleThumbnail": false,
   "windowShadow": false,
   "format": "png",
@@ -18,6 +19,7 @@ launch at another file, which is how tests and agents keep away from the real on
   "hideMenuBarIcon": false,
   "launchAtLogin": false,
   "quickAnnotate": false,
+  "sendWithReturn": false,
   "annotateOnCapture": false,
   "copyOnCapture": true,
   "debug": false,
@@ -29,9 +31,9 @@ launch at another file, which is how tests and agents keep away from the real on
 ```
 
 - **`screenshotsFolder`** is one setting for two things: where Cmd+Shift+3/4/5 saves and what
-  Vignette watches. Set it to the folder you want your screenshots to live in.
-- **`syncAppleSaveLocation`** writes `screenshotsFolder` to Apple's screenshot save location. Turn
-  it off to let Apple save somewhere other than the folder Vignette watches.
+  Vignette watches. Vignette follows macOS here: pick a folder in the Options menu of ⌘⇧5 and
+  Vignette watches it at once. Set it here, or with Save to in Settings → Screenshots, and macOS
+  saves there.
 - **`appleThumbnail`** is the value Vignette keeps Apple's floating thumbnail at. The first launch
   turns it off, because Apple's thumbnail holds the file back for about five seconds, and every
   launch puts it back if something else changed it. `restore-apple-defaults` sets it to what macOS
@@ -43,22 +45,28 @@ launch at another file, which is how tests and agents keep away from the real on
 - **`recentHotkey`** opens the recent stack. `"double-rshift"` by default, a double tap of right
   Shift, which needs Accessibility permission. A key combination such as `"cmd+shift+6"` needs none.
   The setup window on first launch is where this is normally chosen.
-- **`hideMenuBarIcon`** removes Vignette's menu bar icon. `vignette://settings` still opens the
-  Settings window.
-- **`launchAtLogin`** adds Vignette to your login items. It starts on, because the first launch
-  turns Apple's thumbnail off: after a restart without Vignette, a capture would show nothing.
-  The setup window shows the switch and applies it when you close the window.
-- **`quickAnnotate`** changes what Done does. On, it copies the image you drew on and closes the
-  annotator and the stack at once, instead of returning you to the stack.
-- **`annotateOnCapture`** is Draw on New Screenshots: it opens every new screenshot in the annotator
-  right away, instead of showing a thumbnail. The menu bar toggles it.
+- **`hideMenuBarIcon`** removes Vignette's menu bar icon. Opening Vignette again, from Finder or
+  Spotlight, still opens the Settings window, and so does `vignette://settings`.
+- **`launchAtLogin`** is Open at login, which adds Vignette to your login items. It starts on,
+  because the first launch turns Apple's thumbnail off: after a restart without Vignette, a capture
+  would show nothing. The setup window shows the switch and applies it when you close the window.
+- **`quickAnnotate`** is Close after copying a drawing. On, Done copies the image you drew on and
+  closes the annotator and the stack at once, instead of returning you to the stack. It also drops
+  any screenshots still waiting to be drawn on.
+- **`sendWithReturn`** is Send with Return, in the Agents tab. On, Return in the message box beside
+  Send sends the drawing, as in a chat app. Off, Return there only points at ⌘Return, since Vignette
+  picked the session and a Return typed out of habit would hand the drawing to it. ⌘Return sends
+  either way, and Return beside Reply always sends.
+- **`annotateOnCapture`** is Open it to draw, and Open to Draw in the menu bar: it opens every new
+  screenshot in the annotator right away, instead of showing a thumbnail.
 - **`copyOnCapture`** puts every new screenshot on the clipboard as it lands: the image, plus its
   file URL and path for apps that take those. It is on by default. An image that arrives through
-  `add` skips this and Draw on New Screenshots, since a push from an agent is not a capture.
+  `add` skips this and Open to Draw, since a push from an agent is not a capture.
 - **`debug`** unlocks `tweaks`, `install-skill?root=`, and `file=` outside the watch folder.
 - **`agentSkill`** records only whether the app has offered the skill for coding agents:
-  `unasked` until the offer, then `off`. Whether the skill is installed is read from disk, and the
-  Agents tab installs or removes it per agent. An older file holding `on` is read as `off`
+  `unasked` until the offer, then `off`. The setup window's last page makes the offer. Whether the
+  skill is installed is read from disk, and the Agents tab's switches install or remove it per
+  agent. An older file holding `on` is read as `off`
   (see [agents.md](agents.md)).
 - **`setup`** records whether the first-run setup window has had its turn: `unasked`, then `done`.
   It is written when the window closes, so a launch quit part way through asks again.

@@ -37,8 +37,7 @@ enum SetupState: String {
 /// Missing keys fall back to defaults, so a partial file is fine.
 struct SettingsData: Codable, Equatable {
     var version = Settings.currentVersion    // file format version; `Settings.migrate` brings older files up
-    var screenshotsFolder = "~/Desktop"      // where Cmd+Shift+3/4/5 saves and what Vignette watches
-    var syncAppleSaveLocation = true         // write screenshotsFolder to Apple's screencapture location
+    var screenshotsFolder = "~/Desktop"      // where Cmd+Shift+3/4/5 saves and what Vignette watches; follows Apple's location
     var appleThumbnail = true                // Apple's floating thumbnail; off means the file lands immediately
     var windowShadow = true                  // Apple's window-capture shadow
     var format = "png"                       // png or jpg
@@ -47,6 +46,7 @@ struct SettingsData: Codable, Equatable {
     var hideMenuBarIcon = false              // vignette://settings still opens the window
     var launchAtLogin = false                // registers the app as a login item (System Settings > Login Items)
     var quickAnnotate = false                // Done copies the result and closes the annotator and the stack at once
+    var sendWithReturn = false               // Return in the message field beside Send sends; ⌘Return always does
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
     var debug = false                        // unlocks tweaks, install-skill root=, and file= outside the watch folder
@@ -116,7 +116,7 @@ struct SettingsData: Codable, Equatable {
     /// First run: mirror what macOS is already doing so nothing changes until the user asks.
     static func fromSystem() -> SettingsData {
         var d = SettingsData()
-        if let loc = AppleScreencapture.string("location") { d.screenshotsFolder = loc }
+        d.screenshotsFolder = AppleScreencapture.location
         d.appleThumbnail = AppleScreencapture.bool("show-thumbnail") ?? true
         d.windowShadow = !(AppleScreencapture.bool("disable-shadow") ?? false)
         d.format = AppleScreencapture.string("type") ?? "png"
@@ -374,6 +374,7 @@ final class Settings: ObservableObject {
     private var lastWrittenData: SettingsData?
     private var reloadWork: DispatchWorkItem?
     private var writeWork: DispatchWorkItem?
+    private var appleLocation: AppleScreencapture.Observer?
 
     private init() {
         let boot = Settings.bootstrap(at: Settings.fileURL)
@@ -534,8 +535,7 @@ final class Settings: ObservableObject {
         put("disable-shadow", original.disableShadow)
         put("type", original.type)
         var next = data
-        // An unset Apple location means the system default, which is also the app's default folder.
-        if next.syncAppleSaveLocation { next.screenshotsFolder = original.location ?? SettingsData().screenshotsFolder }
+        next.screenshotsFolder = AppleScreencapture.location
         next.appleThumbnail = original.showThumbnail ?? true
         next.windowShadow = !(original.disableShadow ?? false)
         next.format = original.type ?? "png"
@@ -567,34 +567,36 @@ final class Settings: ObservableObject {
         onChange?(old, next)
     }
 
-    /// Put back the keys Vignette owns when something outside the app changed them. Only the two
-    /// whose drift breaks it: Apple's thumbnail delays the file past the clipboard fill, and a save
-    /// location pointing elsewhere leaves the watcher with nothing to see. `type` and
-    /// `disable-shadow` are left alone, since both of their values work.
+    /// Launch: put back Apple's thumbnail if something outside the app turned it on, since it holds
+    /// the file past the clipboard fill. Then take macOS's save location as the watch folder, and
+    /// keep taking it while the app runs, so a folder picked in ⌘⇧5's Options menu is the one
+    /// Vignette watches. `type` and `disable-shadow` are left alone, since both of their values work.
     func reconcileApple() {
-        var fixed: [String] = []
         if (AppleScreencapture.bool("show-thumbnail") ?? true) != data.appleThumbnail {
             AppleScreencapture.set("show-thumbnail", data.appleThumbnail)
-            fixed.append("show-thumbnail=\(data.appleThumbnail)")
+            Log.write("[settings] reconciled apple show-thumbnail=\(data.appleThumbnail)")
         }
-        // Compared expanded, because Vignette writes the tilde form and Apple's own UI writes a
-        // full path; a plain string compare would rewrite the key on every launch.
-        if data.syncAppleSaveLocation {
-            let want = data.folderURL.standardizedFileURL.path
-            let have = AppleScreencapture.string("location").map {
-                URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath).standardizedFileURL.path
-            }
-            if have != want {
-                AppleScreencapture.set("location", data.screenshotsFolder)
-                fixed.append("location=\(data.screenshotsFolder)")
-            }
-        }
-        if !fixed.isEmpty { Log.write("[settings] reconciled apple \(fixed.joined(separator: " "))") }
+        followAppleLocation()
+        appleLocation = AppleScreencapture.observeLocation { [weak self] in self?.followAppleLocation() }
+    }
+
+    /// Takes Apple's save location as the watch folder when the two differ. Compared expanded,
+    /// because Vignette writes the tilde form and Apple's own UI writes a full path. Not written
+    /// back to Apple, since that is where it came from.
+    private func followAppleLocation() {
+        let location = AppleScreencapture.location
+        guard !AppleScreencapture.samePath(location, data.screenshotsFolder) else { return }
+        var next = data
+        next.screenshotsFolder = (URL(fileURLWithPath: (location as NSString).expandingTildeInPath)
+            .standardizedFileURL.path as NSString).abbreviatingWithTildeInPath
+        Log.write("[settings] following apple location=\(next.screenshotsFolder)")
+        apply(next, source: "apple", pushApple: false)
+        scheduleWrite()
     }
 
     /// Keep macOS's screenshot behavior in line with the file. Only touched keys are written.
     private func pushToApple(old: SettingsData, new: SettingsData) {
-        if new.syncAppleSaveLocation && (new.screenshotsFolder != old.screenshotsFolder || !old.syncAppleSaveLocation) {
+        if !AppleScreencapture.samePath(new.screenshotsFolder, old.screenshotsFolder) {
             AppleScreencapture.set("location", new.screenshotsFolder)
         }
         if new.appleThumbnail != old.appleThumbnail { AppleScreencapture.set("show-thumbnail", new.appleThumbnail) }
@@ -711,12 +713,53 @@ final class Settings: ObservableObject {
     }
 }
 
-/// Apple's screenshot defaults (`defaults read com.apple.screencapture`).
+/// Apple's screenshot defaults (`defaults read com.apple.screencapture`). A launch with
+/// `VIGNETTE_SETTINGS` reads and writes `<bundle id>.screencapture` instead, so a test copy never
+/// takes or moves the user's save location. macOS itself never reads that domain.
 enum AppleScreencapture {
-    private static let domain = "com.apple.screencapture" as CFString
+    static let domainName = (ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false) ? "\(Identity.bundleID).screencapture" : "com.apple.screencapture"
+    private static let domain = domainName as CFString
 
     static func string(_ key: String) -> String? { CFPreferencesCopyAppValue(key as CFString, domain) as? String }
     static func bool(_ key: String) -> Bool? { CFPreferencesCopyAppValue(key as CFString, domain) as? Bool }
+
+    /// Where macOS saves screenshots: the `location` key, or the Desktop when it is unset.
+    static var location: String { string("location") ?? SettingsData().screenshotsFolder }
+
+    /// Two folder paths name the same folder, whatever their tildes and trailing slashes.
+    static func samePath(_ a: String, _ b: String) -> Bool {
+        func standard(_ path: String) -> String {
+            URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.path
+        }
+        return standard(a) == standard(b)
+    }
+
+    /// Calls `changed` on the main thread whenever `location` changes, whoever changed it: the
+    /// preferences daemon tells every process observing the key. Measured with a `defaults write`
+    /// from another process: 10 to 35 ms.
+    static func observeLocation(_ changed: @escaping @MainActor @Sendable () -> Void) -> Observer? {
+        UserDefaults(suiteName: domainName).map { Observer(defaults: $0, changed: changed) }
+    }
+
+    final class Observer: NSObject {
+        private let defaults: UserDefaults
+        private let changed: @MainActor @Sendable () -> Void
+
+        init(defaults: UserDefaults, changed: @escaping @MainActor @Sendable () -> Void) {
+            self.defaults = defaults
+            self.changed = changed
+            super.init()
+            defaults.addObserver(self, forKeyPath: "location", options: [], context: nil)
+        }
+
+        deinit { defaults.removeObserver(self, forKeyPath: "location") }
+
+        override func observeValue(forKeyPath keyPath: String?, of object: Any?,
+                                   change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+            // Delivered on whichever thread the change arrived on.
+            DispatchQueue.main.async { [changed] in MainActor.assumeIsolated { changed() } }
+        }
+    }
 
     static func set(_ key: String, _ value: Any) {
         CFPreferencesSetAppValue(key as CFString, value as CFPropertyList, domain)

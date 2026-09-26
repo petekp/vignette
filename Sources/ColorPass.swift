@@ -72,7 +72,7 @@ struct ColorSample {
         case .arrow(let arrow):
             under = labs(along: arrow.body(pointScale: pointScale))
         case .text(let text):
-            let lines = TextLayout(text, imageWidth: CGFloat(pixels.width), pointScale: pointScale, style: style).lines
+            let lines = TextLayout(text, imageWidth: CGFloat(pixels.width), pointScale: pointScale, style: style.forAgent(mark.agent)).lines
             // An empty line has no letters to cover anything.
             let inked = lines.filter { $0.rect.width > 0 }
             under = (inked.isEmpty ? lines : inked).flatMap { labs(in: $0.rect, borderOnly: false) }
@@ -118,21 +118,14 @@ struct ColorSample {
         return borderOnly && !border.isEmpty ? border : all
     }
 
-    /// Points along the body as drawn, arc included, each with one to either side of it.
+    /// Points along the body as drawn, arc or curve included, each with one to either side of it.
     private func labs(along body: ArrowBody) -> [Lab] {
         let scaleX = CGFloat(width) / CGFloat(pixels.width), scaleY = CGFloat(height) / CGFloat(pixels.height)
         let band = CGFloat(max(1, Int((Self.lineBand * CGFloat(max(width, height))).rounded())))
-        let chord = hypot(body.end.x - body.start.x, body.end.y - body.start.y)
         var labs: [Lab] = []
         for step in 0...Self.lineSteps {
-            let point = body.point(at: CGFloat(step) / CGFloat(Self.lineSteps))
-            // The body's normal at this point: the radius on an arc, the perpendicular on a line.
-            var normal = CGVector(dx: 0, dy: 0)
-            if let arc = body.arc, arc.radius > 0 {
-                normal = CGVector(dx: (point.x - arc.center.x) / arc.radius, dy: (point.y - arc.center.y) / arc.radius)
-            } else if chord > 0 {
-                normal = CGVector(dx: -(body.end.y - body.start.y) / chord, dy: (body.end.x - body.start.x) / chord)
-            }
+            let fraction = CGFloat(step) / CGFloat(Self.lineSteps)
+            let point = body.point(at: fraction), normal = body.normal(at: fraction)
             for side: CGFloat in [-1, 0, 1] {
                 labs.append(lab(x: point.x * scaleX + normal.dx * band * side, y: point.y * scaleY + normal.dy * band * side))
             }

@@ -5,14 +5,19 @@
 Open the disk image and drag Vignette to Applications. If you open Vignette from the disk image
 instead, it offers to move itself to Applications, reopens from there, and ejects the disk image.
 
-The first launch opens a setup window for [the shortcut](#the-shortcut), with Launch at login on.
+The first launch opens a setup window, one step per page: a welcome, [the shortcut](#the-shortcut),
+and your coding agents when Claude Code or Codex is installed. Open at login starts on, because
 Vignette turns off Apple's floating thumbnail, so if Vignette is not running after a restart, a
 capture shows nothing. The window adds the login item when you close it.
 
 If your screenshots save to the Desktop, Documents or Downloads, macOS asks once whether Vignette
-may read that folder. If you answered Don't Allow, the setup window says so, and its button opens
-Privacy & Security → Files and Folders. Switch Vignette on there, and it starts watching the folder
-without a relaunch.
+may read that folder. The welcome page asks for it, with Allow…, and says why. If you answered
+Don't Allow, the row says so, and its Allow… opens Privacy & Security → Files and Folders. Switch
+Vignette on there, and it starts watching the folder without a relaunch. Settings → Screenshots
+says so too, under Save to.
+
+Vignette watches the folder macOS saves screenshots to. Pick another in the Options menu of ⌘⇧5,
+or with Save to in Settings → Screenshots, and both change to it.
 
 ## The stack
 
@@ -72,7 +77,7 @@ drawing. The cards stay selected and it comes back when you are done.
 Cmd+S stitches two or more selected screenshots into one image with numbered badges, saved next to
 the originals and copied. Two or three pieces stack, and more go in a grid. Each badge is the number
 the card's circle showed. The selected cards fly together into the new card, which takes their place
-at the bottom of the stack, or opens in the annotator when Draw on New Screenshots is on.
+at the bottom of the stack, or opens in the annotator when Open to Draw is on.
 
 Drag a card out to drop it on a chat window, Finder, or a terminal. A card you drew on drops the
 drawing, and any other card drops the screenshot. A selected card drags the whole selection.
@@ -120,16 +125,16 @@ card and the drawing is back. Copy Drawing renders it without opening the editor
 
 ## The shortcut
 
-The shortcut is either a double tap of right Shift, which is the default, or a key combination.
-The first launch opens a window to choose. The double tap needs Vignette trusted for
-Accessibility, and a key combination needs no permission. Allow in System Settings brings up
-macOS's request, and its Open System Settings button opens Privacy & Security → Accessibility with
-Vignette listed. Switch it on, and the setup window comes back and waits for you to press the keys
-once.
+The shortcut is either a double tap, of right Shift by default, or a key combination. Pick one
+from the Shortcut menu in the setup window or in Settings → General. Key Combination…, at the
+bottom, asks you to press the keys. The double tap needs Vignette trusted for Accessibility, and a
+key combination needs no permission. Allow… brings up macOS's request, and its Open System
+Settings button opens Privacy & Security → Accessibility with Vignette listed. Switch it on, and
+the setup window comes back and waits for you to press the keys once.
 
 Hold the key, or the second tap, and the newest screenshot lifts out of the stack into the
 annotator: capture, tap-tap-hold, draw. The menu bar shows the same two commands, Show Recent
-Screenshots and Draw on Last Screenshot, with the shortcut beside them. [Settings](settings.md)
+Screenshots and Draw on Newest Screenshot, with the shortcut beside them. [Settings](settings.md)
 covers changing it.
 
 ## Screen recordings
@@ -144,8 +149,8 @@ hovering one says why. Their shortcuts beep. When every selected card is a recor
 Open.
 
 Cmd+C copies a recording as a file, which chat apps attach and terminals paste as its path. Draw on
-Last Screenshot and the held shortcut skip recordings and open the newest screenshot. Draw on New
-Screenshots leaves a new recording in the stack.
+Newest Screenshot and the held shortcut skip recordings and open the newest screenshot. Open to
+Draw leaves a new recording in the stack.
 
 ## Cards from an agent
 

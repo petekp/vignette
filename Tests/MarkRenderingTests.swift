@@ -250,6 +250,9 @@ final class MarkRenderingTests: XCTestCase {
             (Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 140, y: 100), bend: 40), full),
             // A radius of 10.625 px, 1.5 strokes: the head is as long as the circle is wide.
             (Mark.Arrow(start: CGPoint(x: 100, y: 100), end: CGPoint(x: 110, y: 100), bend: 20), 21.25),
+            // Freehand, arriving on a curve and on a hook tighter than the head.
+            (Mark.Arrow(start: CGPoint(x: 50, y: 300), end: CGPoint(x: 400, y: 300), via: [CGPoint(x: 150, y: 150), CGPoint(x: 300, y: 250)]), full),
+            (Mark.Arrow(start: CGPoint(x: 50, y: 300), end: CGPoint(x: 200, y: 290), via: [CGPoint(x: 200, y: 300), CGPoint(x: 210, y: 295)]), full),
         ]
         for (arrow, headLength) in arrows {
             let body = arrow.body(pointScale: 2)
@@ -269,6 +272,20 @@ final class MarkRenderingTests: XCTestCase {
                 let ahead = (edge.x - base.x) * (arrow.end.x - base.x) + (edge.y - base.y) * (arrow.end.y - base.y) > 1e-9
                 XCTAssertTrue(!ahead || head.path.contains(edge), "\(arrow): the cap's edge at \(step * 5)°")
             }
+        }
+    }
+
+    func testAFreehandArrowsBodyIsTheCurveThroughItsPoints() {
+        let arrow = Mark.Arrow(start: CGPoint(x: 50, y: 300), end: CGPoint(x: 400, y: 300), via: [CGPoint(x: 150, y: 150), CGPoint(x: 300, y: 250)])
+        let body = arrow.body(pointScale: 2)
+        for point in [arrow.start, arrow.end] + arrow.via { XCTAssertLessThan(body.distance(to: point), 1e-9, "it passes through \(point)") }
+        XCTAssertEqual(body.point(at: 0), arrow.start)
+        XCTAssertEqual(body.point(at: 1), arrow.end)
+        XCTAssertLessThan(body.bounds.minY, 150, "it bows past the highest point, as a smooth curve through it does")
+        // The stroked path is the same curve, cut where the fraction says.
+        for fraction: CGFloat in [0.25, 0.5, 0.9, 1] {
+            let end = body.path(upTo: fraction).currentPoint, expected = body.point(at: fraction)
+            XCTAssertEqual(hypot(end.x - expected.x, end.y - expected.y), 0, accuracy: 0.05, "at \(fraction)")
         }
     }
 

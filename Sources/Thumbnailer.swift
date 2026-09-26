@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import ImageIO
+import QuickLookThumbnailing
 
 /// Downsampled copies of screenshots, cached by file and size. Decoding a 3000-pixel PNG for a
 /// 220-point card wastes memory and Core Animation's minification shimmers; ImageIO resamples
@@ -22,7 +23,9 @@ enum Thumbnailer: @unchecked Sendable {
     /// What a file's header says, by path, valid while the file's date matches; reading a header is a
     /// file open per card, and a recording's is an AVFoundation load.
     nonisolated(unsafe) private static var headers: [String: (modified: Date, header: Header)] = [:]
-    private struct Header { let size: NSSize; let duration: TimeInterval? }
+    /// A file's size in points and, for a recording, its length. `exact` is false for a shape taken
+    /// from iCloud's thumbnail of a file that is not downloaded: right in proportion only.
+    struct Header { let size: NSSize; let duration: TimeInterval?; var exact = true }
     /// Decoded pixels the cache may hold, as RGBA bytes. About 30 cards at Retina card size plus a few
     /// screen-size flight decodes fit; beyond that the oldest go.
     nonisolated(unsafe) private static var budget = 96 << 20
@@ -39,16 +42,60 @@ enum Thumbnailer: @unchecked Sendable {
     /// The screenshot's size in points, from the file header only: pixels scaled by the file's DPI,
     /// which is what `NSImage.size` reports for a Retina capture. A recording carries no DPI, so its
     /// size is in pixels; only its shape is used, since a recording never reaches the annotator.
+    /// Reads the file, so a file that is not downloaded is downloaded first: the main thread asks
+    /// `lookUp` instead.
     static func pointSize(of url: URL) -> NSSize? { header(of: url)?.size }
 
-    /// A recording's length in seconds; nil for an image.
+    /// A recording's length in seconds; nil for an image. Reads the file, as `pointSize` does.
     static func duration(of url: URL) -> TimeInterval? { header(of: url)?.duration }
 
-    private static func header(of url: URL) -> Header? {
+    /// True when iCloud Drive has taken the file's bytes off this Mac (Optimize Mac Storage) and left
+    /// a placeholder. Any read of such a file, ImageIO's header read and AVFoundation's included,
+    /// downloads all of it and waits: two such files held launch for 1.5 s, and a 333 MB recording
+    /// held the stack's opening for 14 s (measured 2026-09-25). `lstat` reads the flag without that.
+    static func isDataless(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && info.st_flags & UInt32(SF_DATALESS) != 0
+    }
+
+    /// A file as the main thread may know it, which never reads a file that is not downloaded.
+    enum Lookup {
+        case read(Header)
+        /// The file's bytes are in iCloud only. The header kept from an earlier read, or the shape of
+        /// iCloud's thumbnail once `cardImage` has fetched it; nil before either.
+        case notDownloaded(Header?)
+        case unreadable
+    }
+
+    static func lookUp(_ url: URL) -> Lookup {
+        if isDataless(url) { return .notDownloaded(kept(url)) }
+        return header(of: url).map { .read($0) } ?? .unreadable
+    }
+
+    private static func kept(_ url: URL) -> Header? {
         let modified = modified(url)
-        lock.lock()
-        if let hit = headers[url.path], hit.modified == modified { lock.unlock(); return hit.header }
-        lock.unlock()
+        lock.lock(); defer { lock.unlock() }
+        guard let hit = headers[url.path], hit.modified == modified else { return nil }
+        return hit.header
+    }
+
+    /// Downloads a file that is not downloaded by reading its header on the thumbnail queue, so the
+    /// editor, which reads the file on the main thread when it opens, finds its bytes here.
+    static func download(_ url: URL, completion: @escaping @MainActor @Sendable (Header?) -> Void = { _ in }) {
+        queue.async {
+            let header = self.read(url)
+            DispatchQueue.main.async { MainActor.assumeIsolated { completion(header) } }
+        }
+    }
+
+    private static func header(of url: URL) -> Header? {
+        if let hit = kept(url), hit.exact { return hit }
+        return read(url)
+    }
+
+    /// Reads the header from the file, whatever is kept, and keeps it.
+    private static func read(_ url: URL) -> Header? {
+        let modified = modified(url)
         let read = Screenshot(url: url).kind == .recording ? readRecording(url) : readPointSize(of: url).map { Header(size: $0, duration: nil) }
         guard let header = read else { return nil }
         if let modified { lock.lock(); headers[url.path] = (modified, header); lock.unlock() }
@@ -156,6 +203,40 @@ enum Thumbnailer: @unchecked Sendable {
         return context.makeImage() ?? image
     }
 
+    /// A card's picture. A file that is not downloaded gets iCloud's thumbnail instead of a decode of
+    /// its pixels, which would download it; the thumbnail's shape is kept as the file's header until
+    /// the file's own is read.
+    static func cardImage(at url: URL, maxPixel: Int, space: CGColorSpace?) -> NSImage? {
+        guard isDataless(url) else { return image(at: url, maxPixel: maxPixel, space: space) }
+        if let hit = cached(at: url, maxPixel: maxPixel, space: space) { return hit }
+        guard let cg = cloudThumbnail(url, maxPixel: maxPixel).map({ converted($0, to: space) }) else { return nil }
+        let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        guard let modified = modified(url) else { return image }
+        lock.lock()
+        insert(url.path, Entry(modified: modified, maxPixel: maxPixel, space: space, image: image, bytes: cg.width * cg.height * 4))
+        if headers[url.path]?.modified != modified {
+            headers[url.path] = (modified, Header(size: NSSize(width: cg.width, height: cg.height), duration: nil, exact: false))
+        }
+        lock.unlock()
+        return image
+    }
+
+    /// Quick Look answers for a file that is not downloaded from iCloud's own thumbnail, without
+    /// downloading it: 0.3 to 0.9 s, and the file stayed a placeholder (measured 2026-09-25).
+    private static func cloudThumbnail(_ url: URL, maxPixel: Int) -> CGImage? {
+        let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: maxPixel, height: maxPixel),
+                                                   scale: 1, representationTypes: .thumbnail)
+        let done = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var thumbnail: CGImage?
+        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, _ in
+            thumbnail = representation?.cgImage
+            done.signal()
+        }
+        // Offline, iCloud may not answer at all; the card then keeps its matte.
+        if done.wait(timeout: .now() + 20) == .timedOut { QLThumbnailGenerator.shared.cancel(request) }
+        return thumbnail
+    }
+
     /// About 90 ms, most of it decoding video, so it runs where `image` runs: on `queue` for a card.
     private static func posterFrame(_ url: URL, maxPixel: Int) -> CGImage? {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
@@ -204,10 +285,21 @@ enum Thumbnailer: @unchecked Sendable {
         }
     }
 
-    /// Fills the cache in the background for files not yet in it.
+    /// A card's picture, off the main thread, with the file's header as it stands once the picture
+    /// is in: for a file that is not downloaded, the shape of iCloud's thumbnail if nothing better was kept.
+    static func loadCard(at url: URL, maxPixel: Int, space: CGColorSpace?,
+                         completion: @escaping @MainActor @Sendable (NSImage?, Header?) -> Void) {
+        queue.async {
+            let image = self.cardImage(at: url, maxPixel: maxPixel, space: space)
+            let header = self.kept(url)
+            DispatchQueue.main.async { MainActor.assumeIsolated { completion(image, header) } }
+        }
+    }
+
+    /// Fills the cache with cards' pictures in the background for files not yet in it.
     static func warm(_ items: [(url: URL, maxPixel: Int)], space: CGColorSpace?) {
         for item in items where cached(at: item.url, maxPixel: item.maxPixel, space: space) == nil {
-            queue.async { _ = image(at: item.url, maxPixel: item.maxPixel, space: space) }
+            queue.async { _ = cardImage(at: item.url, maxPixel: item.maxPixel, space: space) }
         }
     }
 

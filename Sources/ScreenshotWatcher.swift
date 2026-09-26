@@ -53,6 +53,21 @@ final class ScreenshotWatcher: @unchecked Sendable {
     /// app off under Privacy & Security > Files and Folders.
     var isDenied: Bool { state.withLock { $0.denied } }
 
+    /// Whether a listing of the folder has worked. False while macOS's prompt waits for an answer.
+    var isReadable: Bool { state.withLock { $0.indexed && !$0.denied } }
+
+    /// The folder macOS asks about before an app may read a folder inside it, or nil for a folder
+    /// it doesn't protect. Named as the setup window says it: "your Desktop".
+    static func protectedArea(of folder: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> String? {
+        let path = folder.standardizedFileURL.path
+        for (name, spoken) in [("Desktop", "your Desktop"), ("Documents", "your Documents folder"),
+                               ("Downloads", "your Downloads folder")] {
+            let area = home.appendingPathComponent(name).standardizedFileURL.path
+            if path == area || path.hasPrefix(area + "/") { return spoken }
+        }
+        return nil
+    }
+
     private func start() {
         let fd = open(folder.path, O_EVTONLY)
         guard fd >= 0 else {
@@ -85,7 +100,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
         queue.asyncAfter(deadline: .now() + ScreenshotWatcher.retryDelay) { [weak self] in
             guard let self else { return }
             self.retryDue = false
-            if self.source == nil { self.scan() }
+            if self.source == nil || self.isDenied { self.scan() }
         }
     }
 
@@ -115,7 +130,15 @@ final class ScreenshotWatcher: @unchecked Sendable {
 
     private func scan() {
         if source == nil { start() }
-        let read = ScreenshotWatcher.read(folder)
+        let listing = ScreenshotWatcher.read(folder)
+        let read = listing.files
+        // macOS can let the folder be opened for events and still refuse its listing.
+        if listing.refused {
+            state.withLock { $0.denied = true }
+            retryLater()
+        } else if read != nil, source != nil {
+            state.withLock { $0.denied = false }
+        }
         let change = state.withLock { s -> (added: [String], removed: [String]) in
             // A folder that could not be read held its files all along, so the first listing that
             // works is the folder as it was, not a batch of new captures: after a grant every file
@@ -194,25 +217,28 @@ final class ScreenshotWatcher: @unchecked Sendable {
     /// Every candidate in `folder` with its modification date, from one bulk listing. Asking the
     /// listing for the date is what keeps this cheap: a per-file attribute call reads extended
     /// attributes too and costs about 20 times more (measured on 1300 files: 7 ms against 110 ms).
-    static func listing(of folder: URL) -> [String: Date] { read(folder) ?? [:] }
+    static func listing(of folder: URL) -> [String: Date] { read(folder).files ?? [:] }
 
     /// The listing; empty for a folder that does not exist, which is what it holds; nil for a folder
-    /// that is there but could not be read, such as one macOS has not let the app into yet.
-    private static func read(_ folder: URL) -> [String: Date]? {
+    /// that is there but could not be read, with `refused` when macOS refused the app it.
+    private static func read(_ folder: URL) -> (files: [String: Date]?, refused: Bool) {
         let urls: [URL]
         do {
             urls = try FileManager.default.contentsOfDirectory(
                 at: folder, includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles)
         } catch CocoaError.fileReadNoSuchFile {
-            return [:]
+            return ([:], false)
         } catch {
-            return nil
+            let posix = (error as NSError).userInfo[NSUnderlyingErrorKey] as? NSError
+            let refused = (error as? CocoaError)?.code == .fileReadNoPermission
+                || (posix?.domain == NSPOSIXErrorDomain && [Int(EPERM), Int(EACCES)].contains(posix?.code))
+            return (nil, refused)
         }
         var files: [String: Date] = [:]
         for url in urls where isCandidate(url.lastPathComponent) {
             if let date = modificationDate(of: url) { files[url.lastPathComponent] = date }
         }
-        return files
+        return (files, false)
     }
 
     static func modificationDate(of url: URL) -> Date? {

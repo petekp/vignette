@@ -47,7 +47,7 @@ final class MarkLayers {
     typealias Plan = (Text, Mark, Mark.Text) -> Bool
 
     private struct Shown {
-        let layout: (Mark.Text) -> TextLayout
+        let layout: (Mark.Text, _ agent: Bool) -> TextLayout
         let plan: Plan
     }
 
@@ -233,7 +233,7 @@ final class MarkLayers {
     /// layout, which a text that only moved sideways is checked against. A text new here shows the
     /// bitmap one of `sources` has of the same words in the same place and style, until its own
     /// arrives.
-    func show(_ drawing: Drawing, arrowhead: ArrowheadStyle, layout: @escaping (Mark.Text) -> TextLayout,
+    func show(_ drawing: Drawing, arrowhead: ArrowheadStyle, layout: @escaping (Mark.Text, _ agent: Bool) -> TextLayout,
               adopting sources: [MarkLayers] = [], plan: @escaping Plan) {
         guard !isParked, drawing.pixels == pixels else { return }
         self.drawing = drawing
@@ -291,7 +291,7 @@ final class MarkLayers {
         guard !isParked else { return }
         wholeShow = (scale, bound)
         let imageWidth = CGFloat(drawing.pixels.width), pointScale = drawing.pointScale
-        show(drawing, arrowhead: arrowhead, layout: { TextLayout($0, imageWidth: imageWidth, pointScale: pointScale, style: style) },
+        show(drawing, arrowhead: arrowhead, layout: { TextLayout($0, imageWidth: imageWidth, pointScale: pointScale, style: style.forAgent($1)) },
              adopting: sources) { record, mark, _ in
             record.wantWhole = Target(mark: mark, region: bound, scale: scale, style: style)
             return true
@@ -457,13 +457,13 @@ final class MarkLayers {
     /// The offset that takes `old` to `new`, when that is all that changed and the renderer would
     /// draw the moved text as the old one moved. A text with no wrap width wraps at the image's edge,
     /// so a sideways move slides it only while its lines break in the same places.
-    private static func translation(from old: Mark, to new: Mark, layout: (Mark.Text) -> TextLayout) -> CGVector? {
+    private static func translation(from old: Mark, to new: Mark, layout: (Mark.Text, _ agent: Bool) -> TextLayout) -> CGVector? {
         guard old.color == new.color, old.agent == new.agent, old.colorChosen == new.colorChosen,
               case .text(let a) = old.geometry, case .text(let b) = new.geometry,
               a.text == b.text, a.size == b.size, a.wrap == b.wrap else { return nil }
         let offset = CGVector(dx: b.origin.x - a.origin.x, dy: b.origin.y - a.origin.y)
         if a.wrap == nil, offset.dx != 0 {
-            let before = layout(a).lines, after = layout(b).lines
+            let before = layout(a, old.agent).lines, after = layout(b, new.agent).lines
             guard before.count == after.count,
                   zip(before, after).allSatisfy({ CTLineGetStringRange($0.ctLine).length == CTLineGetStringRange($1.ctLine).length })
             else { return nil }
@@ -489,7 +489,7 @@ final class MarkLayers {
     /// The rect a bitmap for `target` covers, in px: the part of its region the text may touch.
     nonisolated private static func covered(by target: Target, pointScale: CGFloat, imageWidth: CGFloat) -> CGRect {
         guard case .text(let text) = target.mark.geometry else { return .null }
-        let box = TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: target.style).box
+        let box = TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: target.style.forAgent(target.mark.agent)).box
         return aligned(padded(text, box: box, pointScale: pointScale).intersection(target.region), scale: target.scale)
     }
 

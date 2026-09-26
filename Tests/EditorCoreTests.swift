@@ -201,7 +201,7 @@ final class EditorCoreTests: XCTestCase {
         core.click(500, 300)
         _ = core.reduce(.typingChanged(String(repeating: "wrap these words ", count: 20)))
         let wrapped = try XCTUnwrap(textOf(core.drawing.marks.first))
-        let layout = core.geometry.layout(wrapped)
+        let layout = core.geometry.layout(wrapped, agent: false)
         XCTAssertGreaterThan(layout.lines.count, 1)
         XCTAssertLessThanOrEqual(layout.box.maxX, 1000 * (1 - TextLayout.margin))
         XCTAssertEqual(wrapped.origin.x, 500)
@@ -212,7 +212,7 @@ final class EditorCoreTests: XCTestCase {
         _ = core.reduce(.typingChanged(Array(repeating: "line", count: 6).joined(separator: "\n")))
         let grown = try XCTUnwrap(textOf(core.drawing.marks.last))
         XCTAssertLessThan(grown.origin.y, startY)
-        XCTAssertEqual(core.geometry.layout(grown).box.maxY, 600, accuracy: 1e-9)
+        XCTAssertEqual(core.geometry.layout(grown, agent: false).box.maxY, 600, accuracy: 1e-9)
         _ = core.reduce(.typingEnded)
 
         // Started with under 15% of the width to its right, a text moves left as it grows.
@@ -220,7 +220,199 @@ final class EditorCoreTests: XCTestCase {
         _ = core.reduce(.typingChanged("hello wonderful world"))
         let moved = try XCTUnwrap(textOf(core.drawing.marks.last))
         XCTAssertLessThan(moved.origin.x, 900)
-        XCTAssertEqual(core.geometry.layout(moved).lines.count, 1)
+        XCTAssertEqual(core.geometry.layout(moved, agent: false).lines.count, 1)
+    }
+
+    func testATypedTextGetsSmallerToFitItsRoomBeforeItWrapsAndGrowsBackAsItShortens() throws {
+        var core = core()
+        let size = EditorMetrics.standard.newTextSize, right = 1000 * (1 - TextLayout.margin)
+        _ = core.reduce(.setTool(.text))
+        core.click(700, 300)
+        _ = core.reduce(.typingChanged("short"))
+        XCTAssertEqual(try XCTUnwrap(textOf(core.drawing.marks.first)).size, size)
+
+        _ = core.reduce(.typingChanged("a line longer than the room it has"))
+        let fitted = try XCTUnwrap(textOf(core.drawing.marks.first))
+        XCTAssertLessThan(fitted.size, size)
+        XCTAssertGreaterThan(fitted.size, size / 2)
+        XCTAssertEqual(core.geometry.layout(fitted, agent: false).lines.count, 1)
+        XCTAssertLessThanOrEqual(core.geometry.layout(fitted, agent: false).box.maxX, right + 1e-6)
+
+        // At half the size it stops getting smaller and wraps.
+        _ = core.reduce(.typingChanged(String(repeating: "wrap these words ", count: 12)))
+        let floor = try XCTUnwrap(textOf(core.drawing.marks.first))
+        XCTAssertEqual(floor.size, size / 2)
+        XCTAssertGreaterThan(core.geometry.layout(floor, agent: false).lines.count, 1)
+
+        _ = core.reduce(.typingChanged("short"))
+        XCTAssertEqual(try XCTUnwrap(textOf(core.drawing.marks.first)).size, size)
+        _ = core.reduce(.typingEnded)
+
+        // A text dragged to a width wraps in it at its own size.
+        core.press(100, 450, time: 1)
+        core.dragTo(300, 450, time: 1.3)
+        core.release(300, 450, time: 1.4)
+        _ = core.reduce(.typingChanged(String(repeating: "wrap these words ", count: 12)))
+        XCTAssertEqual(try XCTUnwrap(textOf(core.drawing.marks.last)).size, size)
+    }
+
+    /// A press, drags through `points`, and a release at the last.
+    private func stroke(_ core: inout Core, _ points: [(CGFloat, CGFloat)], _ modifiers: Core.Modifiers = []) {
+        core.press(points[0].0, points[0].1, modifiers)
+        for (index, point) in points.dropFirst().enumerated() { core.dragTo(point.0, point.1, modifiers, time: 0.01 * Double(index + 1)) }
+        core.release(points[points.count - 1].0, points[points.count - 1].1, modifiers)
+    }
+
+    /// Points along the top half of a circle from (100, 400) to (500, 400).
+    private let arch: [(CGFloat, CGFloat)] = (0...40).map { (step: Int) -> (CGFloat, CGFloat) in
+        let angle: CGFloat = .pi * (1 - CGFloat(step) / 40)
+        let x: CGFloat = 300 + 200 * cos(angle), y: CGFloat = 400 - 200 * sin(angle)
+        return (x, y)
+    }
+
+    func testTheArrowToolFollowsThePointerAndPutsTheHeadWhereItLifts() throws {
+        var core = core()
+        _ = core.reduce(.setTool(.arrow))
+        stroke(&core, arch)
+        guard case .arrow(let arrow)? = core.drawing.marks.last?.geometry else { return XCTFail("no arrow") }
+        XCTAssertEqual(arrow.start, CGPoint(x: 100, y: 400))
+        XCTAssertEqual(arrow.end.x, 500, accuracy: 1e-9)
+        XCTAssertEqual(arrow.end.y, 400, accuracy: 1e-9)
+        XCTAssertFalse(arrow.via.isEmpty)
+        XCTAssertLessThan(arrow.via.count, 20, "a smooth stroke needs few points")
+        let body = arrow.body(pointScale: 1)
+        for (x, y) in arch { XCTAssertLessThan(body.distance(to: CGPoint(x: x, y: y)), 3, "it follows the stroke at (\(x), \(y))") }
+        XCTAssertEqual(core.selection, [core.drawing.marks.last!.id])
+        XCTAssertEqual(core.geometry.dotCenters(of: arrow).map(\.kind), [.start, .end], "no bend dot on a freehand arrow")
+
+        // The same stroke with Shift draws the straight arrow, at a 15° step.
+        stroke(&core, arch.map { ($0.0, $0.1 + 100) }, .shift)
+        guard case .arrow(let straight)? = core.drawing.marks.last?.geometry else { return XCTFail("no arrow") }
+        XCTAssertTrue(straight.via.isEmpty)
+        XCTAssertEqual(straight.end.y, straight.start.y, accuracy: 1e-9)
+    }
+
+    func testAStrokeThatStaysNearTheLineBetweenItsEndsDrawsAStraightArrow() throws {
+        var core = core()
+        _ = core.reduce(.setTool(.arrow))
+        let wobbly: [(CGFloat, CGFloat)] = (0...40).map { (step: Int) -> (CGFloat, CGFloat) in
+            let y: CGFloat = step % 2 == 0 ? 304 : 296
+            return (100 + CGFloat(step) * 10, y)
+        }
+        stroke(&core, wobbly)
+        guard case .arrow(let arrow)? = core.drawing.marks.last?.geometry else { return XCTFail("no arrow") }
+        XCTAssertTrue(arrow.via.isEmpty)
+        XCTAssertEqual(arrow.start, CGPoint(x: 100, y: 304))
+        XCTAssertEqual(arrow.end, CGPoint(x: 500, y: 304))
+        XCTAssertEqual(core.geometry.dotCenters(of: arrow).count, 3, "and it bends by its middle dot as before")
+    }
+
+    func testDraggingAFreehandArrowsEndTurnsAndScalesItsCurveAboutTheOtherEnd() throws {
+        let arrow = Mark.Arrow(start: CGPoint(x: 100, y: 300), end: CGPoint(x: 500, y: 300), via: [CGPoint(x: 300, y: 200)])
+        var core = core([Mark(geometry: .arrow(arrow))])
+        core.press(500, 300)
+        core.dragTo(400, 350)
+        core.dragTo(300, 500)
+        core.release(300, 500)
+        guard case .arrow(let turned)? = core.drawing.marks.last?.geometry else { return XCTFail("no arrow") }
+        XCTAssertEqual(turned.start, arrow.start)
+        XCTAssertEqual(turned.end, CGPoint(x: 300, y: 500))
+        // An eighth of a turn clockwise, at √2/2 of the length.
+        XCTAssertEqual(turned.via[0].x, 250, accuracy: 1e-9)
+        XCTAssertEqual(turned.via[0].y, 350, accuracy: 1e-9)
+    }
+
+    func testACharacterTypedRightAfterABoxStartsANoteBesideIt() throws {
+        var core = core()
+        core.drag(from: (100, 100), to: (300, 200))
+        let box = try XCTUnwrap(core.drawing.marks.first)
+        let effects = core.key(.character("f"), shift: true)
+        XCTAssertTrue(effects.contains(.passKeysToText))
+        XCTAssertFalse(effects.contains(.holdKey))
+        XCTAssertEqual(core.drawing.marks.count, 2)
+        let note = try XCTUnwrap(textOf(core.drawing.marks.last))
+        XCTAssertEqual(note.origin, CGPoint(x: 300 + Mark.strokeWidth / 2 + Core.noteGap, y: 100 - Mark.strokeWidth / 2))
+        XCTAssertEqual(core.typing?.id, core.drawing.marks.last?.id)
+        XCTAssertEqual(core.tool, .rectangle)
+
+        _ = core.reduce(.typingChanged("Fix"))
+        _ = core.reduce(.typingEnded)
+        // The note and its typing are one step.
+        core.key(.character("z"), .command)
+        XCTAssertEqual(core.drawing.marks.map(\.id), [box.id])
+
+        // Once anything else has happened, a character is not a note.
+        core.drag(from: (100, 300), to: (300, 400))
+        core.click(600, 500)
+        XCTAssertFalse(core.key(.character("f")).contains(.passKeysToText))
+    }
+
+    func testAToolKeyRightAfterABoxPicksItsToolUnlessACharacterFollows() throws {
+        var core = core()
+        core.drag(from: (100, 100), to: (300, 200))
+        XCTAssertTrue(core.key(.character("a")).contains(.holdKey))
+        XCTAssertEqual(core.tool, .arrow)
+        XCTAssertEqual(core.drawing.marks.count, 1)
+        XCTAssertTrue(core.key(.character("d")).contains(.passKeysToText))
+        XCTAssertEqual(core.tool, .rectangle)
+        XCTAssertNotNil(textOf(core.drawing.marks.last))
+
+        // A press after the tool key keeps the tool.
+        var other = self.core()
+        other.drag(from: (100, 100), to: (300, 200))
+        other.key(.character("a"))
+        other.drag(from: (500, 300), to: (700, 400))
+        XCTAssertEqual(other.tool, .arrow)
+        guard case .arrow? = other.drawing.marks.last?.geometry else { return XCTFail("no arrow") }
+    }
+
+    func testANoteGoesBelowABoxWithNoRoomBesideItAndAboveOneWithNoRoomBelow() throws {
+        let edge = Mark.strokeWidth / 2 + Core.noteGap
+        var core = core()
+        core.drag(from: (700, 100), to: (950, 200))
+        core.key(.character("n"))
+        XCTAssertEqual(try XCTUnwrap(textOf(core.drawing.marks.last)).origin, CGPoint(x: 700 - Mark.strokeWidth / 2, y: 200 + edge))
+
+        var low = self.core()
+        low.drag(from: (700, 450), to: (950, 590))
+        low.key(.character("n"))
+        _ = low.reduce(.typingChanged("n"))
+        let above = low.geometry.layout(try XCTUnwrap(textOf(low.drawing.marks.last)), agent: false).box
+        XCTAssertEqual(above.maxY, 450 - edge, accuracy: 0.001)
+        // A second line grows it upward, away from the box.
+        _ = low.reduce(.typingChanged("n\nsecond line"))
+        let grown = low.geometry.layout(try XCTUnwrap(textOf(low.drawing.marks.last)), agent: false).box
+        XCTAssertEqual(grown.maxY, above.maxY, accuracy: 0.001)
+        XCTAssertEqual(grown.height, above.height * 2, accuracy: 0.001)
+    }
+
+    func testANoteForAnArrowHangsBeyondItsTailAndGrowsAwayFromIt() throws {
+        let edge = Mark.strokeWidth / 2 + Core.noteGap
+        var core = core()
+        _ = core.reduce(.setTool(.arrow))
+        core.drag(from: (300, 300), to: (600, 300))
+        XCTAssertTrue(core.key(.character("h")).contains(.passKeysToText))
+        _ = core.reduce(.typingChanged("h"))
+        let first = core.geometry.layout(try XCTUnwrap(textOf(core.drawing.marks.last)), agent: false).box
+        // Left of the tail, its first line centred on it, so the arrow leads from it.
+        XCTAssertEqual(first.maxX, 300 - edge, accuracy: 0.001)
+        XCTAssertEqual(first.midY, 300, accuracy: 0.001)
+        // It grows leftward, and past its room it wraps rather than crossing the tail.
+        _ = core.reduce(.typingChanged(String(repeating: "a note longer than the room left of the tail ", count: 3)))
+        let grown = core.geometry.layout(try XCTUnwrap(textOf(core.drawing.marks.last)), agent: false).box
+        XCTAssertEqual(grown.maxX, first.maxX, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(grown.minX, 1000 * TextLayout.margin - 0.001)
+        XCTAssertGreaterThan(grown.height, first.height)
+
+        // An arrow drawn upward hangs its note below its tail, centred on it.
+        var up = self.core()
+        _ = up.reduce(.setTool(.arrow))
+        up.drag(from: (500, 400), to: (500, 150))
+        up.key(.character("u"))
+        _ = up.reduce(.typingChanged("up"))
+        let below = up.geometry.layout(try XCTUnwrap(textOf(up.drawing.marks.last)), agent: false).box
+        XCTAssertEqual(below.midX, 500, accuracy: 0.001)
+        XCTAssertEqual(below.minY, 400 + edge, accuracy: 0.001)
     }
 
     func testATextToolDragSetsAWrapOfAtLeastOneEmAndOneBroughtBackIsAClick() throws {
@@ -374,17 +566,17 @@ final class EditorCoreTests: XCTestCase {
     func testDraggingATextsRightEdgeSetsItsWrapWidthAndDraggingItsCornerScalesItsFont() throws {
         var core = core([text("hello world", 100, 100)])
         let id = core.drawing.marks[0].id
-        let before = core.geometry.layout(try XCTUnwrap(textOf(core.mark(id))))
+        let before = core.geometry.layout(try XCTUnwrap(textOf(core.mark(id))), agent: false)
         let right = CGPoint(x: before.box.maxX, y: before.box.midY)
         XCTAssertEqual(core.target(at: right), .handle(id, .right))
         core.drag(from: (right.x, right.y), to: (right.x - before.box.width * 0.4, right.y + 30))
         let wrapped = try XCTUnwrap(textOf(core.mark(id)))
         XCTAssertEqual(try XCTUnwrap(wrapped.wrap), before.box.width * 0.6, accuracy: 1e-9)
         XCTAssertEqual(wrapped.origin, CGPoint(x: 100, y: 100), "the top stays")
-        XCTAssertEqual(core.geometry.layout(wrapped).lines.count, 2)
+        XCTAssertEqual(core.geometry.layout(wrapped, agent: false).lines.count, 2)
         XCTAssertEqual(wrapped.size, EditorMetrics.standard.newTextSize)
 
-        let box = core.geometry.layout(wrapped).box
+        let box = core.geometry.layout(wrapped, agent: false).box
         core.drag(from: (box.maxX, box.maxY), to: (box.maxX + box.width, box.maxY + box.height))
         let scaled = try XCTUnwrap(textOf(core.mark(id)))
         XCTAssertEqual(scaled.size, EditorMetrics.standard.newTextSize * 2, accuracy: 1e-9)
@@ -450,36 +642,36 @@ final class EditorCoreTests: XCTestCase {
         var core = core([text("hello wonderful world", 800, 300)])
         let id = core.drawing.marks[0].id
         let start = try XCTUnwrap(textOf(core.mark(id)))
-        let lines = core.geometry.layout(start).lines.count
-        let box = core.geometry.layout(start).box
+        let lines = core.geometry.layout(start, agent: false).lines.count
+        let box = core.geometry.layout(start, agent: false).box
         core.press(box.minX + 5, box.midY)
         var x = start.origin.x
         for step in 1...30 {
             core.dragTo(box.minX + 5 + CGFloat(step * 5), box.midY)
             let text = try XCTUnwrap(textOf(core.mark(id)))
             XCTAssertGreaterThanOrEqual(text.origin.x, x)
-            XCTAssertEqual(core.geometry.layout(text).lines.count, lines)
+            XCTAssertEqual(core.geometry.layout(text, agent: false).lines.count, lines)
             x = text.origin.x
         }
         core.release(box.minX + 155, box.midY)
         let moved = try XCTUnwrap(textOf(core.mark(id)))
-        XCTAssertEqual(core.geometry.layout(moved).box.maxX, 1000 * (1 - TextLayout.margin), accuracy: 1e-6)
+        XCTAssertEqual(core.geometry.layout(moved, agent: false).box.maxX, 1000 * (1 - TextLayout.margin), accuracy: 1e-6)
     }
 
     func testATextNudgedTowardTheRightEdgeStopsThereWithItsLines() throws {
         var core = core([text("a longer sentence that wraps into several lines near the edge", 800, 200)])
         let id = core.drawing.marks[0].id
-        let lines = core.geometry.layout(try XCTUnwrap(textOf(core.mark(id)))).lines.count
+        let lines = core.geometry.layout(try XCTUnwrap(textOf(core.mark(id))), agent: false).lines.count
         var x = try XCTUnwrap(textOf(core.mark(id))).origin.x
         for press in 0..<20 {
             core.key(.right, .shift, isRepeat: press > 0)
             let text = try XCTUnwrap(textOf(core.mark(id)))
             XCTAssertGreaterThanOrEqual(text.origin.x, x)
-            XCTAssertEqual(core.geometry.layout(text).lines.count, lines)
+            XCTAssertEqual(core.geometry.layout(text, agent: false).lines.count, lines)
             x = text.origin.x
         }
         let moved = try XCTUnwrap(textOf(core.mark(id)))
-        XCTAssertEqual(core.geometry.layout(moved).box.maxX, 1000 * (1 - TextLayout.margin), accuracy: 1e-6)
+        XCTAssertEqual(core.geometry.layout(moved, agent: false).box.maxX, 1000 * (1 - TextLayout.margin), accuracy: 1e-6)
     }
 
     // MARK: Keys
@@ -895,7 +1087,7 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(core.typing, typing)
         XCTAssertFalse(effects.contains(.endTyping))
         XCTAssertEqual(core.undoSteps.count, 1)
-        XCTAssertEqual(core.geometry.layout(try XCTUnwrap(textOf(core.drawing.marks.last))).lineHeight, 48, "its lines are set in the new style")
+        XCTAssertEqual(core.geometry.layout(try XCTUnwrap(textOf(core.drawing.marks.last)), agent: false).lineHeight, 48, "its lines are set in the new style")
 
         // Typing goes on in the same session, which ends as one step with the text it made.
         _ = core.reduce(.typingChanged("a note, longer"))

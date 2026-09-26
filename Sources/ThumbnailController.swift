@@ -16,6 +16,9 @@ struct Card: Identifiable {
     func with(size: NSSize) -> Card {
         Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
     }
+    func with(pointSize: NSSize, size: NSSize, duration: TimeInterval?) -> Card {
+        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
+    }
 }
 
 /// Why the selection strip's labels are out. The cursor on the strip brings them out; so does a
@@ -404,11 +407,18 @@ final class ThumbnailController: NSObject {
         return .shown(cards.count)
     }
 
-    /// Decodes thumbnails for `shots` in the background so the stack opens without waiting.
+    /// Decodes thumbnails for `shots` in the background so the stack opens without waiting. A
+    /// screenshot that is not downloaded is downloaded here too, for the editor.
     func warm(_ shots: [Screenshot]) {
         let items = shots.compactMap { shot -> (url: URL, maxPixel: Int)? in
-            guard let pointSize = Thumbnailer.pointSize(of: shot.url) else { return nil }
-            return (shot.url, thumbnailPixels(size: layout.cardSize(for: pointSize), pointSize: pointSize))
+            switch Thumbnailer.lookUp(shot.url) {
+            case .read(let header):
+                return (shot.url, thumbnailPixels(size: layout.cardSize(for: header.size), pointSize: header.size))
+            case .notDownloaded:
+                if shot.kind == .image { Thumbnailer.download(shot.url) }
+                return (shot.url, cloudThumbnailPixels)
+            case .unreadable: return nil
+            }
         }
         Thumbnailer.warm(items, space: screenSpace)
     }
@@ -609,8 +619,10 @@ final class ThumbnailController: NSObject {
         guard visible else { return }
         model.cards = model.cards.map { card in
             let size = layout.cardSize(for: card.pointSize)
-            let image = Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize),
-                                          space: screenSpace) ?? card.image
+            // A file that is not downloaded keeps the picture it has: decoding it here would download it.
+            let image = Thumbnailer.isDataless(card.shot.url) ? card.image
+                : Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize),
+                                    space: screenSpace) ?? card.image
             if let marks = card.marks, let drawing = marks.drawing {
                 marks.show(drawing, filling: size, backingScale: screen.backingScaleFactor, style: style, arrowhead: arrowhead)
             }
@@ -857,7 +869,7 @@ final class ThumbnailController: NSObject {
     private func takeNext() -> Screenshot? {
         while !queue.isEmpty {
             let key = queue.removeFirst()
-            guard Thumbnailer.pointSize(of: URL(fileURLWithPath: key)) != nil else { continue }
+            if case .unreadable = Thumbnailer.lookUp(URL(fileURLWithPath: key)) { continue }
             queueOpened += 1
             Log.write("[annotate] next \((key as NSString).lastPathComponent) \(queueOpened) of \(queueTotal)")
             return Screenshot(url: URL(fileURLWithPath: key))
@@ -1120,7 +1132,9 @@ final class ThumbnailController: NSObject {
     }
 
     private func prefetchFlightImage(_ id: UUID?) {
-        guard let id, let card = model.cards.first(where: { $0.id == id }) else { return }
+        // Only an image flies into the editor; a recording's decode at this size is wasted, and one
+        // that is not downloaded would be downloaded whole.
+        guard let id, let card = model.cards.first(where: { $0.id == id }), card.shot.kind == .image else { return }
         let path = card.shot.url.path
         guard flightImages[path] == nil else { return }
         Thumbnailer.load(at: card.shot.url, maxPixel: Thumbnailer.screenPixels(on: screen), space: screenSpace) { [weak self] image in
@@ -1354,18 +1368,35 @@ final class ThumbnailController: NSObject {
         model.cards = model.cards.map { $0.id == card.id ? $0.with(image: image) : $0 }
     }
 
-    /// A card appears at once; if its thumbnail is not cached yet it arrives a moment later.
+    /// A card appears at once; if its thumbnail is not cached yet it arrives a moment later. A file
+    /// that is not downloaded is never read here: its card takes the shape kept for it, or the
+    /// screen's until iCloud's thumbnail arrives, and a screenshot is downloaded in the background
+    /// for the editor. A recording is not downloaded, and its badge shows no length.
     private func makeCard(_ shot: Screenshot) -> Card? {
-        guard let pointSize = Thumbnailer.pointSize(of: shot.url) else { return nil }
-        let size = layout.cardSize(for: pointSize)
-        let maxPixel = thumbnailPixels(size: size, pointSize: pointSize)
+        let header: Thumbnailer.Header
+        var notDownloaded = false
+        switch Thumbnailer.lookUp(shot.url) {
+        case .read(let read): header = read
+        case .notDownloaded(let kept):
+            notDownloaded = true
+            header = kept ?? Thumbnailer.Header(size: screen.frame.size, duration: nil, exact: false)
+        case .unreadable: return nil
+        }
+        let size = layout.cardSize(for: header.size)
+        let maxPixel = notDownloaded ? cloudThumbnailPixels : thumbnailPixels(size: size, pointSize: header.size)
         let space = screenSpace
         let card = Card(id: UUID(), shot: shot, image: Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space),
-                        pointSize: pointSize, size: size, agent: Agent.of(shot.url), duration: Thumbnailer.duration(of: shot.url))
+                        pointSize: header.size, size: size, agent: Agent.of(shot.url), duration: header.duration)
         if card.image == nil {
-            Thumbnailer.load(at: shot.url, maxPixel: maxPixel, space: space) { [weak self] image in
-                guard let self, let image, self.model.cards.contains(where: { $0.id == card.id }) else { return }
-                self.replaceImage(of: card, with: image)
+            Thumbnailer.loadCard(at: shot.url, maxPixel: maxPixel, space: space) { [weak self] image, kept in
+                guard let self, self.model.cards.contains(where: { $0.id == card.id }) else { return }
+                if let image { self.replaceImage(of: card, with: image) }
+                if notDownloaded, let kept { self.reshape(card.id, to: kept) }
+            }
+        }
+        if notDownloaded, shot.kind == .image {
+            Thumbnailer.download(shot.url) { [weak self] header in
+                if let header { self?.reshape(card.id, to: header) }
             }
         }
         // Read off the main thread; the card is in the column by the time its drawing arrives.
@@ -1374,6 +1405,25 @@ final class ThumbnailController: NSObject {
             drawingReads.append(shot.url)
         }
         return card
+    }
+
+    /// A card whose file is not downloaded learns its shape late: from iCloud's thumbnail, then from
+    /// the file's own header once the file is here. A card in the annotator or mid-stitch keeps its
+    /// size, since its slot is where a flight lands.
+    private func reshape(_ id: UUID, to header: Thumbnailer.Header) {
+        guard let card = model.cards.first(where: { $0.id == id }), card.pointSize != header.size || card.duration != header.duration,
+              !model.outCards.contains(id), !model.forming.contains(id) else { return }
+        let size = layout.cardSize(for: header.size)
+        withAnimation(Anim.spring(ui.relayoutDuration)) {
+            model.cards = model.cards.map { $0.id == id ? $0.with(pointSize: header.size, size: size, duration: header.duration) : $0 }
+        }
+        if size != card.size { relayout() }
+    }
+
+    /// Pixels on the longest side for iCloud's thumbnail of a file that is not downloaded: enough for a
+    /// card of any shape, since the shape is not known until the thumbnail arrives.
+    private var cloudThumbnailPixels: Int {
+        Int(ceil(max(layout.maxCardWidth, layout.maxCardHeight) * screen.backingScaleFactor * 1.5))
     }
 
     /// Pixels on the longest side for a decode that covers the card at this screen's scale, with margin.
@@ -1389,7 +1439,10 @@ final class ThumbnailController: NSObject {
     enum Entrance { case slide, stayOffscreen, inPlace }
 
     private func present(cards: [Card], stack: Bool, entrance: Entrance = .slide) {
-        if !visible { pinnedScreen = NSScreen.main ?? NSScreen.screens[0] }
+        if !visible {
+            pinnedScreen = NSScreen.main ?? NSScreen.screens[0]
+            FocusReturn.shared.sessionStarting()
+        }
         dismissTimer?.invalidate()
         dismissGeneration += 1
         flights.endAll()
@@ -1432,7 +1485,10 @@ final class ThumbnailController: NSObject {
 
     /// A toast on its own, in the corner.
     private func present(toast: String) {
-        if !visible { pinnedScreen = NSScreen.main ?? NSScreen.screens[0] }
+        if !visible {
+            pinnedScreen = NSScreen.main ?? NSScreen.screens[0]
+            FocusReturn.shared.sessionStarting()
+        }
         dismissGeneration += 1
         model.isStack = false
         model.slidingOut = false

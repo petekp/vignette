@@ -1,6 +1,8 @@
 ---
 name: vignette
-description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Not for images the user captured themselves; Vignette already shows those.
+description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message starts "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
+metadata:
+  version: "1"
 ---
 
 # Vignette
@@ -64,20 +66,26 @@ its size, `x2`,`y2` an arrow's head.
 The user can hand you a drawing from Vignette's editor. It arrives in your session as one line:
 
 ```text
-Vignette request <id>: open the drawing at "<path>" and do what it asks. To answer with a drawing
-of your own, run: python3 "<helper>" --ticket "<ticket>" --marks <marks.json>; …
+From Vignette: "<folder>/image.png". If a drawing would answer better than words, you can send one back.
 ```
 
-Open that image and answer what it asks. When the answer is easier to show than to say, reply with
-a drawing: the helper puts your marks on a new card beside the user's other screenshots. They edit
-those marks like their own and can send the result straight back to you.
+When the user typed a message to go with the drawing, it ends the line, after "send one back.".
+Read it as their request about the image.
+
+Open the image. The boxes, arrows and text on it are the user's: they point at what they want you
+to look at or change. When the answer is easier to show than to say, reply with a drawing: the
+helper puts your marks on a new card beside the user's other screenshots. They edit those marks
+like their own and can send the result straight back to you.
+
+The helper is `scripts/reply` in this skill's folder, and the `ticket.json` in the image's folder
+authorizes the reply:
 
 ```sh
 cat > /tmp/reply.json <<'JSON'
 [{"type": "arrow", "x": 0.50, "y": 0.90, "x2": 0.44, "y2": 0.62},
  {"type": "text",  "x": 0.20, "y": 0.92, "text": "this column is the one that overflows"}]
 JSON
-python3 "<helper>" --ticket "<ticket>" --marks /tmp/reply.json
+python3 "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --marks /tmp/reply.json
 ```
 
 - The marks are the same format as `&marks=` above, with the same limits.
@@ -86,8 +94,8 @@ python3 "<helper>" --ticket "<ticket>" --marks /tmp/reply.json
   Vignette has your reply and will keep it, not that the card is on screen yet.
 - **Unconfirmed means do not send a new reply.** Vignette never answered, so your reply may or may
   not have arrived. Retry the exact one, which can never make a second card:
-  `python3 "<helper>" --ticket "<ticket>" --retry <the bundle path it printed>`.
-- Only the ticket you were given authorizes a reply, and only to that one request. A request the
+  `python3 "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --retry <the bundle path it printed>`.
+- Only that ticket authorizes a reply, and only to that one request. A request the
   user has cleared refuses new replies (`request-closed`).
 - Answer in words in your own session as usual. The reply carries only the drawing.
 

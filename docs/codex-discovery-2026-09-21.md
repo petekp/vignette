@@ -43,9 +43,37 @@ closed is answered only as far as `initialize`, because the server exits on EOF.
 | 30 | 2.89 s | 30 |
 | 50 | 3.05 s | 50 |
 
-It runs every time an image opens, so `AppServer.listLimit` is 15. The cost is not linear and a menu
+It runs every time an image opens, so `AppServer.listLimit` was 15. It is 5 since 2026-09-25, and the
+last list is kept between openings (`docs/send-and-reply-2026-09-24.md`). The cost is not linear and a menu
 of fifty is not one a person reads. Those numbers were measured through a proxy; a spawned server
 came back in 0.42–0.74 s for the whole conversation, handshake included.
+
+## Finding the thread the Codex app shows (2026-09-25)
+
+`thread/list` takes a `searchTerm`, "a substring filter for the extracted thread title". The
+extracted title is the thread's name, or for a thread with none its whole first message as typed.
+With `useStateDbOnly` a search takes about 2 ms.
+
+The Codex app shows something else. Its rule, in its bundle, starts from the name, or else the
+first message. From a message an IDE sent, it takes the part after "## My request for Codex:".
+It renders that from markdown to plain text, joins whitespace to one space, and cuts it to 79
+characters and "…" when it is longer than 80. Links keep their text, and tags,
+divider lines and the marks that start a heading or a list item go. A tag whose name has an
+underscore, such as `<environment_context>`, is not HTML to markdown, so it stays.
+
+So the title as shown is a poor search term. Over the 144 threads on this Mac:
+
+| Search terms | Threads found |
+| --- | --- |
+| The title as shown | 0 of the 97 cut with "…" |
+| The title without "…" | 83 of 144 |
+| The title and its first three words | 129 of 144 |
+| The title and its two longest words | 144 of 144 |
+
+`AppServer.searchTerms` sends the last, ten results each. `CodexConnection.name(of:)` follows the
+app's rule, and its names equal the app's titles for all 144 threads. The app's titles were read from its
+own catalog, `local_thread_catalog.display_title` in `~/.codex/sqlite/codex-dev.db`. Vignette
+does not read that file, because it is the app's private store.
 
 ## Sending needs no endpoint either
 

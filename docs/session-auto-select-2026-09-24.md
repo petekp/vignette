@@ -18,7 +18,9 @@ The default becomes the first of these that exists:
 3. A session working in the folder the screenshot shows. The rule looks for one working there now,
    from its transcript's folder, then one started there, from herdr's pane folder, then one in
    another worktree of the same repository. Ties go to herdr's focus, then to the session used last.
-4. The session in herdr's focused pane, then the one agent in the focused tab. Shipped.
+4. The thread the Codex app shows, when it was the app in front, which is built and not yet
+   released. Then the session in herdr's focused pane, then the one agent in the focused tab, which
+   are shipped.
 5. The session used last. Shipped.
 
 The safeguards stay as shipped. The chip shows the target before anything is sent, and Return never

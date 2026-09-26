@@ -25,7 +25,8 @@ final class AnnotationController {
     /// stack follows it, so it narrows as the frame grows towards it.
     var onFrame: ((NSRect) -> Void)?
     /// Send or Reply handed the drawing to this agent session.
-    var onSend: ((Screenshot, Drawing, AgentDestination) -> Void)?
+    /// Send or Reply, with the message typed in the bar, if any.
+    var onSend: ((Screenshot, Drawing, AgentDestination, String?) -> Void)?
     /// Cmd+C with nothing selected: this drawing's rendering goes on the clipboard.
     var onCopyDrawing: ((Screenshot, Drawing) -> Void)?
 
@@ -107,6 +108,7 @@ final class AnnotationController {
     init() {
         toolbar.onTool = { [weak self] tool in self?.editor.setTool(tool) }
         toolbar.onDone = { [weak self] in self?.editor.done() }
+        toolbar.onMessageEnd = { [weak self] in self?.window?.makeKey() }
         toolbar.onSend = { [weak self] destination in
             guard let self else { return }
             sendingTo = destination
@@ -122,7 +124,7 @@ final class AnnotationController {
         editor.onSend = { [weak self] drawing in
             guard let self, let shot = current, let destination = sendingTo ?? toolbar.model.offer.destination else { return }
             sendingTo = nil
-            onSend?(shot, drawing, destination)
+            onSend?(shot, drawing, destination, toolbar.model.sentMessage)
         }
         editor.onCopyDrawing = { [weak self] drawing in
             guard let self, let shot = current else { return }
@@ -131,6 +133,7 @@ final class AnnotationController {
         editor.onToast = { [weak self] words in self?.toast.show(words) }
         editor.onZoom = { [weak self] request in self?.zoom(request) }
         editor.onZoomGesture = { [weak self] event in self?.zoomGesture(event) }
+        editor.onReveal = { [weak self] rect in self?.reveal(rect) }
     }
 
     /// Sizes the window to `frame`, opens the image in the editor, and takes the keys, so a key
@@ -436,6 +439,29 @@ final class AnnotationController {
         editor.pictureRect = pictureRect
     }
 
+    /// Moves the part of a magnified picture in view just far enough to show `rect`, in image px,
+    /// with a line's height of room around it: the caret while typing. A text wraps at the image's
+    /// edge, not the frame's, so without this the words typed past the frame ran on out of sight.
+    private func reveal(_ rect: CGRect) {
+        guard canvasZoom.width > 1 || canvasZoom.height > 1 else { return }
+        let pixels = editor.core.drawing.pixels
+        let w = CGFloat(pixels.width), h = CGFloat(pixels.height)
+        guard w > 0, h > 0, [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite) else { return }
+        let visible = Zoom.visible(center: zoomCenter, camera: canvasZoom)
+        // As fractions of the image, y from the top, as `zoomCenter` is.
+        let pad = CGSize(width: min(rect.height / w, visible.width / 4), height: min(rect.height / h, visible.height / 4))
+        let want = CGRect(x: rect.minX / w - pad.width, y: rect.minY / h - pad.height,
+                          width: rect.width / w + 2 * pad.width, height: rect.height / h + 2 * pad.height)
+        var center = zoomCenter
+        if want.minX < visible.minX { center.x -= visible.minX - want.minX } else if want.maxX > visible.maxX { center.x += want.maxX - visible.maxX }
+        if want.minY < visible.minY { center.y -= visible.minY - want.minY } else if want.maxY > visible.maxY { center.y += want.maxY - visible.maxY }
+        center = Zoom.clamped(center: center, camera: canvasZoom)
+        guard center != zoomCenter else { return }
+        zoomPan = ZoomPan(center: center, camera: canvasZoom, cursor: Zoom.center)
+        zoomCenter = center
+        editor.pictureRect = pictureRect
+    }
+
     /// How much one point of wheel travel zooms: a factor of e to this per point, so 100 points
     /// of scroll is a zoom of e (2.7 times) in either direction.
     private static let wheelZoomRate = 0.01
@@ -712,7 +738,11 @@ final class AnnotationController {
 
     /// Another client answered with its sessions; `complete` on the last.
     func destinationsAnswered(_ list: [AgentDestination], complete: Bool) {
+        let before = toolbar.model.target?.id
         toolbar.model.answered(list, complete: complete)
+        if let target = toolbar.model.target, target.id != before {
+            Log.write("[send] target \(target.address.description) project=\(target.detail) focus=\(target.focus?.rawValue ?? "none")")
+        }
         offerChanged()
     }
 
@@ -767,7 +797,7 @@ final class AnnotationController {
     }
 
     /// What the bar offers, and where its filled button sends: the session's id, client, project
-    /// and where herdr's focus is, never its title.
+    /// and why it is the session you came from, never its title.
     private var offerJSON: [String: Any] {
         let offer = toolbar.model.offer
         var json: [String: Any] = ["listed": toolbar.model.listed]
@@ -780,7 +810,7 @@ final class AnnotationController {
             json["session"] = destination.id
             json["client"] = destination.client.rawValue
             json["project"] = destination.detail
-            json["focus"] = destination.focus.map { $0 == .pane ? "pane" : "tab" } as Any
+            json["focus"] = destination.focus?.rawValue as Any
         }
         return json
     }

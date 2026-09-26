@@ -176,6 +176,92 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertNil(AgentDestination.defaultTarget(in: []))
     }
 
+    /// Coming from the Codex app, Send starts on the thread it shows, whatever herdr's focus says,
+    /// since herdr keeps a focused pane while its terminal is behind (observed 2026-09-25).
+    func testSendStartsOnTheThreadTheCodexAppShows() {
+        var focused = AgentDestination(id: "c", name: "vignette", address: .claudeSession("c"))
+        focused.focus = .pane
+        let recent = AgentDestination(id: "t1", name: "Review codebase", address: .codexThread(uuid: "t1"))
+        let shown = AgentDestination(id: "t2", name: "Build showroom MCP App PoC", address: .codexThread(uuid: "t2"))
+        let unnamed = AgentDestination(id: "t3", name: "Please assess and improve the following: the hover outline flickers when the po…",
+                                       address: .codexThread(uuid: "t3"))
+        let sibling = AgentDestination(id: "t4", name: "Please assess and improve the following: the hover outline flickers when the ca…",
+                                       address: .codexThread(uuid: "t4"))
+        let list = [focused, recent, shown, unnamed, sibling]
+        func target(_ open: String?) -> String? {
+            AgentDestination.defaultTarget(in: AgentDestination.cameFrom(.codex, open: open, in: list))?.id
+        }
+        XCTAssertEqual(target("Build showroom MCP App PoC"), "t2")
+        XCTAssertEqual(target("Please assess and improve the following: the hover outline flickers when the ca…"), "t4",
+                       "the app cuts a title at 80 characters, and so does the name, so a long shared start does not decide")
+        XCTAssertEqual(target("Build showroom MCP App PoC…"), "t2", "a title cut short matches the name it starts")
+        XCTAssertEqual(target("Build showroom: MCP App PoC"), "t2", "only letters and digits are compared")
+        XCTAssertEqual(target("Build showroom"), "t1", "a whole title is not a name's start")
+        XCTAssertEqual(target(nil), "t1", "an unread title gives the Codex thread used last")
+        XCTAssertEqual(target("A thread older than the list"), "t1")
+        XCTAssertEqual(AgentDestination.cameFrom(.codex, open: nil, in: [focused]).map(\.focus), [nil],
+                       "no Codex thread listed: herdr's focus still says nothing")
+        XCTAssertEqual(AgentDestination.cameFrom(.codex, open: "Started a minute ago", in: list, fresh: false).map(\.focus),
+                       [nil, nil, nil, nil, nil], "a kept list may predate the open thread, so the fresh list decides")
+        XCTAssertEqual(AgentDestination.cameFrom(.codex, open: "Build showroom MCP App PoC", in: list, fresh: false)
+            .first { $0.focus == .app }?.id, "t2", "a thread the kept list has settles at once")
+    }
+
+    /// A thread is named as the Codex app names it, so the title read from the app finds it: the
+    /// app's rule, read from its bundle and checked against its own titles for 144 threads on
+    /// 2026-09-25. A first message is plain text with its lines joined, and an IDE's is its request.
+    func testAThreadIsNamedAsTheCodexAppNamesIt() {
+        func name(_ name: String?, _ preview: String) -> String {
+            CodexConnection.name(of: AppServer.Thread(id: "01a0ab02-0000", name: name, cwd: "/x", preview: preview))
+        }
+        XCTAssertEqual(name("Implement Plan: <task>Add a toolbar</task>", ""), "Implement Plan: Add a toolbar",
+                       "a tag is taken out of a name")
+        XCTAssertEqual(name(nil, "Review [notes.md](docs/notes.md).\n\n---\n\n### Then\n\n- fix **the** `outline`"),
+                       "Review notes.md. Then fix the outline")
+        XCTAssertEqual(name(nil, "# Context from my IDE setup:\n\n## Active file: a.swift\n\n## My request for Codex:\nMake it faster"),
+                       "Make it faster")
+        XCTAssertEqual(name(nil, "<environment_context>\n  <cwd>/Users/p/x</cwd>\n</environment_context>"),
+                       "<environment_context> /Users/p/x </environment_context>",
+                       "a tag's name has no underscore, so this one is text")
+        let long = String(repeating: "word ", count: 30)
+        XCTAssertEqual(name(nil, long), String(String(repeating: "word ", count: 16).dropLast()) + "…",
+                       "cut to 79 characters and an ellipsis, without the space before it")
+        XCTAssertEqual(name("", " \n "), "Codex 01a0ab02")
+    }
+
+    /// Searching by a title's words finds threads that only mention them, so only the thread the
+    /// title names joins the listing.
+    func testASearchAddsOnlyTheThreadTheTitleNames() {
+        let listing = #"{"id":2,"result":{"data":[{"id":"a","name":"Recent","cwd":"/x","recencyAt":300}]}}"#
+        let byTitle = #"{"id":3,"result":{"data":[]}}"#
+        let byWord = #"{"id":4,"result":{"data":[{"id":"other","name":"Appointments list","cwd":"/y"},{"id":"old","name":"Investigate [missing](x) appointments","cwd":"/y","recencyAt":1}]}}"#
+        var connection = CodexConnection()
+        connection.binary = { "/bin/codex" }
+        connection.converse = { _, _, _ in [listing, byTitle, byWord] }
+        XCTAssertEqual(connection.destinations(named: "Investigate missing appointments").map(\.id), ["a", "old"])
+        XCTAssertEqual(connection.destinations().map(\.id), ["a"], "without a title, searches are not read")
+    }
+
+    /// Send's menu holds the active sessions used last, five at most, and always the target. A
+    /// Codex thread is active when used in the last day; a Claude Code session is listed only
+    /// while it runs in a herdr pane.
+    func testTheMenuListsTheActiveSessionsAndTheTarget() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func codex(_ id: String, hoursAgo: Double) -> AgentDestination {
+            AgentDestination(id: id, name: id, address: .codexThread(uuid: id), lastUsed: now.addingTimeInterval(-hoursAgo * 3600))
+        }
+        func claude(_ id: String, hoursAgo: Double) -> AgentDestination {
+            AgentDestination(id: id, name: id, address: .claudeSession(id), lastUsed: now.addingTimeInterval(-hoursAgo * 3600))
+        }
+        let list = [codex("a", hoursAgo: 1), claude("b", hoursAgo: 2), codex("c", hoursAgo: 30),
+                    claude("d", hoursAgo: 40), claude("e", hoursAgo: 50), claude("f", hoursAgo: 60), claude("g", hoursAgo: 70)]
+        XCTAssertEqual(AgentDestination.menu(list, target: list[0], now: now).map(\.id), ["a", "b", "d", "e", "f"],
+                       "a Codex thread from yesterday is left out")
+        XCTAssertEqual(AgentDestination.menu(list, target: list[6], now: now).map(\.id), ["a", "b", "d", "e", "g"])
+        XCTAssertEqual(AgentDestination.menu(list, target: list[2], now: now).map(\.id), ["a", "b", "d", "e", "c"],
+                       "the target is shown even when it is not active")
+    }
+
     /// Send lists the session used last first, and one with no known time after all the others.
     func testSessionsAreListedNewestFirst() {
         let old = AgentDestination(id: "1", name: "a", address: .claudeSession("1"), lastUsed: Date(timeIntervalSince1970: 100))
@@ -262,8 +348,8 @@ final class AgentConnectionTests: XCTestCase {
         connection.converse = { _, _, _ in [answer] }
 
         let found = connection.destinations()
-        XCTAssertEqual(found.map(\.name), ["Explore agent screenshot loop", "Open drawing", "Look at this"],
-                       "a thread with no name reads as its first message")
+        XCTAssertEqual(found.map(\.name), ["Explore agent screenshot loop", "Open drawing", "Look at this the rest"],
+                       "a thread with no name reads as its first message, its lines joined")
         XCTAssertEqual(found[1].detail, "loop-test", "the project is the session's own folder")
         XCTAssertEqual(found[1].address, .codexThread(uuid: "01a0c28f-7c24-7a93-82e4-a7906de82cf4"))
         XCTAssertEqual(found[1].lastUsed, Date(timeIntervalSince1970: 1789970783))

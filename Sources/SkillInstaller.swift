@@ -26,6 +26,7 @@ enum SkillInstaller {
         case installed              // written where there was nothing
         case updated                // something was there, and now holds this build's copy
         case unchanged              // already the files the bundle carries
+        case kept                   // a launch left a copy of the bundle's version or a later one as it was
         case removed
         case absent                 // nothing to remove
         case failed
@@ -88,10 +89,16 @@ enum SkillInstaller {
         roots(home: home).map(status(of:))
     }
 
-    /// Copies `source` to each root's destination, replacing whatever is there.
-    static func install(source: URL, into roots: [URL]) -> [Result] {
+    /// Copies `source` to each root's destination, replacing whatever is there. `onlyNewer`, for a
+    /// launch, replaces a copy only when `source` is a later version (`version(of:)`) or the copy has
+    /// none: an older build must not replace a newer skill, and a copy that is the checkout the skill
+    /// is written in differs from the bundle whenever it has edits the build does not.
+    static func install(source: URL, into roots: [URL], onlyNewer: Bool = false) -> [Result] {
         each(of: roots, at: destination(in:)) { destination in
             if matches(source: source, installed: destination) { return (.unchanged, "") }
+            if onlyNewer, let found = version(of: destination), let wanted = version(of: source), found >= wanted {
+                return (.kept, "version \(found); this build's is \(wanted)")
+            }
             // Staged beside the destination and moved into place in one step, so a copy that failed
             // part way leaves the old one where it was. Both paths are inside one directory, so the
             // move is a rename.
@@ -152,6 +159,22 @@ enum SkillInstaller {
         }
     }
 
+    /// The version of the skill in `folder`: `metadata.version` in the frontmatter of its SKILL.md,
+    /// where the Agent Skills format keeps one. Nil without one, or when it is not a whole number.
+    static func version(of folder: URL) -> Int? {
+        guard let text = try? String(contentsOf: folder.appendingPathComponent("SKILL.md"), encoding: .utf8) else { return nil }
+        let lines = text.components(separatedBy: "\n")
+        guard lines.first == "---" else { return nil }
+        var inMetadata = false
+        for line in lines.dropFirst() {
+            if line == "---" { break }
+            if !line.hasPrefix(" ") { inMetadata = line == "metadata:"; continue }
+            let pair = line.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            if inMetadata, pair.count == 2, pair[0] == "version" { return Int(pair[1].trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))) }
+        }
+        return nil
+    }
+
     /// Whether anything is at `url`. `attributesOfItem` is `lstat`, so a link is something there
     /// even when it points at nothing.
     private static func present(_ url: URL) -> Bool {
@@ -180,5 +203,7 @@ struct AgentSkillStatus: Equatable, Identifiable {
     let installed: Bool
 
     var status: String { installed ? "Installed" : "Not installed" }
+    /// The name its logo has under `Resources/agents`: the agent's directory without the dot.
+    var logoKey: String { String(root.lastPathComponent.drop { $0 == "." }) }
     var id: String { name }
 }

@@ -41,9 +41,9 @@ All eighteen were decided on 2026-09-22.
 | 4 | Do rectangles and arrows carry text labels? | No. The Text tool is the one way to add words. | One way to add words keeps the tools simple. |
 | 5 | Can text be formatted? | No. Text is plain and can run to several lines. | Notes on screenshots are short. Formatting shortcuts fire by accident. |
 | 6 | Can marks be rotated? | No. | Marks point at interface elements, which are upright. |
-| 7 | Can arrows be curved? | Yes, with the middle dot, which an arrow shows when it is the only mark selected. | A bend takes an arrow around a mark it would otherwise cross. |
+| 7 | Can arrows be curved? | Yes. The Arrow tool draws freehand, so an arrow follows the hand's path and gets its head where the button comes up. A stroke that stays close to a straight line draws a straight arrow, which bends by its middle dot. | A curve shows something moving from one place to another, and takes an arrow around a mark it would otherwise cross. Most arrows are meant to be straight, and a straight one is easier to read. |
 | 8 | What sets the size of strokes and text? | Each drawing records its point scale, the px per pt of the display the annotator is on when the drawing's first mark is made. A drawing that an agent's marks start takes the main display's. Every mark in the drawing uses it. | The drawing looks the same on any display it reopens on. A capture file does not say which display took it, so the annotator's display is the best available guess. |
-| 9 | Which font does text use? | SF Pro Rounded. | It is the system's own face, so nothing is bundled and macOS supplies every script and emoji. The rounded face reads as a note, apart from the SF Pro text in most screenshots. The app already uses it for the numbers on selected cards. |
+| 9 | Which font does text use? | SF Pro Rounded for yours, SF Mono for an agent's. | Both are the system's own faces, so nothing is bundled and macOS supplies every script and emoji. The rounded face reads as a note, apart from the SF Pro text in most screenshots. The app already uses it for the numbers on selected cards. SF Mono tells an agent's words from yours at a glance. It is wider, so an agent's note takes more room. |
 | 10 | What do Cmd+C and Cmd+V do? | With marks selected, Cmd+C copies those marks, and Cmd+V pastes them. With nothing selected, Cmd+C copies the drawing as an image, the same PNG Done makes, and the editor stays open. Cmd+V with text adds a text mark. Cmd+V with an image says it cannot paste images. Each copy says what it copied. Section 8 has the details. | The visible selection says what Cmd+C will copy. |
 | 11 | Do marks snap to each other and to the image's edges? | Not in the first version. | Marks point at things in the screenshot, so alignment between marks rarely matters. |
 | 12 | Can several selected marks be resized together? | No. Several selected marks can be moved, duplicated and deleted. | A group resize would scale the text but not the strokes, which distorts the group. |
@@ -70,7 +70,7 @@ All eighteen were decided on 2026-09-22.
 |---|---|---|
 | Rectangle | frame `x y w h` | Rectangle tool, agents |
 | Ellipse | frame `x y w h`. The ellipse fills the frame. | Agents |
-| Arrow | start `x y`, end `x2 y2`, `bend` | Arrow tool, agents |
+| Arrow | start `x y`, end `x2 y2`, and either `bend` or `via` | Arrow tool, agents. Only the Arrow tool makes `via`. |
 | Text | `x y` of the box's top-left corner, `text`, `wrap` width or none, `size` | Text tool, agents, Cmd+V |
 
 Every mark also has:
@@ -85,6 +85,9 @@ Notes:
   mark is the last one.
 - **Bend.** The signed distance in px from the middle of the line between the ends to the arc,
   measured on the perpendicular. A bend under 8 pt is drawn straight.
+- **Via.** A freehand arrow's points between its ends, as `[x, y]` pairs in px, in order, at most
+  500. Its body is the smooth curve through the start, these points and the end: a centripetal
+  Catmull-Rom spline, which never loops between two points. An arrow with `via` has no bend.
 - **Text size.** `size` is the font size in pt. Dragging a text's corner scales it. An agent's text
   starts with a size set from the image's width.
 - **Arrowhead.** Every arrow has one head, at its end.
@@ -110,8 +113,9 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   image's size no longer fits it. The image opens without it, with a log line, and the file stays on
   disk.
 - `pointScale` is between 0.5 and 8.
-- A mark's fields are the ones its type uses. `bend`, `wrap`, `agent` and `colorChosen` are left out
-  at their defaults. `color` and a text's `size` are always written. A mark has no id in the file.
+- A mark's fields are the ones its type uses. `bend`, `via`, `wrap`, `agent` and `colorChosen` are
+  left out at their defaults. A build from before `via` reads a freehand arrow as the straight arrow
+  between its ends, so the file's `version` did not change. `color` and a text's `size` are always written. A mark has no id in the file.
 - The host writes the file atomically whenever it receives the drawing: after the 300 ms pause, at
   park, and when the app quits.
 - A drawing with no marks has no file.
@@ -146,6 +150,9 @@ colour.
 `add?marks=` keeps its format, described in [commands.md](commands.md). Every number is a fraction
 of the image. The fractions become px when the marks arrive. A reply's marks take the same path.
 
+An agent's text is set in SF Mono wherever it is drawn: the editor, a card, a flight and the PNG.
+`TextStyle.forAgent` picks the face from the mark, and every place that lays a text out asks it.
+
 ## 2. Look
 
 | What | How it looks |
@@ -177,8 +184,8 @@ brush and hit areas stay the same size on screen. Each step of a zoom moves both
 
 | Trigger | Result |
 |---|---|
-| V, R, A, T, with or without Shift, while not typing | Select, Rectangle, Arrow, Text |
-| Any other letter while not typing | Nothing |
+| V, R, A, T, with or without Shift, while not typing | Select, Rectangle, Arrow, Text. Right after a box or an arrow is drawn, the next key can still make the letter the start of a note (section 5, A note for a box or an arrow). |
+| Any other letter while not typing | Nothing, except right after a box or an arrow is drawn, where it starts a note |
 | The toolbar's buttons | The same four tools |
 | A new screenshot opens | Rectangle |
 | A screenshot with a drawing opens | Select, with the newest mark the person drew selected. An agent's mark is never the one picked. |
@@ -227,12 +234,13 @@ everywhere else. The cursor and the hover outline show which will happen before 
 
 | Trigger | Result |
 |---|---|
-| Press, then move more than 4 screen pt | An arrow runs from the press point to the pointer, with its head at the pointer |
-| Click without a drag | Nothing is created. A click on empty space clears the selection, as with every tool. |
-| Shift held while dragging the end | The angle from the start snaps to 15° steps. The length follows the pointer. |
-| Release | The arrow is created and selected. One undo step. |
-| Release within 8 screen pt of the start | Nothing is created |
-| Pointer beyond the image | The end stops at the image's edge |
+| Press, then move more than 4 screen pt | The arrow follows the pointer's path from the press point, with its head at the pointer |
+| The path while drawing | Smoothed: points closer than 2 screen pt are dropped, each is averaged with its neighbours, and the curve keeps as few points as stay within 1.5 screen pt of the result |
+| A path that stays within 6 screen pt of the line between its ends, or 4% of that line's length if that is more | A straight arrow. The drawing shows what the release will make. |
+| Shift held while drawing | A straight arrow from the press point to the pointer, its angle snapped to 15° steps. Letting go of Shift brings the path back. |
+| Release | The arrow is created and selected, as drawn. One undo step. |
+| Release with a path under 8 screen pt long | Nothing is created |
+| Pointer beyond the image | The path stops at the image's edge |
 | Esc during the drag | The arrow is removed, and the editor stays open |
 | A tool key during the drag | The arrow is removed, and the new tool is active |
 | Cmd+Z during the drag | The arrow is removed. Nothing else is undone. |
@@ -331,14 +339,15 @@ Hover, press and release use one rule:
 
 | Trigger | Result |
 |---|---|
-| Select an arrow on its own | No frame and no corners. The outline on the body and head, a dot at each end, and a dot in the middle. With other marks selected too, it has no dots. |
+| Select an arrow on its own | No frame and no corners. The outline on the body and head, a dot at each end, and on a straight or bent arrow a dot in the middle. A freehand arrow has no middle dot. With other marks selected too, it has no dots. |
 | Arrow dot hit area | A circle of radius 12 screen pt. The end dots beat the middle dot. |
-| Drag an end dot | That end follows the pointer. Shift snaps the angle from the other end to 15° steps. |
+| Drag an end dot | That end follows the pointer. Shift snaps the angle from the other end to 15° steps. A freehand arrow turns and scales about its other end, so its curve keeps its shape. |
 | Drag the middle dot | The arrow curves. The bend is the pointer's distance from the line between the ends, measured on the perpendicular through its middle. No snapping. |
 | The middle dot on a short arrow | Shown. It sits beside the line, clear of the end dots. |
 | The dots while a dot is dragged | Stay visible |
 | Option+drag an end dot | A copy of the arrow moves with the pointer, as Option-drag does anywhere |
 | A curved arrow's arc | Stays inside the image. The bend stops where the arc would cross an edge. |
+| A freehand arrow's curve | Moves in whole when it fits inside the image. A point dragged past an edge stops at it. |
 
 ### Keyboard on a selection
 
@@ -371,6 +380,7 @@ The double-click interval is the system's setting, for editing and for zoom.
 | Trigger | Result |
 |---|---|
 | Text tool click or drag | Typing starts in the new text |
+| A character typed right after drawing a box | Typing starts in a note beside the box, with that character |
 | Double-click a text | Typing starts, all text selected |
 | Click a selected text | Typing starts, caret at the click |
 | Shift+Return or Option+Return with one text selected | Typing starts, all text selected |
@@ -403,15 +413,53 @@ The double-click interval is the system's setting, for editing and for zoom.
 - Notes on screenshots often hold code and names. So there is no spell-check, no autocorrect, and no
   automatic replacement of quotes, dashes, links or text shortcuts. What is typed is what is drawn.
 
+### A note for a box or an arrow
+
+Most boxes and arrows get a short note, so typing right after drawing one starts it. There is no
+switch to the Text tool and no click to place it.
+
+- The note starts on the first character typed after the Rectangle tool draws a box, or the Arrow
+  tool an arrow. The mark must still be the selection. A press, a toolbar button or any other key
+  ends the wait. Moving the pointer and zooming do not.
+- The tool stays as it was, so the next mark and its note work the same way.
+- V, R, A and T still pick their tools, and the next key decides. A press keeps the new tool, so A
+  and a drag draws an arrow. A character makes the tool letter the note's first letter, and the tool
+  goes back to what it was. So a note can start with "the" or "add".
+- A space as the first key starts nothing. A key held with Command or Control keeps its meaning.
+- A box's note goes 8 pt past its stroke. The first side with room wins:
+  1. The right, when there is room for a few words: 15% of the image's width and six times the
+     text size. The first line starts level with the box's top. Beside a box shorter than a line,
+     it is centred on the box.
+  2. Below, at the box's left edge.
+  3. Above, where the note grows upward, away from the box.
+  4. Inside the box's top left corner.
+- An arrow's note goes 8 pt past its tail, on the side the arrow leaves the tail from, so the arrow
+  leads from the note to what it points at. An arrow drawn to the right has its note to the left of
+  its tail, and the note grows leftward, away from the arrow. Beside the tail, the first line is
+  centred on it; above or below it, the note is centred on it. A side without room for a few words,
+  or for a line above or below, gives way to the next side the arrow leaves least towards.
+- From there the note grows, shrinks and wraps like any text, keeping the edge that faces its
+  mark where it started. A note to the left of a tail wraps at its room rather than cross the tail.
+  Opened again later, a note grows to the right like any other text.
+- The note and its typing are one undo step, as with the Text tool.
+- The keys reach the text as typed, so an input method or a dead key composes as usual.
+
 ### How a text grows
 
-- A text wraps where its right edge would pass the image's right edge, less a margin of 2% of the
-  image's width. Agents' texts use the same margin.
+- A text without a wrap width gets smaller as it is typed, just enough to end at the image's right
+  edge, less a margin of 2% of the image's width, and above the image's bottom. So a note on a small
+  screenshot does not fill it after a few words.
+- It stops at half the new-text size, 12 pt by default, which is still easy to read. From there it
+  wraps where its right edge would pass the margin. Agents' texts use the same margin.
+- Deleting words brings it back up, never past the size it had when typing began. A text with a
+  wrap width keeps its size and wraps in that width.
 - A text that starts with less than 15% of the image's width to its right moves left as it grows,
   instead of wrapping into a narrow column.
 - When the text's bottom would pass the image's bottom, the text moves up.
 - A text wider or taller than the whole image keeps its start showing.
-- The caret stays in view while typing.
+- The caret stays in view while typing. When the picture is magnified past the frame, the view
+  moves just far enough to show the caret with a line's height of room, as a text view scrolls to
+  its caret. The words still wrap at the image's edge, not the frame's.
 - Dragging a text's side edge sets a wrap width. That width is also held inside the image.
 
 ### Undo around typing
@@ -529,8 +577,16 @@ a session the host picked; the host sets both keys from what its toolbar offers
 ### The toolbar
 
 - The native toolbar shows the four tools, then one of three offers: Copy alone when there is no
-  session to send to; Copy, the target session and Send; or Reply alone on a card that names the
-  session it came from. Copy is Done. `docs/send-and-reply-2026-09-24.md` has the rules.
+  session to send to; Copy, the target session, a message field and Send; or a message field and
+  Reply on a card that names the session it came from. Copy is Done.
+  `docs/send-and-reply-2026-09-24.md` has the rules.
+- The message field is one line in the bar. While it is typed in, it grows down past the bar's
+  bottom, up to six lines, and the bar keeps its size. Cmd+Return in it sends. Return replies on a
+  card that names its session; beside Send it sends nothing and bounces Send's ⌘↩, since Return
+  never sends to a session Vignette picked. Esc, or a click on the image, hands the keys back to the
+  editor, and the field shrinks back to one line.
+  What it holds ends the line Send puts in the session (`docs/request-line-2026-09-25.md`). It is
+  kept until the next image opens, so a send that fails keeps it.
 - For each tool, the editor supplies an id, a label, a key and an SF Symbol:
 
 | Tool | Key | SF Symbol |

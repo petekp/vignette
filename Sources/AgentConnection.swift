@@ -71,11 +71,13 @@ struct AgentDestination: Equatable, Identifiable {
     /// When the session was last used, which is the order Send lists sessions in. Nil when its
     /// client could not say.
     var lastUsed: Date? = nil
-    /// Where herdr's focus is, when it is on this session: its own pane, or a pane beside it in its
-    /// tab. Nil for every other session, and for every Codex thread, which herdr does not run.
+    /// Why this is the session you came from, when it is: its agent's own app was in front, or
+    /// herdr's focus is on its pane or beside it. Nil for every other session.
     var focus: Focus? = nil
 
-    enum Focus: Equatable {
+    enum Focus: String, Equatable {
+        /// Its agent's own app was the app in front, showing this session (`cameFrom`).
+        case app
         /// herdr's focused pane runs this session.
         case pane
         /// herdr's focused pane runs no agent, and this is the one session in that pane's tab.
@@ -85,10 +87,72 @@ struct AgentDestination: Equatable, Identifiable {
     var client: AgentClient { address.client }
 
     /// Where Send goes when nobody has chosen: the session you came from, which is where a paste
-    /// would have gone. herdr's focused pane first, then the one session beside it, then the session
-    /// used last. `list` is in Send's order, the session used last first.
+    /// would have gone. The session an agent's app showed first, then herdr's focused pane, then the
+    /// one session beside it, then the session used last. `list` is in Send's order, the session used
+    /// last first.
     static func defaultTarget(in list: [AgentDestination]) -> AgentDestination? {
-        list.first { $0.focus == .pane } ?? list.first { $0.focus == .tab } ?? list.first
+        list.first { $0.focus == .app } ?? list.first { $0.focus == .pane } ?? list.first { $0.focus == .tab }
+            ?? list.first
+    }
+
+    /// The sessions as they stand when you came from `client`'s own app, such as the Codex app.
+    /// herdr keeps a focused pane while its terminal is behind, so its focus says nothing then and is
+    /// cleared. The app's session is the one named `open`, the thread it shows, or else that client's
+    /// session used last. When `open` names nothing in a list that is not `fresh`, nothing is
+    /// marked: the thread may have started since the list was kept, and the fresh list will say.
+    /// `list` is in Send's order.
+    static func cameFrom(_ client: AgentClient, open: String?, in list: [AgentDestination], fresh: Bool = true) -> [AgentDestination] {
+        var marked = list.map { destination -> AgentDestination in
+            var cleared = destination
+            cleared.focus = nil
+            return cleared
+        }
+        let ofClient = marked.indices.filter { marked[$0].client == client }
+        let shown = open.flatMap { title in ofClient.first { marked[$0].isNamed(title) } }
+        guard shown != nil || open == nil || fresh else { return marked }
+        if let index = shown ?? ofClient.first { marked[index].focus = .app }
+        return marked
+    }
+
+    /// Whether this session is known to be in use, which is what Send's menu lists. A Claude Code
+    /// session is listed only while it runs in a herdr pane. Nothing says which threads the Codex
+    /// app has open, so a Codex thread counts when it was used in the last day: on 2026-09-25, 2 of
+    /// the 15 threads listed had been, and the rest were 33 hours to 17 days old.
+    func isActive(now: Date = Date()) -> Bool {
+        switch address {
+        case .claudeSession: return true
+        case .codexThread: return lastUsed.map { now.timeIntervalSince($0) < Self.activeWindow } ?? false
+        }
+    }
+
+    static let activeWindow: TimeInterval = 24 * 60 * 60
+
+    /// Send's menu: the sessions used last among the active ones, at most `count`, with `target`
+    /// always among them so its check is seen. `list` is in Send's order.
+    static func menu(_ list: [AgentDestination], target: AgentDestination, count: Int = 5, now: Date = Date()) -> [AgentDestination] {
+        let active = Array(list.filter { $0.isActive(now: now) }.prefix(count))
+        guard !active.contains(where: { $0.id == target.id }) else { return active }
+        return Array(active.prefix(count - 1)) + [target]
+    }
+
+    /// Whether a title an app shows is this session's name. Only letters and digits are compared:
+    /// the Codex app takes a name's markdown and tags out, and `CodexConnection.name(of:)` does the
+    /// same closely but not exactly. A title or a name cut short with an ellipsis matches one that
+    /// goes on from where it stops.
+    func isNamed(_ title: String) -> Bool {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shown = Self.lettersAndDigits(title), own = Self.lettersAndDigits(name)
+        guard !shown.isEmpty, !own.isEmpty else { return false }
+        switch (title.hasSuffix("…"), name.hasSuffix("…")) {
+        case (false, false): return shown == own
+        case (true, false): return own.hasPrefix(shown)
+        case (false, true): return shown.hasPrefix(own)
+        case (true, true): return shown.hasPrefix(own) || own.hasPrefix(shown)
+        }
+    }
+
+    private static func lettersAndDigits(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.lowercased().unicodeScalars.filter(CharacterSet.alphanumerics.contains)))
     }
 
     /// Send's order: the session used last first. A session with no time comes after every one
@@ -131,9 +195,20 @@ enum SubmissionOutcome {
 /// Both calls block on a subprocess, so they never run on the main thread.
 protocol AgentConnection: Sendable {
     var client: AgentClient { get }
+    /// Whether this route's last list may stand in while a fresh one is asked for. A list that says
+    /// where herdr's focus is may not: the focus moves whenever you change panes.
+    var keepsList: Bool { get }
     /// The sessions this route can address right now. Empty when the route cannot enumerate.
     func destinations() -> [AgentDestination]
+    /// The same, together with any session named `title` that the route can find though it is not
+    /// among the ones it lists, such as a Codex thread used weeks ago that the Codex app shows.
+    func destinations(named title: String) -> [AgentDestination]
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome
+}
+
+extension AgentConnection {
+    var keepsList: Bool { false }
+    func destinations(named title: String) -> [AgentDestination] { destinations() }
 }
 
 // MARK: Running a command
@@ -424,6 +499,8 @@ struct ClaudeCodeConnection: AgentConnection {
 /// another thread. Vignette never starts, resumes, or stops a Codex session.
 struct CodexConnection: AgentConnection {
     let client = AgentClient.codex
+    /// The threads change only when one is used, and a discovery starts a process of its own.
+    let keepsList = true
     var binary: () -> String? = { CodexConnection.binary() }
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
         Subprocess.run($0, $1, timeout: $2)
@@ -451,28 +528,69 @@ struct CodexConnection: AgentConnection {
     /// share, so an app-server started for the length of this one call answers for every session,
     /// including the ones the ChatGPT desktop app owns. No codex on the machine means no Codex
     /// destinations, which is not an error.
-    func destinations() -> [AgentDestination] {
+    func destinations() -> [AgentDestination] { discover(title: nil) }
+
+    /// The threads used last, and the thread the Codex app shows under `title`, found by searching
+    /// the store whatever its age (`AppServer.searchTerms`).
+    func destinations(named title: String) -> [AgentDestination] { discover(title: title) }
+
+    private func discover(title: String?) -> [AgentDestination] {
         guard let codex = binary() else { return [] }
-        let lines = converse(codex, ["app-server"], AppServer.discoveryRequests())
-        return AppServer.threads(in: lines).map { thread in
-            AgentDestination(
-                id: thread.id,
-                name: Self.name(of: thread),
-                detail: (thread.cwd as NSString).lastPathComponent,
-                address: .codexThread(uuid: thread.id),
-                lastUsed: thread.recencyAt)
-        }
+        let lines = converse(codex, ["app-server"], AppServer.discoveryRequests(title: title))
+        let listed = AppServer.threads(in: lines).map(Self.destination)
+        guard let title else { return listed }
+        let shown = AppServer.searched(in: lines).map(Self.destination)
+            .filter { found in found.isNamed(title) && !listed.contains { $0.id == found.id } }
+        return listed + shown
     }
 
-    /// A thread's name, or for a thread with none, the first line of its first message without
-    /// a heading's `#`, cut to 60 characters.
+    private static func destination(_ thread: AppServer.Thread) -> AgentDestination {
+        AgentDestination(
+            id: thread.id,
+            name: name(of: thread),
+            detail: (thread.cwd as NSString).lastPathComponent,
+            address: .codexThread(uuid: thread.id),
+            lastUsed: thread.recencyAt)
+    }
+
+    /// A thread's name as the Codex app shows it: its own name, or for a thread with none, its first
+    /// message, as plain text with its lines joined, cut to 79 characters and an ellipsis when it is
+    /// longer than 80. A message an IDE sent is named by the request after its context. That is the
+    /// app's rule, read from its bundle on 2026-09-25. Cutting it where the app does keeps what tells
+    /// two threads apart: at 60 characters, two threads with one long start matched the same title.
     static func name(of thread: AppServer.Thread) -> String {
-        if let name = thread.name, !name.isEmpty { return name }
-        let line = (thread.preview ?? "").split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "#").union(.whitespaces)) }
-            .first { !$0.isEmpty }
-        guard let line else { return "Codex \(thread.id.prefix(8))" }
-        return line.count > 60 ? line.prefix(59) + "…" : line
+        let text = [thread.name ?? "", request(in: thread.preview ?? "")].lazy.map(plainText).first { !$0.isEmpty }
+        guard let text else { return "Codex \(thread.id.prefix(8))" }
+        return text.count > 80 ? text.prefix(79).trimmingCharacters(in: .whitespaces) + "…" : text
+    }
+
+    /// What follows the last "## My request for Codex:" in a first message, which is where an IDE
+    /// puts the request after the context it sends; the whole message when there is none.
+    static func request(in message: String) -> String {
+        guard let marker = message.range(of: #"## My request(?: for Codex)?:"#, options: [.regularExpression, .backwards]) else {
+            return message
+        }
+        return message[marker.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Markdown as the plain text the Codex app shows for it, close enough for `isNamed`: a link or
+    /// an image keeps its text and an autolink its address; HTML tags, a divider line, and the marks
+    /// that start a heading, a quote, a list item or a code fence go; each run of whitespace is one
+    /// space. A tag's name is letters, digits and hyphens, so `<environment_context>` is text and
+    /// stays.
+    static func plainText(_ markdown: String) -> String {
+        let rules = [
+            (#"<(https?://[^>\s]+)>"#, "$1"),
+            (#"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>\n]*)?/?>"#, ""),
+            (#"!?\[([^\]\n]*)\]\([^)\n]*\)"#, "$1"),
+            (#"(?m)^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$"#, ""),
+            (#"(?m)^[ \t]*(?:#{1,6}(?=[ \t]|$)|>|[-*+](?=[ \t])|\d+[.)](?=[ \t])|```\S*)[ \t]*"#, ""),
+            (#"\*\*|__|`"#, ""),
+            (#"\s+"#, " "),
+        ]
+        return rules.reduce(markdown) { text, rule in
+            text.replacingOccurrences(of: rule.0, with: rule.1, options: .regularExpression)
+        }.trimmingCharacters(in: .whitespaces)
     }
 
     /// The argv for one queue call. Built as a list, never a shell line: an image path with spaces

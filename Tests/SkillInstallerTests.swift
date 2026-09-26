@@ -53,6 +53,28 @@ final class SkillInstallerTests: XCTestCase {
         XCTAssertEqual(try text(at: installed), try text(at: source))
     }
 
+    func testALaunchRewritesOnlyACopyOfAnEarlierVersionOrNone() throws {
+        func skill(_ version: String?, _ words: String) -> String {
+            "---\nname: vignette\n" + (version.map { "metadata:\n  version: \"\($0)\"\n" } ?? "") + "---\n\n\(words)\n"
+        }
+        try write(skill(nil, "Unversioned."))
+        _ = SkillInstaller.install(source: source, into: [root])
+        try write(skill("2", "Version two."))
+        XCTAssertEqual(SkillInstaller.version(of: source), 2)
+        XCTAssertEqual(SkillInstaller.install(source: source, into: [root], onlyNewer: true).map(\.outcome), [.updated])
+
+        // A copy with edits this build does not have, at the same version, and a later one, stay.
+        try skill("2", "Version two, edited.").write(to: installed.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(SkillInstaller.install(source: source, into: [root], onlyNewer: true).map(\.outcome), [.kept])
+        try skill("3", "Version three.").write(to: installed.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(SkillInstaller.install(source: source, into: [root], onlyNewer: true).map(\.outcome), [.kept])
+        XCTAssertEqual(try text(at: installed), skill("3", "Version three."))
+
+        // Asked for, the install writes whatever is there.
+        XCTAssertEqual(SkillInstaller.install(source: source, into: [root]).map(\.outcome), [.updated])
+        XCTAssertEqual(try text(at: installed), skill("2", "Version two."))
+    }
+
     func testInstallReplacesAFolderThatIsNotASkill() throws {
         try makeDirectory(installed)
         try "notes".write(to: installed.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)

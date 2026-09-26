@@ -30,6 +30,11 @@ final class DrawingTests: XCTestCase {
             (#"{"type": "rectangle", "x": 1, "y": 1, "w": 5, "h": 5, "color": "red", "colorChosen": "yes"}"#, "colorChosen must be true or false"),
             (#"{"type": "arrow", "x": 1, "y": 1, "x2": 1, "y2": 1, "color": "red"}"#, "the arrow ends where it starts"),
             (#"{"type": "arrow", "x": 1, "y": 1, "x2": 5, "y2": 1, "bend": null, "color": "red"}"#, "bend must be a finite number"),
+            (#"{"type": "arrow", "x": 1, "y": 1, "x2": 5, "y2": 1, "via": [1, 2], "color": "red"}"#, "via must be a list of [x, y] points"),
+            (#"{"type": "arrow", "x": 1, "y": 1, "x2": 5, "y2": 1, "via": [[1, "2"]], "color": "red"}"#, "via must be a list of [x, y] points"),
+            (#"{"type": "arrow", "x": 1, "y": 1, "x2": 5, "y2": 1, "via": [[1, 2, 3]], "color": "red"}"#, "via must be a list of [x, y] points"),
+            (#"{"type": "arrow", "x": 1, "y": 1, "x2": 5, "y2": 1, "via": \#(Array(repeating: [2, 2], count: Mark.Arrow.maxVia + 1)), "color": "red"}"#,
+             "via has more than 500 points"),
             (#"{"type": "text", "x": 1, "y": 1, "size": 24, "color": "red"}"#, "text is missing"),
             (#"{"type": "text", "x": 1, "y": 1, "text": " \n ", "size": 24, "color": "red"}"#, "text is missing"),
             (#"{"type": "text", "x": 1, "y": 1, "text": "\#(long)", "size": 24, "color": "red"}"#, "text is longer than 2000 characters"),
@@ -88,6 +93,33 @@ final class DrawingTests: XCTestCase {
                        .arrow(.init(start: CGPoint(x: 0, y: 10), end: CGPoint(x: 400, y: 20))))
         XCTAssertNil(placed(.arrow(.init(start: CGPoint(x: -900, y: 10), end: CGPoint(x: -420, y: 10)))),
                      "both ends stop at the same point on the edge, so nothing is left of it")
+    }
+
+    func testAFreehandArrowMovesInWholeWhenItsCurveFitsAndIsCutToTheImageWhenNot() throws {
+        let arrow = Mark.Arrow(start: CGPoint(x: -30, y: 50), end: CGPoint(x: 100, y: 50), via: [CGPoint(x: 30, y: 20)])
+        guard case .arrow(let moved)? = placed(.arrow(arrow)) else { return XCTFail() }
+        XCTAssertEqual(moved.end.x - moved.start.x, 130, "moved, not squeezed")
+        XCTAssertEqual(moved.via.count, 1)
+        XCTAssertTrue(image.bounds.contains(moved.exactBody.bounds))
+
+        let wide = Mark.Arrow(start: CGPoint(x: -30, y: 50), end: CGPoint(x: 500, y: 50), via: [CGPoint(x: 200, y: -200)])
+        guard case .arrow(let cut)? = placed(.arrow(wide)) else { return XCTFail() }
+        XCTAssertEqual(cut.start, CGPoint(x: 0, y: 50))
+        XCTAssertEqual(cut.end, CGPoint(x: 400, y: 50))
+        XCTAssertEqual(cut.via, [CGPoint(x: 200, y: 0)])
+    }
+
+    func testAFreehandArrowRoundTripsThroughAFileAndAnOlderReaderSeesItsEnds() throws {
+        let arrow = Mark(geometry: .arrow(.init(start: CGPoint(x: 10, y: 20), end: CGPoint(x: 300, y: 80),
+                                                via: [CGPoint(x: 100, y: 5.5), CGPoint(x: 200, y: 90)])))
+        let data = try CopiedMarks(pointScale: 2, marks: [arrow]).encoded()
+        let object = try XCTUnwrap(DrawingJSON.object(from: data) as? [String: Any])
+        let item = try XCTUnwrap((object["marks"] as? [Any])?.first as? [String: Any])
+        XCTAssertEqual(item["via"] as? [[Double]], [[100, 5.5], [200, 90]])
+        XCTAssertNil(item["bend"])
+        XCTAssertEqual(try Mark(validating: item).geometry, arrow.geometry)
+        // x, y, x2 and y2 are its ends, which is all a build from before `via` reads.
+        XCTAssertEqual([item["x"], item["y"], item["x2"], item["y2"]].map { $0 as? Double }, [10, 20, 300, 80])
     }
 
     func testACurvedArrowsBendStopsWhereItsArcWouldLeaveTheImage() throws {

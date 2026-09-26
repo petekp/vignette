@@ -29,6 +29,9 @@ final class EditorView: NSView {
     var onZoom: ((EditorCore.ZoomRequest) -> Void)?
     /// A pinch, a scroll or a two-finger double tap: the host's zoom and pan act on these.
     var onZoomGesture: ((NSEvent) -> Void)?
+    /// The caret while typing, in image px, after it moved: the host brings it into view when the
+    /// picture is magnified past the frame, as a text view scrolls to its caret.
+    var onReveal: ((CGRect) -> Void)?
     /// A short confirmation to show, such as "Copied 2 marks".
     var onToast: ((String) -> Void)?
 
@@ -69,6 +72,7 @@ final class EditorView: NSView {
     private var placedPicture = CGRect.zero
     private var screenshotName = ""
     private var typingField: TypingField?
+    private var revealPending = false
     /// The text view of a typing session that ended, kept over its text until the text's bitmap is
     /// on its layer, so the words are on screen in every frame.
     private var lingering: TypingField?
@@ -79,6 +83,8 @@ final class EditorView: NSView {
     private var settingSize = false
     /// Arrow keys down, which get their key up when the window stops being key.
     private var heldArrows: Set<EditorCore.Key> = []
+    /// The tool key the core is holding (`holdKey`) until the next key shows whether it began a note.
+    private var heldKeys: [NSEvent] = []
     private var resignKeyObserver: NSObjectProtocol?
 
     /// `pasteboard` is where Cmd+C and Cmd+V go: the general one, or a private one in tests.
@@ -198,8 +204,8 @@ final class EditorView: NSView {
         for effect in core.reduce(.tweaksChanged(style: style, metrics: metrics, arrowhead: arrowhead)) { run(effect, event: nil) }
         if restyled {
             for field in [typingField, lingering].compactMap({ $0 }) {
-                guard case .text(let text)? = core.mark(field.id)?.geometry else { continue }
-                field.setStyle(style, size: text.size, pointScale: core.drawing.pointScale, imageWidth: CGFloat(core.drawing.pixels.width))
+                guard let mark = core.mark(field.id), case .text(let text) = mark.geometry else { continue }
+                field.setStyle(style.forAgent(mark.agent), size: text.size, pointScale: core.drawing.pointScale, imageWidth: CGFloat(core.drawing.pixels.width))
             }
         }
         refresh()
@@ -230,6 +236,7 @@ final class EditorView: NSView {
     private func handle(_ input: EditorCore.Input, event: NSEvent? = nil) -> [EditorCore.Effect] {
         let effects = core.reduce(input)
         for effect in effects { run(effect, event: event) }
+        if !core.holdsKey { heldKeys = [] }
         refresh()
         return effects
     }
@@ -240,6 +247,13 @@ final class EditorView: NSView {
         case .tool(let tool): onTool?(tool)
         case .cursor(let cursor): if pointerIsInside { Self.cursor(cursor).set() }
         case .beginTyping(let id, let caret): beginTyping(id, caret: caret)
+        case .holdKey: if let event { heldKeys.append(event) }
+        case .passKeysToText:
+            // The text view reads them as typed, so an input method or a dead key composes as usual.
+            guard let field = typingField else { return }
+            let keys = heldKeys + (event.map { [$0] } ?? [])
+            heldKeys = []
+            for key in keys { field.textView.keyDown(with: key) }
         case .endTyping: endTyping()
         case .passPressToText:
             // NSTextView tracks the drag and the release in its own loop before this returns, so
@@ -373,7 +387,7 @@ final class EditorView: NSView {
             endTyping()
             dropLingering()
             let field = TypingField(id: id, text: text, color: mark.color, pointScale: core.drawing.pointScale,
-                                    imageWidth: CGFloat(core.drawing.pixels.width), style: core.style)
+                                    imageWidth: CGFloat(core.drawing.pixels.width), style: core.style.forAgent(mark.agent))
             field.onChange = { [weak self] words in self?.handle(.typingChanged(words)) }
             field.onResign = { [weak self, weak field] in
                 // The text view gave up the keys to something other than the editor.
@@ -381,6 +395,7 @@ final class EditorView: NSView {
                 self.handle(.typingEnded)
             }
             field.textView.takeKey = { [weak self] event in self?.typingKey(event) ?? false }
+            field.onCaretMoved = { [weak self] in self?.revealCaretSoon() }
             typingField = field
             addSubview(field.textView)
             placeTypingField()
@@ -405,9 +420,9 @@ final class EditorView: NSView {
     /// gone; until then it follows the zoom over the text.
     private func settleLingering() {
         guard let field = lingering else { return }
-        guard case .text(let text)? = core.mark(field.id)?.geometry, !picture.isDrawn(field.id) else { return dropLingering() }
+        guard let mark = core.mark(field.id), case .text(let text) = mark.geometry, !picture.isDrawn(field.id) else { return dropLingering() }
         let transform = toView
-        field.place(text, box: core.geometry.layout(text).box, imageWidth: CGFloat(core.drawing.pixels.width)) { $0.applying(transform) }
+        field.place(text, box: core.geometry.layout(text, agent: mark.agent).box, imageWidth: CGFloat(core.drawing.pixels.width)) { $0.applying(transform) }
     }
 
     private func dropLingering() {
@@ -415,9 +430,26 @@ final class EditorView: NSView {
         lingering = nil
     }
 
-    /// Puts the text view over the core's box for the text, which may have moved as it grew.
+    /// Asks the host to bring the caret into view, one turn later: a keystroke moves the caret before
+    /// the core has taken the text and moved the text as it grew, and the caret is read once both are done.
+    private func revealCaretSoon() {
+        guard !revealPending else { return }
+        revealPending = true
+        DispatchQueue.main.async { MainActor.assumeIsolated { [weak self] in
+            guard let self else { return }
+            revealPending = false
+            if let rect = typingField?.caretRect() { onReveal?(rect) }
+        } }
+    }
+
+    /// Puts the text view over the core's box for the text, which may have moved as it grew, and sets
+    /// its words at the text's size, which gets smaller as it grows. An input method's composition
+    /// keeps its size until it is confirmed, since restyling the words would end it.
     private func placeTypingField() {
-        guard let field = typingField, let box = core.typingBox, case .text(let text)? = core.mark(field.id)?.geometry else { return }
+        guard let field = typingField, let box = core.typingBox, let mark = core.mark(field.id), case .text(let text) = mark.geometry else { return }
+        if field.size != text.size, !field.textView.hasMarkedText() {
+            field.setStyle(core.style.forAgent(mark.agent), size: text.size, pointScale: core.drawing.pointScale, imageWidth: CGFloat(core.drawing.pixels.width))
+        }
         let transform = toView
         field.place(text, box: box, imageWidth: CGFloat(core.drawing.pixels.width)) { $0.applying(transform) }
     }
@@ -437,7 +469,7 @@ final class EditorView: NSView {
     override func keyDown(with event: NSEvent) {
         guard let key = Self.key(event) else { return super.keyDown(with: event) }
         if key.direction != nil { heldArrows.insert(key) }
-        handle(.keyDown(key, Self.modifiers(event), isRepeat: event.isARepeat))
+        handle(.keyDown(key, Self.modifiers(event), isRepeat: event.isARepeat), event: event)
     }
 
     override func keyUp(with event: NSEvent) {

@@ -100,8 +100,15 @@ struct Mark: Equatable, Identifiable {
         var start: CGPoint
         var end: CGPoint
         /// The signed distance in px from the middle of the line between the ends to the arc,
-        /// measured on the perpendicular (`bendPoint`). 0 is straight.
+        /// measured on the perpendicular (`bendPoint`). 0 is straight. Always 0 with `via`.
         var bend: CGFloat = 0
+        /// The points between the ends that a freehand arrow passes through, in order. Its body is the
+        /// smooth curve through the ends and these (`ArrowBody.init(through:)`). Empty for an arrow
+        /// that is straight or bends on an arc.
+        var via: [CGPoint] = []
+
+        /// The most points `via` may hold in a file or a paste.
+        static let maxVia = 500
     }
 
     struct Text: Equatable {
@@ -215,6 +222,19 @@ struct MarkFields {
         return flag.boolValue
     }
 
+    /// A freehand arrow's `via`: a list of `[x, y]` pairs, in px. Empty when the mark leaves it out.
+    func via() throws -> [CGPoint] {
+        guard let raw = item["via"] else { return [] }
+        guard let pairs = raw as? [Any] else { throw MarkProblem("via must be a list of [x, y] points") }
+        guard pairs.count <= Mark.Arrow.maxVia else { throw MarkProblem("via has more than \(Mark.Arrow.maxVia) points") }
+        return try pairs.map { pair in
+            guard let pair = pair as? [Any], pair.count == 2, let x = DrawingJSON.number(pair[0]), let y = DrawingJSON.number(pair[1]) else {
+                throw MarkProblem("via must be a list of [x, y] points")
+            }
+            return CGPoint(x: x, y: y)
+        }
+    }
+
     /// An arrow's `x`, `y` and `x2`, `y2`.
     func arrowEnds() throws -> (start: CGPoint, end: CGPoint) {
         let start = CGPoint(x: try number("x"), y: try number("y"))
@@ -240,7 +260,8 @@ extension Mark {
             geometry = kind == .rectangle ? .rectangle(frame) : .ellipse(frame)
         case .arrow:
             let ends = try fields.arrowEnds()
-            geometry = .arrow(Arrow(start: ends.start, end: ends.end, bend: try fields.optionalNumber("bend") ?? 0))
+            let via = try fields.via()
+            geometry = .arrow(Arrow(start: ends.start, end: ends.end, bend: via.isEmpty ? try fields.optionalNumber("bend") ?? 0 : 0, via: via))
         case .text:
             let size = try fields.size("size")
             guard size <= Text.maxSize else { throw MarkProblem("size must be at most \(Int(Text.maxSize))") }
@@ -272,6 +293,23 @@ extension Mark {
             // A paste that scales a very thin side down can leave it 0.
             guard inside.width > 0, inside.height > 0 else { return nil }
             placed.geometry = kind == .rectangle ? .rectangle(inside) : .ellipse(inside)
+        case .arrow(var arrow) where !arrow.via.isEmpty:
+            let points = [arrow.start] + arrow.via + [arrow.end]
+            guard points.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { return nil }
+            // Moved in whole when its curve fits, else each point stopped at the edge.
+            let curve = arrow.exactBody.bounds
+            let dx = Self.shiftInside(from: curve.minX, to: curve.maxX, within: bounds.width)
+            let dy = Self.shiftInside(from: curve.minY, to: curve.maxY, within: bounds.height)
+            func inside(_ point: CGPoint) -> CGPoint {
+                CGPoint(x: dx.map { point.x + $0 } ?? min(max(point.x, 0), bounds.width),
+                        y: dy.map { point.y + $0 } ?? min(max(point.y, 0), bounds.height))
+            }
+            arrow.start = inside(arrow.start)
+            arrow.end = inside(arrow.end)
+            arrow.via = arrow.via.map(inside)
+            arrow.bend = 0
+            guard arrow.start != arrow.end else { return nil }
+            placed.geometry = .arrow(arrow)
         case .arrow(var arrow):
             guard [arrow.start.x, arrow.start.y, arrow.end.x, arrow.end.y, arrow.bend].allSatisfy(\.isFinite) else { return nil }
             (arrow.start.x, arrow.end.x) = Self.fitEnds(arrow.start.x, arrow.end.x, within: bounds.width)
@@ -280,6 +318,7 @@ extension Mark {
             arrow.bend = arrow.largestBend(arrow.bend, inside: bounds)
             placed.geometry = .arrow(arrow)
         case .text(var text):
+            let style = style.forAgent(agent)
             guard [text.origin.x, text.origin.y, text.size, text.wrap ?? 0].allSatisfy(\.isFinite),
                   (text.size * pointScale).isFinite else { return nil }
             if let wrap = text.wrap, wrap > bounds.width { text.wrap = bounds.width }
@@ -330,8 +369,9 @@ extension Mark {
 // MARK: - The file's encoding
 
 /// A mark as a drawing file and a paste write it: flat fields, without the ones its type does not
-/// use, and without `bend`, `wrap`, `agent` and `colorChosen` at their defaults. `color` and a
-/// text's `size` are always written.
+/// use, and without `bend`, `via`, `wrap`, `agent` and `colorChosen` at their defaults. `color` and
+/// a text's `size` are always written. A build that predates `via` reads a freehand arrow as the
+/// straight one between its ends.
 private struct MarkRecord: Encodable {
     let type: MarkKind
     let x: CGFloat
@@ -341,6 +381,7 @@ private struct MarkRecord: Encodable {
     var x2: CGFloat?
     var y2: CGFloat?
     var bend: CGFloat?
+    var via: [[CGFloat]]?
     var text: String?
     var wrap: CGFloat?
     var size: CGFloat?
@@ -361,6 +402,7 @@ private struct MarkRecord: Encodable {
             x2 = arrow.end.x
             y2 = arrow.end.y
             bend = arrow.bend == 0 ? nil : arrow.bend
+            via = arrow.via.isEmpty ? nil : arrow.via.map { [$0.x, $0.y] }
         case .text(let text):
             x = text.origin.x
             y = text.origin.y

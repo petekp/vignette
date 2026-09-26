@@ -111,7 +111,7 @@ final class EditorPicture {
     /// `covered` is a text something else shows until its bitmap arrives, which stays hidden until then.
     func show(_ drawing: Drawing, typing: Mark.ID?, covered: Mark.ID?, geometry: EditorGeometry, resolution: Resolution, gesture: Bool) {
         let state = State(drawing: drawing, geometry: geometry, resolution: resolution, gesture: gesture, typing: typing, covered: covered)
-        marks.show(drawing, arrowhead: geometry.arrowhead, layout: geometry.layout) { record, mark, text in
+        marks.show(drawing, arrowhead: geometry.arrowhead, layout: { geometry.layout($0, agent: $1) }) { record, mark, text in
             Self.plan(record, mark, text, state)
         }
     }
@@ -130,7 +130,7 @@ final class EditorPicture {
             return true
         }
         let resolution = state.resolution, gesture = state.gesture, style = state.geometry.style
-        let whole = MarkLayers.padded(text, box: state.geometry.layout(text).box, pointScale: state.geometry.pointScale)
+        let whole = MarkLayers.padded(text, box: state.geometry.layout(text, agent: mark.agent).box, pointScale: state.geometry.pointScale)
             .intersection(state.drawing.pixels.bounds)
         guard !whole.isNull, !whole.isEmpty, resolution.scale > 0 else {
             record.clearWhole()

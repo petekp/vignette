@@ -14,12 +14,18 @@ final class TypingField: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
     var onChange: ((String) -> Void)?
     /// The text view gave up the keys to something else, ending the session on its own.
     var onResign: (() -> Void)?
+    /// The caret or the selection moved, by typing, a key or a click.
+    var onCaretMoved: (() -> Void)?
 
     /// Where `TextLayout` puts each line's baseline below the line's top, in px. TextKit would put it
     /// lower (27.4 px against 25.27 at 24 px); every line fragment is given this one instead.
     private var baseline: CGFloat = 0
     /// Room around the box, in px, for the outline and for glyphs that reach past their line.
     private var margin: CGFloat = 0
+    /// The view's top-left corner in image px, where `place` last put it.
+    private var origin: CGPoint = .zero
+    /// The size the words are set at, in pt: the text's, which shrinks as it grows while typing.
+    private(set) var size: CGFloat = 0
 
     init(id: Mark.ID, text: Mark.Text, color: MarkColor, pointScale: CGFloat, imageWidth: CGFloat, style: TextStyle) {
         self.id = id
@@ -48,6 +54,7 @@ final class TypingField: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
     /// the text's new box is.
     func setStyle(_ style: TextStyle, size: CGFloat, pointScale: CGFloat, imageWidth: CGFloat) {
         let probe = TextLayout(Mark.Text(origin: .zero, text: "", wrap: nil, size: size), imageWidth: imageWidth, pointScale: pointScale, style: style)
+        self.size = size
         baseline = probe.lines[0].baseline
         margin = 2 * Mark.Text.outlineWidth * pointScale + CTFontGetSize(probe.font) / 4
         let paragraph = NSMutableParagraphStyle()
@@ -71,6 +78,16 @@ final class TypingField: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
                         width: max(box.width, lineWidth) + 2 * margin, height: box.height + 2 * margin)
         textView.frame = rect(px)
         textView.bounds = CGRect(origin: .zero, size: px.size)
+        origin = px.origin
+    }
+
+    /// The caret, or the start of the selection, in image px: a line tall and no wide.
+    func caretRect() -> CGRect? {
+        guard let window = textView.window else { return nil }
+        let onScreen = textView.firstRect(forCharacterRange: NSRange(location: textView.selectedRange().location, length: 0), actualRange: nil)
+        guard onScreen.height > 0, onScreen.minX.isFinite, onScreen.minY.isFinite else { return nil }
+        let inView = textView.convert(window.convertFromScreen(onScreen), from: nil)
+        return inView.offsetBy(dx: origin.x, dy: origin.y)
     }
 
     /// Moves the caret, or selects every word. `.at` is in image px; `origin` is the box's.
@@ -98,6 +115,10 @@ final class TypingField: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
 
     func textDidChange(_ notification: Notification) {
         onChange?(textView.string)
+    }
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+        onCaretMoved?()
     }
 
     func undoManager(for view: NSTextView) -> UndoManager? { undo }

@@ -71,7 +71,7 @@ extension AgentMark {
     /// the agent could know. `tooLong` when it is still wider or taller than the image.
     private static func fit(_ text: Mark.Text, in pixels: PixelSize, pointScale: CGFloat,
                             style: TextStyle) -> (text: Mark.Text, tooLong: Bool) {
-        let width = CGFloat(pixels.width), height = CGFloat(pixels.height)
+        let width = CGFloat(pixels.width), height = CGFloat(pixels.height), style = style.forAgent(true)
         func box(_ text: Mark.Text) -> CGRect { TextLayout(text, imageWidth: width, pointScale: pointScale, style: style).box }
         // The image less the margin on every side. The margin is a fraction of the width on all four,
         // so the inset is the same number of px all round.

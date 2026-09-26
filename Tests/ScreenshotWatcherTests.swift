@@ -30,6 +30,17 @@ final class ScreenshotWatcherTests: XCTestCase {
         XCTAssertEqual(recent.files, 3)
     }
 
+    func testProtectedAreaIsTheDesktopDocumentsOrDownloadsAndWhatIsInside() {
+        let home = URL(fileURLWithPath: "/Users/someone")
+        func area(_ path: String) -> String? { ScreenshotWatcher.protectedArea(of: URL(fileURLWithPath: path), home: home) }
+        XCTAssertEqual(area("/Users/someone/Desktop"), "your Desktop")
+        XCTAssertEqual(area("/Users/someone/Desktop/Screenshots/"), "your Desktop")
+        XCTAssertEqual(area("/Users/someone/Documents/Shots"), "your Documents folder")
+        XCTAssertEqual(area("/Users/someone/Downloads"), "your Downloads folder")
+        XCTAssertNil(area("/Users/someone/DesktopArchive"))
+        XCTAssertNil(area("/Users/someone/Dropbox/Screenshots"))
+    }
+
     func testCandidatesAreScreenshotFormatsAndNotOutputs() {
         for name in ["Screenshot 1.png", "x.PNG", "x.jpg", "x.jpeg", "x.heic", "Screenshot 1.mov", "x.MOV"] { XCTAssertTrue(ScreenshotWatcher.isCandidate(name), name) }
         for name in [".hidden.png", "x-annotated.png", "x.pdf", "x.tiff", "x.gif", "png", "x.png.part"] { XCTAssertFalse(ScreenshotWatcher.isCandidate(name), name) }

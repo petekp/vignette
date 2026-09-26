@@ -7,28 +7,18 @@ Things decided or raised but not built. Each entry says what, why, and what it w
 0.1.0 went out on 2026-09-24. Publish `skills/vignette/SKILL.md` on skills.sh from the public repo,
 as herdr does, so Cursor and other agents can install it without the app.
 
+## A nicer disk image window (raised 2026-09-25)
+
+The window the disk image opens, where you drag Vignette to Applications, should look better. Today
+`scripts/release.sh` lays it out with Vignette on the left and Applications on the right, and
+nothing else. The look is Pete's to choose. The change is to the release script, so it needs his
+approval for that change before it is made.
+
 ## A new demo video (raised 2026-09-24)
 
 The tldraw-era video left the site and the README with the native editor, and a still of the stack
 and the editor leads in its place (`site/stack-and-editor.png`). A new recording replaces the still
 when Pete makes one.
-
-## Type right after drawing a box (raised 2026-09-24)
-
-After drawing a rectangle, typing should start a text at once, with no switch to the Text tool and
-no click to place it. Vignette places the text where it fits beside the box and inside the image.
-Most boxes get a short note, and today that note takes three steps: T, a click, then typing.
-
-To settle first: V, R, A and T pick tools whenever nothing is being typed, so after a box, typing
-"a" picks the Arrow tool today. The feature needs a rule for when a letter is text and when it is a
-tool. It also needs a rule for where the text goes when there's no room beside the box.
-
-## Text runs off the edge of the image (raised 2026-09-24)
-
-Pete has seen words run past the image's edge and get cut off, where they should wrap onto the next
-line. `docs/editor.md` says a text wraps where its right edge would pass the image's right edge, so
-this is a bug or a case that rule misses. First step: reproduce it and find which case it is. For
-example, a long word with no spaces, a text dragged to a wrap width, or an agent's text.
 
 ## The annotator's redesign: agent controls and comments (raised 2026-09-24)
 
@@ -44,8 +34,8 @@ it resumes, settle the Return rule first. It would change the site's pitch and t
 
 Tell an agent's marks from a person's by typeface, not colour. Colour stays with the colour pass,
 which picks whatever stands out against the image, and a colour reserved for agents would work
-against that. Every mark already records its author (`agent`), so a text can be set in its
-author's typeface. Open: what marks the difference on a box or an arrow, which have no typeface.
+against that. Since 2026-09-26 an agent's texts are set in SF Mono (`TextStyle.forAgent`). Open:
+what marks the difference on a box or an arrow, which have no typeface.
 
 ## Xcode's JSON project format (raised 2026-09-21)
 
@@ -76,6 +66,22 @@ Waits on two things, either way:
 - XcodeGen emitting the format, if `project.yml` stays. Tuist's XcodeProj has an experimental
   pull request for it (tuist/XcodeProj#1177); XcodeGen itself has nothing yet. Until then there
   is no path from `project.yml` to a `.xcproj` at all.
+
+## Vignette without the agent features (raised 2026-09-26)
+
+Pete wants an option to leave out the agent features altogether and use Vignette only as a
+replacement for macOS's screenshot thumbnail. With it on, nothing about agents would show: Send,
+Reply, the target menu and the message box in the editor's bar, the Agents tab, setup's skill page,
+and the "From <Name>" tab on a pushed card. Vignette would also stop asking herdr and Codex for
+sessions, which today happens at launch, on a capture and when the stack opens. Open: where the
+switch lives (setup, Settings, or both), and whether `vignette://add` and the skill still work
+while it is on.
+
+## No "Draw" hint on a hovered card (raised 2026-09-26)
+
+Pete wants the hint that appears over a hovered card, "Draw" on a screenshot and "Open" on a
+recording, removed. It is `showsClickHint` in `StackView.swift`, and AGENTS.md describes how it
+avoids the card's corner buttons, so that rule goes with it.
 
 ## Discussed, not decided
 

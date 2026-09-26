@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Vignette</title>
-<meta name="description" content="A macOS menu bar app for what happens after the screenshot: copy it, keep the recent ones in a stack, draw on any of them.">
+<meta name="description" content="The modern Mac screenshot tool for the agentic age. Your recent screenshots a double tap away, marked up in place, and a coding agent that can send you its own.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Vignette">
-<meta property="og:description" content="A macOS menu bar app for what happens after the screenshot: copy it, keep the recent ones in a stack, draw on any of them.">
+<meta property="og:description" content="The modern Mac screenshot tool for the agentic age. Your recent screenshots a double tap away, marked up in place, and a coding agent that can send you its own.">
 <meta property="og:image" content="https://vignette.pete.design/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -85,6 +85,12 @@
   }
   p {
     margin: 0 0 1.4rem;
+  }
+  h2.headline {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0 0 0.8rem;
   }
   ul {
     margin: 0 0 1.4rem;
@@ -189,8 +195,11 @@
   </nav>
 </header>
 
-<p>What if macOS's built-in screenshot tool had continued to evolve after 2010? Cmd+Shift+3, 4
-and 5 still take the screenshot. Vignette handles what comes after.</p>
+<h2 class="headline">The modern Mac screenshot tool for the agentic age.</h2>
+
+<p>A picture is worth a thousand-word prompt. Vignette keeps your recent screenshots a double tap
+away, ready to mark up and drag straight into Claude Code or Codex. Your agent can send you
+screenshots too, with its own marks on them. You still take screenshots with Cmd+Shift+4.</p>
 
 <figure>
   <img src="stack-and-editor.png" width="1200" height="668" alt="A Mac screen with recent screenshots stacked as cards down the right edge and one of them open in the editor beside them, a red rectangle drawn on it.">
@@ -200,48 +209,48 @@ and 5 still take the screenshot. Vignette handles what comes after.</p>
 <section class="features">
 
   <div class="feature">
-    <h2>Screenshot history, one key away</h2>
-    <p>Press the Vignette shortcut and your recent screenshots slide in from the right. A camera roll for screenshots. Arrows move, Space selects, Return opens.</p>
+    <h2>Screenshot history</h2>
+    <p>Double-tap right Shift and your recent screenshots slide in from the right. Arrow keys move, Space selects, and Return opens one, while the app you're in stays in front.</p>
+  </div>
+
+  <div class="feature">
+    <h2>Hold to draw</h2>
+    <p>Double-tap right Shift and hold the second tap. The newest screenshot opens in the editor, ready for a box or an arrow.</p>
+  </div>
+
+  <div class="feature">
+    <h2>Your agent shows you things</h2>
+    <p>With the skill that comes with Vignette, Claude Code or Codex can put a screenshot in your stack with its own marks on it, or ask you to circle something and read what you drew.</p>
+  </div>
+
+  <div class="feature">
+    <h2>Send a drawing to a session</h2>
+    <p>Send lists your Codex threads and the Claude Code sessions running in herdr, the one you used last first. Your drawing goes to the one you pick. The agent features are experimental.</p>
+  </div>
+
+  <div class="feature">
+    <h2>Stitch for a model to read</h2>
+    <p>Select several screenshots and Stitch joins them into one numbered image. It picks the layout that stays readable after Claude shrinks the image.</p>
+  </div>
+
+  <div class="feature">
+    <h2>Drag into a terminal</h2>
+    <p>Drag a card into Claude Code, a chat or Finder. A card you drew on drops the drawing.</p>
   </div>
 
   <div class="feature">
     <h2>Copies on capture</h2>
-    <p>Every screenshot lands on the clipboard.</p>
+    <p>Every screenshot goes to the clipboard as soon as macOS saves it, and the file stays in your screenshots folder.</p>
   </div>
 
   <div class="feature">
-    <h2>One-click stitch</h2>
-    <p>Join several screenshots into one image. Each piece gets a number.</p>
+    <h2>Three tools, no colour picker</h2>
+    <p>Rectangle, arrow and text. Vignette gives each mark the colour that stands out most against the image under it, and keeps your marks apart from the screenshot so you can change them later.</p>
   </div>
 
   <div class="feature">
-    <h2>Simple by design</h2>
-    <p>Three drawing tools: rectangle, text, arrow. No colour picker. Vignette picks the colour that stands out most against the image under your mark.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Non-destructive</h2>
-    <p>Your drawing is kept in its own file, apart from the original. Go back, change it, undo it. The original stays as it was.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Queue</h2>
-    <p>Draw on several in a row. Open them together and each Done opens the next.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Native, refined feel</h2>
-    <p>The stack answers your keys without taking focus from the app you're in. Hold the shortcut and the newest shot lifts into the editor. Close it and you're back where you were.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Agent-friendly</h2>
-    <p>Experimental. A coding agent can send you a screenshot with its own marks on it, and you can send yours back. The skill for Claude Code and Codex ships with the app.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Customizable and hackable</h2>
-    <p>Every setting lives in a file, every action is a URL, and the source is MIT.</p>
+    <h2>Scriptable and open source</h2>
+    <p>Every action is a <code>vignette://</code> URL, which is how your agent drives it. Settings are one JSON file, and the source is on GitHub.</p>
   </div>
 
 </section>

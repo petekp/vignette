@@ -61,6 +61,16 @@ struct EditorCore {
     static let snapAngle = CGFloat.pi / 12
     /// The pause after the last change before the drawing goes to the host.
     static let handOverDelay: TimeInterval = 0.3
+    /// The room between a box's stroke and the note typed for it, in pt.
+    static let noteGap: CGFloat = 8
+    /// A freehand stroke keeps a point this many screen pt from the last one it kept.
+    static let strokeSpacing: CGFloat = 2
+    /// A freehand arrow's curve misses the smoothed stroke by at most this many screen pt.
+    static let strokeTolerance: CGFloat = 1.5
+    /// A stroke that strays no further than this many screen pt, or this share of the line between its
+    /// ends, whichever is more, draws a straight arrow.
+    static let straightStroke: CGFloat = 6
+    static let straightShare: CGFloat = 0.04
 
     // MARK: Inputs
 
@@ -232,6 +242,11 @@ struct EditorCore {
         case cursor(Cursor)
         /// Start the text view on this text mark, or move its caret when it is already there.
         case beginTyping(Mark.ID, Caret)
+        /// Keep this key: a tool key pressed right after a box or an arrow was drawn. It is the note's
+        /// first character if a character follows it.
+        case holdKey
+        /// The kept key and this one go to the text view, which types them into the note just begun.
+        case passKeysToText
         /// The session is over: the text view goes, and the mark draws the text.
         case endTyping
         /// The press landed in the text being typed: the text view takes it and what follows it.
@@ -382,6 +397,8 @@ struct EditorCore {
     private var heldArrows: Set<Key> = []
     /// The top undo step is the nudge the arrow keys held now are making.
     private var nudging = false
+    /// The box or arrow just drawn, which a typed character gives a note.
+    private var noteMark: NoteMark?
     /// The drawing changed since it last went to the host.
     private var unsaved = false
     private var reportedTool: Tool?
@@ -395,6 +412,8 @@ struct EditorCore {
         var phase: Phase
         /// The latest pointer location, so a modifier change with no move updates the gesture.
         var pointer: CGPoint
+        /// Where the pointer has been while the Arrow tool draws, after the press, inside the image.
+        var stroke: [CGPoint] = []
     }
 
     struct Press {
@@ -434,10 +453,27 @@ struct EditorCore {
         case bending(Mark.ID)
     }
 
+    struct NoteMark {
+        let id: Mark.ID
+        /// Set while a tool key pressed after the mark waits to learn whether it began a word: the tool
+        /// to go back to if it did.
+        var toolBefore: Tool?
+    }
+
+    /// A tool key is waiting to learn whether it began a note (`holdKey`).
+    var holdsKey: Bool { noteMark?.toolBefore != nil }
+
     struct Typing: Equatable {
         let id: Mark.ID
-        /// The text's origin when the session began. As it grows it moves from here, and back as it shrinks.
-        let anchor: CGPoint
+        /// Where the text is held as it grows and shrinks: its top left corner when the session began,
+        /// or for a new note the side of its mark it hangs from.
+        let anchor: TextAnchor
+        /// The text's wrap width when the session began. A note held by its right edge or its centre
+        /// gets one while it is too wide for its room, and loses it again when it shrinks back.
+        let wrap: CGFloat?
+        /// The text's size when the session began. As it grows it gets smaller than this, and back as it
+        /// shrinks, unless it has a wrap width (`EditorGeometry.fittedSize`).
+        let size: CGFloat
         /// The session began with a single click on the selected text, so a second click selects all of it.
         var startedByClick: Bool
     }
@@ -458,6 +494,7 @@ struct EditorCore {
             open(drawing, style: style, metrics: metrics, arrowhead: arrowhead, pickColor: pickColor)
         } else if isOpen {
             if !input.keepsNudge { nudging = false }
+            if !input.keepsNoteMark { noteMark = nil }
             handle(input)
         }
         if isOpen { settle() }
@@ -809,6 +846,7 @@ struct EditorCore {
             gesture.phase = phase
             startDrag(&gesture)
         }
+        if case .drawing = gesture.phase, tool == .arrow { gesture.stroke.append(geometry.inside(event.location)) }
         update(&gesture)
         self.gesture = gesture
     }
@@ -876,10 +914,13 @@ struct EditorCore {
             let shape: Mark.Geometry
             if tool == .rectangle {
                 shape = .rectangle(geometry.newRectangle(from: start, to: at, square: modifiers.contains(.shift), centred: modifiers.contains(.option)))
-            } else {
-                let end = geometry.arrowEnd(from: start, toward: at, snapping: modifiers.contains(.shift))
+            } else if modifiers.contains(.shift) {
+                let end = geometry.arrowEnd(from: start, toward: at, snapping: true)
                 guard end != start else { return }
                 shape = .arrow(Mark.Arrow(start: start, end: end))
+            } else {
+                guard let arrow = geometry.freehandArrow(along: [start] + gesture.stroke) else { return }
+                shape = .arrow(arrow)
             }
             if var mark = mark(id) {
                 mark.geometry = shape
@@ -902,7 +943,7 @@ struct EditorCore {
             case .ellipse(let frame):
                 mark.geometry = .ellipse(geometry.resized(frame, by: position, delta: delta, proportional: modifiers.contains(.shift), fromCenter: modifiers.contains(.option)))
             case .text(let text):
-                mark.geometry = .text(geometry.resized(text, by: position, delta: delta, fromCenter: modifiers.contains(.option)))
+                mark.geometry = .text(geometry.resized(text, agent: mark.agent, by: position, delta: delta, fromCenter: modifiers.contains(.option)))
             case .arrow:
                 return
             }
@@ -914,6 +955,9 @@ struct EditorCore {
             let other = kind == .start ? arrow.end : arrow.start
             let end = geometry.arrowEnd(from: other, toward: at, snapping: modifiers.contains(.shift))
             guard end != other else { return }
+            // A freehand arrow turns and scales about its other end, so its curve keeps its shape.
+            let from = kind == .start ? arrow.start : arrow.end
+            arrow.via = arrow.via.map { geometry.inside(Self.turned($0, about: other, from: from, to: end)) }
             if kind == .start { arrow.start = end } else { arrow.end = end }
             arrow.bend = arrow.largestBend(arrow.bend, inside: geometry.image)
             mark.geometry = .arrow(arrow)
@@ -930,6 +974,17 @@ struct EditorCore {
             mark.geometry = .arrow(arrow)
             replace(mark)
         }
+    }
+
+    /// `point` under the turn and scale about `pivot` that takes `from` to `to`.
+    static func turned(_ point: CGPoint, about pivot: CGPoint, from: CGPoint, to: CGPoint) -> CGPoint {
+        let a = CGPoint(x: from.x - pivot.x, y: from.y - pivot.y), b = CGPoint(x: to.x - pivot.x, y: to.y - pivot.y)
+        let squared = a.x * a.x + a.y * a.y
+        guard squared > 0 else { return point }
+        // b / a as complex numbers: the rotation and scale in one.
+        let cos = (b.x * a.x + b.y * a.y) / squared, sin = (b.y * a.x - b.x * a.y) / squared
+        let p = CGPoint(x: point.x - pivot.x, y: point.y - pivot.y)
+        return CGPoint(x: pivot.x + p.x * cos - p.y * sin, y: pivot.y + p.x * sin + p.y * cos)
     }
 
     /// Moves the selection by `delta`, or copies of it with Option while the originals stay put. The
@@ -965,6 +1020,9 @@ struct EditorCore {
             pointer = event.location
             modifiers = event.modifiers
             gesture.pointer = event.location
+            if case .drawing = gesture.phase, tool == .arrow, gesture.stroke.last != geometry.inside(event.location) {
+                gesture.stroke.append(geometry.inside(event.location))
+            }
             if gesture.phase != .pressed, gesture.phase != .wrapping { update(&gesture) }
         }
         self.gesture = nil
@@ -1010,12 +1068,13 @@ struct EditorCore {
             let big: Bool
             switch mark.geometry {
             case .rectangle(let frame): big = min(frame.width, frame.height) * zoom >= metrics.smallestRectangle
-            case .arrow(let arrow): big = hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y) * zoom > metrics.shortestArrow
+            case .arrow(let arrow): big = arrow.exactBody.length * zoom > metrics.shortestArrow
             default: big = false
             }
             if big {
                 selection = [id]
                 commitEdit()
+                if event != nil { noteMark = NoteMark(id: id) }
             } else {
                 revertEdit()
                 selection = []
@@ -1054,7 +1113,7 @@ struct EditorCore {
                 overlay.frame = outline
                 overlay.handles = geometry.handles(around: outline, of: only.id, markSize: frame.size)
             case .text(let text):
-                let box = geometry.layout(text).box
+                let box = geometry.layout(text, agent: only.agent).box
                 let outline = geometry.selectionFrame(of: [only]) ?? box
                 overlay.frame = outline
                 if typing?.id != only.id { overlay.handles = geometry.handles(around: outline, of: only.id, markSize: box.size) }
@@ -1125,8 +1184,8 @@ struct EditorCore {
 
     /// The box of the text being typed.
     var typingBox: CGRect? {
-        guard let typing, case .text(let text)? = mark(typing.id)?.geometry else { return nil }
-        return geometry.layout(text).box
+        guard let typing, let mark = mark(typing.id), case .text(let text) = mark.geometry else { return nil }
+        return geometry.layout(text, agent: mark.agent).box
     }
 
     var cursor: Cursor {
@@ -1174,37 +1233,56 @@ struct EditorCore {
     }
 
     private mutating func newText(at point: CGPoint, wrap: CGFloat?) {
+        newText(TextAnchor(geometry.textOrigin(at: geometry.inside(point), size: metrics.newTextSize)), wrap: wrap)
+    }
+
+    /// A note for the box or arrow `id`, where `EditorGeometry.notePlace` finds room: beside a box,
+    /// and beyond an arrow's tail.
+    private mutating func newNote(for id: Mark.ID) {
         let size = metrics.newTextSize
-        let origin = geometry.textOrigin(at: geometry.inside(point), size: size)
+        switch mark(id)?.geometry {
+        case .rectangle(let frame)?: newText(geometry.notePlace(beside: frame, size: size), wrap: nil)
+        case .arrow(let arrow)?: newText(geometry.notePlace(atTailOf: arrow, size: size), wrap: nil)
+        default: break
+        }
+    }
+
+    private mutating func newText(_ anchor: TextAnchor, wrap: CGFloat?) {
         let id = UUID()
         var edit = MarkEdit(marks: drawing.marks, selectionBefore: selection)
         edit.note(id)
-        let text = Mark.Text(origin: origin, text: "", wrap: wrap, size: size)
+        let text = geometry.anchored(Mark.Text(origin: anchor.point, text: "", wrap: wrap, size: metrics.newTextSize), agent: false, to: anchor)
         guard let placed = geometry.placed(Mark(id: id, geometry: .text(text))) else { return }
         drawing.marks.append(placed)
-        beginTyping(id, caret: .end, edit: edit, anchor: origin)
+        beginTyping(id, caret: .end, edit: edit, anchor: anchor)
     }
 
     /// Starts a session on a text, ending any other. `edit` holds what the session changes, so a
     /// text made for it and its first session are one step.
-    private mutating func beginTyping(_ id: Mark.ID, caret: Caret, edit: MarkEdit, anchor: CGPoint? = nil) {
+    private mutating func beginTyping(_ id: Mark.ID, caret: Caret, edit: MarkEdit, anchor: TextAnchor? = nil) {
         if typing != nil { endTyping() }
         guard case .text(let text)? = mark(id)?.geometry else { return }
         self.edit = edit
         self.edit?.note(id)
         selection = [id]
-        typing = Typing(id: id, anchor: anchor ?? text.origin, startedByClick: false)
+        typing = Typing(id: id, anchor: anchor ?? TextAnchor(text.origin), wrap: text.wrap, size: text.size, startedByClick: false)
         emit(.beginTyping(id, caret))
     }
 
     /// The text view's text changed: the mark takes it, capped at what a drawing file may hold, and
-    /// grows by the rules in `Mark.placed`: it wraps at the image's edge less the margin, moves
+    /// grows: a text without a wrap width first gets smaller to fit its room, down to half the new-text
+    /// size, and then by the rules in `Mark.placed` it wraps at the image's edge less the margin, moves
     /// left when it started near the right edge, moves up at the bottom, and keeps its start showing.
     private mutating func typed(_ string: String) {
         guard let typing, var mark = mark(typing.id), case .text(var text) = mark.geometry else { return }
         text.text = Self.capped(string)
-        text.origin = typing.anchor
-        mark.geometry = .text(text)
+        text.origin = typing.anchor.point
+        text.wrap = typing.wrap
+        if text.wrap == nil {
+            text.size = geometry.fittedSize(text, agent: mark.agent, from: typing.size, floor: min(typing.size, metrics.newTextSize / 2),
+                                            anchor: typing.anchor)
+        }
+        mark.geometry = .text(geometry.anchored(text, agent: mark.agent, to: typing.anchor))
         guard let grown = geometry.placed(mark) else { return }
         replace(grown)
         changed()
@@ -1262,6 +1340,8 @@ struct EditorCore {
             if let tool = toolKey(key, modifiers) { self.tool = tool }
             return
         }
+        if let note = noteMark, startsNote(for: note, key, modifiers, isRepeat: isRepeat) { return }
+        noteMark = nil
         if key.direction != nil {
             if !isRepeat, heldArrows.contains(key) { heldArrows = [] }
             heldArrows.insert(key)
@@ -1309,6 +1389,28 @@ struct EditorCore {
         default:
             if let tool = toolKey(key, modifiers) { self.tool = tool }
         }
+    }
+
+    /// A key after a box or an arrow was drawn, while it is still the selection. A character begins a
+    /// note for it, except a tool key, which picks its tool and waits: a press next keeps the tool,
+    /// and a character next makes both keys the note's first two, with the tool back as it was.
+    /// True when the key was taken.
+    private mutating func startsNote(for note: NoteMark, _ key: Key, _ modifiers: Modifiers, isRepeat: Bool) -> Bool {
+        guard case .character(let character) = key, modifiers.isDisjoint(with: [.command, .control]),
+              selection == [note.id], mark(note.id) != nil else { return false }
+        if isRepeat { return note.toolBefore != nil }
+        if note.toolBefore == nil, let picked = toolKey(key, modifiers) {
+            noteMark = NoteMark(id: note.id, toolBefore: tool)
+            tool = picked
+            emit(.holdKey)
+            return true
+        }
+        guard note.toolBefore != nil || !character.isWhitespace else { return false }
+        noteMark = nil
+        if let before = note.toolBefore { tool = before }
+        newNote(for: note.id)
+        emit(.passKeysToText)
+        return true
     }
 
     /// The editor's own Command keys when nothing is typed, by the character held with Command.
@@ -1440,6 +1542,7 @@ struct EditorCore {
                 arrow.start = CGPoint(x: arrow.start.x * factor, y: arrow.start.y * factor)
                 arrow.end = CGPoint(x: arrow.end.x * factor, y: arrow.end.y * factor)
                 arrow.bend *= factor
+                arrow.via = arrow.via.map { CGPoint(x: $0.x * factor, y: $0.y * factor) }
                 mark.geometry = .arrow(arrow)
             case .text(var text):
                 text.origin = CGPoint(x: text.origin.x * factor, y: text.origin.y * factor)
@@ -1526,6 +1629,15 @@ struct EditorCore {
 }
 
 private extension EditorCore.Input {
+    /// The inputs after which a box or an arrow just drawn still takes a typed character as its note.
+    /// A key decides for itself (`startsNote`).
+    var keepsNoteMark: Bool {
+        switch self {
+        case .keyDown, .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .tweaksChanged, .timerFired: return true
+        default: return false
+        }
+    }
+
     /// The inputs that leave a hold of the arrow keys one undo step.
     var keepsNudge: Bool {
         switch self {

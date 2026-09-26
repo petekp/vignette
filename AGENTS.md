@@ -27,7 +27,10 @@ the measurements and the reasoning; a rule here points at its note.
   change settings; the app reloads it within a second. It is the user's real config: never test
   against it. `VIGNETTE_SETTINGS=<path>` in the environment
   (`open -g --env VIGNETTE_SETTINGS=/tmp/x/settings.json <app>`) points a launch at another file,
-  and the launch line names it. The tweak panel writes to whichever file the instance was launched
+  and the launch line names it. It also moves Apple's screenshot defaults to
+  `<bundle id>.screencapture`, a domain macOS never reads, so a test launch neither takes nor moves
+  the user's save location. Vignette follows that domain's `location`, so write it before a launch
+  that should watch a scratch folder: `defaults write <bundle id>.screencapture location <folder>`. The tweak panel writes to whichever file the instance was launched
   with, so copy the real file over the scratch copy before a test round and, before relaunching the
   real build, merge back any `ui` keys that changed (`[settings] wrote ui.…` in the log lists them).
   A file that does not parse is moved to `settings.json.invalid` and replaced with defaults; bad
@@ -327,7 +330,11 @@ the same driven sequence; a single run varies.
   one-pixel bitmaps stretched to the strip and cached by width; shading a drawing-handler image at
   the strip's full height on every show was measurably slow.
 - The status item has an autosave name and a seeded preferred position. Without it, a crowded
-  menu bar on a notch Mac puts the new icon under the notch and it never appears.
+  menu bar on a notch Mac puts the new icon under the notch and it never appears. Opening Vignette
+  again, from Finder or Spotlight, opens Settings (`applicationShouldHandleReopen`), or brings setup
+  forward while it is up; with the icon hidden it is the way back. A `vignette://` URL is not a
+  reopen (checked 2026-09-25), so a script's commands never open the window. The menu names its
+  two switches as the Screenshots tab does, under an "After a Screenshot" section header.
 - Files named `*-annotated.png` are outputs and are ignored by the watcher. `Stitch *.png`
   outputs are not ignored on purpose: they arrive like a capture, which is what carries a stitch into
   the annotator when `annotateOnCapture` is on. The watcher takes png, jpg, jpeg, and heic images
@@ -347,11 +354,27 @@ the same driven sequence; a single run varies.
   folder) the reads list it directly and the watch is retried every 2 seconds, logging a change of
   reason rather than every attempt. A folder that was there but unreadable is indexed silently by
   the first listing that works, so a grant does not report every file in it as a new capture; a
-  missing folder is indexed as empty and what arrives in it is reported. `isDenied` is what the
-  setup window reads. project.yml gives macOS's folder prompt its explanation
+  missing folder is indexed as empty and what arrives in it is reported. `isDenied` (macOS refused
+  the app the folder, at its open or at its listing) and `isReadable` (a listing worked) are what
+  setup and the Screenshots tab read. A first launch whose folder is inside the Desktop, Documents
+  or Downloads (`ScreenshotWatcher.protectedArea`) makes no watcher until setup's Allow…, its
+  Continue or its closing (`watcherWaitsForSetup`), so macOS's prompt comes up under a row that says
+  why. `recentShots` answers empty with no watcher, so nothing reads the folder before then.
+  project.yml gives macOS's folder prompt its explanation
   (`NSDesktopFolderUsageDescription` and the Documents and Downloads keys).
   `docs/install-2026-09-24.md` has the measurements. Copying puts the PNG on the pasteboard and
   promises the TIFF, which is rendered only when a paste target asks.
+- The main thread never reads a file that iCloud Drive has taken off the Mac. With Optimize Mac
+  Storage on, an old file in an iCloud Desktop or Documents folder is a placeholder
+  (`SF_DATALESS`), and any read of it, ImageIO's header or AVFoundation's asset, downloads all of
+  it and waits: a 333 MB recording held the stack's opening for 14 s. The listing, `lstat`, resource
+  values and extended attributes do not download. `Thumbnailer.lookUp` is what the main thread
+  asks: `.notDownloaded` for a placeholder, and the card takes the kept shape or the screen's, with
+  iCloud's thumbnail from Quick Look, which does not download (`Thumbnailer.cardImage`). A
+  placeholder screenshot is downloaded in the background (`Thumbnailer.download`), because the
+  editor reads the file on the main thread when it opens; a recording is not downloaded, and its
+  badge shows no length. `docs/icloud-files-2026-09-25.md` has the measurements and what still
+  reads on the main thread.
 - A screen recording is a `Screenshot` whose `kind` is `.recording`, read from the `.mov`
   extension alone (`Screenshot.recordingExtensions`). Its card shows the first frame, decoded on
   the thumbnail queue (`Thumbnailer.posterFrame`, about 90 ms), and a badge with its length. Each
@@ -361,7 +384,7 @@ the same driven sequence; a single run varies.
   a selection it can take. Draw and Open share Return and one strip row (`Config.stripRows` groups
   actions by key); the row shows whichever applies, and Draw when neither does. A click on a
   recording opens it in the app macOS opens movies with. A recording never reaches the annotator,
-  so `annotateOnCapture`, the hold, and Draw on Last Screenshot pass over it. Copy puts a recording
+  so `annotateOnCapture`, the hold, and Draw on Newest Screenshot pass over it. Copy puts a recording
   on the pasteboard as its file URL and path, never its frames.
   `docs/replacing-apple-capture-2026-09-22.md` has the measurements.
 - Stitching from the stack is one motion, not a file appearing later. `ThumbnailController.stitched`
@@ -383,9 +406,11 @@ the same driven sequence; a single run varies.
   The stitch is a new image with no drawing of its own. `docs/stitch-2026-09-17.md` has the numbers;
   separate images are better when the model has to read the text.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
-  call `NSApp.activate` for it; the user's app must stay frontmost. While a card is in the
-  annotator the panel gives up key status so typing reaches the editor. It gives it up in
-  `perform(.prepare)`, right after the annotator's window has taken it, so the keys pass from one
+  call `NSApp.activate` for it; the user's app must stay frontmost. Closing the stack or the
+  annotator hands the focus back (`FocusReturn.restore`): to the Vignette window the session began
+  in when that was Settings, setup or the tweaks, and else to the app before Vignette. While a
+  card is in the annotator the panel gives up key status so typing reaches the editor. It gives it
+  up in `perform(.prepare)`, right after the annotator's window has taken it, so the keys pass from one
   to the other instead of being nobody's for the length of the flight. A `.help` tooltip never
   shows in the stack: AppKit shows a window's tooltips only while its app is active, unless the
   window sets `allowsToolTipsWhenApplicationIsInactive`, which the panel does not. Text the user
@@ -509,16 +534,38 @@ the same driven sequence; a single run varies.
   frame. It shows `EditorCore.Tool.allCases`, the editor reports the active tool through `onTool`,
   and the bar calls `setTool`, `send` and `done` on the editor. The bar is tools, one divider, then
   what `ToolbarOffer` says the image offers: Copy alone when there is no session to send to; Copy,
-  the target and Send; or Reply alone on a card that names the session it came from (an agent's
-  reply, or a push with `session=`). Copy is Done under a label that says what it does. There is no
+  the target, a message field and Send; or the message field and Reply on a card that names the
+  session it came from (an agent's reply, or a push with `session=`). Copy is Done under a label
+  that says what it does. The bar's panel takes the keys only for a press on the message field
+  (`ToolbarPanel.sendEvent`), since SwiftUI's buttons ask for them as a field does; a press on a
+  button leaves them with the editor. The field counts as typed in only while the panel is key
+  (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. There is no
   palette, so which colour a mark is drawn in is the colour pass's, not the user's. Send starts on
-  the session you came from: herdr's focused pane, or the one agent in its tab when that pane runs
-  none (`AgentDestination.defaultTarget`), else the session used last. The target shows the agent's
-  logo and the project, and its menu lists five sessions, the one used last first, then More
-  sessions. The target settles once, from herdr's answer (about 60 ms, before the bar is up) or
+  the session you came from (`AgentDestination.defaultTarget`). When the app before Vignette
+  (`FocusReturn.previousApp`) was the Codex app, that is the thread it shows, named by the title of
+  its page (`AgentApp.openThread`, through Accessibility), or else the Codex thread used last;
+  herdr's focus is ignored then, because herdr keeps a focused pane while its terminal is behind.
+  A Codex thread is named the way the app names it (`CodexConnection.name(of:)`), so the title
+  compares with the name, letters and digits only (`AgentDestination.isNamed`). A thread older than
+  the list is found by searching the store for the title and its two longest words
+  (`AppServer.searchTerms`), since the store holds the first message as typed and the title is it
+  as plain text.
+  Otherwise it is herdr's focused pane, or the one agent in its tab when that pane runs none, else
+  the session used last. Reading the page asks the Codex app, which is Electron, to build its
+  accessibility tree, and it keeps it until it quits. The target shows the agent's logo and the
+  project. Its menu lists the active sessions used last, five at most, with the target always among
+  them (`AgentDestination.menu`): a Claude Code session is active while it runs in a herdr pane, and
+  a Codex thread when it was used in the last day, since nothing says which threads the Codex app
+  has open. The target settles once, from herdr's answer (about 60 ms, before the bar is up) or
   from the whole list, and after that changes only when its session is gone, so it never changes
-  under the pointer. Return copies and replies only on a card that names its session; Cmd+Return
-  sends or replies (`EditorCore.finishes`). Return never sends to a session Vignette picked.
+  under the pointer. Codex's list is kept (`AgentConnection.keepsList`): an opening editor answers
+  from the last one at once and asks for a fresh one, which comes in about 0.1 s for the five
+  threads used last (`AppServer.listLimit`), and it is asked for again at launch, on a capture and
+  when the stack opens. herdr is always asked afresh, because its focus moves. Coming from the Codex
+  app, a kept list that holds the open thread settles the target at once; one that does not waits
+  for the fresh list, since the thread may be newer. Return copies and replies only on a card that names its session; Cmd+Return
+  sends or replies (`EditorCore.finishes`). Return never sends to a session Vignette picked, except
+  from the message field when the person turned on Send with Return (`sendWithReturn`).
   `docs/send-and-reply-2026-09-24.md` has the rules. While one image follows another with no gap (a click on
   another card, or the queue moving on) the bar stays on screen and springs to the next image's
   place: `place(below:gap:)` slides the panel when it is already up, one `Tween` per direction, over
@@ -536,14 +583,20 @@ the same driven sequence; a single run varies.
   core with no window. Cmd+Z and Shift+Cmd+Z always reach the editor (`performKeyEquivalent`), so
   one owner handles undo whether a text is being typed or not; while typing, the core takes only
   the keys `takesKey` names and the text view gets the rest, and an input method's composition owns
-  every key until it is confirmed. A Cmd key the core does not take goes on to the menu.
+  every key until it is confirmed. A character right after a box is drawn starts a note for it
+  (`startsNote`): the core begins typing and answers `passKeysToText`, and the view replays the key
+  event into the text view, so an input method or a dead key composes as usual. A tool key then is
+  held (`holdKey`, `heldKeys` in the view) until the next key shows whether it began a word. A Cmd key the core does not take goes on to the menu.
   `docs/editor.md` is the behaviour: keys, gestures, what a press hits, the clipboard, the file.
 - A mark has one geometry, and the renderer owns it. `Mark.shape(pointScale:arrowhead:)` gives a
   rectangle's, an ellipse's or an arrow's paths, which the renderer draws and `MarkLayers` puts in
   `CAShapeLayer`s, so a shape looks the same in the editor, on a card, in flight and in the PNG. A
   text's letters are drawn only by the renderer (`MarkRendering.swift`): its outline is stroked a
   glyph at a time and then filled in one pass, which took a 2,000-character text from 240 ms to
-  61 ms (`docs/native-editor-2026-09-23.md`). `EditorTextView`, the text being typed, sets every
+  61 ms (`docs/native-editor-2026-09-23.md`). An agent's text is set in SF Mono and a person's in SF
+  Pro Rounded: every place that lays a text out takes the style from its mark
+  (`TextStyle.forAgent(mark.agent)`), and the editor's `layout(_:agent:)` has no default, so none
+  can forget. `EditorTextView`, the text being typed, sets every
   line's baseline from `TextLayout` through its layout manager's delegate, so typing and the drawn
   text meet within half a point.
 - `MarkLayers` is the one on-screen drawer for marks: the editor (`EditorPicture`), a card
@@ -614,7 +667,9 @@ the same driven sequence; a single run varies.
   them as a `ZoomRequest` through `onZoom`. Those are ignored until the flight has landed (`landed`
   sets `hasLanded`, and the next `prepare` clears it): the editor takes keys from `prepare` and
   presses handed over from the flight, and a zoom before the landing would grow the window under a
-  flight image still at the fitted frame.
+  flight image still at the fitted frame. While typing, the editor sends the caret's rect in image
+  px through `onReveal` whenever it moves, and `AnnotationController.reveal` pans a magnified
+  picture just far enough to show it, since a text wraps at the image's edge and not the frame's.
 
   All of them move one number, `zoomLevel`: how far the image is magnified past the frame it opened
   in (`AnnotationController.zoom(by:at:as:)`). The picture is magnified uniformly by that level, so
@@ -676,10 +731,16 @@ the same driven sequence; a single run varies.
   was there before. Installing Vignette is choosing what happens after a capture, so that is not a
   question the setup window asks and there is no toggle for it; `appleOriginal`, captured in the
   same turn, is the way back. `Settings.reconcileApple()` runs at every launch, before the watcher,
-  and puts back `show-thumbnail`, and `location` when `syncAppleSaveLocation` is on, if something
-  outside the app changed them: those two break Vignette rather than merely differing from it.
+  and puts back `show-thumbnail` if something outside the app turned it on, since Apple's thumbnail
+  breaks Vignette rather than merely differing from it. The save location runs the other way:
+  Vignette follows macOS's. The launch takes `location` as `screenshotsFolder` (unset reads as
+  `~/Desktop`), and a key-value observer on the domain (`AppleScreencapture.observeLocation`) takes
+  every later change, a folder picked in ⌘⇧5's Options menu included, as it is written
+  (`[settings] following apple location=…`; measured on a scratch domain, 10 to 35 ms after a
+  `defaults write` from another process). Picking a folder in Vignette writes `location`, so the two
+  never differ, and the observer ignores that write coming back as the folder it already has.
   `type` and `disable-shadow` are never reconciled. The reconcile is silent; the Screenshots tab
-  says that Vignette replaces the thumbnail in the row of its Restore button. That button is the
+  says that Vignette replaces the thumbnail in the footer under its Restore button. That button is the
   disable path and the only way back in the UI. `appleThumbnail` stays a settings.json key with no
   control, because `restoreAppleDefaults()` writes Apple's old value into it and that is what makes
   a restore survive the next launch's reconcile.
@@ -728,8 +789,11 @@ the same driven sequence; a single run varies.
   are recorded on every request and reported in `[state] requests`; `docs/closed-agent-loop-implementation-2026-09-20.md` says why the weaker one
   is still allowed to submit.
 - A `vignette://` URL has no authenticated sender, so a reply is authorized by a per-request bearer
-  secret in the request's own directory. The ticket's path travels in the request line; the secret
-  does not, because `[url]` logs every URL. Holding the ticket permits replies to that one request
+  secret in the request's own directory. The request line names only the image
+  (`ScreenshotRequests.requestLine`, "From Vignette: …"), and the skill tells the agent that the
+  ticket is `ticket.json` beside it and the helper is the skill's own `scripts/reply`, so an agent
+  without the skill can read the drawing but not answer with one. The secret never travels in the
+  line, because `[url]` logs every URL. Holding the ticket permits replies to that one request
   and proves nothing about which process wrote them. The helper writes its envelope where its own
   ids say it should be and Vignette derives that path itself, so a caller cannot name a file
   outside the request directory. Only the request root is resolved, because Vignette created it;
@@ -746,7 +810,8 @@ the same driven sequence; a single run varies.
 - The reply helper returns to the app that issued the request: `ticket.app` names the bundle and the
   helper passes it to `open -a`. Plain `open` hands a `vignette://` URL to whichever copy of the
   bundle id LaunchServices registered last, which on a Mac with a second build is a different app
-  that answers `unknown-command` (observed).
+  that answers `unknown-command` (observed). The helper reads the URL scheme from that bundle's
+  Info.plist too (`app_scheme`), so a fork's reply goes to the fork's scheme.
 - Send never reuses Done. It renders the drawing on `RenderingQueue` and closes nothing while it
   waits. The request is stored before the image leaves the editor, so a failure anywhere before then
   leaves the drawing where the hand left it. A rendering belongs to the annotator session Send was
@@ -760,9 +825,11 @@ the same driven sequence; a single run varies.
   without a copied mark, and the queue carries on to the next card: a list of files to annotate is
   something the person asked for, and handing one of them to an agent does not withdraw the rest.
   Esc is the one that empties the queue, because that is a person stopping.
-- The first launch opens the setup window (`SetupWindow.swift`), and it has that launch to itself:
-  the agent-skill offer waits for the next one rather than competing for a first-time user. Its job
-  is the shortcut, because the default is `double-rshift` and that needs Accessibility. Nothing else
+- The first launch opens the setup window (`SetupWindow.swift`), and it has that launch to itself.
+  It is pages, one step each: welcome, with the folder permission when macOS protects the watch
+  folder, and Open at login; the shortcut; and the agent skill, only when `~/.claude` or `~/.codex`
+  exists. Its main job is the shortcut, because the default is `double-rshift` and that needs
+  Accessibility. Nothing else
   may raise that dialog: `ModifierTap` is constructed with `prompt: false`, so the only
   `trusted(prompt: true)` in the app is `Accessibility.request()`, which runs from a button the user
   pressed: this window's, after choosing the double tap, and the Settings window's. A dialog raised
@@ -774,20 +841,30 @@ the same driven sequence; a single run varies.
   by polling (AXIsProcessTrusted announces nothing), comes back to the front then, since System
   Settings was covering it, and learns the shortcut works from the `.hotKeyFired`
   notification, which `registerHotKey`'s `fire` posts: the keys firing is what proves the setup
-  worked, since the stack appearing does not on a Mac with no screenshots yet. That same poll reads
+  worked, since the stack appearing does not on a Mac with no screenshots yet. Each fire presses the
+  key picture and turns its ×2 into a check, and the line then asks for the hold, which posts
+  `.hotKeyHeld`. That same poll reads
   the watch folder's count, and an empty folder asks for a capture first, ahead of the fired state:
   a tap with nothing to show opens nothing, so reporting success would report it about an empty
-  corner. The two menu items that act on a screenshot, Show Recent Screenshots and Draw on Last
+  corner. The two menu items that act on a screenshot, Show Recent Screenshots and Draw on Newest
   Screenshot, are greyed out while the folder is empty (`validateMenuItem`), which is the rest of
   that silence: both used to answer only in the log. `setup` in
   settings.json records `unasked` then `done`, written when the window closes rather than when it
   opens, so a launch quit part way through asks again. `ShortcutSetting` is the one shortcut
-  control, shared with the Settings window's General tab. A new settings file starts with
+  control, shared with the Settings window's General tab: a pop-up of double taps, then Key
+  Combination…, which shows a recorder that starts listening at once. A new settings file starts with
   `launchAtLogin` on: first run turns Apple's thumbnail off, so a restart that does not bring
   Vignette back leaves every capture silent. The window shows the switch, and the login item is
-  registered when it closes, not during the launch it is showing in. When macOS refused the app
-  the watch folder (`ScreenshotWatcher.isDenied`), the window says so under the folder and its
-  button opens Privacy & Security > Files and Folders.
+  registered when it closes, not during the launch it is showing in. The folder row is a
+  permission, not a choice of folder: it appears only for a folder inside the Desktop, Documents or
+  Downloads, its Allow… starts the watcher, whose first read raises macOS's prompt, and a refusal
+  turns it into a warning whose Allow… opens Privacy & Security > Files and Folders. The window's one
+  default button is the next step still to take: a missing permission's Allow…, then Continue or
+  Done. The page dots are laid over the buttons, so they sit on the window's centre line whatever
+  the buttons are. The skill page's switches start on, and closing the window installs the ones
+  still on, but only for someone who reached that page: closed earlier, `agentSkill` stays
+  `unasked`, and the next launch offers the skill in the Settings window instead.
+  `docs/settings-polish-2026-09-25.md` has the design and its reasons.
 - A launch from the disk image offers to move the app to Applications (`AppLocation.swift`),
   from `main` before `Settings.shared` exists, so the copy on the image never creates the settings
   file or touches Apple's defaults. "On the disk image" is a read-only volume or a translocated
@@ -811,13 +888,18 @@ the same driven sequence; a single run varies.
   stays (`entry(in:)`). An install overwrites whatever is there, and `matches(source:installed:)`
   is what makes a launch with nothing to change say nothing. The copy is staged beside the
   destination and moved into place, so a failed install leaves the old one where it was.
-  `agentSkill` in settings.json records only that the offer was made: `unasked` with an agent
-  directory present makes it once, which is the Settings window at the Agents section, since the
-  toast carries no button, and making it records `off`. That window comes up with `orderFront` and
+  `agentSkill` in settings.json records only that the offer was made. Setup's last page makes it
+  and records `off`. A file that finished setup before that page existed, or a setup closed before
+  it, still reads `unasked`, and with an agent directory present the next launch makes the offer
+  once as the Settings window at the Agents section, since the toast carries no button. That window comes up with `orderFront` and
   does not activate the app: the user did not ask for it. Disk is the rest of the truth. A launch
-  rewrites every copy that is there and differs from the bundle's, installs nothing new, and removes
-  nothing; the Agents tab's per-agent buttons and `install-skill` are the only things that put the
-  skill somewhere or take it away. An older file holding `on` is read as `off` (`validated()`).
+  rewrites every copy that is there and holds an earlier version than the bundle's, or none
+  (`metadata.version` in SKILL.md's frontmatter, `SkillInstaller.version(of:)`), installs nothing
+  new, and removes nothing, so an older build never replaces a newer skill and the checkout the skill
+  is written in keeps its edits. Raise the version with every change to the skill. A launch that
+  keeps a differing copy logs `[skill] kept`; the Agents tab's switches, setup's last page and `install-skill` are the only things that
+  put the skill somewhere or take it away. A failed install or removal in the Agents tab leaves the
+  switch where the disk is and says why under the agent's name, with no toast. An older file holding `on` is read as `off` (`validated()`).
   The app carries the skill because someone who downloads Vignette needs their agent to learn the
   `vignette://` contract, and the app is the one thing they are sure to have and the one thing that
   knows which commands its version supports. `docs/menu-settings-revamp-2026-09-20.md` is the

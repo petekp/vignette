@@ -20,6 +20,9 @@ struct InputTool {
       move X Y                                   move the mouse
       click X Y                                  click the left button
       drag X1 Y1 X2 Y2 [seconds]                 drag with the left button, held at the end that long
+      glide X Y [seconds]                        move the mouse there like a hand: eased, on a slight arc (0.6 s)
+      glidedrag X1 Y1 X2 Y2 [seconds]            glide to X1 Y1, then drag to X2 Y2 like a hand (0.5 s)
+      type TEXT [chars per second]               type TEXT at about that rate, unevenly, like a person (9)
       scroll DY [steps]                          scroll; negative DY reveals what is above
       pasteboard                                 print the general pasteboard's item count and types
     """
@@ -56,6 +59,18 @@ struct InputTool {
         case "drag":
             let p = points(rest, 4)
             drag(from: p[0], to: p[1], hold: rest.count > 4 ? Double(rest[4]) ?? 0 : 0)
+        case "glide":
+            let p = points(rest, 2)
+            glide(to: p[0], seconds: rest.count > 2 ? Double(rest[2]) ?? 0.6 : 0.6)
+        case "glidedrag":
+            let p = points(rest, 4)
+            glide(to: p[0], seconds: 0.45); pause(0.12)
+            mouse(.leftMouseDown, CGPoint(x: p[0].0, y: p[0].1)); pause(0.09)
+            glide(to: p[1], seconds: rest.count > 4 ? Double(rest[4]) ?? 0.5 : 0.5, dragging: true); pause(0.07)
+            mouse(.leftMouseUp, CGPoint(x: p[1].0, y: p[1].1))
+        case "type":
+            guard let text = rest.first else { fail(usage) }
+            type(text, rate: rest.dropFirst().first.flatMap { Double($0) } ?? 9)
         case "scroll":
             guard let dy = rest.first.flatMap({ Double($0) }) else { fail(usage) }
             scroll(dy, steps: rest.dropFirst().first.flatMap { Int($0) } ?? 10)
@@ -122,6 +137,62 @@ struct InputTool {
         }
         if hold > 0 { pause(hold) }
         mouse(.leftMouseUp, CGPoint(x: to.0, y: to.1))
+    }
+
+    /// A hand's movement for the recordings: ease in and out, bowed slightly to one side of the
+    /// straight line, one event every 1/120 s. `dragging` posts drags, so the button must be down.
+    static func glide(to end: (Double, Double), seconds: Double, dragging: Bool = false) {
+        let start = CGEvent(source: nil)?.location ?? CGPoint(x: end.0, y: end.1)
+        let dx = end.0 - start.x, dy = end.1 - start.y
+        let length = (dx * dx + dy * dy).squareRoot()
+        guard length > 0.5 else { return }
+        let bow = min(length * 0.06, 40)
+        let control = CGPoint(x: start.x + dx / 2 - dy / length * bow, y: start.y + dy / 2 + dx / length * bow)
+        let steps = max(2, Int(seconds * 120))
+        for i in 1...steps {
+            let u = Double(i) / Double(steps)
+            let t = u < 0.5 ? 4 * u * u * u : 1 - pow(-2 * u + 2, 3) / 2
+            let a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t
+            let p = CGPoint(x: a * start.x + b * control.x + c * end.0, y: a * start.y + b * control.y + c * end.1)
+            mouse(dragging ? .leftMouseDragged : .mouseMoved, p)
+            pause(1.0 / 120)
+        }
+    }
+
+    /// Types with real key codes on a US layout where there is one, so the app sees what a
+    /// keyboard sends; anything else goes as a Unicode string. The gaps vary around 1/rate, a
+    /// little longer after a space, from a generator seeded by the text, so a take repeats.
+    static func type(_ text: String, rate: Double) {
+        let letters = "asdfhgzxcv bqweryt123465=97-80]ou[ip lj'k;\\,/nm."
+        let codes: [Character: UInt16] = Dictionary(uniqueKeysWithValues: letters.enumerated().compactMap { i, ch in
+            ch == " " ? nil : (ch, UInt16(i))
+        })
+        let shifted: [Character: Character] = ["!": "1", "?": "/", "@": "2", "#": "3", "&": "7", "*": "8",
+                                               "(": "9", ")": "0", ":": ";", "\"": "'", "_": "-", "+": "="]
+        var seed = UInt64(truncatingIfNeeded: text.unicodeScalars.reduce(5381) { ($0 &* 33) &+ Int($1.value) })
+        func random() -> Double {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return Double(seed >> 11) / Double(1 << 53)
+        }
+        for ch in text {
+            var code: UInt16?
+            var flags: CGEventFlags = []
+            let lower = Character(ch.lowercased())
+            if ch == " " { code = 49 }
+            else if let c = codes[lower] { code = c; if ch != lower { flags = .maskShift } }
+            else if let base = shifted[ch], let c = codes[base] { code = c; flags = .maskShift }
+            for down in [true, false] {
+                let e = CGEvent(keyboardEventSource: nil, virtualKey: code ?? 0, keyDown: down)
+                e?.flags = flags
+                if code == nil {
+                    let units = Array(String(ch).utf16)
+                    e?.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
+                }
+                post(e)
+                if down { pause(0.02 + random() * 0.03) }
+            }
+            pause(max(0.02, (1 / rate) * (0.55 + random() * 0.9) + (ch == " " ? 0.06 : 0)))
+        }
     }
 
     /// Trackpad-style pixel deltas. Negative dy pulls the content down, which is what reveals

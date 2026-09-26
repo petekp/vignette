@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 /// Sending a drawing to an agent session and taking its drawing back. One object owns all of it:
 /// the fixed sent image, the durable request and reply records, reply validation, the receipts an
@@ -195,24 +194,73 @@ final class ScreenshotRequests {
         return AgentDestination(id: request.destinationID, name: request.destinationName, address: request.address)
     }
 
-    /// Every session that can be addressed right now, the one used last first. Each client is
-    /// asked at once, off the main thread, and the list is answered on the main thread every time
-    /// one of them answers, with `complete` on the last. herdr answers in milliseconds and Codex's
-    /// listing takes 0.5 to 2 s, so the session in herdr's focused pane is known long before.
-    func destinations(_ completion: @escaping @Sendable @MainActor (_ found: [AgentDestination], _ complete: Bool) -> Void) {
-        let connections = Array(connections.values)
-        guard !connections.isEmpty else { return completion([], true) }
-        let answers = OSAllocatedUnfairLock(initialState: (found: [AgentDestination](), left: connections.count))
-        for connection in connections {
+    /// Every session that can be addressed right now, the one used last first. A client whose list
+    /// is kept (`AgentConnection.keepsList`) answers from its last list at once. Every client is
+    /// also asked afresh, off the main thread, and the list is answered on the main thread again as
+    /// each fresh answer arrives. `complete` means every client has answered, from a kept list or a
+    /// fresh one, and `fresh` that every answer is fresh. herdr answers in about 70 ms. `named` asks
+    /// that client for the session with that name too, such as the thread the Codex app shows.
+    func destinations(named: (client: AgentClient, title: String)? = nil,
+                      _ completion: @escaping @MainActor (_ found: [AgentDestination], _ complete: Bool, _ fresh: Bool) -> Void) {
+        let clients = Array(connections.keys)
+        guard !clients.isEmpty else { return completion([], true, true) }
+        let answers = Answers()
+        func deliver() {
+            let found = answers.lists.values.flatMap { $0 }.sorted(by: AgentDestination.newestFirst)
+            completion(found, answers.lists.count == clients.count, answers.fresh.count == clients.count)
+        }
+        for client in clients {
+            if let list = kept[client] { answers.lists[client] = list }
+        }
+        if !answers.lists.isEmpty { deliver() }
+        for client in clients {
+            ask(client, named: named?.client == client ? named?.title : nil) { list in
+                answers.lists[client] = list
+                answers.fresh.insert(client)
+                deliver()
+            }
+        }
+    }
+
+    /// Asks again every client whose list is kept, so the next editor opens on a current one. Run
+    /// when an editor is likely to open soon: at launch, on a capture, and when the stack opens.
+    func refreshKeptLists() {
+        for (client, connection) in connections where connection.keepsList { ask(client) { _ in } }
+    }
+
+    /// The answers one listing has so far, by client.
+    private final class Answers {
+        var lists: [AgentClient: [AgentDestination]] = [:]
+        var fresh: Set<AgentClient> = []
+    }
+
+    /// The last list of each client whose list is kept.
+    private var kept: [AgentClient: [AgentDestination]] = [:]
+    /// The clients being asked right now, and who is waiting for each answer. A second ask joins
+    /// the one on its way instead of starting another.
+    private var asking: [AgentClient: [@MainActor ([AgentDestination]) -> Void]] = [:]
+
+    /// Asks one client for its sessions off the main thread. An ask for a name runs on its own, and
+    /// its answer is not kept: it holds a session found for one editor.
+    private func ask(_ client: AgentClient, named title: String? = nil, then answer: @escaping @MainActor ([AgentDestination]) -> Void) {
+        guard let connection = connections[client] else { return }
+        if let title {
             DispatchQueue.global(qos: .userInitiated).async {
-                let listed = connection.destinations()
-                // Queued to the main thread while the lock is held, so answers arrive in the order
-                // they were counted and the one with `complete` is last.
-                answers.withLock { state in
-                    state.found = (state.found + listed).sorted(by: AgentDestination.newestFirst)
-                    state.left -= 1
-                    let (found, complete) = (state.found, state.left == 0)
-                    DispatchQueue.main.async { MainActor.assumeIsolated { completion(found, complete) } }
+                let list = connection.destinations(named: title)
+                DispatchQueue.main.async { MainActor.assumeIsolated { answer(list) } }
+            }
+            return
+        }
+        if asking[client] != nil { asking[client]?.append(answer); return }
+        asking[client] = [answer]
+        DispatchQueue.global(qos: .userInitiated).async {
+            let list = connection.destinations()
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if connection.keepsList { self.kept[client] = list }
+                    let waiting = self.asking.removeValue(forKey: client) ?? []
+                    waiting.forEach { $0(list) }
                 }
             }
         }
@@ -225,7 +273,7 @@ final class ScreenshotRequests {
     /// the annotator may close. The submission follows off the main thread and reports through
     /// `[send]` and the toast.
     @discardableResult
-    func send(png: Data, source: URL, to destination: AgentDestination) -> Record? {
+    func send(png: Data, source: URL, to destination: AgentDestination, message: String? = nil) -> Record? {
         let live = requests.values.filter { $0.status != .cleared }.count
         guard live < Self.maxLiveRequests else {
             Log.write("[send] error \(CommandError.writeFailed.rawValue) \(live) requests are open; clear some with \(Identity.urlScheme)://requests?clear=all")
@@ -250,18 +298,19 @@ final class ScreenshotRequests {
         }
         requests[id] = record
         Log.write("[send] prepared \(id) to \(destination.name) (\(destination.address.description)) \(png.count) bytes")
-        submit(record, ticket: ticket)
+        submit(record, message: message)
         return record
     }
 
-    /// Hands one prepared request to its client and records what came back.
-    private func submit(_ record: Record, ticket: ReplyProtocol.Ticket) {
+    /// Hands one prepared request to its client and records what came back. The message travels in
+    /// the line only: it is the person's words, so neither the record nor the log keeps it.
+    private func submit(_ record: Record, message: String?) {
         guard let connection = connections[record.address.client] else {
             finishSubmission(record.id, .notSubmitted(code: .noAgent, detail: "no connection for \(record.address.client.rawValue)"))
             return
         }
         let destination = AgentDestination(id: record.destinationID, name: record.destinationName, address: record.address)
-        let line = Self.requestLine(record: record, ticket: ticket, root: root)
+        let line = Self.requestLine(record: record, root: root, message: message)
         DispatchQueue.global(qos: .userInitiated).async {
             let outcome = connection.submit(line, to: destination)
             DispatchQueue.main.async { MainActor.assumeIsolated { self.finishSubmission(record.id, outcome) } }
@@ -294,23 +343,15 @@ final class ScreenshotRequests {
         }
     }
 
-    /// The one line the agent receives. One line because herdr submits it with Return, and the
-    /// same shape for both clients so neither is a special case. The ticket's path travels; its
-    /// secret does not, and neither does anything that would be worth logging.
-    static func requestLine(record: Record, ticket: ReplyProtocol.Ticket, root: URL) -> String {
+    /// The one line the agent receives, which arrives in the person's session as their own message.
+    /// It names only the image; the skill says how to answer with a drawing, using the `ticket.json`
+    /// beside it. The person's message, already one line (`AnnotatorToolbar.Model.sentMessage`), ends
+    /// it, so it reads as what they ask of the image. One line, because herdr submits it with Return.
+    /// The ticket's secret never travels.
+    static func requestLine(record: Record, root: URL, message: String? = nil) -> String {
         let image = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("image.png").path
-        let helper = Self.helperPath
-        // A fork answers to another scheme, so the helper is told which one rather than assuming.
-        let scheme = Identity.urlScheme == "vignette" ? "" : " --scheme \(Identity.urlScheme)"
-        return "Vignette request \(record.id): open the drawing at \"\(image)\" and do what it asks. "
-            + "To answer with a drawing of your own, run: python3 \"\(helper)\" --ticket \"\(ticket.requestDirectory)/ticket.json\"\(scheme) --marks <marks.json>; "
-            + "python3 \"\(helper)\" --help explains the mark format and what it answers."
-    }
-
-    /// The reply helper inside the app bundle. Always there and always current for this build, so
-    /// the loop does not depend on the person having installed the skill.
-    static var helperPath: String {
-        (SkillInstaller.bundled?.appendingPathComponent("scripts/reply").path) ?? "vignette/scripts/reply"
+        let line = "From Vignette: \"\(image)\". If a drawing would answer better than words, you can send one back."
+        return message.map { "\(line) \($0)" } ?? line
     }
 
     // MARK: Accepting a reply

@@ -49,6 +49,41 @@ extension HotKeySpec {
         }
     }
 
+    /// What to hold to draw on the newest screenshot, for the menu item that does it: with a double
+    /// tap it is the second tap, not the key named twice.
+    var holdLabel: String {
+        switch self {
+        case .key: return "hold \(glyphs)"
+        case .doubleTap: return "hold the second tap"
+        }
+    }
+
+    /// The key a double tap is made on, as its keycap reads: "⇧" and "shift", and whether it sits on
+    /// the right of the keyboard, where the keycap's label is on the right too. nil for a key
+    /// combination.
+    var doubleTapKey: (glyph: String, word: String, label: String, isRight: Bool)? {
+        guard case let .doubleTap(keyCode) = self, let name = HotKeySpec.modifierNamesByKeyCode[keyCode],
+              let label = HotKeySpec.modifierLabel(forKeyCode: keyCode) else { return nil }
+        let (glyph, word): (String, String) = switch name.dropFirst() {
+        case "shift": ("⇧", "shift")
+        case "cmd": ("⌘", "command")
+        case "opt": ("⌥", "option")
+        default: ("⌃", "control")
+        }
+        return (glyph, word, label, name.hasPrefix("r"))
+    }
+
+    /// A key combination as its keys, one keycap each, modifiers first in the order macOS lists
+    /// them: ["⇧", "⌘", "6"]. Empty for a double tap.
+    var keycaps: [String] {
+        guard case let .key(keyCode, modifiers) = self else { return [] }
+        var caps = HotKeySpec.modifierGlyphs(modifiers).map(String.init)
+        if let name = HotKeySpec.keyName(forKeyCode: keyCode) {
+            caps.append(HotKeySpec.specialKeys[name]?.glyph ?? name.uppercased())
+        }
+        return caps
+    }
+
     /// The NSMenuItem key equivalent, so a menu renders the hotkey in its shortcut column.
     /// nil for a double tap, which no menu can draw.
     var menuKeyEquivalent: (key: String, modifiers: NSEvent.ModifierFlags)? {

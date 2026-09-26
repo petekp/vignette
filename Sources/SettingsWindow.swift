@@ -35,13 +35,14 @@ enum SettingsTab: String, CaseIterable {
 /// A thin editor over settings.json. Every control writes straight to the file.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate {
-    /// The two actions the window asks for rather than performs: both are AppDelegate's own, and
-    /// they already toast and log.
+    /// What the window asks AppDelegate for rather than doing itself: its own actions, which
+    /// already log, and the watcher's answer about the folder.
     struct Callbacks {
         var restoreAppleDefaults: () -> Void = {}
         var openTweaks: () -> Void = {}
-        var installAgentSkill: (URL) -> Void = { _ in }
-        var removeAgentSkill: (URL) -> Void = { _ in }
+        var installAgentSkill: (URL) -> [SkillInstaller.Result] = { _ in [] }
+        var removeAgentSkill: (URL) -> [SkillInstaller.Result] = { _ in [] }
+        var folderDenied: () -> Bool = { false }
     }
 
     var callbacks = Callbacks()
@@ -66,6 +67,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
         } else {
             win.orderFront(nil)
         }
+        // AppKit gives a new window's first text field the keyboard, which outlines the count and
+        // selects it; nothing here is waiting to be typed, and Tab still reaches the field.
+        if !wasVisible { DispatchQueue.main.async { win.makeFirstResponder(nil) } }
     }
 
     private func makeWindow() -> NSWindow {
@@ -119,6 +123,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
     /// caption with the menu bar icon.
     private func fit(animated: Bool) {
         guard let win = window, let hosting else { return }
+        // A newly set form measures 2 pt short after its first layout pass and settles on the
+        // second, so a window fitted after one pass left General and Screenshots scrolling by 2 pt.
+        hosting.layoutSubtreeIfNeeded()
+        hosting.needsLayout = true
         hosting.layoutSubtreeIfNeeded()
         // The window has no resize control, so a form taller than the screen would hang off the
         // bottom where nothing can reach it. Capped, the form scrolls inside the window instead.
@@ -177,13 +185,25 @@ struct SettingsView: View {
     static let width: CGFloat = 480
     /// Title bar plus a margin: how much of the screen's visible height a form may not use.
     static let screenRoom: CGFloat = 60
+    /// The Agents footer, and the line under the setup page's heading.
+    static let agentsLine = "Adds a skill that lets your coding agents show you images and reply to drawings you send them."
+    /// macOS's Accessibility alert gives no reason, so the row gives it, and the way around it.
+    static let accessibilityReason = "Lets Vignette notice the double tap in any app. A key combination doesn't need it."
 
     let tab: SettingsTab
     let callbacks: SettingsWindowController.Callbacks
 
     @ObservedObject private var settings = Settings.shared
-    /// What is on disk for each agent, read on show and after every settings change.
+    /// What is on disk for each agent, read on show and after every switch.
     @State private var agentRows = SkillInstaller.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
+    /// Why the last install or removal failed, by agent directory. The switch shows what is on disk,
+    /// so after a failure it is back where it was, and this says why.
+    @State private var agentFailures: [URL: String] = [:]
+    @State private var trusted = ModifierTap.trusted(prompt: false)
+    @State private var folderDenied = false
+    /// Neither the Accessibility grant nor macOS's folder permission announces a change, so the
+    /// rows that show them look again while the window is up.
+    private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         Form {
@@ -195,7 +215,17 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        // A grouped form's scroll view bounces even when everything fits. This keeps it still
+        // unless the form is taller than the window, which happens only under fit's screen cap.
+        .scrollBounceBehavior(.basedOnSize)
         .frame(width: SettingsView.width)
+        .onAppear(perform: look)
+        .onReceive(poll) { _ in look() }
+    }
+
+    private func look() {
+        trusted = ModifierTap.trusted(prompt: false)
+        folderDenied = callbacks.folderDenied()
     }
 
     // MARK: General
@@ -203,14 +233,18 @@ struct SettingsView: View {
     @ViewBuilder private var general: some View {
         Section {
             ShortcutSetting()
-            if settings.data.usesDoubleTap, !ModifierTap.trusted(prompt: false) {
-                LabeledContent("The double tap needs Accessibility permission.") {
-                    Button("Allow in System Settings") { Accessibility.request() }
-                }
+            // Here the shortcut is not working yet, so it reads as a warning, where setup's lock
+            // reads as a step still to take.
+            if settings.data.usesDoubleTap, !trusted {
+                PermissionRow(symbol: "lock.fill", title: "Needs Accessibility permission",
+                              reason: SettingsView.accessibilityReason, status: .refused) { Accessibility.request() }
             }
+        } footer: {
+            // Under the title, the wide pop-up would leave the caption half the row's width.
+            footer(ShortcutSetting.caption(doubleTap: settings.data.usesDoubleTap))
         }
-        Section {
-            LabeledContent("Keep recent screenshots") {
+        Section("Recent screenshots") {
+            LabeledContent("How many to show") {
                 HStack(spacing: 4) {
                     TextField("", value: recentCount, format: .number)
                         .labelsHidden()
@@ -220,17 +254,14 @@ struct SettingsView: View {
                     Stepper("", value: recentCount, in: 1...100).labelsHidden()
                 }
             }
-            LabeledContent("Show a new screenshot for") {
-                HStack {
-                    Slider(value: binding(\.ui.thumbnailSeconds), in: 2...15, step: 1)
-                    Text("\(Int(settings.data.ui.thumbnailSeconds))s").monospacedDigit().frame(width: 30)
-                }
-            }
-            Toggle("Launch at login", isOn: binding(\.launchAtLogin))
+            Toggle("Close after copying a drawing", isOn: binding(\.quickAnnotate))
+        }
+        Section("System") {
+            Toggle("Open at login", isOn: binding(\.launchAtLogin))
             Toggle(isOn: menuBarIcon) {
                 Text("Show in menu bar")
                 if settings.data.hideMenuBarIcon {
-                    Text("Reopen Settings with open vignette://settings in Terminal.")
+                    Text("Open Vignette again to get back to Settings.")
                 }
             }
         }
@@ -240,13 +271,12 @@ struct SettingsView: View {
 
     @ViewBuilder private var screenshots: some View {
         Section {
-            LabeledContent("Save to") {
-                HStack {
-                    Text(settings.data.screenshotsFolder).lineLimit(1).truncationMode(.middle)
-                    Button("Choose…", action: chooseFolder)
+            SaveToPicker()
+            if folderDenied {
+                PermissionRow(symbol: "folder", title: "Vignette doesn't have access to this folder", status: .refused) {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)
                 }
             }
-            Toggle("Save macOS screenshots here", isOn: binding(\.syncAppleSaveLocation))
             Picker("Format", selection: binding(\.format)) {
                 Text("PNG").tag("png")
                 Text("JPEG").tag("jpg")
@@ -259,25 +289,23 @@ struct SettingsView: View {
                 Text("Open it to draw")
                 Text("Instead of showing a thumbnail.")
             }
-        }
-        Section("When you finish drawing") {
-            Picker("When you finish drawing", selection: binding(\.quickAnnotate)) {
-                Text("Return to the stack").tag(false)
-                Text("Copy and close").tag(true)
+            // Visible with "Open it to draw" on too: a thumbnail that comes back from the editor
+            // without a copy, after Send for example, stays this long.
+            LabeledContent("Show the thumbnail for") {
+                HStack {
+                    Slider(value: thumbnailSeconds, in: 2...15).labelsHidden().frame(width: 150)
+                    Text("\(Int(settings.data.ui.thumbnailSeconds)) seconds").monospacedDigit()
+                        .frame(width: 72, alignment: .trailing)
+                }
             }
-            .pickerStyle(.radioGroup)
-            .labelsHidden()
         }
-        Section("macOS") {
-            // The only place that says the thumbnail is gone, in the row of the button that brings
-            // it back: someone who misses it comes looking here, not at a toast they already lost.
-            LabeledContent {
+        Section {
+            LabeledContent("macOS screenshot settings") {
                 Button("Restore…") { callbacks.restoreAppleDefaults() }
                     .disabled(settings.data.appleOriginal == nil)
-            } label: {
-                Text("Original screenshot settings")
-                Text("Vignette replaces the macOS thumbnail, so each capture is saved right away. Restoring puts back the save location, thumbnail, shadow, and format macOS had before.")
             }
+        } footer: {
+            footer("Vignette replaces the macOS thumbnail. Restore puts back the thumbnail and the folder, format and shadow macOS used before.")
         }
     }
 
@@ -285,40 +313,41 @@ struct SettingsView: View {
 
     @ViewBuilder private var agents: some View {
         Section {
-            Text("Vignette can teach your coding agents to show you an image and read back what you draw on it.")
-        }
-        Section {
             if agentRows.isEmpty {
                 Text("No coding agent found on this Mac. Vignette looks for Claude Code and Codex.")
             } else {
                 ForEach(agentRows) { row in
-                    LabeledContent {
-                        HStack {
-                            Group {
-                                if row.installed {
-                                    Label(row.status, systemImage: "checkmark.circle.fill")
-                                        .foregroundStyle(Color.installed)
-                                } else {
-                                    Text(row.status)
-                                }
-                            }
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            if row.installed {
-                                Button("Remove") { callbacks.removeAgentSkill(row.root); refreshAgents() }
-                            } else {
-                                Button("Install") { callbacks.installAgentSkill(row.root); refreshAgents() }
-                                    .buttonStyle(.borderedProminent)
-                            }
-                        }
-                    } label: {
-                        Text(row.name)
+                    Toggle(isOn: installed(row)) {
+                        AgentName(row: row, failure: agentFailures[row.root])
                     }
                 }
             }
+        } footer: {
+            if !agentRows.isEmpty { footer(SettingsView.agentsLine) }
         }
         .onAppear(perform: refreshAgents)
+        if !agentRows.isEmpty {
+            Section {
+                Toggle(isOn: binding(\.sendWithReturn)) {
+                    Text("Send with Return")
+                    Text("Return in the message box sends the drawing. ⌘Return always does.")
+                }
+            }
+        }
+    }
+
+    /// On installs the skill and off removes whatever is at `<root>/skills/vignette`. The switch
+    /// reads the disk, so a failed install leaves it off.
+    private func installed(_ row: AgentSkillStatus) -> Binding<Bool> {
+        Binding(get: { row.installed }, set: { on in
+            let results = on ? callbacks.installAgentSkill(row.root) : callbacks.removeAgentSkill(row.root)
+            if let failed = results.first(where: { $0.outcome == .failed }) {
+                agentFailures[row.root] = "Couldn't \(on ? "install" : "remove"): \(failed.detail)"
+            } else {
+                agentFailures[row.root] = nil
+            }
+            refreshAgents()
+        })
     }
 
     private func refreshAgents() {
@@ -335,7 +364,7 @@ struct SettingsView: View {
                 Button("Reveal settings.json") { NSWorkspace.shared.activateFileViewerSelecting([Settings.fileURL]) }
             }
         } footer: {
-            caption("This tab shows because debug is on in settings.json.")
+            Text("This tab shows because debug is on in settings.json.").font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -350,23 +379,141 @@ struct SettingsView: View {
         Binding(get: { settings.data.recentCount }, set: { n in settings.update { $0.recentCount = min(max(n, 1), 100) } })
     }
 
+    /// Whole seconds, rounded here rather than by the slider's `step`, which draws a tick for each.
+    private var thumbnailSeconds: Binding<Double> {
+        Binding(get: { settings.data.ui.thumbnailSeconds },
+                set: { v in settings.update { $0.ui.thumbnailSeconds = v.rounded() } })
+    }
+
     private var menuBarIcon: Binding<Bool> {
         Binding(get: { !settings.data.hideMenuBarIcon }, set: { on in settings.update { $0.hideMenuBarIcon = !on } })
     }
 
-    private func caption(_ text: String) -> some View {
-        Text(text).font(.caption).foregroundStyle(.secondary)
+    private func footer(_ text: String) -> some View {
+        Text(text).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Where screenshots are saved, as macOS's own ⌘⇧5 Options menu offers it: the folder in use, the
+/// Desktop and Documents, and Other…. The choice is macOS's save location too.
+@MainActor
+struct SaveToPicker: View {
+    @ObservedObject private var settings = Settings.shared
+    private static let desktop = "~/Desktop"
+    private static let documents = "~/Documents"
+    private static let other = "other"
+
+    var body: some View {
+        Picker("Save to", selection: choice) {
+            if !isCommon(settings.data.screenshotsFolder) {
+                item(settings.data.screenshotsFolder).tag(settings.data.screenshotsFolder)
+            }
+            item(SaveToPicker.desktop).tag(SaveToPicker.desktop)
+            item(SaveToPicker.documents).tag(SaveToPicker.documents)
+            Divider()
+            Text("Other…").tag(SaveToPicker.other)
+        }
+    }
+
+    private func isCommon(_ path: String) -> Bool {
+        [SaveToPicker.desktop, SaveToPicker.documents].contains { AppleScreencapture.samePath($0, path) }
+    }
+
+    private func item(_ path: String) -> some View {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        icon.size = NSSize(width: 16, height: 16)
+        return Label { Text(FileManager.default.displayName(atPath: url.path)) } icon: { Image(nsImage: icon) }
+    }
+
+    private var choice: Binding<String> {
+        Binding(get: {
+            let current = settings.data.screenshotsFolder
+            return [SaveToPicker.desktop, SaveToPicker.documents].first { AppleScreencapture.samePath($0, current) } ?? current
+        }, set: { picked in
+            // The panel runs its own modal loop, so it opens after the menu's pick has been handled.
+            if picked == SaveToPicker.other { DispatchQueue.main.async { chooseFolder() } } else { settings.update { $0.screenshotsFolder = picked } }
+        })
     }
 
     private func chooseFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
         panel.directoryURL = settings.data.folderURL
-        if panel.runModal() == .OK, let url = panel.url {
-            let home = FileManager.default.homeDirectoryForCurrentUser.path
-            let path = url.path.hasPrefix(home) ? "~" + url.path.dropFirst(home.count) : url.path
-            settings.update { $0.screenshotsFolder = path }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        settings.update { $0.screenshotsFolder = (url.standardizedFileURL.path as NSString).abbreviatingWithTildeInPath }
+    }
+}
+
+/// One row for every permission, in setup and in Settings: a symbol, what is needed, why, and
+/// Allow…. A check replaces the button once it is granted. A refusal swaps the symbol for a
+/// warning, and Allow… then opens Privacy & Security, since macOS doesn't ask twice.
+struct PermissionRow: View {
+    enum Status { case ask, refused, granted }
+    let symbol: String
+    let title: String
+    var reason: String?
+    let status: Status
+    /// Setup gives the window's default button to the next step still to take.
+    var isDefault = false
+    /// macOS's own prompt is up and has not been answered.
+    var busy = false
+    let allow: () -> Void
+
+    var body: some View {
+        LabeledContent {
+            if status == .granted {
+                Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(Color.installed)
+                    .accessibilityLabel("Allowed")
+            } else {
+                Button("Allow…", action: allow).keyboardShortcut(isDefault && !busy ? .defaultAction : nil).disabled(busy)
+            }
+        } label: {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                    if let reason {
+                        Text(reason).font(.subheadline).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } icon: {
+                if status == .refused {
+                    Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
+                } else {
+                    Image(systemName: symbol).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+/// An agent's logo and name, and why its last install failed.
+struct AgentName: View {
+    let row: AgentSkillStatus
+    var failure: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if let image = Agent.logo(for: row.logoKey) {
+                Image(nsImage: image).renderingMode(image.isTemplate ? .template : .original)
+                    .resizable().aspectRatio(contentMode: .fit).frame(width: 18, height: 18)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 4 }
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.name)
+                if let failure {
+                    Label { Text(failure) } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
+                    }
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
     }
 }
@@ -374,9 +521,15 @@ struct SettingsView: View {
 /// The shortcut field: it reads the shortcut as glyphs, and takes one typed in.
 private struct ShortcutRecorder: NSViewRepresentable {
     let text: String
+    /// Starts listening as the view appears, for a recorder the user just asked for.
+    var recordNow = false
     let onCommit: (String) -> Void
 
-    func makeNSView(context: Context) -> ShortcutRecorderView { ShortcutRecorderView() }
+    func makeNSView(context: Context) -> ShortcutRecorderView {
+        let view = ShortcutRecorderView()
+        view.recordOnWindow = recordNow
+        return view
+    }
 
     func updateNSView(_ view: ShortcutRecorderView, context: Context) {
         view.text = text
@@ -390,6 +543,7 @@ private struct ShortcutRecorder: NSViewRepresentable {
 private final class ShortcutRecorderView: NSView {
     var text = "" { didSet { if text != oldValue { needsDisplay = true } } }
     var onCommit: (String) -> Void = { _ in }
+    var recordOnWindow = false
 
     private var recording = false { didSet { needsDisplay = true } }
     private var outsideClick: Any?
@@ -421,6 +575,14 @@ private final class ShortcutRecorderView: NSView {
         let height = (shown as NSString).size(withAttributes: attributes).height
         (shown as NSString).draw(in: NSRect(x: box.minX, y: box.midY - height / 2, width: box.width, height: height),
                                  withAttributes: attributes)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard recordOnWindow, let window else { return }
+        recordOnWindow = false
+        window.makeFirstResponder(self)
+        begin()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -478,47 +640,77 @@ private final class ShortcutRecorderView: NSView {
     }
 }
 
-/// The shortcut picker and its recorder, shared by the Settings window's General tab and the
-/// first-run setup window. What each of those says about Accessibility below it differs, so the
-/// permission line is not part of this.
+/// The shortcut: a pop-up of double taps, then Key Combination…, which shows a recorder labelled
+/// Keys. macOS's own Dictation and Siri shortcut settings work this way. Shared by the Settings
+/// window's General tab and the setup window, which say different things about Accessibility
+/// below it, so the permission row is not part of this. Each says what the shortcut does in its
+/// own place: Settings under the box, setup under its page's heading.
 @MainActor
 struct ShortcutSetting: View {
     @ObservedObject private var settings = Settings.shared
+    /// Set by picking Key Combination…: the ellipsis promised a question, so the recorder that
+    /// appears starts listening.
+    @State private var recordNow = false
 
-    enum Kind { case combination, doubleTap }
+    static let doubleTaps = ["double-rshift", "double-lshift", "double-rcmd", "double-ropt"]
+    private static let combination = "combination"
+
+    /// What the shortcut does. With a double tap, "hold it" leaves open which press to hold.
+    static func caption(doubleTap: Bool) -> String {
+        "Shows your recent screenshots. " + (doubleTap ? "Hold the second tap to draw on the newest one." : "Hold it to draw on the newest one.")
+    }
 
     var body: some View {
-        Picker(selection: kind) {
-            Text("Double-tap Right Shift").tag(Kind.doubleTap)
-            Text("Key combination").tag(Kind.combination)
-        } label: {
-            Text("Shortcut")
-            Text("Shows your recent screenshots. Hold it to draw on the newest one.")
+        Picker("Shortcut", selection: choice) {
+            ForEach(options, id: \.self) { value in
+                Text(ShortcutSetting.title(of: value)).tag(value)
+            }
+            Divider()
+            Text(settings.data.usesDoubleTap ? "Key Combination…" : "Key Combination").tag(ShortcutSetting.combination)
         }
-        .pickerStyle(.segmented)
         if !settings.data.usesDoubleTap {
-            HStack {
-                Spacer()
-                ShortcutRecorder(text: HotKeySpec.parse(settings.data.recentHotkey)?.glyphs ?? settings.data.recentHotkey) { shortcut in
+            LabeledContent("Keys") {
+                ShortcutRecorder(text: HotKeySpec.parse(settings.data.recentHotkey)?.glyphs ?? settings.data.recentHotkey,
+                                 recordNow: recordNow) { shortcut in
                     settings.update { $0.recentHotkey = shortcut }
                 }
-                .frame(width: 140, height: 24)
+                .frame(width: 150, height: 24)
+                // An AppKit view has no text baseline, so the row would line the label up with its
+                // bottom edge. This is where the text it draws sits.
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             }
         }
     }
 
-    /// Which kind of shortcut is in the file. Choosing the other kind writes a working value of it
-    /// straight away, so the setting is never a choice the file does not hold.
-    private var kind: Binding<Kind> {
-        Binding(get: { settings.data.usesDoubleTap ? .doubleTap : .combination },
-                set: { kind in
-                    switch kind {
-                    case .doubleTap:
-                        settings.update { $0.recentHotkey = "double-rshift" }
-                    case .combination:
-                        if settings.data.usesDoubleTap {
-                            settings.update { $0.recentHotkey = SettingsData.defaultKeyCombination }
-                        }
+    /// The double taps offered, and the one in the file when settings.json names another.
+    private var options: [String] {
+        guard let current = currentDoubleTap, !ShortcutSetting.doubleTaps.contains(current) else { return ShortcutSetting.doubleTaps }
+        return ShortcutSetting.doubleTaps + [current]
+    }
+
+    /// The file's double tap, written the one way the pop-up's tags are.
+    private var currentDoubleTap: String? {
+        guard case let .doubleTap(code)? = HotKeySpec.parse(settings.data.recentHotkey) else { return nil }
+        return HotKeySpec.doubleTapText(forKeyCode: code)
+    }
+
+    static func title(of value: String) -> String {
+        guard let key = HotKeySpec.parse(value)?.doubleTapKey else { return value }
+        return "Press \(key.label) Twice"
+    }
+
+    /// Picking Key Combination… writes a working combination straight away, so the setting is never
+    /// a choice the file does not hold.
+    private var choice: Binding<String> {
+        Binding(get: { currentDoubleTap ?? ShortcutSetting.combination },
+                set: { value in
+                    if value == ShortcutSetting.combination {
+                        guard settings.data.usesDoubleTap else { return }
+                        recordNow = true
+                        settings.update { $0.recentHotkey = SettingsData.defaultKeyCombination }
+                    } else {
+                        recordNow = false
+                        settings.update { $0.recentHotkey = value }
                     }
                 })
     }
@@ -559,7 +751,7 @@ enum Accessibility {
     }
 }
 
-private extension Color {
+extension Color {
     /// System green is too light to read as text on a light row (2:1 against white), so light mode
     /// takes Apple's increased-contrast green, 4.4:1. Dark mode keeps system green.
     static let installed = Color(nsColor: NSColor(name: nil) { appearance in

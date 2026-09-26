@@ -45,8 +45,9 @@ extension Mark.Text {
 // MARK: - The arrowhead
 
 extension ArrowBody {
-    /// The body's length along the line or the arc.
+    /// The body's length along the line, the arc or the curve.
     var length: CGFloat {
+        if let curve { return curve.length }
         guard let arc else { return hypot(end.x - start.x, end.y - start.y) }
         return arc.radius * abs(arc.sweep)
     }
@@ -55,7 +56,19 @@ extension ArrowBody {
     func path(upTo fraction: CGFloat) -> CGPath {
         let t = min(max(fraction, 0), 1)
         let path = CGMutablePath()
-        if let arc {
+        if let curve, let first = curve.segments.first {
+            path.move(to: first[0])
+            let place = t >= 1 ? (segment: curve.segments.count - 1, t: CGFloat(1)) : curve.place(at: t * curve.length)
+            let last = place.segment, cut = place.t
+            for segment in curve.segments[..<last] {
+                path.addCurve(to: segment[3], control1: segment[1], control2: segment[2])
+            }
+            // The last segment up to `cut`, by de Casteljau's construction.
+            let segment = curve.segments[last]
+            func mix(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: a.x + (b.x - a.x) * cut, y: a.y + (b.y - a.y) * cut) }
+            let a = mix(segment[0], segment[1]), b = mix(segment[1], segment[2])
+            path.addCurve(to: Curve.point(on: segment, at: cut), control1: a, control2: mix(a, b))
+        } else if let arc {
             path.addArc(center: arc.center, radius: arc.radius, startAngle: arc.startAngle,
                         endAngle: arc.startAngle + arc.sweep * t, clockwise: arc.sweep < 0)
         } else {
@@ -78,9 +91,12 @@ struct Arrowhead {
 
     init(body: ArrowBody, strokeWidth: CGFloat, style: ArrowheadStyle) {
         let bodyLength = body.length
-        // Past an arc's diameter no point of the body is a head's length from the tip, so the head
-        // could not be aimed from one.
-        let longest = min(bodyLength * ArrowheadStyle.maxShareOfBody, body.arc.map { 2 * $0.radius } ?? .infinity)
+        // Past an arc's diameter, or a curve's furthest point from the tip, no point of the body is a
+        // head's length from the tip, so the head could not be aimed from one.
+        let reachable = body.arc.map { 2 * $0.radius }
+            ?? body.curve.map { curve in curve.samples.reduce(0) { max($0, hypot($1.x - body.end.x, $1.y - body.end.y)) } }
+            ?? .infinity
+        let longest = min(bodyLength * ArrowheadStyle.maxShareOfBody, reachable)
         let shrink = min(1, longest / max(style.length * strokeWidth, .ulpOfOne))
         let length = style.length * strokeWidth * shrink
         let halfWidth = style.width * strokeWidth * shrink / 2
@@ -88,7 +104,9 @@ struct Arrowhead {
         // around it. Aimed from there, the head's axis runs through the body at the middle of its
         // base; aimed along the tangent at the tip, a tight arc hooks and bows out through a side.
         let back: CGFloat
-        if let arc = body.arc {
+        if let curve = body.curve {
+            back = Self.back(along: curve, from: body.end, reach: length)
+        } else if let arc = body.arc {
             back = max(0, 1 - 2 * asin(min(1, length / (2 * arc.radius))) / abs(arc.sweep))
         } else {
             back = bodyLength > 0 ? max(0, 1 - length / bodyLength) : 0
@@ -103,6 +121,23 @@ struct Arrowhead {
         // The stroke stops on the head's axis, so its round cap lies inside the head however tight
         // the arc.
         bodyEnd = back
+    }
+
+    /// The fraction of `curve` where it is first `reach` from `tip`, walking back from the tip; 0 when
+    /// no point is that far.
+    private static func back(along curve: ArrowBody.Curve, from tip: CGPoint, reach: CGFloat) -> CGFloat {
+        guard curve.length > 0 else { return 0 }
+        for index in stride(from: curve.samples.count - 1, to: 0, by: -1) {
+            let a = curve.samples[index - 1], b = curve.samples[index]
+            guard hypot(a.x - tip.x, a.y - tip.y) >= reach else { continue }
+            // Nearer the tip, `b` is inside the circle of `reach` and `a` is not, so the line from `a`
+            // to `b` crosses it once, at the smaller root.
+            let d = CGPoint(x: b.x - a.x, y: b.y - a.y), w = CGPoint(x: a.x - tip.x, y: a.y - tip.y)
+            let qa = d.x * d.x + d.y * d.y, qb = 2 * (w.x * d.x + w.y * d.y), qc = w.x * w.x + w.y * w.y - reach * reach
+            let u = qa > 0 ? min(max((-qb - max(0, qb * qb - 4 * qa * qc).squareRoot()) / (2 * qa), 0), 1) : 0
+            return (curve.lengths[index - 1] + (curve.lengths[index] - curve.lengths[index - 1]) * u) / curve.length
+        }
+        return 0
     }
 
     var path: CGPath {
@@ -173,7 +208,7 @@ extension Mark {
                 ctx.fillPath()
             }
         } else if case .text(let text) = geometry {
-            Self.draw(TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: style),
+            Self.draw(TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: style.forAgent(agent)),
                       color: color.cgColor, outline: 2 * Text.outlineWidth * pointScale, in: ctx)
         }
     }

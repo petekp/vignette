@@ -34,25 +34,70 @@ shown before anything is sent, and Return never sends to it.
 | The image | The bar | Return | Cmd+Return |
 |---|---|---|---|
 | No session to send to | Copy, filled | Copy | Copy |
-| A session to send to | Copy, then the target, then Send, filled | Copy | Send |
-| It names the session it came from | Reply alone, filled, with the agent's logo | Reply | Reply |
+| A session to send to | Copy, then the target, the message field, then Send, filled | Copy | Send |
+| It names the session it came from | The message field, then Reply, filled, with the agent's logo | Reply | Reply |
+
+The message field keeps these keys. Cmd+Return sends. Return replies on Reply, and beside Send it
+sends nothing and bounces Send's ⌘↩ instead, so a Return typed as in a chat never hands the
+drawing to a session Vignette picked. Send with Return, in the Agents tab (`sendWithReturn`), makes
+Return beside Send send, as Pete asked on 2026-09-26, following chat apps such as Codex that offer
+the same choice. Send keeps showing ⌘↩, which sends either way; a hint that changed with the focus
+changed the button's width and moved the whole bar. `docs/request-line-2026-09-25.md` has what the
+message becomes.
 
 - **Copy is Done** under a label that says what it does. The code and the log still call it done.
 - **The target** is the agent's logo and the project's folder. It sits beside Send as its own
   control, as Pete asked on 2026-09-24: "maybe the thread selection is separate from the note and
-  Send CTA". Its menu lists five sessions, the one used last first, then More sessions. Each row is
+  Send CTA". Its menu lists the active sessions used last, five at most. Each row is
   the logo, the project, and the title in grey under it. A check marks the target.
 - **The default** is the first of these that exists (`AgentDestination.defaultTarget`):
-  1. The session in herdr's focused pane.
-  2. The one agent in the focused pane's tab, when the focused pane runs no agent, such as a
+  1. The thread the Codex app shows, when it was the app in front before Vignette. Vignette reads
+     the title of its page through Accessibility and matches it to a thread's name. If it can't,
+     it takes the Codex thread used last. herdr's focus is ignored in this case: herdr keeps a
+     focused pane while its terminal is behind, so on 2026-09-25 Send started on a Claude session
+     while Pete was in the Codex app.
+  2. The session in herdr's focused pane.
+  3. The one agent in the focused pane's tab, when the focused pane runs no agent, such as a
      browser beside the session. If the focused pane runs Codex, the Claude session beside it is
      not the default, because Codex is who you were talking to.
-  3. The session used last. This is how a Codex thread becomes the default.
+  4. The session used last.
+- **The title finds the thread the Codex app shows.** On 2026-09-25 Send started on the wrong
+  Codex thread for one Pete had open. A test of every thread on this Mac, 144, with the title the
+  app shows for each, found the cause. Only 39 matched, and for 92 Send picked another thread.
+  - The app names a thread with no name by its whole first message as plain text: markdown and
+    tags taken out, lines joined, cut to 79 characters and "…". Vignette used the first line.
+  - The app takes tags out of names too, such as `<task>`. Vignette kept them.
+  - Vignette searched the store with the title as shown. The store holds the first message as
+    typed, so a title with "…", a joined line or a link in it found nothing.
+
+  Now a thread is named by the app's rule, read from its bundle, and the name matched the app's
+  title for all 144 threads. Titles compare by letters and digits only. The search sends the
+  title and its two longest words, which found all 144, and a word's other hits are dropped.
+  137 threads now match. The other 7 share their title with another thread, and Send takes the
+  newest of them, which is as far as a title can tell. The whole lookup took 68 ms at the median
+  and 222 ms at most.
 - **The target settles once.** herdr answers in about 60 ms, before the bar is up, so a focused
   session is known at once. With no focus, the target waits for every client, since "used last" is
-  a comparison across them; Codex takes 1 to 2 seconds. After that the target changes only when its
-  session is gone from the whole list, or when you pick another. So it never changes under the
-  pointer.
+  a comparison across them. After that the target changes only when its session is gone from the
+  whole list, or when you pick another. So it never changes under the pointer.
+- **The list is ready when the bar comes up.** On 2026-09-25 Pete saw the target and Send appear
+  late. The Codex listing took 0.9 to 1.7 s, and every open without a herdr focus, or from the
+  Codex app, waited for it. Two changes fixed it:
+  - Vignette asks Codex for the five threads used last instead of fifteen. The whole discovery
+    took 0.15 s instead of 0.89 s.
+  - Vignette keeps the last Codex list and answers from it at once, while a fresh one is asked
+    for. It asks again at launch, on a capture and when the stack opens, so the kept list is
+    current before an editor opens.
+
+  herdr is always asked afresh, because its focus moves as you change panes. On the demo copy the
+  kept list answered at 0 ms, herdr at 62 ms and the fresh Codex list at 114 ms. The editor takes
+  clicks at about 200 ms. Coming from the Codex app, a kept list that doesn't hold the open thread
+  waits for the fresh one, since the thread may have started since.
+- **The menu lists only active sessions,** five at most, and the target always, so its check is
+  seen. A Claude Code session is active while it runs in a herdr pane. Nothing says which threads
+  the Codex app has open, so a Codex thread counts when it was used in the last day. On 2026-09-25,
+  2 of the 15 threads the listing returned had been, and the rest were 33 hours to 17 days old.
+  Pete removed More sessions the same day: "i don't see people using this".
 - **Reply goes to the session the image names**: an agent's reply to a request, or a push with
   `session=`. If that Claude Code session is missing from the whole list, it has closed, since herdr
   lists every pane, and the bar changes to the layout for your own screenshot. A Codex thread is

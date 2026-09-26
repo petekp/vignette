@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     private var statusItem: NSStatusItem?
     private var watcher: ScreenshotWatcher?
+    /// True on a first launch whose folder macOS protects, until setup asks for it.
+    private var watcherWaitsForSetup = false
     private var wakeObserver: Any?
     private var screenObserver: Any?
     private var hotKey: HotKey?
@@ -50,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         AppLocation.ejectDiskImageIfAsked()
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppDelegate.makeMainMenu()
-        let settingsSource = Settings.isOverridden ? " (VIGNETTE_SETTINGS)" : ""
+        let settingsSource = Settings.isOverridden ? " (VIGNETTE_SETTINGS) screencapture=\(AppleScreencapture.domainName)" : ""
         Log.writeLaunch("[app] launched \(BuildInfo.current.description) watching \(watchFolder.path) settings \(Settings.fileURL.path)\(settingsSource)")
         if let type = AppleScreencapture.string("type"), !ScreenshotWatcher.isCandidate("screenshot.\(type)") {
             Log.write("[settings] warning Apple screencapture type=\(type) is a format the watcher ignores")
@@ -82,35 +84,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return drawings.read(url, pixels: pixels, style: settings.data.ui.textStyle)
         }
         annotator.onDrawing = { [weak self] drawing, reason in self?.drawings.write(drawing, reason: reason) }
-        annotator.onSend = { [weak self] shot, drawing, destination in self?.sendDrawing(drawing, of: shot, to: destination) }
+        annotator.onSend = { [weak self] shot, drawing, destination, message in self?.sendDrawing(drawing, of: shot, to: destination, message: message) }
         annotator.onCopyDrawing = { [weak self] shot, drawing in self?.copyDrawing(drawing, of: shot) }
         thumbnail.dragItems = { [weak self] cards in self?.dragItems(cards) ?? [] }
         settingsWindow.callbacks = SettingsWindowController.Callbacks(
             restoreAppleDefaults: { [weak self] in self?.restoreAppleDefaults() },
             openTweaks: { [weak self] in self?.debugPanel.toggle() },
-            installAgentSkill: { [weak self] root in self?.installAgentSkill(into: [root]) },
-            removeAgentSkill: { [weak self] root in self?.removeAgentSkill(from: [root]) })
+            installAgentSkill: { [weak self] root in self?.installAgentSkill(into: [root], toast: false) ?? [] },
+            removeAgentSkill: { [weak self] root in self?.removeAgentSkill(from: [root], toast: false) ?? [] },
+            folderDenied: { [weak self] in self?.watcher?.isDenied ?? false })
         // Before the watcher, so a capture taken during launch already lands the way Vignette needs.
         settings.reconcileApple()
         startDrawings()
         startRequests()
-        startWatching()
+        // A first launch leaves a folder macOS protects alone until setup has said why Vignette
+        // needs it: the watcher's first read is what raises macOS's prompt.
+        watcherWaitsForSetup = setupWindow.isUnasked && ScreenshotWatcher.protectedArea(of: watchFolder) != nil
+        if watcherWaitsForSetup {
+            Log.write("[watcher] waiting for setup to ask for \(watchFolder.path)")
+        } else {
+            startWatching()
+        }
         registerHotKey()
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
         if let notice = settings.startupNotice { thumbnail.showFeedback(notice) }
         // Setup comes first and has the launch to itself: two windows competing for a first-time
         // user is worse than the skill offer waiting until the next launch.
         if setupWindow.isUnasked {
-            // The login item waits for the window to close, which applies the switch it shows.
-            setupWindow.show(hasScreenshots: { [weak self] in self?.hasScreenshots ?? false },
-                             folderDenied: { [weak self] in self?.watcher?.isDenied ?? false })
+            // The login item and the skill wait for the window to close, which applies the
+            // switches it shows.
+            setupWindow.show(protectedArea: watcherWaitsForSetup ? ScreenshotWatcher.protectedArea(of: watchFolder) : nil,
+                             callbacks: SetupWindowController.Callbacks(
+                                hasScreenshots: { [weak self] in self?.hasScreenshots ?? false },
+                                folderAccess: { [weak self] in self?.folderAccess ?? .ask },
+                                askFolder: { [weak self] in self?.askForFolder() },
+                                installAgentSkill: { [weak self] roots in self?.installAgentSkill(into: roots) }))
         } else {
             // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
             LoginItem.apply(settings.data.launchAtLogin)
             startAgentSkill()
         }
+        requests.refreshKeptLists()
         // The contract for agents: after this line every command answers.
         Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) watching=\(watchFolder.path)")
+    }
+
+    /// Opening Vignette again, from Finder, Spotlight or the Dock, opens Settings. With the menu bar
+    /// icon hidden it is the one way back to them.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        Log.write("[app] reopened")
+        if !setupWindow.bringToFront() { settingsWindow.show() }
+        return false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -140,7 +164,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private func settingsChanged(_ old: SettingsData, _ new: SettingsData) {
         if new.ui != old.ui { thumbnail.applyTweaks(); annotator.applyTweaks(); warmThumbnails() }
         if new.recentCount != old.recentCount { warmThumbnails() }
-        if new.screenshotsFolder != old.screenshotsFolder { startWatching() }
+        if new.screenshotsFolder != old.screenshotsFolder {
+            // A folder macOS doesn't protect needs no asking, so a move to one while setup waits
+            // starts the watch at once.
+            if !watcherWaitsForSetup {
+                startWatching()
+            } else if ScreenshotWatcher.protectedArea(of: watchFolder) == nil {
+                askForFolder()
+            } else {
+                Log.write("[watcher] waiting for setup to ask for \(watchFolder.path)")
+            }
+        }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
         if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
@@ -155,32 +189,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if settings.data.agentSkillChoice == .unasked { offerAgentSkill() }
         let existing = SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
             .filter { SkillInstaller.state(of: $0) == .installed }
-        if !existing.isEmpty { installAgentSkill(into: existing) }
+        if !existing.isEmpty { installAgentSkill(into: existing, onlyNewer: true) }
     }
 
-    /// The Agents tab's Install, and `install-skill`.
+    /// The Agents tab's switch, the setup window, and `install-skill`, which always write; and the
+    /// launch, which writes only a newer version (`onlyNewer`). The Agents tab shows a failure under
+    /// the agent's name, so it asks for no toast.
     @discardableResult
-    func installAgentSkill(into roots: [URL]) -> [SkillInstaller.Result] {
+    func installAgentSkill(into roots: [URL], toast: Bool = true, onlyNewer: Bool = false) -> [SkillInstaller.Result] {
         guard let source = SkillInstaller.bundled else {
-            Log.write("[skill] error missing-file \(SkillInstaller.skillName) is not in the bundle"); return []
+            Log.write("[skill] error missing-file \(SkillInstaller.skillName) is not in the bundle")
+            return roots.map { SkillInstaller.Result(root: $0, path: SkillInstaller.destination(in: $0), outcome: .failed,
+                                                     detail: "the skill is missing from this copy of Vignette") }
         }
-        return report(SkillInstaller.install(source: source, into: roots), verb: "install")
+        return report(SkillInstaller.install(source: source, into: roots, onlyNewer: onlyNewer), verb: "install", toast: toast)
     }
 
-    /// The Agents tab's Remove.
+    /// The Agents tab's switch, turned off.
     @discardableResult
-    func removeAgentSkill(from roots: [URL]) -> [SkillInstaller.Result] {
-        report(SkillInstaller.remove(from: roots), verb: "remove")
+    func removeAgentSkill(from roots: [URL], toast: Bool = true) -> [SkillInstaller.Result] {
+        report(SkillInstaller.remove(from: roots), verb: "remove", toast: toast)
     }
 
     /// One line for everything that changed, and a toast for everything that failed. A launch with
     /// every copy already current says nothing.
     @discardableResult
-    private func report(_ results: [SkillInstaller.Result], verb: String) -> [SkillInstaller.Result] {
+    private func report(_ results: [SkillInstaller.Result], verb: String, toast: Bool) -> [SkillInstaller.Result] {
         for result in results where ![.unchanged, .absent].contains(result.outcome) {
             Log.write("[skill] \(result.outcome.rawValue) \(result.path.path)\(result.detail.isEmpty ? "" : " \(result.detail)")")
         }
-        for result in results where result.outcome == .failed {
+        for result in results where result.outcome == .failed && toast {
             thumbnail.showFeedback("Couldn't \(verb) the skill for \(SkillInstaller.agentName(of: result.root))")
         }
         return results
@@ -244,10 +282,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             let focused = thumbnail.focusedShot
             pressDismissed = pressRecent() == .dismissed
             holdTarget = pressDismissed ? focused : nil
+            if !pressDismissed { requests.refreshKeptLists() }   // a card from the stack may open next
         }
         let hold = { [weak self] in
             guard let self else { return }
             Log.write("[hotkey] hold")
+            NotificationCenter.default.post(name: .hotKeyHeld, object: nil)
             if pressDismissed { _ = pressRecent() }
             if let shot = holdTarget, shot.kind == .image { annotate([shot]) } else { annotateLast() }
         }
@@ -684,15 +724,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         menu.addItem(recentItem)
 
-        let drawItem = NSMenuItem(title: "Draw on Last Screenshot", action: #selector(annotateLast), keyEquivalent: "")
-        if let shortcut { drawItem.badge = NSMenuItemBadge(string: "hold \(shortcut.label)") }
+        let drawItem = NSMenuItem(title: "Draw on Newest Screenshot", action: #selector(annotateLast), keyEquivalent: "")
+        if let shortcut { drawItem.badge = NSMenuItemBadge(string: shortcut.holdLabel) }
         menu.addItem(drawItem)
 
+        // The same two switches, under the same heading, as the Settings window's Screenshots tab.
         menu.addItem(.separator())
-        let copyItem = NSMenuItem(title: "Copy New Screenshots", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
+        menu.addItem(.sectionHeader(title: "After a Screenshot"))
+        let copyItem = NSMenuItem(title: "Copy to Clipboard", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
         copyItem.state = settings.data.copyOnCapture ? .on : .off
         menu.addItem(copyItem)
-        let captureItem = NSMenuItem(title: "Draw on New Screenshots", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
+        let captureItem = NSMenuItem(title: "Open to Draw", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
         captureItem.state = settings.data.annotateOnCapture ? .on : .off
         menu.addItem(captureItem)
 
@@ -888,21 +930,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private func refreshDestinations(for shot: Screenshot) {
         annotator.beginDestinations(replyTo: requests.origin(of: shot.url) ?? Agent.origin(of: shot.url))
         let asked = CACurrentMediaTime()
-        requests.destinations { [weak self] found, complete in
+        let app = FocusReturn.shared.previousApp
+        guard let client = AgentApp.client(of: app), let pid = app?.processIdentifier else {
+            return listDestinations(for: shot, asked: asked, cameFrom: nil)
+        }
+        // The thread open in the agent's app is read before anything is listed: herdr's answer comes
+        // first and would settle the target on a pane you were not in.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let open = AgentApp.openThread(pid: pid)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.annotator.currentKey == shot.url.path else { return }
+                Log.write("[send] came from the \(client.label) app, open thread \(open == nil ? "unread" : "read") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms")
+                self.listDestinations(for: shot, asked: asked, cameFrom: (client, open))
+            }
+        }
+    }
+
+    private func listDestinations(for shot: Screenshot, asked: CFTimeInterval, cameFrom: (client: AgentClient, open: String?)?) {
+        let named = cameFrom.flatMap { from in from.open.map { (from.client, $0) } }
+        requests.destinations(named: named) { [weak self] found, complete, fresh in
             guard let self else { return }
-            Log.write("[send] sessions \(found.count)\(complete ? " complete" : "") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
+            Log.write("[send] sessions \(found.count)\(complete ? " complete" : "")\(fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
             // Listing the sessions runs subprocesses that can take seconds, so two images' answers
             // can arrive out of order. An answer for an image the editor has left would label the
             // one that replaced it, and a reply would go to a session it was never about.
             guard self.annotator.currentKey == shot.url.path else { return }
-            self.annotator.destinationsAnswered(found, complete: complete)
+            guard let cameFrom else { return self.annotator.destinationsAnswered(found, complete: complete) }
+            let marked = AgentDestination.cameFrom(cameFrom.client, open: cameFrom.open, in: found, fresh: fresh)
+            // Nothing marked from a kept list means the open thread may be newer than it, so the
+            // target waits for the fresh one rather than settling on the thread used last.
+            let waits = !fresh && !marked.contains { $0.focus == .app }
+            self.annotator.destinationsAnswered(marked, complete: complete && !waits)
         }
     }
 
     /// Send, from the annotator's toolbar. The drawing is rendered without closing anything; the
     /// image leaves the editor only once that rendering and the request are stored, so a failure
     /// anywhere before then leaves the drawing exactly where the hand left it.
-    private func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination) {
+    private func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination, message: String?) {
         guard !annotator.sending, let session = annotator.session else { return }
         let name = shot.url.lastPathComponent
         // Nothing drawn is a send of the screenshot itself, which is what the person is looking at.
@@ -914,7 +979,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 thumbnail.showFeedback("Could not read \(name)")
                 return
             }
-            return submit(bytes, of: shot, to: destination)
+            return submit(bytes, of: shot, to: destination, message: message)
         }
         annotator.sending = true
         let ui = settings.data.ui
@@ -934,12 +999,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 thumbnail.showFeedback("Could not render the drawing; see the log")
                 return
             }
-            submit(png, of: shot, to: destination)
+            submit(png, of: shot, to: destination, message: message)
         }
     }
 
-    private func submit(_ png: Data, of shot: Screenshot, to destination: AgentDestination) {
-        guard requests.send(png: png, source: shot.url, to: destination) != nil else {
+    private func submit(_ png: Data, of shot: Screenshot, to destination: AgentDestination, message: String?) {
+        guard requests.send(png: png, source: shot.url, to: destination, message: message) != nil else {
             thumbnail.showFeedback("Could not store the request; see the log"); return
         }
         // Stored, so the request survives whatever the client does next. The image goes home
@@ -971,6 +1036,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         NSWorkspace.shared.open(Log.url)
     }
 
+    /// Setup's Allow…, or the window closing: the watcher's first read raises macOS's prompt.
+    private func askForFolder() {
+        guard watcherWaitsForSetup else { return }
+        watcherWaitsForSetup = false
+        startWatching()
+    }
+
+    /// Where macOS's permission for the folder stands, as setup shows it.
+    private var folderAccess: FolderAccess {
+        guard let watcher else { return .ask }
+        if watcher.isDenied { return .refused }
+        return watcher.isReadable ? .granted : .waiting
+    }
+
     private func startWatching() {
         Log.write("[watcher] watching \(watchFolder.path)")
         watcher = ScreenshotWatcher(folder: watchFolder, onNew: { [weak self] url in
@@ -987,6 +1066,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             // stored. A watcher report for one — the copy that made it, or a later rescan — is
             // never a capture, so it neither goes to the clipboard nor opens the editor.
             guard self.requests.isCapture(url) else { return }
+            self.requests.refreshKeptLists()   // so Send's list is current if this opens in the editor
             if self.settings.data.copyOnCapture {
                 Clipboard.copyFiles([url])
                 Log.write("[watcher] copied \(url.lastPathComponent)")

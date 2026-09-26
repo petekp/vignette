@@ -97,13 +97,27 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertFalse(try ticket(for: record).secret.isEmpty)
     }
 
-    func testTheRequestLineNamesTheFixedImageAndTheTicketAndNotTheSecret() throws {
+    /// The line names only the image. The skill finds the ticket beside it, so that is where it must be.
+    func testTheRequestLineNamesTheImageBesideItsTicketAndNotTheSecret() throws {
         let record = try makeRequest()
-        let line = ScreenshotRequests.requestLine(record: record, ticket: try ticket(for: record), root: root)
-        XCTAssertTrue(line.contains(record.id))
-        XCTAssertTrue(line.contains("ticket.json"))
+        let line = ScreenshotRequests.requestLine(record: record, root: root)
+        let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
+        XCTAssertTrue(line.hasPrefix("From Vignette: \"\(directory.appendingPathComponent("image.png").path)\""))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("ticket.json").path))
         XCTAssertFalse(line.contains(try ticket(for: record).secret), "a secret in the line would be logged with the URL")
         XCTAssertFalse(line.contains("\n"), "herdr submits the line with Return")
+
+        let asked = ScreenshotRequests.requestLine(record: record, root: root, message: "Make this bigger")
+        XCTAssertEqual(asked, line + " Make this bigger", "the person's message ends the line")
+    }
+
+    /// The field takes line breaks from a paste or Option+Return; the line cannot hold them.
+    func testAMessageJoinsTheLineAsOneLineAndABlankOneIsNone() {
+        let model = AnnotatorToolbar.Model()
+        model.message = "  Make this bigger\nand bluer\r\n\tplease  "
+        XCTAssertEqual(model.sentMessage, "Make this bigger and bluer please")
+        model.message = " \n\t "
+        XCTAssertNil(model.sentMessage)
     }
 
     // MARK: Acceptance

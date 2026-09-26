@@ -23,6 +23,21 @@ final class AnnotatorToolbar {
         private var picked = false
         /// A send is rendering or submitting. The button says so and takes no second click.
         @Published var sending = false
+        /// What the person typed to go with Send or Reply, as typed. Kept until the next image opens,
+        /// so a send that fails keeps it for the next try.
+        @Published var message = ""
+        /// The bar's panel holds the keys, which it does only while the message field is typed in.
+        @Published var keyed = false
+
+        /// The most characters the message holds, as for a text mark.
+        static let messageLimit = MarkFields.maxTextLength
+
+        /// The message as it joins the line Send puts in the session, which is one line: its words with
+        /// one space between each, whatever line breaks, tabs or spaces were there. Nil when there are none.
+        var sentMessage: String? {
+            let words = message.split(whereSeparator: \.isWhitespace)
+            return words.isEmpty ? nil : words.joined(separator: " ")
+        }
 
         var offer: ToolbarOffer {
             ToolbarOffer(replyTo: replyTo, destinations: destinations, listed: listed, target: target)
@@ -31,16 +46,17 @@ final class AnnotatorToolbar {
         /// A new image: nothing listed yet, and nothing picked.
         func begin(replyTo: AgentDestination?) {
             self.replyTo = replyTo
+            message = ""
             destinations = []
             listed = false
             target = nil
             picked = false
         }
 
-        /// Another client answered. The target settles as soon as herdr's focus names a session,
-        /// and otherwise once every client has answered, since the session used last is a comparison
-        /// across all of them. Once settled it changes only when its session is gone from the whole
-        /// list, so it never changes under the pointer.
+        /// Another client answered. The target settles as soon as a focus names a session (herdr's,
+        /// or the agent app you came from), and otherwise once every client has answered, since the
+        /// session used last is a comparison across all of them. Once settled it changes only when
+        /// its session is gone from the whole list, so it never changes under the pointer.
         func answered(_ list: [AgentDestination], complete: Bool) {
             destinations = list
             listed = complete
@@ -62,7 +78,10 @@ final class AnnotatorToolbar {
     var onTool: ((EditorCore.Tool) -> Void)?
     var onDone: (() -> Void)?
     var onSend: ((AgentDestination) -> Void)?
+    /// Esc in the message field: the keys go back to the editor.
+    var onMessageEnd: (() -> Void)?
     private var hosting: NSHostingView<ToolbarView>!
+    private var keyObservers: [NSObjectProtocol] = []
     /// Where `place` last put the bar, so a bar whose contents change width can centre again.
     private var placedBelow: (frame: NSRect, gap: CGFloat)?
 
@@ -72,7 +91,8 @@ final class AnnotatorToolbar {
     private var hideGeneration = 0
 
     init() {
-        panel = ToolbarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
+        let panel = ToolbarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
+        self.panel = panel
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false   // the bar draws its own; a window shadow cannot follow the animated content
@@ -86,8 +106,28 @@ final class AnnotatorToolbar {
                                                       onPick: { [weak self] in
                                                           self?.model.pick($0)
                                                           self?.refit()
-                                                      }))
+                                                      },
+                                                      onMessageFocus: { [weak self] _ in self?.refit() },
+                                                      onMessageEnd: { [weak self] in self?.onMessageEnd?() }))
         panel.contentView = hosting
+        panel.onCommandReturn = { [weak self] in
+            guard let self, !model.sending, let destination = model.offer.destination else { return }
+            onSend?(destination)
+        }
+        // A field keeps first responder in a panel that is not key, and AppKit makes it the panel's
+        // first responder when the bar comes up. So the field counts as typed in only while the
+        // panel is key, and losing the keys ends typing in it, as a click elsewhere does.
+        keyObservers = [
+            NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: panel, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.model.keyed = true }
+            },
+            NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.model.keyed = false
+                    _ = self?.panel.makeFirstResponder(nil)
+                }
+            },
+        ]
     }
 
     /// Centers the toolbar under `frame`, `gap` points below it. A bar that is already up — one
@@ -165,6 +205,7 @@ final class AnnotatorToolbar {
     func show() {
         hideGeneration += 1
         panel.orderFront(nil)
+        panel.makeFirstResponder(nil)
         DispatchQueue.main.async { [weak self] in self?.model.shown = true }
     }
 
@@ -195,11 +236,34 @@ final class AnnotatorToolbar {
     }
 }
 
-/// Never key: typing and shortcuts stay with the editor window this panel belongs to.
+/// Key only for the message field: a press on it takes the keys, and a press anywhere else in the
+/// bar leaves them, and so the tool keys and shortcuts, with the editor window. SwiftUI's buttons
+/// ask for the keys as a text field does, so `becomesKeyOnlyIfNeeded` cannot tell them apart.
 @MainActor
 private final class ToolbarPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    private var pressOnField = false
+    /// Cmd+Return while the message field has the keys: Send, as in the editor.
+    var onCommandReturn: (() -> Void)?
+    override var canBecomeKey: Bool { pressOnField || isKeyWindow }
     override var canBecomeMain: Bool { false }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, [36, 76].contains(event.keyCode), event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+            onCommandReturn?()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, let content = contentView {
+            // NSWindow makes itself key inside `super.sendEvent`, so the answer is ready before it asks.
+            var view = content.hitTest(content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow)
+            while let current = view, !(current is NSTextField || current is NSText) { view = current.superview }
+            pressOnField = view != nil
+        }
+        super.sendEvent(event)
+    }
 }
 
 /// What the bar offers for the open image, and so what Return and Cmd+Return do. Each case has one
@@ -244,16 +308,47 @@ enum ToolbarOffer: Equatable {
     }
 }
 
+/// A blur of what is behind the window, as a popover has. SwiftUI's materials blend only with the
+/// window's own content, so over the bar's panel they show the bar's edge through them.
+private struct BehindWindowBlur: NSViewRepresentable {
+    let cornerRadius: CGFloat
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .popover
+        view.blendingMode = .behindWindow
+        // The bar's panel is seldom key, and an inactive effect view draws flat.
+        view.state = .active
+        view.wantsLayer = true
+        view.layer?.cornerRadius = cornerRadius
+        view.layer?.cornerCurve = .continuous
+        view.layer?.masksToBounds = true
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
 private struct ToolbarView: View {
     @ObservedObject var model: AnnotatorToolbar.Model
+    @ObservedObject private var settings = Settings.shared
     let onTool: (EditorCore.Tool) -> Void
     let onDone: () -> Void
     let onSend: (AgentDestination) -> Void
     let onPick: (AgentDestination) -> Void
+    let onMessageFocus: (Bool) -> Void
+    let onMessageEnd: () -> Void
+    @FocusState private var focused: Bool
+    /// Counts Returns in the message field that did not send, each of which bounces Send's ⌘↩.
+    @State private var sendNudges = 0
+    /// The message field is being typed in.
+    private var typing: Bool { focused && model.keyed }
 
-    /// How many sessions the menu shows before "More sessions". The one you are sending to is
-    /// almost always among the few used last.
-    private static let recentCount = 5
+    /// The message field's width in the bar, and the most lines it grows to while it is typed in.
+    private static let messageWidth: CGFloat = 220
+    private static let messageLines = 6
+    /// The room under the bar the grown field may take, reserved in the panel while it is typed in.
+    private static let messageRoom: CGFloat = 110
 
     var body: some View {
         HStack(spacing: 2) {
@@ -279,9 +374,20 @@ private struct ToolbarView: View {
                 targetMenu(target)
                     .disabled(model.sending)
                     .padding(.trailing, 4)
+                // Vignette picked this session, so Return in the field sends only when Settings says so
+                // (`sendWithReturn`); otherwise it points at ⌘↩, which sends either way.
+                messageField(returnSends: { settings.data.sendWithReturn }) { onSend(target) }
+                    .padding(.trailing, 4)
                 actionButton(model.sending ? "Sending…" : "Send", key: "⌘↩", logo: nil) { onSend(target) }
                     .help("Send the drawing to this session (⌘↩)")
+                    .keyframeAnimator(initialValue: CGFloat(1), trigger: sendNudges) { content, scale in content.scaleEffect(scale) } keyframes: { _ in
+                        let motion = Settings.shared.motionScale
+                        CubicKeyframe(motion > 0 ? 1.08 : 1, duration: 0.09)
+                        SpringKeyframe(1, duration: 0.35 * max(motion, 0.01), spring: .bouncy)
+                    }
             case .reply(let origin):
+                messageField(returnSends: { true }) { onSend(origin) }
+                    .padding(.trailing, 4)
                 actionButton(model.sending ? "Sending…" : "Reply", key: "↩", logo: origin.client) { onSend(origin) }
                     .help("Send the drawing back to the session it came from (↩)")
             }
@@ -293,6 +399,9 @@ private struct ToolbarView: View {
         .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
         .fixedSize()
         .padding(AnnotatorToolbar.padding)
+        // Room below for the field to grow into. The panel's top stays where it is (`position`).
+        .padding(.bottom, typing ? Self.messageRoom : 0)
+        .onChange(of: typing) { _, now in onMessageFocus(now) }
         // In: rises a little and settles on a spring. Out: a short fade while it sinks back.
         .opacity(model.shown ? 1 : 0)
         .scaleEffect(model.shown ? 1 : 0.94, anchor: .top)
@@ -316,6 +425,54 @@ private struct ToolbarView: View {
         }
         .buttonStyle(TactileButtonStyle(shape: .rounded, hoverScale: 1))
         .help("Copy the drawing and close (↩)")
+    }
+
+    /// What goes with the drawing, typed in the bar. One line wide in the bar; while it is typed in
+    /// it grows down past the bar's bottom, up to `messageLines` lines, and the bar keeps its size.
+    /// Cmd+Return sends (`ToolbarPanel`). Return sends only when `returnSends`: beside Reply, as in
+    /// the editor, and beside Send when `sendWithReturn` is on. It is asked when Return is pressed,
+    /// because the field keeps the submit action it was made with when the setting changes under it.
+    /// Esc hands the keys back to the editor.
+    private func messageField(returnSends: @escaping () -> Bool, send: @escaping () -> Void) -> some View {
+        let grown = typing && !model.message.isEmpty
+        return Color.clear
+            .frame(width: Self.messageWidth, height: 30)
+            .overlay(alignment: .top) {
+                TextField("Add a message", text: $model.message, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .lineLimit(typing ? 1...Self.messageLines : 1...1)
+                    .focused($focused)
+                    .disabled(model.sending)
+                    .onSubmit {
+                        if !returnSends() { sendNudges += 1 } else if !model.sending { send() }
+                    }
+                    .onExitCommand { onMessageEnd() }
+                    .onChange(of: model.message) { _, words in
+                        if words.count > AnnotatorToolbar.Model.messageLimit { model.message = String(words.prefix(AnnotatorToolbar.Model.messageLimit)) }
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 7)
+                    .frame(width: Self.messageWidth, alignment: .topLeading)
+                    .frame(minHeight: 30)
+                    // Its own height, not the slot's, so it grows down past the bar.
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background {
+                        // Grown, it hangs below the bar over whatever is behind, so it takes a blur of
+                        // that, as a popover does. The shape under the blur casts its shadow.
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.primary.opacity(0.09))
+                                .shadow(color: .black.opacity(grown ? 0.3 : 0), radius: 10, y: 4)
+                            BehindWindowBlur(cornerRadius: 7).opacity(grown ? 1 : 0)
+                        }
+                    }
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(Color.accentColor.opacity(typing ? 0.8 : 0), lineWidth: 1))
+                    .animation(Anim.spring(0.25 * Settings.shared.motionScale), value: model.message)
+                    .animation(Anim.spring(0.25 * Settings.shared.motionScale), value: typing)
+            }
+            .help("Words to send with the drawing")
     }
 
     /// Send or Reply: the filled button, with the agent's logo when it goes back to one.
@@ -342,17 +499,12 @@ private struct ToolbarView: View {
     }
 
     /// Where Send goes: the agent's logo and the session's project, apart from Send itself. The menu
-    /// is only for changing it; the session used last leads it.
+    /// is only for changing it: the active sessions used last, the target among them
+    /// (`AgentDestination.menu`).
     private func targetMenu(_ target: AgentDestination) -> some View {
-        let sessions = model.destinations
-        return Menu {
+        Menu {
             Section("Send to") {
-                ForEach(Array(sessions.prefix(Self.recentCount))) { row($0, target: target) }
-            }
-            if sessions.count > Self.recentCount {
-                Menu("More sessions") {
-                    ForEach(Array(sessions.dropFirst(Self.recentCount))) { row($0, target: target) }
-                }
+                ForEach(AgentDestination.menu(model.destinations, target: target)) { row($0, target: target) }
             }
         } label: {
             HStack(spacing: 6) {
