@@ -345,13 +345,13 @@ final class ScreenshotRequests {
 
     /// The one line the agent receives, which arrives in the person's session as their own message.
     /// It names only the image; the skill says how to answer with a drawing, using the `ticket.json`
-    /// beside it. The person's message, already one line (`AnnotatorToolbar.Model.sentMessage`), ends
-    /// it, so it reads as what they ask of the image. One line, because herdr submits it with Return.
-    /// The ticket's secret never travels.
+    /// beside it. The person's message, already one line (`AnnotatorToolbar.Model.sentMessage`), leads
+    /// it, as the request, and the Vignette part follows in brackets, as a note on what came with it.
+    /// One line, because herdr submits it with Return. The ticket's secret never travels.
     static func requestLine(record: Record, root: URL, message: String? = nil) -> String {
         let image = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("image.png").path
-        let line = "From Vignette: \"\(image)\". If a drawing would answer better than words, you can send one back."
-        return message.map { "\(line) \($0)" } ?? line
+        let note = "From Vignette: \"\(image)\". If a drawing would answer better than words, you can send one back."
+        return message.map { "\($0) [\(note)]" } ?? note
     }
 
     // MARK: Accepting a reply

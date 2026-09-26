@@ -32,11 +32,11 @@ Vignette request 3f0de335-c8a7-4295-a966-1ed61c9252b8: open the drawing at "/Use
 
 ## What moved to the skill
 
-- **When to load it.** The skill's description now says to use it when a message starts
+- **When to load it.** The skill's description now says to use it when a message contains
   "From Vignette:". Before, it covered only showing the user an image.
 - **Where the ticket is.** `ticket.json` is in the image's folder. A test holds that.
-- **Where the helper is.** The skill's own `scripts/reply`. Vignette rewrites an installed copy
-  that differs from its bundle at every launch, so the helper stays current.
+- **Where the helper is.** The skill's own `scripts/reply`. A launch rewrites an installed copy
+  whose version is older than the bundle's, so the helper stays current.
 - **Which app to answer.** A fork answers to its own URL scheme, which the old line passed as
   `--scheme`. The helper now reads it from the Info.plist of the app the ticket names.
 
@@ -44,14 +44,21 @@ The cost: an agent without the skill can read the drawing, but cannot answer wit
 
 ## A message with the drawing (2026-09-26)
 
-The bar has a message field beside Send and Reply. What the person types there ends the line:
+The bar has a message field beside Send and Reply. What the person types there leads the line, and
+the Vignette part follows in brackets:
 
 ```text
-From Vignette: "<folder>/image.png". If a drawing would answer better than words, you can send one back. Make this button bigger
+Make this button bigger [From Vignette: "<folder>/image.png". If a drawing would answer better than words, you can send one back.]
 ```
 
-- **At the end,** so the line still starts "From Vignette:", which is what the skill's description
-  looks for, and the agent reads the context before the ask.
+- **The message first.** The first build put it at the end, after "send one back.", so the line
+  still started "From Vignette:". Pete found that haphazard: the ask read as an afterthought
+  tacked onto an instruction. First, it is the request, as a message typed in the session would
+  be, and the person sees their own words first in the transcript.
+- **The rest in brackets,** so it reads as a note on what came with the message rather than a
+  second request. The skill's description looks for "From Vignette:" anywhere in a message, so
+  it still loads.
+- **Without a message, the line is as before.**
 - **One line.** Line breaks and tabs from a paste or Option+Return become single spaces
   (`AnnotatorToolbar.Model.sentMessage`), because herdr submits the line with Return.
 - **Not stored.** The message travels in the line only. The request's record and the log leave it

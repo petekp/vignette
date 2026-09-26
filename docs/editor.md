@@ -583,9 +583,10 @@ a session the host picked; the host sets both keys from what its toolbar offers
 - The message field is one line in the bar. While it is typed in, it grows down past the bar's
   bottom, up to six lines, and the bar keeps its size. Cmd+Return in it sends. Return replies on a
   card that names its session; beside Send it sends nothing and bounces Send's ⌘↩, since Return
-  never sends to a session Vignette picked. Esc, or a click on the image, hands the keys back to the
+  never sends to a session Vignette picked, unless Send with Return is on in Settings > Agents
+  (`sendWithReturn`). Esc, or a click on the image, hands the keys back to the
   editor, and the field shrinks back to one line.
-  What it holds ends the line Send puts in the session (`docs/request-line-2026-09-25.md`). It is
+  What it holds leads the line Send puts in the session (`docs/request-line-2026-09-25.md`). It is
   kept until the next image opens, so a send that fails keeps it.
 - For each tool, the editor supplies an id, a label, a key and an SF Symbol:
 

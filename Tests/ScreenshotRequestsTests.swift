@@ -108,7 +108,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertFalse(line.contains("\n"), "herdr submits the line with Return")
 
         let asked = ScreenshotRequests.requestLine(record: record, root: root, message: "Make this bigger")
-        XCTAssertEqual(asked, line + " Make this bigger", "the person's message ends the line")
+        XCTAssertEqual(asked, "Make this bigger [\(line)]", "the person's message leads, and the Vignette part is a note after it")
     }
 
     /// The field takes line breaks from a paste or Option+Return; the line cannot hold them.
