@@ -4,10 +4,9 @@
   <a href="https://vignette.pete.design"><img src="docs/logotype.svg" width="150" alt="Vignette"></a>
 </p>
 
-What if macOS's built-in screenshot tool had continued to evolve after 2010? That's the idea
-behind Vignette.
+What if macOS's built-in screenshot tool continuing evolving after 2010 and was built with AI in mind? Meet Vignette.
 
-## See it
+## Tour
 
 ![Recent screenshots stacked as cards down the right edge of a Mac screen, and one of them open in the editor beside them, with a red rectangle and arrow drawn on it.](site/stack-and-editor.png)
 
