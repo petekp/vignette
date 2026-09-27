@@ -7,11 +7,14 @@ ships in the app bundle. The marks format is in [commands.md](commands.md).
 
 ## Installing
 
-The first launch that finds `~/.claude` or `~/.codex` opens Settings at the Agents section and asks
-once; `agentSkill` in settings.json records only that the offer was made. The tab lists every agent
-found on this Mac, says whether the skill is there, and gives each one its own Install or Remove
-button. Disk is the only record: a later launch rewrites a copy whose files differ from the app's
-and installs nothing new. `open -g vignette://install-skill` installs for every agent from a script.
+Setup's last page offers the skill when this Mac has `~/.claude` or `~/.codex`, with a switch for
+each agent, and installs the ones left on when setup closes. A settings file from before that page,
+or a setup closed before reaching it, gets the offer once, as the Settings window at the Agents
+section. `agentSkill` in settings.json records only that the offer was made. The Agents tab lists
+every agent found on this Mac with a switch that adds or removes the skill. Disk is the only record:
+a launch updates a copy that holds an older version than the app's, or none (`metadata.version`
+in `SKILL.md`), keeps any other, and installs nothing new. `open -g vignette://install-skill`
+installs for every agent from a script.
 
 Links are resolved all the way, so the skill is written where it really lives. An agent whose
 `skills` is a link into a repository of yours, or whose `vignette` folder is a link to a skill you

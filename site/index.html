@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Vignette</title>
-<meta name="description" content="The modern Mac screenshot tool for the agentic age. Your recent screenshots a double tap away, marked up in place, and a coding agent that can send you its own.">
+<meta name="description" content="The modern Mac screenshot tool for the agentic age. Your recent screenshots a double tap away, ready to draw on and hand to Claude Code or Codex, which can send you screenshots of its own.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Vignette">
-<meta property="og:description" content="The modern Mac screenshot tool for the agentic age. Your recent screenshots a double tap away, marked up in place, and a coding agent that can send you its own.">
+<meta property="og:description" content="The modern Mac screenshot tool for the agentic age. Your recent screenshots a double tap away, ready to draw on and hand to Claude Code or Codex, which can send you screenshots of its own.">
 <meta property="og:image" content="https://vignette.pete.design/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The Vignette wordmark beside a column of annotated screenshots, one from Claude and one from Codex.">
+<meta property="og:image:alt" content="The Vignette wordmark beside a column of screenshots with marks drawn on them, one from Claude and one from Codex.">
 <meta property="og:url" content="https://vignette.pete.design/">
 <link rel="canonical" href="https://vignette.pete.design/">
 <meta name="twitter:card" content="summary_large_image">
@@ -162,6 +162,9 @@
   .download {
     margin-bottom: 0.6rem;
   }
+  .download + figure {
+    margin-top: 2rem;
+  }
   .download a {
     display: inline-block;
     padding: 0.6rem 1.4rem;
@@ -201,16 +204,18 @@
 away, ready to mark up and drag straight into Claude Code or Codex. Your agent can send you
 screenshots too, with its own marks on them. You still take screenshots with Cmd+Shift+4.</p>
 
+<p class="download"><a href="https://github.com/petekp/vignette/releases/latest">Download Vignette</a></p>
+
 <figure>
-  <img src="stack-and-editor.png" width="1200" height="668" alt="A Mac screen with recent screenshots stacked as cards down the right edge and one of them open in the editor beside them, a red rectangle drawn on it.">
-  <figcaption>The recent stack, with one screenshot open in the editor.</figcaption>
+  <img src="stack-and-editor.png" width="1200" height="668" alt="A Mac screen with recent screenshots stacked as cards down the right edge and one of them open in the editor beside them, with a red rectangle and an arrow drawn on it.">
+  <figcaption>Your recent screenshots down the right edge, with one open in the editor.</figcaption>
 </figure>
 
 <section class="features">
 
   <div class="feature">
     <h2>Screenshot history</h2>
-    <p>Double-tap right Shift and your recent screenshots slide in from the right. Arrow keys move, Space selects, and Return opens one, while the app you're in stays in front.</p>
+    <p>Double-tap right Shift and your recent screenshots and screen recordings slide in from the right. Arrow keys move, Space selects, and Return opens one, while the app you're in stays in front.</p>
   </div>
 
   <div class="feature">
@@ -220,12 +225,12 @@ screenshots too, with its own marks on them. You still take screenshots with Cmd
 
   <div class="feature">
     <h2>Your agent shows you things</h2>
-    <p>With the skill that comes with Vignette, Claude Code or Codex can put a screenshot in your stack with its own marks on it, or ask you to circle something and read what you drew.</p>
+    <p>With the skill that comes with Vignette, Claude Code or Codex can put a screenshot in your stack with its own marks on it, and you can change them like your own. Your agent can also ask you to draw on one and read what you drew.</p>
   </div>
 
   <div class="feature">
     <h2>Send a drawing to a session</h2>
-    <p>Send lists your Codex threads and the Claude Code sessions running in herdr, the one you used last first. Your drawing goes to the one you pick. The agent features are experimental.</p>
+    <p>Send hands your drawing, with a message if you type one, to the Claude Code or Codex session you were just in. A click picks another. On a screenshot from your agent, Reply sends your drawing straight back. Claude Code needs to be running in <a href="https://herdr.dev">herdr</a>. The agent features are experimental.</p>
   </div>
 
   <div class="feature">
@@ -240,12 +245,12 @@ screenshots too, with its own marks on them. You still take screenshots with Cmd
 
   <div class="feature">
     <h2>Copies on capture</h2>
-    <p>Every screenshot goes to the clipboard as soon as macOS saves it, and the file stays in your screenshots folder.</p>
+    <p>Every screenshot goes to the clipboard as soon as macOS saves it, and the file stays in your screenshots folder. Vignette's thumbnail takes the place of macOS's, and a click on it opens the editor.</p>
   </div>
 
   <div class="feature">
     <h2>Three tools, no colour picker</h2>
-    <p>Rectangle, arrow and text. Vignette gives each mark the colour that stands out most against the image under it, and keeps your marks apart from the screenshot so you can change them later.</p>
+    <p>Rectangle, arrow and text. Type right after drawing a box or an arrow and a note starts beside it. Marks are red, and where red would be hard to see, Vignette picks a colour that stands out. Your marks stay apart from the screenshot, so you can change them later.</p>
   </div>
 
   <div class="feature">
@@ -257,10 +262,14 @@ screenshots too, with its own marks on them. You still take screenshots with Cmd
 
 <p class="download"><a href="https://github.com/petekp/vignette/releases/latest">Download Vignette</a></p>
 
-<p>Open the disk image and drag Vignette to Applications. Or
-<a href="https://github.com/petekp/vignette">build it from source</a>.</p>
+<p>Free, for macOS 14 or later. Open the disk image and drag Vignette to Applications. The app is
+notarized by Apple. Or <a href="https://github.com/petekp/vignette">build it from source</a>.</p>
 
-<footer>macOS 14 or later. Vignette is MIT licensed.</footer>
+<p>The double tap needs Accessibility permission, which Vignette asks for when it first opens. If you'd
+rather not grant it, pick a key combination instead. Vignette turns off macOS's thumbnail, and a
+button in Settings turns it back on.</p>
+
+<footer>Vignette is MIT licensed.</footer>
 
 </main>
 </body>
