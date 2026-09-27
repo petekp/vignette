@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "3"
+  version: "5"
 ---
 
 # Vignette
@@ -15,8 +15,8 @@ command is a `vignette://` URL. Each one answers with one line in `~/Library/Log
 ## Show the user an image
 
 ```sh
-path=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "/abs/path/Checkout at 390px.png")
-open -g "vignette://add?file=$path&agent=claude&session=$CLAUDE_CODE_SESSION_ID"
+file=$(osascript -l JavaScript -e 'function run(argv) { return encodeURIComponent(argv[0]) }' "/abs/path/Checkout at 390px.png")
+open -g "vignette://add?file=$file&agent=claude&session=$CLAUDE_CODE_SESSION_ID"
 ```
 
 - `add` copies the file into the watch folder and shows its thumbnail. It leaves the clipboard
@@ -92,16 +92,21 @@ cat > /tmp/reply.json <<'JSON'
 [{"type": "arrow", "x": 0.50, "y": 0.90, "x2": 0.44, "y2": 0.62},
  {"type": "text",  "x": 0.20, "y": 0.92, "text": "this column is the one that overflows"}]
 JSON
-python3 "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --marks /tmp/reply.json
+sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --marks /tmp/reply.json
 ```
 
 - The marks are the same format as `&marks=` above, with the same limits.
-- `--image <your.png>` puts them on a picture of your own instead of the one you were sent.
-- It prints one JSON line and exits **0** accepted, **2** refused, **3** unconfirmed. Accepted means
-  Vignette has your reply and will keep it, not that the card is on screen yet.
+- `--image <your image>` puts them on a picture of your own instead of the one you were sent. It
+  is sent as a PNG, so a JPEG or any other image macOS reads works too. With a picture, the marks
+  may be `[]`.
+- It prints one JSON line and exits **0** accepted, **1** not sent, **2** refused, or
+  **3** unconfirmed. Accepted means Vignette has your reply and will keep it, not that the card is
+  on screen yet. Not sent means an argument, a file or a mark is wrong, and `error` says which.
 - **Unconfirmed means do not send a new reply.** Vignette never answered, so your reply may or may
   not have arrived. Retry the exact one, which can never make a second card:
-  `python3 "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --retry <the bundle path it printed>`.
+  `sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --retry <the bundle path it printed>`.
+  A retry that exits 1 sent nothing, but the first attempt may still have arrived, so do not send a
+  new reply then either.
 - Only that ticket authorizes a reply, and only to that one request. A request the
   user has cleared refuses new replies (`request-closed`).
 - Answer in words in your own session as usual. The reply carries only the drawing.

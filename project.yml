@@ -40,6 +40,9 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         VignetteBuild: $(VIGNETTE_BUILD)
+        # The binary answers `<binary> reply …` (ReplyCommand). The skill's scripts/reply reads this
+        # before running it: a binary without the command would start the app instead.
+        VignetteReplyCommand: true
         # Where "Check for Updates…" sends the user. A fork points this at its own releases.
         ReleasesURL: https://github.com/petekp/vignette/releases/latest
         LSUIElement: true

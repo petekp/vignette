@@ -46,6 +46,10 @@ final class ScreenshotRequestsTests: XCTestCase {
         return rep.representation(using: .png, properties: [:])!
     }
 
+    private func jpeg(_ side: Int) -> Data {
+        NSBitmapImageRep(data: png(side))!.representation(using: .jpeg, properties: [:])!
+    }
+
     /// A stored request with no connection behind it, so nothing is submitted anywhere.
     private func makeRequest() throws -> ScreenshotRequests.Record {
         let record = requests.send(png: png(), source: folder.appendingPathComponent("Screenshot.png"),
@@ -135,6 +139,62 @@ final class ScreenshotRequestsTests: XCTestCase {
         let receipt = try XCTUnwrap(self.receipt(record, attemptID))
         XCTAssertEqual(receipt.acceptance, .accepted)
         XCTAssertEqual(receipt.attemptID, attemptID)
+    }
+
+    /// The skill's helper is `ReplyCommand`. What it writes has to be what this side accepts, and a
+    /// retry of the same bundle has to be acknowledged without a second card.
+    func testAReplyTheCommandPreparesIsAcceptedAndItsRetryMakesNoSecondCard() throws {
+        let record = try makeRequest()
+        let ticketFile = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("ticket.json")
+        let ticket = try ReplyCommand.loadTicket(ticketFile.path)
+        let marksFile = root.deletingLastPathComponent().appendingPathComponent("marks.json")
+        try Data(#"[{"type":"arrow","x":0.5,"y":0.9,"x2":0.4,"y2":0.6},{"type":"text","x":0.2,"y":0.1,"text":"a \"quoted\" word"}]"#.utf8)
+            .write(to: marksFile)
+        let prepared = try ReplyCommand.prepare(ticket: ticket, marks: ReplyCommand.loadMarks(marksFile.path), image: nil)
+
+        let first = try ReplyCommand.writeAttempt(ticket: ticket, prepared: prepared)
+        requests.receiveReply(envelope: first.envelope)
+        let receipt = try XCTUnwrap(self.receipt(record, first.id))
+        XCTAssertEqual(receipt.acceptance, .accepted, receipt.errorCode ?? "")
+        XCTAssertTrue(ReplyCommand.answers(receipt, ticket: ticket, prepared: prepared, attemptID: first.id))
+        let cards = presented.count
+
+        let again = try ReplyCommand.reread(prepared.directory)
+        XCTAssertEqual(again, prepared, "a retry carries the same reply id and digest")
+        let second = try ReplyCommand.writeAttempt(ticket: ticket, prepared: again)
+        requests.receiveReply(envelope: second.envelope)
+        XCTAssertEqual(self.receipt(record, second.id)?.acceptance, .accepted)
+        XCTAssertEqual(presented.count, cards, "a retry makes no second card")
+    }
+
+    /// The command sends the agent's picture as a PNG whatever it was, and with it an empty marks
+    /// list, which is what the app accepts.
+    func testAPictureTheCommandSendsIsAPNGTheAppAccepts() throws {
+        let record = try makeRequest()
+        let ticketFile = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("ticket.json")
+        let ticket = try ReplyCommand.loadTicket(ticketFile.path)
+        let picture = root.deletingLastPathComponent().appendingPathComponent("picture.jpg")
+        try jpeg(6).write(to: picture)
+        let marksFile = root.deletingLastPathComponent().appendingPathComponent("marks.json")
+        try Data("[]".utf8).write(to: marksFile)
+        let prepared = try ReplyCommand.prepare(ticket: ticket, marks: ReplyCommand.loadMarks(marksFile.path, allowingEmpty: true),
+                                                image: ReplyCommand.loadImage(picture))
+
+        let attempt = try ReplyCommand.writeAttempt(ticket: ticket, prepared: prepared)
+        requests.receiveReply(envelope: attempt.envelope)
+        XCTAssertEqual(receipt(record, attempt.id)?.acceptance, .accepted)
+        let published = folder.appendingPathComponent(ReplyProtocol.replyFileName(prepared.replyID))
+        XCTAssertTrue(ReplyProtocol.isPNG(try Data(contentsOf: published)))
+    }
+
+    /// A reply is published as `Agent reply <id>.png`, so a picture in any other format is refused
+    /// rather than published under a name that says it is a PNG.
+    func testAReplyPictureThatIsNotAPNGIsRefused() throws {
+        let record = try makeRequest()
+        let attemptID = UUID().uuidString.lowercased()
+        requests.receiveReply(envelope: try stageReply(record, attemptID: attemptID, image: jpeg(6)))
+        XCTAssertEqual(receipt(record, attemptID)?.errorCode, ReplyProtocol.Refusal.badPayload.rawValue)
+        XCTAssertTrue(presented.isEmpty)
     }
 
     func testAReplyWithoutTheTicketIsRefusedAndNothingIsStored() throws {

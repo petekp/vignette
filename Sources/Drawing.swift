@@ -564,7 +564,8 @@ struct AgentMark: Codable, Equatable {
     /// brace, else the path to a file holding it. Throws the one thing wrong with it, worded for
     /// the error line: the index and the field, never what the file said, which the log would
     /// otherwise carry. Numbers are fractions of the image, so a pixel coordinate is caught here.
-    static func parse(_ value: String) throws -> [AgentMark] {
+    /// `allowingEmpty` accepts `[]`, for a reply that brings its own image and no marks.
+    static func parse(_ value: String, allowingEmpty: Bool = false) throws -> [AgentMark] {
         let data: Data
         if value.hasPrefix("[") || value.hasPrefix("{") {
             guard value.utf8.count <= maxBytes else { throw MarkProblem(tooBig(value.utf8.count)) }
@@ -583,7 +584,7 @@ struct AgentMark: Codable, Equatable {
         guard let list = (try? DrawingJSON.object(from: data)) as? [[String: Any]] else {
             throw MarkProblem("expected a JSON array of marks")
         }
-        guard !list.isEmpty else { throw MarkProblem("no marks in it") }
+        guard !list.isEmpty || allowingEmpty else { throw MarkProblem("no marks in it") }
         guard list.count <= maxCount else { throw MarkProblem("\(list.count) marks; at most \(maxCount)") }
         return try list.enumerated().map { index, item in
             do { return try AgentMark(validating: item) }

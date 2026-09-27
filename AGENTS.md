@@ -52,8 +52,8 @@ the measurements and the reasoning; a rule here points at its note.
   itself; it never launches the app). A build into another `-derivedDataPath` leaves `build/`,
   and an instance running from it, untouched.
 - `Sources/AgentConnection.swift`, `Sources/ScreenshotRequests.swift`, `Sources/ReplyProtocol.swift`,
-  and `skills/vignette/scripts/reply` are the closed loop: a drawing sent to an agent session and
-  that agent's drawing sent back. See the rules below and
+  `Sources/ReplyCommand.swift` and `skills/vignette/scripts/reply` are the closed loop: a drawing
+  sent to an agent session and that agent's drawing sent back. See the rules below and
   `docs/closed-agent-loop-implementation-2026-09-20.md`.
 - `Sources/Identity.swift` reads the bundle id, name, and URL scheme from the bundle and derives
   the log name, the status item's autosave name, the Application Support folder, and the Carbon
@@ -815,13 +815,27 @@ the same driven sequence; a single run varies.
   identity is a digest over the bundle file's own bytes and then the image's, which is why the
   helper and the app cannot disagree about how a number is spelled. The same reply id with the same
   digest is acknowledged from its record and makes no second card; with a different digest it is
-  refused and the first is untouched. `ReplyProtocol.version` and the helper's `PROTOCOL` go up
-  together.
+  refused and the first is untouched. Raise `ReplyProtocol.version` with any change to what either
+  side writes: a skill copy from before 2026-09-26 carries a Python helper that still answers.
+- The reply helper is the app's own binary. `AppDelegate.main` hands `<binary> reply …` to
+  `ReplyCommand` before an `NSApplication` exists, and it exits, so the app never starts. The
+  skill's `scripts/reply` is a shell script, so the skill needs nothing a Mac does not ship:
+  `/usr/bin/python3` is a stub that asks to install Apple's developer tools. It reads the ticket's
+  `app` with `plutil` and runs that bundle's `CFBundleExecutable` only when its Info.plist has
+  `VignetteReplyCommand` (project.yml): a binary without the command would start the app and
+  replace the running instance. The ticket decides what runs, so the script takes only a ticket in
+  `~/Library/Application Support/<that app's bundle id>/requests/<request id>/`. It finds
+  `--ticket` the way `ReplyCommand.Options` does, and the command refuses a ticket another app
+  issued (`checkIssuer`); change the two parsers together. The file is also Python that hands
+  itself to sh, for agents that still hold the version 3 instructions. The command checks the marks
+  with `AgentMark.parse` and converts the image to PNG before anything is sent, and the app refuses
+  a reply image that is not a PNG, since it is published as `Agent reply <id>.png` and Copy puts a
+  file's bytes on the pasteboard as PNG. `docs/reply-command-2026-09-26.md` has the reasons.
 - The reply helper returns to the app that issued the request: `ticket.app` names the bundle and the
   helper passes it to `open -a`. Plain `open` hands a `vignette://` URL to whichever copy of the
   bundle id LaunchServices registered last, which on a Mac with a second build is a different app
   that answers `unknown-command` (observed). The helper reads the URL scheme from that bundle's
-  Info.plist too (`app_scheme`), so a fork's reply goes to the fork's scheme.
+  Info.plist too (`ReplyCommand.dispatch`), so a fork's reply goes to the fork's scheme.
 - Send never reuses Done. It renders the drawing on `RenderingQueue` and closes nothing while it
   waits. The request is stored before the image leaves the editor, so a failure anywhere before then
   leaves the drawing where the hand left it. A rendering belongs to the annotator session Send was

@@ -1,11 +1,13 @@
 import CryptoKit
 import Foundation
+import ImageIO
 
 /// The bytes an agent's reply helper writes and the acknowledgement Vignette writes back. The
 /// helper freezes a bundle once and submits it as many times as it needs to; Vignette owns the
 /// request directory those files live in, decides what a reply may say, and answers in a receipt
-/// file at a path it derives itself. `skills/vignette/scripts/reply` is the other half of this
-/// file: change both together and raise `version`.
+/// file at a path it derives itself. `ReplyCommand` is the helper, run from this app's own binary
+/// by the skill's `scripts/reply`. Raise `version` with any change to what either side writes: an
+/// older skill's helper may still answer this app's requests.
 ///
 /// A `vignette://` URL has no authenticated sender, so authorization is a per-request bearer
 /// secret in the request's own directory. Holding it permits replies to that one request. It does
@@ -76,7 +78,8 @@ enum ReplyProtocol {
         /// The app bundle that issued this request. A reply belongs to the instance that asked for
         /// it, and `open` on its own hands a `vignette://` URL to whichever copy of the bundle id
         /// LaunchServices registered last — another build on the machine, which answers
-        /// `unknown-command`. Naming the bundle is what keeps a reply on the right app.
+        /// `unknown-command`. Naming the bundle is what keeps a reply on the right app. The skill's
+        /// `scripts/reply` runs this bundle's binary as the helper (`ReplyCommand`).
         let app: String
 
         enum CodingKeys: String, CodingKey {
@@ -239,16 +242,22 @@ enum ReplyProtocol {
         var image: Data?
         if hasImage {
             let imageURL = bundleImageURL(root: root, requestID: attempt.requestID, replyID: attempt.replyID)
-            image = try read(imageURL, limit: maxImageBytes, what: "the reply image")
-            guard Commands.isReadableImage(imageURL) else {
-                throw Problem(.badPayload, "the reply image is not an image this app can read")
-            }
+            let bytes = try read(imageURL, limit: maxImageBytes, what: "the reply image")
+            guard isPNG(bytes) else { throw Problem(.badPayload, "the reply image is not a PNG this app can read") }
+            image = bytes
         }
         guard hasImage || !marks.isEmpty else {
             throw Problem(.badPayload, "the reply carries neither an image nor marks")
         }
         let bundle = Bundle(requestID: attempt.requestID, replyID: attempt.replyID, hasImage: hasImage, marks: marks)
         return (bundle, image, payloadDigest(bundle: data, image: image))
+    }
+
+    /// Whether `data` is a PNG that ImageIO reads. A reply image must be one: it is published as
+    /// `Agent reply <id>.png`, and Copy puts a file's bytes on the pasteboard as PNG.
+    static func isPNG(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+        return CGImageSourceGetType(source) == "public.png" as CFString && CGImageSourceGetCount(source) > 0
     }
 
     /// Reads a regular file, refusing a directory, a device, a symbolic link, or one too big to

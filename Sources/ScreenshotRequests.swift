@@ -34,6 +34,9 @@ final class ScreenshotRequests {
     /// reading it, so the limit refuses a new send rather than deleting an old one behind the
     /// person's back; `vignette://requests?clear=all` is how room is made.
     static let maxLiveRequests = 50
+    /// A request's `Record`, in its request directory. `ReplyCommand` reads it to tell a retry that
+    /// the request was cleared.
+    nonisolated static let recordFileName = "request.json"
 
     let root: URL
     private var requests: [String: Record] = [:]
@@ -135,7 +138,7 @@ final class ScreenshotRequests {
         var loadedRequests = 0, loadedReplies = 0, unreadable = 0
         for directory in (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
             guard ReplyProtocol.isID(directory.lastPathComponent) else { continue }
-            if let record: Record = decode(directory.appendingPathComponent("request.json")) {
+            if let record: Record = decode(directory.appendingPathComponent(Self.recordFileName)) {
                 requests[record.id] = record
                 loadedRequests += 1
             } else { unreadable += 1 }
@@ -641,7 +644,7 @@ final class ScreenshotRequests {
     private func write(_ record: Record) throws {
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try encode(record, to: directory.appendingPathComponent("request.json"))
+        try encode(record, to: directory.appendingPathComponent(Self.recordFileName))
     }
 
     private func write(_ reply: Reply) throws {

@@ -4,6 +4,10 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     static func main() {
+        // The skill's scripts/reply runs this binary as `<executable> reply …`. It answers and exits
+        // here, before an NSApplication exists, so it never starts the app.
+        let arguments = CommandLine.arguments.dropFirst()
+        if arguments.first == "reply" { ReplyCommand.run(Array(arguments.dropFirst())) }
         let app = NSApplication.shared
         AppLocation.offerMove()
         let delegate = AppDelegate()
