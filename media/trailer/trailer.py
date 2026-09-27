@@ -216,6 +216,7 @@ def claude():
     script = os.path.join(PATHS['stage'], 'sign-in.sh')
     with open(script, 'w') as f:
         f.write(f"""#!/bin/zsh
+unset -m 'HERDR_*' 'CLAUDE*'
 export CLAUDE_CONFIG_DIR={json.dumps(home)}
 cd {json.dumps(PATHS['mew'])}
 echo "Sign in the trailer's Claude Code, trust this folder, then type /exit."

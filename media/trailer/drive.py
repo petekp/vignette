@@ -93,6 +93,13 @@ class Stage:
     # ---- The stage copy ----------------------------------------------------------------------
 
     def url(self, command):
+        # With the stage copy gone, `open` would launch it again without VIGNETTE_SETTINGS, on your
+        # own settings and screenshots folder.
+        if getattr(self, 'pid', None):
+            try:
+                os.kill(self.pid, 0)
+            except ProcessLookupError:
+                raise TakeFailed(f'the stage copy (pid {self.pid}) is gone; not sending {command.split("?")[0]}')
         subprocess.run(['open', '-g', '-a', self.app['path'], f"{self.app['scheme']}://{command}"], check=True)
 
     def log_size(self):
@@ -145,8 +152,9 @@ class Stage:
 
     def agent_wait(self, until, timeout, what):
         name = self.config['stage']['session']['agent']
-        out = self.herdr('agent', 'wait', name, '--until', until, '--timeout', str(int(timeout * 1000)),
-                         check=False, timeout=timeout + 10)
+        states = [until] if isinstance(until, str) else list(until)
+        out = self.herdr('agent', 'wait', name, *[a for s in states for a in ('--until', s)],
+                         '--timeout', str(int(timeout * 1000)), check=False, timeout=timeout + 10)
         if 'error' in out:
             raise TakeFailed(f"{what}: {out['error'].get('message', out['error'])}")
         return time.monotonic()
@@ -226,8 +234,9 @@ class Stage:
 
 CLIENT = b"""<script>
 (() => {
-  new EventSource('/__reload').onmessage = () => location.reload();
+  // Headless Chrome's screenshot waits for the network to go quiet, which a reload stream never does.
   if (/Headless/.test(navigator.userAgent)) return;
+  new EventSource('/__reload').onmessage = () => location.reload();
   const report = () => requestAnimationFrame(() => requestAnimationFrame(() => {
     const q = new URLSearchParams({ x: screenX, y: screenY, ow: outerWidth, oh: outerHeight,
       iw: innerWidth, ih: innerHeight, page: location.pathname + location.search });
@@ -349,7 +358,10 @@ class DevServer:
 # ---- Setup and teardown ----------------------------------------------------------------------
 
 def port_free(port):
+    """Whether the dev server can listen on `port`. SO_REUSEADDR, as the server sets it, lets a port
+    the last take's server left in TIME_WAIT count as free, and still refuses one something listens on."""
     with socket.socket() as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind(('127.0.0.1', port))
             return True
@@ -443,7 +455,7 @@ def stage_game(stage):
             # Anything not allowed here is refused without a question, so a take never stops on one.
             'defaultMode': 'dontAsk',
             'allow': [
-                'Edit(./**)', 'Write(./**)', 'Bash(./screenshot:*)', 'Bash(open -g:*)',
+                'Edit(./**)', 'Bash(./screenshot:*)', 'Bash(./push:*)',
                 f'Read({requests})', f'Bash({reply}:*)',
             ],
         },
@@ -483,17 +495,47 @@ def open_browser(stage):
     stage.event('browser.ready', game=list(stage.game))
 
 
+def herdr_config(stage):
+    """Your herdr config with the sidebar hidden, for the trailer's session only: the terminal
+    shows Claude Code alone, in your herdr's colours."""
+    yours = os.path.expanduser('~/.config/herdr/config.toml')
+    lines = open(yours).read().splitlines() if os.path.exists(yours) else []
+    ours = ['sidebar_start_collapsed = true', 'sidebar_collapsed_mode = "hidden"']
+    lines = [l for l in lines if l.split('=')[0].strip() not in ('sidebar_start_collapsed', 'sidebar_collapsed_mode')]
+    if '[ui]' in lines:
+        at = lines.index('[ui]') + 1
+        lines[at:at] = ours
+    else:
+        lines = ['[ui]', *ours, *lines]
+    path = os.path.join(stage.paths['stage'], 'herdr.toml')
+    with open(path, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    check = subprocess.run([HERDR, 'config', 'check'], capture_output=True, text=True,
+                           env=dict(os.environ, HERDR_CONFIG_PATH=path))
+    if 'config: ok' not in check.stdout:
+        raise TakeFailed(f"the trailer's herdr config does not check: {(check.stdout + check.stderr).strip()}")
+    return path
+
+
 def open_terminal(stage):
     """Ghostty running the trailer's herdr session, and Claude Code started in its pane."""
     c, p = stage.config['stage'], stage.paths
     session = c['session']
+    config = herdr_config(stage)
     script = os.path.join(p['stage'], 'terminal.sh')
     with open(script, 'w') as f:
         f.write(f"""#!/bin/zsh
 # Written by drive.py: the trailer's terminal runs its own herdr session, whose Claude Code uses
 # the trailer's config.
+# A take started from an agent's terminal passes on that terminal's variables. herdr refuses to
+# start inside another herdr, and Claude Code would take the calling session's id, messaging
+# socket and transcript setting as its own.
+unset -m 'HERDR_*' 'CLAUDE*'
+export HERDR_CONFIG_PATH={json.dumps(config)}
 export CLAUDE_CONFIG_DIR={json.dumps(p['claude'])}
 export MEW_URL={json.dumps(stage.page_url)}
+export VIGNETTE_SCHEME={json.dumps(stage.app['scheme'])}
+export VIGNETTE_APP={json.dumps(stage.app['path'])}
 cd {json.dumps(p['mew'])}
 exec {json.dumps(HERDR)} --session {json.dumps(session['herdr'])}
 """)
@@ -527,8 +569,14 @@ exec {json.dumps(HERDR)} --session {json.dumps(session['herdr'])}
     stage.herdr('agent', 'start', session['agent'], '--kind', 'claude', '--pane', pane, '--timeout', '30000',
                 '--', '-n', session['title'], *session.get('args', []))
     stage.agent_wait('idle', 60, 'Claude Code starting')
-    panes = stage.herdr('pane', 'list').get('result', {}).get('panes', [])
-    found = [q for q in panes if q.get('pane_id') == pane and (q.get('agent_session') or {}).get('value')]
+    # The hook reports the session id on its own schedule, which can be after herdr says idle.
+    end = time.monotonic() + 20
+    found = []
+    while time.monotonic() < end and not found:
+        panes = stage.herdr('pane', 'list', check=False).get('result', {}).get('panes', [])
+        found = [q for q in panes if q.get('pane_id') == pane and (q.get('agent_session') or {}).get('value')]
+        if not found:
+            time.sleep(0.25)
     if not found:
         raise TakeFailed('herdr does not know the Claude Code session; run trailer.py claude to install its hook')
     stage.session_id = found[0]['agent_session']['value']
@@ -568,6 +616,24 @@ def setup(stage):
                             env=dict(os.environ, CLAUDE_CONFIG_DIR=p['claude']))
     if not json.loads(status.stdout or '{}').get('loggedIn'):
         raise TakeFailed("the trailer's Claude Code is not signed in; run trailer.py claude once")
+    # With the Claude in Chrome extension in your Chrome, Claude Code asks once whether to use it,
+    # and reports its session to herdr only after the answer. The answer is no: yes would let it
+    # drive your own browser.
+    state_path = os.path.join(p['claude'], '.claude.json')
+    with open(state_path) as f:
+        claude_state = json.load(f)
+    if claude_state.get('claudeInChromeDefaultEnabled') is not False:
+        claude_state['claudeInChromeDefaultEnabled'] = False
+        with open(state_path, 'w') as f:
+            json.dump(claude_state, f, indent=2)
+    # Claude Code suggests a next prompt in grey in its input, which the camera would read as typed.
+    settings_path = os.path.join(p['claude'], 'settings.json')
+    with open(settings_path) as f:
+        claude_settings = json.load(f)
+    if claude_settings.get('promptSuggestionEnabled') is not False:
+        claude_settings['promptSuggestionEnabled'] = False
+        with open(settings_path, 'w') as f:
+            json.dump(claude_settings, f, indent=2)
     port = c['stage'].get('port', 5173)
     if not port_free(port):
         raise TakeFailed(f'port {port} is taken; stop what uses it or change [stage] port')
@@ -616,10 +682,12 @@ def setup(stage):
     print(f"  stage copy pid={stage.pid} accessibility={s['app'].get('accessibility')}", flush=True)
 
     for path, card in cards:
-        marks = path + '.json'
-        with open(marks, 'w') as f:
-            json.dump(card.get('marks', []), f)
-        query = {'file': path, 'marks': marks}
+        query = {'file': path}
+        if card.get('marks'):
+            marks = path + '.json'
+            with open(marks, 'w') as f:
+                json.dump(card['marks'], f)
+            query['marks'] = marks
         if card.get('agent'):
             query['agent'] = card['agent']
         offset = stage.log_size()
@@ -928,7 +996,8 @@ def beat_sketch(stage):
     card = newest_card(s)
     stage.sketch_file = card['file']
     stage.event('card.shown', card=card['frame'])
-    stage.agent_wait('idle', 300, 'Claude finishing its turn')
+    # herdr reports a finished turn as done: a wait for idle alone ran its whole 300 s (2026-09-26).
+    stage.agent_wait(('done', 'idle'), 300, 'Claude finishing its turn')
     stage.event('claude.idle')
     stage.wait_state(lambda s: not s['stack']['visible'], timeout=30, what="Claude's card leaving")
     stage.event('card.gone')
@@ -995,7 +1064,7 @@ def beat_reply(stage):
     changed = stage.wait_event('game.changed', stage.last('reply.working')['t'], 600, 'Claude building the ledges')
     shown = stage.wait_event('page.shown', changed['t'], 30, 'the game reloading')
     stage.event('ledges.shown', t=shown['t'])
-    stage.agent_wait('idle', 300, 'Claude finishing')
+    stage.agent_wait(('done', 'idle'), 300, 'Claude finishing')
     stage.event('claude.done')
     stage.pause(2.0)
     stage.event('end')

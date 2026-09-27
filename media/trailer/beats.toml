@@ -51,7 +51,7 @@ browser = [592, 54, 904, 660]
 # Options for the terminal, as Ghostty takes them.
 terminal_args = []
 # The game's dev server.
-port = 5173
+port = 5391
 # Where the pointer waits between moves.
 rest = [1180, 880]
 # The hand's variation: a take with the same seed moves and pauses the same way.

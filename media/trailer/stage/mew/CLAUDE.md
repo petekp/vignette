@@ -30,9 +30,15 @@ Where the cat's way up goes is the designer's decision. When a change leaves the
 cat's reach, do not build a route. Sketch one and ask:
 
 1. Run `./screenshot sketch.png` to render the level as it is now.
-2. Propose the ledges as boxes on that image, with a short note on what they are for, and push it
-   through the vignette skill as Claude.
-3. Stop, and say in one line that the sketch is in Vignette.
+2. Propose the ledges as boxes on that image, with a short note on what they are for. Write the
+   marks as the vignette skill describes, to `sketch.json` in this folder.
+3. Run `./push sketch.png sketch.json`, which shows the sketch in Vignette as yours. Use it instead
+   of the skill's `open` command.
+
+This folder allows those two shell commands and no others, and only exactly as written above: one
+command per call, with nothing added before or after it, no `;`, `&&` or `echo`. Each prints what
+it did, and exits non-zero if it failed.
+4. Stop, and say in one line that the sketch is in Vignette.
 
 When the sketch comes back, its boxes are where the designer wants the ledges. Build one ledge per
 box, with the ledge's top at the box's top edge, even where you would have placed it differently.
