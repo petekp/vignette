@@ -41,6 +41,7 @@ final class AgentConnectionTests: XCTestCase {
         var connection = ClaudeCodeConnection()
         connection.binary = { "/bin/herdr" }
         connection.transcripts = URL(fileURLWithPath: "/nonexistent/projects")
+        connection.readsDrawings = { true }
         connection.run = { _, arguments, _ in
             calls.record(arguments)
             // The whole argv first, so one call can be answered differently from another that

@@ -287,6 +287,8 @@ struct ClaudeCodeConnection: AgentConnection {
     /// Where Claude Code keeps its transcripts, one folder per project. Injected so a test never
     /// reads the real ones.
     var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
+    /// Whether Claude Code's settings hold `ClaudeReadRule`. Injected so a test never reads them.
+    var readsDrawings: () -> Bool = { ClaudeReadRule.isSet(in: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude")) }
 
     static let listTimeout: TimeInterval = 10
     static let promptTimeout: TimeInterval = 20
@@ -326,6 +328,9 @@ struct ClaudeCodeConnection: AgentConnection {
     static let unresponsive = "herdr isn't responding. Check that it's running."
     static let closed = "This session is closed. Send to another one."
     static let blocked = "Answer Claude's question in the session, then send again."
+    /// The same, when the question may be the one `ClaudeReadRule` answers.
+    static let blockedWithoutReadRule = "Answer Claude's question, then send again. Settings > Agents can stop it asking about drawings."
+    private var blocked: String { readsDrawings() ? Self.blocked : Self.blockedWithoutReadRule }
 
     /// Where herdr may be. The app is launched by LaunchServices, so it inherits no shell PATH.
     static let binaryPaths = ["\(NSHomeDirectory())/.local/bin/herdr", "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr"]
@@ -476,7 +481,7 @@ struct ClaudeCodeConnection: AgentConnection {
         }
         guard let herdr = binary() else {
             return .notSubmitted(code: .noAgent, detail: "no herdr at \(Self.binaryPaths.joined(separator: " "))",
-                                 reason: "Install herdr to send to Claude Code.")
+                                 reason: "Vignette can't find herdr, which Send uses to reach Claude Code.")
         }
         guard let list = run(herdr, ["agent", "list"], Self.listTimeout) else {
             return .notSubmitted(code: .noAgent, detail: "herdr agent list did not run", reason: Self.unresponsive)
@@ -491,7 +496,7 @@ struct ClaudeCodeConnection: AgentConnection {
             return .destinationChanged(detail: "Claude Code session \(session) is in no herdr pane now", reason: Self.closed)
         }
         guard target.status != "blocked" else {
-            return .notSubmitted(code: .sendFailed, detail: "\(target.id) is waiting on a prompt of its own; answer it first", reason: Self.blocked)
+            return .notSubmitted(code: .sendFailed, detail: "\(target.id) is waiting on a prompt of its own; answer it first", reason: blocked)
         }
         guard let sent = run(herdr, ["agent", "prompt", target.pane, line], Self.promptTimeout) else {
             return .notSubmitted(code: .sendFailed, detail: "herdr agent prompt did not run", reason: Self.unresponsive)
@@ -509,7 +514,7 @@ struct ClaudeCodeConnection: AgentConnection {
                 return .destinationChanged(detail: detail, reason: Self.closed)
             }
             if detail.contains("agent_blocked") {
-                return .notSubmitted(code: .sendFailed, detail: "\(detail); answer the agent's own prompt first", reason: Self.blocked)
+                return .notSubmitted(code: .sendFailed, detail: "\(detail); answer the agent's own prompt first", reason: blocked)
             }
             return .notSubmitted(code: .sendFailed, detail: detail, reason: SubmissionOutcome.quoted("herdr", detail))
         }

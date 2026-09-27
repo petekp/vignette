@@ -201,4 +201,49 @@ final class SkillInstallerTests: XCTestCase {
         XCTAssertEqual(SkillInstaller.roots(home: home).map(\.lastPathComponent), [".claude", ".codex"],
                        "a linked agent directory is one of them, and is written through")
     }
+
+    // MARK: Claude Code's read rule, in a settings.json under the temporary root
+
+    func testTheReadRuleNamesEveryRequestsImageFromHome() {
+        let home = URL(fileURLWithPath: "/Users/someone")
+        let requests = home.appendingPathComponent("Library/Application Support/com.example.app/requests")
+        XCTAssertEqual(ClaudeReadRule.rule(requests: requests, home: home),
+                       "Read(~/Library/Application Support/com.example.app/requests/*/image.png)")
+    }
+
+    func testTheReadRuleJoinsAndLeavesClaudeSettingsKeepingEverythingElse() throws {
+        // Kept in a dotfiles folder and linked in, as people do; the link has to survive the write.
+        let file = ClaudeReadRule.settingsFile(in: root)
+        let dotfiles = root.appendingPathComponent("dotfiles/claude-settings.json")
+        try FileManager.default.createDirectory(at: dotfiles.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try #"{"theme": "dark", "permissions": {"allow": ["Bash(ls:*)"], "deny": ["Read(./.env)"]}}"#
+            .write(to: dotfiles, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: file, withDestinationURL: dotfiles)
+        try ClaudeReadRule.set(true, in: root, rule: "Read(x)")
+        XCTAssertTrue(ClaudeReadRule.isSet(in: root, rule: "Read(x)"))
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        XCTAssertEqual(json["theme"] as? String, "dark")
+        XCTAssertEqual((json["permissions"] as? [String: Any])?["allow"] as? [String], ["Bash(ls:*)", "Read(x)"])
+        XCTAssertEqual((json["permissions"] as? [String: Any])?["deny"] as? [String], ["Read(./.env)"])
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: file.path), dotfiles.path)
+
+        try ClaudeReadRule.set(false, in: root, rule: "Read(x)")
+        json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        XCTAssertEqual((json["permissions"] as? [String: Any])?["allow"] as? [String], ["Bash(ls:*)"])
+    }
+
+    func testTheReadRuleOnAndOffLeavesNoEmptySection() throws {
+        try ClaudeReadRule.set(true, in: root, rule: "Read(x)")
+        try ClaudeReadRule.set(false, in: root, rule: "Read(x)")
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: ClaudeReadRule.settingsFile(in: root))) as? [String: Any])
+        XCTAssertTrue(json.isEmpty, "\(json)")
+    }
+
+    func testTheReadRuleLeavesASettingsFileItCannotReadAlone() throws {
+        let file = ClaudeReadRule.settingsFile(in: root)
+        let broken = #"{"theme": "dark",, }"#
+        try broken.write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try ClaudeReadRule.set(true, in: root, rule: "Read(x)"))
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), broken)
+    }
 }

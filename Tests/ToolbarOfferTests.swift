@@ -36,7 +36,7 @@ final class ToolbarOfferTests: XCTestCase {
 
     func testTheTargetSettlesOnHerdrsFocusAndStaysWhenCodexAnswersLater() {
         let model = AnnotatorToolbar.Model()
-        model.begin(replyTo: nil)
+        model.begin(replyTo: nil, carryingTarget: false)
         let codex = session("codex", .codex, used: 200), unfocused = session("other", used: 150)
         model.answered([codex], complete: false)
         XCTAssertNil(model.target, "no focus yet, and the session used last needs every client's answer")
@@ -52,13 +52,28 @@ final class ToolbarOfferTests: XCTestCase {
 
     func testWithNoFocusTheTargetIsTheSessionUsedLastAndIsReplacedOnlyWhenItIsGone() {
         let model = AnnotatorToolbar.Model()
-        model.begin(replyTo: nil)
+        model.begin(replyTo: nil, carryingTarget: false)
         let old = session("old", used: 100), new = session("new", .codex, used: 200)
         model.answered([new, old], complete: true)
         XCTAssertEqual(model.target?.id, "new")
         model.answered([old], complete: true)
         XCTAssertEqual(model.target?.id, "old")
-        model.begin(replyTo: nil)
+        model.begin(replyTo: nil, carryingTarget: false)
         XCTAssertNil(model.target, "each image starts over")
+    }
+
+    /// A swap keeps the bar up. Emptying the target there took Send and the target off the bar for
+    /// the length of the listing, and the bar jumped narrower and back on every swap.
+    func testASwapKeepsTheTargetOnTheBarUntilTheNextImagesSettles() {
+        let model = AnnotatorToolbar.Model()
+        model.begin(replyTo: nil, carryingTarget: false)
+        let mew = session("mew", focus: .pane), codex = session("codex", .codex, used: 200)
+        model.answered([mew], complete: true)
+        model.begin(replyTo: nil, carryingTarget: true)
+        XCTAssertEqual(model.offer, .send(mew))
+        model.answered([codex], complete: false)
+        XCTAssertEqual(model.target?.id, "mew", "an answer that settles nothing leaves it")
+        model.answered([codex, session("other", focus: .pane)], complete: false)
+        XCTAssertEqual(model.target?.id, "other", "this image's own focus replaces it")
     }
 }

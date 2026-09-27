@@ -158,6 +158,7 @@ private struct SequenceRun {
         case 35: return .done
         case 36: return .send
         case 37: return .park
+        case 38: return .enterCanvas(backward: Bool.random(using: &rng))
         default: return .modifiersChanged(modifiers)
         }
     }
@@ -474,6 +475,7 @@ private struct SequenceRun {
         case .keyDown(let key, let m, let isRepeat): return "key \(key) \(m.rawValue)\(isRepeat ? " repeat" : "")"
         case .keyUp(let key): return "keyUp \(key)"
         case .setTool(let tool): return "tool \(tool)"
+        case .enterCanvas(let backward): return "enterCanvas\(backward ? " backward" : "")"
         case .zoomChanged(let zoom): return "zoom \(zoom)"
         case .tweaksChanged: return "tweaks"
         case .typingChanged(let text): return "type \(text.count) characters"

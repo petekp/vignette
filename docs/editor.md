@@ -300,7 +300,7 @@ Hover, press and release use one rule:
 | Esc during a brush | The selection from before the brush comes back, and the editor stays open |
 | Cmd+A | Every mark |
 | Esc with a selection and no gesture | The editor closes |
-| Tab, Shift+Tab | The next or previous mark, in reading order |
+| Tab, Shift+Tab | The next or previous mark, in reading order. Past the last mark, or before the first, the toolbar's controls come next (section 9, The toolbar). |
 
 ### Moving
 
@@ -481,6 +481,8 @@ Keys that act on a selection are in section 4. The rest:
 | Shift+Cmd+Z | Redoes one step |
 | Cmd+Plus, Cmd+Minus, Cmd+0 | The host's zoom: in, out, back to fit |
 | Cmd+C, Cmd+X, Cmd+V | Section 8 |
+| M or P | Puts the keys in the toolbar's message field, when the toolbar has one |
+| Space | Presses the toolbar control that has the keyboard focus |
 | Plain wheel or two-finger scroll | Pans a zoomed-in image |
 | Cmd or Ctrl with a wheel or two-finger scroll | The host's zoom |
 | Any other key | Nothing |
@@ -581,13 +583,31 @@ a session the host picked; the host sets both keys from what its toolbar offers
   Reply on a card that names the session it came from. Copy is Done.
   `docs/send-and-reply-2026-09-24.md` has the rules.
 - The message field is one line in the bar. While it is typed in, it grows down past the bar's
-  bottom, up to six lines, and the bar keeps its size. Cmd+Return in it sends. Return replies on a
+  bottom, up to six lines, and the bar keeps its size. Once it would come within 8 pt of the bottom
+  of the visible screen, the top of the Dock when the Dock is there, it grows up out of the top of
+  the bar instead. Past six lines it scrolls. M or P in the editor puts the keys in it. Cmd+Return in it sends. Return replies on a
   card that names its session; beside Send it sends nothing and bounces Send's ⌘↩, since Return
   never sends to a session Vignette picked, unless Send with Return is on in Settings > Agents
   (`sendWithReturn`). Esc, or a click on the image, hands the keys back to the
   editor, and the field shrinks back to one line.
   What it holds leads the line Send puts in the session (`docs/request-line-2026-09-25.md`). It is
   kept until the next image opens, so a send that fails keeps it.
+- Tab goes through the marks in reading order, then the bar's controls in order (the tools, Copy,
+  the target, the message field, the filled button), then back to the first mark. Shift+Tab goes
+  the other way. With no marks, it goes round the controls. While a control has the focus, the
+  editor keeps the keys, so the tool keys, Return, Cmd+Return, Esc and undo work as always. Tab and
+  Space are the bar's, and a ring in the system's focus colour shows which control has it. Space
+  presses the control, as a click does. The target opens its menu, which is AppKit's, so arrows and
+  Return work in it. Tab onto the message field types in it, and Tab or Shift+Tab in the field goes
+  on to the next control. A press on the image or on the bar takes the focus away.
+- Each tool's tooltip gives its name and key, such as "Rectangle (R)". The bar draws its tooltips
+  itself, under the control, or over it when the Dock is close below. One comes up after the
+  pointer rests a second, and while one is up the next comes at once. AppKit's never came up on the
+  bar until it was clicked: AppKit shows a window's tooltips only while it is key or was the last
+  window clicked, and the editor's window holds the keys.
+- Every control on the bar takes presses up to the bar's top and bottom edges and into the gaps
+  beside it. A press anywhere on the message field, or in the bar around it, starts typing, with
+  the I-beam over all of it.
 - For each tool, the editor supplies an id, a label, a key and an SF Symbol:
 
 | Tool | Key | SF Symbol |

@@ -123,6 +123,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         if model.sawAgents {
             let roots = model.agents.filter { !$0.installed && model.chosen.contains($0.root) }.map(\.root)
             if !roots.isEmpty { model.callbacks.installAgentSkill(roots) }
+            if let claude = model.claudeWithoutReadRule, model.claudeReads { ClaudeReadRule.apply(true, in: claude) }
             settings.update { $0.agentSkill = AgentSkill.off.rawValue }
             skill = roots.isEmpty ? "none" : roots.map(\.lastPathComponent).joined(separator: ",")
         }
@@ -151,6 +152,10 @@ final class SetupModel: ObservableObject {
     /// The agents whose switch is on. All of them to start: the user installed Vignette to work
     /// with them, and a switch they can see is still their choice.
     @Published var chosen: Set<URL>
+    /// Claude Code's directory when its settings lack `ClaudeReadRule`, which this page then offers,
+    /// on to start for the same reason as the skill.
+    let claudeWithoutReadRule: URL?
+    @Published var claudeReads = true
     private(set) var sawAgents = false
 
     init(protectedArea: String?, agents: [AgentSkillStatus], callbacks: SetupWindowController.Callbacks) {
@@ -158,6 +163,8 @@ final class SetupModel: ObservableObject {
         self.agents = agents
         self.callbacks = callbacks
         chosen = Set(agents.map(\.root))
+        claudeWithoutReadRule = agents.first { $0.logoKey == AgentClient.claude.rawValue }
+            .map(\.root).flatMap { ClaudeReadRule.isSet(in: $0) ? nil : $0 }
     }
 
     var pages: [Page] { agents.isEmpty ? [.welcome, .shortcut] : [.welcome, .shortcut, .agents] }
@@ -340,6 +347,14 @@ struct SetupView: View {
                             }
                         } else {
                             Toggle(isOn: chosen(row.root)) { AgentName(row: row) }
+                        }
+                    }
+                }
+                if model.claudeWithoutReadRule != nil {
+                    Section {
+                        Toggle(isOn: $model.claudeReads) {
+                            Text(ClaudeReadRule.title)
+                            Text(ClaudeReadRule.explanation)
                         }
                     }
                 }

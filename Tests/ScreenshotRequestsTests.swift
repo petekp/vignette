@@ -10,7 +10,8 @@ final class ScreenshotRequestsTests: XCTestCase {
     private var added: [[AgentMark]] = []
     private var addFails = false
     private var presented: [URL] = []
-    private var toasts: [String] = []
+    /// The requests whose reply could not be made a card.
+    private var replyFailures: [String] = []
     /// Set to hold the answer: the completion lands here instead of being called, which is what a
     /// real `addMarks` does while it makes its colour sample off the main thread.
     private var heldAdd: ((Drawings.Failure?) -> Void)?
@@ -31,7 +32,7 @@ final class ScreenshotRequestsTests: XCTestCase {
             },
             present: { [unowned self] shot in self.presented.append(shot.url) },
             watchFolder: { [unowned self] in self.folder },
-            feedback: { [unowned self] words in self.toasts.append(words) })
+            replyFailed: { [unowned self] record, _ in self.replyFailures.append(record.id) })
     }
 
     override func tearDownWithError() throws {
@@ -271,6 +272,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path), "the PNG is copied under the reserved name")
         XCTAssertFalse(requests.isVisible(file), "but nothing may list it until publication commits")
         XCTAssertEqual(presented, [])
+        XCTAssertEqual(replyFailures, [record.id], "the card that was sent says so instead")
         XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["error"] as? String, "draft-store-failed",
                        "the code receipts have always carried for a drawing that could not be stored")
     }
@@ -313,6 +315,22 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(self.receipt(record, attemptID)?.errorCode, "request-closed")
     }
 
+    /// Pruning deletes a request's folder, and with it the record of every reply to it. A reply still
+    /// in the watch folder is shown only by its record, so that request outlasts the week.
+    func testPruningKeepsARequestWhoseReplyIsStillACard() throws {
+        let answered = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(answered))
+        let reply = folder.appendingPathComponent(ReplyProtocol.replyFileName(try replyID(in: answered)))
+        let unanswered = try makeRequest()
+        requests.run(clear: "all")
+        requests.prune(now: Date().addingTimeInterval(ScreenshotRequests.clearedKept + 60))
+
+        XCTAssertTrue(requests.isVisible(reply), "the reply's card stays")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ReplyProtocol.requestDirectory(root: root, requestID: answered.id).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: ReplyProtocol.requestDirectory(root: root, requestID: unanswered.id).path),
+                       "a request with nothing on screen goes")
+    }
+
     func testDeletingAPublishedReplyIsARemovalAndNotARebuild() throws {
         let record = try makeRequest()
         try requests.receiveReply(envelope: stageReply(record))
@@ -349,7 +367,6 @@ final class ScreenshotRequestsTests: XCTestCase {
         let gone = Drawings.Failure(code: .unreadableImage, description: "the file is gone")
         for outcome in [nil, gone] {
             let record = try makeRequest()
-            toasts = []                      // the send's own, from a request with no connection
             heldAdd = { _ in }             // hold the next add's answer
             requests.receiveReply(envelope: try stageReply(record))
             let id = try replyID(in: record)
@@ -361,7 +378,7 @@ final class ScreenshotRequestsTests: XCTestCase {
             answer(outcome)
 
             XCTAssertEqual(presented, [], "a cleared reply makes no card")
-            XCTAssertEqual(toasts, [], "and no toast: the person cleared it")
+            XCTAssertEqual(replyFailures, [], "and no failure: the person cleared it")
             XCTAssertFalse(FileManager.default.fileExists(atPath: published.path), "and leaves no hidden file behind")
             let reply = (requests.stateJSON["replies"] as? [[String: Any]])?.first { $0["id"] as? String == id }
             XCTAssertEqual(reply?["stage"] as? String, "cancelled")

@@ -199,6 +199,9 @@ struct SettingsView: View {
     /// Why the last install or removal failed, by agent directory. The switch shows what is on disk,
     /// so after a failure it is back where it was, and this says why.
     @State private var agentFailures: [URL: String] = [:]
+    /// Whether Claude Code's settings hold `ClaudeReadRule`, and why the last change to it failed.
+    @State private var claudeReads = false
+    @State private var claudeReadsFailure: String?
     @State private var trusted = ModifierTap.trusted(prompt: false)
     @State private var folderDenied = false
     /// Neither the Accessibility grant nor macOS's folder permission announces a change, so the
@@ -326,6 +329,17 @@ struct SettingsView: View {
             if !agentRows.isEmpty { footer(SettingsView.agentsLine) }
         }
         .onAppear(perform: refreshAgents)
+        if let claude = claudeRow {
+            Section {
+                Toggle(isOn: Binding(get: { claudeReads }, set: { on in
+                    claudeReadsFailure = ClaudeReadRule.apply(on, in: claude.root)
+                    refreshAgents()
+                })) {
+                    Text(ClaudeReadRule.title)
+                    Text(claudeReadsFailure ?? ClaudeReadRule.explanation)
+                }
+            }
+        }
         if !agentRows.isEmpty {
             Section {
                 Toggle(isOn: binding(\.sendWithReturn)) {
@@ -352,7 +366,10 @@ struct SettingsView: View {
 
     private func refreshAgents() {
         agentRows = SkillInstaller.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
+        claudeReads = claudeRow.map { ClaudeReadRule.isSet(in: $0.root) } ?? false
     }
+
+    private var claudeRow: AgentSkillStatus? { agentRows.first { $0.logoKey == AgentClient.claude.rawValue } }
 
     // MARK: Developer
 
@@ -496,6 +513,9 @@ struct PermissionRow: View {
 struct AgentName: View {
     let row: AgentSkillStatus
     var failure: String?
+    /// Send reaches a Claude Code session only through the herdr pane it runs in, so without herdr
+    /// Claude Code is never in Send's menu, and this row is the one place that says why.
+    private var needsHerdr: Bool { row.logoKey == AgentClient.claude.rawValue && ClaudeCodeConnection.binary() == nil }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -506,6 +526,11 @@ struct AgentName: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name)
+                if needsHerdr {
+                    Text("Send reaches Claude Code through [herdr](https://herdr.dev), which Vignette can't find.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let failure {
                     Label { Text(failure) } icon: {
                         Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)

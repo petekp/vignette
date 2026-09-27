@@ -26,7 +26,7 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   "debug": false,
   "agentSkill": "unasked",
   "setup": "unasked",
-  "ui": { "cardMaxWidth": 208, "slideInDuration": 0.75, "backdropBlurRadius": 13, "...": "the design numbers" },
+  "ui": { "cardMaxWidth": 208, "slideInDuration": 0.4, "backdropBlurRadius": 13, "...": "the design numbers" },
   "appleOriginal": { "location": "~/Desktop", "showThumbnail": true, "disableShadow": false, "type": "png" }
 }
 ```

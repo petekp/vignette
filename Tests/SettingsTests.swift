@@ -114,6 +114,14 @@ final class SettingsTests: XCTestCase {
     }
 
     @MainActor
+    func testFileHoldsOnlyTheUIValuesThatDiffer() throws {
+        try write(#"{"version": 2, "ui": {"cardMaxWidth": 300, "cardMaxHeight": \#(UITweaks().cardMaxHeight)}}"#)
+        let boot = Settings.bootstrap(at: file)
+        XCTAssertEqual(boot.data.ui.cardMaxWidth, 300)
+        XCTAssertEqual(try json()["ui"] as? [String: Double], ["cardMaxWidth": 300])
+    }
+
+    @MainActor
     func testFileWithoutVersionIsMigratedAndRewritten() throws {
         try write(#"{"recentCount": 7}"#)
         let boot = Settings.bootstrap(at: file)

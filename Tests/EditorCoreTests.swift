@@ -512,14 +512,35 @@ final class EditorCoreTests: XCTestCase {
         var core = core([b, a, d, c])
         core.click(900, 550)
         var visited: [Mark.ID] = []
-        for _ in 0..<5 {
+        for _ in 0..<4 {
             core.key(.tab)
             visited.append(contentsOf: core.selection)
         }
-        XCTAssertEqual(visited, [a.id, b.id, c.id, d.id, a.id])
-        core.key(.tab, .shift)
+        XCTAssertEqual(visited, [a.id, b.id, c.id, d.id])
+        // Past the last mark the toolbar's controls come next, and they hand back to either end.
+        XCTAssertTrue(core.key(.tab).contains(.leaveCanvas(backward: false)))
+        XCTAssertEqual(core.selection, [])
+        _ = core.reduce(.enterCanvas(backward: true))
         XCTAssertEqual(core.selection, [d.id])
+        core.key(.tab, .shift)
+        XCTAssertEqual(core.selection, [c.id])
+        _ = core.reduce(.enterCanvas(backward: false))
+        XCTAssertEqual(core.selection, [a.id])
+        XCTAssertTrue(core.key(.tab, .shift).contains(.leaveCanvas(backward: true)))
         XCTAssertEqual(core.undoSteps.count, 0)
+    }
+
+    func testTabWithNoMarksGoesStraightToTheToolbar() {
+        var core = core([])
+        XCTAssertTrue(core.key(.tab).contains(.leaveCanvas(backward: false)))
+        XCTAssertTrue(core.key(.tab, .shift).contains(.leaveCanvas(backward: true)))
+    }
+
+    func testMAndPAskForTheMessage() {
+        var core = core([rect(100, 100, 50, 50)])
+        XCTAssertTrue(core.key(.character("m")).contains(.focusMessage))
+        XCTAssertTrue(core.key(.character("p")).contains(.focusMessage))
+        XCTAssertFalse(core.key(.character("m"), .command).contains(.focusMessage))
     }
 
     func testATenByTenScreenPointRectangleShowsFourCornersEachDraggable() {

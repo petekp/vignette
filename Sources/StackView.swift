@@ -163,6 +163,16 @@ private struct CardView: View {
     private var showsButtons: Bool { showsHover && !model.inSelectionMode && !copied && sendMark == nil }
     /// The padding every corner control is given.
     static let buttonPad: CGFloat = 6
+    /// How far a corner control's hit area reaches past it into the card.
+    static let hitReach: CGFloat = 8
+
+    /// A corner control's extra hit area: out to the card's edges on the corner's two sides, where
+    /// the padding is, and `hitReach` into the card on the other two.
+    static func hitSlop(_ corner: Alignment) -> EdgeInsets {
+        let top = corner.vertical == .top, leading = corner.horizontal == .leading
+        return EdgeInsets(top: top ? buttonPad : hitReach, leading: leading ? buttonPad : hitReach,
+                          bottom: top ? hitReach : buttonPad, trailing: leading ? hitReach : buttonPad)
+    }
     /// The card on screen. `Card.size` is its size at rest; the stack narrows while the annotator
     /// is beside it, and every card narrows with it.
     private var size: NSSize { StackLayout.current.at(widthScale: model.widthScale).drawn(card.size) }
@@ -221,7 +231,7 @@ private struct CardView: View {
         // name while the cursor is on it. A click anywhere else on the card draws.
         .overlay(alignment: .bottomLeading) {
             if showsButtons, let copy = Config.action(id: "copy"), let symbol = copy.symbol {
-                RevealButton(symbol: symbol, label: copy.label, ui: ui) { model.onAction(copy, [card]) }
+                RevealButton(symbol: symbol, label: copy.label, ui: ui, hitSlop: CardView.hitSlop(.bottomLeading)) { model.onAction(copy, [card]) }
                     .onHover { model.overControl = $0 }
                     .padding(CardView.buttonPad)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
@@ -229,7 +239,7 @@ private struct CardView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if showsButtons, let trash = Config.action(id: "trash"), let symbol = trash.symbol {
-                RoundButton(symbol: symbol, help: trash.label, ui: ui) { model.onAction(trash, [card]) }
+                RoundButton(symbol: symbol, help: trash.label + (trash.key.map { " (\($0.glyphs))" } ?? ""), ui: ui, hitSlop: CardView.hitSlop(.bottomTrailing)) { model.onAction(trash, [card]) }
                     .onHover { model.overControl = $0 }
                     .padding(CardView.buttonPad)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
@@ -248,15 +258,18 @@ private struct CardView: View {
         .overlay(alignment: .topLeading) {
             if showsCircle {
                 SelectionCircle(number: model.selectionNumber(of: card.id), size: ui.selectionCircleSize)
+                    .padding(CardView.hitSlop(.topLeading))
+                    .contentShape(Rectangle())
                     .onHover { model.overControl = $0 }
-                    .padding(CardView.buttonPad)
-                    .transition(.opacity)
                     // A press toggles; dragging from here sweeps selection down or up the column.
                     .gesture(
                         DragGesture(minimumDistance: 0, coordinateSpace: .named("stack"))
                             .onChanged { value in model.onSweep(value.location.y) }
                             .onEnded { _ in model.onSweepEnd() }
                     )
+                    .padding(CardView.hitSlop(.topLeading).negated)
+                    .padding(CardView.buttonPad)
+                    .transition(.opacity)
             }
         }
         .frame(width: size.width, height: size.height)
@@ -383,7 +396,6 @@ private struct AgentBadge: View {
         // A hairline edge and a deep shadow: the tab lands on light images too, a white wordmark included.
         .background(Capsule().fill(.white).overlay(Capsule().strokeBorder(.black.opacity(0.22), lineWidth: 0.75)))
         .shadow(color: .black.opacity(0.5), radius: 5, y: 1.5)
-        .help(Agent.label(for: agent))
     }
 }
 
@@ -456,7 +468,6 @@ private struct SelectionStrip: View {
                 .buttonStyle(TactileButtonStyle(shape: .rounded, hoverScale: 1))
                 .disabled(reason != nil)
                 .opacity(reason != nil ? 0.35 : 1)
-                .help(action.label + shortcutHint(action))
                 .accessibilityHint(reason ?? "")
                 .onHover { inside in
                     if inside, reason != nil { explained = action.id }
@@ -482,10 +493,6 @@ private struct SelectionStrip: View {
         // edge never moves, and the labels grow into the room on the left that the box holds open.
         .frame(width: size.width + reveal, alignment: .trailing)
     }
-
-    private func shortcutHint(_ action: ShotAction) -> String {
-        action.key.map { " (\($0.glyphs))" } ?? ""
-    }
 }
 
 /// Buttons that react to hover and press with a small scale, so they feel physical.
@@ -499,6 +506,9 @@ struct TactileButtonStyle: ButtonStyle {
     /// would stretch the label and move the icon out from under the cursor. A card's Copy keeps the
     /// scale and anchors it to its leading edge, so the scale and the label pull the same way.
     var hoverScale: CGFloat = 1.08
+    /// Room the label is padded by so that presses around the button reach it (`hitSlop` on the
+    /// buttons below). The hover fill stays on the button itself.
+    var hitSlop = EdgeInsets()
     @State private var hovered = false
     private var motion: Double { Settings.shared.motionScale }
 
@@ -507,11 +517,14 @@ struct TactileButtonStyle: ButtonStyle {
         return configuration.label
             .foregroundStyle(.primary)
             .background {
-                switch shape {
-                case .circle: Circle().fill(fill)
-                case .rounded: RoundedRectangle(cornerRadius: 8, style: .continuous).fill(fill)
-                case .capsule: Capsule().fill(fill)
+                Group {
+                    switch shape {
+                    case .circle: Circle().fill(fill)
+                    case .rounded: RoundedRectangle(cornerRadius: 8, style: .continuous).fill(fill)
+                    case .capsule: Capsule().fill(fill)
+                    }
                 }
+                .padding(hitSlop)
             }
             .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? hoverScale : 1), anchor: anchor)
             .animation(Anim.spring(0.2 * motion, bounce: 0.3), value: configuration.isPressed)
@@ -561,6 +574,7 @@ private struct SendOverlay: View {
         case .sent: return "Sent to \(mark.project)"
         case .uncertain: return "Check \(mark.project)"
         case .failed: return "Not sent"
+        case .replyFailed: return "Reply not shown"
         }
     }
 
@@ -572,7 +586,7 @@ private struct SendOverlay: View {
                 logo
                 // A failure's reason goes first when the card is too short for it, then the words.
                 ViewThatFits(in: .vertical) {
-                    if let reason = mark.reason, state == .failed || state == .uncertain {
+                    if let reason = mark.reason, state != .sending && state != .sent {
                         VStack(spacing: 3) {
                             headline
                             Text(reason).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
@@ -608,7 +622,7 @@ private struct SendOverlay: View {
     private var headline: some View {
         ViewThatFits(in: .horizontal) {
             label(words)
-            if state != .failed { label(mark.project) }
+            if state != .failed && state != .replyFailed { label(mark.project) }
             Color.clear.frame(width: 1, height: 1)
         }
     }
@@ -647,9 +661,9 @@ private struct SendOverlay: View {
                 case .sent:
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 15, weight: .bold))
                         .symbolRenderingMode(.palette).foregroundStyle(.white, .green)
-                case .uncertain, .failed:
+                case .uncertain, .failed, .replyFailed:
                     Image(systemName: "exclamationmark.circle.fill").font(.system(size: 15, weight: .bold))
-                        .symbolRenderingMode(.palette).foregroundStyle(.white, state == .failed ? Color.red : Color.orange)
+                        .symbolRenderingMode(.palette).foregroundStyle(.white, state == .uncertain ? Color.orange : Color.red)
                 }
             }
             .id(state)
@@ -716,6 +730,7 @@ private struct RevealButton: View {
     let symbol: String
     let label: String
     let ui: UITweaks
+    var hitSlop = EdgeInsets()
     let action: () -> Void
     @State private var hovered = false
 
@@ -734,9 +749,13 @@ private struct RevealButton: View {
             .background(Capsule().fill(.regularMaterial))
             .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+            // In the label, since a button acts only on presses on its label.
+            .padding(hitSlop)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(TactileButtonStyle(shape: .capsule, anchor: .leading))
+        .buttonStyle(TactileButtonStyle(shape: .capsule, anchor: .leading, hitSlop: hitSlop))
         .onHover { hovered = $0 }
+        .padding(hitSlop.negated)
         .animation(Anim.spring(ui.hoverRevealDuration), value: hovered)
     }
 }
@@ -745,6 +764,7 @@ private struct RoundButton: View {
     let symbol: String
     let help: String
     let ui: UITweaks
+    var hitSlop = EdgeInsets()
     let action: () -> Void
 
     var body: some View {
@@ -756,8 +776,11 @@ private struct RoundButton: View {
                 .background(Circle().fill(.regularMaterial))
                 .overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                .padding(hitSlop)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(TactileButtonStyle(shape: .circle))
+        .buttonStyle(TactileButtonStyle(shape: .circle, hitSlop: hitSlop))
+        .padding(hitSlop.negated)
         .help(help)
     }
 }
@@ -775,4 +798,10 @@ private struct FeedbackToast: View {
         .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
     }
+}
+
+extension EdgeInsets {
+    /// Padding by these insets takes back padding by the originals, so a view can take more room for
+    /// its hit area without moving anything around it.
+    var negated: EdgeInsets { EdgeInsets(top: -top, leading: -leading, bottom: -bottom, trailing: -trailing) }
 }

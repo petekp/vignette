@@ -28,7 +28,8 @@ struct Card: Identifiable {
 /// path, because a lone thumbnail's card leaves the panel while it is in the annotator, and a card
 /// shown again after a failure is a new card for the same file.
 struct SendMark: Equatable {
-    enum State: Equatable { case sending, sent, uncertain, failed }
+    /// `replyFailed`: the agent's reply to this send arrived and could not be made a card.
+    enum State: Equatable { case sending, sent, uncertain, failed, replyFailed }
     let request: String   // the request's id, so a later send's mark is never taken off by this one's timer
     let client: AgentClient
     let project: String
@@ -731,14 +732,28 @@ final class ThumbnailController: NSObject {
     }
 
     /// The client answered for the request `request` about `shot`. The mark says so and holds as the
-    /// copied mark does, a failure twice as long. A card no longer on screen says nothing more about
-    /// a delivery that worked, and comes back as a lone thumbnail about one that did not.
+    /// copied mark does, a failure three times as long. A card no longer on screen says nothing more
+    /// about a delivery that worked, and comes back as a lone thumbnail about one that did not.
     func delivered(_ shot: Screenshot, request: String, _ state: SendMark.State, reason: String?) {
         let key = shot.url.path
         guard var mark = model.sendMarks[key], mark.request == request else { return }
         mark.state = state
         mark.reason = reason
-        let failed = state == .failed || state == .uncertain
+        hold(mark, on: shot)
+    }
+
+    /// A reply to a send could not be made a card, so the card that was sent says so, as it says a
+    /// failed send. Long after the send, so it sets a mark of its own rather than updating one,
+    /// except over a later send of the same card still waiting for its answer, which `delivered`
+    /// finds by its request.
+    func replyFailed(_ shot: Screenshot, request: String, client: AgentClient, reason: String) {
+        if let current = model.sendMarks[shot.url.path], current.request != request, current.state == .sending { return }
+        hold(SendMark(request: request, client: client, project: client.label, state: .replyFailed, reason: reason), on: shot)
+    }
+
+    private func hold(_ mark: SendMark, on shot: Screenshot) {
+        let key = shot.url.path, request = mark.request, state = mark.state
+        let failed = state != .sending && state != .sent
         let onScreen = visible && model.cards.contains { $0.shot.url.path == key }
         guard onScreen || failed else { model.sendMarks[key] = nil; return }
         model.sendMarks[key] = mark

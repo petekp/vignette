@@ -9,7 +9,10 @@ the measurements and the reasoning; a rule here points at its note.
 - `Sources/` Swift menu bar app. `AppDelegate.swift` wires everything; `Config.swift` holds the actions.
 - `~/.config/vignette/settings.json` holds per-machine settings (`Settings.swift` defines the keys).
   Its `ui` section (`UITweaks`) holds the layout, style, timing, flight, and backdrop numbers, and its
-  defaults are the tuned UI, so a fresh install renders the same. `open -g vignette://tweaks`
+  defaults are the tuned UI, so a fresh install renders the same. The file holds only the `ui`
+  values that differ from the defaults (`UITweaks.differencesOnly`), so a default tuned in a later
+  build reaches every install. Version 2 of the file brought that in; a build from before it opens
+  a version 2 file read-only. `open -g vignette://tweaks`
   edits them live (needs `debug`). A number stays in code when changing it would mean changing the
   code around it, or when it is a fraction of something rather than a size: the toolbar's rows and
   buttons (`AnnotatorToolbar.swift`), the card button size and the strip's icon and label sizes
@@ -66,6 +69,23 @@ the measurements and the reasoning; a rule here points at its note.
   the same bundle id quits the older instance (`[app] replacing older instance`).
 
 ## The loop
+
+Before you drive the app:
+
+- Launch a test copy with a scratch settings file: `open -g --env VIGNETTE_SETTINGS=<scratch> <app>`.
+  Never test against `~/.config/vignette/settings.json`, which is the user's real config.
+- Read `[state]` before every key, click or command, and stop unless `app.bundle` is your build and
+  `app.settingsFile` is your scratch file.
+- Launch one copy at a time, behind the lock when agents share the Mac, and put the user's own build
+  back after every round.
+- Never send a synthetic Esc to close the stack or the annotator. Use `vignette://dismiss` and
+  `vignette://cancel`.
+- Delete test files from the watch folder afterwards. It is the user's real screenshot folder.
+- Stop a test copy by its PID before you launch another copy of the same bundle id. On 2026-09-26,
+  `open -a <a Release copy> <url>`, sent after a Debug copy of the same bundle id had run, launched a
+  second Release instance without `VIGNETTE_SETTINGS`, on the user's real settings file.
+
+The steps below have the details.
 
 1. Change code.
 2. `./scripts/run.sh`
@@ -180,7 +200,10 @@ Measuring a handoff or a flicker: a burst of `screencapture -x -R x,y,w,h` reach
 second; `screencapture -x -v` records the region at 60, and the frames read back with AVFoundation
 give a per-frame position of an edge or the mean brightness of a band, which is how a one-frame
 step, a doubled shadow, or a mismatch between a frame and its picture is proven or ruled out.
-Compare before and after on the same driven sequence.
+Compare before and after on the same driven sequence. `scripts/measure/frames.sh` reads a recording
+back: `extract` writes its frames as PNGs, `sheet` lays out crops of the frames at given times on
+one labelled image, and `track` prints a rect's mean colour in every frame. A rect is in points from
+the recording's top-left, at the main display's scale; `FRAMES_SCALE` sets another.
 
 Measuring a stutter: launch the app under Instruments and drive it as above.
 `xcrun xctrace record --template 'Time Profiler' --instrument 'Core Animation Commits' --env
@@ -191,10 +214,25 @@ running process records no commits or samples on macOS). `xctrace export --xpath
 commit with its duration; a commit over 8.3 ms dropped a frame at 120 Hz. `time-profile` samples
 on the main thread that run without a gap are a stall; the frames from the `Vignette` binary name
 the code. Trace time zero is about `[app] launched` minus the first sample inside
-`applicationDidFinishLaunching`, which lines the trace up with the log. Compare before and after on
-the same driven sequence; a single run varies.
+`applicationDidFinishLaunching`, which lines the trace up with the log.
+`scripts/measure/commits.py <trace>` prints that table as quarter seconds of work, or `--at` the
+windows after given times. Compare before and after on the same driven sequence; a single run
+varies, and so does the build: `scripts/run.sh` builds Debug and the stage copy is Release, and a
+Debug build's narrowing dropped four frames where the Release build's dropped at most one
+(`docs/prerelease-fixes-2026-09-26.md`). Check that the driven sequence does what it is meant to:
+the stack narrows only when the annotator's frame comes near it, so a trace of 1600 by 1000
+images opening measured no narrowing at all, and `stack.widthScale` in `[state]` says whether it did.
+
+Testing Send without a real session: `scripts/fake-herdr` reports one Claude Code session and
+answers a submission as its folder's `mode` file says (ok, gone, blocked or hang, after a delay).
+The stage copy runs it in place of herdr when launched with `--env FAKE_HERDR=<folder>`. Launched
+with `--env CFFIXED_USER_HOME=<folder>` as well, the app takes that folder for the home folder, so
+the Agents tab and setup read and write a scratch `.claude` rather than the user's; its log is then
+under that folder's `Library/Logs`.
 
 ## Rules that are not obvious from the code
+
+### Shortcut and capture
 
 - The recent-stack shortcut is either a Carbon hotkey (`HotKey.swift`, no permission needed)
   or a modifier double tap (`ModifierTap.swift`, `"double-rshift"`), which needs the app trusted
@@ -206,23 +244,126 @@ the same driven sequence; a single run varies.
   `annotate` instead of `show`.
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
-- `docs/glossary.md` is the vocabulary for the agent loop: agent client, agent session, terminal
-  host, destination, delivery route, screenshot request, screenshot reply, reply ticket. It says
-  what each one means and what not to call it. The distinctions it keeps are load-bearing, above
-  all that a session is a conversation and a pane is a place.
+- The status item has an autosave name and a seeded preferred position. Without it, a crowded
+  menu bar on a notch Mac puts the new icon under the notch and it never appears. Opening Vignette
+  again, from Finder or Spotlight, opens Settings (`applicationShouldHandleReopen`), or brings setup
+  forward while it is up; with the icon hidden it is the way back. A `vignette://` URL is not a
+  reopen (checked 2026-09-25), so a script's commands never open the window. The menu names its
+  two switches as the Screenshots tab does, under an "After a Screenshot" section header.
+- Files named `*-annotated.png` are outputs and are ignored by the watcher. `Stitch *.png`
+  outputs are not ignored on purpose: they arrive like a capture, which is what carries a stitch into
+  the annotator when `annotateOnCapture` is on. The watcher takes png, jpg, jpeg, and heic images
+  and mov recordings (`ScreenshotWatcher.candidateExtensions`), reports removals to the stack
+  (`[watcher] removed`), waits for a new file to decode before reporting it (a recording, until
+  AVFoundation can read its video track), and gives up on one that never does after
+  ten seconds (`[watcher] error never-stable`); the next folder event or stack open picks it up.
+  Wake from sleep rescans the folder. The watcher keeps an index of the folder (name and
+  modification date, from one bulk listing) so opening the stack and finding the newest screenshot
+  never list the folder on the main thread. Every stack open asks for a rescan, which is how the
+  index catches a file changed in place. The first listing runs on the watcher's queue and launch
+  waits for it half a second: macOS holds the first read of a folder it protects (the Desktop,
+  Documents, Downloads) until the user answers its prompt, and done on the main thread that read
+  held the whole launch for as long as the prompt was up (measured: 4 minutes 20 seconds, no setup
+  window and no menu bar icon). Until a listing has worked the reads answer from the empty index.
+  While the folder cannot be watched (a volume not mounted yet, or macOS refused the app the
+  folder) the reads list it directly and the watch is retried every 2 seconds, logging a change of
+  reason rather than every attempt. A folder that was there but unreadable is indexed silently by
+  the first listing that works, so a grant does not report every file in it as a new capture; a
+  missing folder is indexed as empty and what arrives in it is reported. `isDenied` (macOS refused
+  the app the folder, at its open or at its listing) and `isReadable` (a listing worked) are what
+  setup and the Screenshots tab read. A first launch whose folder is inside the Desktop, Documents
+  or Downloads (`ScreenshotWatcher.protectedArea`) makes no watcher until setup's Allow…, its
+  Continue or its closing (`watcherWaitsForSetup`), so macOS's prompt comes up under a row that says
+  why. `recentShots` answers empty with no watcher, so nothing reads the folder before then.
+  project.yml gives macOS's folder prompt its explanation
+  (`NSDesktopFolderUsageDescription` and the Documents and Downloads keys).
+  `docs/install-2026-09-24.md` has the measurements. Copying puts the image's own bytes on the
+  pasteboard under its own type, `public.jpeg` for a JPEG, and promises the TIFF, and the PNG when
+  the image is not one. Both are made only when a paste target asks.
+- The main thread never reads a file that iCloud Drive has taken off the Mac. With Optimize Mac
+  Storage on, an old file in an iCloud Desktop or Documents folder is a placeholder
+  (`SF_DATALESS`), and any read of it, ImageIO's header or AVFoundation's asset, downloads all of
+  it and waits: a 333 MB recording held the stack's opening for 14 s. The listing, `lstat`, resource
+  values and extended attributes do not download. `Thumbnailer.lookUp` is what the main thread
+  asks: `.notDownloaded` for a placeholder, and the card takes the kept shape or the screen's, with
+  iCloud's thumbnail from Quick Look, which does not download (`Thumbnailer.cardImage`). A
+  placeholder screenshot is downloaded in the background (`Thumbnailer.download`), because the
+  editor reads the file on the main thread when it opens; a recording is not downloaded, and its
+  badge shows no length. `docs/icloud-files-2026-09-25.md` has the measurements and what still
+  reads on the main thread.
+- A screen recording is a `Screenshot` whose `kind` is `.recording`, read from the `.mov`
+  extension alone (`Screenshot.recordingExtensions`). Its card shows the first frame, decoded on
+  the thumbnail queue (`Thumbnailer.posterFrame`, about 90 ms), and a badge with its length. Each
+  action names the kinds it takes (`ShotAction.kinds`, images only unless it says otherwise), and
+  `unavailableReason(for:)` is the one test: the strip greys a row that cannot take every selected
+  card, its key beeps, and its URL answers `unsupported-type`. An action never runs on the part of
+  a selection it can take. Draw and Open share Return and one strip row (`Config.stripRows` groups
+  actions by key); the row shows whichever applies, and Draw when neither does. A click on a
+  recording opens it in the app macOS opens movies with. A recording never reaches the annotator,
+  so `annotateOnCapture`, the hold, and Draw on Newest Screenshot pass over it. Copy puts a recording
+  on the pasteboard as its file URL and path, never its frames.
+  `docs/replacing-apple-capture-2026-09-22.md` has the measurements.
+- The first launch opens the setup window (`SetupWindow.swift`), and it has that launch to itself.
+  It is pages, one step each: welcome, with the folder permission when macOS protects the watch
+  folder, and Open at login; the shortcut; and the agent skill, only when `~/.claude` or `~/.codex`
+  exists. Its main job is the shortcut, because the default is `double-rshift` and that needs
+  Accessibility. Nothing else
+  may raise that dialog: `ModifierTap` is constructed with `prompt: false`, so the only
+  `trusted(prompt: true)` in the app is `Accessibility.request()`, which runs from a button the user
+  pressed: this window's, after choosing the double tap, and the Settings window's. A dialog raised
+  during launch, on a question nobody asked, is the one people dismiss. `request()` raises macOS's
+  own alert and nothing else, and opens the pane itself only when no `universalAccessAuthWarn`
+  window is up 1.5 s later (measured: the alert came up within half a second). Opening both at
+  once put the pane in front of the alert, which then waited behind it and outlived the grant, and
+  each further press queued one more alert to come up after it. The window learns the grant landed
+  by polling (AXIsProcessTrusted announces nothing), comes back to the front then, since System
+  Settings was covering it, and learns the shortcut works from the `.hotKeyFired`
+  notification, which `registerHotKey`'s `fire` posts: the keys firing is what proves the setup
+  worked, since the stack appearing does not on a Mac with no screenshots yet. Each fire presses the
+  key picture and turns its ×2 into a check, and the line then asks for the hold, which posts
+  `.hotKeyHeld`. That same poll reads
+  the watch folder's count, and an empty folder asks for a capture first, ahead of the fired state:
+  a tap with nothing to show opens nothing, so reporting success would report it about an empty
+  corner. The two menu items that act on a screenshot, Show Recent Screenshots and Draw on Newest
+  Screenshot, are greyed out while the folder is empty (`validateMenuItem`), which is the rest of
+  that silence: both used to answer only in the log. `setup` in
+  settings.json records `unasked` then `done`, written when the window closes rather than when it
+  opens, so a launch quit part way through asks again. `ShortcutSetting` is the one shortcut
+  control, shared with the Settings window's General tab: a pop-up of double taps, then Key
+  Combination…, which shows a recorder that starts listening at once. A new settings file starts with
+  `launchAtLogin` on: first run turns Apple's thumbnail off, so a restart that does not bring
+  Vignette back leaves every capture silent. The window shows the switch, and the login item is
+  registered when it closes, not during the launch it is showing in. The folder row is a
+  permission, not a choice of folder: it appears only for a folder inside the Desktop, Documents or
+  Downloads, its Allow… starts the watcher, whose first read raises macOS's prompt, and a refusal
+  turns it into a warning whose Allow… opens Privacy & Security > Files and Folders. The window's one
+  default button is the next step still to take: a missing permission's Allow…, then Continue or
+  Done. The page dots are laid over the buttons, so they sit on the window's centre line whatever
+  the buttons are. The skill page's switches start on, and closing the window installs the ones
+  still on, but only for someone who reached that page: closed earlier, `agentSkill` stays
+  `unasked`, and the next launch offers the skill in the Settings window instead.
+  `docs/settings-polish-2026-09-25.md` has the design and its reasons.
+- A launch from the disk image offers to move the app to Applications (`AppLocation.swift`),
+  from `main` before `Settings.shared` exists, so the copy on the image never creates the settings
+  file or touches Apple's defaults. "On the disk image" is a read-only volume or a translocated
+  path; a notarized, stapled image is not translocated (observed), so the volume check is the one
+  that fires for a real download. The move copies beside the destination, clears the quarantine
+  flag (the user already answered Gatekeeper for this app), puts an older copy in the Trash, opens
+  the new copy as a new instance, and exits; the new copy replaces the old instance as any launch
+  does and detaches the image with `hdiutil detach`, because `NSWorkspace.unmountAndEjectDevice`
+  unmounted an APFS image's volume and left the image attached, so opening the same file again
+  mounted nothing. `VIGNETTE_SETTINGS` is passed to the moved copy, so a test launch stays on its
+  scratch file. The destination is /Applications, or ~/Applications for a user who cannot write
+  there.
+
+### Words and motion
+
 - Two vocabularies, and they do not mix. Every string a user reads says draw: the buttons, the menu
   items, the toggles, the section headings, the toasts. Every name a script, a log reader or a
   compiler reads says annotate: the URL ids (`vignette://annotate`, `copy-annotated`), the log tags
   (`[annotate]`), the settings keys (`quickAnnotate`, `annotateOnCapture`), the `-annotated.png`
   suffix, and every identifier. A label is free to change; those are a contract. The editor window
   is still the annotator in both, because it is a thing rather than an action.
-- The annotator must open instantly, so the editor opens at `prepare`, before the image is
-  decoded (`AnnotationController.open`). It opens with the screen-size decode when `Thumbnailer`
-  has it cached, which it does after a hover, and with no image otherwise; `setImage` adds the image
-  when the decode answers, and `[annotate] loaded <ms>ms <name>` is logged then. Opening first is
-  what lets the keys work from `prepare`, and it leaves no moment in which an agent's push could
-  miss the open drawing. `openGeneration` drops a decode or a colour sample that answers after
-  another image opened.
 - Every animation goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json scales
   every duration, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
   `toastSeconds`) are not motion, and neither is a movement the user's own hand is driving: the
@@ -234,6 +375,115 @@ the same driven sequence; a single run varies.
   velocity and blends into the new target instead of jumping. `Tween.spring` is the closed form of
   a critically damped spring, so a late tick lands where the spring really is by then. Do not step
   it forward by hand: integrating it overshoots by hundreds of points after one late tick.
+
+### The stack
+
+- The stack runs to the bottom of the screen and steps around the Dock. `StackLayout.area` builds
+  one `StackArea` from the screen: `bounds` takes its sides and top from `visibleFrame` and its
+  bottom from the screen's own `frame`; `safeBottom` is the height AppKit reserves for a bottom
+  Dock, but only when the Dock's tiles reach into the column's strip of the screen. The column sits
+  above the Dock, the newest card rests `ui.screenMargin` above its top edge, and the mask and the
+  hair of alpha that catches clicks are lifted by the same number, so a click on a Dock icon under
+  the column still reaches the Dock. The tiles' rect is Accessibility's (`Dock.tiles`, the Dock
+  process's one `AXList`): `CGWindowListCopyWindowInfo` reports the Dock's window as the whole
+  screen on macOS 15. Untrusted for Accessibility, the Dock is taken to span the whole edge.
+  `annotatorRoom` and `annotationFrame` keep reading `visibleFrame`: the annotator must not go
+  under the Dock. `docs/stack-dock-2026-09-18.md` has the numbers.
+- A card in the stack and the same card in flight have to cast the same shadow. The column is
+  masked with a fade over the panel's inset at each end (`StackView.column`), and the bottom fade
+  starts below the newest card's shadow: solid for `StackLayout.cardShadowRoom` and fading over the
+  rest of the inset. `StackLayout.inset` is therefore at least that room plus `shadowFade`, so a
+  shadow bigger than `ui.panelInset` grows the panel around the column instead of being cut off.
+  The flight's shadow is cast by the clipped image, before the ring, for the same reason.
+- The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
+  The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
+  server on macOS 15, and a bare CABackdropLayer renders black. Do not retry. The band masks are
+  one-pixel bitmaps stretched to the strip and cached by width; shading a drawing-handler image at
+  the strip's full height on every show was measurably slow.
+- Stitching from the stack is one motion, not a file appearing later. `ThumbnailController.stitched`
+  takes the cards the image was made from out of the column, holds a slot for the new card at the
+  bottom, and hands both to `TransitionLayer.converge`: the pieces fly into that slot while the
+  finished image fades in under them. Both sets of cards sit in `model.forming` while their image is
+  in the transition layer, so a slot keeps its place and draws nothing, and the image is never on
+  screen twice. The watcher reports the file a moment later as usual; the card is already there, so
+  `insert` ignores it, and with `annotateOnCapture` on that same report flies the new card into the
+  annotator. With the stack closed (a `vignette://stitch` from a script) the toast is the whole of
+  it. Dismissing the stack mid-converge ends the pieces' flights with it and the stitch says so as a
+  toast, so it never finishes in silence. `Stitch.compose` lays the pieces out for the model that
+  will read the result: it tries every column count and keeps the one that survives a vision
+  model's resize best (`readerScale`, Anthropic's standard tier: a long edge of 1568 px and 1568
+  patches of 28 px). The gap and the badges are fractions of the piece they are on,
+  `ui.stitchLongSide` caps the output, and `[stitch] ok` reports the composed size and that scale.
+  Each piece carries its drawing, the editor's own for the image open in it and the stored one
+  otherwise, and `Drawing.draw` draws it into the piece's pixels as Done does, off the main thread.
+  The stitch is a new image with no drawing of its own. `docs/stitch-2026-09-17.md` has the numbers;
+  separate images are better when the model has to read the text.
+- The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
+  call `NSApp.activate` for it; the user's app must stay frontmost. Closing the stack or the
+  annotator hands the focus back (`FocusReturn.restore`): to the Vignette window the session began
+  in when that was Settings, setup or the tweaks, and else to the app before Vignette. While a
+  card is in the annotator the panel gives up key status so typing reaches the editor. It gives it
+  up in `perform(.prepare)`, right after the annotator's window has taken it, so the keys pass from one
+  to the other instead of being nobody's for the length of the flight. A `.help` tooltip never
+  shows in the stack: AppKit shows a window's tooltips only while its app is active, unless the
+  window sets `allowsToolTipsWhenApplicationIsInactive`, which the panel does not. Text the user
+  must see there is drawn, like a greyed strip row's reason (`UnavailableReason`).
+- Which card a key acts on is one variable, `model.focused`. The stack focuses the newest card the
+  moment it takes keys (`takeKeys`), so arrows, Space, and Return act on a card without a first
+  click, and the pointer moves the focus too: moving onto a card focuses it, and leaving it leaves
+  the focus there. The pointer only moves it while the stack holds the keys and no card is in the
+  annotator; while the annotator has them nothing moves. A shortcut runs on the selection when there
+  is one, else on the focused card (`targetCards`). The ring says where the focus is: the accent
+  color on a selected card, white on a focused one.
+- The panel widens to the left while cards are selected, to hold the selection strip
+  (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:reveal:)` makes the room:
+  the icon column, the gap to the cards, and the room the labels grow into, whether they are out or
+  not). Its right edge never moves, so the cards stay where they are. The gap to the cards is
+  `ui.selectionStripGap`, measured from the widest selected card (`docs/selection-strip-2026-09-18.md`).
+  Only the column carries the hair of alpha that catches clicks and scrolls; the strip's side of
+  the panel stays clear, so a click there still reaches the window underneath.
+- The strip's labels are out for as long as a selection exists, whichever hand built it: a selection
+  is the moment the rows' names and shortcuts are wanted, and a strip that folded back to icons when
+  the pointer moved onto a card read as the strip losing interest. Each row draws its shortcut after
+  the label from `ShotAction.Key.glyphs`, and `stripReveal(rows:)` measures both, so the panel's
+  room holds them. Copy on a card still reveals on hover and grows to the right from an icon that
+  does not move; the strip keeps its right edge and grows to the left, so a label never covers a
+  card. A row is one button, icon and label together. The strip stands aside while the annotator has
+  an image, since it hangs inside the room the frame may grow into: the two places that ask for its
+  placement refuse (`ThumbnailController.stripFrame` and `StackView.stripPlacement`), never
+  `showsStrip`, which sizes the panel, because the panel's window is not resized while a card is in
+  the annotator. The selection is untouched and the strip springs back when the annotator closes.
+  `[state] stack.strip` is the grown frame, null while a card is in the annotator.
+- The recent stack narrows to make room for the annotator. One number says how wide it is drawn:
+  `StackLayout.widthScale`, 1 at rest and never below `ui.stackMinScale`. The cards are drawn at
+  that width (`drawn`) and the column with them; their right edge does not move. The panel is always
+  the size the stack needs at rest, and transparent outside the column, so nothing has to be resized
+  while the stack narrows; the scroll follows the column's height so the same cards stay in view and
+  the column comes back to the same place. The rect the annotator fits and grows within is the
+  visible frame less the strip the stack keeps at its narrowest, `ui.stackGap` beside it
+  (`annotatorRoom`), so the frame can never reach the cards however far a zoom grows it. In between,
+  every time the annotator's frame moves the stack takes the widest value that still clears it by
+  the gap (`widthScale(clearing:visibleFrame:)`). Opening and closing spring it through
+  `ui.relayoutDuration`; a zoom sets it straight, in the same turn as the frame. Only the recent
+  stack does this: a lone thumbnail leaves the panel when the annotator opens, and a
+  `vignette://annotate` with no stack showing gets the whole visible frame.
+  `docs/stack-room-2026-09-17.md` has the numbers, and `docs/stack-narrowing-2026-09-23.md` what a
+  frame of the narrowing costs and the options for making it cheaper.
+- A card joining the open stack is not animated as a layout change. `ThumbnailController.shiftUp`
+  changes the layout and grows the panel with animations off, lifts every card that was there back
+  to where it was drawn (`StackModel.lift`), and springs the lifts to 0 on the next turn. The panel
+  grows at its top edge at once, and SwiftUI animates in coordinates whose origin is that edge, so
+  an animated insert moved the cards half a slot in one frame and carried the new card along with
+  the column. The new card slides on the lone thumbnail's spring, after `CardView.insertLead`, so it
+  reaches the column's width only once the card above has cleared its slot.
+  `docs/stack-insert-2026-09-26.md` has the frames.
+- A card's thumbnail fills the card, so a screenshot whose shape differs from the card's box hangs
+  outside the card's frame, and the clip that hides it does not shrink the hit area. The
+  `contentShape` in `CardView` holds each card's hover and clicks to its own frame; without it a
+  hovered card, which `zIndex` raises for its hover scale, takes them from the card below.
+
+### Flights and presses
+
 - A flight does not run down a straight line. `FlightCurve` bows it to one side and swells the card,
   both peaking in the middle and nothing at the ends, so the card still leaves and lands exactly
   where the layout puts it. The amounts are `ui.flightArc` (a fraction of the path's length),
@@ -320,168 +570,6 @@ the same driven sequence; a single run varies.
   (`ThumbnailController.hover(landing:)`). `docs/flight-press-2026-09-23.md` has the measurements
   and the two limits that remain: the window server's lag of 6 to about 30 ms, and a press at
   motion 0 that passed through, which needs no fix.
-- The stack runs to the bottom of the screen and steps around the Dock. `StackLayout.area` builds
-  one `StackArea` from the screen: `bounds` takes its sides and top from `visibleFrame` and its
-  bottom from the screen's own `frame`; `safeBottom` is the height AppKit reserves for a bottom
-  Dock, but only when the Dock's tiles reach into the column's strip of the screen. The column sits
-  above the Dock, the newest card rests `ui.screenMargin` above its top edge, and the mask and the
-  hair of alpha that catches clicks are lifted by the same number, so a click on a Dock icon under
-  the column still reaches the Dock. The tiles' rect is Accessibility's (`Dock.tiles`, the Dock
-  process's one `AXList`): `CGWindowListCopyWindowInfo` reports the Dock's window as the whole
-  screen on macOS 15. Untrusted for Accessibility, the Dock is taken to span the whole edge.
-  `annotatorRoom` and `annotationFrame` keep reading `visibleFrame`: the annotator must not go
-  under the Dock. `docs/stack-dock-2026-09-18.md` has the numbers.
-- A card in the stack and the same card in flight have to cast the same shadow. The column is
-  masked with a fade over the panel's inset at each end (`StackView.column`), and the bottom fade
-  starts below the newest card's shadow: solid for `StackLayout.cardShadowRoom` and fading over the
-  rest of the inset. `StackLayout.inset` is therefore at least that room plus `shadowFade`, so a
-  shadow bigger than `ui.panelInset` grows the panel around the column instead of being cut off.
-  The flight's shadow is cast by the clipped image, before the ring, for the same reason.
-- The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
-  The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
-  server on macOS 15, and a bare CABackdropLayer renders black. Do not retry. The band masks are
-  one-pixel bitmaps stretched to the strip and cached by width; shading a drawing-handler image at
-  the strip's full height on every show was measurably slow.
-- The status item has an autosave name and a seeded preferred position. Without it, a crowded
-  menu bar on a notch Mac puts the new icon under the notch and it never appears. Opening Vignette
-  again, from Finder or Spotlight, opens Settings (`applicationShouldHandleReopen`), or brings setup
-  forward while it is up; with the icon hidden it is the way back. A `vignette://` URL is not a
-  reopen (checked 2026-09-25), so a script's commands never open the window. The menu names its
-  two switches as the Screenshots tab does, under an "After a Screenshot" section header.
-- Files named `*-annotated.png` are outputs and are ignored by the watcher. `Stitch *.png`
-  outputs are not ignored on purpose: they arrive like a capture, which is what carries a stitch into
-  the annotator when `annotateOnCapture` is on. The watcher takes png, jpg, jpeg, and heic images
-  and mov recordings (`ScreenshotWatcher.candidateExtensions`), reports removals to the stack
-  (`[watcher] removed`), waits for a new file to decode before reporting it (a recording, until
-  AVFoundation can read its video track), and gives up on one that never does after
-  ten seconds (`[watcher] error never-stable`); the next folder event or stack open picks it up.
-  Wake from sleep rescans the folder. The watcher keeps an index of the folder (name and
-  modification date, from one bulk listing) so opening the stack and finding the newest screenshot
-  never list the folder on the main thread. Every stack open asks for a rescan, which is how the
-  index catches a file changed in place. The first listing runs on the watcher's queue and launch
-  waits for it half a second: macOS holds the first read of a folder it protects (the Desktop,
-  Documents, Downloads) until the user answers its prompt, and done on the main thread that read
-  held the whole launch for as long as the prompt was up (measured: 4 minutes 20 seconds, no setup
-  window and no menu bar icon). Until a listing has worked the reads answer from the empty index.
-  While the folder cannot be watched (a volume not mounted yet, or macOS refused the app the
-  folder) the reads list it directly and the watch is retried every 2 seconds, logging a change of
-  reason rather than every attempt. A folder that was there but unreadable is indexed silently by
-  the first listing that works, so a grant does not report every file in it as a new capture; a
-  missing folder is indexed as empty and what arrives in it is reported. `isDenied` (macOS refused
-  the app the folder, at its open or at its listing) and `isReadable` (a listing worked) are what
-  setup and the Screenshots tab read. A first launch whose folder is inside the Desktop, Documents
-  or Downloads (`ScreenshotWatcher.protectedArea`) makes no watcher until setup's Allow…, its
-  Continue or its closing (`watcherWaitsForSetup`), so macOS's prompt comes up under a row that says
-  why. `recentShots` answers empty with no watcher, so nothing reads the folder before then.
-  project.yml gives macOS's folder prompt its explanation
-  (`NSDesktopFolderUsageDescription` and the Documents and Downloads keys).
-  `docs/install-2026-09-24.md` has the measurements. Copying puts the image's own bytes on the
-  pasteboard under its own type, `public.jpeg` for a JPEG, and promises the TIFF, and the PNG when
-  the image is not one. Both are made only when a paste target asks.
-- The main thread never reads a file that iCloud Drive has taken off the Mac. With Optimize Mac
-  Storage on, an old file in an iCloud Desktop or Documents folder is a placeholder
-  (`SF_DATALESS`), and any read of it, ImageIO's header or AVFoundation's asset, downloads all of
-  it and waits: a 333 MB recording held the stack's opening for 14 s. The listing, `lstat`, resource
-  values and extended attributes do not download. `Thumbnailer.lookUp` is what the main thread
-  asks: `.notDownloaded` for a placeholder, and the card takes the kept shape or the screen's, with
-  iCloud's thumbnail from Quick Look, which does not download (`Thumbnailer.cardImage`). A
-  placeholder screenshot is downloaded in the background (`Thumbnailer.download`), because the
-  editor reads the file on the main thread when it opens; a recording is not downloaded, and its
-  badge shows no length. `docs/icloud-files-2026-09-25.md` has the measurements and what still
-  reads on the main thread.
-- A screen recording is a `Screenshot` whose `kind` is `.recording`, read from the `.mov`
-  extension alone (`Screenshot.recordingExtensions`). Its card shows the first frame, decoded on
-  the thumbnail queue (`Thumbnailer.posterFrame`, about 90 ms), and a badge with its length. Each
-  action names the kinds it takes (`ShotAction.kinds`, images only unless it says otherwise), and
-  `unavailableReason(for:)` is the one test: the strip greys a row that cannot take every selected
-  card, its key beeps, and its URL answers `unsupported-type`. An action never runs on the part of
-  a selection it can take. Draw and Open share Return and one strip row (`Config.stripRows` groups
-  actions by key); the row shows whichever applies, and Draw when neither does. A click on a
-  recording opens it in the app macOS opens movies with. A recording never reaches the annotator,
-  so `annotateOnCapture`, the hold, and Draw on Newest Screenshot pass over it. Copy puts a recording
-  on the pasteboard as its file URL and path, never its frames.
-  `docs/replacing-apple-capture-2026-09-22.md` has the measurements.
-- Stitching from the stack is one motion, not a file appearing later. `ThumbnailController.stitched`
-  takes the cards the image was made from out of the column, holds a slot for the new card at the
-  bottom, and hands both to `TransitionLayer.converge`: the pieces fly into that slot while the
-  finished image fades in under them. Both sets of cards sit in `model.forming` while their image is
-  in the transition layer, so a slot keeps its place and draws nothing, and the image is never on
-  screen twice. The watcher reports the file a moment later as usual; the card is already there, so
-  `insert` ignores it, and with `annotateOnCapture` on that same report flies the new card into the
-  annotator. With the stack closed (a `vignette://stitch` from a script) the toast is the whole of
-  it. Dismissing the stack mid-converge ends the pieces' flights with it and the stitch says so as a
-  toast, so it never finishes in silence. `Stitch.compose` lays the pieces out for the model that
-  will read the result: it tries every column count and keeps the one that survives a vision
-  model's resize best (`readerScale`, Anthropic's standard tier: a long edge of 1568 px and 1568
-  patches of 28 px). The gap and the badges are fractions of the piece they are on,
-  `ui.stitchLongSide` caps the output, and `[stitch] ok` reports the composed size and that scale.
-  Each piece carries its drawing, the editor's own for the image open in it and the stored one
-  otherwise, and `Drawing.draw` draws it into the piece's pixels as Done does, off the main thread.
-  The stitch is a new image with no drawing of its own. `docs/stitch-2026-09-17.md` has the numbers;
-  separate images are better when the model has to read the text.
-- The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
-  call `NSApp.activate` for it; the user's app must stay frontmost. Closing the stack or the
-  annotator hands the focus back (`FocusReturn.restore`): to the Vignette window the session began
-  in when that was Settings, setup or the tweaks, and else to the app before Vignette. While a
-  card is in the annotator the panel gives up key status so typing reaches the editor. It gives it
-  up in `perform(.prepare)`, right after the annotator's window has taken it, so the keys pass from one
-  to the other instead of being nobody's for the length of the flight. A `.help` tooltip never
-  shows in the stack: AppKit shows a window's tooltips only while its app is active, unless the
-  window sets `allowsToolTipsWhenApplicationIsInactive`, which the panel does not. Text the user
-  must see there is drawn, like a greyed strip row's reason (`UnavailableReason`).
-- Which card a key acts on is one variable, `model.focused`. The stack focuses the newest card the
-  moment it takes keys (`takeKeys`), so arrows, Space, and Return act on a card without a first
-  click, and the pointer moves the focus too: moving onto a card focuses it, and leaving it leaves
-  the focus there. The pointer only moves it while the stack holds the keys and no card is in the
-  annotator; while the annotator has them nothing moves. A shortcut runs on the selection when there
-  is one, else on the focused card (`targetCards`). The ring says where the focus is: the accent
-  color on a selected card, white on a focused one.
-- The panel widens to the left while cards are selected, to hold the selection strip
-  (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:reveal:)` makes the room:
-  the icon column, the gap to the cards, and the room the labels grow into, whether they are out or
-  not). Its right edge never moves, so the cards stay where they are. The gap to the cards is
-  `ui.selectionStripGap`, measured from the widest selected card (`docs/selection-strip-2026-09-18.md`).
-  Only the column carries the hair of alpha that catches clicks and scrolls; the strip's side of
-  the panel stays clear, so a click there still reaches the window underneath.
-- The strip's labels are out for as long as a selection exists, whichever hand built it: a selection
-  is the moment the rows' names and shortcuts are wanted, and a strip that folded back to icons when
-  the pointer moved onto a card read as the strip losing interest. Each row draws its shortcut after
-  the label from `ShotAction.Key.glyphs`, and `stripReveal(rows:)` measures both, so the panel's
-  room holds them. Copy on a card still reveals on hover and grows to the right from an icon that
-  does not move; the strip keeps its right edge and grows to the left, so a label never covers a
-  card. A row is one button, icon and label together. The strip stands aside while the annotator has
-  an image, since it hangs inside the room the frame may grow into: the two places that ask for its
-  placement refuse (`ThumbnailController.stripFrame` and `StackView.stripPlacement`), never
-  `showsStrip`, which sizes the panel, because the panel's window is not resized while a card is in
-  the annotator. The selection is untouched and the strip springs back when the annotator closes.
-  `[state] stack.strip` is the grown frame, null while a card is in the annotator.
-- The recent stack narrows to make room for the annotator. One number says how wide it is drawn:
-  `StackLayout.widthScale`, 1 at rest and never below `ui.stackMinScale`. The cards are drawn at
-  that width (`drawn`) and the column with them; their right edge does not move. The panel is always
-  the size the stack needs at rest, and transparent outside the column, so nothing has to be resized
-  while the stack narrows; the scroll follows the column's height so the same cards stay in view and
-  the column comes back to the same place. The rect the annotator fits and grows within is the
-  visible frame less the strip the stack keeps at its narrowest, `ui.stackGap` beside it
-  (`annotatorRoom`), so the frame can never reach the cards however far a zoom grows it. In between,
-  every time the annotator's frame moves the stack takes the widest value that still clears it by
-  the gap (`widthScale(clearing:visibleFrame:)`). Opening and closing spring it through
-  `ui.relayoutDuration`; a zoom sets it straight, in the same turn as the frame. Only the recent
-  stack does this: a lone thumbnail leaves the panel when the annotator opens, and a
-  `vignette://annotate` with no stack showing gets the whole visible frame.
-  `docs/stack-room-2026-09-17.md` has the numbers, and `docs/stack-narrowing-2026-09-23.md` what a
-  frame of the narrowing costs and the options for making it cheaper.
-- A card joining the open stack is not animated as a layout change. `ThumbnailController.shiftUp`
-  changes the layout and grows the panel with animations off, lifts every card that was there back
-  to where it was drawn (`StackModel.lift`), and springs the lifts to 0 on the next turn. The panel
-  grows at its top edge at once, and SwiftUI animates in coordinates whose origin is that edge, so
-  an animated insert moved the cards half a slot in one frame and carried the new card along with
-  the column. The new card slides on the lone thumbnail's spring, after `CardView.insertLead`, so it
-  reaches the column's width only once the card above has cleared its slot.
-  `docs/stack-insert-2026-09-26.md` has the frames.
-- A card's thumbnail fills the card, so a screenshot whose shape differs from the card's box hangs
-  outside the card's frame, and the clip that hides it does not shrink the hit area. The
-  `contentShape` in `CardView` holds each card's hover and clicks to its own frame; without it a
-  hovered card, which `zIndex` raises for its hover scale, takes them from the card below.
 - "Click outside" detection goes through `OutsideClick`. A plain global mouse monitor also
   reports clicks on this app's own floating windows, so the topmost window under the cursor is
   checked first. The stack and the annotator each own one; the monitor's token never leaves that
@@ -501,6 +589,16 @@ the same driven sequence; a single run varies.
   flight's are click-through. All of this holds for the annotator and the flight layer only while
   `ignoresMouseEvents` is never set on either: set either way, the window takes or passes every
   press, whatever its pixels.
+
+### The annotator and its reducer
+
+- The annotator must open instantly, so the editor opens at `prepare`, before the image is
+  decoded (`AnnotationController.open`). It opens with the screen-size decode when `Thumbnailer`
+  has it cached, which it does after a hover, and with no image otherwise; `setImage` adds the image
+  when the decode answers, and `[annotate] loaded <ms>ms <name>` is logged then. Opening first is
+  what lets the keys work from `prepare`, and it leaves no moment in which an agent's push could
+  miss the open drawing. `openGeneration` drops a decode or a colour sample that answers after
+  another image opened.
 - Which image is in the annotator, where it came from, and what is in flight has one owner:
   `AnnotatorTransition` (a pure reducer) held by `ThumbnailController`. Controllers send events
   (annotate, shown, parked, close, finish, newShot, dismiss, remove) and run the effects it returns
@@ -520,7 +618,8 @@ the same driven sequence; a single run varies.
   comes down. `dismiss` sets `model.slidingOut` before it sends, so a park that answers in that turn
   leaves the flight it just aimed offscreen to the slide-out. Add a sequence to
   `AnnotatorTransitionTests` before changing the table; the random-sequence test checks the
-  invariants, with same-turn answers among its sequences.
+  invariants, with same-turn answers among its sequences. A swap runs two flights at once, and the
+  stack keeps the slot, drawn empty, so the card flies back to the same place.
 - The flight to the annotator can be interrupted. In `flyingOut` the window has not come up, so
   nobody has seen that image: a `close` or an `annotate` of another key answers in the same turn
   with `abandon` and `returnCard`, and the flight turns around from where it is (`fly` on an id
@@ -586,14 +685,35 @@ the same driven sequence; a single run varies.
   from the message field when the person turned on Send with Return (`sendWithReturn`).
   `docs/send-and-reply-2026-09-24.md` has the rules. While one image follows another with no gap (a click on
   another card, or the queue moving on) the bar stays on screen and springs to the next image's
-  place: `place(below:gap:)` slides the panel when it is already up, one `Tween` per direction, over
-  `Anim.passesTarget(ui.expandDuration)`, which is when the next image's window comes up.
+  place, and keeps the image before's target until the next image's settles (`Model.begin`'s
+  `carryingTarget`), since emptying it took Send off the bar for the listing's 60 to 90 ms and the
+  bar jumped narrower and back: `place(below:gap:)` slides the panel when it is already up, one `Tween` per direction, over
+  `Anim.passesTarget(ui.expandDuration)`, which is when the next image's window comes up. The
+  springs move the panel's centre and top edge, so a change of size never moves the bar. When the
+  offer changes, the bar springs to its new width inside the panel, which never narrows while the
+  bar is up and is clear around it. The controls two offers share (Copy, the message field, the
+  filled button) keep one identity so they move rather than cross-fade, and the bar's sides clip
+  what comes and goes.
   `hideWindows` asks for the exit through `hideSoon`, which waits one turn of the run loop and is
   cancelled by the next `place`; a swap's park answer and the next `prepare` land in that same turn,
-  so the reducer says nothing about this. `[state] annotator.toolbar` is the panel's frame, or null
-  when it is off screen. `docs/annotator-toolbar-2026-09-19.md` has the numbers. A swap runs two
-  flights at once, and the stack keeps the slot, drawn empty, so the card flies back to the same
-  place.
+  so the reducer says nothing about this. The panel always keeps
+  the room above and below the bar that the message field grows into, clear, since a panel that
+  grew when the field took focus moved the bar for a frame. The field grows down, and up out of the
+  bar once it nears the bottom of the visible screen (`Model.roomBelow`, `GrowingField`).
+  `[state] annotator.toolbar` is the panel's frame without that room, or null when it is off screen.
+  Tab goes from the last mark to the bar's controls and back (`AnnotatorToolbar.enter`, `move`,
+  `EditorView.enterCanvas`). While a control has the focus the editor keeps the keys and hands Tab
+  and Space to the bar (`EditorView.takesKey`), except in the message field, where the bar's panel
+  has them and takes Tab first (`ToolbarPanel.sendEvent`). `[state] annotator.toolbarFocus` names
+  the focused control. The bar draws its own tooltips (`TipSpot`, `TipLabel`): AppKit shows a
+  window's tooltips only while it is key or was the last one clicked, so `.help` on the bar showed
+  nothing until the bar was clicked, and `allowsToolTipsWhenApplicationIsInactive` did not change
+  that. The target's menu is an `NSMenu` (`showTargetMenu`), since SwiftUI's `Menu`
+  cannot be opened from a key. Space opens it a turn later: opened inside the editor's keyDown it
+  took no keys, and a press on its item closed the editor as a press outside. `docs/annotator-toolbar-2026-09-19.md` has the numbers.
+
+### The editor and drawings
+
 - The editor is a pure reducer and a view that decides nothing. `EditorCore.reduce` takes one
   `Input` and returns the `Effect`s to run, in order; `EditorView` turns events into inputs, runs
   those effects, and draws the core's state in one `CATransaction`. What a press hits is
@@ -677,6 +797,9 @@ the same driven sequence; a single run varies.
   backing scale of the screen it opens on; one an agent's marks create takes `NSScreen.main`'s, the
   best guess with no annotator open. Both are clamped to `Drawing.pointScales`. A stored drawing
   keeps its own, so a mark keeps its size in the image when the drawing is opened on another screen.
+
+### Zoom
+
 - Zoom belongs to the annotator, not the editor. A pinch, a two-finger double tap and a wheel over
   the editor go straight to `AnnotationController` through `onZoomGesture`, with the trackpad's
   phases: a pinch and a wheel with cmd or ctrl held zoom, and a plain wheel pans a magnified
@@ -710,6 +833,9 @@ the same driven sequence; a single run varies.
   `annotator.zoom` and `annotator.canvasZoom` its two halves per direction, `annotator.zoomAnchor`
   the point the window grows away from, `annotator.zoomCenter` the middle of the visible part, and
   `annotator.room` the rect the frame may grow within.
+
+### Memory
+
 - Memory is bounded where images are held. `Thumbnailer` keeps decoded images under `budgetBytes`,
   least recently used out first, and screen-size flight decodes are dropped whenever the stack
   hides. Every image that reaches a card, a flight or the editor is decoded before it gets there
@@ -728,10 +854,14 @@ the same driven sequence; a single run varies.
   `removeCards` lets a card's marks go when it leaves the column. Text bitmaps are capped by their
   owner's plan (the `MarkLayers` rule above), and renderings run one at a time (`RenderingQueue`). A
   stitch decodes one piece at a time and draws at the capped output size.
+
+### Build, signing and Apple defaults
+
 - Swift language mode is 5 (see `project.yml`). No sandbox, on purpose: the app writes Apple's
   `com.apple.screencapture` defaults, watches a folder the user names without security-scoped
   bookmarks, and installs global event monitors. The hardened runtime is on.
-- Signing: project.yml defaults to ad-hoc so any clone builds; `scripts/build.sh` reads the
+
+  Signing: project.yml defaults to ad-hoc so any clone builds; `scripts/build.sh` reads the
   gitignored `scripts/signing.env` (identity and team) and this Mac's names the Developer ID
   certificate. Keep it that way here: Accessibility trust is tied to the signature's designated
   requirement, and an ad-hoc signature changes on every build (`docs/building.md` has the details).
@@ -740,7 +870,8 @@ the same driven sequence; a single run varies.
   self-signed build crashed at launch. macOS keys Accessibility by bundle id: a second copy of
   the app with the same bundle id and a different signature shares the row and stays untrusted,
   so a test build that must be trusted needs its own bundle id.
-- `Info.plist` is generated by xcodegen from `project.yml` and is gitignored.
+
+  `Info.plist` is generated by xcodegen from `project.yml` and is gitignored.
 - Settings changes push to Apple's `com.apple.screencapture` defaults (location, show-thumbnail,
   disable-shadow, type). Only keys that changed are written. First run is the one exception, and it
   writes one key: `show-thumbnail` goes off, because Apple's thumbnail withholds the file for about
@@ -762,6 +893,13 @@ the same driven sequence; a single run varies.
   disable path and the only way back in the UI. `appleThumbnail` stays a settings.json key with no
   control, because `restoreAppleDefaults()` writes Apple's old value into it and that is what makes
   a restore survive the next launch's reconcile.
+
+### Agents
+
+- `docs/glossary.md` is the vocabulary for the agent loop: agent client, agent session, terminal
+  host, destination, delivery route, screenshot request, screenshot reply, reply ticket. It says
+  what each one means and what not to call it. The distinctions it keeps are load-bearing, above
+  all that a session is a conversation and a pane is a place.
 - Sending a drawing to an agent session and taking its drawing back is one object,
   `ScreenshotRequests`, and one small boundary, `AgentConnection`. Two things are durable and
   different: **acceptance** means Vignette owns every byte of a reply, and is what the receipt a
@@ -777,6 +915,10 @@ the same driven sequence; a single run varies.
   rather than trusting the copy its import has been carrying. A managed reply is never a capture even after publication, so a late watcher
   event cannot copy it to the clipboard or open the editor, and its card is inserted once, by its
   own import. Startup loads the records before the watcher starts or anything warms the stack.
+  At `maxLiveRequests` open requests a send clears the oldest (`[requests] cleared <id> …: the
+  oldest of 50 open`) rather than refusing, since a refusal stopped Send working for good. A
+  cleared request's folder is deleted a week later (`clearedKept`, dated by its `request.json`),
+  unless one of its replies is still a card, since that reply's record is what shows it.
 - A destination is an agent session, never the terminal displaying it. Codex is addressed by its
   thread UUID and nothing else: `codex queue --thread` finds the engine that owns the thread, the
   desktop app's included, and that engine resolves the UUID or fails, which is
@@ -803,7 +945,13 @@ the same driven sequence; a single run varies.
   session immediately before submitting (`AddressGuard.preflight`). A session in no pane is an
   error and never another pane. The image travels as a path the session opens itself, so a Claude
   Code session that may not read it stops on a permission prompt. herdr reports that pane as
-  `blocked`, and Vignette records the request as not submitted, with `send-failed`. The two tiers
+  `blocked`, and Vignette records the request as not submitted, with `send-failed`. The Agents tab
+  and setup's last page offer `ClaudeReadRule`, one `Read(…/requests/*/image.png)` rule in
+  `~/.claude/settings.json`'s `permissions.allow`, which lets Claude Code open the sent images
+  without asking. It writes through a link to that file, since people keep it in a dotfiles
+  repository; a skill's `allowed-tools` was tried and made Claude Code ask to use the skill
+  instead. Without herdr, the Agents tab and setup say Send reaches Claude Code only through it
+  (`AgentName`). The two tiers
   are recorded on every request and reported in `[state] requests`; `docs/closed-agent-loop-implementation-2026-09-20.md` says why the weaker one
   is still allowed to submit.
 - A `vignette://` URL has no authenticated sender, so a reply is authorized by a per-request bearer
@@ -868,59 +1016,10 @@ the same driven sequence; a single run varies.
   for the log. A card gone from the screen by then says nothing more about a success and comes back
   as a lone thumbnail for a failure. A failure before the request is stored leaves the drawing in
   the editor, so it shows there: the button reads "Not sent" and a popover on it gives the reason,
-  both until a click elsewhere or Send again. `docs/send-confirmation-2026-09-26.md` has the frames.
-- The first launch opens the setup window (`SetupWindow.swift`), and it has that launch to itself.
-  It is pages, one step each: welcome, with the folder permission when macOS protects the watch
-  folder, and Open at login; the shortcut; and the agent skill, only when `~/.claude` or `~/.codex`
-  exists. Its main job is the shortcut, because the default is `double-rshift` and that needs
-  Accessibility. Nothing else
-  may raise that dialog: `ModifierTap` is constructed with `prompt: false`, so the only
-  `trusted(prompt: true)` in the app is `Accessibility.request()`, which runs from a button the user
-  pressed: this window's, after choosing the double tap, and the Settings window's. A dialog raised
-  during launch, on a question nobody asked, is the one people dismiss. `request()` raises macOS's
-  own alert and nothing else, and opens the pane itself only when no `universalAccessAuthWarn`
-  window is up 1.5 s later (measured: the alert came up within half a second). Opening both at
-  once put the pane in front of the alert, which then waited behind it and outlived the grant, and
-  each further press queued one more alert to come up after it. The window learns the grant landed
-  by polling (AXIsProcessTrusted announces nothing), comes back to the front then, since System
-  Settings was covering it, and learns the shortcut works from the `.hotKeyFired`
-  notification, which `registerHotKey`'s `fire` posts: the keys firing is what proves the setup
-  worked, since the stack appearing does not on a Mac with no screenshots yet. Each fire presses the
-  key picture and turns its ×2 into a check, and the line then asks for the hold, which posts
-  `.hotKeyHeld`. That same poll reads
-  the watch folder's count, and an empty folder asks for a capture first, ahead of the fired state:
-  a tap with nothing to show opens nothing, so reporting success would report it about an empty
-  corner. The two menu items that act on a screenshot, Show Recent Screenshots and Draw on Newest
-  Screenshot, are greyed out while the folder is empty (`validateMenuItem`), which is the rest of
-  that silence: both used to answer only in the log. `setup` in
-  settings.json records `unasked` then `done`, written when the window closes rather than when it
-  opens, so a launch quit part way through asks again. `ShortcutSetting` is the one shortcut
-  control, shared with the Settings window's General tab: a pop-up of double taps, then Key
-  Combination…, which shows a recorder that starts listening at once. A new settings file starts with
-  `launchAtLogin` on: first run turns Apple's thumbnail off, so a restart that does not bring
-  Vignette back leaves every capture silent. The window shows the switch, and the login item is
-  registered when it closes, not during the launch it is showing in. The folder row is a
-  permission, not a choice of folder: it appears only for a folder inside the Desktop, Documents or
-  Downloads, its Allow… starts the watcher, whose first read raises macOS's prompt, and a refusal
-  turns it into a warning whose Allow… opens Privacy & Security > Files and Folders. The window's one
-  default button is the next step still to take: a missing permission's Allow…, then Continue or
-  Done. The page dots are laid over the buttons, so they sit on the window's centre line whatever
-  the buttons are. The skill page's switches start on, and closing the window installs the ones
-  still on, but only for someone who reached that page: closed earlier, `agentSkill` stays
-  `unasked`, and the next launch offers the skill in the Settings window instead.
-  `docs/settings-polish-2026-09-25.md` has the design and its reasons.
-- A launch from the disk image offers to move the app to Applications (`AppLocation.swift`),
-  from `main` before `Settings.shared` exists, so the copy on the image never creates the settings
-  file or touches Apple's defaults. "On the disk image" is a read-only volume or a translocated
-  path; a notarized, stapled image is not translocated (observed), so the volume check is the one
-  that fires for a real download. The move copies beside the destination, clears the quarantine
-  flag (the user already answered Gatekeeper for this app), puts an older copy in the Trash, opens
-  the new copy as a new instance, and exits; the new copy replaces the old instance as any launch
-  does and detaches the image with `hdiutil detach`, because `NSWorkspace.unmountAndEjectDevice`
-  unmounted an APFS image's volume and left the image attached, so opening the same file again
-  mounted nothing. `VIGNETTE_SETTINGS` is passed to the moved copy, so a test launch stays on its
-  scratch file. The destination is /Applications, or ~/Applications for a user who cannot write
-  there.
+  both until a click elsewhere or Send again. A reply that was accepted and could not be made a card
+  has no card to report on, so the card it answers takes a `replyFailed` mark, "Reply not shown"
+  (`ScreenshotRequests.Callbacks.replyFailed`). A published reply is its own card and nothing else
+  says it arrived. `docs/send-confirmation-2026-09-26.md` has the frames.
 - The agent skill (`skills/vignette/SKILL.md`) ships in the bundle as a folder resource
   (project.yml), and `SkillInstaller.swift` copies it out. A root is an agent's own directory,
   `~/.claude` or `~/.codex`, and only one that exists; the skill lands in `<root>/skills/vignette`.

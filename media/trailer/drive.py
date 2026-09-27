@@ -601,11 +601,15 @@ def render_cards(stage):
 
 def write_herdr(stage):
     """The stage copy's herdr: the real one, pointed at the trailer's session, so Send lists only
-    the trailer's Claude Code and never one of yours."""
+    the trailer's Claude Code and never one of yours. A launch with FAKE_HERDR set gets
+    scripts/fake-herdr instead, which answers as a test tells it to."""
     session = stage.config['stage']['session']['herdr']
+    fake = os.path.join(REPO, 'scripts', 'fake-herdr')
     os.makedirs(os.path.dirname(stage.paths['herdr']), exist_ok=True)
     with open(stage.paths['herdr'], 'w') as f:
-        f.write(f'#!/bin/sh\n# Written by drive.py for the stage copy of Vignette.\nexec {json.dumps(HERDR)} --session {json.dumps(session)} "$@"\n')
+        f.write(f'#!/bin/sh\n# Written by drive.py for the stage copy of Vignette.\n'
+                f'[ -n "$FAKE_HERDR" ] && exec {json.dumps(fake)} "$@"\n'
+                f'exec {json.dumps(HERDR)} --session {json.dumps(session)} "$@"\n')
     os.chmod(stage.paths['herdr'], 0o755)
 
 

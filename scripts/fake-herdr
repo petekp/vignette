@@ -1,0 +1,31 @@
+#!/bin/sh
+# A stand-in for herdr, for testing Send and Reply without reaching a real Claude Code session.
+# It reports one session in one pane and answers a submission as the mode file says. The stage copy
+# (media/trailer) runs it in place of herdr when launched with FAKE_HERDR set to a folder:
+#   open -g --env VIGNETTE_SETTINGS=<scratch settings> --env FAKE_HERDR=<folder> "<stage copy>"
+# In that folder:
+#   mode         "<answer> <seconds>", read at each submission. The answer is ok, gone (the session
+#                closed), blocked (it waits on a prompt) or hang (no answer, so the send is
+#                unconfirmed); the seconds are how long it takes to answer. Missing: "ok 0.3".
+#   status       the pane's agent_status in listings: idle, working or blocked. Missing: idle.
+#   prompts.log  every line submitted, with the time.
+set -e
+dir="${FAKE_HERDR:?set FAKE_HERDR to the folder this reads}"
+status=$(cat "$dir/status" 2>/dev/null || echo idle)
+pane='{"pane_id":"p1","agent":"claude","agent_session":{"value":"11111111-2222-4333-8444-555555555555"},"cwd":"/tmp/fake-project","terminal_title_stripped":"Fake session","tab_id":"t1","focused":true,"agent_status":"'"$status"'","name":""}'
+case "$1 $2" in
+"pane list") echo '{"result":{"panes":['"$pane"']}}' ;;
+"agent list") echo '{"result":{"agents":['"$pane"']}}' ;;
+"agent prompt")
+  echo "$(date +%T) $4" >> "$dir/prompts.log"
+  set -- $(cat "$dir/mode" 2>/dev/null || echo ok 0.3)
+  sleep "${2:-0}"
+  case "$1" in
+  ok) echo '{"result":{}}' ;;
+  gone) echo 'error: agent_not_found' >&2; exit 1 ;;
+  blocked) echo 'error: agent_blocked' >&2; exit 1 ;;
+  hang) sleep 60 ;;
+  *) echo "fake herdr: unknown mode $1" >&2; exit 1 ;;
+  esac ;;
+*) echo "fake herdr: $*" >&2; exit 1 ;;
+esac

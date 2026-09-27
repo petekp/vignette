@@ -22,23 +22,31 @@ final class ScreenshotRequests {
         /// Shows a published reply's card. Managed replies never reach the watcher's capture path.
         var present: (Screenshot) -> Void = { _ in }
         var watchFolder: () -> URL = { FileManager.default.temporaryDirectory }
-        /// One sentence for the person, on the stack's toast.
-        var feedback: (String) -> Void = { _ in }
         /// What the client answered for a request, which the card that was sent shows.
         var delivered: (Record, SubmissionOutcome) -> Void = { _, _ in }
+        /// A reply to this request was accepted and could not be made a card, which the card that
+        /// was sent shows, since there is no card of the reply's own to show it on. The reason is
+        /// what the person can do about it.
+        var replyFailed: (Record, String) -> Void = { _, _ in }
     }
 
     var callbacks = Callbacks()
     /// The connections, by client. Injected so a test never runs herdr or codex.
     var connections: [AgentClient: any AgentConnection] = [:]
 
-    /// The most requests that may be live at once. A request holds a PNG and an agent may still be
-    /// reading it, so the limit refuses a new send rather than deleting an old one behind the
-    /// person's back; `vignette://requests?clear=all` is how room is made.
+    /// The most requests kept open at once, each with its PNG and a ticket its agent can still reply
+    /// with. A send past it clears the oldest: a limit that refused the send stopped Send working
+    /// for good after the fiftieth, and an agent answers a request within the hour, not fifty sends later.
     static let maxLiveRequests = 50
+    /// How long a cleared request's folder is kept. Until then a late reply is told the request was
+    /// cleared; after it the ticket is gone and the reply is refused as unauthorized.
+    static let clearedKept: TimeInterval = 7 * 24 * 3600
     /// A request's `Record`, in its request directory. `ReplyCommand` reads it to tell a retry that
     /// the request was cleared.
     nonisolated static let recordFileName = "request.json"
+
+    /// Where the app keeps its requests. `ClaudeReadRule` names the images in it.
+    nonisolated static let defaultRoot = Identity.applicationSupportURL.appendingPathComponent("requests")
 
     let root: URL
     private var requests: [String: Record] = [:]
@@ -160,6 +168,7 @@ final class ScreenshotRequests {
                 try? write(replies[id]!)
             }
         }
+        prune()
         Log.write("[requests] loaded \(loadedRequests) requests \(loadedReplies) replies pending=\(pendingImports.count)\(unreadable > 0 ? " unreadable=\(unreadable)" : "") dir=\(root.path)")
         importNext()
     }
@@ -283,11 +292,6 @@ final class ScreenshotRequests {
     @discardableResult
     func send(png: Data, source: URL, to destination: AgentDestination, message: String? = nil,
               instructions: String = SettingsData.defaultSendInstructions) throws -> Record {
-        let live = requests.values.filter { $0.status != .cleared }.count
-        guard live < Self.maxLiveRequests else {
-            Log.write("[send] error \(CommandError.writeFailed.rawValue) \(live) requests are open; clear some with \(Identity.urlScheme)://requests?clear=all")
-            throw Refusal(reason: "\(live) earlier sends are still open. Clear them with \(Identity.urlScheme)://requests?clear=all.")
-        }
         let id = ReplyProtocol.newID()
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: id)
         let record = Record(id: id, created: Date(), destinationID: destination.id,
@@ -306,6 +310,8 @@ final class ScreenshotRequests {
             throw Refusal(reason: "Vignette couldn't save the request. \(error.localizedDescription)")
         }
         requests[id] = record
+        clearOldest()
+        prune()
         Log.write("[send] prepared \(id) to \(destination.name) (\(destination.address.description)) \(png.count) bytes")
         submit(record, message: message, instructions: instructions)
         return record
@@ -548,7 +554,6 @@ final class ScreenshotRequests {
         if let client = requests[reply.requestID]?.address.client { Agent.record(client.rawValue, on: url) }
         Log.write("[reply] published \(reply.fileName) marks=\(reply.marks.count)")
         callbacks.present(Screenshot(url: url))
-        callbacks.feedback("\(requests[reply.requestID]?.destinationName ?? "An agent") replied")
         done()
     }
 
@@ -574,7 +579,11 @@ final class ScreenshotRequests {
         replies[id] = reply
         try? write(reply)
         Log.write("[reply] error \(code) \(id)")
-        if stage == .failed { callbacks.feedback("A reply could not be imported; see the log") }
+        if stage == .failed, let request = requests[reply.requestID] {
+            // The agent can fix an image or marks that did not read; a write that failed here cannot.
+            let theAgents = code == "payload-unreadable" || code == "draft-failed"
+            callbacks.replyFailed(request, theAgents ? "Ask \(request.address.client.label) to send it again." : "Vignette couldn't save the reply. See the log.")
+        }
     }
 
     // MARK: Clearing
@@ -593,29 +602,63 @@ final class ScreenshotRequests {
             return
         }
         let targets = clear == "all" ? Array(requests.keys) : [clear]
-        var cleared = 0
-        for id in targets {
-            guard var record = requests[id] else { continue }
-            record.status = .cleared
-            requests[id] = record
-            try? write(record)
-            for reply in replies.values where reply.requestID == id && reply.stage != .published {
-                pendingImports.removeAll { $0 == reply.id }
-                // A reserved name was copied into the watch folder but never shown. It is Vignette's
-                // until publication, so clearing takes it back rather than leaving a hidden file.
-                if reply.stage == .reserved {
-                    try? FileManager.default.removeItem(at: callbacks.watchFolder().appendingPathComponent(reply.fileName))
-                }
-                fail(reply.id, stage: .cancelled, code: "request-cleared")
-            }
-            // Only this task's own files. The sent PNG goes; an agent that still holds the path
-            // sees it disappear, which is what clearing means.
-            try? FileManager.default.removeItem(at: ReplyProtocol.requestDirectory(root: root, requestID: id).appendingPathComponent("image.png"))
-            try? FileManager.default.removeItem(at: ReplyProtocol.requestDirectory(root: root, requestID: id).appendingPathComponent("submissions"))
-            cleared += 1
-        }
+        let cleared = targets.filter { self.clear($0) }.count
         guard cleared > 0 else { Commands.error("requests", .missingFile, "no request \(clear)"); return }
         Commands.ok("requests", "cleared \(cleared)")
+    }
+
+    /// The oldest open requests, past `maxLiveRequests`, are cleared. Run after a request is stored,
+    /// so a send that fails to store clears nothing.
+    private func clearOldest() {
+        let open = requests.values.filter { $0.status != .cleared }.sorted { $0.created < $1.created }
+        for record in open.prefix(max(0, open.count - Self.maxLiveRequests)) {
+            clear(record.id)
+            Log.write("[requests] cleared \(record.id) \(record.destinationName): the oldest of \(Self.maxLiveRequests) open")
+        }
+    }
+
+    /// Deletes the folders of requests cleared more than `clearedKept` ago, dated by `request.json`,
+    /// which clearing rewrites. A request with a published reply still in the watch folder stays:
+    /// its reply record is what `isVisible` shows that card by.
+    func prune(now: Date = Date()) {
+        let fm = FileManager.default
+        let folder = callbacks.watchFolder()
+        for record in requests.values where record.status == .cleared {
+            let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
+            let file = directory.appendingPathComponent(Self.recordFileName)
+            guard let cleared = (try? fm.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
+                  now.timeIntervalSince(cleared) > Self.clearedKept else { continue }
+            let own = replies.values.filter { $0.requestID == record.id }
+            guard !own.contains(where: { $0.stage == .published && fm.fileExists(atPath: folder.appendingPathComponent($0.fileName).path) })
+            else { continue }
+            guard (try? fm.removeItem(at: directory)) != nil else { continue }
+            requests[record.id] = nil
+            for reply in own { replies[reply.id] = nil }
+            Log.write("[requests] removed \(record.id), cleared \(Int(now.timeIntervalSince(cleared) / 86400)) days ago")
+        }
+    }
+
+    /// Stops one request taking replies. Answers false when there is no such request.
+    @discardableResult
+    private func clear(_ id: String) -> Bool {
+        guard var record = requests[id] else { return false }
+        record.status = .cleared
+        requests[id] = record
+        try? write(record)
+        for reply in replies.values where reply.requestID == id && reply.stage != .published {
+            pendingImports.removeAll { $0 == reply.id }
+            // A reserved name was copied into the watch folder but never shown. It is Vignette's
+            // until publication, so clearing takes it back rather than leaving a hidden file.
+            if reply.stage == .reserved {
+                try? FileManager.default.removeItem(at: callbacks.watchFolder().appendingPathComponent(reply.fileName))
+            }
+            fail(reply.id, stage: .cancelled, code: "request-cleared")
+        }
+        // Only this task's own files. The sent PNG goes; an agent that still holds the path
+        // sees it disappear, which is what clearing means.
+        try? FileManager.default.removeItem(at: ReplyProtocol.requestDirectory(root: root, requestID: id).appendingPathComponent("image.png"))
+        try? FileManager.default.removeItem(at: ReplyProtocol.requestDirectory(root: root, requestID: id).appendingPathComponent("submissions"))
+        return true
     }
 
     // MARK: The state report

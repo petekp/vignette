@@ -34,6 +34,15 @@ final class EditorView: NSView {
     var onReveal: ((CGRect) -> Void)?
     /// A short confirmation to show, such as "Copied 2 marks".
     var onToast: ((String) -> Void)?
+    /// Tab went past the last mark, or Shift+Tab past the first: the toolbar's controls come next.
+    var onLeaveCanvas: ((_ backward: Bool) -> Void)?
+    /// M or P: the host puts the keys in the message field beside Send, when there is one.
+    var onFocusMessage: (() -> Void)?
+    /// A press on the canvas, which takes the keyboard's focus back from the toolbar.
+    var onPress: (() -> Void)?
+    /// Offered each key before the core while no text is typed: true when the host took it. While one
+    /// of the toolbar's controls has the focus, the keys stay here and Tab and Space are the toolbar's.
+    var takesKey: ((EditorCore.Key, EditorCore.Modifiers) -> Bool)?
 
     /// Everything the editor decides; the host reads it for `[state]`.
     private(set) var core = EditorCore()
@@ -174,6 +183,14 @@ final class EditorView: NSView {
     /// A tool button in the toolbar.
     func setTool(_ tool: EditorCore.Tool) { handle(.setTool(tool)) }
 
+    /// Tab or Shift+Tab came back from the toolbar. False with no marks to take it, so the toolbar
+    /// keeps it and goes round its own controls.
+    func enterCanvas(backward: Bool) -> Bool {
+        guard core.isOpen, !core.drawing.marks.isEmpty else { return false }
+        handle(.enterCanvas(backward: backward))
+        return true
+    }
+
     /// Done in the toolbar; the drawing comes back through `onDone`.
     func done() { handle(.done) }
 
@@ -245,7 +262,7 @@ final class EditorView: NSView {
     private func run(_ effect: EditorCore.Effect, event: NSEvent?) {
         switch effect {
         case .tool(let tool): onTool?(tool)
-        case .cursor(let cursor): if pointerIsInside { Self.cursor(cursor).set() }
+        case .cursor: showCursor()
         case .beginTyping(let id, let caret): beginTyping(id, caret: caret)
         case .holdKey: if let event { heldKeys.append(event) }
         case .passKeysToText:
@@ -274,6 +291,8 @@ final class EditorView: NSView {
             // The words can be a text's own, so they go to VoiceOver and nowhere else.
             NSAccessibility.post(element: self, notification: .announcementRequested,
                                  userInfo: [.announcement: words, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        case .leaveCanvas(let backward): onLeaveCanvas?(backward)
+        case .focusMessage: onFocusMessage?()
         case .close: onClose?()
         case .done(let drawing): onDone?(drawing)
         case .send(let drawing): onSend?(drawing)
@@ -468,6 +487,7 @@ final class EditorView: NSView {
 
     override func keyDown(with event: NSEvent) {
         guard let key = Self.key(event) else { return super.keyDown(with: event) }
+        if typingField == nil, takesKey?(key, Self.modifiers(event)) == true { return }
         if key.direction != nil { heldArrows.insert(key) }
         handle(.keyDown(key, Self.modifiers(event), isRepeat: event.isARepeat), event: event)
     }
@@ -557,6 +577,7 @@ final class EditorView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        onPress?()
         handle(.pointerPressed(pointer(event), clickCount: event.clickCount), event: event)
     }
 
@@ -570,6 +591,10 @@ final class EditorView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         handle(.pointerMoved(pointer(event)))
+        // The core reports a cursor only when it changes, and another of this app's windows puts up
+        // the arrow as the pointer leaves it: the toolbar's panel, whose clear edges reach over the
+        // image. So every move over the picture puts the core's cursor back.
+        showCursor()
     }
 
     /// A press begun on the card flying into this editor. The flight layer took it from the window
@@ -627,6 +652,10 @@ final class EditorView: NSView {
 
     override func cursorUpdate(with event: NSEvent) {
         Self.cursor(core.cursor).set()
+    }
+
+    private func showCursor() {
+        if pointerIsInside { Self.cursor(core.cursor).set() }
     }
 
     override func updateTrackingAreas() {

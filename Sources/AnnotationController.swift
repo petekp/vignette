@@ -119,6 +119,20 @@ final class AnnotationController {
         editor.onTool = { [weak self] tool in self?.toolbar.model.tool = tool }
         editor.onHandOver = { [weak self] drawing in self?.onDrawing?(drawing, "saved") }
         editor.onClose = { [weak self] in self?.cancel() }
+        // One Tab order: the marks, then the toolbar's controls, then the marks again.
+        editor.onLeaveCanvas = { [weak self] backward in self?.toolbar.enter(backward: backward) }
+        toolbar.onLeave = { [weak self] backward in self?.editor.enterCanvas(backward: backward) ?? false }
+        editor.onFocusMessage = { [weak self] in self?.toolbar.focusMessage() }
+        editor.onPress = { [weak self] in self?.toolbar.clearFocus() }
+        editor.takesKey = { [weak self] key, modifiers in
+            guard let toolbar = self?.toolbar, toolbar.model.focus != nil, modifiers.isSubset(of: .shift) else { return false }
+            switch key {
+            case .tab: toolbar.move(backward: modifiers.contains(.shift))
+            case .character(" ") where modifiers.isEmpty: toolbar.activate()
+            default: return false
+            }
+            return true
+        }
         editor.onDone = { [weak self] drawing in
             guard let self, let shot = current else { return }
             onFinished?(shot, drawing)
@@ -747,7 +761,7 @@ final class AnnotationController {
     /// of sessions is on its way. Read once per image: the list comes from subprocesses, and a menu
     /// that re-read it on every click would stall the bar.
     func beginDestinations(replyTo: AgentDestination?) {
-        toolbar.model.begin(replyTo: replyTo)
+        toolbar.model.begin(replyTo: replyTo, carryingTarget: toolbar.model.shown)
         offerChanged()
     }
 
@@ -810,7 +824,8 @@ final class AnnotationController {
             "zoomCenter": [zoomCenter.x, zoomCenter.y],
             "room": StateReport.topLeft(room, primaryHeight: StateReport.primaryHeight),
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
-            "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.panel.frame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
+            "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.barFrame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
+            "toolbarFocus": toolbar.model.focus?.name as Any,
             "tool": toolbar.model.tool?.rawValue as Any,
             "offer": (current == nil ? nil : offerJSON) as Any,
         ]

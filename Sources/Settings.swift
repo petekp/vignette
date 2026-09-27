@@ -163,7 +163,7 @@ struct UITweaks: Codable, Equatable {
     // Timings
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
     var toastSeconds = 1.7
-    var slideInDuration = 0.75
+    var slideInDuration = 0.4
     var slideInCurve = "spring"      // spring, easeOut, easeInOut, linear
     var slideOutDuration = 0.3
     var staggerDelay = 0.05
@@ -196,7 +196,7 @@ struct UITweaks: Codable, Equatable {
     var annotationMinHeight = 320.0
     var annotationCornerRadius = 10.0
     var annotationToolbarGap = 12.0
-    var annotationScreenInset = 65.0
+    var annotationScreenInset = 60.0
     var zoomEdgeBandPoints = 120.0   // how far from each edge of the picture a zoom holds that edge
     var zoomEdgePull = 0.5           // the part of that band in which the edge is held exactly
     // The editor (`EditorMetrics`): screen pt, the same size at any zoom, unless it says otherwise
@@ -301,6 +301,30 @@ struct UITweaks: Codable, Equatable {
 }
 
 extension UITweaks {
+    /// Set on the encoder that writes settings.json. There `ui` holds only the values that differ
+    /// from the defaults, so a default tuned in a later build reaches a file an earlier one wrote.
+    /// Every other encoding is whole, since `Settings.load` merges a file over it.
+    static let differencesOnly = CodingUserInfoKey(rawValue: "vignette.ui.differencesOnly")!
+
+    private struct Key: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    /// Every stored property under its own name, as the synthesized encoding writes it; decoding
+    /// stays synthesized. Mirror walks the properties, so a new tweak needs nothing here.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: Key.self)
+        let differencesOnly = encoder.userInfo[Self.differencesOnly] as? Bool ?? false
+        for (child, fallback) in zip(Mirror(reflecting: self).children, Mirror(reflecting: UITweaks()).children) {
+            guard let name = child.label, let value = child.value as? any Encodable else { continue }
+            if differencesOnly, let a = child.value as? AnyHashable, let b = fallback.value as? AnyHashable, a == b { continue }
+            try container.encode(value, forKey: Key(stringValue: name))
+        }
+    }
+
     var editorMetrics: EditorMetrics {
         EditorMetrics(dragDistance: dragDistance, hitMargin: hitMargin, cornerHitSize: cornerHitSize, edgeHitSize: edgeHitSize,
                       smallSide: smallSide, handleSize: handleSize, dotRadius: dotRadius, dotHitRadius: dotHitRadius,
@@ -342,7 +366,7 @@ struct AppleOriginal: Codable, Equatable {
 @MainActor
 final class Settings: ObservableObject {
     static let shared = Settings()
-    nonisolated static let currentVersion = 1
+    nonisolated static let currentVersion = 2
     static let isOverridden = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false
     static let fileURL: URL = {
         if let path = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"], !path.isEmpty {
@@ -432,7 +456,8 @@ final class Settings: ObservableObject {
                 loaded.data.appleOriginal = AppleOriginal.capture()
                 boot.log.append("recorded Apple's screencapture values as appleOriginal at this launch")
             }
-            // Fill in any keys the file lacks so every knob is visible to whoever edits it next.
+            // Fill in any settings the file lacks so each is visible to whoever edits it next. `ui`
+            // is the exception: it holds only what differs from the defaults.
             if let full = try? encoder().encode(loaded.data), full != (try? Data(contentsOf: url)) {
                 boot.written = write(full, to: url)
             }
@@ -509,9 +534,10 @@ final class Settings: ObservableObject {
     }
 
     /// Brings a file's raw JSON up to `currentVersion`. Files with no `version` are version 0.
-    /// A file from a newer version is returned unchanged. Version 1 only introduced the version
-    /// field, so there is nothing to rewrite yet; a bump that changes a key rewrites it here,
-    /// between the guard and the stamp, one step per version.
+    /// A file from a newer version is returned unchanged. A bump that changes a key rewrites it
+    /// here, between the guard and the stamp, one step per version. Version 1 introduced the
+    /// version field. Version 2 writes only the `ui` values that differ from the defaults, which
+    /// changes no key, so a file from before it is read as it is.
     static func migrate(_ raw: [String: Any]) -> (json: [String: Any], from: Int) {
         var json = raw
         let from = (json["version"] as? NSNumber)?.intValue ?? 0
@@ -616,6 +642,7 @@ final class Settings: ObservableObject {
     private static func encoder() -> JSONEncoder {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        enc.userInfo[UITweaks.differencesOnly] = true
         return enc
     }
 

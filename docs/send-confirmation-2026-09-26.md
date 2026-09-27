@@ -64,12 +64,13 @@ request is stored. Then the editor closes and the client delivers the line off t
   nothing more for a success. A failure brings the card back as a lone thumbnail with the failed
   mark.
 
-## Out of scope
+## Later the same day
 
-- The "<session> replied" toast when an agent's drawing comes back, and the toast for a reply that
-  could not be imported. A reply already arrives as a card of its own.
-- Requests are never cleared on their own, so after 50 sends Send refuses until
-  `vignette://requests?clear=all`. The popover now says so, but the limit itself is unchanged.
+`docs/prerelease-fixes-2026-09-26.md` took the two points left out here:
+
+- The "<session> replied" toast is gone, since a reply arrives as a card of its own. A reply that
+  could not be made a card shows on the card it answers, as "Reply not shown".
+- A send past 50 open requests clears the oldest instead of refusing.
 
 ## Checked
 

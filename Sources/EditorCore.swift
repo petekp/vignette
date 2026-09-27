@@ -105,6 +105,9 @@ struct EditorCore {
         case keyUp(Key)
         /// A tool button in the toolbar.
         case setTool(Tool)
+        /// Tab or Shift+Tab came back from the toolbar: the first mark in reading order is selected,
+        /// or the last one going backward.
+        case enterCanvas(backward: Bool)
         /// The host's zoom: screen pt per image px.
         case zoomChanged(CGFloat)
         /// The text style, sizes and arrowhead the host uses now, in place of the ones `open` gave. The
@@ -268,6 +271,10 @@ struct EditorCore {
         case zoom(ZoomRequest)
         /// For VoiceOver.
         case announce(String)
+        /// Tab went past the last mark, or Shift+Tab past the first: the toolbar's controls come next.
+        case leaveCanvas(backward: Bool)
+        /// M or P: the message that goes with Send.
+        case focusMessage
         /// Ask the host to close the editor.
         case close
         /// Render this drawing and finish.
@@ -527,6 +534,11 @@ struct EditorCore {
             if gesture != nil { cancelGesture() }
             if typing != nil { endTyping() }
             self.tool = tool
+        case .enterCanvas(let backward):
+            if gesture != nil { cancelGesture() }
+            if typing != nil { endTyping() }
+            let order = geometry.readingOrder(drawing.marks)
+            selection = (backward ? order.last : order.first).map { [$0] } ?? []
         case .zoomChanged(let zoom):
             if zoom > 0, zoom.isFinite { self.zoom = zoom }
         case .tweaksChanged(let style, let metrics, let arrowhead):
@@ -1357,17 +1369,18 @@ struct EditorCore {
                 beginTyping(id, caret: .selectAll, edit: MarkEdit(marks: drawing.marks, selectionBefore: selection))
             }
         case .tab:
+            // The marks, then the toolbar's controls, then the marks again.
             let order = geometry.readingOrder(drawing.marks)
-            guard !order.isEmpty else { return }
             let backward = modifiers.contains(.shift)
             let positions = order.indices.filter { selection.contains(order[$0]) }
-            let next: Int
-            if backward {
-                next = ((positions.first ?? order.count) - 1 + order.count) % order.count
-            } else {
-                next = ((positions.last ?? -1) + 1) % order.count
+            let next = backward ? (positions.first ?? order.count) - 1 : (positions.last ?? -1) + 1
+            guard order.indices.contains(next) else {
+                selection = []
+                return emit(.leaveCanvas(backward: backward))
             }
             selection = [order[next]]
+        case .character(let character) where modifiers.isEmpty && Self.messageKeys.contains(character):
+            emit(.focusMessage)
         case .delete, .forwardDelete:
             deleteSelection()
         case .character(let character) where command:
@@ -1418,6 +1431,9 @@ struct EditorCore {
     private enum Command: Character {
         case undo = "z", selectAll = "a", copy = "c", cut = "x", paste = "v", duplicate = "d"
     }
+
+    /// M for message and P for prompt: the field beside Send.
+    static let messageKeys: Set<Character> = ["m", "p"]
 
     private func toolKey(_ key: Key, _ modifiers: Modifiers) -> Tool? {
         guard case .character(let character) = key, modifiers.isSubset(of: .shift) else { return nil }

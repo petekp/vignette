@@ -2,20 +2,66 @@
 
 Things decided or raised but not built. Each entry says what, why, and what it waits on.
 
-## A nicer disk image window (raised 2026-09-25)
+## Before the public release
+
+### Updates that reach every install (raised 2026-09-27)
+
+Vignette has no updater yet. "Check for Updates…" opens the latest release on GitHub
+(`Identity.releasesURL`), and nothing tells a user that a new version exists. Someone who installs a
+build without an updater has to find each later version themselves. So the first public build has
+to carry the updater, and it has to be tested before the release.
+
+Recommended: Sparkle 2, which most Mac apps outside the App Store use. It reads a feed of versions
+(an appcast), checks each download's EdDSA signature, and replaces the app in place. The feed and the
+downloads can live on GitHub Releases. Adding it changes `project.yml` and `scripts/release.sh`, which
+are release tooling, so each change needs Pete's approval.
+
+Test it on installs of the stage copy, which has its own bundle id, from a feed served out of a
+scratch folder, so no test touches Pete's install. Cases to cover:
+
+- **The update itself.** From the current release to the next, through the updater. An update that
+  arrives while the stack or the editor is open, or while a send waits for its answer. A declined
+  update, a skipped version, a failed download, and no network.
+- **Settings.** A newer build migrates an older settings file (`Settings.migrate`). A default changed
+  in the new build reaches the install, since the file keeps only the `ui` values that differ. An
+  older build installed by hand over a newer one opens the newer file read-only.
+- **Permissions.** Accessibility trust survives the update. It is tied to the signature's designated
+  requirement, so every release must be signed with the same Developer ID. The folder permission for
+  a watch folder on the Desktop, in Documents or in Downloads survives too, and the login item opens
+  the new version.
+- **Stored data.** The new build opens drawings the old one wrote. Open screenshot requests and
+  replies still waiting to be imported come through the relaunch. An agent holding the old skill
+  can still reply (`ReplyProtocol.version`).
+- **The agent skill.** The first launch after an update rewrites the older copies of the skill it
+  finds (`SkillInstaller.version(of:)`), and leaves a newer or edited copy alone.
+- **Apple's screenshot settings.** The launch reconcile runs again, and `appleOriginal` is kept, so
+  Restore still puts back what was there before Vignette.
+- **Where the app lives.** /Applications, ~/Applications, a folder the user cannot write to, where
+  Sparkle asks for an administrator's password, and a copy still running from the disk image.
+
+## Not placed yet
+
+### The stitch layout (raised 2026-09-27)
+
+`docs/stitch-layout-2026-09-27.md` proposes three changes: size a stitch for Claude Code on current
+models, lay the pieces out in rows that wrap in reading order, and warn when a stitch would make text
+too small for the model to read. It waits on Pete's decision. The warning's wording needs his
+approval, and the 10 px threshold should first be checked by pasting a few stitches into Claude Code.
+
+### A nicer disk image window (raised 2026-09-25)
 
 The window the disk image opens, where you drag Vignette to Applications, should look better. Today
 `scripts/release.sh` lays it out with Vignette on the left and Applications on the right, and
 nothing else. The look is Pete's to choose. The change is to the release script, so it needs his
 approval for that change before it is made.
 
-## A new demo video (raised 2026-09-24)
+### A new demo video (raised 2026-09-24)
 
 The tldraw-era video left the site and the README with the native editor, and a still of the stack
 and the editor leads in its place (`site/stack-and-editor.png`). A new recording replaces the still
 when Pete makes one.
 
-## The annotator's redesign: agent controls and comments (raised 2026-09-24)
+### The annotator's redesign: agent controls and comments (raised 2026-09-24)
 
 Pete wants Send to be first-class and Done to stop being ambiguous, and proposed comments pinned to
 the image, as in Figma, that agents leave and answer too. The design so far: the tools in a rail on
@@ -25,14 +71,14 @@ videos. The bar's Send and Reply came forward the same day, with a target beside
 tabs: `docs/send-and-reply-2026-09-24.md`. `docs/annotator-redesign-2026-09-24.md` has what's decided, what's open and a mockup. When
 it resumes, settle the Return rule first. It would change the site's pitch and the recordings.
 
-## Agents' marks in their own typeface (raised 2026-09-24)
+### Agents' marks in their own typeface (raised 2026-09-24)
 
 Tell an agent's marks from a person's by typeface, not colour. Colour stays with the colour pass,
 which picks whatever stands out against the image, and a colour reserved for agents would work
 against that. Since 2026-09-26 an agent's texts are set in SF Mono (`TextStyle.forAgent`). Open:
 what marks the difference on a box or an arrow, which have no typeface.
 
-## Xcode's JSON project format (raised 2026-09-21)
+### Xcode's JSON project format (raised 2026-09-21)
 
 Xcode 27 stores the project configuration as JSON: `project.xcproj` inside the `.xcodeproj`,
 in place of `project.pbxproj`. It is the default in 27.2 and readable by 27 and later. Apple's
@@ -62,7 +108,7 @@ Waits on two things, either way:
   pull request for it (tuist/XcodeProj#1177); XcodeGen itself has nothing yet. Until then there
   is no path from `project.yml` to a `.xcproj` at all.
 
-## Vignette without the agent features (raised 2026-09-26)
+### Vignette without the agent features (raised 2026-09-26)
 
 Pete wants an option to leave out the agent features altogether and use Vignette only as a
 replacement for macOS's screenshot thumbnail. With it on, nothing about agents would show: Send,
@@ -72,7 +118,13 @@ sessions, which today happens at launch, on a capture and when the stack opens. 
 switch lives (setup, Settings, or both), and whether `vignette://add` and the skill still work
 while it is on.
 
-## A glint around a new thumbnail (raised 2026-09-26)
+### Send to Claude Code without herdr (raised 2026-09-26)
+
+Send reaches a Claude Code session only through the herdr pane it runs in, and most people who
+download Vignette will not run herdr. The Agents tab and setup now say so. Reaching Claude Code
+without herdr needs a way into a running session that Claude Code itself offers; none is known yet.
+
+### A glint around a new thumbnail (raised 2026-09-26)
 
 Pete wants a new thumbnail to arrive with a glint: a highlight that travels around the image's
 border, with a faint bloom around it. Like every animation it goes through `Settings.motionUI`, so
@@ -80,14 +132,14 @@ motion 0 and Reduce Motion show none. Open: whether it plays only on a capture's
 on a card that arrives in an open stack, such as an agent's push or reply; how many laps it runs;
 and which of its numbers become `ui` tweaks.
 
-## Sound effects (raised 2026-09-26)
+### Sound effects (raised 2026-09-26)
 
 Pete wants sound effects, with settings to turn them on and off. Open: which moments get a sound
 (a capture landing, a copy, a send, an agent's reply arriving, a stitch); one switch for all of them
 or one per sound; system sounds or Vignette's own; and whether they follow macOS's "Play user
 interface sound effects" setting.
 
-## A 3D logo with PBR materials (raised 2026-09-26)
+### A 3D logo with PBR materials (raised 2026-09-26)
 
 Pete wants a 3D version of the Vignette logo, with physically based materials, on setup's welcome
 page, where the app icon sits today (`SetupWindow.swift`, 96 pt). The same logo should work
@@ -135,22 +187,6 @@ wants it in the hero or somewhere smaller.
   if the push loop proves itself in use.
 - A name convention for pushed files, `Agent <what> <state>.png`, so the card reads at a glance.
 - Folding Copy Drawing into Copy, so one Copy gives the image as the card shows it.
-- Reorganising AGENTS.md. It is 782 lines, and a rule in it is easy to miss. The final docs review
-  of 2026-09-23 proposed:
-  - Open The loop with a short "Before you drive the app" list: use a scratch settings file; check
-    `app.bundle` and `app.settingsFile` in `[state]`; launch one at a time behind the lock; send no
-    synthetic Esc; delete test files from the real watch folder.
-  - Move the rules it found buried: never testing against the real settings file, now mid-bullet in
-    Layout; the lock for parallel agents and putting the user's build back, mid-step 3; never
-    sending Escape to close the stack, inside step 4; and a swap keeping the slot drawn empty, in
-    the toolbar rule, which belongs in the transition or queue rule.
-  - Group the rules under subheadings: Shortcut and capture; The stack; Flights and presses; The
-    annotator and its reducer; The editor and drawings; Zoom; Memory; Build, signing and Apple
-    defaults; Agents.
-  - Merge the build bullets (Swift mode, signing, `Info.plist`) into one. They repeat `project.yml`,
-    `.gitignore` and `docs/building.md`.
-
-  Pete, 2026-09-23: later.
 
 ## Known costs, left alone
 
@@ -162,9 +198,8 @@ wants it in the hero or somewhere smaller.
 - A stitch draws a piece with an orientation flag unturned, and skips that piece's marks, because
   the drawing's size is the turned one. `Rendering` applies the flag; `Stitch` does not. Only an
   image pushed through `add` can carry one: screenshots never do. Pete, 2026-09-23: left for now.
-- The stack drops frames while it narrows to make room for the editor, and while it widens back.
-  After a click, the pointer rests on the column, so SwiftUI re-checks hover and redraws cards on
-  every frame. Every card is also laid out on every frame, though only about six are in view.
-  `docs/stack-narrowing-2026-09-23.md` has the measurements and five options. The recommended pair
-  is to pause hover while the column moves and to lay out only the visible cards. Pete, 2026-09-23:
-  left for now, to take up later.
+- The stack's narrowing for the editor, and its widening back, lay out every card on every frame,
+  though only about six are in view. Measured again on 2026-09-26, after the click hint went: a
+  Release build drops at most one frame per narrowing, and a Debug build up to four. Holding the
+  hover still made no difference and was not kept. Laying out only the cards in view is what is left
+  (`docs/stack-narrowing-2026-09-23.md`, option B; `docs/prerelease-fixes-2026-09-26.md`).

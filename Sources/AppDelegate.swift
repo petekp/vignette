@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
     private var pendingAdds: [String: PendingAdd] = [:]
     /// Sending drawings to agent sessions and taking their drawings back. See ScreenshotRequests.
-    private let requests = ScreenshotRequests(root: Identity.applicationSupportURL.appendingPathComponent("requests"))
+    private let requests = ScreenshotRequests(root: ScreenshotRequests.defaultRoot)
     /// The screenshot each request sent this launch was made from, until its client answers.
     private var sentShots: [String: Screenshot] = [:]
 
@@ -910,7 +910,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             },
             present: { [weak self] shot in self?.thumbnail.show(shot) },
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
-            feedback: { [weak self] text in self?.thumbnail.showFeedback(text) },
             delivered: { [weak self] record, outcome in
                 guard let self, let shot = sentShots.removeValue(forKey: record.id) else { return }
                 let state: SendMark.State
@@ -920,6 +919,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 case .notSubmitted, .destinationChanged: state = .failed
                 }
                 thumbnail.delivered(shot, request: record.id, state, reason: outcome.reason)
+            },
+            replyFailed: { [weak self] record, reason in
+                // The record keeps the sent screenshot's name; a send is made from the watch folder.
+                guard let self else { return }
+                let shot = Screenshot(url: watchFolder.appendingPathComponent(record.source))
+                guard FileManager.default.fileExists(atPath: shot.url.path) else { return }
+                thumbnail.replyFailed(shot, request: record.id, client: record.address.client, reason: reason)
             })
         requests.load()
     }
