@@ -83,6 +83,52 @@ Pete wants the hint that appears over a hovered card, "Draw" on a screenshot and
 recording, removed. It is `showsClickHint` in `StackView.swift`, and AGENTS.md describes how it
 avoids the card's corner buttons, so that rule goes with it.
 
+## A glint around a new thumbnail (raised 2026-09-26)
+
+Pete wants a new thumbnail to arrive with a glint: a highlight that travels around the image's
+border, with a faint bloom around it. Like every animation it goes through `Settings.motionUI`, so
+motion 0 and Reduce Motion show none. Open: whether it plays only on a capture's thumbnail or also
+on a card that arrives in an open stack, such as an agent's push or reply; how many laps it runs;
+and which of its numbers become `ui` tweaks.
+
+## Sound effects (raised 2026-09-26)
+
+Pete wants sound effects, with settings to turn them on and off. Open: which moments get a sound
+(a capture landing, a copy, a send, an agent's reply arriving, a stitch); one switch for all of them
+or one per sound; system sounds or Vignette's own; and whether they follow macOS's "Play user
+interface sound effects" setting.
+
+## A 3D logo with PBR materials (raised 2026-09-26)
+
+Pete wants a 3D version of the Vignette logo, with physically based materials, on setup's welcome
+page, where the app icon sits today (`SetupWindow.swift`, 96 pt). The same logo should work
+elsewhere, possibly on the website with three.js, so it needs to support more than one renderer.
+
+Recommended: one set of source files, and a renderer native to each place.
+
+- **Source.** The mark is one filled path in `docs/logomark.svg`. Extrude and bevel it once, in
+  Blender, and export a glTF binary (`.glb`) with metallic-roughness materials. Commit it beside
+  one HDR environment map for the lighting and a small JSON file with the scene's numbers: camera,
+  exposure, tone mapping and the idle motion. Every renderer reads those three files, so the look
+  has one definition.
+- **Web.** three.js loads the `.glb` with `GLTFLoader` and the map with `RGBELoader` and
+  `PMREMGenerator`. The site is a static `index.html`, so three.js comes in as an ES module through
+  an import map. Without WebGL, or with reduced motion, the page shows the SVG.
+- **App.** RealityKit, since Apple deprecated SceneKit in 2025. RealityKit does not read glTF, so
+  the `.glb` is converted to `.usdz` once and committed. `RealityView` needs macOS 15, and Vignette
+  supports 14: macOS 14 keeps today's icon. The motion goes through `Settings.motionUI`, so Reduce
+  Motion shows it still.
+- **The risk is a mismatch.** three.js and RealityKit tone-map and light differently. The same HDR,
+  the same exposure and three.js's neutral tone mapping get them close. Then compare the two side
+  by side and tune the JSON, not either renderer's code.
+
+The alternative is a video rendered in Blender, with alpha, played in both places. It gives the
+richest look for the least runtime work, but it cannot turn toward the pointer. It also needs one
+render per appearance, light and dark.
+
+Open: whether the logo reacts to the pointer (which rules out the video), and whether the website
+wants it in the hero or somewhere smaller.
+
 ## Discussed, not decided
 
 - Drawing on the live screen, both directions: an agent pointing at a window, an element, or a
