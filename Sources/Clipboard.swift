@@ -1,9 +1,10 @@
 import AppKit
+import ImageIO
 
 @MainActor
 enum Clipboard {
     /// One pasteboard that works everywhere: a file URL per file (chat apps attach them all),
-    /// the paths as text (terminals paste them), and the first file's pixels when it is an image
+    /// the paths as text (terminals paste them), and the first file's image when it is one
     /// (single-image targets). A recording goes on as its file only; reading one whole to offer its
     /// bytes would hold the video in memory for a paste target that wants the file anyway.
     static func copyFiles(_ urls: [URL]) {
@@ -13,8 +14,8 @@ enum Clipboard {
         var items: [NSPasteboardItem] = []
         for (i, url) in urls.enumerated() {
             let item: NSPasteboardItem
-            if i == 0, Screenshot(url: url).kind == .image, let png = try? Data(contentsOf: url) {
-                item = imageItem(png: png)
+            if i == 0, Screenshot(url: url).kind == .image, let data = try? Data(contentsOf: url), let image = imageItem(data) {
+                item = image
             } else {
                 item = NSPasteboardItem()
             }
@@ -64,25 +65,33 @@ enum Clipboard {
         }.joined(separator: "\n")
     }
 
-    /// The PNG goes on now; the TIFF is a decode and re-encode of the whole image, so it is
-    /// rendered only when a paste target asks for it instead of on every copy.
-    private static func imageItem(png: Data) -> NSPasteboardItem {
+    /// The file's bytes go on now, under the type they are: a JPEG or a HEIC capture labelled PNG
+    /// fails in a paste target that decodes it as one. A PNG made from another format, and the TIFF,
+    /// are a decode and re-encode of the whole image, so they are made only when a paste target asks
+    /// for them instead of on every copy. Nil for a file ImageIO cannot read.
+    private static func imageItem(_ data: Data) -> NSPasteboardItem? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) > 0,
+              let type = CGImageSourceGetType(source) as String? else { return nil }
         let item = NSPasteboardItem()
-        item.setData(png, forType: .png)
-        item.setDataProvider(TIFFProvider(png: png), forTypes: [.tiff])
+        let own = NSPasteboard.PasteboardType(type)
+        item.setData(data, forType: own)
+        item.setDataProvider(ConversionProvider(image: data), forTypes: own == .png ? [.tiff] : [.png, .tiff])
         return item
     }
 }
 
-/// Renders the TIFF of a copied PNG when a paste target asks for it. The item retains it until the
-/// pasteboard changes. Immutable, so the callback may arrive on any thread.
-private final class TIFFProvider: NSObject, NSPasteboardItemDataProvider, @unchecked Sendable {
-    private let png: Data
-    init(png: Data) { self.png = png }
+/// Makes the PNG or the TIFF of a copied image when a paste target asks for it. The item retains
+/// it until the pasteboard changes. Immutable, so the callback may arrive on any thread.
+private final class ConversionProvider: NSObject, NSPasteboardItemDataProvider, @unchecked Sendable {
+    private let image: Data
+    init(image: Data) { self.image = image }
 
     func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
-        guard type == .tiff, let tiff = NSImage(data: png)?.tiffRepresentation else { return }
-        item.setData(tiff, forType: .tiff)
+        switch type {
+        case .png: if let png = Thumbnailer.png(from: image) { item.setData(png, forType: .png) }
+        case .tiff: if let tiff = NSImage(data: image)?.tiffRepresentation { item.setData(tiff, forType: .tiff) }
+        default: break
+        }
     }
 }
 

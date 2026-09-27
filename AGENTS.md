@@ -362,8 +362,9 @@ the same driven sequence; a single run varies.
   why. `recentShots` answers empty with no watcher, so nothing reads the folder before then.
   project.yml gives macOS's folder prompt its explanation
   (`NSDesktopFolderUsageDescription` and the Documents and Downloads keys).
-  `docs/install-2026-09-24.md` has the measurements. Copying puts the PNG on the pasteboard and
-  promises the TIFF, which is rendered only when a paste target asks.
+  `docs/install-2026-09-24.md` has the measurements. Copying puts the image's own bytes on the
+  pasteboard under its own type, `public.jpeg` for a JPEG, and promises the TIFF, and the PNG when
+  the image is not one. Both are made only when a paste target asks.
 - The main thread never reads a file that iCloud Drive has taken off the Mac. With Optimize Mac
   Storage on, an old file in an iCloud Desktop or Documents folder is a placeholder
   (`SF_DATALESS`), and any read of it, ImageIO's header or AVFoundation's asset, downloads all of

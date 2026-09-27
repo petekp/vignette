@@ -148,6 +148,17 @@ enum Thumbnailer: @unchecked Sendable {
     static func png(from url: URL) -> Data? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         if CGImageSourceGetType(source) == "public.png" as CFString { return try? Data(contentsOf: url) }
+        return png(of: source)
+    }
+
+    /// The same for an image already read.
+    static func png(from data: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        if CGImageSourceGetType(source) == "public.png" as CFString { return data }
+        return png(of: source)
+    }
+
+    private static func png(of source: CGImageSource) -> Data? {
         guard let cg = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
         let out = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
