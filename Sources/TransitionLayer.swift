@@ -213,6 +213,8 @@ final class TransitionLayer {
         let settleTime = Anim.settle(ui.expandDuration, bounce: Anim.flightBounce, distance: travel, within: Self.arrivalTolerance)
         let coverTime = min(settleTime, Anim.passesTarget(ui.expandDuration, bounce: Anim.flightBounce))
         // The starting state has to be committed before the animated change, or it starts at `to`.
+        // The annotator's `Removal` hides its frame on this same turn, so the flight home takes over
+        // from it in one commit.
         DispatchQueue.main.async { [weak self] in
             guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
             // A spring, so a flight retargeted mid-way (a swap) blends into the new path instead

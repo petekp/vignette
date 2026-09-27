@@ -1127,6 +1127,12 @@ final class ThumbnailController: NSObject {
     private func flightImage(for card: Card) -> NSImage {
         let path = card.shot.url.path
         if let image = flightImages[path] { return image }
+        // The editor's decode is this one. A lone thumbnail's flight home needs it: the stack hid
+        // when the annotator opened, which emptied `flightImages`, and the card's own picture is
+        // too small to stand in for the editor's first frame.
+        if let image = Thumbnailer.cached(at: card.shot.url, maxPixel: Thumbnailer.screenPixels(on: screen), space: screenSpace) {
+            return image
+        }
         prefetchFlightImage(card.id)
         return card.image ?? NSImage(size: card.size)
     }

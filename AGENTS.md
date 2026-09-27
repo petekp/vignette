@@ -274,6 +274,14 @@ the same driven sequence; a single run varies.
   whatever the zoom was: `hide` springs the level back to 1 first and comes down once that has
   arrived (`AnnotationController.fitBeforeHide`). `docs/shadow-2026-09-17.md` and
   `docs/handover-2026-09-18.md` have the frames and what each moment cost.
+
+  The way home is the same handover the other way round. The flight starts at the editor's frame,
+  the editor's frame is hidden in the commit that starts the flight moving, and its window is ordered
+  out three display refreshes later (`AnnotationController`'s `Removal`). The window server takes a
+  window down at once, so ordered out in the turn the flight was added, the window left the frame
+  empty for 4 to 9 frames before the flight showed. The flight starts from the editor's own decode,
+  from Thumbnailer's cache: a lone thumbnail's flight images are dropped when its stack hides, and
+  its card's picture showed for one blurred frame. `docs/e2e-2026-09-26.md` has the frames.
 - The flight layer takes the presses on a flying card or a swallow rect, and nothing else; the matte
   rule below says why nothing else reaches it. Its content view, `PressCatcher`, takes each press
   with its drags and its release, and `FlightPress` decides where they go. Its comment and
