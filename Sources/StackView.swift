@@ -41,8 +41,9 @@ struct StackView: View {
                     SelectionStrip(model: model, size: strip.size, reveal: reveal)
                         .offset(x: -(layout.inset + strip.right), y: -(layout.inset + model.safeBottom + strip.bottom))
                         .animation(Anim.spring(settings.motionUI.relayoutDuration), value: strip)
-                        // Scrolling moves it with the cards, at once; the slide-out carries it off screen.
-                        .offset(x: stripSlide, y: model.scroll)
+                        // Scrolling moves it with the cards, at once, and it shifts up with them for a
+                        // new card; the slide-out carries it off screen.
+                        .offset(x: stripSlide, y: model.scroll + stripLift)
                         .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
                         .transition(.opacity)
                 }
@@ -56,13 +57,12 @@ struct StackView: View {
 
     /// Layout changes animate only while cards are on screen. While the whole column is offscreen,
     /// in or out, a toast or strip leaving the column would otherwise shift the cards as they slide
-    /// in. One card entering a visible column is offscreen too, and the others must make room for
-    /// it with a spring rather than a jump, so the test is whether any card is still on screen.
+    /// in. A card joining a visible column changes the layout with animations off, and the others
+    /// shift up with `StackModel.lift` instead (`ThumbnailController.shiftUp`).
     private func layoutAnimation(_ duration: Double) -> Animation? {
         let anyOnScreen = model.cards.contains { !model.offscreen.contains($0.id) }
         guard anyOnScreen else { return nil }
-        let seconds = model.entering == nil ? duration * settings.motionScale : settings.motionUI.insertDuration
-        return Anim.spring(seconds)
+        return Anim.spring(duration * settings.motionScale)
     }
 
     private var stripPlacement: StackLayout.StripPlacement? {
@@ -82,6 +82,11 @@ struct StackView: View {
 
     /// The strip starts a column's width further left, and its labels reach further still, so it
     /// needs that much more to clear the screen.
+    /// The selected cards' lift while they shift up for a new card; they share one.
+    private var stripLift: CGFloat {
+        model.selectedCards().first.flatMap { model.lift[$0.id] } ?? 0
+    }
+
     private var stripSlide: CGFloat {
         guard model.slidingOut else { return 0 }
         let reach = layout.columnWidth + layout.stripGap + layout.stripWidth
@@ -140,7 +145,6 @@ private struct CardView: View {
     let card: Card
     let index: Int      // 0 = newest, at the bottom
     @ObservedObject var model: StackModel
-    @State private var pointer: CGPoint? = nil   // the mouse over this card, in its own coordinates
     private var hovered: Bool { model.hoveredCard == card.id }
     private var pressed: Bool { model.pressedCard == card.id }
     private var selected: Bool { model.isSelected(card.id) }
@@ -155,22 +159,9 @@ private struct CardView: View {
     private var showsHover: Bool { hovered && !isOut && !isForming }
     private var showsCircle: Bool { model.isStack && !isOut && !isForming && (hovered || model.inSelectionMode || focused) }
     private var copied: Bool { model.copied.contains(card.id) }
-    private var showsButtons: Bool { showsHover && !model.inSelectionMode && !copied }
-    /// What a click on this card runs: Draw on a screenshot, Open on a recording.
-    private var clickAction: ShotAction? { Config.defaultAction(for: [card.shot]) }
-    private var showsClickHint: Bool { showsButtons && !model.overControl && !pressed && !overCornerButton && clickAction != nil }
-    /// The pointer is over one of the card's two corner buttons, each button's own padding included:
-    /// a click there is the button's, not a draw. Only those two rects, so the hint stays up across
-    /// the middle of the card's bottom edge, which holds no button. Copy's label only comes out once
-    /// the button itself is hovered, and a hovered control hides the hint anyway, so the resting
-    /// width is the rect that matters here.
-    private var overCornerButton: Bool {
-        guard let p = pointer else { return true }   // no pointer, no hint
-        guard p.y >= size.height - CardView.buttonPad - ui.buttonSize else { return false }
-        let corner = ui.buttonSize + CardView.buttonPad * 2
-        return p.x <= corner || p.x >= size.width - corner
-    }
-    /// The padding every corner control is given, so the dead zone is the button plus it.
+    private var sendMark: SendMark? { model.sendMarks[card.shot.url.path] }
+    private var showsButtons: Bool { showsHover && !model.inSelectionMode && !copied && sendMark == nil }
+    /// The padding every corner control is given.
     static let buttonPad: CGFloat = 6
     /// The card on screen. `Card.size` is its size at rest; the stack narrows while the annotator
     /// is beside it, and every card narrows with it.
@@ -279,17 +270,14 @@ private struct CardView: View {
             }
         }
         .animation(Anim.spring((copied ? 0.15 : 0.4) * motion), value: copied)
-        // What a click does trails the mouse over the card, away from its controls: "Draw" on a
-        // screenshot, "Open" on a recording. Positioned in the card's own coordinates, so it
-        // appears where the mouse is.
-        .overlay(alignment: .topLeading) {
-            if showsClickHint, let p = pointer, let action = clickAction {
-                ClickHintFollower(point: p, label: action.label, symbol: action.hintSymbol ?? action.symbol ?? "")
-                    .transition(.asymmetric(insertion: .scale(scale: 0.6, anchor: .bottom).combined(with: .opacity), removal: .opacity))
+        // Where a send went and how it went, from the moment the card lands until it has said so.
+        .overlay {
+            if let mark = sendMark, !isOut && !isForming {
+                SendOverlay(mark: mark, corner: ui.cardCornerRadius).transition(.opacity)
             }
         }
-        .animation(showsClickHint ? Anim.spring(0.3 * motion, bounce: 0.3) : Anim.spring(0.1 * motion), value: showsClickHint)
-        .zIndex(showsHover ? 1 : 0)   // the hint may hang over the card below
+        .animation(Anim.spring((sendMark == nil ? 0.4 : 0.15) * motion), value: sendMark == nil)
+        .zIndex(showsHover ? 1 : 0)   // the hover scale may hang over the card below
         .scaleEffect(pressed ? ui.pressScale : (showsHover ? ui.hoverScale : 1))
         .animation(Anim.spring(0.25 * motion, bounce: 0.3), value: pressed)
         .animation(Anim.spring(ui.hoverRevealDuration), value: showsHover)
@@ -297,14 +285,10 @@ private struct CardView: View {
         // Past the panel's right edge, which sits just beyond the screen edge, so the card slides off screen.
         .offset(x: offscreen ? StackLayout.current.offscreenDistance(cardWidth: size.width) : 0)
         .animation(slideAnimation.delay(slideDelay), value: offscreen)
+        // Outside the slide's animation, which would otherwise take over the lift's spring.
+        .offset(y: model.lift[card.id] ?? 0)
         .onHover { inside in
             model.hoveredCard = inside ? card.id : (model.hoveredCard == card.id ? nil : model.hoveredCard)
-        }
-        .onContinuousHover(coordinateSpace: .local) { phase in
-            switch phase {
-            case .active(let p): pointer = p
-            case .ended: pointer = nil
-            }
         }
     }
 
@@ -321,14 +305,27 @@ private struct CardView: View {
     /// dismissal feels immediate even when the top of the column is still leaving. The per-card
     /// delay shrinks for tall stacks so the whole column is never slower than `staggerTotalMax`.
     private var slideDelay: Double {
-        Double(max(0, index)) * StackView.staggerStep(count: model.cards.count)
+        if model.entering == card.id { return insertLead }
+        return Double(max(0, index)) * StackView.staggerStep(count: model.cards.count)
     }
 
     private var slideAnimation: Animation {
         if model.slidingOut { return Anim.spring(ui.slideOutDuration) }
-        // A card joining a visible column arrives at the pace the others make room for it.
-        if model.entering == card.id { return Anim.spring(ui.insertDuration) }
+        // A card joining a visible column moves as a lone thumbnail does, after `insertLead`.
         return Anim.swiftUI(ui.slideInCurve, duration: ui.slideInDuration)
+    }
+
+    /// How long a card joining a visible column waits, so it never overlaps the card above it. The
+    /// cards above shift up by its slot, its height and the spacing, on `ui.shiftUpDuration`'s spring,
+    /// and the card above clears the slot once it has risen the new card's height. The new card
+    /// reaches the column's width once it is less than its own width from rest.
+    private var insertLead: Double {
+        let layout = StackLayout.current.at(widthScale: model.widthScale)
+        let card = layout.drawn(self.card.size)
+        let clears = Anim.reaches(Double(card.height / (card.height + layout.spacing)), spring: ui.shiftUpDuration)
+        let travel = layout.offscreenDistance(cardWidth: card.width)
+        let arrives = Anim.reaches(Double(1 - card.width / travel), curve: ui.slideInCurve, duration: ui.slideInDuration)
+        return max(0, clears - arrives)
     }
 
     /// Dragging a selected card carries the whole selection, in the order it was selected.
@@ -544,36 +541,125 @@ private struct CopiedOverlay: View {
     }
 }
 
-/// Appears at the pointer and then eases after it; the first position is never animated, or the
-/// hint would slide in from wherever the view's initial offset was.
-private struct ClickHintFollower: View {
-    let point: CGPoint
-    let label: String
-    let symbol: String
-    @State private var shown: CGPoint? = nil
-    @State private var width: CGFloat = 0
+/// The copied mark's counterpart for a send: the destination's logo, a badge on it for the
+/// delivery, and where it went. The words go on a card too narrow for them, the project name last.
+/// A delivery usually answers about as the card lands, so the sending state, once on screen, holds
+/// `sendingHold` before it gives way: two steps rather than one state flickering into the next.
+private struct SendOverlay: View {
+    let mark: SendMark
+    let corner: CGFloat
+    @State private var landed = false
+    @State private var shown: SendMark.State?
+    @State private var since = Date()
+    private static let sendingHold: TimeInterval = 0.45
+
+    private var state: SendMark.State { shown ?? mark.state }
+
+    private var words: String {
+        switch state {
+        case .sending: return "Sending to \(mark.project)"
+        case .sent: return "Sent to \(mark.project)"
+        case .uncertain: return "Check \(mark.project)"
+        case .failed: return "Not sent"
+        }
+    }
 
     var body: some View {
-        let p = shown ?? point
-        // Centered just above the pointer: a frame from the card's top-left corner to a spot half
-        // the hint's width right of the pointer, with the hint aligned to its far corner. Its width
-        // is measured, so the hint stays hidden until the first measurement lands.
-        ClickHint(label: label, symbol: symbol)
-            .background(GeometryReader { g in
-                Color.clear
-                    .onAppear { width = g.size.width }
-                    .onChange(of: g.size.width) { _, new in width = new }
-            })
-            .opacity(width > 0 ? 1 : 0)
-            .frame(width: max(0, p.x + width / 2), height: max(0, p.y - 8), alignment: .bottomTrailing)
-            .onAppear { shown = point }
-            .onChange(of: point) { _, new in
-                withAnimation(Anim.spring(0.18 * Settings.shared.motionScale, bounce: 0.15)) { shown = new }
+        let motion = Settings.shared.motionScale
+        ZStack {
+            RoundedRectangle(cornerRadius: corner, style: .continuous).fill(.black.opacity(0.55))
+            VStack(spacing: 5) {
+                logo
+                // A failure's reason goes first when the card is too short for it, then the words.
+                ViewThatFits(in: .vertical) {
+                    if let reason = mark.reason, state == .failed || state == .uncertain {
+                        VStack(spacing: 3) {
+                            headline
+                            Text(reason).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
+                                .multilineTextAlignment(.center).lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    headline
+                    Color.clear.frame(width: 1, height: 1)
+                }
+                .id(words)
+                .transition(.blurReplace)
+                .padding(.horizontal, 8)
             }
+            .scaleEffect(landed ? 1 : 0.3)
+            .opacity(landed ? 1 : 0)
+        }
+        .onAppear {
+            shown = mark.state
+            since = Date()
+            withAnimation(Anim.spring(0.4 * motion, bounce: 0.45)) { landed = true }
+        }
+        .onChange(of: mark.state) { _, next in
+            let wait = shown == .sending ? max(0, Self.sendingHold - Date().timeIntervalSince(since)) : 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
+                withAnimation(Anim.spring(0.35 * motion, bounce: 0.35)) { shown = next }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// The words, or the project alone on a card too narrow for them, or nothing.
+    private var headline: some View {
+        ViewThatFits(in: .horizontal) {
+            label(words)
+            if state != .failed { label(mark.project) }
+            Color.clear.frame(width: 1, height: 1)
+        }
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+            .lineLimit(1).fixedSize()
+    }
+
+    /// The agent's logo on a white disc, as on a card an agent sent, with the delivery at its corner.
+    private var logo: some View {
+        ZStack {
+            Circle().fill(.white).frame(width: 30, height: 30)
+            if let image = Agent.logo(for: mark.client.rawValue) {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                    .foregroundStyle(.black.opacity(0.85))
+                    .frame(width: 18, height: 18)
+            } else {
+                Image(systemName: Agent.fallbackSymbol).font(.system(size: 14, weight: .bold)).foregroundStyle(.black.opacity(0.8))
+            }
+        }
+        .overlay(alignment: .bottomTrailing) { badge.offset(x: 5, y: 4) }
+    }
+
+    /// On a white ring, which parts it from the disc it sits on.
+    private var badge: some View {
+        ZStack {
+            Circle().fill(.white).frame(width: 18, height: 18)
+            Group {
+                switch state {
+                case .sending:
+                    ZStack {
+                        Circle().fill(Color(white: 0.18)).frame(width: 15, height: 15)
+                        ProgressView().controlSize(.mini).environment(\.colorScheme, .dark).scaleEffect(0.8)
+                    }
+                case .sent:
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 15, weight: .bold))
+                        .symbolRenderingMode(.palette).foregroundStyle(.white, .green)
+                case .uncertain, .failed:
+                    Image(systemName: "exclamationmark.circle.fill").font(.system(size: 15, weight: .bold))
+                        .symbolRenderingMode(.palette).foregroundStyle(.white, state == .failed ? Color.red : Color.orange)
+                }
+            }
+            .id(state)
+            // The next state pops in while the last one only fades, so the ring is never empty.
+            .transition(.asymmetric(insertion: .scale(scale: 0.3).combined(with: .opacity), removal: .opacity))
+        }
     }
 }
 
-/// Why a greyed strip row cannot run on the selection, under the row, in the click hint's style.
+/// Why a greyed strip row cannot run on the selection, under the row.
 /// One line, centered on the row: it may overhang the strip into the panel's inset, and a reason
 /// wider than that would be cut off at the window's edge.
 private struct UnavailableReason: View {
@@ -585,26 +671,8 @@ private struct UnavailableReason: View {
             .fixedSize()
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            // Darker than the click hint's 0.7, which let the rows under it read through.
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.black.opacity(0.85)))
             .allowsHitTesting(false)
-    }
-}
-
-private struct ClickHint: View {
-    let label: String
-    let symbol: String
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
-            Text(label).font(.system(size: 12, weight: .semibold))
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(.black.opacity(0.7)))   // plain, unlike the material action buttons
-        .fixedSize()
-        .allowsHitTesting(false)
     }
 }
 

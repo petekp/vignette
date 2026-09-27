@@ -169,7 +169,7 @@ struct UITweaks: Codable, Equatable {
     var staggerDelay = 0.05
     var staggerTotalMax = 0.3        // the last card never starts later than this
     var relayoutDuration = 0.2
-    var insertDuration = 0.5         // one card joining a visible stack: its slide and the room the others make
+    var shiftUpDuration = 0.3        // one card joining a visible stack: how long the others take to shift up
     var expandDuration = 0.25
     var hoverRevealDuration = 0.15
     // A flight between a stack slot and the annotator, bowed and swelled by FlightCurve
@@ -241,7 +241,7 @@ struct UITweaks: Codable, Equatable {
         var u = self
         u.slideInDuration *= scale; u.slideOutDuration *= scale
         u.staggerDelay *= scale; u.staggerTotalMax *= scale
-        u.relayoutDuration *= scale; u.insertDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
+        u.relayoutDuration *= scale; u.shiftUpDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
         u.flightArc *= scale; u.flightDepth *= scale
@@ -266,7 +266,7 @@ struct UITweaks: Codable, Equatable {
         Bound("thumbnailSeconds", \.thumbnailSeconds, 0...3600), Bound("toastSeconds", \.toastSeconds, 0...3600),
         Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
         Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
-        Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("insertDuration", \.insertDuration, 0...60),
+        Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("shiftUpDuration", \.shiftUpDuration, 0...60),
         Bound("expandDuration", \.expandDuration, 0...60),
         Bound("hoverRevealDuration", \.hoverRevealDuration, 0...60), Bound("motion", \.motion, 0...1),
         Bound("flightArc", \.flightArc, 0...1), Bound("flightArcMax", \.flightArcMax, 0...2000),
@@ -820,6 +820,31 @@ enum Anim {
             t += step
         }
         return spring.settlingDuration
+    }
+
+    /// When the animation `swiftUI(curve, duration:)` makes first covers `fraction` of its way.
+    static func reaches(_ fraction: Double, curve: String, duration: Double) -> Double {
+        switch curve {
+        case "easeOut": return reaches(fraction, duration: duration) { UnitCurve.easeOut.value(at: $0) }
+        case "easeInOut": return reaches(fraction, duration: duration) { UnitCurve.easeInOut.value(at: $0) }
+        case "linear": return max(0, min(1, fraction)) * duration
+        default: return reaches(fraction, spring: duration, bounce: flightBounce)
+        }
+    }
+
+    /// When `spring(duration, bounce:)` first covers `fraction` of its way.
+    static func reaches(_ fraction: Double, spring duration: Double, bounce: Double = 0) -> Double {
+        let spring = Spring(duration: duration, bounce: bounce)
+        return reaches(fraction, duration: duration) { spring.value(target: 1.0, time: $0 * duration) }
+    }
+
+    /// Searches `progress`, a function of the time as a fraction of `duration`, in 1/240 s steps.
+    private static func reaches(_ fraction: Double, duration: Double, progress: (Double) -> Double) -> Double {
+        guard duration > 0, fraction > 0 else { return 0 }
+        let step = 1.0 / 240
+        var t = 0.0
+        while t < duration * 4, progress(t / duration) < fraction { t += step }
+        return t
     }
 
     /// When the same spring is within `within` points of a target `distance` points away. Its tail

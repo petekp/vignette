@@ -18,7 +18,7 @@ enum Config {
     static let actions: [ShotAction] = [
         ShotAction(id: "copy", symbol: "doc.on.doc", label: "Copy", key: .init("c", [.command]),
                    placement: .everywhere, kinds: [.image, .recording]) { shots, app in app.copyToClipboard(shots) },
-        ShotAction(id: "annotate", symbol: "pencil.line", hintSymbol: "scribble.variable", label: "Draw",
+        ShotAction(id: "annotate", symbol: "pencil.line", label: "Draw",
                    key: .init("\r", []), placement: .strip, isDefault: true) { shots, app in app.annotate(shots) },
         ShotAction(id: "open", symbol: "arrow.up.forward.app", label: "Open", key: .init("\r", []),
                    placement: .strip, isDefault: true, kinds: [.recording]) { shots, app in app.open(shots) },
@@ -99,8 +99,6 @@ struct ShotAction: Sendable {
     let id: String
     /// SF Symbol name. None for a `.shortcut` action: it is drawn on no card and in no strip.
     var symbol: String? = nil
-    /// The glyph in the hint that follows the pointer over a card, when it differs from `symbol`.
-    var hintSymbol: String? = nil
     let label: String
     var key: Key? = nil     // shortcut while the recent stack has focus
     var placement: Placement = .everywhere

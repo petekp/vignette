@@ -24,11 +24,25 @@ struct Card: Identifiable {
 /// Why the selection strip's labels are out. The cursor on the strip brings them out; so does a
 /// selection built from the keyboard, where the shortcuts beside the labels are what a hand on the
 /// keys needs. The mouse takes over when it moves onto a card or the strip, as the focus does.
+/// What a card sent to an agent shows: where it went and how the delivery went. Keyed by the file's
+/// path, because a lone thumbnail's card leaves the panel while it is in the annotator, and a card
+/// shown again after a failure is a new card for the same file.
+struct SendMark: Equatable {
+    enum State: Equatable { case sending, sent, uncertain, failed }
+    let request: String   // the request's id, so a later send's mark is never taken off by this one's timer
+    let client: AgentClient
+    let project: String
+    var state: State
+    /// What went wrong and what to do about it, once a delivery has failed or gone unconfirmed.
+    var reason: String? = nil
+}
+
 @MainActor
 final class StackModel: ObservableObject {
     @Published var cards: [Card] = []          // index 0 is newest, drawn at the bottom
     @Published var offscreen: Set<UUID> = []   // cards parked past the right screen edge
     @Published var entering: UUID? = nil       // the one card joining a visible column, for the length of its entrance
+    @Published var lift: [UUID: CGFloat] = [:] // how far below its slot a card shifting up is drawn, springing to 0
     var slidingOut = false                     // picks the exit stagger order and curve for `offscreen`
     @Published var outCards: Set<UUID> = []    // cards currently in the annotator; their slots stay empty
     @Published var forming: Set<UUID> = []     // cards whose image is in the transition layer, mid-stitch; drawn as nothing
@@ -43,6 +57,7 @@ final class StackModel: ObservableObject {
     @Published var annotating = false
     @Published var copied: Set<UUID> = []      // cards showing the copied mark over their image
     @Published var copiedLabel = "Copied"      // what that mark says; one action marks every card the same
+    @Published var sendMarks: [String: SendMark] = [:]   // by file path: a card sent to an agent, and how that went
     /// The selected cards, in the order they were selected. Every action, Stitch included, takes
     /// them in this order, and a card's circle shows its place here.
     @Published private(set) var selection: [UUID] = []
@@ -704,6 +719,36 @@ final class ThumbnailController: NSObject {
         // A card still on its way back from the annotator shows the mark when it lands.
         let hold = ui.toastSeconds + ui.expandDuration
         DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.copied.subtract(ids) }
+        if !model.isStack { scheduleDismiss(after: hold) }
+    }
+
+    /// The request for `shot` is stored and its card is going home: the card shows where it is going
+    /// from the moment it lands. A copied mark on it comes off; the send is the newer news.
+    func markSending(_ shot: Screenshot, request: String, to destination: AgentDestination) {
+        let key = shot.url.path
+        if let card = model.cards.first(where: { $0.shot.url.path == key }) { model.copied.remove(card.id) }
+        model.sendMarks[key] = SendMark(request: request, client: destination.client, project: destination.project, state: .sending)
+    }
+
+    /// The client answered for the request `request` about `shot`. The mark says so and holds as the
+    /// copied mark does, a failure twice as long. A card no longer on screen says nothing more about
+    /// a delivery that worked, and comes back as a lone thumbnail about one that did not.
+    func delivered(_ shot: Screenshot, request: String, _ state: SendMark.State, reason: String?) {
+        let key = shot.url.path
+        guard var mark = model.sendMarks[key], mark.request == request else { return }
+        mark.state = state
+        mark.reason = reason
+        let failed = state == .failed || state == .uncertain
+        let onScreen = visible && model.cards.contains { $0.shot.url.path == key }
+        guard onScreen || failed else { model.sendMarks[key] = nil; return }
+        model.sendMarks[key] = mark
+        if !onScreen { show(shot) }
+        // A failure has a sentence to read and act on, so it holds three times as long.
+        let hold = (ui.toastSeconds + ui.expandDuration) * (failed ? 3 : 1)
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in
+            guard let self, self.model.sendMarks[key]?.request == request else { return }
+            self.model.sendMarks[key] = nil
+        }
         if !model.isStack { scheduleDismiss(after: hold) }
     }
 
@@ -1515,25 +1560,72 @@ final class ThumbnailController: NSObject {
         if model.feedback != nil && !model.isStack { model.feedback = nil; model.removeCards { _ in true } }
         if entrance != .inPlace { _ = model.offscreen.insert(card.id) }
         model.slidingOut = false
-        // One card joining a visible column moves through `ui.insertDuration`, the card and the room
-        // the others make alike, which is slower than a relayout: it is an arrival, not a shuffle.
-        let joining = visible && !model.cards.isEmpty && entrance == .slide
-        let duration = joining ? ui.insertDuration : ui.relayoutDuration
-        if joining { model.entering = card.id }
+        if visible && !model.cards.isEmpty && entrance == .slide { return shiftUp(for: card) }
         model.cards.insert(card, at: 0)
-        if model.cards.count > Settings.shared.data.recentCount, let last = model.cards.last {
-            model.removeCards { $0.id == last.id }
-            model.deselect([last.id])
-        }
-        withAnimation(Anim.spring(duration)) { model.scroll = 0 }
-        layoutPanel(shrinkLater: false, animated: true, duration: duration)
+        removeOverflow()
+        withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
+        layoutPanel(shrinkLater: false, animated: true)
         DispatchQueue.main.async { [weak self] in self?.model.offscreen.remove(card.id) }
-        if joining {
-            DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-                guard let self, self.model.entering == card.id else { return }
-                self.model.entering = nil
+    }
+
+    /// When the lifts last sprang to 0, and what they were then, so a card joining while the others
+    /// are still shifting up adds to where they are drawn.
+    private var shift: (start: CFTimeInterval, lift: [UUID: CGFloat])?
+
+    /// One card joining a visible column. The others shift up on `ui.shiftUpDuration`'s spring, and
+    /// the card slides in as a lone thumbnail does once its slot is clear (`CardView.insertLead`).
+    /// The layout changes in one update with no animation, the panel's growth included, and every
+    /// card that was there is lifted back to where it was drawn; the lifts spring to 0 on the next
+    /// turn. Animated as a layout change instead, the panel's top edge moved at once while the
+    /// column's height sprang, so the cards jumped half a slot in one frame and the new card rode
+    /// the column's motion (`docs/stack-insert-2026-09-26.md`).
+    private func shiftUp(for card: Card) {
+        let now = CACurrentMediaTime()
+        // The new card's slot, and the scroll the column drops back from.
+        let rise = layout.drawn(card.size).height + layout.spacing + model.scroll
+        var lift: [UUID: CGFloat] = [:]
+        for old in model.cards { lift[old.id] = liftLeft(old.id, at: now) + rise }
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) {
+            model.entering = card.id
+            model.cards.insert(card, at: 0)
+            model.lift = lift
+            model.scroll = 0
+        }
+        layoutPanel(shrinkLater: false, animated: false)
+        shift = (now, lift)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.model.offscreen.remove(card.id)
+            withAnimation(Anim.spring(self.ui.shiftUpDuration)) {
+                self.model.lift = [:]
+                // The oldest card leaves the top with its transition, once the column is moving.
+                if self.removeOverflow() { self.relayout() }
             }
         }
+        // The card's slide reads `entering` when it starts, on the next turn.
+        DispatchQueue.main.asyncAfter(deadline: .now() + ui.shiftUpDuration) { [weak self] in
+            guard let self, self.model.entering == card.id else { return }
+            self.model.entering = nil
+        }
+    }
+
+    /// Where the lift of card `id` is drawn at `time`: what it was when the lifts last sprang, less
+    /// what `ui.shiftUpDuration`'s spring has covered since.
+    private func liftLeft(_ id: UUID, at time: CFTimeInterval) -> CGFloat {
+        guard let shift, let lift = shift.lift[id], ui.shiftUpDuration > 0 else { return 0 }
+        let covered = Spring(duration: ui.shiftUpDuration, bounce: 0).value(target: 1.0, time: time - shift.start)
+        return lift * CGFloat(max(0, 1 - covered))
+    }
+
+    /// Drops the oldest card when the column holds more than `recentCount`. True when it did.
+    @discardableResult
+    private func removeOverflow() -> Bool {
+        guard model.cards.count > Settings.shared.data.recentCount, let last = model.cards.last else { return false }
+        model.removeCards { $0.id == last.id }
+        model.deselect([last.id])
+        return true
     }
 
     private func relayout() {
@@ -1581,7 +1673,9 @@ final class ThumbnailController: NSObject {
         dismissTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if self.model.hoveredCard != nil || self.transition.isActive { self.scheduleDismiss(after: 1.5); return }
+                // A card still being delivered stays until the client answers, which its mark shows.
+                let delivering = self.model.cards.contains { self.model.sendMarks[$0.shot.url.path]?.state == .sending }
+                if self.model.hoveredCard != nil || self.transition.isActive || delivering { self.scheduleDismiss(after: 1.5); return }
                 self.dismiss()
             }
         }

@@ -21,8 +21,28 @@ final class AnnotatorToolbar {
         @Published private(set) var target: AgentDestination?
         /// The target was picked in the menu, so no later answer changes it.
         private var picked = false
-        /// A send is rendering or submitting. The button says so and takes no second click.
-        @Published var sending = false
+        /// From Send's press until the bar leaves. The button shows the send and takes no second click.
+        /// A new press puts a failure's reason away.
+        @Published var sending = false { didSet { if sending { failure = nil } } }
+        /// Why the last send failed before its request was stored, and what to do about it. While it
+        /// is set the button says "Not sent" and the reason stands beside it, until the person moves
+        /// on: a click elsewhere, or Send again.
+        @Published var failure: String?
+        var notSent: Bool { failure != nil }
+        /// Counts those failures; each one shakes the button.
+        @Published private(set) var failures = 0
+
+        func sendFailed(_ reason: String) {
+            sending = false
+            failure = reason
+            failures += 1
+        }
+
+        /// A new image opens with a button that offers Send.
+        func resetSend() {
+            sending = false
+            failure = nil
+        }
         /// What the person typed to go with Send or Reply, as typed. Kept until the next image opens,
         /// so a send that fails keeps it for the next try.
         @Published var message = ""
@@ -369,16 +389,17 @@ private struct ToolbarView: View {
                 copyButton(filled: true)
             case .send(let target):
                 copyButton(filled: false)
-                    .disabled(model.sending)
+                    .modifier(Resting(while: model.sending))
                     .padding(.trailing, 6)
                 targetMenu(target)
-                    .disabled(model.sending)
+                    .modifier(Resting(while: model.sending))
                     .padding(.trailing, 4)
                 // Vignette picked this session, so Return in the field sends only when Settings says so
                 // (`sendWithReturn`); otherwise it points at ⌘↩, which sends either way.
                 messageField(returnSends: { settings.data.sendWithReturn }) { onSend(target) }
+                    .modifier(Resting(while: model.sending))
                     .padding(.trailing, 4)
-                actionButton(model.sending ? "Sending…" : "Send", key: "⌘↩", logo: nil) { onSend(target) }
+                actionButton("Send", key: "⌘↩", logo: nil) { onSend(target) }
                     .help("Send the drawing to this session (⌘↩)")
                     .keyframeAnimator(initialValue: CGFloat(1), trigger: sendNudges) { content, scale in content.scaleEffect(scale) } keyframes: { _ in
                         let motion = Settings.shared.motionScale
@@ -387,8 +408,9 @@ private struct ToolbarView: View {
                     }
             case .reply(let origin):
                 messageField(returnSends: { true }) { onSend(origin) }
+                    .modifier(Resting(while: model.sending))
                     .padding(.trailing, 4)
-                actionButton(model.sending ? "Sending…" : "Reply", key: "↩", logo: origin.client) { onSend(origin) }
+                actionButton("Reply", key: "↩", logo: origin.client) { onSend(origin) }
                     .help("Send the drawing back to the session it came from (↩)")
             }
         }
@@ -443,7 +465,6 @@ private struct ToolbarView: View {
                     .font(.system(size: 13))
                     .lineLimit(typing ? 1...Self.messageLines : 1...1)
                     .focused($focused)
-                    .disabled(model.sending)
                     .onSubmit {
                         if !returnSends() { sendNudges += 1 } else if !model.sending { send() }
                     }
@@ -475,21 +496,53 @@ private struct ToolbarView: View {
             .help("Words to send with the drawing")
     }
 
-    /// Send or Reply: the filled button, with the agent's logo when it goes back to one.
+    /// Send or Reply: the filled button, with the agent's logo when it goes back to one. From the
+    /// press it shows the send, and after a failure before the store it says "Not sent". Its label
+    /// stays in the layout under both, so the button keeps its width and nothing beside it moves.
+    /// It keeps its fill, since it is busy rather than disabled, and takes no clicks while sending.
+    /// After a failure a click sends again.
     private func actionButton(_ title: String, key: String, logo client: AgentClient?, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        let motion = Settings.shared.motionScale
+        let busy = model.sending || model.notSent
+        return Button(action: action) {
             HStack(spacing: 6) {
                 if let client { AgentLogo(client: client, template: true).frame(width: 13, height: 13) }
                 Text(title).font(.system(size: 13, weight: .semibold))
-                if !model.sending { keyText(key, filled: true) }
+                keyText(key, filled: true)
+            }
+            .opacity(busy ? 0 : 1)
+            .blur(radius: busy ? 4 : 0)
+            .offset(y: model.sending ? -6 : 0)
+            .overlay {
+                if model.sending {
+                    SendingGlyph(leaving: !model.shown).transition(.blurReplace)
+                } else if model.notSent {
+                    Text("Not sent").font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .transition(.blurReplace)
+                }
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 11)
             .frame(height: 30)
-            .background(Color.accentColor.opacity(model.sending ? 0.55 : 1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(model.notSent ? Color(nsColor: .systemRed) : Color.accentColor, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(TactileButtonStyle(shape: .rounded, hoverScale: 1))
-        .disabled(model.sending)
+        .allowsHitTesting(!model.sending)
+        // The reason, attached to the button that failed, as a popover: it stays until a click
+        // elsewhere, which also gives the button back.
+        .popover(isPresented: Binding(get: { model.failure != nil }, set: { if !$0 { model.failure = nil } }), arrowEdge: .bottom) {
+            FailureReason(text: model.failure ?? "")
+        }
+        .keyframeAnimator(initialValue: CGFloat(0), trigger: model.failures) { content, x in content.offset(x: x) } keyframes: { _ in
+            let reach: CGFloat = motion > 0 ? 5 : 0
+            CubicKeyframe(-reach, duration: 0.05)
+            CubicKeyframe(reach, duration: 0.08)
+            CubicKeyframe(-reach * 0.6, duration: 0.08)
+            SpringKeyframe(0, duration: 0.3 * max(motion, 0.01), spring: .bouncy)
+        }
+        .animation(Anim.spring(0.3 * motion, bounce: 0.2), value: model.sending)
+        .animation(Anim.spring(0.3 * motion), value: model.notSent)
     }
 
     private func keyText(_ key: String, filled: Bool) -> some View {
@@ -509,7 +562,7 @@ private struct ToolbarView: View {
         } label: {
             HStack(spacing: 6) {
                 AgentLogo(client: target.client, template: false).frame(width: 14, height: 14)
-                Text(Self.project(of: target)).font(.system(size: 13, weight: .semibold))
+                Text(target.project).font(.system(size: 13, weight: .semibold))
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
             }
             .foregroundStyle(.primary)
@@ -531,17 +584,13 @@ private struct ToolbarView: View {
     private func row(_ destination: AgentDestination, target: AgentDestination) -> some View {
         Toggle(isOn: Binding(get: { destination.id == target.id }, set: { _ in onPick(destination) })) {
             AgentLogo(client: destination.client, template: false, menu: true)
-            Text(Self.project(of: destination))
+            Text(destination.project)
             Text(destination.name)
         }
     }
 
     /// What names a session at a glance: its project's folder, which you chose, or its agent's name
     /// when it reported none.
-    private static func project(of destination: AgentDestination) -> String {
-        destination.detail.isEmpty ? destination.client.label : destination.detail
-    }
-
     private var entrance: Animation {
         let scale = Settings.shared.motionScale
         guard scale > 0 else { return .linear(duration: 0) }
@@ -552,6 +601,67 @@ private struct ToolbarView: View {
 /// An agent's logo from the bundle, or the fallback symbol for a vendor without one. `template`
 /// draws it in the foreground colour, for the white of a filled button. A one-colour logo is always
 /// drawn in the foreground colour.
+/// What went wrong with a send and what to do about it, in the popover on the button.
+private struct FailureReason: View {
+    let text: String
+    var body: some View {
+        Label {
+            Text(text).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            // Two colours, since a red fill with the mark cut out of it disappears on a dark popover.
+            Image(systemName: "exclamationmark.triangle.fill")
+                .symbolRenderingMode(.palette).foregroundStyle(.white, Color(nsColor: .systemRed))
+        }
+        .frame(width: 260, alignment: .leading)
+        .padding(12)
+    }
+}
+
+/// A control beside a send in progress: it fades back, on a spring rather than in one frame, and
+/// takes no clicks. Not `.disabled`, whose look AppKit's controls switch in one frame.
+private struct Resting: ViewModifier {
+    let resting: Bool
+    init(while resting: Bool) { self.resting = resting }
+    func body(content: Content) -> some View {
+        content
+            .opacity(resting ? 0.4 : 1)
+            .allowsHitTesting(!resting)
+            .animation(Anim.spring(0.3 * Settings.shared.motionScale), value: resting)
+    }
+}
+
+/// The send inside Send's button: a paper plane that comes in from the lower left and settles, and
+/// carries on up and to the right as the bar leaves. The wait is usually a rendering of about
+/// 150 ms, too short for a spinner to read as anything but a flicker; past half a second a spinner
+/// takes the plane's place.
+private struct SendingGlyph: View {
+    let leaving: Bool
+    @State private var arrived = false
+    @State private var slow = false
+
+    var body: some View {
+        let motion = Settings.shared.motionScale
+        ZStack {
+            if slow && !leaving {
+                ProgressView().controlSize(.small).environment(\.colorScheme, .dark)
+                    .transition(.blurReplace)
+            } else {
+                Image(systemName: "paperplane.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .offset(x: leaving ? 16 : (arrived ? 0 : -10), y: leaving ? -12 : (arrived ? 0 : 6))
+                    .opacity(leaving ? 0 : 1)
+                    .transition(.blurReplace)
+            }
+        }
+        .onAppear {
+            withAnimation(Anim.spring(0.35 * motion, bounce: 0.3)) { arrived = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                withAnimation(Anim.spring(0.3 * motion)) { slow = true }
+            }
+        }
+    }
+}
+
 private struct AgentLogo: View {
     let client: AgentClient
     let template: Bool

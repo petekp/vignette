@@ -147,7 +147,7 @@ final class AnnotationController {
         let started = CACurrentMediaTime()
         current = shot
         // A send still rendering belongs to the session before this one, which its answer will find gone.
-        sending = false
+        toolbar.model.resetSend()
         // The window and the editor are this image's now, so the last image's removal must not take them.
         removal.cancel()
         let win = window ?? makeWindow()
@@ -767,11 +767,16 @@ final class AnnotationController {
         toolbar.refit()
     }
 
-    /// True while a send is rendering or submitting; the button says so and takes no second click.
+    /// True from Send's press until the bar leaves; the button shows the send and takes no second
+    /// click. `prepare` resets it.
     var sending: Bool {
         get { toolbar.model.sending }
         set { toolbar.model.sending = newValue }
     }
+
+    /// The send failed before its request was stored, so the drawing is still here: the button says
+    /// so, with `reason` beside it, until the person moves on.
+    func sendFailed(_ reason: String) { toolbar.model.sendFailed(reason) }
 
     /// Ends the session as Esc would. `open vignette://cancel`. False when nothing was open.
     @discardableResult

@@ -2,11 +2,6 @@
 
 Things decided or raised but not built. Each entry says what, why, and what it waits on.
 
-## Publish the skill on skills.sh (raised 2026-09-19)
-
-0.1.0 went out on 2026-09-24. Publish `skills/vignette/SKILL.md` on skills.sh from the public repo,
-as herdr does, so Cursor and other agents can install it without the app.
-
 ## A nicer disk image window (raised 2026-09-25)
 
 The window the disk image opens, where you drag Vignette to Applications, should look better. Today
@@ -76,12 +71,6 @@ and the "From <Name>" tab on a pushed card. Vignette would also stop asking herd
 sessions, which today happens at launch, on a capture and when the stack opens. Open: where the
 switch lives (setup, Settings, or both), and whether `vignette://add` and the skill still work
 while it is on.
-
-## No "Draw" hint on a hovered card (raised 2026-09-26)
-
-Pete wants the hint that appears over a hovered card, "Draw" on a screenshot and "Open" on a
-recording, removed. It is `showsClickHint` in `StackView.swift`, and AGENTS.md describes how it
-avoids the card's corner buttons, so that rule goes with it.
 
 ## A glint around a new thumbnail (raised 2026-09-26)
 

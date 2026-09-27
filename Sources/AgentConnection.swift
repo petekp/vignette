@@ -85,6 +85,8 @@ struct AgentDestination: Equatable, Identifiable {
     }
 
     var client: AgentClient { address.client }
+    /// What the toolbar's target and the sent card call it: its project, or the client's name.
+    var project: String { detail.isEmpty ? client.label : detail }
 
     /// Where Send goes when nobody has chosen: the session you came from, which is where a paste
     /// would have gone. The session an agent's app showed first, then herdr's focused pane, then the
@@ -169,24 +171,41 @@ struct AgentDestination: Equatable, Identifiable {
 
 /// What happened when a request was handed to a client. The four cases are different on purpose:
 /// only `notSubmitted` permits an automatic retry, and only `uncertain` may already have arrived.
+/// `detail` is for the log. `reason` is for the person, on the card that was sent: what went wrong
+/// and what to do about it, short enough for a card.
 enum SubmissionOutcome {
     /// The runtime took the request. It does not mean a model has read the image.
     case accepted(detail: String)
     /// Nothing reached the client. Retrying the same request is safe.
-    case notSubmitted(code: CommandError, detail: String)
+    case notSubmitted(code: CommandError, detail: String, reason: String)
     /// The conversation is gone, replaced, or no longer reachable where it was.
-    case destinationChanged(detail: String)
+    case destinationChanged(detail: String, reason: String)
     /// The call did not answer in time. It may or may not have been accepted, so Vignette neither
     /// retries it nor claims it failed.
-    case uncertain(detail: String)
+    case uncertain(detail: String, reason: String)
 
     var isAccepted: Bool { if case .accepted = self { return true }; return false }
 
     var detail: String {
         switch self {
-        case .accepted(let d), .destinationChanged(let d), .uncertain(let d): return d
-        case .notSubmitted(_, let d): return d
+        case .accepted(let d), .destinationChanged(let d, _), .uncertain(let d, _): return d
+        case .notSubmitted(_, let d, _): return d
         }
+    }
+
+    var reason: String? {
+        switch self {
+        case .accepted: return nil
+        case .notSubmitted(_, _, let r), .destinationChanged(_, let r), .uncertain(_, let r): return r
+        }
+    }
+
+    static let internalReason = "Something went wrong. See the log."
+
+    /// A client's own words, cut to fit a card, for a failure Vignette has no sentence of its own for.
+    static func quoted(_ client: String, _ detail: String) -> String {
+        let words = detail.count > 70 ? String(detail.prefix(69)) + "…" : detail
+        return "\(client): \(words)"
     }
 }
 
@@ -302,6 +321,11 @@ struct ClaudeCodeConnection: AgentConnection {
               let id = pane["pane_id"] as? String else { return nil }
         return (id, pane["tab_id"] as? String ?? "")
     }
+
+    /// What the card says when herdr fails, for the failures more than one step can meet.
+    static let unresponsive = "herdr isn't responding. Check that it's running."
+    static let closed = "This session is closed. Send to another one."
+    static let blocked = "Answer Claude's question in the session, then send again."
 
     /// Where herdr may be. The app is launched by LaunchServices, so it inherits no shell PATH.
     static let binaryPaths = ["\(NSHomeDirectory())/.local/bin/herdr", "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr"]
@@ -448,31 +472,33 @@ struct ClaudeCodeConnection: AgentConnection {
 
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
         guard case .claudeSession(let session) = destination.address else {
-            return .notSubmitted(code: .noAgent, detail: "not a Claude Code destination")
+            return .notSubmitted(code: .noAgent, detail: "not a Claude Code destination", reason: SubmissionOutcome.internalReason)
         }
         guard let herdr = binary() else {
-            return .notSubmitted(code: .noAgent, detail: "no herdr at \(Self.binaryPaths.joined(separator: " "))")
+            return .notSubmitted(code: .noAgent, detail: "no herdr at \(Self.binaryPaths.joined(separator: " "))",
+                                 reason: "Install herdr to send to Claude Code.")
         }
         guard let list = run(herdr, ["agent", "list"], Self.listTimeout) else {
-            return .notSubmitted(code: .noAgent, detail: "herdr agent list did not run")
+            return .notSubmitted(code: .noAgent, detail: "herdr agent list did not run", reason: Self.unresponsive)
         }
         guard list.status == 0 else {
-            return .notSubmitted(code: .noAgent, detail: "herdr agent list: \(Subprocess.detail(list.output) ?? "no output")")
+            return .notSubmitted(code: .noAgent, detail: "herdr agent list: \(Subprocess.detail(list.output) ?? "no output")", reason: Self.unresponsive)
         }
         // The guard: the pane has to be running this exact session now, not a session it ran
         // before. A session in no pane is an error; it is never redirected to another one.
         let agents = Self.agents(in: Data(list.output.utf8))
         guard let target = agents.first(where: { $0.session == session }) else {
-            return .destinationChanged(detail: "Claude Code session \(session) is in no herdr pane now")
+            return .destinationChanged(detail: "Claude Code session \(session) is in no herdr pane now", reason: Self.closed)
         }
         guard target.status != "blocked" else {
-            return .notSubmitted(code: .sendFailed, detail: "\(target.id) is waiting on a prompt of its own; answer it first")
+            return .notSubmitted(code: .sendFailed, detail: "\(target.id) is waiting on a prompt of its own; answer it first", reason: Self.blocked)
         }
         guard let sent = run(herdr, ["agent", "prompt", target.pane, line], Self.promptTimeout) else {
-            return .notSubmitted(code: .sendFailed, detail: "herdr agent prompt did not run")
+            return .notSubmitted(code: .sendFailed, detail: "herdr agent prompt did not run", reason: Self.unresponsive)
         }
         if sent.timedOut {
-            return .uncertain(detail: "herdr agent prompt did not answer in \(Int(Self.promptTimeout)) s")
+            return .uncertain(detail: "herdr agent prompt did not answer in \(Int(Self.promptTimeout)) s",
+                              reason: "herdr didn't confirm it. Check the session.")
         }
         guard sent.status == 0 else {
             let detail = Subprocess.detail(sent.output) ?? "herdr said nothing"
@@ -480,12 +506,12 @@ struct ClaudeCodeConnection: AgentConnection {
             // is gone; `agent_blocked` says it is there, waiting on a prompt of its own, which is
             // the same non-submission the preflight above reports and is worth retrying.
             if detail.contains("agent_not_found") {
-                return .destinationChanged(detail: detail)
+                return .destinationChanged(detail: detail, reason: Self.closed)
             }
             if detail.contains("agent_blocked") {
-                return .notSubmitted(code: .sendFailed, detail: "\(detail); answer the agent's own prompt first")
+                return .notSubmitted(code: .sendFailed, detail: "\(detail); answer the agent's own prompt first", reason: Self.blocked)
             }
-            return .notSubmitted(code: .sendFailed, detail: detail)
+            return .notSubmitted(code: .sendFailed, detail: detail, reason: SubmissionOutcome.quoted("herdr", detail))
         }
         return .accepted(detail: "pane=\(target.pane) session=\(session)")
     }
@@ -601,16 +627,18 @@ struct CodexConnection: AgentConnection {
 
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
         guard case .codexThread(let uuid) = destination.address else {
-            return .notSubmitted(code: .noAgent, detail: "not a Codex destination")
+            return .notSubmitted(code: .noAgent, detail: "not a Codex destination", reason: SubmissionOutcome.internalReason)
         }
         guard let codex = binary() else {
-            return .notSubmitted(code: .noAgent, detail: "no codex at \(Self.binaryPaths.joined(separator: " "))")
+            return .notSubmitted(code: .noAgent, detail: "no codex at \(Self.binaryPaths.joined(separator: " "))",
+                                 reason: "Install the Codex CLI to send to Codex.")
         }
         guard let result = run(codex, Self.arguments(thread: uuid, message: line), Self.queueTimeout) else {
-            return .notSubmitted(code: .sendFailed, detail: "codex queue did not run")
+            return .notSubmitted(code: .sendFailed, detail: "codex queue did not run", reason: "Codex didn't start. See the log.")
         }
         if result.timedOut {
-            return .uncertain(detail: "codex queue did not answer in \(Int(Self.queueTimeout)) s")
+            return .uncertain(detail: "codex queue did not answer in \(Int(Self.queueTimeout)) s",
+                              reason: "Codex didn't confirm it. Check the thread.")
         }
         guard result.status == 0 else {
             return Self.failure(output: result.output, thread: uuid)
@@ -623,11 +651,14 @@ struct CodexConnection: AgentConnection {
     static func failure(output: String, thread: String) -> SubmissionOutcome {
         let detail = Subprocess.detail(output) ?? "codex said nothing"
         let lower = detail.lowercased()
-        let gone = ["thread not found", "no such thread", "session not found", "unknown thread",
-                    "connection refused", "failed to connect", "connection reset"]
-        if gone.contains(where: lower.contains) {
-            return .destinationChanged(detail: detail)
+        let missing = ["thread not found", "no such thread", "session not found", "unknown thread"]
+        let unreachable = ["connection refused", "failed to connect", "connection reset"]
+        if missing.contains(where: lower.contains) {
+            return .destinationChanged(detail: detail, reason: "This thread is gone. Send to another one.")
         }
-        return .notSubmitted(code: .sendFailed, detail: detail)
+        if unreachable.contains(where: lower.contains) {
+            return .destinationChanged(detail: detail, reason: "Codex isn't running. Open it, then send again.")
+        }
+        return .notSubmitted(code: .sendFailed, detail: detail, reason: SubmissionOutcome.quoted("Codex", detail))
     }
 }

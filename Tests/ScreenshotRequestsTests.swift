@@ -52,9 +52,8 @@ final class ScreenshotRequestsTests: XCTestCase {
 
     /// A stored request with no connection behind it, so nothing is submitted anywhere.
     private func makeRequest() throws -> ScreenshotRequests.Record {
-        let record = requests.send(png: png(), source: folder.appendingPathComponent("Screenshot.png"),
-                                   to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
-        return try XCTUnwrap(record)
+        try requests.send(png: png(), source: folder.appendingPathComponent("Screenshot.png"),
+                          to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
     }
 
     private func ticket(for record: ScreenshotRequests.Record) throws -> ReplyProtocol.Ticket {

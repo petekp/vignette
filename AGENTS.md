@@ -470,14 +470,18 @@ the same driven sequence; a single run varies.
   `vignette://annotate` with no stack showing gets the whole visible frame.
   `docs/stack-room-2026-09-17.md` has the numbers, and `docs/stack-narrowing-2026-09-23.md` what a
   frame of the narrowing costs and the options for making it cheaper.
-- The click hint (Draw on a screenshot, Open on a recording) goes out over the card's two corner
-  buttons and nowhere else (`CardView.overCornerButton`): each button's frame plus its padding, not
-  the whole band along the bottom, so the hint stays up over the middle of the band and a click
-  there still does what it says.
+- A card joining the open stack is not animated as a layout change. `ThumbnailController.shiftUp`
+  changes the layout and grows the panel with animations off, lifts every card that was there back
+  to where it was drawn (`StackModel.lift`), and springs the lifts to 0 on the next turn. The panel
+  grows at its top edge at once, and SwiftUI animates in coordinates whose origin is that edge, so
+  an animated insert moved the cards half a slot in one frame and carried the new card along with
+  the column. The new card slides on the lone thumbnail's spring, after `CardView.insertLead`, so it
+  reaches the column's width only once the card above has cleared its slot.
+  `docs/stack-insert-2026-09-26.md` has the frames.
 - A card's thumbnail fills the card, so a screenshot whose shape differs from the card's box hangs
   outside the card's frame, and the clip that hides it does not shrink the hit area. The
   `contentShape` in `CardView` holds each card's hover and clicks to its own frame; without it a
-  hovered card, which `zIndex` raises for the click hint, takes them from the card below.
+  hovered card, which `zIndex` raises for its hover scale, takes them from the card below.
 - "Click outside" detection goes through `OutsideClick`. A plain global mouse monitor also
   reports clicks on this app's own floating windows, so the topmost window under the cursor is
   checked first. The stack and the annotator each own one; the monitor's token never leaves that
@@ -846,14 +850,25 @@ the same driven sequence; a single run varies.
   leaves the drawing where the hand left it. A rendering belongs to the annotator session Send was
   pressed in (`annotator.session`). One that answers after that session ended is dropped, even when
   the same image is open again, and nothing is sent or closed
-  (`[send] dropped <name>; the editor moved on`). `prepare` resets `sending`, so the next image's
-  toolbar never shows "Sending…" for a send that is not its own. A list of agent sessions that
+  (`[send] dropped <name>; the editor moved on`). `sending` stays on from the press until the bar
+  has left, so the button keeps its paper plane through the exit, and `prepare` resets it, so the
+  next image's toolbar never shows a send that is not its own. A list of agent sessions that
   arrives after the editor moved on to another image is dropped as well. A rendering that fails is a
   refusal, never a send of the bare screenshot: only a drawing with no marks sends the picture
   itself, and it goes through PNG whatever the capture's own format is. Send closes the editor
   without a copied mark, and the queue carries on to the next card: a list of files to annotate is
   something the person asked for, and handing one of them to an agent does not withdraw the rest.
   Esc is the one that empties the queue, because that is a person stopping.
+- A send reports on the card it was sent from, never in a toast. Once the request is stored the card
+  carries a `SendMark` (`ThumbnailController.markSending`), keyed by the file's path because a lone
+  thumbnail's card leaves the panel while it is in the editor. It shows the destination's logo and
+  project from the moment the card lands, and `delivered` turns it to sent, uncertain or failed when
+  the client answers. A failure the person must act on carries a `reason`: every `SubmissionOutcome`
+  that is not accepted has one, written where the client knows what went wrong, and `detail` stays
+  for the log. A card gone from the screen by then says nothing more about a success and comes back
+  as a lone thumbnail for a failure. A failure before the request is stored leaves the drawing in
+  the editor, so it shows there: the button reads "Not sent" and a popover on it gives the reason,
+  both until a click elsewhere or Send again. `docs/send-confirmation-2026-09-26.md` has the frames.
 - The first launch opens the setup window (`SetupWindow.swift`), and it has that launch to itself.
   It is pages, one step each: welcome, with the folder permission when macOS protects the watch
   folder, and Open at login; the shortcut; and the agent skill, only when `~/.claude` or `~/.codex`

@@ -24,6 +24,8 @@ final class ScreenshotRequests {
         var watchFolder: () -> URL = { FileManager.default.temporaryDirectory }
         /// One sentence for the person, on the stack's toast.
         var feedback: (String) -> Void = { _ in }
+        /// What the client answered for a request, which the card that was sent shows.
+        var delivered: (Record, SubmissionOutcome) -> Void = { _, _ in }
     }
 
     var callbacks = Callbacks()
@@ -271,17 +273,20 @@ final class ScreenshotRequests {
 
     // MARK: Sending
 
+    /// A send refused before anything was stored, with what the person reads about it.
+    struct Refusal: Error { let reason: String }
+
     /// Stores the drawing and the request, then hands it to the client. The store happens first and
     /// on the main thread: once this answers, the request exists whatever the client does next, and
     /// the annotator may close. The submission follows off the main thread and reports through
-    /// `[send]` and the toast.
+    /// `[send]` and `callbacks.delivered`. Throws a `Refusal` when nothing could be stored.
     @discardableResult
     func send(png: Data, source: URL, to destination: AgentDestination, message: String? = nil,
-              instructions: String = SettingsData.defaultSendInstructions) -> Record? {
+              instructions: String = SettingsData.defaultSendInstructions) throws -> Record {
         let live = requests.values.filter { $0.status != .cleared }.count
         guard live < Self.maxLiveRequests else {
             Log.write("[send] error \(CommandError.writeFailed.rawValue) \(live) requests are open; clear some with \(Identity.urlScheme)://requests?clear=all")
-            return nil
+            throw Refusal(reason: "\(live) earlier sends are still open. Clear them with \(Identity.urlScheme)://requests?clear=all.")
         }
         let id = ReplyProtocol.newID()
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: id)
@@ -298,7 +303,7 @@ final class ScreenshotRequests {
             try write(record)
         } catch {
             Log.write("[send] error \(CommandError.writeFailed.rawValue) \(directory.path): \(error.localizedDescription)")
-            return nil
+            throw Refusal(reason: "Vignette couldn't save the request. \(error.localizedDescription)")
         }
         requests[id] = record
         Log.write("[send] prepared \(id) to \(destination.name) (\(destination.address.description)) \(png.count) bytes")
@@ -310,7 +315,8 @@ final class ScreenshotRequests {
     /// the line only: it is the person's words, so neither the record nor the log keeps it.
     private func submit(_ record: Record, message: String?, instructions: String) {
         guard let connection = connections[record.address.client] else {
-            finishSubmission(record.id, .notSubmitted(code: .noAgent, detail: "no connection for \(record.address.client.rawValue)"))
+            finishSubmission(record.id, .notSubmitted(code: .noAgent, detail: "no connection for \(record.address.client.rawValue)",
+                                                      reason: SubmissionOutcome.internalReason))
             return
         }
         let destination = AgentDestination(id: record.destinationID, name: record.destinationName, address: record.address)
@@ -334,17 +340,14 @@ final class ScreenshotRequests {
         switch outcome {
         case .accepted(let detail):
             Log.write("[send] ok \(id) \(record.destinationName) \(detail)")
-            callbacks.feedback("Sent to \(record.destinationName)")
-        case .uncertain(let detail):
+        case .uncertain(let detail, _):
             Log.write("[send] uncertain \(id) \(record.destinationName) \(detail)")
-            callbacks.feedback("Delivery uncertain; check \(record.destinationName)")
-        case .destinationChanged(let detail):
+        case .destinationChanged(let detail, _):
             Log.write("[send] error \(CommandError.noAgent.rawValue) \(id) \(detail)")
-            callbacks.feedback("\(record.destinationName) is not there any more")
-        case .notSubmitted(let code, let detail):
+        case .notSubmitted(let code, let detail, _):
             Log.write("[send] error \(code.rawValue) \(id) \(detail)")
-            callbacks.feedback("Could not send to \(record.destinationName); see the log")
         }
+        callbacks.delivered(record, outcome)
     }
 
     /// The one line the agent receives, which arrives in the person's session as their own message.

@@ -50,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var pendingAdds: [String: PendingAdd] = [:]
     /// Sending drawings to agent sessions and taking their drawings back. See ScreenshotRequests.
     private let requests = ScreenshotRequests(root: Identity.applicationSupportURL.appendingPathComponent("requests"))
+    /// The screenshot each request sent this launch was made from, until its client answers.
+    private var sentShots: [String: Screenshot] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         replaceOlderInstances()
@@ -908,7 +910,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             },
             present: { [weak self] shot in self?.thumbnail.show(shot) },
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
-            feedback: { [weak self] text in self?.thumbnail.showFeedback(text) })
+            feedback: { [weak self] text in self?.thumbnail.showFeedback(text) },
+            delivered: { [weak self] record, outcome in
+                guard let self, let shot = sentShots.removeValue(forKey: record.id) else { return }
+                let state: SendMark.State
+                switch outcome {
+                case .accepted: state = .sent
+                case .uncertain: state = .uncertain
+                case .notSubmitted, .destinationChanged: state = .failed
+                }
+                thumbnail.delivered(shot, request: record.id, state, reason: outcome.reason)
+            })
         requests.load()
     }
 
@@ -971,21 +983,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Send, from the annotator's toolbar. The drawing is rendered without closing anything; the
     /// image leaves the editor only once that rendering and the request are stored, so a failure
     /// anywhere before then leaves the drawing exactly where the hand left it.
+    /// The button shows the send from the press until the bar leaves, and says "Not sent" when it
+    /// fails before the request is stored, since the drawing is still in the editor then.
     private func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination, message: String?) {
         guard !annotator.sending, let session = annotator.session else { return }
         let name = shot.url.lastPathComponent
+        annotator.sending = true
         // Nothing drawn is a send of the screenshot itself, which is what the person is looking at.
         // Through PNG whatever the capture format is: a reply copies these bytes to a `.png`
         // name, and an agent opening a file whose name and content disagree may not cope.
         guard !drawing.marks.isEmpty else {
             guard let bytes = Thumbnailer.png(from: shot.url) else {
                 Commands.error("send", .unreadableImage, shot.url.path)
-                thumbnail.showFeedback("Could not read \(name)")
+                annotator.sendFailed(Self.unreadable(name))
                 return
             }
             return submit(bytes, of: shot, to: destination, message: message)
         }
-        annotator.sending = true
         let ui = settings.data.ui
         let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: nil, style: ui.textStyle, arrowhead: ui.arrowhead)
         rendering.whenDone { [weak self] output in
@@ -996,24 +1010,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard annotator.session == session else {
                 Log.write("[send] dropped \(name); the editor moved on"); return
             }
-            annotator.sending = false
             guard let png = output.png, output.failure == nil else {
                 let failure = output.failure ?? .writeFailed("the rendering made no image")
                 Commands.error("send", failure.code, "\(name): \(failure)")
-                thumbnail.showFeedback("Could not render the drawing; see the log")
+                if case .unreadableImage = failure { annotator.sendFailed(Self.unreadable(name)) }
+                else { annotator.sendFailed("The drawing couldn't be rendered. See the log.") }
                 return
             }
             submit(png, of: shot, to: destination, message: message)
         }
     }
 
+    private static func unreadable(_ name: String) -> String {
+        "Vignette can't read \(name). It may have been moved or deleted."
+    }
+
     private func submit(_ png: Data, of shot: Screenshot, to destination: AgentDestination, message: String?) {
-        guard requests.send(png: png, source: shot.url, to: destination, message: message,
-                            instructions: settings.data.sendInstructions) != nil else {
-            thumbnail.showFeedback("Could not store the request; see the log"); return
+        let record: ScreenshotRequests.Record
+        do {
+            record = try requests.send(png: png, source: shot.url, to: destination, message: message,
+                                       instructions: settings.data.sendInstructions)
+        } catch {
+            annotator.sendFailed((error as? ScreenshotRequests.Refusal)?.reason ?? "The drawing couldn't be sent. See the log.")
+            return
         }
         // Stored, so the request survives whatever the client does next. The image goes home
-        // and takes no copied mark: copying is Done's contract. A queued run carries on.
+        // with a send mark rather than a copied one: copying is Done's contract. A queued run
+        // carries on. `sending` stays on, so the button keeps its plane while the bar leaves;
+        // the next `prepare` resets it.
+        sentShots[record.id] = shot
+        thumbnail.markSending(shot, request: record.id, to: destination)
         thumbnail.annotationSent()
     }
 
