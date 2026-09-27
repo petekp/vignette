@@ -563,6 +563,8 @@ private struct ToolbarView: View {
     @State private var tipShown: AnnotatorToolbar.Model.Control?
     @State private var tipWait: DispatchWorkItem?
     @State private var tipLeft = Date.distantPast
+    /// The message field's height as its text needs it. The box springs to it (`GrowingField`).
+    @State private var fieldHeight: CGFloat = 30
     /// The message field is being typed in.
     private var typing: Bool { focused && model.keyed }
     @Environment(\.colorScheme) private var colorScheme
@@ -749,7 +751,15 @@ private struct ToolbarView: View {
         let grown = typing && !model.message.isEmpty
         // The bar's middle is 7 pt above its bottom edge; a margin keeps the field off the Dock.
         let below = model.roomBelow + (AnnotatorToolbar.height - 30) / 2 - 8
-        return GrowingField(below: below) {
+        let box = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        return GrowingField(height: fieldHeight, below: below) {
+            // Grown, it hangs past the bar over whatever is behind, so it takes a blur of that, as a
+            // popover does.
+            BehindWindowBlur(cornerRadius: 7).opacity(grown ? 1 : 0)
+            // The text at its own height, always. A text field shorter than its text scrolls to its
+            // caret, so while the box grew around it the text jumped up a line and back. The box
+            // clips it instead, and a new line comes into view as the box grows.
+            .overlay(alignment: .top) {
                 TextField("Add a message", text: $model.message, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
@@ -766,37 +776,31 @@ private struct ToolbarView: View {
                     .padding(.vertical, 7)
                     .frame(width: Self.messageWidth, alignment: .topLeading)
                     .frame(minHeight: 30)
-                    .background {
-                        // Grown, it hangs below the bar over whatever is behind, so it takes a blur of
-                        // that, as a popover does. The shape under the blur casts its shadow.
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(Color.primary.opacity(0.09))
-                                .shadow(color: .black.opacity(grown ? 0.3 : 0), radius: 10, y: 4)
-                            BehindWindowBlur(cornerRadius: 7).opacity(grown ? 1 : 0)
-                        }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        withAnimation(Anim.spring(0.25 * Settings.shared.motionScale)) { fieldHeight = height }
                     }
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(Color.accentColor.opacity(typing ? 0.8 : 0), lineWidth: 1))
-                    // The text field takes presses only on its text; its padding and the room around
-                    // it in the bar start typing too, on the press, as the text does.
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .simultaneousGesture(pressToType)
-                    .modifier(IBeam())
             }
-            .frame(width: Self.messageWidth, height: 30)
-            .padding(Self.slop)
-            .background {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .gesture(pressToType)
-                    .modifier(IBeam())
-            }
-            .padding(Self.slop.negated)
-            // The layout places the field, so its growth and its move up animate together.
-            .animation(Anim.spring(0.25 * Settings.shared.motionScale), value: model.message)
-            .animation(Anim.spring(0.25 * Settings.shared.motionScale), value: typing)
-            .modifier(TipSpot(control: .message, text: typing ? nil : "Add a message (M)", hover: tip))
+            .clipShape(box)
+            .background { box.fill(Color.primary.opacity(0.09)).shadow(color: .black.opacity(grown ? 0.3 : 0), radius: 10, y: 4) }
+            .overlay(box.stroke(Color.accentColor.opacity(typing ? 0.8 : 0), lineWidth: 1))
+            // The text field takes presses only on its text; its padding and the room around it in
+            // the bar start typing too, on the press, as the text does.
+            .contentShape(box)
+            .simultaneousGesture(pressToType)
+            .modifier(IBeam())
+        }
+        .frame(width: Self.messageWidth, height: 30)
+        .padding(Self.slop)
+        .background {
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(pressToType)
+                .modifier(IBeam())
+        }
+        .padding(Self.slop.negated)
+        .animation(Anim.spring(0.25 * Settings.shared.motionScale), value: typing)
+        .modifier(TipSpot(control: .message, text: typing ? nil : "Add a message (M)", hover: tip))
     }
 
     private var pressToType: some Gesture {
@@ -1059,16 +1063,23 @@ private struct IBeam: ViewModifier {
 /// Places the message field in its slot on the bar: from the slot's top down, and once it would
 /// reach further down than `below` allows, moved up by the rest, out of the top of the bar.
 private struct GrowingField: Layout {
+    /// The field's height, which SwiftUI animates, and the layout with it.
+    var height: CGFloat
     let below: CGFloat
+
+    var animatableData: CGFloat {
+        get { height }
+        set { height = newValue }
+    }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         proposal.replacingUnspecifiedDimensions()
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let height = max(height, bounds.height)
+        let up = min(max(0, height - bounds.height - max(0, below)), height - bounds.height)
         for subview in subviews {
-            let height = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
-            let up = min(max(0, height - bounds.height - max(0, below)), max(0, height - bounds.height))
             subview.place(at: CGPoint(x: bounds.minX, y: bounds.minY - up), anchor: .topLeading,
                           proposal: ProposedViewSize(width: bounds.width, height: height))
         }
