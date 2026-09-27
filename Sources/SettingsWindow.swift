@@ -726,21 +726,56 @@ enum Accessibility {
     /// whose button opens it. The pane is opened here only when that alert has not come up by
     /// `alertWait`. Opening both at once put the pane in front of the alert, which then waited
     /// behind it and outlived the grant.
+    ///
+    /// Deny on the alert, or quitting System Settings without the grant, hands the focus to the app
+    /// the user had before Vignette. That app covers the window that asked, and Vignette has no Dock
+    /// icon to bring it back by, so the window comes back then. A grant is left to the windows,
+    /// which poll for it.
     @MainActor
     static func request() {
+        let asking = NSApp.keyWindow
         _ = ModifierTap.trusted(prompt: true)
         Task { @MainActor in
-            let deadline = ContinuousClock.now + alertWait
-            while ContinuousClock.now < deadline {
-                if alertIsUp { return }
-                try? await Task.sleep(for: .milliseconds(100))
+            let opened: Bool
+            if await holds(within: alertWait, { alertIsUp }) {
+                while alertIsUp { try? await Task.sleep(for: .milliseconds(100)) }
+                opened = false
+            } else {
+                openSystemSettings()
+                opened = true
             }
-            if !alertIsUp { openSystemSettings() }
+            // Measured: the alert's Open System Settings puts System Settings in front by the time
+            // the alert is gone, and its Deny leaves the app from before in front.
+            if await holds(within: opened ? .seconds(3) : .milliseconds(300), { systemSettingsInFront }),
+               let settings = NSWorkspace.shared.frontmostApplication {
+                while !settings.isTerminated, !ModifierTap.trusted(prompt: false) {
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+            }
+            guard !ModifierTap.trusted(prompt: false), let asking, asking.isVisible else { return }
+            Log.write("[accessibility] not granted; \"\(asking.title)\" comes back to the front")
+            asking.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 
     /// Measured: the alert was up within half a second of the request.
     private static let alertWait: Duration = .milliseconds(1500)
+
+    private static var systemSettingsInFront: Bool {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.systempreferences"
+    }
+
+    /// Whether `condition` becomes true within `limit`, checked every 100 ms.
+    @MainActor
+    private static func holds(within limit: Duration, _ condition: () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + limit
+        while !condition() {
+            guard ContinuousClock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return true
+    }
 
     /// The alert belongs to macOS's `universalAccessAuthWarn` process. Window owner names need no
     /// Screen Recording permission. If Apple renames the process, this reads false and the pane
