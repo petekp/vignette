@@ -497,8 +497,8 @@ the same driven sequence; a single run varies.
   (annotate, shown, parked, close, finish, newShot, dismiss, remove) and run the effects it returns
   (prepare, show, park, abandon, returnCard, markCopied, hideAnnotator, join). Done sends `finish`:
   the card returns and takes the copied mark, and a lone thumbnail, which left the panel when the
-  annotator opened, comes back to the corner for it. Esc sends `close`: a stack card returns, a lone
-  thumbnail's annotator just hides. Quick draw sends `dismiss`. A `prepare` is never emitted while a
+  annotator opened, comes back to the corner for it. Esc and Send send `close`: the card returns the
+  same way, without the copied mark. Quick draw sends `dismiss`. A `prepare` is never emitted while a
   park is in flight, which is what serializes rapid swaps; a new screenshot during a lone annotation
   joins the panel instead of closing the editor. Every event logs one
   `[transition] <event> -> <phase> effects=…` line. The annotator never hides itself: Esc, a click

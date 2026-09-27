@@ -8,10 +8,10 @@ final class AnnotatorTransitionTests: XCTestCase {
     func testRapidSwapRaceSerializesParks() {
         // Finding 3: annotate 1, then 2 and 3 before the park of 1 completes.
         var t = T()
-        XCTAssertEqual(t.reduce(.annotate("1", from: .stack)), [.prepare("1")])
+        XCTAssertEqual(t.reduce(.annotate("1")), [.prepare("1")])
         XCTAssertEqual(t.reduce(.shown), [.show])
-        XCTAssertEqual(t.reduce(.annotate("2", from: .stack)), [.park("1")])
-        XCTAssertEqual(t.reduce(.annotate("3", from: .stack)), [], "a second request during the park emits nothing")
+        XCTAssertEqual(t.reduce(.annotate("2")), [.park("1")])
+        XCTAssertEqual(t.reduce(.annotate("3")), [], "a second request during the park emits nothing")
         XCTAssertEqual(t.phase, .parking("1", then: .annotate("3")))
         XCTAssertEqual(t.reduce(.parked), [.returnCard("1"), .prepare("3")])
         XCTAssertEqual(t.reduce(.shown), [.show])
@@ -20,25 +20,18 @@ final class AnnotatorTransitionTests: XCTestCase {
 
     func testClosingDuringTheFlightTurnsTheCardAroundWithoutAPark() {
         var t = T()
-        XCTAssertEqual(t.reduce(.annotate("a", from: .stack)), [.prepare("a")])
+        XCTAssertEqual(t.reduce(.annotate("a")), [.prepare("a")])
         XCTAssertEqual(t.reduce(.close), [.abandon("a"), .returnCard("a")], "no park: the window never came up")
         XCTAssertEqual(t.phase, .idle)
         XCTAssertEqual(t.reduce(.parked), [], "a park that was never asked for answers nothing")
     }
 
-    func testClosingALoneThumbnailDuringTheFlightJustHides() {
-        var t = T()
-        _ = t.reduce(.annotate("a", from: .thumbnail))
-        XCTAssertEqual(t.reduce(.close), [.abandon("a"), .hideAnnotator])
-        XCTAssertEqual(t.phase, .idle)
-    }
-
     func testAnnotatingAnotherCardDuringTheFlightSwapsAtOnce() {
         var t = T()
-        _ = t.reduce(.annotate("a", from: .stack))
-        XCTAssertEqual(t.reduce(.annotate("b", from: .stack)), [.abandon("a"), .returnCard("a"), .prepare("b")])
+        _ = t.reduce(.annotate("a"))
+        XCTAssertEqual(t.reduce(.annotate("b")), [.abandon("a"), .returnCard("a"), .prepare("b")])
         XCTAssertEqual(t.phase, .flyingOut("b"))
-        XCTAssertEqual(t.reduce(.annotate("b", from: .stack)), [], "the key already flying out")
+        XCTAssertEqual(t.reduce(.annotate("b")), [], "the key already flying out")
         XCTAssertEqual(t.reduce(.shown), [.show])
         XCTAssertEqual(t.phase, .annotating("b"))
     }
@@ -47,7 +40,7 @@ final class AnnotatorTransitionTests: XCTestCase {
         // The panel aims the flight offscreen before this arrives, so the card stays in the layer
         // until the park answers rather than being dropped mid-slide.
         var t = T()
-        _ = t.reduce(.annotate("a", from: .stack))
+        _ = t.reduce(.annotate("a"))
         XCTAssertEqual(t.reduce(.dismiss), [.park("a")])
         XCTAssertEqual(t.reduce(.parked), [.hideAnnotator])
     }
@@ -55,18 +48,18 @@ final class AnnotatorTransitionTests: XCTestCase {
     func testNewShotDuringALoneAnnotationJoinsInsteadOfClosing() {
         // Finding 4.
         var t = T()
-        _ = t.reduce(.annotate("a", from: .thumbnail))
+        _ = t.reduce(.annotate("a"))
         _ = t.reduce(.shown)
         XCTAssertEqual(t.reduce(.newShot("b")), [.join("b")])
         XCTAssertEqual(t.phase, .annotating("a"))
         XCTAssertEqual(t.reduce(.close), [.park("a")])
-        XCTAssertEqual(t.reduce(.parked), [.hideAnnotator], "a lone card has no slot to return to")
+        XCTAssertEqual(t.reduce(.parked), [.returnCard("a")], "a lone thumbnail flies back to the corner")
         XCTAssertEqual(t.phase, .idle)
     }
 
-    func testCloseFromTheStackReturnsTheCard() {
+    func testCloseReturnsTheCard() {
         var t = T()
-        _ = t.reduce(.annotate("a", from: .stack)); _ = t.reduce(.shown)
+        _ = t.reduce(.annotate("a")); _ = t.reduce(.shown)
         XCTAssertEqual(t.reduce(.close), [.park("a")])
         XCTAssertEqual(t.reduce(.parked), [.returnCard("a")])
         XCTAssertEqual(t.phase, .idle)
@@ -74,16 +67,16 @@ final class AnnotatorTransitionTests: XCTestCase {
 
     func testDismissWinsOverALaterAnnotate() {
         var t = T()
-        _ = t.reduce(.annotate("a", from: .stack)); _ = t.reduce(.shown)
+        _ = t.reduce(.annotate("a")); _ = t.reduce(.shown)
         _ = t.reduce(.dismiss)
-        XCTAssertEqual(t.reduce(.annotate("b", from: .stack)), [])
+        XCTAssertEqual(t.reduce(.annotate("b")), [])
         XCTAssertEqual(t.reduce(.parked), [.hideAnnotator])
         XCTAssertEqual(t.phase, .idle)
     }
 
     func testRemovingTheAnnotatedFileHidesWithoutReturn() {
         var t = T()
-        _ = t.reduce(.annotate("a", from: .stack)); _ = t.reduce(.shown)
+        _ = t.reduce(.annotate("a")); _ = t.reduce(.shown)
         XCTAssertEqual(t.reduce(.remove("other")), [])
         XCTAssertEqual(t.reduce(.remove("a")), [.park("a")])
         XCTAssertEqual(t.reduce(.parked), [.hideAnnotator])
@@ -91,8 +84,8 @@ final class AnnotatorTransitionTests: XCTestCase {
 
     func testRemovingTheSwapTargetTurnsTheSwapIntoAClose() {
         var t = T()
-        _ = t.reduce(.annotate("a", from: .stack)); _ = t.reduce(.shown)
-        _ = t.reduce(.annotate("b", from: .stack))
+        _ = t.reduce(.annotate("a")); _ = t.reduce(.shown)
+        _ = t.reduce(.annotate("b"))
         _ = t.reduce(.remove("b"))
         XCTAssertEqual(t.reduce(.parked), [.returnCard("a")])
     }
@@ -103,30 +96,28 @@ final class AnnotatorTransitionTests: XCTestCase {
         XCTAssertEqual(t.phase, .idle)
     }
 
-    func testFinishReturnsTheCardMarkedCopiedFromEitherOrigin() {
-        for origin in [T.Origin.stack, .thumbnail] {
-            var t = T()
-            _ = t.reduce(.annotate("a", from: origin)); _ = t.reduce(.shown)
-            XCTAssertEqual(t.reduce(.finish), [.park("a")], "\(origin)")
-            XCTAssertEqual(t.reduce(.parked), [.returnCard("a"), .markCopied("a")], "\(origin): Done brings the card back, even a lone thumbnail")
-            XCTAssertEqual(t.phase, .idle)
-        }
+    func testFinishReturnsTheCardMarkedCopied() {
+        var t = T()
+        _ = t.reduce(.annotate("a")); _ = t.reduce(.shown)
+        XCTAssertEqual(t.reduce(.finish), [.park("a")])
+        XCTAssertEqual(t.reduce(.parked), [.returnCard("a"), .markCopied("a")])
+        XCTAssertEqual(t.phase, .idle)
     }
 
     func testRemovingTheFileDuringAFinishHidesWithoutReturn() {
         var t = T()
-        _ = t.reduce(.annotate("a", from: .thumbnail)); _ = t.reduce(.shown); _ = t.reduce(.finish)
+        _ = t.reduce(.annotate("a")); _ = t.reduce(.shown); _ = t.reduce(.finish)
         XCTAssertEqual(t.reduce(.remove("a")), [])
         XCTAssertEqual(t.reduce(.parked), [.hideAnnotator])
     }
 
     func testAnnotatingAnotherKeyDuringAFinishSwaps() {
         var t = T()
-        _ = t.reduce(.annotate("a", from: .stack)); _ = t.reduce(.shown); _ = t.reduce(.finish)
-        XCTAssertEqual(t.reduce(.annotate("a", from: .stack)), [], "the finishing key is coming back anyway")
+        _ = t.reduce(.annotate("a")); _ = t.reduce(.shown); _ = t.reduce(.finish)
+        XCTAssertEqual(t.reduce(.annotate("a")), [], "the finishing key is coming back anyway")
         XCTAssertEqual(t.reduce(.parked), [.returnCard("a"), .markCopied("a")])
-        _ = t.reduce(.annotate("a", from: .stack)); _ = t.reduce(.shown); _ = t.reduce(.finish)
-        _ = t.reduce(.annotate("b", from: .stack))
+        _ = t.reduce(.annotate("a")); _ = t.reduce(.shown); _ = t.reduce(.finish)
+        _ = t.reduce(.annotate("b"))
         XCTAssertEqual(t.reduce(.parked), [.returnCard("a"), .prepare("b")])
     }
 
@@ -158,7 +149,7 @@ final class AnnotatorTransitionTests: XCTestCase {
                 pending.removeAll { $0.due <= step }
                 var events = due.map(\.event)
                 switch Int.random(in: 0..<8, using: &rng) {
-                case 0...2: events.append(.annotate(keys.randomElement(using: &rng)!, from: Bool.random(using: &rng) ? .stack : .thumbnail))
+                case 0...2: events.append(.annotate(keys.randomElement(using: &rng)!))
                 case 3: events.append(Bool.random(using: &rng) ? .close : .finish)
                 case 4: events.append(.newShot("n\(step)"))
                 case 5: events.append(.dismiss)

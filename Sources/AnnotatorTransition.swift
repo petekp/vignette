@@ -8,13 +8,10 @@ import Foundation
 /// Serialization rule: a `prepare` is never emitted while a park is in flight. A request that
 /// arrives during a park only changes what happens once `parked` comes back.
 struct AnnotatorTransition: Equatable {
-    /// Where the annotated card came from: a lone fresh thumbnail, or the recent stack.
-    enum Origin: Equatable { case thumbnail, stack }
-
     /// What to do once the editor has parked the current drawing.
     enum Next: Equatable {
         case annotate(String)   // the old card returns and this key flies out (a swap)
-        case close              // the session was abandoned: the card returns to its stack slot, or the annotator just hides
+        case close              // Esc or Send: the card returns, to its slot or the corner, with no copied mark
         case finish             // the result is on the clipboard: the card returns, to its slot or the corner, marked copied
         case dismiss            // the panel is leaving with it
         case remove             // the file is gone
@@ -28,10 +25,10 @@ struct AnnotatorTransition: Equatable {
     }
 
     enum Event: Equatable {
-        case annotate(String, from: Origin)
+        case annotate(String)
         case shown               // the flight landed and the annotator became visible
         case parked              // the editor finished parking
-        case close               // Esc, click outside, or Cmd+W: nothing to show for it
+        case close               // Esc, click outside, Cmd+W, or Send: nothing was copied
         case finish              // Done or Return: the result is on the clipboard
         case newShot(String)     // a new file arrived
         case dismiss             // the panel is going away
@@ -50,7 +47,6 @@ struct AnnotatorTransition: Equatable {
     }
 
     private(set) var phase: Phase = .idle
-    private(set) var origin: Origin = .stack
 
     /// The key in the annotator or on its way there, if any.
     var key: String? {
@@ -65,8 +61,8 @@ struct AnnotatorTransition: Equatable {
     mutating func reduce(_ event: Event) -> [Effect] {
         switch phase {
         case .idle:
-            guard case .annotate(let k, let from) = event else { return [] }
-            phase = .flyingOut(k); origin = from
+            guard case .annotate(let k) = event else { return [] }
+            phase = .flyingOut(k)
             return [.prepare(k)]
 
         case .flyingOut(let k):
@@ -79,8 +75,8 @@ struct AnnotatorTransition: Equatable {
                 return [.show]
             case .close:
                 phase = .idle
-                return origin == .stack ? [.abandon(k), .returnCard(k)] : [.abandon(k), .hideAnnotator]
-            case .annotate(let k2, _):
+                return [.abandon(k), .returnCard(k)]
+            case .annotate(let k2):
                 if k2 == k { return [] }
                 phase = .flyingOut(k2)
                 return [.abandon(k), .returnCard(k), .prepare(k2)]
@@ -109,7 +105,7 @@ struct AnnotatorTransition: Equatable {
             switch event {
             case .shown:
                 return []
-            case .annotate(let k2, _):
+            case .annotate(let k2):
                 if k2 == k { return [] }
                 phase = .parking(k, then: .annotate(k2))
                 return [.park(k)]
@@ -140,17 +136,18 @@ struct AnnotatorTransition: Equatable {
                     phase = .flyingOut(k2)
                     return [.returnCard(k), .prepare(k2)]
                 case .close:
+                    // A lone thumbnail left the panel when the annotator opened; returnCard brings it
+                    // back to the corner, so the editor never leaves without a flight.
                     phase = .idle
-                    return origin == .stack ? [.returnCard(k)] : [.hideAnnotator]
+                    return [.returnCard(k)]
                 case .finish:
-                    // A lone thumbnail left the panel when the annotator opened; returnCard brings it back to the corner.
                     phase = .idle
                     return [.returnCard(k), .markCopied(k)]
                 case .dismiss, .remove:
                     phase = .idle
                     return [.hideAnnotator]
                 }
-            case .annotate(let k2, _):
+            case .annotate(let k2):
                 // A later request wins, unless the panel is already leaving or the card is gone.
                 // Re-requesting the key that is finishing changes nothing: it is coming back anyway.
                 switch next {
@@ -207,7 +204,7 @@ extension AnnotatorTransition.Next: CustomStringConvertible {
 extension AnnotatorTransition.Event: CustomStringConvertible {
     var description: String {
         switch self {
-        case .annotate(let k, let from): return "annotate(\(short(k)) from \(from))"
+        case .annotate(let k): return "annotate(\(short(k)))"
         case .shown: return "shown"
         case .parked: return "parked"
         case .close: return "close"

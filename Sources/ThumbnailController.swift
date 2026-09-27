@@ -792,7 +792,7 @@ final class ThumbnailController: NSObject {
     // MARK: Annotation transitions. The reducer decides; this section only runs its effects.
 
     private func annotate(_ card: Card) {
-        send(.annotate(card.shot.url.path, from: model.isStack ? .stack : .thumbnail))
+        send(.annotate(card.shot.url.path))
     }
 
     /// Events that arrived while one was still being handled, in the order they came. A park or a
