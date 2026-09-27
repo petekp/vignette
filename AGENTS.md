@@ -51,6 +51,11 @@ the measurements and the reasoning; a rule here points at its note.
   --test` also runs the unit tests in `Tests/` (the `VignetteTests` target compiles `Sources/`
   itself; it never launches the app). A build into another `-derivedDataPath` leaves `build/`,
   and an instance running from it, untouched.
+- `media/trailer/trailer.py all` records the trailer from the current source: it builds a stage copy
+  of the app with its own bundle id, sets up a desktop with the game in Chrome and the trailer's own
+  Claude Code in a herdr session, drives every beat while it records the screen, and cuts the result
+  from `beats.toml`. `trailer.py claude` signs that Claude Code in once. A take takes over the screen
+  for 5 to 8 minutes. `docs/trailer-pipeline-2026-09-26.md` says how.
 - `Sources/AgentConnection.swift`, `Sources/ScreenshotRequests.swift`, `Sources/ReplyProtocol.swift`,
   `Sources/ReplyCommand.swift` and `skills/vignette/scripts/reply` are the closed loop: a drawing
   sent to an agent session and that agent's drawing sent back. See the rules below and

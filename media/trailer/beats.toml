@@ -1,0 +1,253 @@
+# The trailer, as data. Edit this file for wording, timing, framing and the marks, then run
+# `trailer.py cut` to render it again from the last take. Changing `app`, `stage`, `marks` or `adjust`
+# needs a new take (`trailer.py record`).
+#
+# The cut is the spans of the take it keeps, played at the take's speed, with beats laid over them:
+# a caption each, and the camera's moves. The camera and the captions carry on across spans.
+#
+# Times are written against the events drive.py logs during a take: "finish.press",
+# "finish.press+0.4" or "finish.press-1.2", in seconds. `trailer.py events` lists a take's events.
+# Places in the scene are in the game's own units, 1600 x 1000, whatever the screen. Places on the
+# desktop are in points, from the screen's top left.
+
+[output]
+width = 1600
+height = 1000
+fps = 60
+# The poster is the frame of the cut that shows this moment of the take.
+poster = { at = "message.click-0.2" }
+# The last `loop` seconds dissolve back into the first frame, and the last caption turns back into
+# the first, so the trailer loops without a jump. 0 ends on the last frame.
+loop = 0.8
+
+[caption]
+# Pixels at 1600 wide, as in the storyboard.
+size = 34
+key_size = 22
+x = 44
+y = 40
+# How long a key cap stays lit after its key is pressed.
+lit = 0.45
+# How long one caption takes to turn into the next.
+change = 0.45
+
+[camera]
+# While the camera holds on something, it creeps in by this much of its width a second, up to
+# `drift_most`, so a hold is never a frozen frame.
+drift = 0.01
+drift_most = 0.03
+
+# The stage copy's settings.json. Anything left out takes the app's default.
+[app]
+settings = { setup = "done", agentSkill = "off", hideMenuBarIcon = true, launchAtLogin = false, recentHotkey = "ctrl+opt+cmd+9", debug = false }
+
+# The desktop: a wallpaper, Claude Code in a terminal on the left, and the game in Chrome on the
+# right.
+[stage]
+# Where the windows go, in points: x, y, w, h. The browser's height is then fitted so the game
+# shows at 16:10.
+terminal = [16, 54, 560, 912]
+browser = [592, 54, 904, 660]
+# Options for the terminal, as Ghostty takes them.
+terminal_args = []
+# The game's dev server.
+port = 5173
+# Where the pointer waits between moves.
+rest = [1180, 880]
+# The hand's variation: a take with the same seed moves and pauses the same way.
+seed = 7
+
+# The terminal runs this herdr session, and its one pane runs Claude Code under this agent name.
+# The stage copy of Vignette lists only this session's panes. The title is Claude Code's name for
+# the session, which Vignette shows after Send.
+[stage.session]
+herdr = "vignette-trailer"
+agent = "mew"
+title = "Build level 4"
+# More options for claude, such as ["--model", "sonnet"].
+args = []
+
+# The history's earlier captures, oldest first, rendered from the game before the take. `page` is
+# the game's page and query, and `size` keeps only that much of it, from the top left.
+[[stage.card]]
+name = "Cat"
+page = "cat-test.html"
+size = [500, 560]
+
+[[stage.card]]
+name = "Level 3"
+page = "?level=3&hud=1"
+marks = [{ type = "rectangle", x = 0.6375, y = 0.22, w = 0.1, h = 0.16 }]
+
+[[stage.card]]
+name = "Level 2"
+page = "?level=2&hud=1"
+agent = "claude"
+marks = [
+  { type = "arrow", x = 0.5625, y = 0.33, x2 = 0.678125, y2 = 0.47 },
+  { type = "text", x = 0.3875, y = 0.25, w = 0.2625, text = "Climb this next" },
+]
+
+# Your marks on the bare scene, and the message sent with them.
+[marks]
+file = "Level 4.png"
+# Drawn in this order. A box with a `note` gets it typed right after, beside the box. A `label`
+# is typed with the Text tool at `at`, the left end of its first line.
+order = ["moon", "tower", "city"]
+# A click here, with nothing on it, clears the selection before the drawing is sent.
+empty = [1480, 120]
+moon = { box = [590, 50, 230, 214], note = "big moon" }
+tower = { box = [846, 380, 124, 318], note = "water tower" }
+city = { box = [540, 560, 270, 140], label = "a city behind", at = [548, 528] }
+# Typed in the toolbar's message field, then Cmd+Return sends.
+message = "Add these"
+# Typing speed, in characters a second.
+typing = 11
+
+# Your change to Claude's sketch: one of its boxes dragged onto the water tower it built.
+[adjust]
+# "middle" is the middle box from top to bottom, or a number counts from the top.
+ledge = "middle"
+# The box's bottom edge ends this far above the top of the tower, in the scene's units.
+above = 16
+
+# The spans of the take the cut keeps, in order. Inside a span the take plays at its own speed.
+# A span after the first dissolves in over the last `dissolve` seconds of the one before, so where
+# the cut skips ahead the picture blends instead of jumping. A skip over a still picture at the
+# same framing does not show. Start and end a span where the pointer is still, or its two
+# positions show during the dissolve.
+
+# The desktop, the capture, the thumbnail, a click into the editor, and the moon's box and note.
+[[span]]
+from = "open"
+to = "moon.noted+0.85"
+
+# The other two marks appear through the dissolve. Then the message, Send, and the drawing
+# landing in Claude Code.
+[[span]]
+from = "marks.done-0.3"
+to = "claude.working+2.0"
+dissolve = 0.6
+
+# Claude's reading time is the dissolve. Claude edits the level and the game reloads.
+[[span]]
+from = "game.changed-1.2"
+to = "build.shown+1.4"
+dissolve = 0.5
+
+# Claude renders the level and pushes its sketch, and the card slides in.
+[[span]]
+from = "push-0.6"
+to = "card.shown+2.2"
+dissolve = 0.5
+
+# Most of the five seconds the card stays, skipped while it is still. Then it slides away, the
+# history brings it back, the ledge moves, Reply, and the reply landing in Claude Code.
+[[span]]
+from = "card.gone-0.8"
+to = "reply.working+1.6"
+dissolve = 0.4
+
+# Claude builds the ledges where the boxes are.
+[[span]]
+from = "ledges.shown-0.8"
+to = "ledges.shown+2.6"
+dissolve = 0.5
+
+# The beats, in the order the cut plays them. A beat's caption comes up at `from` and turns into
+# the next beat's at that one's `from`; `press` lights its key caps. `camera` is a list of moves:
+# at `at` the camera starts toward `rect` on a spring that settles over `ease` seconds, from
+# wherever it is and at whatever speed it has, so a move can start in one span and finish in the
+# next. A time in a stretch the cut skips takes effect where the cut goes on. A rect is `desktop`,
+# a name drive.py records, a list of names for the rect around all of them, or [x, y, w] in
+# points, and `pad` widens it by that fraction of its width on every side. The recorded rects are
+# `game` (the game in the browser), `terminal`, `capture`, `card` (a thumbnail), `editor` (the
+# editor and its toolbar), a mark's name with its note (`moon`), `field` (the message field),
+# `stack`, `ledge` (the box before and after it moves) and `sketch` (all of Claude's marks). Every
+# rect is made 16:10 around its centre, at least 800 points wide so no pixel is enlarged (`least`
+# lowers that), and kept on the desktop.
+
+# Wide on the desktop, in on the game for the drag, back out for the thumbnail, and on to the
+# editor as the thumbnail lifts into it.
+[[beat]]
+id = "capture"
+caption = "Take screenshots as usual"
+keys = ["⌘", "⇧", "4"]
+press = "capture.crosshair"
+from = "open"
+camera = [
+  { at = "from", rect = "desktop" },
+  { at = "capture.crosshair-0.8", rect = "game", pad = 0.04, ease = 1.6 },
+  { at = "capture.release", rect = ["game", "card"], pad = 0.02, ease = 1.4 },
+  { at = "editor.click", rect = "editor", pad = 0.02, ease = 1.3 },
+]
+
+# In on where the moon goes, then back out while the other marks appear.
+[[beat]]
+id = "marks"
+caption = "Mark it up"
+from = "moon.press-0.5"
+camera = [
+  { at = "editor.landed-0.1", rect = "moon", pad = 0.4, ease = 1.5 },
+  { at = "moon.noted+0.2", rect = "editor", pad = 0.02, ease = 1.6 },
+]
+
+# Down to the message, then across to the terminal as the drawing lands in Claude Code.
+[[beat]]
+id = "send"
+caption = "Send it to your agent"
+keys = ["⌘", "↩"]
+press = "send.press"
+from = "message.click-0.4"
+camera = [
+  { at = "message.click-0.5", rect = "field", pad = 0.6, ease = 1.4 },
+  { at = "send.press+0.1", rect = [16, 440, 820], ease = 1.8 },
+]
+
+# Across to the game as it reloads with what you marked.
+[[beat]]
+id = "build"
+caption = "It builds what you marked"
+from = "game.changed-1.0"
+camera = [{ at = "game.changed-0.2", rect = "game", pad = 0.04, ease = 1.5 }]
+
+[[beat]]
+id = "sketch"
+caption = "It sketches the next step"
+from = "push-0.4"
+camera = [
+  { at = "push-0.3", rect = ["game", "card"], pad = 0.02, ease = 1.4 },
+  { at = "card.shown", rect = "card", pad = 1.4, least = 960, ease = 1.4 },
+]
+
+# The card slides away as the camera pulls back, and the history brings it back.
+[[beat]]
+id = "history"
+caption = "Double-tap right Shift to get it back"
+keys = ["⇧", "⇧"]
+press = "history"
+from = "history-0.6"
+camera = [
+  { at = "card.gone-0.4", rect = "desktop", ease = 1.6 },
+  { at = "editor2.landed-0.15", rect = "sketch", pad = 0.04, ease = 1.4 },
+]
+
+[[beat]]
+id = "adjust"
+caption = "Change what you don’t like"
+from = "move.press-0.5"
+camera = [{ at = "move.press-0.6", rect = "ledge", pad = 0.5, ease = 1.4 }]
+
+# Reply, then across to the terminal as the reply lands, and to the game as the ledges appear.
+[[beat]]
+id = "reply"
+caption = "Send it back"
+keys = ["↩"]
+press = "reply.press"
+from = "move.release+0.3"
+camera = [
+  { at = "reply.press-0.2", rect = "editor", pad = 0.02, ease = 1.2 },
+  { at = "reply.home", rect = [16, 440, 820], ease = 1.8 },
+  { at = "ledges.shown-0.4", rect = "game", pad = 0.04, ease = 1.6 },
+  { at = "ledges.shown+1.2", rect = "desktop", ease = 2.0 },
+]

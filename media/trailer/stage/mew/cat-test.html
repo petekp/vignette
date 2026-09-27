@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#222}svg{display:block}</style></head>
+<body><div id="s"></div><script type="module">
+import { cat } from './cat.js';
+const w = 1200, h = 600;
+document.getElementById('s').innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d1238"/><stop offset=".45" stop-color="#b8395c"/><stop offset=".8" stop-color="#f08a4b"/><stop offset="1" stop-color="#ffc36a"/></linearGradient></defs>
+<rect width="${w}" height="${h}" fill="url(#sky)"/>
+<rect y="520" width="${w}" height="80" fill="#0b0509"/>
+${cat(260, 520, 420)}
+${cat(760, 520, 160)}
+${cat(1000, 520, 60)}
+</svg>`;
+</script></body></html>

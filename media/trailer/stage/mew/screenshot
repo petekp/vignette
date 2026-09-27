@@ -1,0 +1,24 @@
+#!/bin/sh
+# Renders the game at the scene's own size, 1600 x 1000: ./screenshot <file.png> [query] [w,h]
+# A smaller size keeps only that much of the page, from the top left. The dev server must be
+# running. MEW_URL names it.
+set -e
+out="${1:?usage: ./screenshot <file.png> [query] [w,h]}"
+url="${MEW_URL:-http://localhost:5173/}${2:-}"
+size="${3:-1600,1000}"
+case "$out" in /*) path="$out" ;; *) path="$PWD/$out" ;; esac
+rm -f "$path"
+profile="$(mktemp -d)"
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir="$profile" \
+  --use-mock-keychain --no-first-run --hide-scrollbars --window-size="$size" --force-device-scale-factor=1 \
+  --virtual-time-budget=3000 --screenshot="$path" "$url" >/dev/null 2>&1 &
+chrome=$!
+# Headless Chrome can stay running after it writes the screenshot, so the script stops it.
+i=0
+while [ ! -s "$path" ] && [ $i -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+sleep 0.3
+kill "$chrome" 2>/dev/null || true
+wait "$chrome" 2>/dev/null || true
+rm -rf "$profile"
+test -s "$path"
+echo "$out"
