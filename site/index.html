@@ -146,7 +146,8 @@
     margin: 0;
     opacity: .8;
   }
-  img {
+  img,
+  video {
     display: block;
     width: 100%;
     height: auto;
@@ -207,9 +208,22 @@ screenshots too, with its own marks on them. You still take screenshots with Cmd
 <p class="download"><a href="https://github.com/petekp/vignette/releases/latest">Download Vignette</a></p>
 
 <figure>
-  <img src="stack-and-editor.png" width="1200" height="668" alt="A Mac screen with recent screenshots stacked as cards down the right edge and one of them open in the editor beside them, with a red rectangle and an arrow drawn on it.">
-  <figcaption>Your recent screenshots down the right edge, with one open in the editor.</figcaption>
+  <video id="trailer" width="1600" height="1000" autoplay muted loop playsinline poster="trailer-poster.jpg"
+    aria-label="A trip planner's itinerary gets an arrow from a map stop to a day, with the note &quot;number the days&quot;, and a box around another day, with &quot;make this pop, options?&quot;. Send takes the drawing to Claude Code, which numbers the days and sends back three versions of that day, labelled A, B and C. A box picks C, an arrow brings in the flag from B, Reply sends the drawing back, and Claude builds that version.">
+    <source src="trailer.webm" type="video/webm">
+    <source src="trailer.mp4" type="video/mp4">
+  </video>
+  <figcaption>Draw on a screenshot, send it to Claude Code, and pick from the options it sends back. Recorded live, with Claude's working time cut.</figcaption>
 </figure>
+<script>
+  // With Reduce Motion on, the trailer waits for a press on play.
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const trailer = document.getElementById("trailer");
+    trailer.removeAttribute("autoplay");
+    trailer.pause();
+    trailer.controls = true;
+  }
+</script>
 
 <section class="features">
 

@@ -12,7 +12,10 @@ You still take screenshots with Cmd+Shift+3, 4 and 5.
 
 ## Tour
 
-![Recent screenshots stacked as cards down the right edge of a Mac screen, and one of them open in the editor beside them, with a red rectangle and arrow drawn on it.](site/stack-and-editor.png)
+[![A trip planner's itinerary open in Vignette's editor, with an arrow from a map stop to a day and a box around another day, each with a note. Links to the video.](site/trailer-poster.jpg)](https://vignette.pete.design)
+
+[Watch the one-minute video](https://vignette.pete.design): draw on a screenshot, send it to Claude
+Code, and pick from the options it sends back. Recorded live, with Claude's working time cut.
 
 ## What it does
 
