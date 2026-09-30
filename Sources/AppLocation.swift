@@ -30,7 +30,11 @@ enum AppLocation {
 
         let alert = NSAlert()
         alert.messageText = "Move \(Identity.name) to Applications?"
-        alert.informativeText = "\(Identity.name) is running from the disk image. Moving it to Applications lets it open at login and ejects the disk image."
+        // A translocated copy can be one put in Applications with its quarantine flag but not by
+        // Finder (`cp`, some unarchivers), so it is not always on a disk image.
+        alert.informativeText = isTranslocated(bundle)
+            ? "macOS is running \(Identity.name) from a temporary copy, so it can't open at login. Moving it to Applications fixes that."
+            : "\(Identity.name) is running from the disk image. Moving it to Applications lets it open at login and ejects the disk image."
         alert.addButton(withTitle: "Move to Applications")
         alert.addButton(withTitle: "Quit")
         guard runKeyed(alert) == .alertFirstButtonReturn else {

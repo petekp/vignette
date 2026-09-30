@@ -4,20 +4,6 @@ Things decided or raised but not built. Each entry says what, why, and what it w
 
 ## Before the public release
 
-### A scheduled update check can miss a new release (raised 2026-09-30)
-
-The feed is kept in URLCache for about a tenth of its age when fetched, so after a month-old release
-a daily check can likely miss the next one for days (`docs/updater-2026-09-27.md`). Check for Updates…
-is not affected. The fix is a URLCache with no storage, set before the updater starts; nothing else
-in the app uses it. Waits on Pete's approval, and needs a test release to verify.
-
-### The move alert's wording for a translocated app (raised 2026-09-30)
-
-An app put in Applications with its quarantine flag but not by Finder (`cp`, `ditto`, some
-unarchivers) is translocated by macOS, and Vignette offers to move it. The move works and leaves
-an unquarantined copy in Applications, but the alert says "Vignette is running from the disk
-image", which is wrong there. It could say that macOS is running a temporary copy.
-
 ### Testing on the second MacBook from this one (raised 2026-09-30)
 
 A Tailscale link between the two MacBooks, so an agent here can test on a Mac that never ran
