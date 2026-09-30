@@ -178,9 +178,10 @@ The steps below have the details.
    there with a `[tag]`. `open -g "vignette://state?tag=<id>"` writes one
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, bundle, isActive, accessibility, watch folder, settings file, debug), `screen`,
-   `stack` (cards with `file`, `frame`, `out`, `forming`, `drawing`, `agent`, `kind`; `selected`,
+   `stack` (cards with `file`, `frame`, `out`, `forming`, `drawing`, `agent`, `kind`, `copied`,
+   `notCopied`, the reason a copy failed or null; `selected`,
    `focused`, `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`,
-   `scroll`, `viewport`, `safeBottom`, the room the Dock keeps under the column, feedback, panel,
+   `scroll`, `viewport`, `safeBottom`, the room the Dock keeps under the column, panel,
    `widthScale`, how wide the stack is drawn, and `strip`, the selection strip's frame or null),
    `transition` (phase), `annotator` (`current`, `frame`, `toolbar`, `windowVisible`, `key`, `tool`,
    and the zoom's own keys, which the zoom bullet below names), `editor` (`open`, `tool`, `marks`
@@ -381,15 +382,22 @@ screenshot location for such a launch is written with the same variable:
 
 ### Words and motion
 
+- Vignette has no toasts. What happened is said on something already on screen. A copy or a stitch
+  marks its card (`ThumbnailController.showCopied`), a failed copy (`showNotCopied`) or send
+  (`SendMark`) says why on the card, and a card that is not on screen comes up as the lone
+  thumbnail to say it. A paste the editor cannot take beeps. A settings.json that did not parse is
+  a warning at the top of the Settings window's General tab, and Restore reads Restored once
+  Apple's values are back (`Settings.appleRestored`). A command from a script answers in the log.
+  `docs/no-toasts-2026-09-30.md` has what each toast became.
 - Two vocabularies, and they do not mix. Every string a user reads says draw: the buttons, the menu
-  items, the toggles, the section headings, the toasts. Every name a script, a log reader or a
+  items, the toggles, the section headings, the marks on cards. Every name a script, a log reader or a
   compiler reads says annotate: the URL ids (`vignette://annotate`, `copy-annotated`), the log tags
   (`[annotate]`), the settings keys (`quickAnnotate`, `annotateOnCapture`), the `-annotated.png`
   suffix, and every identifier. A label is free to change; those are a contract. The editor window
   is still the annotator in both, because it is a thing rather than an action.
 - Every animation goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json scales
   every duration, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
-  `toastSeconds`) are not motion, and neither is a movement the user's own hand is driving: the
+  `markSeconds`) are not motion, and neither is a movement the user's own hand is driving: the
   drag-select's auto-scroll (`ui.autoScrollZone`, `ui.autoScrollSpeed`, `StackLayout.autoScrollSpeed`,
   ticked by a display link in `ThumbnailController`) follows the drag at its own speed whatever
   the scale says. `"ui": {"motion": 0}` makes the stack appear and leave at once, which is what a
@@ -430,9 +438,10 @@ screenshot location for such a launch is written with the same variable:
   in the transition layer, so a slot keeps its place and draws nothing, and the image is never on
   screen twice. The watcher reports the file a moment later as usual; the card is already there, so
   `insert` ignores it, and with `annotateOnCapture` on that same report flies the new card into the
-  annotator. With the stack closed (a `vignette://stitch` from a script) the toast is the whole of
-  it. Dismissing the stack mid-converge ends the pieces' flights with it and the stitch says so as a
-  toast, so it never finishes in silence. `Stitch.compose` lays the pieces out for the model that
+  annotator. With the stack closed (a `vignette://stitch` from a script) the stitched card comes up
+  as the lone thumbnail with the copied mark. Dismissing the stack mid-converge ends the pieces'
+  flights with it, and the stitched card comes up the same way, so a stitch never finishes in
+  silence. `Stitch.compose` lays the pieces out for the model that
   will read the result: it tries every column count and keeps the one that survives a vision
   model's resize best (`readerScale`, Anthropic's standard tier: a long edge of 1568 px and 1568
   patches of 28 px). The gap and the badges are fractions of the piece they are on,
@@ -821,8 +830,8 @@ screenshot location for such a launch is written with the same variable:
   from the moment the drag begins and written as `<name>-annotated.png`; a card without one drops
   its file.
   A rendering that fails clears the clipboard, unless something else was copied since, and takes the
-  card's copied mark back (`takeBackCopied`), with the toast "Could not copy the drawing; see the
-  log". `[annotate] done <file> <n> bytes, copied` is logged when the file is written. A drawing
+  card's copied mark back (`takeBackCopied`), and the card says "Not copied" and why
+  (`ThumbnailController.showNotCopied`, `Rendering.Failure.reason`). `[annotate] done <file> <n> bytes, copied` is logged when the file is written. A drawing
   with no marks copies the original file and writes nothing.
 - A mark's colour says who drew it and is not stored: `Mark.color` names a person's colour or the
   agent colour (`MarkColor`, from `agent`), and `MarkStyle.color` gives the settings' red or indigo.
@@ -1060,7 +1069,7 @@ screenshot location for such a launch is written with the same variable:
   without a copied mark, and the queue carries on to the next card: a list of files to annotate is
   something the person asked for, and handing one of them to an agent does not withdraw the rest.
   Esc is the one that empties the queue, because that is a person stopping.
-- A send reports on the card it was sent from, never in a toast. Once the request is stored the card
+- A send reports on the card it was sent from. Once the request is stored the card
   carries a `SendMark` (`ThumbnailController.markSending`), keyed by the file's path because a lone
   thumbnail's card leaves the panel while it is in the editor. It shows the destination's logo and
   project from the moment the card lands, and `delivered` turns it to sent, uncertain or failed when
@@ -1104,11 +1113,12 @@ screenshot location for such a launch is written with the same variable:
   `agentSkill` in settings.json records only that the offer was made. Setup's last page makes it
   and records `off`. A file that finished setup before that page existed, or a setup closed before
   it, still reads `unasked`, and with an agent directory present the next launch makes the offer
-  once as the Settings window at the Agents section, since the toast carries no button. That window
+  once as the Settings window at the Agents section. That window
   comes up with `orderFront` and does not activate the app: the user did not ask for it. The Agents
   tab's switches, setup's last page and `install-skill` are the only things that install the plugin
   somewhere new, and the switch is the only thing that removes it. A switch says Installing… or
-  Removing… until the tool answers, and a failure is said under the agent's name, with no toast.
+  Removing… until the tool answers, and a failure is said under the agent's name. A launch's
+  update of an installed plugin says a failure only in the log.
   The tools are found by `AgentTools`: the installers' folders, the version managers' (nvm, fnm,
   Volta, Bun, pnpm, asdf, mise), then the login shell's `PATH`, asked once at launch off the main
   thread (`[tools] login shell found …`). A lookup on the main thread answers at once with what is

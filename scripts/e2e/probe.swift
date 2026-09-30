@@ -3,8 +3,10 @@
 //   probe pasteboard restore <folder>  puts the saved items back, or clears the pasteboard when a
 //                                      concealed item was skipped
 //   probe pasteboard types             prints the item count and each item's types, one line each
+//   probe pasteboard data <type> <out> writes the first item's bytes for <type> to <out>
 //   probe pixels <png> x,y …           prints each point's colour as #rrggbb in sRGB, one per line
-//   probe image <png> <w> <h>          writes a test image: bands of grey with a grid, in sRGB
+//   probe image <file> <w> <h>         writes a test image: bands of grey with a grid, in sRGB, as a
+//                                      JPEG when the name ends in .jpg or .jpeg and a PNG otherwise
 import AppKit
 
 let args = CommandLine.arguments
@@ -98,7 +100,9 @@ func image(_ path: String, _ w: Int, _ h: Int) {
     context.setLineWidth(1)
     for x in stride(from: 0, to: w, by: 100) { context.stroke(CGRect(x: x, y: 0, width: 0, height: h)) }
     guard let cg = context.makeImage(),
-          let out = CGImageDestinationCreateWithURL(URL(fileURLWithPath: path) as CFURL, "public.png" as CFString, 1, nil) else { fail("cannot write \(path)") }
+          let out = CGImageDestinationCreateWithURL(URL(fileURLWithPath: path) as CFURL,
+                                                    (["jpg", "jpeg"].contains((path as NSString).pathExtension.lowercased()) ? "public.jpeg" : "public.png") as CFString,
+                                                    1, nil) else { fail("cannot write \(path)") }
     CGImageDestinationAddImage(out, cg, nil)
     guard CGImageDestinationFinalize(out) else { fail("cannot write \(path)") }
 }
@@ -111,6 +115,9 @@ case ("pasteboard", 3) where args[2] == "types":
     let items = NSPasteboard.general.pasteboardItems ?? []
     print("items \(items.count)")
     for item in items { print(item.types.map(\.rawValue).joined(separator: " ")) }
+case ("pasteboard", 5) where args[2] == "data":
+    guard let data = NSPasteboard.general.pasteboardItems?.first?.data(forType: NSPasteboard.PasteboardType(args[3])) else { fail("no \(args[3]) on the pasteboard") }
+    do { try data.write(to: URL(fileURLWithPath: args[4])) } catch { fail("\(error)") }
 case ("pixels", _) where args.count >= 4: pixels(args[2], Array(args[3...]))
 case ("image", 5): image(args[2], Int(args[3]) ?? 0, Int(args[4]) ?? 0)
 default: fail("usage: probe pasteboard save|restore|types … | pixels <png> x,y … | image <png> w h")

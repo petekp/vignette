@@ -165,13 +165,12 @@ struct UITweaks: Codable, Equatable {
     var buttonIconSize = 11.0
     var buttonSpacing = 4.0
     var selectionCircleSize = 19.0
-    var selectionBarHeight = 44.0    // the toast row under the column
     var selectionStripGap = 16.0     // the widest selected card to the control strip beside it
     var autoScrollZone = 44.0        // band at each end of the column where a drag-select scrolls it
     var autoScrollSpeed = 600.0      // points a second at the very edge of that band
     // Timings
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
-    var toastSeconds = 1.7
+    var markSeconds = 1.7            // how long a card's copied or sent mark stays
     var slideInDuration = 0.4
     var slideInCurve = "spring"      // spring, easeOut, easeInOut, linear
     var slideOutDuration = 0.3
@@ -262,7 +261,7 @@ struct UITweaks: Codable, Equatable {
     }
 
     /// The same tweaks with every animation scaled: the durations, and how far a flight bows and
-    /// swells. Dwell times (`thumbnailSeconds`, `toastSeconds`) are not motion and stay as they
+    /// swells. Dwell times (`thumbnailSeconds`, `markSeconds`) are not motion and stay as they
     /// are, and `flightArcMax` is a limit on the bow rather than an amount of it.
     func scaledForMotion(_ scale: Double) -> UITweaks {
         var u = self
@@ -288,10 +287,9 @@ struct UITweaks: Codable, Equatable {
         Bound("hoverScale", \.hoverScale, 0.1...10), Bound("pressScale", \.pressScale, 0.1...10), Bound("hoverDim", \.hoverDim, 0...1),
         Bound("buttonSize", \.buttonSize, 1...1000), Bound("buttonIconSize", \.buttonIconSize, 1...1000),
         Bound("buttonSpacing", \.buttonSpacing, 0...1000), Bound("selectionCircleSize", \.selectionCircleSize, 1...1000),
-        Bound("selectionBarHeight", \.selectionBarHeight, 1...1000),
         Bound("selectionStripGap", \.selectionStripGap, 0...1000),
         Bound("autoScrollZone", \.autoScrollZone, 0...10_000), Bound("autoScrollSpeed", \.autoScrollSpeed, 0...10_000),
-        Bound("thumbnailSeconds", \.thumbnailSeconds, 0...3600), Bound("toastSeconds", \.toastSeconds, 0...3600),
+        Bound("thumbnailSeconds", \.thumbnailSeconds, 0...3600), Bound("markSeconds", \.markSeconds, 0...3600),
         Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
         Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
         Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("shiftUpDuration", \.shiftUpDuration, 0...60),
@@ -443,7 +441,7 @@ final class Settings: ObservableObject {
     var motionScale: Double { Motion.scale(reduceMotion: reduceMotion, multiplier: data.ui.motion) }
     /// The tweaks every animation reads: layout as in `data.ui`, durations scaled by `motionScale`.
     var motionUI: UITweaks { data.ui.scaledForMotion(motionScale) }
-    /// One sentence for a toast at launch when the file had to be set aside. nil when all was well.
+    /// What the Settings window says when this launch had to set the file aside. nil when all was well.
     let startupNotice: String?
     /// True when the file was written by a newer Vignette. Writes would drop its keys, so none happen.
     private(set) var readOnly = false
@@ -540,11 +538,11 @@ final class Settings: ObservableObject {
             if moved {
                 boot.log.append("moved the invalid file to \(aside.path) and replaced it with defaults")
                 boot.written = (try? encoder().encode(d)).flatMap { write($0, to: url) }
-                boot.notice = "settings.json did not parse; kept as settings.json.invalid, defaults in use"
+                boot.notice = "Vignette is using the default settings. Your file was kept as settings.json.invalid."
             } else {
                 boot.log.append("could not move the invalid file aside; running on defaults without writing")
                 boot.readOnly = true
-                boot.notice = "settings.json did not parse; running on defaults"
+                boot.notice = "Vignette is using the default settings and will not save changes until the file is fixed."
             }
             return boot
         }
@@ -601,6 +599,16 @@ final class Settings: ObservableObject {
         change(&next)
         apply(next, source: "app")
         scheduleWrite()
+    }
+
+    /// The settings already match what Apple's were before Vignette changed them, so Restore has
+    /// nothing left to put back.
+    var appleRestored: Bool {
+        guard let original = data.appleOriginal else { return false }
+        return AppleScreencapture.samePath(data.screenshotsFolder, original.location ?? SettingsData().screenshotsFolder)
+            && data.appleThumbnail == (original.showThumbnail ?? true)
+            && data.windowShadow == !(original.disableShadow ?? false)
+            && data.format == (original.type ?? "png")
     }
 
     /// Puts Apple's screencapture defaults back to the recorded originals and mirrors them in the

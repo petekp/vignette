@@ -35,7 +35,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private lazy var debugPanel = DebugPanelController(previews: .init(
         thumbnail: { [weak self] in self?.openLast() },
         stack: { [weak self] in self?.toggleRecent() },
-        toast: { [weak self] in self?.thumbnail.showFeedback("Copied 3 images") },
         annotator: { [weak self] in self?.annotateLast() }))
     private let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
@@ -103,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         settingsWindow.callbacks = SettingsWindowController.Callbacks(
             restoreAppleDefaults: { [weak self] in self?.restoreAppleDefaults() },
             openTweaks: { [weak self] in self?.debugPanel.toggle() },
-            installAgentPlugin: { [weak self] root, done in self?.installAgentPlugin(into: [root], toast: false) { done($0) } },
+            installAgentPlugin: { [weak self] root, done in self?.installAgentPlugin(into: [root]) { done($0) } },
             removeAgentPlugin: { [weak self] root, done in self?.removeAgentPlugin(from: root, completion: done) },
             folderDenied: { [weak self] in self?.watcher?.isDenied ?? false })
         // Before the watcher, so a capture taken during launch already lands the way Vignette needs.
@@ -120,7 +119,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         registerHotKey()
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
-        if let notice = settings.startupNotice { thumbnail.showFeedback(notice) }
         // Setup comes first and has the launch to itself: two windows competing for a first-time
         // user is worse than the plugin offer waiting until the next launch.
         if setupWindow.isUnasked {
@@ -200,16 +198,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// by itself only where the skill from before the plugin was, since that person chose the skill.
     private func startAgentPlugin() {
         if settings.data.agentSkillChoice == .unasked { offerAgentPlugin() }
-        agentPlugins.launch { [weak self] results in self?.report(results, verb: "update", toast: true) }
+        agentPlugins.launch { _ in }
     }
 
-    /// The Agents tab's switch, the setup window and `install-skill`. The Agents tab shows a failure
-    /// under the agent's name, so it asks for no toast.
-    func installAgentPlugin(into roots: [URL], toast: Bool = true, completion: @escaping ([AgentPlugin.Result]) -> Void = { _ in }) {
-        agentPlugins.install(into: roots) { [weak self] results in
-            self?.report(results, verb: "install", toast: toast)
-            completion(results)
-        }
+    /// The Agents tab's switch, the setup window and `install-skill`. `AgentPlugins` logs each
+    /// result, and the Agents tab shows a failure under the agent's name.
+    func installAgentPlugin(into roots: [URL], completion: @escaping ([AgentPlugin.Result]) -> Void = { _ in }) {
+        agentPlugins.install(into: roots, completion: completion)
     }
 
     /// The Agents tab's switch, turned off.
@@ -217,16 +212,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         agentPlugins.remove(from: root, completion: completion)
     }
 
-    /// A toast for everything that failed; `AgentPlugins` has logged each result.
-    private func report(_ results: [AgentPlugin.Result], verb: String, toast: Bool) {
-        for result in results where result.outcome == .failed && toast {
-            let name = AgentPlugin.client(of: result.root)?.label ?? result.root.lastPathComponent
-            thumbnail.showFeedback("Couldn't \(verb) the Vignette plugin for \(name)")
-        }
-    }
-
     /// The offer, once: the app has never asked and this Mac has an agent directory. The offer is
-    /// the Settings window, since the toast carries no button, and the answer is the buttons in it.
+    /// the Settings window, and the answer is the buttons in it.
     /// Recorded as `off` as it is made, so the question is asked once whatever the user does.
     private func offerAgentPlugin() {
         let roots = AgentPlugin.roots(home: FileManager.default.homeDirectoryForCurrentUser)
@@ -313,8 +300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard !shots.isEmpty else { Commands.error("paths", .missingFile, "nothing selected"); return }
         Clipboard.copyText(Clipboard.pathsText(shots.map(\.url)))
         Commands.ok("paths", shots.map(\.url.lastPathComponent).joined(separator: ", "))
-        thumbnail.showCopied(shots, label: "Copied Path",
-                             fallback: shots.count == 1 ? "Copied path" : "Copied \(shots.count) paths")
+        thumbnail.showCopied(shots, label: "Copied Path")
     }
 
     func annotate(_ shots: [Screenshot]) {
@@ -366,8 +352,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Clipboard.copyFiles([out])
         // readerScale is what a vision model's resize leaves of the composition; see Stitch.swift.
         Commands.ok("stitch", "\(out.path) from \(composed.pieces) images, \(Int(composed.size.width))x\(Int(composed.size.height)) columns=\(composed.columns) readerScale=\(String(format: "%.2f", composed.readerScale)) \(composed.png.count) bytes, copied")
-        // The cards conjoin into the new one when the stack is showing them; otherwise say so.
-        if !thumbnail.stitched(shots, into: out) { thumbnail.showFeedback("Stitched \(composed.pieces) images, copied") }
+        // The cards conjoin into the new one when the stack is showing them; otherwise the new card
+        // comes up with the copied mark.
+        if !thumbnail.stitched(shots, into: out) { thumbnail.showCopied([Screenshot(url: out)]) }
     }
 
     // MARK: Drawings
@@ -463,7 +450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let file = output?.file else {
                 let failure = output?.failure ?? .writeFailed("no rendering")
                 Commands.error("copy-annotated", failure.code, "\(shot.url.lastPathComponent): \(failure)")
-                thumbnail.showFeedback("Could not render the drawing; see the log")
+                thumbnail.showNotCopied(shot, reason: failure.reason)
                 return
             }
             urls.append(file)
@@ -509,9 +496,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             if let failure = output.failure {
                 Log.write("[annotate] error \(failure.code.rawValue) \(name): \(failure)")
                 // The clipboard took its promise back; the card must not say otherwise.
-                let words = "Could not copy the drawing; see the log"
-                thumbnail.takeBackCopied(shot)
-                if !thumbnail.stackShowing, annotator.currentKey != nil { annotator.showToast(words) } else { thumbnail.showFeedback(words) }
+                thumbnail.showNotCopied(shot, reason: failure.reason)
             } else if let file = output.file, let png = output.png {
                 Log.write("[annotate] \(verb) \(file.lastPathComponent) \(png.count) bytes, copied")
             }
@@ -880,11 +865,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     @objc func restoreAppleDefaults() {
         guard let restored = settings.restoreAppleDefaults() else {
             Commands.error("restore-apple-defaults", .noAppleOriginal, "nothing was recorded, so nothing to restore")
-            thumbnail.showFeedback("No Apple defaults were recorded")
             return
         }
         Commands.ok("restore-apple-defaults", restored.joined(separator: " "))
-        thumbnail.showFeedback("Apple screenshot defaults restored")
     }
 
     @objc private func openTweaks() {
@@ -924,6 +907,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// user opens the agent's drawing and edits it like their own.
     private func addImage(_ request: CommandRequest) {
         guard let source = request.files.first else { Commands.error("add", .missingFile, "no file given"); return }
+        guard FileManager.default.fileExists(atPath: source.path) else { Commands.error("add", .missingFile, source.path); return }
         guard Commands.isReadableImage(source) else { Commands.error("add", .unreadableImage, source.path); return }
         var marks: [AgentMark] = []
         if let value = request.marks {

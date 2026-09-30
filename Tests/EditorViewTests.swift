@@ -25,7 +25,7 @@ final class EditorViewTests: XCTestCase {
         handedOver = []
         view.onTool = { [unowned self] tool in heard.append("tool \(tool.rawValue)") }
         view.onClose = { [unowned self] in heard.append("close") }
-        view.onToast = { [unowned self] words in heard.append("toast \(words)") }
+        view.onBeep = { [unowned self] in heard.append("beep") }
         view.onHandOver = { [unowned self] drawing in handedOver.append(drawing) }
     }
 
@@ -553,8 +553,9 @@ final class EditorViewTests: XCTestCase {
         XCTAssertEqual(view.core.selection.count, 1, "reopening selects the newest mark")
 
         // Through keyDown.
+        let beforeKey = pasteboard.changeCount
         key("c", 8, .command)
-        XCTAssertEqual(heard.last, "toast Copied 1 mark")
+        let oneCopy = pasteboard.changeCount - beforeKey
         let data = try XCTUnwrap(pasteboard.data(forType: CopiedMarks.pasteboardType))
         XCTAssertEqual(CopiedMarks(data: data)?.marks.map(\.geometry), view.core.drawing.marks.map(\.geometry))
         XCTAssertEqual(pasteboard.string(forType: .string), "a note")
@@ -566,8 +567,9 @@ final class EditorViewTests: XCTestCase {
         // Through the window's key equivalents, as a Command key reaches it in the app. Each command
         // runs once.
         pasteboard.clearContents()
+        let beforeEquivalent = pasteboard.changeCount
         XCTAssertTrue(window.performKeyEquivalent(with: keyEvent("c", 8, .command)))
-        XCTAssertEqual(heard.filter { $0.hasPrefix("toast") }.count, 2)
+        XCTAssertEqual(pasteboard.changeCount - beforeEquivalent, oneCopy)
         XCTAssertNotNil(pasteboard.data(forType: CopiedMarks.pasteboardType))
         XCTAssertTrue(window.performKeyEquivalent(with: keyEvent("v", 9, .command)))
         XCTAssertEqual(view.core.drawing.marks.count, 3)
@@ -583,7 +585,7 @@ final class EditorViewTests: XCTestCase {
         XCTAssertFalse(window.performKeyEquivalent(with: keyEvent("w", 13, .command)))
     }
 
-    func testCmdVOfAFileOrAnImageAddsNothingAndSaysSo() {
+    func testCmdVOfAFileOrAnImageAddsNothingAndBeeps() {
         open()
         pasteboard.clearContents()
         pasteboard.writeObjects([URL(fileURLWithPath: "/tmp/Screenshot other.png") as NSURL])
@@ -591,7 +593,7 @@ final class EditorViewTests: XCTestCase {
         pasteboard.setString("Screenshot other.png", forType: .string)
         key("v", 9, .command)
         XCTAssertTrue(view.core.drawing.marks.isEmpty, "a file's name on the clipboard does not make it text")
-        XCTAssertEqual(heard.last, "toast Images can't be pasted here")
+        XCTAssertEqual(heard.last, "beep")
 
         pasteboard.clearContents()
         pasteboard.setString("https://example.com/a", forType: .string)

@@ -512,6 +512,14 @@ enum Rendering {
             case .unreadableImage(let detail), .writeFailed(let detail): return detail
             }
         }
+
+        /// What a card says, short enough for its mark; `description` has the detail for the log.
+        var reason: String {
+            switch self {
+            case .unreadableImage: return "The screenshot could not be read"
+            case .writeFailed: return "The drawing could not be saved"
+            }
+        }
     }
 
     /// The image at `url` with `drawing` over it. Throws a `Failure`.

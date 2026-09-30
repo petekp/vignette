@@ -241,6 +241,21 @@ struct SettingsView: View {
     // MARK: General
 
     @ViewBuilder private var general: some View {
+        // A settings.json this launch could not parse. Only a person who edits the file by hand
+        // meets this, and this window is where they look.
+        if let notice = settings.startupNotice {
+            Section {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.json could not be read")
+                        Text(notice).font(.subheadline).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
+                }
+            }
+        }
         Section {
             ShortcutSetting()
             // Here the shortcut is not working yet, so it reads as a warning, where setup's lock
@@ -311,8 +326,8 @@ struct SettingsView: View {
         }
         Section {
             LabeledContent("macOS screenshot settings") {
-                Button("Restore…") { callbacks.restoreAppleDefaults() }
-                    .disabled(settings.data.appleOriginal == nil)
+                Button(settings.appleRestored ? "Restored" : "Restore") { callbacks.restoreAppleDefaults() }
+                    .disabled(settings.data.appleOriginal == nil || settings.appleRestored)
             }
         } footer: {
             footer("Vignette replaces the macOS thumbnail. Restore puts back the thumbnail and the folder, format and shadow macOS used before.")

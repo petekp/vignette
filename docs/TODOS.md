@@ -67,6 +67,15 @@ after.
 
 ## Not placed yet
 
+### Apple's original values survive a deleted settings.json (raised 2026-09-30)
+
+A launch that finds no settings.json treats itself as a first launch: it writes the defaults, runs
+setup again, and records `appleOriginal` from macOS's current screenshot settings. After an earlier
+install those are Vignette's own, with Apple's thumbnail off, so Restore would put back Vignette's
+values rather than the ones from before Vignette. The rest recovers by itself. The fix: keep a
+second copy of `appleOriginal` in Application Support, and read it when settings.json is missing.
+Rare, and macOS's own ⌘⇧5 Options menu still turns the thumbnail back on, so it did not hold 0.1.2.
+
 ### The stitch layout (raised 2026-09-27)
 
 `docs/stitch-layout-2026-09-27.md` proposes three changes: size a stitch for Claude Code on current

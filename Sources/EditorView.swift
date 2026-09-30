@@ -32,8 +32,8 @@ final class EditorView: NSView {
     /// The caret while typing, in image px, after it moved: the host brings it into view when the
     /// picture is magnified past the frame, as a text view scrolls to its caret.
     var onReveal: ((CGRect) -> Void)?
-    /// A short confirmation to show, such as "Copied 2 marks".
-    var onToast: ((String) -> Void)?
+    /// A key that cannot act. A test replaces it to hear the beep.
+    var onBeep: () -> Void = { NSSound.beep() }
     /// Tab went past the last mark, or Shift+Tab past the first: the toolbar's controls come next.
     var onLeaveCanvas: ((_ backward: Bool) -> Void)?
     /// M or P: the host puts the keys in the message field beside Send, when there is one.
@@ -282,7 +282,7 @@ final class EditorView: NSView {
         case .copyMarks(let marks, let text): write(marks, text: text)
         case .copyDrawing(let drawing): onCopyDrawing?(drawing)
         case .readClipboard: handle(.paste(clipboardContent()))
-        case .toast(let words): onToast?(words)
+        case .beep: onBeep()
         case .zoom(let request): onZoom?(request)
         case .announce(let words):
             // The words can be a text's own, so they go to VoiceOver and nowhere else.

@@ -26,37 +26,29 @@ struct StackView: View {
                 // The panel runs down to the screen's edge; the Dock's room at the bottom of it
                 // stays clear, so a click on a Dock icon under the column still reaches the Dock.
                 .padding(.bottom, model.safeBottom)
-            if !model.isStack, let text = model.feedback {
-                FeedbackToast(text: text)
-                    .padding(layout.inset)
-                    .padding(.bottom, model.safeBottom)   // above the Dock, like the cards
+            column
+            if let strip = stripPlacement {
+                let reveal = layout.stripReveal(rows: StackLayout.stripRows)
+                // The strip's box is always the grown width, with the strip against its
+                // trailing edge, so the right edge sits where the placement put it whether the
+                // labels are out or not and the growth goes left, away from the cards.
+                SelectionStrip(model: model, size: strip.size, reveal: reveal)
+                    .offset(x: -(layout.inset + strip.right), y: -(layout.inset + model.safeBottom + strip.bottom))
+                    .animation(Anim.spring(settings.motionUI.relayoutDuration), value: strip)
+                    // Scrolling moves it with the cards, at once, and it shifts up with them for a
+                    // new card; the slide-out carries it off screen.
+                    .offset(x: stripSlide, y: model.scroll + stripLift)
+                    .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
                     .transition(.opacity)
-            } else {
-                column
-                if let strip = stripPlacement {
-                    let reveal = layout.stripReveal(rows: StackLayout.stripRows)
-                    // The strip's box is always the grown width, with the strip against its
-                    // trailing edge, so the right edge sits where the placement put it whether the
-                    // labels are out or not and the growth goes left, away from the cards.
-                    SelectionStrip(model: model, size: strip.size, reveal: reveal)
-                        .offset(x: -(layout.inset + strip.right), y: -(layout.inset + model.safeBottom + strip.bottom))
-                        .animation(Anim.spring(settings.motionUI.relayoutDuration), value: strip)
-                        // Scrolling moves it with the cards, at once, and it shifts up with them for a
-                        // new card; the slide-out carries it off screen.
-                        .offset(x: stripSlide, y: model.scroll + stripLift)
-                        .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
-                        .transition(.opacity)
-                }
             }
         }
         .animation(layoutAnimation(0.2), value: model.cards.map(\.id))
         .animation(layoutAnimation(0.15), value: model.inSelectionMode)
         .animation(layoutAnimation(0.15), value: model.annotating)
-        .animation(layoutAnimation(0.15), value: model.feedback)
     }
 
     /// Layout changes animate only while cards are on screen. While the whole column is offscreen,
-    /// in or out, a toast or strip leaving the column would otherwise shift the cards as they slide
+    /// in or out, a strip leaving the column would otherwise shift the cards as they slide
     /// in. A card joining a visible column changes the layout with animations off, and the others
     /// shift up with `StackModel.lift` instead (`ThumbnailController.shiftUp`).
     private func layoutAnimation(_ duration: Double) -> Animation? {
@@ -71,22 +63,17 @@ struct StackView: View {
         // when the session ends.
         guard model.isStack, model.inSelectionMode, !model.annotating else { return nil }
         return layout.stripPlacement(rows: Config.stripRows.count, selection: model.selectedIndices(),
-                                     cards: model.cards.map { layout.drawn($0.size) }, showsBar: model.showsBar,
+                                     cards: model.cards.map { layout.drawn($0.size) },
                                      scroll: model.scroll, viewport: model.viewport)
     }
 
-    /// The toast leaves with the bottom card instead of vanishing under it.
-    private var barSlide: CGFloat {
-        model.slidingOut ? layout.offscreenDistance(cardWidth: layout.columnWidth) : 0
-    }
-
-    /// The strip starts a column's width further left, and its labels reach further still, so it
-    /// needs that much more to clear the screen.
     /// The selected cards' lift while they shift up for a new card; they share one.
     private var stripLift: CGFloat {
         model.selectedCards().first.flatMap { model.lift[$0.id] } ?? 0
     }
 
+    /// The strip starts a column's width further left, and its labels reach further still, so it
+    /// needs that much more to clear the screen.
     private var stripSlide: CGFloat {
         guard model.slidingOut else { return 0 }
         let reach = layout.columnWidth + layout.stripGap + layout.stripWidth
@@ -104,13 +91,6 @@ struct StackView: View {
             ForEach(Array(model.cards.enumerated().reversed()), id: \.element.id) { index, card in
                 CardView(card: card, index: index, model: model)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
-            if model.isStack, let text = model.feedback {
-                FeedbackToast(text: text)
-                    .frame(width: layout.columnWidth, height: layout.barHeight)
-                    .transition(.opacity)
-                    .offset(x: barSlide)
-                    .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
             }
         }
         .coordinateSpace(name: "stack")
@@ -160,7 +140,8 @@ private struct CardView: View {
     private var showsCircle: Bool { model.isStack && !isOut && !isForming && (hovered || model.inSelectionMode || focused) }
     private var copied: Bool { model.copied.contains(card.id) }
     private var sendMark: SendMark? { model.sendMarks[card.shot.url.path] }
-    private var showsButtons: Bool { showsHover && !model.inSelectionMode && !copied && sendMark == nil }
+    private var notCopied: String? { model.notCopied[card.shot.url.path] }
+    private var showsButtons: Bool { showsHover && !model.inSelectionMode && !copied && sendMark == nil && notCopied == nil }
     /// The padding every corner control is given.
     static let buttonPad: CGFloat = 6
     /// How far a corner control's hit area reaches past it into the card.
@@ -291,6 +272,12 @@ private struct CardView: View {
             }
         }
         .animation(Anim.spring((copied ? 0.15 : 0.4) * motion), value: copied)
+        .overlay {
+            if let reason = notCopied, !isOut && !isForming {
+                CopiedOverlay(corner: ui.cardCornerRadius, label: "Not copied", failure: reason).transition(.opacity)
+            }
+        }
+        .animation(Anim.spring((notCopied == nil ? 0.4 : 0.15) * motion), value: notCopied == nil)
         // Where a send went and how it went, from the moment the card lands until it has said so.
         .overlay {
             if let mark = sendMark, !isOut && !isForming {
@@ -546,18 +533,27 @@ struct TactileButtonStyle: ButtonStyle {
     }
 }
 
-/// Flush over a card after a copy: the veil fades in, the mark springs in, and both fade out.
+/// Flush over a card after a copy: the veil fades in, the mark springs in, and both fade out. A
+/// copy that failed shows its reason under the label, as a failed send does.
 private struct CopiedOverlay: View {
     let corner: CGFloat
     let label: String
+    var failure: String? = nil
     @State private var landed = false
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: corner, style: .continuous).fill(.black.opacity(0.55))
             VStack(spacing: 2) {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 22, weight: .bold)).foregroundStyle(.green)
+                Image(systemName: failure == nil ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .font(.system(size: 22, weight: .bold)).foregroundStyle(failure == nil ? .green : .red)
                 Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                if let failure {
+                    Text(failure).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
+                        .multilineTextAlignment(.center).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 8).padding(.top, 1)
+                }
             }
             .scaleEffect(landed ? 1 : 0.3)
             .opacity(landed ? 1 : 0)
@@ -795,21 +791,6 @@ private struct RoundButton: View {
         .buttonStyle(TactileButtonStyle(shape: .circle, hitSlop: hitSlop))
         .padding(hitSlop.negated)
         .help(help)
-    }
-}
-
-private struct FeedbackToast: View {
-    let text: String
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-            Text(text).font(.system(size: 13, weight: .medium))
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
     }
 }
 

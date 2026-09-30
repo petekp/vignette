@@ -118,6 +118,9 @@ def launch(app):
     missing_file = app.command_error('copy', app.file_query(os.path.join(app.watch, 'nothing here.png')))
     if 'missing-file' not in missing_file:
         raise Failed(f'a missing file: {missing_file}')
+    missing_file = app.command_error('add', app.file_query(os.path.join(app.folder, 'nothing here.png')))
+    if 'missing-file' not in missing_file:
+        raise Failed(f'a missing file: {missing_file}')
     app.report.step('bad files answer with error lines')
 
 
@@ -202,6 +205,30 @@ def send_target(app):
     close_editor(app)
 
 
+def pasteboard_types():
+    out = subprocess.run([PROBE, 'pasteboard', 'types'], capture_output=True, text=True, check=True).stdout.splitlines()
+    return out[1].split() if len(out) > 1 else []
+
+
+def copy_types(app):
+    """Copy puts a capture's own bytes on the pasteboard under its own type: a JPEG as
+    public.jpeg, a PNG as public.png."""
+    start(app)
+    for name, uti in [('Screenshot copy.jpg', 'public.jpeg'), ('Screenshot copy.png', 'public.png')]:
+        path = app.image(name, folder=app.watch)
+        time.sleep(1)
+        app.command('copy', app.file_query(path))
+        types = pasteboard_types()
+        if uti not in types or (uti == 'public.png' and 'public.jpeg' in types):
+            raise Failed(f'copying {name} put {types} on the pasteboard')
+        out = os.path.join(app.folder, 'pasted.' + name.rsplit('.', 1)[1])
+        subprocess.run([PROBE, 'pasteboard', 'data', uti, out], check=True)
+        if open(out, 'rb').read() != open(path, 'rb').read():
+            raise Failed(f"the {uti} on the pasteboard is not {name}'s own bytes")
+        app.report.step(f'{name} copies as its own {uti} bytes', detail=' '.join(types))
+    app.command('dismiss')
+
+
 def stitch(app):
     """Stitch makes one image from two and puts it in the watch folder."""
     start(app)
@@ -214,6 +241,9 @@ def stitch(app):
         raise Failed(f'stitch: {detail}')
     app.report.image(out)
     app.report.step('stitched', detail=detail)
+    # With no stack showing, the stitched card comes up wearing the copied mark.
+    app.wait_state(lambda s: (c := card_for(s, out)) is not None and c['copied'], 'the stitched card with its copied mark')
+    app.report.step('the stitched card shows the copied mark')
     app.command('dismiss')
 
 
@@ -376,4 +406,4 @@ def agent_marks_editable(app):
     close_editor(app)
 
 
-ALL = [launch, agent_push, annotate_open, send_target, stitch, relaunch, settings_repair, draw_and_done, send_and_reply, agent_marks_editable]
+ALL = [launch, agent_push, annotate_open, send_target, copy_types, stitch, relaunch, settings_repair, draw_and_done, send_and_reply, agent_marks_editable]

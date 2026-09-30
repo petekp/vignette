@@ -44,7 +44,7 @@ All eighteen were decided on 2026-09-22.
 | 7 | Can arrows be curved? | Yes. The Arrow tool draws freehand, so an arrow follows the hand's path and gets its head where the button comes up. A stroke that stays close to a straight line draws a straight arrow, which bends by its middle dot. | A curve shows something moving from one place to another, and takes an arrow around a mark it would otherwise cross. Most arrows are meant to be straight, and a straight one is easier to read. |
 | 8 | What sets the size of strokes and text? | Each drawing records its point scale, the px per pt of the display the annotator is on when the drawing's first mark is made. A drawing that an agent's marks start takes the main display's. Every mark in the drawing uses it. | The drawing looks the same on any display it reopens on. A capture file does not say which display took it, so the annotator's display is the best available guess. |
 | 9 | Which font does text use? | SF Pro Rounded for yours, SF Mono for an agent's. | Both are the system's own faces, so nothing is bundled and macOS supplies every script and emoji. The rounded face reads as a note, apart from the SF Pro text in most screenshots. The app already uses it for the numbers on selected cards. SF Mono tells an agent's words from yours at a glance. It is wider, so an agent's note takes more room. |
-| 10 | What do Cmd+C and Cmd+V do? | With marks selected, Cmd+C copies those marks, and Cmd+V pastes them. With nothing selected, Cmd+C copies the drawing as an image, the same PNG Done makes, and the editor stays open. Cmd+V with text adds a text mark. Cmd+V with an image says it cannot paste images. Each copy says what it copied. Section 8 has the details. | The visible selection says what Cmd+C will copy. |
+| 10 | What do Cmd+C and Cmd+V do? | With marks selected, Cmd+C copies those marks, and Cmd+V pastes them. With nothing selected, Cmd+C copies the drawing as an image, the same PNG Done makes, and the editor stays open. Cmd+V with text adds a text mark. Cmd+V with an image beeps and adds nothing. Section 8 has the details. | The visible selection says what Cmd+C will copy. |
 | 11 | Do marks snap to each other and to the image's edges? | Not in the first version. | Marks point at things in the screenshot, so alignment between marks rarely matters. |
 | 12 | Can several selected marks be resized together? | No. Several selected marks can be moved, duplicated and deleted. | A group resize would scale the text but not the strokes, which distorts the group. |
 | 13 | How is a drawing stored? | In a JSON file of Vignette's own, in px, with a version number. Section 1 has the format. | A format in px does not depend on the display. |
@@ -174,7 +174,6 @@ An agent's text is set in SF Mono wherever it is drawn: the editor, a card, a fl
 | Caret while typing | The colour of the words on the tag |
 | Selected text while typing | Blue background, white letters |
 | Cursors | The system's: a crosshair while drawing, the arrow in Select, resize cursors on handles, an open hand on arrow dots, a closed hand while moving |
-| Confirmation | A small dark capsule at the bottom centre of the frame, over the picture. It stays up for `ui.toastSeconds` and takes no clicks. |
 | Behind the image | `#1a1a1a`, so a screenshot's transparent pixels are never see-through: in the editor, on a card and in flight |
 
 Marks and text scale with the zoom. Handles, selection and hover outlines, dots, the
@@ -517,8 +516,8 @@ Per Decision 10, Cmd+C copies what is selected, and the whole drawing when nothi
 | Cmd+X with nothing selected | Nothing |
 | Cmd+V with copied marks | Pastes them, selected, as one undo step. Where they land is below. |
 | Cmd+V with text | A text mark at the pointer, or at the image's centre when the pointer is outside it. It follows the growth rules in section 5. |
-| Cmd+V with an image or a file | Nothing is added. The editor says "Images can't be pasted here". |
-| Cmd+V with anything else | Nothing is added. The editor says "Only marks and text can be pasted here". |
+| Cmd+V with an image or a file | Nothing is added, and the Mac beeps. |
+| Cmd+V with anything else | Nothing is added, and the Mac beeps. |
 | A file dropped on the editor | The same as Cmd+V with an image |
 | A URL on the clipboard | Pasted as text. Nothing is fetched. |
 | Cmd+C, Cmd+X or Cmd+V while typing | The text clipboard, per section 5 |
@@ -541,13 +540,9 @@ Copied marks:
 
 A mark is selected right after it is drawn, and on reopen the newest mark is selected. So Cmd+C at
 those moments copies that mark, not the drawing. The rule stays, because the visible selection
-always says what Cmd+C will copy. Two things keep the drawing easy to copy:
-
-- A click on empty space clears the selection, whatever tool is active. So copying the whole drawing
-  is always one click and Cmd+C away.
-- Every copy and cut shows a short confirmation of what went on the clipboard: "Copied drawing",
-  "Copied 1 mark", "Copied 2 marks" or "Cut 2 marks". One key does two different things, and the
-  clipboard itself shows nothing.
+always says what Cmd+C will copy. A click on empty space clears the selection, whatever tool is
+active, so copying the whole drawing is always one click and Cmd+C away. A copy shows nothing, as in
+other Mac apps.
 
 Return still copies the drawing and closes the editor. It stays the main way to share. The one
 exception is a card that names the session it came from, where Return replies. Return never sends to
@@ -645,7 +640,8 @@ a session the host picked; the host sets both keys from what its toolbar offers
   `-annotated.png` file is written when the rendering finishes. Done's rendering goes ahead of any
   that has not started.
 - A rendering that fails answers `unreadable-image` or `write-failed`. After Done, it also takes the
-  clipboard and the card's copied mark back, and says "Could not copy the drawing; see the log".
+  clipboard and the card's copied mark back, and the card says "Not copied" and why. A card that is
+  not on screen comes up as the lone thumbnail to say it.
 
 ### Cards and flights
 

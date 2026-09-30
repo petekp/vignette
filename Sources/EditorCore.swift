@@ -263,8 +263,8 @@ struct EditorCore {
         case copyDrawing(Drawing)
         /// Cmd+V: read the clipboard and answer with `paste`.
         case readClipboard
-        /// A short confirmation, such as "Copied 2 marks".
-        case toast(String)
+        /// The system beep: a key that cannot act, such as Cmd+V with an image on the clipboard.
+        case beep
         case zoom(ZoomRequest)
         /// For VoiceOver.
         case announce(String)
@@ -1376,11 +1376,11 @@ struct EditorCore {
             case .undo:
                 if modifiers.contains(.shift) { redo() } else { undo() }
             case .selectAll: selection = Set(drawing.marks.map(\.id))
-            case .copy: copy(verb: "Copied")
+            case .copy: copy()
             case .cut:
                 // Unlike Copy, Cut never falls back to the drawing, which it could not delete.
                 guard !selection.isEmpty else { break }
-                copy(verb: "Cut")
+                copy()
                 deleteSelection()
             case .paste: emit(.readClipboard)
             case .duplicate: duplicate()
@@ -1492,11 +1492,10 @@ struct EditorCore {
     // MARK: Clipboard
 
     /// Cmd+C and Cmd+X: the selected marks, or, for Cmd+C, the drawing when nothing is selected.
-    private mutating func copy(verb: String) {
+    private mutating func copy() {
         let marks = drawing.marks.filter { selection.contains($0.id) }
         guard !marks.isEmpty else {
             emit(.copyDrawing(drawingForHost))
-            emit(.toast("Copied drawing"))
             return
         }
         let order = geometry.readingOrder(marks)
@@ -1505,7 +1504,6 @@ struct EditorCore {
             return text.text
         }
         emit(.copyMarks(CopiedMarks(pointScale: drawing.pointScale, marks: marks), text: words.isEmpty ? nil : words.joined(separator: "\n")))
-        emit(.toast("\(verb) \(marks.count) \(marks.count == 1 ? "mark" : "marks")"))
     }
 
     private mutating func paste(_ content: PasteContent) {
@@ -1523,10 +1521,8 @@ struct EditorCore {
             let text = Mark.Text(origin: geometry.textOrigin(at: at, size: size), text: words, wrap: nil, size: size)
             guard let mark = geometry.placed(Mark(geometry: .text(text))) else { return }
             insert([mark])
-        case .image:
-            emit(.toast("Images can't be pasted here"))
-        case .other:
-            emit(.toast("Only marks and text can be pasted here"))
+        case .image, .other:
+            emit(.beep)
         }
     }
 

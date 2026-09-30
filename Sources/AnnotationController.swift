@@ -33,7 +33,6 @@ final class AnnotationController {
     /// The editor, the whole content of the frame. The state report reads its core.
     let editor = EditorView()
     private let toolbar = AnnotatorToolbar()
-    private let toast = AnnotatorToast()
     private var window: AnnotationWindow?
     /// The window spans the screen's visible frame and stays put. The visible frame is `frameView`
     /// inside it (shadow) with `container` (clip, corner, ring, editor), so a zoom step moves the
@@ -144,7 +143,6 @@ final class AnnotationController {
             guard let self, let shot = current else { return }
             onCopyDrawing?(shot, drawing)
         }
-        editor.onToast = { [weak self] words in self?.toast.show(words) }
         editor.onZoom = { [weak self] request in self?.zoom(request) }
         editor.onZoomGesture = { [weak self] event in self?.zoomGesture(event) }
         editor.onReveal = { [weak self] rect in self?.reveal(rect) }
@@ -640,7 +638,6 @@ final class AnnotationController {
     private func hideWindows() {
         // Nothing here is on screen any more: a spring still ticking would move a hidden frame.
         zoomTween.stop()
-        toast.hide()
         // The panel stops being this window's child before the window goes, or AppKit would order
         // it out with its parent; `hideSoon` then takes it down only if no other image has asked
         // for it by the next turn of the run loop, and `show` makes it a child of the new window.
@@ -694,8 +691,6 @@ final class AnnotationController {
         // the editor out at a size its picture does not fill.
         editor.autoresizingMask = []
         container.addSubview(editor)
-        toast.autoresizingMask = [.minXMargin, .maxXMargin, .maxYMargin]
-        container.addSubview(toast)
         frameView.addSubview(container)
         root.addSubview(frameView)
         win.contentView = root
@@ -728,9 +723,6 @@ final class AnnotationController {
         guard editor.core.isOpen, editor.core.drawing.key == url.path else { return nil }
         return editor.core.drawingForHost
     }
-
-    /// A short message over the picture, where the editor's own confirmations appear.
-    func showToast(_ words: String) { toast.show(words) }
 
     /// The tweaks changed: the open editor takes their text style, sizes and arrowhead at once.
     func applyTweaks() {
@@ -831,73 +823,6 @@ final class AnnotationController {
             json["focus"] = destination.focus?.rawValue as Any
         }
         return json
-    }
-}
-
-/// A short confirmation from the editor, such as "Copied drawing": a small dark capsule at the
-/// bottom of the frame, over the picture, where the eye already is and nothing in the toolbar moves
-/// for it. It takes no clicks.
-@MainActor
-private final class AnnotatorToast: NSVisualEffectView {
-    private let label = NSTextField(labelWithString: "")
-    private var generation = 0
-    /// Its distance from the bottom of the frame, and its padding around the words.
-    private static let inset: CGFloat = 14
-    private static let padding = CGSize(width: 12, height: 5)
-
-    init() {
-        super.init(frame: .zero)
-        material = .hudWindow
-        blendingMode = .withinWindow
-        state = .active
-        appearance = NSAppearance(named: .darkAqua)
-        wantsLayer = true
-        alphaValue = 0
-        isHidden = true
-        label.font = .systemFont(ofSize: 13, weight: .medium)
-        label.textColor = .labelColor
-        addSubview(label)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    func show(_ words: String) {
-        guard let container = superview else { return }
-        generation += 1
-        let gen = generation
-        label.stringValue = words
-        label.sizeToFit()
-        let size = CGSize(width: ceil(label.frame.width) + Self.padding.width * 2, height: ceil(label.frame.height) + Self.padding.height * 2)
-        frame = CGRect(x: ((container.bounds.width - size.width) / 2).rounded(), y: Self.inset, width: size.width, height: size.height)
-        label.frame.origin = CGPoint(x: Self.padding.width, y: Self.padding.height)
-        layer?.cornerRadius = size.height / 2
-        isHidden = false
-        let ui = Settings.shared.motionUI
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15 * Settings.shared.motionScale
-            animator().alphaValue = 1
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + ui.toastSeconds) { [weak self] in
-            guard let self, generation == gen else { return }
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.2 * Settings.shared.motionScale
-                self.animator().alphaValue = 0
-            }, completionHandler: { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self, self.generation == gen else { return }
-                    self.isHidden = true
-                }
-            })
-        }
-    }
-
-    /// Gone at once, with the window.
-    func hide() {
-        generation += 1
-        alphaValue = 0
-        isHidden = true
     }
 }
 

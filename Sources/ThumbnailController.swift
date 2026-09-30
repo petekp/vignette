@@ -47,7 +47,6 @@ final class StackModel: ObservableObject {
     var slidingOut = false                     // picks the exit stagger order and curve for `offscreen`
     @Published var outCards: Set<UUID> = []    // cards currently in the annotator; their slots stay empty
     @Published var forming: Set<UUID> = []     // cards whose image is in the transition layer, mid-stitch; drawn as nothing
-    @Published var feedback: String? = nil
     @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
     @Published var pressedCard: UUID? = nil
     @Published var overControl = false         // the mouse is on a card's button or circle, where a click does not draw
@@ -59,6 +58,7 @@ final class StackModel: ObservableObject {
     @Published var copied: Set<UUID> = []      // cards showing the copied mark over their image
     @Published var copiedLabel = "Copied"      // what that mark says; one action marks every card the same
     @Published var sendMarks: [String: SendMark] = [:]   // by file path: a card sent to an agent, and how that went
+    @Published var notCopied: [String: String] = [:]     // by file path: a copy that failed, and why
     /// The selected cards, in the order they were selected. Every action, Stitch included, takes
     /// them in this order, and a card's circle shows its place here.
     @Published private(set) var selection: [UUID] = []
@@ -74,8 +74,6 @@ final class StackModel: ObservableObject {
     @Published var widthScale: CGFloat = 1
 
     var inSelectionMode: Bool { !selection.isEmpty }
-    /// The row under the column, shown only for a feedback toast.
-    var showsBar: Bool { isStack && feedback != nil }
     var onAction: (ShotAction, [Card]) -> Void = { _, _ in }
     var onSweep: (CGFloat) -> Void = { _ in }       // y from the column top, during a drag from a circle
     var onSweepEnd: () -> Void = {}
@@ -121,7 +119,7 @@ final class StackModel: ObservableObject {
     }
 }
 
-/// Owns the bottom-right panel: fresh-screenshot thumbnails, the recent stack, feedback toasts,
+/// Owns the bottom-right panel: fresh-screenshot thumbnails, the recent stack, the marks on cards,
 /// and the transitions into and out of the annotator. An NSObject because the drag-select's
 /// auto-scroll takes its ticks from a display link, which calls a target and a selector.
 @MainActor
@@ -336,7 +334,6 @@ final class ThumbnailController: NSObject {
     private var cardSizes: [NSSize] { model.cards.map { layout.drawn($0.size) } }
     private var ui: UITweaks { Settings.shared.motionUI }
     private var layout: StackLayout { StackLayout.current.at(widthScale: model.widthScale) }
-    private var showsBar: Bool { model.showsBar }
     private var showsStrip: Bool { model.isStack && model.inSelectionMode }
 
     /// The selection strip's screen frame, or nil when nothing is selected or the annotator has an
@@ -345,7 +342,7 @@ final class ThumbnailController: NSObject {
     private var stripFrame: NSRect? {
         guard !model.annotating else { return nil }
         guard showsStrip, let strip = layout.stripPlacement(rows: Config.stripRows.count, selection: model.selectedIndices(),
-                                                            cards: cardSizes, showsBar: showsBar,
+                                                            cards: cardSizes,
                                                             scroll: model.scroll, viewport: model.viewport) else { return nil }
         let reveal = layout.stripReveal(rows: StackLayout.stripRows)
         return layout.stripFrame(strip, panelFrame: panel.frame, scroll: model.scroll, reveal: reveal, safeBottom: area.safeBottom)
@@ -364,13 +361,14 @@ final class ThumbnailController: NSObject {
                     return ["file": card.shot.url.path, "frame": StateReport.topLeft(cardFrame(i), primaryHeight: h),
                             "out": model.outCards.contains(card.id), "forming": model.forming.contains(card.id),
                             "drawing": drawings?.keys.contains(card.shot.url.path) ?? false, "agent": card.agent as Any,
-                            "kind": card.shot.kind == .recording ? "recording" : "image"]
+                            "kind": card.shot.kind == .recording ? "recording" : "image",
+                            "copied": model.copied.contains(card.id), "notCopied": model.notCopied[card.shot.url.path] as Any]
                 },
                 "selected": model.selectedCards().map(\.shot.url.path),
                 "queue": queue,
                 "focused": model.cards.first { $0.id == model.focused }?.shot.url.path as Any,
                 "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.url.path as Any,
-                "feedback": model.feedback as Any, "key": panel.isKeyWindow,
+                "key": panel.isKeyWindow,
                 "scroll": Int(model.scroll), "viewport": Int(model.viewport), "safeBottom": Int(area.safeBottom),
                 "widthScale": model.widthScale,
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h),
@@ -654,7 +652,7 @@ final class ThumbnailController: NSObject {
     /// The stitched file is written: the cards it was made from converge into its slot and the new
     /// card takes their place as the newest. The originals leave the stack; their files are
     /// untouched, so the next stack open has them back. False when the stack is not showing all of
-    /// them, and the caller falls back to a toast.
+    /// them, and the caller shows the stitched card as it would any copy.
     ///
     /// The watcher reports the new file a moment later like any capture. The card is already in the
     /// column by then, so `insert` ignores it; with `annotateOnCapture` on, the same report carries
@@ -690,10 +688,9 @@ final class ThumbnailController: NSObject {
             self.model.forming.subtract(ids)
             self.model.forming.remove(result.id)
             guard self.stitchGeneration == generation else { return }
-            // The card takes the copied mark; if the stack has gone meanwhile, or the card with it,
-            // the toast says what the stitch did instead, so a stitch never finishes in silence.
-            if self.visible, self.model.cards.contains(where: { $0.id == result.id }) { self.showCopied([result.shot]) }
-            else { self.showFeedback("Stitched \(cards.count) images, copied") }
+            // The card takes the copied mark, and comes back as the lone thumbnail if the stack has
+            // gone meanwhile, so a stitch never finishes in silence.
+            self.showCopied([result.shot])
         }
         Log.write("[stack] stitched cards=\(cards.count) into=\(url.lastPathComponent)")
         return true
@@ -709,19 +706,23 @@ final class ThumbnailController: NSObject {
                     agent: Agent.of(url), duration: Thumbnailer.duration(of: url))
     }
 
-    /// The copied mark over the cards themselves; the toast only when none of them is showing.
-    /// `label` is what the mark says and `fallback` what the toast says, since what was copied is
-    /// the caller's to name.
-    func showCopied(_ shots: [Screenshot], label: String = "Copied", fallback: String? = nil) {
-        let ids = shots.compactMap { shot in model.cards.first { $0.shot.url == shot.url }?.id }
-        guard visible, !ids.isEmpty else {
-            showFeedback(fallback ?? (shots.count == 1 ? "Copied to clipboard" : "Copied \(shots.count) images"))
-            return
+    /// The copied mark over the cards themselves. With nothing on screen, the first of them comes
+    /// up as the lone thumbnail wearing the mark, as a failed send's card does, and the mark counts
+    /// the rest. `label` is what the mark says, since what was copied is the caller's to name.
+    func showCopied(_ shots: [Screenshot], label: String = "Copied") {
+        func onScreen() -> [UUID] { visible ? shots.compactMap { shot in model.cards.first { $0.shot.url == shot.url }?.id } : [] }
+        var ids = onScreen(), label = label
+        if ids.isEmpty, let first = shots.first {
+            show(first)
+            ids = onScreen()
+            if shots.count > 1 { label += " \(shots.count)" }
         }
+        guard !ids.isEmpty else { return }
+        for shot in shots { model.notCopied[shot.url.path] = nil }   // the newer news
         model.copiedLabel = label
         model.copied.formUnion(ids)
         // A card still on its way back from the annotator shows the mark when it lands.
-        let hold = ui.toastSeconds + ui.expandDuration
+        let hold = ui.markSeconds + ui.expandDuration
         DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.copied.subtract(ids) }
         if !model.isStack { scheduleDismiss(after: hold) }
     }
@@ -762,7 +763,7 @@ final class ThumbnailController: NSObject {
         model.sendMarks[key] = mark
         if !onScreen { show(shot) }
         // A failure has a sentence to read and act on, so it holds three times as long.
-        let hold = (ui.toastSeconds + ui.expandDuration) * (failed ? 3 : 1)
+        let hold = (ui.markSeconds + ui.expandDuration) * (failed ? 3 : 1)
         DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in
             guard let self, self.model.sendMarks[key]?.request == request else { return }
             self.model.sendMarks[key] = nil
@@ -778,28 +779,21 @@ final class ThumbnailController: NSObject {
         if let card = model.cards.first(where: { $0.shot.url.path == key }) { model.copied.remove(card.id) }
     }
 
-    /// In the stack the toast sits under the cards; on its own it replaces the thumbnails.
-    func showFeedback(_ text: String) {
-        dismissTimer?.invalidate()
-        if visible && model.isStack {
-            model.feedback = text
-            relayout()
-            DispatchQueue.main.asyncAfter(deadline: .now() + ui.toastSeconds) { [weak self] in
-                guard let self, self.model.feedback == text else { return }
-                self.model.feedback = nil
-                self.relayout()
-            }
-            return
+    /// A copy of `shot` that failed: its copied mark comes off and the card says why, held three
+    /// times as long as the copied mark, as a failed send's is. A card not on screen comes up as the
+    /// lone thumbnail; one in the annotator, or on its way home, shows the mark when it lands.
+    func showNotCopied(_ shot: Screenshot, reason: String) {
+        takeBackCopied(shot)
+        let key = shot.url.path
+        model.notCopied[key] = reason
+        let inAnnotator = transition.key == key
+        if !inAnnotator && !(visible && model.cards.contains { $0.shot.url.path == key }) { show(shot) }
+        let hold = (ui.markSeconds + ui.expandDuration) * 3
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in
+            guard let self, self.model.notCopied[key] == reason else { return }
+            self.model.notCopied[key] = nil
         }
-        model.removeCards { _ in true }
-        model.clearSelection()
-        model.outCards = []
-        model.forming = []
-        model.feedback = text
-        releaseKeys()
-        backdrop.hide()
-        present(toast: text)
-        scheduleDismiss(after: ui.toastSeconds)
+        if !model.isStack && !inAnnotator { scheduleDismiss(after: hold) }
     }
 
     func dismiss() {
@@ -832,8 +826,8 @@ final class ThumbnailController: NSObject {
         // leave the flight just aimed offscreen to the slide-out.
         model.slidingOut = true
         if transition.isActive { send(.dismiss) }
-        // Cards leave the way they came, newest first (see CardView). The selection and any toast
-        // stay in the layout and slide out with them; the block below clears them once gone.
+        // Cards leave the way they came, newest first (see CardView). The selection stays in the
+        // layout and slides out with them; the block below clears it once gone.
         model.offscreen = Set(model.cards.map(\.id))
         let total = ui.slideOutDuration + Double(max(0, model.cards.count - 1)) * StackView.staggerStep(count: model.cards.count) + 0.05
         DispatchQueue.main.asyncAfter(deadline: .now() + (model.cards.isEmpty ? ui.slideOutDuration : total)) { [weak self] in
@@ -845,7 +839,6 @@ final class ThumbnailController: NSObject {
             self.model.outCards = []
             self.model.forming = []
             self.model.slidingOut = false
-            self.model.feedback = nil
             self.model.scroll = 0
             self.pinnedScreen = nil
             FocusReturn.shared.restore(reason: "stack dismissed")
@@ -1222,7 +1215,7 @@ final class ThumbnailController: NSObject {
     }
 
     private func cardFrame(_ index: Int) -> NSRect {
-        layout.cardFrame(index: index, cards: cardSizes, panelFrame: panel.frame, showsBar: showsBar,
+        layout.cardFrame(index: index, cards: cardSizes, panelFrame: panel.frame,
                          scroll: model.scroll, safeBottom: area.safeBottom)
     }
 
@@ -1402,7 +1395,7 @@ final class ThumbnailController: NSObject {
 
     /// The column's height as it is drawn now, at the stack's width scale. `layoutPanel` sizes the
     /// panel from the full-width height instead, so a narrowed stack keeps the panel it comes back to.
-    private var drawnContentHeight: CGFloat { layout.contentHeight(cards: cardSizes, showsBar: showsBar) }
+    private var drawnContentHeight: CGFloat { layout.contentHeight(cards: cardSizes) }
 
     private var maxScroll: CGFloat { max(0, drawnContentHeight - model.viewport) }
 
@@ -1414,7 +1407,7 @@ final class ThumbnailController: NSObject {
     }
 
     private func scrollToReveal(_ index: Int) {
-        let span = layout.cardSpan(index: index, cards: cardSizes, showsBar: showsBar)
+        let span = layout.cardSpan(index: index, cards: cardSizes)
         var target = model.scroll
         if span.top - model.scroll > model.viewport { target = span.top - model.viewport }
         if span.bottom - model.scroll < 0 { target = span.bottom }
@@ -1515,7 +1508,6 @@ final class ThumbnailController: NSObject {
         dismissTimer?.invalidate()
         dismissGeneration += 1
         flights.endAll()
-        model.feedback = nil
         model.entering = nil
         model.hoveredCard = nil
         model.clearSelection()
@@ -1552,30 +1544,11 @@ final class ThumbnailController: NSObject {
         }
     }
 
-    /// A toast on its own, in the corner.
-    private func present(toast: String) {
-        if !visible {
-            pinnedScreen = NSScreen.main ?? NSScreen.screens[0]
-            FocusReturn.shared.sessionStarting()
-        }
-        dismissGeneration += 1
-        model.isStack = false
-        model.slidingOut = false
-        model.scroll = 0
-        visible = true
-        model.viewport = 40
-        readArea()
-        model.safeBottom = area.safeBottom
-        panel.setFrame(layout.panelFrame(viewport: 40, area: area, showsStrip: false), display: false)
-        panel.orderFrontRegardless()
-    }
-
     /// A card joins the bottom of the visible column and slides in.
     private func insert(_ card: Card, entrance: Entrance = .slide) {
         guard !model.cards.contains(where: { $0.shot.url == card.shot.url }) else { return }
         dismissGeneration += 1
         endSweep()   // the new card takes index 0 and shifts every other, the sweep's anchor included
-        if model.feedback != nil && !model.isStack { model.feedback = nil; model.removeCards { _ in true } }
         if entrance != .inPlace { _ = model.offscreen.insert(card.id) }
         model.slidingOut = false
         if visible && !model.cards.isEmpty && entrance == .slide { return shiftUp(for: card) }
@@ -1659,7 +1632,7 @@ final class ThumbnailController: NSObject {
     private func layoutPanel(shrinkLater: Bool, animated: Bool, duration: Double? = nil) {
         // At the stack's full width, so a stack narrowed for the annotator keeps the panel it will
         // need when it comes back. The panel is transparent outside the column either way.
-        let content = layout.contentHeight(cards: model.cards.map(\.size), showsBar: showsBar)
+        let content = layout.contentHeight(cards: model.cards.map(\.size))
         readArea()
         let viewport = layout.viewportHeight(content: content, area: area)
         var transaction = Transaction(animation: animated ? Anim.spring(duration ?? ui.relayoutDuration) : nil)

@@ -938,7 +938,6 @@ final class EditorCoreTests: XCTestCase {
         core.click(900, 500)
         let effects = core.key(.character("c"), .command)
         XCTAssertTrue(effects.contains(.copyDrawing(core.drawing)))
-        XCTAssertTrue(effects.contains(.toast("Copied drawing")))
         XCTAssertFalse(effects.contains(.close))
         XCTAssertTrue(core.isOpen)
     }
@@ -950,16 +949,6 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(core.drawing.marks.count, 1)
         XCTAssertTrue(core.key(.character("c"), .command).contains(.copyDrawing(core.drawing)))
         XCTAssertEqual(core.tool, .rectangle)
-    }
-
-    func testEveryCopyAndCutSaysWhatItCopied() {
-        var core = core([rect(100, 100, 100, 100), rect(300, 100, 100, 100)])
-        XCTAssertTrue(core.key(.character("c"), .command).contains(.toast("Copied 1 mark")))
-        core.key(.character("a"), .command)
-        XCTAssertTrue(core.key(.character("c"), .command).contains(.toast("Copied 2 marks")))
-        XCTAssertTrue(core.key(.character("x"), .command).contains(.toast("Cut 2 marks")))
-        XCTAssertEqual(core.key(.character("x"), .command), [])
-        XCTAssertTrue(core.key(.character("c"), .command).contains(.toast("Copied drawing")))
     }
 
     func testCmdCThenCmdVAddsACopyTenPointsRightAndDownSelectedAndEachPasteStepsFurther() throws {
@@ -1047,11 +1036,11 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(core.geometry.resized(flat, by: .left, delta: CGVector(dx: 40, dy: 0), proportional: false, fromCenter: false), flat)
     }
 
-    func testCmdVOfAnImageAddsNothingAndSaysSo() {
+    func testCmdVOfAnImageAddsNothingAndBeeps() {
         var core = core()
         let effects = core.reduce(.paste(.image))
         XCTAssertTrue(core.drawing.marks.isEmpty)
-        XCTAssertTrue(effects.contains { if case .toast = $0 { return true } else { return false } })
+        XCTAssertEqual(effects, [.beep])
     }
 
     // MARK: Around the editor

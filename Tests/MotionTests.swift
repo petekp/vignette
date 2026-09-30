@@ -20,7 +20,7 @@ final class MotionTests: XCTestCase {
             XCTAssertEqual(off[keyPath: path], 0)
         }
         XCTAssertEqual(off.thumbnailSeconds, base.thumbnailSeconds, "a dwell time is not motion")
-        XCTAssertEqual(off.toastSeconds, base.toastSeconds)
+        XCTAssertEqual(off.markSeconds, base.markSeconds)
         XCTAssertEqual(off.cardMaxWidth, base.cardMaxWidth)
         XCTAssertEqual(off.flightArcMax, base.flightArcMax, "the cap is a limit on the bow, not an amount of it")
         XCTAssertEqual(base.scaledForMotion(1), base)

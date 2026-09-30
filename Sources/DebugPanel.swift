@@ -8,7 +8,6 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
     struct Previews {
         var thumbnail: () -> Void
         var stack: () -> Void
-        var toast: () -> Void
         var annotator: () -> Void
     }
 
@@ -64,7 +63,6 @@ struct DebugPanelView: View {
                 Text("Preview").font(.caption).foregroundStyle(.secondary)
                 Button("Thumbnail", action: previews.thumbnail)
                 Button("Stack", action: previews.stack)
-                Button("Toast", action: previews.toast)
                 Button("Annotator", action: previews.annotator)
             }
             .padding(10)
@@ -110,7 +108,6 @@ struct DebugPanelView: View {
                     Tweak("Icon size", \.buttonIconSize, 8...24)
                     Tweak("Spacing", \.buttonSpacing, 0...24)
                     Tweak("Selection circle", \.selectionCircleSize, 12...36)
-                    Tweak("Selection bar height", \.selectionBarHeight, 24...60)
                     Tweak("Selection strip gap", \.selectionStripGap, 0...40)
                     Tweak("Drag-select edge band", \.autoScrollZone, 0...120, unit: "pt")
                     Tweak("Drag-select speed", \.autoScrollSpeed, 0...2000, step: 25, unit: "pt/s")
@@ -122,7 +119,7 @@ struct DebugPanelView: View {
                     Text("Scales every animation; 0 makes them instant. The system's Reduce Motion forces 0.")
                         .font(.caption).foregroundStyle(.secondary)
                     Tweak("Thumbnail stays", \.thumbnailSeconds, 1...20, step: 0.5, unit: "s")
-                    Tweak("Toast stays", \.toastSeconds, 0.5...5, step: 0.1, unit: "s")
+                    Tweak("Card mark stays", \.markSeconds, 0.5...5, step: 0.1, unit: "s")
                     Tweak("Slide in", \.slideInDuration, 0...1.5, step: 0.05, unit: "s")
                     Picker("Slide in curve", selection: binding(\.slideInCurve)) {
                         ForEach(["spring", "easeOut", "easeInOut", "linear"], id: \.self) { Text($0).tag($0) }

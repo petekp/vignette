@@ -66,8 +66,6 @@ struct StackLayout {
     var columnWidth: CGFloat { maxCardWidth * widthScale }
     /// How narrow the stack goes, and the width it reserves for itself at that narrowest.
     var minWidthScale: CGFloat { ui.stackMinScale }
-    /// The row under the column that carries the feedback toast.
-    var barHeight: CGFloat { ui.selectionBarHeight }
     /// One column of button-sized rows, padded by the button spacing.
     var stripWidth: CGFloat { ui.buttonSize + ui.buttonSpacing * 2 }
     var stripGap: CGFloat { ui.selectionStripGap }
@@ -120,10 +118,9 @@ struct StackLayout {
         return NSSize(width: (size.width * widthScale).rounded(), height: (size.height * widthScale).rounded())
     }
 
-    /// Height of the whole column: every card, plus the bar when shown.
-    func contentHeight(cards: [NSSize], showsBar: Bool) -> CGFloat {
-        let cardsHeight = cards.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(cards.count - 1, 0))
-        return cardsHeight + (showsBar ? barHeight + spacing : 0)
+    /// Height of the whole column: every card and the spacing between them.
+    func contentHeight(cards: [NSSize]) -> CGFloat {
+        cards.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(cards.count - 1, 0))
     }
 
     /// Where the column sits on a screen, and how far a Dock under it reaches up. `dock` is the
@@ -179,8 +176,8 @@ struct StackLayout {
     /// pulled down to reveal older cards. `safeBottom` is the area's, and it lifts the whole column:
     /// the newest card rests on the Dock's top edge plus the margin, the way it rests on the
     /// screen's bottom edge plus the margin without one.
-    func cardFrame(index: Int, cards: [NSSize], panelFrame: NSRect, showsBar: Bool, scroll: CGFloat, safeBottom: CGFloat) -> NSRect {
-        var y = panelFrame.minY + inset + safeBottom + (showsBar ? barHeight + spacing : 0) - scroll
+    func cardFrame(index: Int, cards: [NSSize], panelFrame: NSRect, scroll: CGFloat, safeBottom: CGFloat) -> NSRect {
+        var y = panelFrame.minY + inset + safeBottom - scroll
         for i in 0..<index { y += cards[i].height + spacing }
         let size = cards[index]
         return NSRect(x: panelFrame.maxX - inset - size.width, y: y, width: size.width, height: size.height)
@@ -218,8 +215,8 @@ struct StackLayout {
     }
 
     /// Distance from the column bottom to the bottom and top of card `index`.
-    func cardSpan(index: Int, cards: [NSSize], showsBar: Bool) -> (bottom: CGFloat, top: CGFloat) {
-        var y: CGFloat = showsBar ? barHeight + spacing : 0
+    func cardSpan(index: Int, cards: [NSSize]) -> (bottom: CGFloat, top: CGFloat) {
+        var y: CGFloat = 0
         for i in 0..<index { y += cards[i].height + spacing }
         return (y, y + cards[index].height)
     }
@@ -236,12 +233,12 @@ struct StackLayout {
 
     /// The strip beside the selection: centered on the span from the topmost to the bottommost
     /// selected card, and kept inside the part of the column that is on screen. Nil without a selection.
-    func stripPlacement(rows: Int, selection: [Int], cards: [NSSize], showsBar: Bool, scroll: CGFloat, viewport: CGFloat) -> StripPlacement? {
+    func stripPlacement(rows: Int, selection: [Int], cards: [NSSize], scroll: CGFloat, viewport: CGFloat) -> StripPlacement? {
         let picked = selection.filter { cards.indices.contains($0) }
         guard let lowest = picked.min(), let highest = picked.max() else { return nil }
         let size = NSSize(width: stripWidth, height: stripHeight(rows: rows))
-        let span = (bottom: cardSpan(index: lowest, cards: cards, showsBar: showsBar).bottom,
-                    top: cardSpan(index: highest, cards: cards, showsBar: showsBar).top)
+        let span = (bottom: cardSpan(index: lowest, cards: cards).bottom,
+                    top: cardSpan(index: highest, cards: cards).top)
         let center = (span.bottom + span.top) / 2
         let lowestBottom = scroll, highestBottom = scroll + viewport - size.height
         // A strip taller than the visible column has nowhere to sit inside it, so it centers on it.
