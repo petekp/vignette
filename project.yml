@@ -55,6 +55,9 @@ targets:
         # latest-release URL always names the newest version. A fork points this at its own releases
         # and replaces the key with its own (docs/building.md).
         SUFeedURL: https://github.com/petekp/vignette/releases/latest/download/appcast.xml
+        # Report a Problem… opens a new issue here (ProblemReport). A fork points it at its own
+        # repository, or removes it to leave the menu item out.
+        VignetteIssuesURL: https://github.com/petekp/vignette/issues/new
         SUPublicEDKey: JtXFG+vKXdBgyoxLt4sKoNoMHXvy6GQfoQob3W2zfVA=
         SUEnableAutomaticChecks: true
         LSUIElement: true

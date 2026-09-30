@@ -25,6 +25,10 @@ set to save to the Clipboard, Mail or Preview, no screenshot reaches the folder.
 then starts with Save Screenshots to a Folder, and setup and Settings → Screenshots offer Save to
 Folder.
 
+Report a Problem…, in the menu bar menu, opens a new GitHub issue with Vignette's version and
+your Mac filled in. It also shows Vignette's log in Finder, with any Vignette crash reports, so you
+can drag them onto the form. The log lists your screenshots' file names and folder paths.
+
 ## The stack
 
 Press the Vignette shortcut to show your recent screenshots in a column in the corner. It holds 30

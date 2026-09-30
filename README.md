@@ -98,6 +98,9 @@ puts back its other screenshot settings.
 
 Vignette checks for updates once a day. It installs one only when you choose Install.
 
+Something wrong? Report a Problem…, in the menu bar menu, opens a GitHub issue with your version
+and Mac filled in, and shows Vignette's log in Finder so you can attach it.
+
 Or build it yourself:
 
 ```

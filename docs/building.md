@@ -138,3 +138,5 @@ The README and the site link to `/releases/latest`, so both always point at the 
 4. Point `SUFeedURL` in `project.yml` at your own releases and make your own update key.
    `generate_keys --account <name>` prints the public key for `SUPublicEDKey`, and
    `SPARKLE_ACCOUNT=<name>` tells `scripts/release.sh` to sign with it.
+5. Point `VignetteIssuesURL` in `project.yml` at your own repository's new-issue page, or remove it
+   to leave Report a Problem… out of the menu. The forms it opens are in `.github/ISSUE_TEMPLATE/`.

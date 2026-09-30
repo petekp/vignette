@@ -798,6 +798,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        if ProblemReport.issuesURL != nil {
+            menu.addItem(withTitle: "Report a Problem…", action: #selector(reportProblem), keyEquivalent: "")
+        }
 
         menu.addItem(.separator())
         if settings.data.debug {
@@ -827,6 +830,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     @objc private func checkForUpdates() {
         updater?.checkForUpdates(nil)
+    }
+
+    @objc private func reportProblem() {
+        ProblemReport.open()
     }
 
     private func startUpdater() {
