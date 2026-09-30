@@ -6,12 +6,10 @@ Things decided or raised but not built. Each entry says what, why, and what it w
 
 ### Updates that reach every install (raised 2026-09-27)
 
-Built on 2026-09-27 and tested on a local test copy (`docs/updater-2026-09-27.md`). What is left
-is a real release: 0.1.2 published with the updater (cut on 2026-09-30, not published yet), then
-0.1.3 reaching it through the GitHub feed. That release also covers the cases the local test could
-not reach:
+0.1.2 is published with the updater, and an update from it was tested in a VM on the real app,
+permissions included (`docs/updater-2026-09-27.md`). What is left is 0.1.3 reaching a tester's Mac
+through the GitHub feed, and three cases no test has reached:
 
-- Accessibility and the folder permission after an update.
 - An install in a folder the user cannot write to, where Sparkle asks for an administrator's
   password.
 - A copy running from the disk image.

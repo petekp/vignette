@@ -21,7 +21,7 @@ Every item below is fixed and committed, or measured and left as is:
 - The "Fix next" list: 4aabef3.
 - The default key combination: 939c538.
 
-0.1.2 is cut from 939c538 as build 471, notarized and stapled. It is not published yet.
+0.1.2 was published on 2026-09-30 as build 474, from 597f37f.
 
 The VM found three more defects in sections 1 to 4, fixed in 0d73cf5:
 
