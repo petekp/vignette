@@ -4,7 +4,7 @@
   <a href="https://vignette.pete.design"><img src="docs/logotype.svg" width="150" alt="Vignette"></a>
 </p>
 
-What if macOS's built-in screenshot tool had kept evolving after 2010 and been built with AI in mind? Meet Vignette.
+What if macOS's built-in screenshot tool had kept evolving after 2010 and been built with agents in mind?
 
 Vignette is a free Mac menu bar app. It keeps your recent screenshots a double tap away, lets you
 draw on them, and hands them to Claude Code or Codex, which can send you screenshots of their own.
