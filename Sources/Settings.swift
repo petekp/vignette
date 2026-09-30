@@ -416,7 +416,7 @@ struct AppleOriginal: Codable, Equatable {
 final class Settings: ObservableObject {
     static let shared = Settings()
     nonisolated static let currentVersion = 2
-    static let isOverridden = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false
+    nonisolated static let isOverridden = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false
     static let fileURL: URL = {
         if let path = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"], !path.isEmpty {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)

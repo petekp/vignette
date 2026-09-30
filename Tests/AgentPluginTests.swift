@@ -209,6 +209,24 @@ final class AgentPluginTests: XCTestCase {
         XCTAssertEqual(AgentPlugin.legacySkill(at: AgentPlugin.legacyEntry(in: codex)), .none)
     }
 
+    func testATestLaunchNeverGetsThePersonsOwnAgentFolders() throws {
+        let person = dir.appendingPathComponent("person"), scratch = dir.appendingPathComponent("scratch")
+        for folder in [person, scratch] {
+            for name in [".claude", ".codex"] {
+                try FileManager.default.createDirectory(at: folder.appendingPathComponent(name), withIntermediateDirectories: true)
+            }
+        }
+        let own = [person.appendingPathComponent(".claude"), person.appendingPathComponent(".codex")]
+        let test = ["VIGNETTE_SETTINGS": "/tmp/x/settings.json"]
+        XCTAssertEqual(AgentPlugin.roots(home: person, environment: [:], personHome: person), own, "an ordinary launch")
+        XCTAssertEqual(AgentPlugin.roots(home: person, environment: test, personHome: person), [])
+        XCTAssertEqual(AgentPlugin.guarded(home: person, environment: test, personHome: person), own)
+        XCTAssertEqual(AgentPlugin.roots(home: scratch, environment: test, personHome: person),
+                       [scratch.appendingPathComponent(".claude"), scratch.appendingPathComponent(".codex")], "with CFFIXED_USER_HOME")
+        XCTAssertEqual(AgentPlugin.roots(home: scratch, environment: test.merging(["CLAUDE_CONFIG_DIR": own[0].path]) { $1 }, personHome: person),
+                       [scratch.appendingPathComponent(".codex")], "a config folder named in the environment is still the person's")
+    }
+
     func testLaunchInstallsNothingWhereNothingWas() throws {
         let home = dir.appendingPathComponent("home")
         try FileManager.default.createDirectory(at: home.appendingPathComponent(".codex"), withIntermediateDirectories: true)

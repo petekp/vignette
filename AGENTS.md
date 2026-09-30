@@ -85,6 +85,10 @@ Before you drive the app:
 - Never send a synthetic Esc to close the stack or the annotator. Use `vignette://dismiss` and
   `vignette://cancel`.
 - Delete test files from the watch folder afterwards. It is the user's real screenshot folder.
+- A test copy never touches the person's own `~/.claude` and `~/.codex`: with `VIGNETTE_SETTINGS`
+  set, `AgentPlugin.roots` leaves them out and the launch logs `[plugin] test launch: left <folder>
+  alone`, and it registers no login item. To test the plugin, also launch with
+  `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`).
 - Stop a test copy by its PID before you launch another copy of the same bundle id. On 2026-09-26,
   `open -a <a Release copy> <url>`, sent after a Debug copy of the same bundle id had run, launched a
   second Release instance without `VIGNETTE_SETTINGS`, on the user's real settings file.
@@ -1064,7 +1068,9 @@ under that folder's `Library/Logs`, which must exist before the launch, or the l
   … --scope user`; `codex plugin marketplace add`, then `codex plugin add`. Claude Code reads a
   folder marketplace in place. Codex copies the plugin into its cache, so its update is `codex
   plugin add` again. A root is `~/.claude` or `~/.codex`, or where `CLAUDE_CONFIG_DIR` and
-  `CODEX_HOME` point, and only one that exists. Roots are parameters everywhere, so a test never
+  `CODEX_HOME` point, and only one that exists. A launch with `VIGNETTE_SETTINGS` never gets the
+  person's own two, whatever the environment names (`AgentPlugin.guarded`, found from the user
+  database, which `CFFIXED_USER_HOME` does not move). Roots are parameters everywhere, so a test never
   reaches the real ones, and the live check is `install-skill?root=<dir>` (debug only, a folder
   named `.claude` or `.codex`). The tools get the app's `HOME`, so a test copy launched with
   `CFFIXED_USER_HOME` installs into its scratch home. The `codex` on this Mac is a vite-plus shim

@@ -1,6 +1,6 @@
 # Keeping a test copy out of the person's agent folders (2026-09-29)
 
-Status: a proposal. Nothing here is built.
+Status: built on 2026-09-29.
 
 ## What happened
 
@@ -29,11 +29,13 @@ Two other paths can reach the real folders from a test copy:
 A fresh scratch settings file also starts with `launchAtLogin` on, so closing setup registers the
 test copy as a login item.
 
-## Proposal
+## What was built
 
-**A test launch has no agent folders.** When `VIGNETTE_SETTINGS` is set, `AgentPlugin.roots`
-returns none, unless the launch also moves the home folder with `CFFIXED_USER_HOME`. Then the roots
-are that scratch home's, as today.
+**A test launch never gets the person's own agent folders.** When `VIGNETTE_SETTINGS` is set,
+`AgentPlugin.roots` leaves out `~/.claude` and `~/.codex` of the home folder in the user database
+(`AgentPlugin.personHome`). `CFFIXED_USER_HOME` moves the app's home folder but not that one, so a
+launch with a scratch home gets the scratch home's folders, as before. A `CLAUDE_CONFIG_DIR` or
+`CODEX_HOME` that names one of the person's folders is left out too.
 
 - This closes every path at once: the launch step, setup and the Agents tab all ask `roots`.
 - The launch still writes the marketplace into the test copy's own Application Support. The trailer
@@ -41,19 +43,28 @@ are that scratch home's, as today.
   (`drive.install_plugin`).
 - A test of the plugin install keeps working: launch with `CFFIXED_USER_HOME`, as
   `docs/claude-code-without-herdr-2026-09-27.md` already does.
-- One log line at launch says so: `[plugin] test launch: no agent folders; launch with
-  CFFIXED_USER_HOME to test them`.
-- A test launch does not register a login item either, and logs that it did not.
+- The launch logs one line for each folder it left out:
+  `[plugin] test launch: left /Users/<you>/.claude alone; launch with CFFIXED_USER_HOME to test the plugin`.
+- A test launch does not register a login item either, and logs
+  `[login] test launch: not registered`. macOS would open the copy at login without
+  `VIGNETTE_SETTINGS`, on the person's own settings file.
 
 It follows the rule `VIGNETTE_SETTINGS` already sets for Apple's defaults: a test launch never
 writes what the person's own install owns.
 
-**One permanent test**, in `AgentPluginTests`: `roots` with `VIGNETTE_SETTINGS` set returns none,
-and with `CFFIXED_USER_HOME` as well returns that home's. It catches a change to `roots` or its
-callers that brings the real folders back. No existing test covers the environment.
+**One permanent test**, `testATestLaunchNeverGetsThePersonsOwnAgentFolders` in `AgentPluginTests`:
+the person's folders are left out of a test launch, a scratch home's are not, and a config folder
+named in the environment is still the person's. It catches a change to `roots` that brings the real
+folders back. No existing test covered the environment.
 
-**AGENTS.md** gets one line in "The loop": a test copy never touches the agent folders, and a test
+**AGENTS.md** has a line in "The loop": a test copy never touches the agent folders, and a test
 of the plugin needs `CFFIXED_USER_HOME`.
+
+## Verified
+
+- All 405 unit tests pass.
+- The stage copy, launched with scratch settings on this Mac, logged the line for `~/.claude` and
+  `~/.codex` and installed nothing. `claude plugin list` still showed only `vignette@vignette`.
 
 ## Rejected
 

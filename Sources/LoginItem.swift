@@ -17,10 +17,14 @@ enum LoginItem {
 
     /// Registers or unregisters, logging one `[login]` line. Skips the call when macOS already
     /// agrees, so a launch with the setting on does not re-register every time.
+    /// A test launch never registers: macOS would open the copy at login without `VIGNETTE_SETTINGS`,
+    /// on the person's own settings file.
     static func apply(_ enabled: Bool) {
         let current = SMAppService.mainApp.status
         do {
-            if enabled, current != .enabled {
+            if enabled, current != .enabled, Settings.isOverridden {
+                Log.write("[login] test launch: not registered status=\(status)")
+            } else if enabled, current != .enabled {
                 try SMAppService.mainApp.register()
                 Log.write("[login] registered status=\(status)")
             } else if !enabled, current != .notRegistered, current != .notFound {

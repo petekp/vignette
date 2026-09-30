@@ -88,12 +88,40 @@ enum AgentPlugin {
     // MARK: The agents
 
     /// The agents' config folders on this Mac that exist, Claude Code's then Codex's: `~/.claude`
-    /// and `~/.codex`, or where `CLAUDE_CONFIG_DIR` and `CODEX_HOME` point.
-    static func roots(home: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> [URL] {
+    /// and `~/.codex`, or where `CLAUDE_CONFIG_DIR` and `CODEX_HOME` point. A test launch never gets
+    /// the person's own (`guarded`), so the launch, setup and the Agents tab cannot reach them.
+    static func roots(home: URL, environment: [String: String] = ProcessInfo.processInfo.environment,
+                      personHome: URL = AgentPlugin.personHome) -> [URL] {
+        existingRoots(home: home, environment: environment).filter { !isGuarded($0, environment: environment, personHome: personHome) }
+    }
+
+    /// The folders `roots` leaves out: the person's own agent folders, in a test launch.
+    static func guarded(home: URL, environment: [String: String] = ProcessInfo.processInfo.environment,
+                        personHome: URL = AgentPlugin.personHome) -> [URL] {
+        existingRoots(home: home, environment: environment).filter { isGuarded($0, environment: environment, personHome: personHome) }
+    }
+
+    /// The home folder in the user database. `CFFIXED_USER_HOME` moves `NSHomeDirectory` for a test
+    /// launch but not this, so it always names the person's own folders.
+    static let personHome: URL = {
+        guard let entry = getpwuid(getuid()), let path = entry.pointee.pw_dir else { return FileManager.default.homeDirectoryForCurrentUser }
+        return URL(fileURLWithPath: String(cString: path))
+    }()
+
+    private static func existingRoots(home: URL, environment: [String: String]) -> [URL] {
         AgentClient.allCases.map { root(of: $0, home: home, environment: environment) }.filter { url in
             var isDirectory: ObjCBool = false
             return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
         }
+    }
+
+    /// Whether `folder` is one of the person's own agent folders and this is a test launch, which
+    /// `VIGNETTE_SETTINGS` marks. A test copy that must install the plugin moves the home folder
+    /// with `CFFIXED_USER_HOME`, or names scratch folders with `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
+    private static func isGuarded(_ folder: URL, environment: [String: String], personHome: URL) -> Bool {
+        guard environment["VIGNETTE_SETTINGS"].map({ !$0.isEmpty }) ?? false else { return false }
+        let own = AgentClient.allCases.map { root(of: $0, home: personHome, environment: [:]).resolvingSymlinksInPath().path }
+        return own.contains(folder.resolvingSymlinksInPath().path)
     }
 
     static func root(of client: AgentClient, home: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
@@ -424,6 +452,9 @@ final class AgentPlugins: @unchecked Sendable {
             do { changed = try stageNow() } catch {
                 Log.write("[plugin] error \(error.localizedDescription)")
                 return
+            }
+            for root in AgentPlugin.guarded(home: home) {
+                Log.write("[plugin] test launch: left \(root.path) alone; launch with CFFIXED_USER_HOME to test the plugin")
             }
             for root in AgentPlugin.roots(home: home) {
                 guard let client = AgentPlugin.client(of: root) else { continue }
