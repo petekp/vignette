@@ -345,4 +345,35 @@ def send_and_reply(app):
     app.report.step('the reply is a card')
 
 
-ALL = [launch, agent_push, annotate_open, send_target, stitch, relaunch, settings_repair, draw_and_done, send_and_reply]
+def to_screen(s, image_width, px):
+    """A point of the image, in px, on screen, for the editor at its fitted size."""
+    x, y, w, h = s['annotator']['frame']
+    k = w / image_width
+    return round(x + px[0] * k), round(y + px[1] * k)
+
+
+@needs_input
+def agent_marks_editable(app):
+    """A person can select an agent's mark with a click and move it by dragging."""
+    start(app)
+    copy, _ = push(app, [{'type': 'rectangle', 'x': 0.25, 'y': 0.25, 'w': 0.3, 'h': 0.3}])
+    s = open_editor(app, copy)
+    mark = s['editor']['marks'][0]
+    if not mark.get('agent'):
+        raise Failed(f"the pushed mark is not the agent's: {mark}")
+    x, y, w, h = mark['frame']
+    edge = to_screen(s, 1600, (x, y + h / 2))
+    app.require_key(app.state(), 'annotator')
+    app.input('glide', *edge, 0.3)
+    app.input('click', *edge)
+    s = app.wait_state(lambda s: s['editor']['selection'] == [0], "the agent's mark being selected", timeout=3)
+    app.report.step("a click on the agent's rectangle selects it")
+    app.require_key(s, 'annotator')
+    app.input('glidedrag', *edge, edge[0] + 80, edge[1] + 40, 0.5)
+    s = app.wait_state(lambda s: s['editor']['marks'][0]['frame'][0] > x + 20, "the agent's mark moving", timeout=3)
+    moved = s['editor']['marks'][0]
+    app.report.step('a drag moves it', detail=f"x {round(x)} → {round(moved['frame'][0])}, agent={moved.get('agent')}")
+    close_editor(app)
+
+
+ALL = [launch, agent_push, annotate_open, send_target, stitch, relaunch, settings_repair, draw_and_done, send_and_reply, agent_marks_editable]

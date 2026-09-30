@@ -30,16 +30,40 @@ things went wrong:
 - **Double-tapping right Shift did nothing.** The Settings window showed that Accessibility was
   still needed.
 
-To investigate:
+Most likely cause, from the code (2026-09-30). The landing page gave 0.1.1, since there is no
+0.1.3. On 0.1.1, the first launch read the Desktop at once, so macOS's folder prompt came up with
+the setup window underneath. Answering the prompt gives the focus back to the app that had it, here
+Finder, and the setup window stayed behind its windows. Setup never finished, so nothing asked for
+Accessibility. `main` has fixed both since 2026-09-26 (e3d24a0, after 0.1.1): a first launch reads
+a protected folder only after setup's Allow…, and `folderAnswered` brings setup back in front.
 
-- Whether the released image is notarized and stapled (`spctl` and `stapler validate` on the
-  downloaded file), and what `scripts/release.sh` does for both.
-- Why setup did not open. Check the `setup` key in that Mac's settings file and its log's first
-  launch.
-- Why the folder prompt came with no setup row to explain it. `watcherWaitsForSetup` should hold
-  the watcher until setup's Allow…. Also check which folder macOS's `location` named on that Mac,
-  since Vignette follows it.
-- Once setup runs, whether it asks for Accessibility when the shortcut needs it.
+To confirm on that Mac:
+
+- `grep "\[setup\]\|\[app\] launched" ~/Library/Logs/Vignette.log | head` should show
+  `[setup] shown` on the first launch and no `[setup] done`.
+- The disk image: `spctl -a -t open --context context:primary-signature -v` and
+  `stapler validate` on the downloaded file. The 0.1.1 image passed both on this Mac, and macOS
+  asks once before opening any downloaded file.
+- Which folder Vignette watched: `defaults read com.apple.screencapture location`. If it is unset,
+  Vignette watches the Desktop. Whether Dropbox's screenshot saving sets it is not checked yet.
+
+### Testing on the second MacBook from this one (raised 2026-09-30)
+
+A Tailscale link between the two MacBooks, so an agent here can test on a Mac that never ran
+Vignette. It would confirm the setup fix above before 0.1.2, and serve every fresh-install test
+after.
+
+- **Pete:** signs into Tailscale on both Macs (installed and stopped on this one), and on the
+  second Mac turns on Remote Login for his user only and Screen Sharing (System Settings > General >
+  Sharing). Tailscale's own SSH server is not in its Mac app, so Remote Login serves SSH.
+- **The agent:** puts this Mac's key in the second Mac's `authorized_keys`, and writes a script
+  that resets it to "never ran Vignette": the app, `~/.config/vignette`, the Application Support
+  folder, the log, `tccutil reset` for the bundle id, and Apple's screenshot defaults.
+- **A test round:** the agent copies a disk image over and reads the log over SSH; Pete installs it
+  and answers macOS's prompts over Screen Sharing.
+- **Not over SSH:** posting keys or taking screenshots. Both need the second Mac to grant
+  Accessibility and Screen Recording to the SSH server, which would let anything that logs in
+  control the whole Mac.
 
 ## Not placed yet
 

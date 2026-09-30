@@ -24,8 +24,9 @@ order proposed to get there.
    for any downloaded app, since the image is notarized.
 2. **Run a fresh install of today's `main` on the second MacBook**, before tagging: setup, the
    folder permission, Accessibility, the plugin install, and one Send.
-3. **Check today's mark work by hand:** the white edge on a note while typing, an agent's note
-   becoming the person's when retyped, and selecting an agent's marks, which Pete could not do.
+3. **Done: the mark work, checked by hand on 714ec00** (Pete, 2026-09-30): the white edge on a note
+   while typing, an agent's note becoming the person's when retyped, and selecting and moving an
+   agent's marks. The earlier report that they could not be selected did not reproduce.
 4. **Pass the end-to-end smoke gate** (`docs/e2e-suite-plan-2026-09-29.md`), and fix the git stamp's
    ordering, which can leave a release at `CFBundleVersion` 0.
 5. **Cut 0.1.2 with `scripts/release.sh`.** It is the first build with the updater. It needs the
