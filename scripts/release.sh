@@ -136,12 +136,21 @@ device=""
 trap '[[ -n "$device" ]] && hdiutil detach "$device" -quiet 2>/dev/null; rm -rf "$staging" "$staging.rw.dmg"' EXIT
 cp -R "$app" "$staging/"
 ln -s /Applications "$staging/Applications"   # the drag target
+# The window's background: a looping arrow from the app to Applications, at 1x and 2x in one TIFF so
+# Finder picks the one for the screen. Its layout numbers match the positions below.
+mkdir "$staging/.background"
+swift scripts/dmg-background.swift "$staging/.background/1x.png" 1
+swift scripts/dmg-background.swift "$staging/.background/2x.png" 2
+tiffutil -cathidpicheck "$staging/.background/1x.png" "$staging/.background/2x.png" \
+  -out "$staging/.background/background.tiff"
+rm "$staging/.background/"*.png
 # Finder finds the image by its volume name, and a second volume of that name mounts as "$scheme 1".
 if [[ -e "/Volumes/$scheme" ]]; then
   echo "a volume named $scheme is mounted; eject it before cutting a release" >&2; exit 1
 fi
 # Laid out by Finder on a writable image, then compressed: a small window with the app on the
-# left and Applications on the right. Finder asks once for this terminal to control it.
+# left, Applications on the right, and the arrow between them. Finder asks once for this terminal
+# to control it.
 hdiutil create -volname "$scheme" -srcfolder "$staging" -ov -format UDRW -quiet "$staging.rw.dmg"
 device=$(hdiutil attach "$staging.rw.dmg" -readwrite -noverify -noautoopen | awk '/\/Volumes\// {print $1; exit}')
 # Finder learns of the new disk a moment after hdiutil returns.
@@ -156,13 +165,14 @@ tell application "Finder"
     set current view of container window to icon view
     set toolbar visible of container window to false
     set statusbar visible of container window to false
-    set the bounds of container window to {400, 200, 940, 540}
+    set the bounds of container window to {400, 200, 1000, 560}
     set opts to the icon view options of container window
     set arrangement of opts to not arranged
     set icon size of opts to 128
     set text size of opts to 13
-    set position of item "$scheme.app" of container window to {140, 150}
-    set position of item "Applications" of container window to {400, 150}
+    set background picture of opts to file ".background:background.tiff"
+    set position of item "$scheme.app" of container window to {150, 160}
+    set position of item "Applications" of container window to {450, 160}
     set extension hidden of item "$scheme.app" to true
     update without registering applications
     delay 1

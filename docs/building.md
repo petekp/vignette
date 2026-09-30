@@ -12,7 +12,7 @@ Requires Xcode and `xcodegen`. `Info.plist` is generated from `project.yml`, so 
 ## Where things live
 
 `Sources/` is the whole app, in Swift: the menu bar item, the folder watcher, the panels, the
-clipboard, the hotkey, and the drawing editor. [editor.md](editor.md) says how the editor behaves.
+clipboard, the shortcut, and the drawing editor. [editor.md](editor.md) says how the editor behaves.
 
 Drawings are files the app keeps on disk, one per screenshot, in
 `~/Library/Application Support/com.petepetrash.vignette/drawings/`. The editor hands its drawing
@@ -21,7 +21,7 @@ survives a relaunch.
 
 Three places hold what you are most likely to change:
 
-- `~/.config/vignette/settings.json`: folder, counts, timing, hotkey, backdrop, the editor's
+- `~/.config/vignette/settings.json`: folder, counts, timing, shortcut, backdrop, the editor's
   sizes, and how marks look: their colours, stroke, edge, fonts and text sizes. No rebuild.
 - `Sources/Config.swift`: the actions list.
 - `Sources/EditorCore.swift`: the editor's tools (`EditorCore.Tool`).
@@ -32,7 +32,7 @@ See [AGENTS.md](../AGENTS.md) for the working loop.
 
 Without `scripts/signing.env` the build is ad-hoc signed and runs.
 
-The catch is Accessibility. The double-tap hotkey needs the app trusted for Accessibility, and
+The catch is Accessibility. The double-tap shortcut needs the app trusted for Accessibility, and
 macOS ties that grant to the app's code signature. An ad-hoc signature is a hash of the build, so
 every rebuild is a new app to macOS and the grant is lost.
 
@@ -60,7 +60,7 @@ macOS keys the Accessibility list by bundle id. A second build of the same bundl
 different signer shows the existing row as enabled while staying untrusted. Give a fork its own
 bundle id. See Forking below.
 
-The hardened runtime is on so notarizing later needs no code change.
+The hardened runtime is on, because notarization requires it.
 
 The app is not sandboxed. It writes Apple's screencapture defaults, watches a folder you name, and
 installs global event monitors.
@@ -69,7 +69,8 @@ installs global event monitors.
 
 `scripts/release.sh <version>` builds a Release archive, exports it Developer ID signed, packages a
 disk image with an Applications alias, notarizes it, and staples the ticket. Finder lays out the
-disk image: a small window with the app on the left and Applications on the right. So the first
+disk image: a small window with the app on the left, Applications on the right, and a looping red
+arrow between them, which `scripts/dmg-background.swift` draws at build time. So the first
 run asks for your terminal to control Finder, and the script stops if a volume named Vignette is
 already mounted, because the new image would then mount under another name.
 
@@ -124,8 +125,7 @@ Upload `appcast.xml` with every release. The app reads
 the newest release's copy, so a release without it leaves every install on the version before.
 Installs of 0.1.0 and 0.1.1 have no updater and never read it.
 
-The README and the site link to `/releases/latest`, so both go live the moment the first release
-exists and 404 before it.
+The README and the site link to `/releases/latest`, so both always point at the newest release.
 
 ## Forking
 
@@ -133,7 +133,7 @@ exists and 404 before it.
    `PRODUCT_BUNDLE_IDENTIFIER` values, and the URL scheme. The log name, status item, drawings
    folder, and hotkey registration follow the bundle id at runtime.
 2. Add `scripts/signing.env` with your certificate. Or accept ad-hoc and re-grant Accessibility
-   after each rebuild if you use the double-tap hotkey.
+   after each rebuild if you use the double-tap shortcut.
 3. Run `./scripts/build.sh --test`. A clone builds with no manual step.
 4. Point `SUFeedURL` in `project.yml` at your own releases and make your own update key.
    `generate_keys --account <name>` prints the public key for `SUPublicEDKey`, and
