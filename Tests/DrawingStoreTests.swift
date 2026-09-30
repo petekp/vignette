@@ -44,40 +44,36 @@ final class DrawingStoreTests: XCTestCase {
         XCTAssertEqual(drawing.pixels, pixels)
         XCTAssertEqual(drawing.pointScale, 2)
         XCTAssertEqual(drawing.marks.map(\.geometry), [.rectangle(CGRect(x: 410, y: 220, width: 640, height: 180))])
-        XCTAssertEqual(drawing.marks.first?.color, .red)
         XCTAssertEqual(drawing.marks.first?.agent, false)
-        XCTAssertEqual(drawing.marks.first?.colorChosen, false)
         XCTAssertEqual(lines.all, [])
     }
 
     func testADrawingSurvivesAWriteAndARead() throws {
         let marks = [
-            Mark(geometry: .rectangle(CGRect(x: 410.25, y: 220, width: 640, height: 180.5)), color: .red),
-            Mark(geometry: .ellipse(CGRect(x: 10, y: 20, width: 30, height: 40)), color: .yellow, agent: true, colorChosen: true),
-            Mark(geometry: .arrow(.init(start: CGPoint(x: 100, y: 900), end: CGPoint(x: 700, y: 600), bend: -83.125)), color: .lightBlue),
-            Mark(geometry: .arrow(.init(start: CGPoint(x: 1, y: 2), end: CGPoint(x: 3, y: 4))), color: .white, agent: true),
-            Mark(geometry: .text(.init(origin: CGPoint(x: 50, y: 60), text: "Header should not scroll\nsecond line 你好 🎉", wrap: 900.5, size: 24)), color: .violet),
-            Mark(geometry: .text(.init(origin: CGPoint(x: 0.1, y: 1.0 / 3.0), text: "no wrap", size: 31.7)), color: .red, colorChosen: true),
+            Mark(geometry: .rectangle(CGRect(x: 410.25, y: 220, width: 640, height: 180.5))),
+            Mark(geometry: .ellipse(CGRect(x: 10, y: 20, width: 30, height: 40)), agent: true),
+            Mark(geometry: .arrow(.init(start: CGPoint(x: 100, y: 900), end: CGPoint(x: 700, y: 600), bend: -83.125))),
+            Mark(geometry: .arrow(.init(start: CGPoint(x: 1, y: 2), end: CGPoint(x: 3, y: 4))), agent: true),
+            Mark(geometry: .text(.init(origin: CGPoint(x: 50, y: 60), text: "Header should not scroll\nsecond line 你好 🎉", wrap: 900.5, size: 24))),
+            Mark(geometry: .text(.init(origin: CGPoint(x: 0.1, y: 1.0 / 3.0), text: "no wrap", size: 31.7))),
         ]
         try store.write(Drawing(key: key, pixels: pixels, pointScale: 2, marks: marks))
         let back = try XCTUnwrap(read())
         XCTAssertEqual(back.pointScale, 2)
         XCTAssertEqual(back.marks.map(\.geometry), marks.map(\.geometry))
-        XCTAssertEqual(back.marks.map(\.color), marks.map(\.color))
         XCTAssertEqual(back.marks.map(\.agent), marks.map(\.agent))
-        XCTAssertEqual(back.marks.map(\.colorChosen), marks.map(\.colorChosen))
         XCTAssertEqual(lines.all, [])
 
         // The defaults are left out: a straight arrow has no bend, a text without one no wrap, and
-        // neither flag is written while it is false.
+        // `agent` is not written while it is false. No mark stores a colour.
         let file = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.url(for: key))) as? [String: Any])
         XCTAssertEqual(file["version"] as? Int, 1)
         XCTAssertEqual(file["pixels"] as? [Int], [3024, 1964])
         let written = try XCTUnwrap(file["marks"] as? [[String: Any]])
-        XCTAssertEqual(Set(written[0].keys), ["type", "x", "y", "w", "h", "color"])
-        XCTAssertEqual(Set(written[1].keys), ["type", "x", "y", "w", "h", "color", "agent", "colorChosen"])
-        XCTAssertEqual(Set(written[3].keys), ["type", "x", "y", "x2", "y2", "color", "agent"])
-        XCTAssertEqual(Set(written[5].keys), ["type", "x", "y", "text", "size", "color", "colorChosen"])
+        XCTAssertEqual(Set(written[0].keys), ["type", "x", "y", "w", "h"])
+        XCTAssertEqual(Set(written[1].keys), ["type", "x", "y", "w", "h", "agent"])
+        XCTAssertEqual(Set(written[3].keys), ["type", "x", "y", "x2", "y2", "agent"])
+        XCTAssertEqual(Set(written[5].keys), ["type", "x", "y", "text", "size"])
     }
 
     func testANewerVersionIsReadAsNoDrawingAndNeverOverwritten() throws {
@@ -241,7 +237,7 @@ final class DrawingsTests: XCTestCase {
         try? FileManager.default.removeItem(at: dir)
     }
 
-    /// A 300 by 200 screenshot in the red a mark starts in, so the colour pass has to move a mark off it.
+    /// A 300 by 200 screenshot in a person's red.
     private func redShot() throws -> URL {
         try writeTestImage(width: 300, height: 200, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)), in: dir) { _, _ in (0xe0, 0x31, 0x31) }
     }
@@ -249,25 +245,24 @@ final class DrawingsTests: XCTestCase {
     private let pushed = [AgentMark(type: .rectangle, x: 0.1, y: 0.1, w: 0.5, h: 0.5),
                           AgentMark(type: .ellipse, x: 0.5, y: 0.5, w: 0.2, h: 0.2, color: "red")]
 
-    func testAgentsMarksJoinTheStoredDrawingThroughTheColourPass() throws {
+    func testAgentsMarksJoinTheStoredDrawing() throws {
         let shot = try redShot()
         let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
-        let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)), color: .yellow)
+        let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
         drawings.write(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]), reason: "saved")
 
-        let added = try drawings.add(pushed, to: shot, editor: nil, sample: ColorSample(imageAt: shot), style: .standard, newPointScale: 2)
+        let added = try drawings.add(pushed, from: nil, to: shot, editor: nil, style: .standard, newPointScale: 2)
         XCTAssertEqual(added, 2)
         let stored = try XCTUnwrap(drawings.read(shot, pixels: pixels, style: .standard))
         XCTAssertEqual(stored.pointScale, 1, "a stored drawing keeps its own scale")
         XCTAssertEqual(stored.marks.map(\.geometry).first, theirs.geometry, "the person's mark stays first")
         XCTAssertEqual(stored.marks.count, 3)
         XCTAssertEqual(stored.marks.dropFirst().map(\.agent), [true, true])
-        XCTAssertNotEqual(stored.marks[1].color, .red, "the colour pass moves an unnamed mark off the red under it")
-        XCTAssertEqual(stored.marks[2].color, .red, "a colour the agent named is kept")
+        XCTAssertEqual(stored.marks.dropFirst().map(\.color), [.agent, .agent], "a colour the agent names is ignored")
 
         // A screenshot with no drawing gets a new one at the scale it is given.
         let fresh = try redShot()
-        XCTAssertEqual(try drawings.add(pushed, to: fresh, editor: nil, sample: nil, style: .standard, newPointScale: 2), 2)
+        XCTAssertEqual(try drawings.add(pushed, from: nil, to: fresh, editor: nil, style: .standard, newPointScale: 2), 2)
         let made = try XCTUnwrap(drawings.read(fresh, pixels: pixels, style: .standard))
         XCTAssertEqual(made.pointScale, 2)
         XCTAssertEqual(made.marks.count, 2)
@@ -283,14 +278,13 @@ final class DrawingsTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentView = view
         defer { _ = view.park(); pasteboard.releaseGlobally(); window.close() }
-        let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)), color: .yellow)
+        let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
         view.open(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]), image: nil,
-                  picture: CGRect(x: 0, y: 0, width: 300, height: 200), style: .standard, metrics: .standard, arrowhead: .standard,
-                  pickColor: { _ in nil })
+                  picture: CGRect(x: 0, y: 0, width: 300, height: 200), style: .standard, metrics: .standard, markStyle: .standard)
 
         view.onHandOver = { [drawings] drawing in drawings!.write(drawing, reason: "saved") }
 
-        XCTAssertEqual(try drawings.add(pushed, to: shot, editor: view, sample: nil, style: .standard, newPointScale: 2), 2)
+        XCTAssertEqual(try drawings.add(pushed, from: nil, to: shot, editor: view, style: .standard, newPointScale: 2), 2)
         XCTAssertEqual(view.core.drawing.marks.count, 3)
         XCTAssertEqual(view.core.drawing.marks.dropFirst().map(\.agent), [true, true])
         XCTAssertEqual(drawings.read(shot, pixels: pixels, style: .standard)?.marks.count, 3,
@@ -301,7 +295,7 @@ final class DrawingsTests: XCTestCase {
 
         // The push answers from the hand-over's write, not from the marks having joined.
         try FileManager.default.removeItem(at: shot)
-        XCTAssertThrowsError(try drawings.add(pushed, to: shot, editor: view, sample: nil, style: .standard, newPointScale: 2)) { error in
+        XCTAssertThrowsError(try drawings.add(pushed, from: nil, to: shot, editor: view, style: .standard, newPointScale: 2)) { error in
             XCTAssertEqual((error as? Drawings.Failure)?.code, .writeFailed)
         }
     }

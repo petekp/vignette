@@ -90,25 +90,33 @@ final class MarkGeometryTests: XCTestCase {
 
     private let words = "The header should not scroll with the rest of the page, it should stay pinned at the top."
 
-    func testALongTextWrapsAtTheImagesEdgeLessTheMargin() {
+    func testALongTextWrapsAtTheImagesEdgeOrItsWidestInBalancedLines() {
         let text = Mark.Text(origin: CGPoint(x: 100, y: 20), text: words, size: 24)
         let layout = TextLayout(text, imageWidth: 800, pointScale: 2, style: .standard)
+        let side = layout.padding.side
         XCTAssertGreaterThan(layout.lines.count, 1)
-        for line in layout.lines {
-            XCTAssertLessThanOrEqual(line.rect.maxX, 800 * 0.98 + 0.001, "no line passes the image's edge less 2%")
-        }
-        XCTAssertGreaterThan(layout.lines[0].rect.maxX, 800 * 0.98 - 200, "the first line runs up to the edge before it wraps")
-        XCTAssertEqual(layout.box.width, layout.lines.map(\.rect.width).max()!)
+        XCTAssertLessThanOrEqual(layout.box.maxX, 800 * 0.98 + 0.001, "the tag stops at the image's edge less 2%")
+        XCTAssertEqual(layout.box.width, layout.lines.map(\.rect.width).max()! + 2 * side, accuracy: 0.001)
+        XCTAssertEqual(layout.lines[0].rect.minX, 100 + side, "the words start inside the tag's padding")
 
-        let wider = TextLayout(text, imageWidth: 3000, pointScale: 2, style: .standard)
-        XCTAssertEqual(wider.lines.count, 1, "on a wider image the same words fit one line")
+        // Balanced: the narrowest width that keeps as many lines, so the last line is not a stub.
+        var narrower = text
+        narrower.wrap = layout.wrapWidth + 2 * side - 2
+        XCTAssertGreaterThan(TextLayout(narrower, imageWidth: 800, pointScale: 2, style: .standard).lines.count, layout.lines.count)
+        let widths = layout.lines.map(\.rect.width)
+        XCTAssertGreaterThan(widths.last!, widths.max()! * 0.5, "the last line is not left short")
+
+        // On a wide image it wraps at 18 times its size in px, with its padding.
+        let wider = TextLayout(text, imageWidth: 6000, pointScale: 2, style: .standard)
+        XCTAssertGreaterThan(wider.lines.count, 1)
+        XCTAssertLessThanOrEqual(wider.box.width, TextLayout.widestTag(size: 24, pointScale: 2, style: .standard) + 0.001)
+        XCTAssertEqual(TextLayout.widestTag(size: 24, pointScale: 2, style: .standard), 48 * (18 + 2 * 0.8), accuracy: 1e-9)
 
         var wrapped = text
         wrapped.wrap = 300
         let narrow = TextLayout(wrapped, imageWidth: 3000, pointScale: 2, style: .standard)
         XCTAssertGreaterThan(narrow.lines.count, 3)
-        XCTAssertTrue(narrow.lines.allSatisfy { $0.rect.width <= 300.001 }, "a wrap width wraps it, wherever the image's edge is")
-        XCTAssertEqual(narrow.box.width, 300, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(narrow.box.width, 300.001, "a wrap width is the widest the tag may be, wherever the image's edge is")
     }
 
     func testHardLineBreaksMakeLines() {
@@ -123,11 +131,12 @@ final class MarkGeometryTests: XCTestCase {
 
     func testLinesAreTheLineHeightApart() {
         let text = Mark.Text(origin: CGPoint(x: 10, y: 30), text: "one\ntwo", size: 24)
-        let layout = TextLayout(text, imageWidth: 2000, pointScale: 2, style: TextStyle(weight: .medium, lineHeight: 1.5))
+        let layout = TextLayout(text, imageWidth: 2000, pointScale: 2, style: .tweaked(weight: 500, lineHeight: 1.5))
         XCTAssertEqual(CTFontGetSize(layout.font), 48, "the size in pt times the point scale")
         XCTAssertEqual(layout.lineHeight, 72)
-        XCTAssertEqual(layout.lines.map(\.rect.minY), [30, 102])
-        XCTAssertEqual(layout.box, CGRect(x: 10, y: 30, width: layout.box.width, height: 144))
+        let top: CGFloat = 48 * 0.42, bottom: CGFloat = 48 * 0.47
+        XCTAssertEqual(layout.lines.map(\.rect.minY), [30 + top, 102 + top])
+        XCTAssertEqual(layout.box, CGRect(x: 10, y: 30, width: layout.box.width, height: top + 144 + bottom))
         for line in layout.lines {
             XCTAssertGreaterThan(line.baseline, line.rect.minY + line.rect.height / 2, "the glyphs stand inside their line")
             XCTAssertLessThan(line.baseline, line.rect.maxY)

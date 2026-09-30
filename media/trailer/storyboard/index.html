@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trailer v3 storyboard</title>
+<link rel="stylesheet" href="scene.css">
+<style>
+:root {
+  --page: #f4f4f2; --panel: #ffffff; --ink: #18181b; --muted: #5f6368; --faint: #9a9ea5;
+  --line: #e3e3e0; --accent: #d9480f; --cam: #ff3b30; --cam-prev: #8e8e93; --chip: #eef0f3;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #151517; --panel: #1f1f22; --ink: #ececec; --muted: #a8abb2; --faint: #6f737a;
+    --line: #313136; --chip: #2a2b30;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #151517; --panel: #1f1f22; --ink: #ececec; --muted: #a8abb2; --faint: #6f737a;
+  --line: #313136; --chip: #2a2b30;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Inter", sans-serif; }
+main { max-width: 1320px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 21px; margin: 56px 0 6px; letter-spacing: -0.01em; }
+h3 { font-size: 16px; margin: 24px 0 8px; }
+p { margin: 6px 0; max-width: 72ch; }
+.muted { color: var(--muted); }
+code, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+ul.tight { margin: 6px 0; padding-left: 20px; } ul.tight li { margin: 3px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+td, th { text-align: left; vertical-align: top; padding: 6px 8px; border-top: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; border-top: 0; }
+.chip { display: inline-block; background: var(--chip); border-radius: 6px; padding: 0 6px; font-size: 13px; }
+
+/* Timelines */
+.timeline { display: flex; height: 34px; border-radius: 8px; overflow: hidden; margin: 8px 0 4px; }
+.timeline div { display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;
+  color: #fff; border-right: 2px solid var(--page); white-space: nowrap; overflow: hidden; }
+.tl-label { font-size: 13px; color: var(--muted); }
+
+/* Shots */
+.chapter-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.chapter-head .span { color: var(--muted); font-size: 14px; }
+.shot { display: grid; grid-template-columns: minmax(0, 800px) minmax(280px, 1fr); gap: 20px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin: 16px 0; }
+@media (max-width: 1000px) { .shot { grid-template-columns: 1fr; } }
+.meta { display: flex; gap: 14px; margin-top: 10px; align-items: flex-start; }
+.meta svg { flex: none; border-radius: 4px; }
+.meta .camline { font-size: 13px; color: var(--muted); }
+.id { font-weight: 700; font-size: 18px; }
+.time { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; color: var(--muted); }
+dl { margin: 8px 0 0; display: grid; grid-template-columns: 96px 1fr; gap: 6px 10px; font-size: 14px; }
+dt { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 2px; }
+dd { margin: 0; }
+.trans { display: flex; align-items: center; gap: 8px; margin: -6px 0 -6px 16px; font-size: 13px; color: var(--muted); }
+.trans::before { content: ""; width: 2px; height: 28px; background: var(--line); }
+.approx { color: var(--accent); font-size: 12px; font-weight: 600; }
+.sentence { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 4px 0 8px; }
+.play { display: inline-block; margin-top: 10px; background: var(--accent); color: #fff; font-weight: 700; text-decoration: none;
+  border-radius: 999px; padding: 8px 16px; }
+.loops { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
+.loop { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.loop .frame { margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Trailer v3 storyboard</h1>
+<p class="muted">2026-09-28, fifth pass. The film and the feature loops, drawn to scale from the real screen. Every panel is a frame of the animatic. Nothing here has been recorded.</p>
+
+<div class="card" style="margin-top:18px">
+  <h3 style="margin-top:0">The film says one thing</h3>
+  <p class="sentence">Your agent can show you things, and you answer by pointing.</p>
+  <p>It is built around one moment: Claude's options arrive as a card in Vignette, and you answer by drawing on them.</p>
+  <ol class="tight">
+    <li><b>You capture the itinerary</b> with macOS's own shortcut. The card lands in the corner.</li>
+    <li><b>You click the card and draw what you want:</b> an arrow from a stop on the map to the day it belongs to, "number the days", and a box around the Oct 14 day, "make this pop, options?"</li>
+    <li><b>You send it to Claude Code.</b></li>
+    <li><b>Claude shows you something back:</b> here, three versions of the card, labelled A, B and C.</li>
+    <li><b>You point:</b> a box around C, "this one, with that flag", and an arrow from B's Highlight flag.</li>
+    <li><b>Claude builds it.</b> The day numbers went in on its first turn, since they had one right answer.</li>
+  </ol>
+  <a class="play" href="animatic.html">Play the animatic</a>
+</div>
+
+<div class="grid2" style="margin-top:16px">
+  <div class="card">
+    <h3 style="margin-top:0">Criteria, applied on every pass</h3>
+    <ol class="tight">
+      <li>Every beat serves the sentence, or it is cut.</li>
+      <li>The screen proves each caption. Watch the animatic with captions off (<code>C</code>).</li>
+      <li>A first-time viewer follows it at real speed.</li>
+      <li>Nothing is in the film only because a feature needs showing. That is what the loops are for.</li>
+      <li>Cut before adding.</li>
+    </ol>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">How to read a panel</h3>
+    <p>Each panel is the exact 16:10 crop the viewer sees at the shot's marked time, with its caption. The desktop, window positions, card slots and editor frame are measured from the last take. The Postcard pages are real renders. The small map beside each panel shows where the camera is on the whole screen, in red, and where it came from, dashed.</p>
+    <p>Anything marked <span class="approx">approximate</span> is decided by the app or by Claude during the take. Vignette's own UI is redrawn here, not captured.</p>
+  </div>
+</div>
+
+<h2>Two kinds of video</h2>
+<div id="timelines"></div>
+
+<h2>The stage</h2>
+<div class="grid2">
+  <div class="card">
+    <h3 style="margin-top:0">Screen and windows</h3>
+    <div id="stagemap"></div>
+    <p class="muted" style="font-size:13px">Points, from the screen's top left. The camera never shows the menu bar: it stays inside <code>[0, 38, 1512, 944]</code>.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Camera frames</h3>
+    <table id="camtable"></table>
+    <p class="muted" style="font-size:13px">Every frame is 16:10 and at least 800 points wide, so no screen pixel is enlarged past 1:1 in the 1600 × 1000 output.</p>
+  </div>
+</div>
+
+<div class="grid2" style="margin-top:16px">
+  <div class="card">
+    <h3 style="margin-top:0">What is on screen when the film's take starts</h3>
+    <ul class="tight">
+      <li><b>Chrome</b>, right, <code>[592, 54, 904, 652]</code>: Postcard's itinerary, dark, at <code>localhost:5391</code>. Viewport <code>[592, 141, 904, 565]</code>. The app is clean: nothing on screen is a problem the film leaves unaddressed.</li>
+      <li><b>Ghostty</b>, left, <code>[16, 54, 560, 912]</code>: Claude Code in the <code>postcard</code> project, session name "Itinerary page". One earlier exchange fills the window.</li>
+      <li><b>Vignette Demo</b>, with its own watch folder and settings. The loops add their own starting files: earlier captures, a recording, two drawings.</li>
+      <li><b>The Dock</b> hidden, the pointer resting at <code>[1180, 880]</code>.</li>
+      <li><b>For the session loop only:</b> a second Claude Code session in <code>postcard-api</code>, session name "Booking sync", in a window behind Chrome.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Rules for every shot</h3>
+    <ul class="tight">
+      <li><b>Camera.</b> A move starts only after what it leaves has been still, and settles over 1.6 to 2.0 s on a spring. It never moves while the thing on screen is changing.</li>
+      <li><b>Wide for handoffs.</b> Any moment where two windows matter is WIDE: a card landing, Send, Reply, a card from Claude arriving.</li>
+      <li><b>Captions.</b> A dark pill, top left, 34 px at 1600 wide, with key caps. A key cap lights for 0.45 s when its key is pressed. A new caption fades in over 0.25 s.</li>
+      <li><b>Cuts.</b> Claude's working time is always inside a dissolve of 0.5 s, which starts and ends with the pointer still.</li>
+      <li><b>Pointer.</b> It glides, and pauses 0.3 to 0.6 s before each press.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>The film</h2>
+<div id="film"></div>
+
+<h2>Feature loops</h2>
+<p class="muted">Muted, 4 to 7 s each, for the site and the README. Each shows one feature and needs no story. Each is its own short take.</p>
+<div class="loops" id="loops"></div>
+
+<h2>Before recording</h2>
+<div class="grid2">
+  <div class="card">
+    <h3 style="margin-top:0">Check without recording</h3>
+    <ul class="tight" id="verify"></ul>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Decisions for you</h3>
+    <ul class="tight" id="decisions"></ul>
+  </div>
+</div>
+</main>
+
+<script src="scene.js"></script>
+<script src="story.js"></script>
+<script>
+const COLORS = ['#d9480f', '#7048e8', '#1c7ed6', '#0c8599', '#2f9e44', '#c2255c', '#495057', '#e67700', '#5c940d'];
+
+// The frame a panel shows: the shot at its still time, with the storyboard's path and click markers.
+function stillOf(shot) {
+  const f = frameAt(shot, shot.still ?? shot.dur * 0.6);
+  if (!f.end && shot.annot) f.scene = { ...f.scene, ...shot.annot };
+  return f;
+}
+
+function miniMap(shot, f) {
+  const k = 170 / W, hh = H * k;
+  const rect = (r, a) => `<rect x="${r[0] * k}" y="${r[1] * k}" width="${r[2] * k}" height="${r[3] * k}" ${a}/>`;
+  let g = rect([0, 0, W, H], 'fill="#2b1426"') + rect([0, 0, W, 38], 'fill="#3a3a3c"');
+  g += rect([16, 54, 560, 912], 'fill="#080a0e" stroke="#555" stroke-width=".6"') + rect([592, 54, 904, 652], 'fill="#3b3f48"');
+  const sc = f.scene || {};
+  if (sc.stack) sc.stack.cards.forEach((c, i) => g += rect(c.r || slot(sc.stack.cards.length - 1 - i), 'fill="#9aa"'));
+  if (sc.thumb) g += rect(THUMB, 'fill="#9aa"');
+  if (sc.editor) g += rect([0, 0, W, H], 'fill="rgba(0,0,0,.5)"') + rect(sc.editor.frame || F0, 'fill="#6b7080"');
+  if (shot.from && shot.from !== shot.cam) g += rect(CAM[shot.from].r, 'fill="none" stroke="#c7c7cc" stroke-width="1.5" stroke-dasharray="4 3"');
+  if (!shot.end) g += rect(f.cam, 'fill="none" stroke="#ff3b30" stroke-width="2.2"');
+  return `<svg width="170" height="${hh}" viewBox="0 0 170 ${hh}">${g}</svg>`;
+}
+
+const panels = [];
+function captionText(f) {
+  const c = f.caption;
+  if (!c) return '—';
+  return `“${c.text}”${c.keys ? ' ' + c.keys.map(k => `<span class="chip">${k}</span>`).join(' ') : ''}`;
+}
+
+// Every caption a shot shows, in order.
+function captionsOf(shot) {
+  const seen = [];
+  for (let t = 0; t <= shot.dur; t += 0.1) {
+    const f = frameAt(shot, t), c = f.caption;
+    if (c && !seen.some(x => x.text === c.text)) seen.push(c);
+  }
+  return seen.map(c => captionText({ caption: c }));
+}
+
+// The film
+const film = REELS[0], starts = reelStarts(film);
+document.getElementById('film').innerHTML = film.shots.map((s, i) => {
+  const f = stillOf(s), t = starts[i];
+  panels.push([s.id, f]);
+  return `
+    <div class="shot">
+      <div>
+        <div class="frame" data-panel="${s.id}"></div>
+        <div class="meta">${miniMap(s, f)}<div class="camline">${s.end ? 'No camera.' : `<b>${s.cam}</b> <span class="mono">[${CAM[s.cam].r.map(Math.round).join(', ')}]</span>`}<br>${s.from && s.from !== s.cam ? `from ${s.from}` : ''}${s.still !== undefined ? `<br>Panel at ${s.still.toFixed(1)} s` : ''}</div></div>
+      </div>
+      <div>
+        <div><span class="id">${s.id} · ${s.title}</span> <span class="time">${fmt(t)} – ${fmt(t + s.dur)} · ${s.dur.toFixed(1)} s</span></div>
+        <dl>
+          <dt>Caption</dt><dd>${captionText(f)}</dd>
+          <dt>Camera</dt><dd>${s.move}</dd>
+          <dt>Action</dt><dd>${s.action}</dd>
+          <dt>On screen</dt><dd>${s.screen}</dd>
+          ${s.events ? `<dt>Events</dt><dd class="mono">${s.events}</dd>` : ''}
+          ${s.dissolveIn ? `<dt>In</dt><dd>Dissolves in over ${s.dissolveIn} s.</dd>` : ''}
+        </dl>
+      </div>
+    </div>
+    ${s.outT ? `<div class="trans">${s.outT}</div>` : ''}`;
+}).join('');
+
+// The loops
+document.getElementById('loops').innerHTML = LOOPS.map(l => {
+  const s = l.shots[0], f = stillOf(s);
+  panels.push([s.id, f]);
+  return `<div class="loop"><div class="frame" data-panel="${s.id}"></div>
+    <div><span class="id">${l.title}</span> <span class="time">${s.dur.toFixed(1)} s · ${s.cam}</span></div>
+    <dl><dt>Captions</dt><dd>${captionsOf(s).join('<br>')}</dd><dt>Action</dt><dd>${s.action}</dd><dt>On screen</dt><dd>${s.screen}</dd></dl></div>`;
+}).join('');
+
+// Timelines
+const bar = (shots, colorOf) => `<div class="timeline">${shots.map((s, i) => `<div style="flex:${s.dur};background:${colorOf(i)}" title="${s.title}">${s.id} ${s.title}</div>`).join('')}</div>`;
+document.getElementById('timelines').innerHTML = `
+  <div class="tl-label">The film, about ${Math.round(reelDur(REELS[1]))} s. The README cut adds the end card (${Math.round(reelDur(film))} s). The landing page cut loops, its last 0.8 s dissolving into the first frame.</div>
+  ${bar(film.shots, i => COLORS[i % COLORS.length])}
+  <div class="tl-label" style="margin-top:14px">Feature loops, each its own take.</div>
+  <div class="card" style="margin-top:8px"><table><tr><th>Loop</th><th>Length</th><th>Caption</th></tr>
+  ${LOOPS.map(l => `<tr><td><b>${l.title}</b></td><td>${l.shots[0].dur.toFixed(1)} s</td><td>${captionsOf(l.shots[0]).join('<br>')}</td></tr>`).join('')}</table>
+  <p class="muted" style="font-size:13px">Every take is 1600 × 1000 at 60 fps, as mp4 and webm, each with its own poster.</p></div>`;
+
+document.getElementById('camtable').innerHTML = `<tr><th>Name</th><th>Rect</th><th>Shows</th></tr>` +
+  Object.entries(CAM).map(([k, v]) => `<tr><td><b>${k}</b></td><td class="mono">${v.r.map(Math.round).join(', ')}</td><td>${v.what}</td></tr>`).join('');
+
+document.getElementById('stagemap').innerHTML = (() => {
+  const k = 560 / W, hh = H * k;
+  const rect = (r, a, label) => `<rect x="${r[0] * k}" y="${r[1] * k}" width="${r[2] * k}" height="${r[3] * k}" ${a}/>` +
+    (label ? `<text x="${r[0] * k + 5}" y="${r[1] * k + 14}" font-size="11" fill="currentColor" style="font-family:-apple-system,sans-serif">${label}</text>` : '');
+  let g = rect([0, 0, W, H], 'fill="#2b1426"') + rect([0, 0, W, 38], 'fill="#3a3a3c"');
+  g += `<g style="color:#ddd">${rect([16, 54, 560, 912], 'fill="#080a0e" stroke="#666"', 'Ghostty: Claude Code, postcard')}</g>`;
+  g += `<g style="color:#ddd">${rect([592, 54, 904, 652], 'fill="#3b3f48"', 'Chrome: Postcard, viewport 904 × 565')}</g>`;
+  g += rect(THUMB, 'fill="#9aa"');
+  g += `<g style="color:#ffd60a">${rect(F0, 'fill="none" stroke="#ffd60a" stroke-dasharray="5 4"', 'Editor frame when open')}</g>`;
+  g += `<text x="${1330 * k}" y="${840 * k}" font-size="10" fill="#bbb" style="font-family:-apple-system,sans-serif">card</text>`;
+  return `<svg width="100%" viewBox="0 0 560 ${hh}" style="border-radius:6px;display:block">${g}</svg>`;
+})();
+
+document.getElementById('verify').innerHTML = VERIFY.map(v => `<li>${v}</li>`).join('');
+document.getElementById('decisions').innerHTML = DECISIONS.map(v => `<li>${v}</li>`).join('');
+
+const byId = Object.fromEntries(panels);
+const ro = new ResizeObserver(entries => entries.forEach(e => { e.target.innerHTML = layerHTML(byId[e.target.dataset.panel], e.target.clientWidth); }));
+document.querySelectorAll('.frame').forEach(el => ro.observe(el));
+</script>
+</body>
+</html>

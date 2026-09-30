@@ -1,10 +1,13 @@
-"""The performance: sets a desktop with the game in Chrome and Claude Code in a terminal, then drives
-the stage copy of Vignette through every beat while the screen is recorded, and logs each action
-on the recorder's clock.
+"""The performance: sets a desktop with Postcard, the trip planner, in Chrome and Claude Code in a
+terminal, then drives the stage copy of Vignette through every beat while the screen is recorded,
+and logs each action on the recorder's clock.
 
-Claude Code is real. It runs in a herdr session of its own, with a config of its own, in a fresh
-copy of the game, and Send and Reply reach it. So the driver waits on what Claude does: an edit to
-the game, a sketch pushed to Vignette, the end of a turn.
+Claude Code is real. It runs in a terminal of its own, with a config of its own that has the stage
+copy's plugin, in a fresh copy of the app, and Send and Reply reach it through that plugin. So the
+driver waits on what Claude does: an edit to the app, options pushed to Vignette, the end of a turn.
+
+The hand keeps time. Every press, click and key waits for the next beat of `[rhythm] beat`, counted
+from the take's first event, so the cut, which keeps whole beats, can hold everything to one tempo.
 
 Every action is checked before it is taken. A click needs the stage copy's window under the
 pointer, and a key needs the stage copy's editor or toolbar to hold the keys. A check that fails
@@ -27,7 +30,6 @@ import urllib.parse
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 INPUT = os.path.join(REPO, 'scripts', 'input.sh')
-HERDR = os.path.expanduser('~/.local/bin/herdr')
 CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 
@@ -137,27 +139,44 @@ class Stage:
             time.sleep(0.1)
         raise TakeFailed(f'{what} did not happen within {timeout} s')
 
-    # ---- The terminal's herdr session ----------------------------------------------------------
+    # ---- The trailer's Claude Code session ---------------------------------------------------------
 
-    def herdr(self, *args, check=True, timeout=30):
-        """Runs herdr against the trailer's own session, never the default one."""
-        session = self.config['stage']['session']['herdr']
-        out = subprocess.run([HERDR, '--session', session, *args], capture_output=True, text=True, timeout=timeout)
-        if check and out.returncode != 0:
-            raise TakeFailed(f"herdr {' '.join(args)}: {out.stderr.strip() or out.stdout.strip()}")
+    def marketplace(self):
+        """The plugin marketplace the stage copy writes at every launch."""
+        return os.path.expanduser(f"~/Library/Application Support/{self.app['bundle']}/agent-plugin")
+
+    def inbox_root(self):
+        """Where the stage copy's plugin keeps an inbox per Claude Code process."""
+        return os.path.expanduser(f"~/Library/Application Support/{self.app['bundle']}/claude-sessions")
+
+    def turn(self):
+        """`busy` or `idle`, as the plugin's hooks record the session's turn."""
         try:
-            return json.loads(out.stdout)
-        except json.JSONDecodeError:
-            return {'text': out.stdout}
+            with open(os.path.join(self.inbox, 'turn')) as f:
+                return f.read().strip()
+        except FileNotFoundError:
+            raise TakeFailed("the trailer's Claude Code session is gone")
 
-    def agent_wait(self, until, timeout, what):
-        name = self.config['stage']['session']['agent']
-        states = [until] if isinstance(until, str) else list(until)
-        out = self.herdr('agent', 'wait', name, *[a for s in states for a in ('--until', s)],
-                         '--timeout', str(int(timeout * 1000)), check=False, timeout=timeout + 10)
-        if 'error' in out:
-            raise TakeFailed(f"{what}: {out['error'].get('message', out['error'])}")
-        return time.monotonic()
+    def turn_wait(self, want, timeout, what):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if self.turn() == want:
+                return time.monotonic()
+            time.sleep(0.1)
+        raise TakeFailed(f'{what} did not happen within {timeout} s')
+
+    # ---- Time --------------------------------------------------------------------------------
+
+    def on_beat(self, rest=0):
+        """Waits `rest` whole beats, then for the next beat, counted from the take's first event."""
+        beat = self.config.get('rhythm', {}).get('beat', 0.5)
+        origin = self.events[0]['t'] if self.events else time.monotonic()
+        now = time.monotonic()
+        # A beat less than 60 ms away is too close to reach; the hand takes the one after.
+        target = origin + (math.floor((now - origin) / beat) + 1 + rest) * beat
+        if target - now < 0.06:
+            target += beat
+        time.sleep(target - now)
 
     # ---- Input -------------------------------------------------------------------------------
 
@@ -218,9 +237,10 @@ class Stage:
     # ---- Geometry ----------------------------------------------------------------------------
 
     def screen(self, p):
-        """A point of the scene, in the game's 1600 x 1000 units, on screen."""
+        """A point of the page, in its CSS pixels (`[stage] units`), on screen."""
         x, y, w, h = self.game
-        return (round(x + p[0] / 1600 * w, 1), round(y + p[1] / 1000 * h, 1))
+        uw, uh = self.config['stage'].get('units', [1600, 1000])
+        return (round(x + p[0] / uw * w, 1), round(y + p[1] / uh * h, 1))
 
     def in_image(self, p, source, frame):
         """A point of the scene in an image of `source` (a screen rect), shown in `frame`."""
@@ -249,9 +269,59 @@ CLIENT = b"""<script>
 """
 
 
+# It measures as it runs, at the end of the body: the stylesheets have loaded by then, since they
+# hold up scripts. `--dump-dom` does not wait for anything later, such as a frame after `load`.
+MEASURE = b"""<script>
+(() => {
+  const found = {};
+  for (const sel of SELECTORS) found[sel] = [...document.querySelectorAll(sel)].map(el => {
+    const r = el.getBoundingClientRect();
+    return [r.x, r.y, r.width, r.height];
+  });
+  const out = document.createElement('pre');
+  out.id = '__rects';
+  out.textContent = JSON.stringify(found);
+  document.body.appendChild(out);
+})();
+</script>
+"""
+
+
+def measure(stage, page, selectors):
+    """Where the parts of a page of the app are, in its CSS pixels, laid out as the browser beside
+    Claude shows it: {selector: [[x, y, w, h], ...]}."""
+    uw, uh = stage.config['stage'].get('units', [904, 565])
+    profile = os.path.join(stage.paths['stage'], 'measure-profile')
+    shutil.rmtree(profile, ignore_errors=True)
+    url = stage.base_url + '__measure?' + urllib.parse.urlencode({'page': page, 'sel': '|'.join(selectors)})
+    # Headless Chrome's window keeps 87 px for a toolbar it does not draw, so the viewport is the
+    # window less that.
+    chrome = subprocess.Popen([CHROME, '--headless=new', f'--user-data-dir={profile}', '--hide-scrollbars',
+                               f'--window-size={uw},{uh + 87}', '--virtual-time-budget=3000', '--dump-dom', url],
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    dom = ''
+    end = time.monotonic() + 30
+    try:
+        for line in chrome.stdout:
+            dom += line
+            if '</html>' in line or time.monotonic() > end:
+                break
+    finally:
+        chrome.kill()
+        chrome.wait()
+        for pid in main_pids(CHROME, f'--user-data-dir={profile}'):
+            os.kill(pid, signal.SIGKILL)
+        shutil.rmtree(profile, ignore_errors=True)
+    start = dom.find('<pre id="__rects">')
+    if start < 0:
+        raise TakeFailed(f'could not lay out {page} to find {selectors}')
+    text = dom[start + len('<pre id="__rects">'):dom.index('</pre>', start)]
+    return json.loads(text.replace('&quot;', '"').replace('&amp;', '&'))
+
+
 class DevServer:
-    """Serves the stage copy of the game the way a dev server does: a page reloads itself when a
-    file of the game changes. It also reports when a page in the visible browser has drawn, and
+    """Serves the take's copy of the app the way a dev server does: a page reloads itself when a
+    file of the app changes. It also reports when a page in the visible browser has drawn, and
     where its viewport is, as the events `game.changed` and `page.shown`."""
 
     WATCHED = ('.js', '.json', '.html', '.css')
@@ -279,6 +349,16 @@ class DevServer:
                 path = urllib.parse.urlparse(self.path)
                 if path.path == '/__reload':
                     return server.stream(self)
+                if path.path == '/__measure':
+                    q = {k: v[0] for k, v in urllib.parse.parse_qs(path.query).items()}
+                    with open(os.path.join(root, q['page']), 'rb') as f:
+                        body = f.read().replace(b'</body>', MEASURE.replace(b'SELECTORS', json.dumps(q['sel'].split('|')).encode()) + b'</body>')
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 if path.path == '/__shown':
                     q = {k: v[0] for k, v in urllib.parse.parse_qs(path.query).items()}
                     server.metrics = {k: float(v) for k, v in q.items() if k != 'page'} | {'page': q.get('page', '')}
@@ -335,8 +415,8 @@ class DevServer:
         return found
 
     def watch(self):
-        # The game's own files: a file Claude adds beside them, such as its marks, is not a change
-        # to the game.
+        # The app's own files: a file Claude adds beside them, such as its variants or its marks, is
+        # not a change to the app.
         before = self.snapshot()
         game = set(before)
         while True:
@@ -426,14 +506,11 @@ def command_of(pid):
 
 
 def clear_leftovers(paths, config):
-    """Stops what an interrupted take left running: the trailer's Chrome, its terminal, its herdr
-    session and the stage copy. Each is found by what only the trailer's copy has, never by a
+    """Stops what an interrupted take left running: the trailer's Chrome, its terminal and the stage
+    copy. Each is found by what only the trailer's copy has, never by a
     name alone."""
     for pid in main_pids(CHROME, f"--user-data-dir={paths['chrome']}"):
         stop_pid(pid, timeout=10)
-    session = config['stage']['session']['herdr']
-    subprocess.run([HERDR, 'session', 'stop', session], capture_output=True)
-    subprocess.run([HERDR, 'session', 'delete', session], capture_output=True)
     if os.path.exists(paths['pids']):
         pids = json.load(open(paths['pids']))
         if pids.get('ghostty') and f"--command={paths['stage']}/terminal.sh" in command_of(pids['ghostty']):
@@ -441,27 +518,41 @@ def clear_leftovers(paths, config):
         os.remove(paths['pids'])
 
 
+MARKER = '.trailer-take'
+
+
+def remove_work(paths):
+    """Removes the take's copy of the app, but only a folder a take made."""
+    if os.path.isdir(paths['work']):
+        if not os.path.exists(os.path.join(paths['work'], MARKER)):
+            raise TakeFailed(f"{paths['work']} is not a take's folder; move it aside first")
+        shutil.rmtree(paths['work'])
+
+
 def stage_game(stage):
-    """A fresh copy of the game for Claude to work in, with the permissions its session needs."""
+    """A fresh copy of the app for Claude to work in, with the permissions its session needs."""
     p = stage.paths
-    shutil.rmtree(p['mew'], ignore_errors=True)
-    shutil.copytree(p['game'], p['mew'])
+    remove_work(p)
+    shutil.copytree(p['game'], p['work'])
+    open(os.path.join(p['work'], MARKER), 'w').close()
     # A rule's path starting with ~/ is in the home folder; one starting with / would be relative
     # to this settings file.
     requests = f"~/Library/Application Support/{stage.app['bundle']}/**"
-    reply = os.path.join(p['claude'], 'skills', 'vignette', 'scripts', 'reply')
+    # The skill runs its helper as `sh "<path>"`. Claude Code reads a folder marketplace in place,
+    # so the helper is in the stage copy's own marketplace.
+    reply = os.path.join(stage.marketplace(), 'plugins', 'vignette', 'skills', 'vignette', 'scripts', 'reply')
     settings = {
         'permissions': {
             # Anything not allowed here is refused without a question, so a take never stops on one.
             'defaultMode': 'dontAsk',
             'allow': [
                 'Edit(./**)', 'Bash(./screenshot:*)', 'Bash(./push:*)',
-                f'Read({requests})', f'Bash({reply}:*)',
+                f'Read({requests})', f'Bash(sh "{reply}":*)',
             ],
         },
     }
-    os.makedirs(os.path.join(p['mew'], '.claude'))
-    with open(os.path.join(p['mew'], '.claude', 'settings.json'), 'w') as f:
+    os.makedirs(os.path.join(p['work'], '.claude'))
+    with open(os.path.join(p['work'], '.claude', 'settings.json'), 'w') as f:
         json.dump(settings, f, indent=2)
 
 
@@ -495,54 +586,30 @@ def open_browser(stage):
     stage.event('browser.ready', game=list(stage.game))
 
 
-def herdr_config(stage):
-    """Your herdr config with the sidebar hidden, for the trailer's session only: the terminal
-    shows Claude Code alone, in your herdr's colours."""
-    yours = os.path.expanduser('~/.config/herdr/config.toml')
-    lines = open(yours).read().splitlines() if os.path.exists(yours) else []
-    ours = ['sidebar_start_collapsed = true', 'sidebar_collapsed_mode = "hidden"']
-    lines = [l for l in lines if l.split('=')[0].strip() not in ('sidebar_start_collapsed', 'sidebar_collapsed_mode')]
-    if '[ui]' in lines:
-        at = lines.index('[ui]') + 1
-        lines[at:at] = ours
-    else:
-        lines = ['[ui]', *ours, *lines]
-    path = os.path.join(stage.paths['stage'], 'herdr.toml')
-    with open(path, 'w') as f:
-        f.write('\n'.join(lines) + '\n')
-    check = subprocess.run([HERDR, 'config', 'check'], capture_output=True, text=True,
-                           env=dict(os.environ, HERDR_CONFIG_PATH=path))
-    if 'config: ok' not in check.stdout:
-        raise TakeFailed(f"the trailer's herdr config does not check: {(check.stdout + check.stderr).strip()}")
-    return path
-
-
 def open_terminal(stage):
-    """Ghostty running the trailer's herdr session, and Claude Code started in its pane."""
+    """Ghostty running the trailer's Claude Code, and the inbox its plugin makes for it."""
     c, p = stage.config['stage'], stage.paths
     session = c['session']
-    config = herdr_config(stage)
     script = os.path.join(p['stage'], 'terminal.sh')
     with open(script, 'w') as f:
         f.write(f"""#!/bin/zsh
-# Written by drive.py: the trailer's terminal runs its own herdr session, whose Claude Code uses
-# the trailer's config.
-# A take started from an agent's terminal passes on that terminal's variables. herdr refuses to
-# start inside another herdr, and Claude Code would take the calling session's id, messaging
-# socket and transcript setting as its own.
+# Written by drive.py: the trailer's terminal runs Claude Code on the trailer's config.
+# A take started from an agent's terminal passes on that terminal's variables. Claude Code would
+# take the calling session's id, messaging socket and transcript setting as its own.
 unset -m 'HERDR_*' 'CLAUDE*'
-export HERDR_CONFIG_PATH={json.dumps(config)}
 export CLAUDE_CONFIG_DIR={json.dumps(p['claude'])}
-export MEW_URL={json.dumps(stage.page_url)}
+export STAGE_URL={json.dumps(stage.page_url)}
 export VIGNETTE_SCHEME={json.dumps(stage.app['scheme'])}
 export VIGNETTE_APP={json.dumps(stage.app['path'])}
-cd {json.dumps(p['mew'])}
-exec {json.dumps(HERDR)} --session {json.dumps(session['herdr'])}
+cd {json.dumps(p['work'])}
+exec {json.dumps(shutil.which('claude') or 'claude')} {' '.join(json.dumps(a) for a in session.get('args', []))} {json.dumps(session['prompt']) if session.get('prompt') else ''}
 """)
     os.chmod(script, 0o755)
+    root = stage.inbox_root()
+    before = set(os.listdir(root)) if os.path.isdir(root) else set()
     x, y, w, h = c['terminal']
-    subprocess.run(['open', '-na', 'Ghostty', '--args', f'--command={script}', f"--working-directory={p['mew']}",
-                    f"--title={session['title']}", '--window-save-state=never', '--confirm-close-surface=false',
+    subprocess.run(['open', '-na', 'Ghostty', '--args', f'--command={script}', f"--working-directory={p['work']}",
+                    '--window-save-state=never', '--confirm-close-surface=false',
                     '--quit-after-last-window-closed=true', *c.get('terminal_args', [])], check=True)
     end = time.monotonic() + 15
     found = []
@@ -557,30 +624,67 @@ exec {json.dumps(HERDR)} --session {json.dumps(session['herdr'])}
     subprocess.run([p['stage_bin'], 'place', str(stage.ghostty), str(x), str(y), str(w), str(h)],
                    capture_output=True, check=True)
 
-    # The session's first pane, then Claude Code in it.
-    end = time.monotonic() + 20
-    panes = []
-    while time.monotonic() < end and not panes:
-        panes = stage.herdr('pane', 'list', check=False).get('result', {}).get('panes', [])
-        time.sleep(0.2)
-    if not panes:
-        raise TakeFailed(f"herdr session {session['herdr']} has no pane")
-    pane = panes[0]['pane_id']
-    stage.herdr('agent', 'start', session['agent'], '--kind', 'claude', '--pane', pane, '--timeout', '30000',
-                '--', '-n', session['title'], *session.get('args', []))
-    stage.agent_wait('idle', 60, 'Claude Code starting')
-    # The hook reports the session id on its own schedule, which can be after herdr says idle.
-    end = time.monotonic() + 20
-    found = []
-    while time.monotonic() < end and not found:
-        panes = stage.herdr('pane', 'list', check=False).get('result', {}).get('panes', [])
-        found = [q for q in panes if q.get('pane_id') == pane and (q.get('agent_session') or {}).get('value')]
-        if not found:
+    # The plugin's SessionStart hook makes the inbox, and its monitor keeps it alive. Only the
+    # trailer's config has the stage copy's plugin, so a new inbox here is this session's.
+    end = time.monotonic() + 60
+    while time.monotonic() < end:
+        new = [d for d in (set(os.listdir(root)) if os.path.isdir(root) else set()) - before
+               if os.path.exists(os.path.join(root, d, 'session')) and os.path.exists(os.path.join(root, d, 'alive'))]
+        if new:
+            break
+        time.sleep(0.25)
+    else:
+        raise TakeFailed("the trailer's Claude Code made no inbox; is the stage copy's plugin installed in its config?")
+    stage.inbox = os.path.join(root, new[0])
+    with open(os.path.join(stage.inbox, 'session')) as f:
+        stage.session_id = f.read().strip()
+    stage.turn_wait('idle', 30, 'Claude Code starting')
+    # The session's first prompt, an earlier exchange about the app, fills the terminal before the
+    # take starts. The inbox is found only once the plugin's monitor runs, which can be after that
+    # turn has ended, so the transcript says whether it was answered, not a change of `turn`.
+    if session.get('prompt'):
+        end = time.monotonic() + 300
+        while not (stage.turn() == 'idle' and answered(stage.inbox)):
+            if time.monotonic() > end:
+                raise TakeFailed('Claude Code answering its first prompt did not happen within 300 s')
             time.sleep(0.25)
-    if not found:
-        raise TakeFailed('herdr does not know the Claude Code session; run trailer.py claude to install its hook')
-    stage.session_id = found[0]['agent_session']['value']
+    stage.terminal_started = time.monotonic()
     stage.event('terminal.ready', terminal=list(c['terminal']))
+
+
+def answered(inbox):
+    """Whether the session's transcript holds a reply from Claude with text in it."""
+    try:
+        with open(os.path.join(inbox, 'transcript')) as f:
+            path = f.read().strip()
+        with open(path) as f:
+            for line in f:
+                entry = json.loads(line)
+                content = (entry.get('message') or {}).get('content') if entry.get('type') == 'assistant' else None
+                if isinstance(content, list) and any(c.get('type') == 'text' and c.get('text', '').strip() for c in content):
+                    return True
+    except (OSError, ValueError):
+        pass
+    return False
+
+
+def install_plugin(stage):
+    """The stage copy's plugin in the trailer's Claude Code config, from the marketplace the stage
+    copy wrote at launch. Claude Code reads a folder marketplace in place, so an installed plugin
+    is current once the stage copy has written it again."""
+    env = dict(os.environ, CLAUDE_CONFIG_DIR=stage.paths['claude'])
+    plugin = f"vignette@{stage.app['scheme']}"
+    marketplace = stage.marketplace()
+    if not os.path.isdir(marketplace):
+        raise TakeFailed(f'the stage copy wrote no marketplace at {marketplace}')
+    listed = subprocess.run(['claude', 'plugin', 'list'], capture_output=True, text=True, env=env).stdout
+    if plugin in listed:
+        return
+    for args in (['plugin', 'marketplace', 'add', marketplace], ['plugin', 'install', plugin, '--scope', 'user']):
+        out = subprocess.run(['claude', *args], capture_output=True, text=True, env=env, timeout=60)
+        if out.returncode != 0 and 'already' not in (out.stdout + out.stderr):
+            raise TakeFailed(f"claude {' '.join(args)}: {(out.stderr or out.stdout).strip()}")
+    print(f"  installed {plugin} in the trailer's Claude Code", flush=True)
 
 
 def render_cards(stage):
@@ -593,24 +697,10 @@ def render_cards(stage):
     for i, card in enumerate(stage.config['stage'].get('card', [])):
         path = os.path.join(p['cards'], f"{card.get('name', f'Capture {i + 1}')}.png")
         size = [f"{card['size'][0]},{card['size'][1]}"] if card.get('size') else []
-        subprocess.run([os.path.join(p['mew'], 'screenshot'), path, card['page'], *size],
-                       env=dict(os.environ, MEW_URL=stage.base_url), check=True, capture_output=True, timeout=60)
+        subprocess.run([os.path.join(p['work'], 'screenshot'), path, card['page'], *size],
+                       env=dict(os.environ, STAGE_URL=stage.base_url), check=True, capture_output=True, timeout=60)
         cards.append((path, card))
     return cards
-
-
-def write_herdr(stage):
-    """The stage copy's herdr: the real one, pointed at the trailer's session, so Send lists only
-    the trailer's Claude Code and never one of yours. A launch with FAKE_HERDR set gets
-    scripts/fake-herdr instead, which answers as a test tells it to."""
-    session = stage.config['stage']['session']['herdr']
-    fake = os.path.join(REPO, 'scripts', 'fake-herdr')
-    os.makedirs(os.path.dirname(stage.paths['herdr']), exist_ok=True)
-    with open(stage.paths['herdr'], 'w') as f:
-        f.write(f'#!/bin/sh\n# Written by drive.py for the stage copy of Vignette.\n'
-                f'[ -n "$FAKE_HERDR" ] && exec {json.dumps(fake)} "$@"\n'
-                f'exec {json.dumps(HERDR)} --session {json.dumps(session)} "$@"\n')
-    os.chmod(stage.paths['herdr'], 0o755)
 
 
 def setup(stage):
@@ -621,21 +711,29 @@ def setup(stage):
     if not json.loads(status.stdout or '{}').get('loggedIn'):
         raise TakeFailed("the trailer's Claude Code is not signed in; run trailer.py claude once")
     # With the Claude in Chrome extension in your Chrome, Claude Code asks once whether to use it,
-    # and reports its session to herdr only after the answer. The answer is no: yes would let it
-    # drive your own browser.
+    # and starts only after the answer. The answer is no: yes would let it drive your own browser.
     state_path = os.path.join(p['claude'], '.claude.json')
     with open(state_path) as f:
         claude_state = json.load(f)
-    if claude_state.get('claudeInChromeDefaultEnabled') is not False:
+    # The take's folder is new every take, so it is marked trusted, or Claude Code would ask. Your
+    # own ~/.claude/CLAUDE.md is read under any config, and Claude Code asks whether to follow the
+    # files it imports; the answer is no, so the take's session never reads your own rules.
+    project = claude_state.setdefault('projects', {}).setdefault(p['work'], {})
+    answers = {'hasTrustDialogAccepted': True, 'hasClaudeMdExternalIncludesApproved': False,
+               'hasClaudeMdExternalIncludesWarningShown': True}
+    if claude_state.get('claudeInChromeDefaultEnabled') is not False or any(project.get(k) != v for k, v in answers.items()):
         claude_state['claudeInChromeDefaultEnabled'] = False
+        project.update(answers)
         with open(state_path, 'w') as f:
             json.dump(claude_state, f, indent=2)
-    # Claude Code suggests a next prompt in grey in its input, which the camera would read as typed.
+    # Claude Code suggests a next prompt in grey in its input, which the camera would read as typed,
+    # and prints tips under its spinner, which are about Claude Code rather than the take.
     settings_path = os.path.join(p['claude'], 'settings.json')
     with open(settings_path) as f:
         claude_settings = json.load(f)
-    if claude_settings.get('promptSuggestionEnabled') is not False:
-        claude_settings['promptSuggestionEnabled'] = False
+    quiet = {'promptSuggestionEnabled': False, 'spinnerTipsEnabled': False}
+    if any(claude_settings.get(k) is not v for k, v in quiet.items()):
+        claude_settings.update(quiet)
         with open(settings_path, 'w') as f:
             json.dump(claude_settings, f, indent=2)
     port = c['stage'].get('port', 5173)
@@ -652,7 +750,6 @@ def setup(stage):
     # Launched with VIGNETTE_SETTINGS, the copy follows this domain's location, never Apple's own.
     subprocess.run(['defaults', 'write', f"{stage.app['bundle']}.screencapture", 'location', p['watch']], check=True)
     stage_game(stage)
-    write_herdr(stage)
 
     # The Dock would cover the bottom of the desktop, so it hides for the take and comes back after.
     stage.dock_was = dock_autohide()
@@ -664,7 +761,7 @@ def setup(stage):
 
     stage.base_url = f'http://localhost:{port}/'
     stage.page_url = stage.base_url
-    stage.server = DevServer(stage, p['mew'], port)
+    stage.server = DevServer(stage, p['work'], port)
     stage.desktop = subprocess.Popen([p['stage_bin'], 'desktop'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     ready = stage.desktop.stdout.readline().split()
     if not ready or ready[0] != 'ready':
@@ -672,7 +769,6 @@ def setup(stage):
     stage.bounds = [float(v) for v in ready[1:]]
     stage.event('desktop.ready', desktop=stage.bounds)
     open_browser(stage)
-    open_terminal(stage)
     cards = render_cards(stage)
 
     offset = stage.log_size()
@@ -684,6 +780,9 @@ def setup(stage):
     # Pixels a point on the recorded display, which the cut needs to crop the recording.
     stage.scale = s['screen']['scale']
     print(f"  stage copy pid={stage.pid} accessibility={s['app'].get('accessibility')}", flush=True)
+    # The plugin comes from the marketplace the stage copy just wrote, and its session starts after.
+    install_plugin(stage)
+    open_terminal(stage)
 
     for path, card in cards:
         query = {'file': path}
@@ -709,6 +808,10 @@ def setup(stage):
     stage.glide(tuple(c['stage']['rest']))
     stage.url('dismiss')
     time.sleep(0.8)
+    # Claude Code shows notices over its input for its first seconds, such as the account's usage.
+    wait = c['stage']['session'].get('settle', 0) - (time.monotonic() - stage.terminal_started)
+    if wait > 0:
+        time.sleep(wait)
 
 
 def teardown(stage):
@@ -728,13 +831,14 @@ def teardown(stage):
         attempt('dismiss', lambda: stage.url('dismiss'))
         time.sleep(0.5)
         attempt('stage copy', lambda: stop_pid(stage.pid))
-    attempt('herdr session', lambda: clear_leftovers(stage.paths, stage.config))
+    attempt('leftovers', lambda: clear_leftovers(stage.paths, stage.config))
     if getattr(stage, 'ghostty', None):
         attempt('terminal', lambda: stop_pid(stage.ghostty, timeout=10))
     if stage.desktop:
         attempt('desktop', lambda: (stage.desktop.stdin.close(), stage.desktop.wait(timeout=5)))
     if stage.server:
         attempt('server', lambda: stage.server.stop())
+    attempt('folder', lambda: remove_work(stage.paths))
     if hasattr(stage, 'dock_was'):
         if stage.dock_was is False:
             attempt('dock', lambda: dock_autohide(False))
@@ -832,8 +936,8 @@ def open_card(stage, card, event):
     """Glides to a card, clicks it, and waits for the editor to take presses."""
     point = centre(card['frame'])
     stage.glide(point)
-    stage.pause(0.08)
     stage.require_owner(point, stage.app['name'])
+    stage.on_beat()
     offset = stage.log_size()
     stage.event(event + '.click')
     stage.input('click', *point)
@@ -856,26 +960,15 @@ def message_field(stage, s):
     raise TakeFailed(f'no message field in the toolbar at {toolbar}')
 
 
-def tower_top(stage):
-    """The top of the water tower Claude built, in the scene's units, from the level's data."""
-    with open(os.path.join(stage.paths['mew'], 'level4.json')) as f:
-        layout = json.load(f)
-    tower = layout.get('waterTower')
-    if not tower:
-        raise TakeFailed('Claude built no water tower')
-    roofs = [(-10, 520, 720), (706, 1080, 700), (1120, 1570, 550)]
-    roof = next((top for a, b, top in roofs if a <= tower['x'] <= b), None)
-    if roof is None:
-        raise TakeFailed(f"the water tower at x {tower['x']} stands on no roof")
-    # scene.js: legs 128, tank 100, and a cap 0.42 of the tank's 124 width.
-    return tower['x'], roof - 128 - 100 - 124 * 0.42
-
-
 # ---- The beats -------------------------------------------------------------------------------
+#
+# The film: you capture Postcard's itinerary, draw an arrow and a box on it, and send it. Claude
+# numbers the days and answers the box with three versions, as a picture of its own. You box the one
+# you want, draw an arrow from another version's flag into it, and reply. Claude builds it.
 
 def beat_open(stage):
     stage.event('open')
-    stage.pause(1.2)
+    stage.on_beat(rest=2)
 
 
 def beat_capture(stage):
@@ -883,13 +976,13 @@ def beat_capture(stage):
     x, y, w, h = stage.game
     start, end = (round(x, 1), round(y, 1)), (round(x + w, 1), round(y + h, 1))
     stage.capture = (start[0], start[1], end[0] - start[0], end[1] - start[1])
-    stage.capture_path = os.path.join(stage.paths['watch'], c['marks'].get('file', 'Level 4.png'))
+    stage.capture_path = os.path.join(stage.paths['watch'], c['ask'].get('file', 'Itinerary.png'))
     # The crosshair comes up where the pointer is, so the pointer goes to the drag's start first.
     stage.glide(start)
-    stage.pause(0.3)
+    stage.on_beat()
     shot = subprocess.Popen(['screencapture', '-i', '-x', stage.capture_path])
     stage.event('capture.crosshair', capture=list(stage.capture))
-    stage.pause(0.45)
+    stage.on_beat()
     stage.event('capture.press')
     stage.drag(start, end, 0.9)
     stage.event('capture.release')
@@ -898,81 +991,88 @@ def beat_capture(stage):
     s = stage.wait_state(lambda s: s['stack']['visible'] and s['stack']['cards'], what='the thumbnail')
     card = newest_card(s)
     stage.event('thumb.shown', card=card['frame'])
-    stage.pause(0.35)
+    # Long enough to see the thumbnail land before the click takes it.
+    stage.on_beat(rest=2)
     s = open_card(stage, card, 'editor')
     stage.editor_frame = s['annotator']['frame']
     if s['annotator'].get('tool', '').lower() != 'rectangle':
         raise TakeFailed(f"the editor opened with {s['annotator'].get('tool')}, not the rectangle tool")
 
 
-def beat_marks(stage):
-    c = stage.config['marks']
+def tool(stage, key, name):
+    """Picks a tool with its key, on the beat, and checks the editor took it."""
+    stage.require_editor()
+    stage.on_beat()
+    stage.input('key', key)
+    stage.wait_state(lambda s: s['annotator'].get('tool', '').lower() == name, what=f'the {name} tool')
+
+
+def type_note(stage, text):
+    stage.require_editor()
+    stage.on_beat()
+    stage.input('type', text, stage.config['ask'].get('typing', 14))
+
+
+def end_typing(stage):
+    stage.require_editor()
+    # Return while nothing is being typed is Done, or Reply on Claude's card.
+    stage.wait_state(lambda s: s['editor'].get('typing'), what='the note being typed')
+    stage.on_beat()
+    stage.input('key', 36)                          # Return ends the typing; the note stays selected
+
+
+def beat_ask(stage):
+    """An arrow from a stop on the map to its day, "number the days", and a box around the Oct 14
+    day asking for options."""
+    c = stage.config['ask']
     at = lambda p: stage.in_image(p, stage.capture, stage.editor_frame)
     image = png_size(stage.capture_path)
-    for name in c['order']:
-        mark = c[name]
-        x, y, w, h = mark['box']
-        a, b = at((x, y)), at((x + w, y + h))
-        stage.glide(a)
-        stage.require_editor(a)
-        stage.pause(0.1)
-        stage.event(f'{name}.press')
-        stage.drag(a, b)
-        stage.event(f'{name}.release')
-        stage.pause(0.18)
-        if 'note' in mark:
-            stage.require_editor()
-            stage.input('type', mark['note'], c.get('typing', 11))
-        else:
-            stage.require_editor()
-            stage.input('key', 17)                  # T, then a click keeps the Text tool
-            stage.pause(0.15)
-            point = at(mark['at'])
-            stage.glide(point)
-            stage.require_editor(point)
-            stage.input('click', *point)
-            stage.pause(0.2)
-            stage.input('type', mark['label'], c.get('typing', 11))
-        stage.event(f'{name}.noted')
-        rects = marks_on_screen(stage.state(), image, ['rectangle', 'text'])
-        stage.event(f'{name}.framed', **{name: union(rects)})
-        stage.pause(0.15)
-        stage.require_editor()
-        stage.input('key', 36)                      # Return ends the typing
-        stage.pause(0.3)
-        if 'label' in mark:
-            stage.input('key', 15)                  # R, back to boxes
-            stage.pause(0.1)
+    # The camera moves in on the editor as it lands; the drawing starts once it has settled.
+    stage.on_beat(rest=3)
+
+    link = c['link']
+    tool(stage, 0, 'arrow')                         # A
+    a, b = at(link['from']), at(link['to'])
+    stage.glide(a)
+    stage.require_editor(a)
+    stage.on_beat()
+    stage.event('link.press')
+    stage.drag(a, b)
+    stage.event('link.release')
+    type_note(stage, link['note'])
+    stage.event('link.noted', link=union(marks_on_screen(stage.state(), image, ['arrow', 'text'])))
+    end_typing(stage)
+
+    ask = c['box']
+    tool(stage, 15, 'rectangle')                    # R
+    x, y, w, h = ask['box']
+    a, b = at((x, y)), at((x + w, y + h))
+    stage.glide(a)
+    stage.require_editor(a)
+    stage.on_beat()
+    stage.event('ask.press')
+    stage.drag(a, b)
+    stage.event('ask.release')
+    type_note(stage, ask['note'])
+    stage.event('ask.noted', ask=union(marks_on_screen(stage.state(), image, ['rectangle', 'text'])))
+    end_typing(stage)
+
     # The drawing as it is sent: nothing selected.
     empty = at(c['empty'])
+    stage.glide(empty)
     stage.require_editor(empty)
+    stage.on_beat()
     stage.input('click', *empty)
     stage.event('marks.done')
-    stage.pause(0.6)
 
 
 def beat_send(stage):
-    """Types the message in the toolbar and sends the drawing to Claude Code with Cmd+Return."""
-    c = stage.config['marks']
+    """Sends the drawing to Claude Code with Cmd+Return, with no message: the notes say it."""
     s = stage.require_editor()
     offer = s['annotator'].get('offer') or {}
     if offer.get('kind') != 'send':
         raise TakeFailed(f'the toolbar offers {offer}, not Send')
-    field = message_field(stage, s)
-    point = centre(field)
-    stage.glide(point)
-    stage.require_owner(point, stage.app['name'])
-    stage.event('message.click', field=field)
-    stage.input('click', *point)
-    stage.pause(0.25)
-    s = stage.state()
-    # The field holds the keys when the editor has given them up; typed into the editor instead,
-    # the letters would be tool keys.
-    if not s['annotator']['windowVisible'] or s['annotator']['key']:
-        raise TakeFailed('the message field did not take the keys')
-    stage.input('type', c['message'], c.get('typing', 11))
-    stage.event('message.typed')
-    stage.pause(0.5)
+    stage.on_beat(rest=1)
     offset = stage.log_size()
     stage.event('send.press')
     stage.input('key', 36, 'cmd')
@@ -980,101 +1080,111 @@ def beat_send(stage):
     stage.wait_state(lambda s: not s['annotator']['windowVisible'], what='the editor closing')
     stage.event('send.closed')
     stage.claude_log = stage.log_size()
-    stage.agent_wait('working', 30, 'Claude Code taking the drawing')
+    stage.turn_wait('busy', 30, 'Claude Code taking the drawing')
     stage.event('claude.working')
 
 
-def beat_build(stage):
-    """Claude edits the level, and the page reloads with what you marked."""
+def last_shown(stage, since, before):
+    """The last time the page was drawn between two times: the app as Claude left it."""
+    with stage.lock:
+        shown = [e for e in stage.events if e['name'] == 'page.shown' and since < e['t'] <= before]
+    return shown[-1] if shown else None
+
+
+def beat_answer(stage):
+    """Claude numbers the days, then pushes its three versions, which a click opens."""
     since = stage.last('claude.working')['t']
-    changed = stage.wait_event('game.changed', since, 600, 'Claude changing the game')
-    shown = stage.wait_event('page.shown', changed['t'], 30, 'the game reloading')
-    stage.event('build.shown', t=shown['t'], game=list(stage.game))
-
-
-def beat_sketch(stage):
-    """Claude renders the level and pushes its sketch of a way up; the card arrives and leaves."""
-    line = stage.wait_log('[add] ok', stage.claude_log, timeout=600)
-    stage.event('push', t=stage.mono_from_log(line))
+    line = stage.wait_log('[add] ok', stage.claude_log, timeout=900)
+    push = stage.mono_from_log(line)
+    shown = last_shown(stage, since, push)
+    if not shown:
+        raise TakeFailed('Claude pushed its options before changing the page')
+    stage.event('numbered.shown', t=shown['t'], game=list(stage.game))
+    stage.event('push', t=push)
     s = stage.wait_state(lambda s: s['stack']['visible'] and s['stack']['cards'], timeout=15, what="Claude's card")
     card = newest_card(s)
-    stage.sketch_file = card['file']
+    stage.options_file = card['file']
     stage.event('card.shown', card=card['frame'])
-    # herdr reports a finished turn as done: a wait for idle alone ran its whole 300 s (2026-09-26).
-    stage.agent_wait(('done', 'idle'), 300, 'Claude finishing its turn')
-    stage.event('claude.idle')
-    stage.wait_state(lambda s: not s['stack']['visible'], timeout=30, what="Claude's card leaving")
-    stage.event('card.gone')
-    stage.pause(0.8)
-
-
-def beat_history(stage):
-    offset = stage.log_size()
-    stage.event('history')
-    stage.url('recent')
-    line = stage.wait_log('[stack] shown', offset)
-    s = stage.wait_state(lambda s: s['stack']['visible'] and s['stack']['isStack'], what='the stack')
-    frames = [c['frame'] for c in s['stack']['cards']]
-    stage.event('stack.shown', t=stage.mono_from_log(line), stack=union(frames))
-    stage.pause(0.5)
-    s = open_card(stage, newest_card(s), 'editor2')
-    stage.route_frame = s['annotator']['frame']
+    # Long enough to read the card's "From Claude" tab before the click takes it.
+    stage.on_beat(rest=3)
+    s = open_card(stage, card, 'editor2')
+    stage.options_frame = s['annotator']['frame']
     offer = s['annotator'].get('offer') or {}
     if offer.get('kind') != 'reply':
         raise TakeFailed(f"Claude's card offers {offer}, not Reply")
 
 
-def beat_adjust(stage):
-    """Drags one of Claude's boxes onto the water tower it built."""
-    c = stage.config['adjust']
-    s = stage.require_editor()
-    image = png_size(stage.sketch_file)
-    boxes = sorted((m for m in s['editor']['marks'] if m['type'] == 'rectangle'), key=lambda m: m['frame'][1])
-    if len(boxes) < 2:
-        raise TakeFailed(f"Claude's sketch has {len(boxes)} boxes")
-    box = boxes[len(boxes) // 2] if c.get('ledge', 'middle') == 'middle' else boxes[int(c['ledge'])]
-    bx, by, bw, bh = box['frame']
-    tx, ty = tower_top(stage)
-    # The scene's units in the image's pixels.
-    k = image[0] / 1600
-    target = (tx * k - bw / 2, (ty - c.get('above', 16)) * k - bh)
-    frame = stage.route_frame
-    grab = on_screen(frame, image, [bx + bw / 2, by, 0, 0])[:2]
-    drop = on_screen(frame, image, [target[0] + bw / 2, target[1], 0, 0])[:2]
-    stage.glide(tuple(grab))
-    stage.pause(0.15)
-    stage.require_editor(tuple(grab))
-    stage.event('move.press')
-    stage.drag(tuple(grab), tuple(drop), 0.7)
-    before = on_screen(frame, image, box['frame'])
-    after = on_screen(frame, image, [target[0], target[1], bw, bh])
-    stage.event('move.release', ledge=union([before, after]))
+def beat_point(stage):
+    """Boxes the version you want, says why, and draws an arrow from another version's flag into it."""
+    c = stage.config['point']
+    found = measure(stage, 'variants.html', ['.variant', '.variant .flag'])
+    variants, flags = found['.variant'], found['.variant .flag']
+    if len(variants) != 3 or not flags:
+        raise TakeFailed(f'variants.html has {len(variants)} versions and {len(flags)} flags, not 3 and a flag')
+    image = png_size(stage.options_file)
+    uw = stage.config['stage'].get('units', [904, 565])[0]
+    k = image[0] / uw
+    frame = stage.options_frame
+    here = lambda px: tuple(on_screen(frame, image, [px[0] * k, px[1] * k, 0, 0])[:2])
+    pad = c.get('pad', 7)
+    x, y, w, h = variants[c.get('pick', 2)]
+    corner, far = here((x - pad, y - pad)), here((x + w + pad, y + h + pad))
+    # A look at the three before the hand moves.
+    stage.on_beat(rest=3)
+    tool(stage, 15, 'rectangle')                    # R
+    stage.glide(corner)
+    stage.require_editor(corner)
+    stage.on_beat()
+    stage.event('pick.press')
+    stage.drag(corner, far)
+    stage.event('pick.release')
+    type_note(stage, c['note'])
     s = stage.state()
-    marks = [on_screen(frame, image, m['frame']) for m in s['editor']['marks']]
-    stage.event('move.framed', sketch=union(marks + [before, after]))
-    stage.pause(1.0)
+    stage.event('pick.noted', pick=union(marks_on_screen(s, image, ['rectangle', 'text'])))
+    end_typing(stage)
+
+    tool(stage, 0, 'arrow')                         # A
+    fx, fy, fw, fh = flags[0]
+    tail = here((fx + fw + c.get('tail_gap', 8), fy + fh / 2))
+    tip = here((x + c['tip'][0], y + c['tip'][1]))
+    stage.glide(tail)
+    stage.require_editor(tail)
+    stage.on_beat()
+    stage.event('flag.press')
+    stage.drag(tail, tip)
+    marks = [on_screen(frame, image, m['frame']) for m in stage.state()['editor']['marks']]
+    stage.event('flag.release', pointed=union(marks))
+    stage.on_beat(rest=2)
 
 
 def beat_reply(stage):
+    # The monitor holds a reply until Claude's turn ends, and the waits below read the next turn.
+    stage.turn_wait('idle', 300, 'Claude finishing its turn')
+    stage.event('claude.idle')
     stage.require_editor()
+    stage.on_beat()
     offset = stage.log_size()
     stage.event('reply.press')
     stage.input('key', 36)                          # Return replies on a card that names its session
     stage.wait_log('[send] prepared', offset)
     stage.wait_state(home, what='the card flying home')
     stage.event('reply.home')
-    stage.agent_wait('working', 30, 'Claude Code taking the reply')
+    stage.turn_wait('busy', 30, 'Claude Code taking the reply')
     stage.event('reply.working')
-    changed = stage.wait_event('game.changed', stage.last('reply.working')['t'], 600, 'Claude building the ledges')
-    shown = stage.wait_event('page.shown', changed['t'], 30, 'the game reloading')
-    stage.event('ledges.shown', t=shown['t'])
-    stage.agent_wait(('done', 'idle'), 300, 'Claude finishing')
-    stage.event('claude.done')
-    stage.pause(2.0)
+    since = stage.last('reply.working')['t']
+    stage.wait_event('game.changed', since, 900, 'Claude building the version you picked')
+    done = stage.turn_wait('idle', 900, 'Claude finishing')
+    stage.event('claude.done', t=done)
+    time.sleep(1.0)
+    shown = last_shown(stage, since, time.monotonic())
+    if not shown:
+        raise TakeFailed('the page never reloaded after Claude built it')
+    stage.event('built.shown', t=shown['t'], game=list(stage.game))
+    stage.on_beat(rest=6)
     stage.event('end')
 
 
-BEATS = [beat_open, beat_capture, beat_marks, beat_send, beat_build, beat_sketch, beat_history, beat_adjust, beat_reply]
+BEATS = [beat_open, beat_capture, beat_ask, beat_send, beat_answer, beat_point, beat_reply]
 
 
 def perform(stage, record=True):

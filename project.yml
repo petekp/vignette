@@ -7,6 +7,11 @@ options:
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
+packages:
+  # The updater (Updater.swift). Pinned: a new Sparkle is a change to what every install runs.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
 targets:
   Vignette:
     type: application
@@ -15,7 +20,10 @@ targets:
       - path: Sources
       - path: LICENSE
         buildPhase: resources
-      # The agent skill the app offers to install; SkillInstaller copies this folder out.
+      # The agent plugin the app installs, and the skill it carries; AgentPlugin.stage puts the two together.
+      - path: agent-plugin
+        type: folder
+        buildPhase: resources
       - path: skills/vignette
         type: folder
         buildPhase: resources
@@ -43,8 +51,12 @@ targets:
         # The binary answers `<binary> reply …` (ReplyCommand). The skill's scripts/reply reads this
         # before running it: a binary without the command would start the app instead.
         VignetteReplyCommand: true
-        # Where "Check for Updates…" sends the user. A fork points this at its own releases.
-        ReleasesURL: https://github.com/petekp/vignette/releases/latest
+        # Sparkle's feed: release.sh writes appcast.xml and each release uploads it, so GitHub's
+        # latest-release URL always names the newest version. A fork points this at its own releases
+        # and replaces the key with its own (docs/building.md).
+        SUFeedURL: https://github.com/petekp/vignette/releases/latest/download/appcast.xml
+        SUPublicEDKey: JtXFG+vKXdBgyoxLt4sKoNoMHXvy6GQfoQob3W2zfVA=
+        SUEnableAutomaticChecks: true
         LSUIElement: true
         NSHighResolutionCapable: true
         # Shown in macOS's prompt the first time the app reads a protected folder, which is at
@@ -78,6 +90,8 @@ targets:
         # user names without security-scoped bookmarks, and installs global event monitors.
         ENABLE_APP_SANDBOX: false
         ASSETCATALOG_COMPILER_APPICON_NAME: vignette
+    dependencies:
+      - package: Sparkle
     postBuildScripts:
       # The bundle carries the git state: commit count as CFBundleVersion, describe as
       # VignetteBuild. A build phase, not a build.sh argument, so a build from Xcode or a bare
@@ -98,7 +112,7 @@ targets:
     sources:
       - path: Tests
       - path: Sources
-        excludes: [AppDelegate.swift]
+        excludes: [AppDelegate.swift, Updater.swift]
     settings:
       base:
         SWIFT_VERSION: "5.10"

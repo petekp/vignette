@@ -3,20 +3,6 @@ import XCTest
 final class AgentConnectionTests: XCTestCase {
     private let session = "e011fff1-c791-4934-9e61-9307d840a5eb"
 
-    /// Trimmed from a real `herdr agent list`: two Claude Code panes and one Codex pane.
-    private func agentList(session: String, status: String = "idle", pane: String = "w9:p6") -> String {
-        """
-        {"id":"cli:agent:list","result":{"type":"agent_list","agents":[
-          {"agent":"claude","agent_status":"\(status)","cwd":"/Users/p/Code/vignette","focused":true,
-           "agent_session":{"agent":"claude","kind":"id","value":"\(session)"},
-           "pane_id":"\(pane)","tab_id":"w9:t1","terminal_title_stripped":"Closed agent loop","workspace_id":"w9"},
-          {"agent":"claude","agent_status":"idle","cwd":"/Users/p/Code/other","focused":false,
-           "pane_id":"w9:pA","tab_id":"w9:t2","terminal_title_stripped":"No session id","workspace_id":"w9"},
-          {"agent":"codex","agent_status":"idle","cwd":"/Users/p/Code/two","focused":false,
-           "pane_id":"w9:pB","tab_id":"w9:t3","workspace_id":"w9"}]}}
-        """
-    }
-
     /// The same panes as `herdr pane list` reports them, which is what the listing reads: every
     /// pane, agent or not, so it says where the focus is even when that pane runs no agent. Here a
     /// browser pane beside the session has the focus, as observed 2026-09-24.
@@ -35,21 +21,46 @@ final class AgentConnectionTests: XCTestCase {
         """
     }
 
-    /// A connection whose subprocesses are answers this test wrote, and a record of the argv it used.
-    private func claude(_ answers: [String: (Int32, String, Bool)]) -> (ClaudeCodeConnection, () -> [[String]]) {
+    /// A connection over inboxes in a temporary folder, with herdr answering `panes` when given.
+    /// Every process id in `running` is taken to be alive.
+    private func claude(inboxes root: URL, running: Set<Int32> = [101, 102], panes: String? = nil,
+                        now: Date = Date()) -> (ClaudeCodeConnection, () -> [[String]]) {
         let calls = Recorder()
         var connection = ClaudeCodeConnection()
-        connection.binary = { "/bin/herdr" }
+        connection.inboxes = root
         connection.transcripts = URL(fileURLWithPath: "/nonexistent/projects")
-        connection.readsDrawings = { true }
+        connection.isRunning = { running.contains($0) }
+        connection.now = { now }
+        connection.herdr = { panes == nil ? nil : "/bin/herdr" }
         connection.run = { _, arguments, _ in
             calls.record(arguments)
-            // The whole argv first, so one call can be answered differently from another that
-            // starts with the same word.
-            let answer = answers[arguments.joined(separator: " ")] ?? answers[arguments.first ?? ""]
-            return answer.map { ($0.0, $0.1, $0.2) }
+            return panes.map { (0, $0, false) }
         }
         return (connection, { calls.all() })
+    }
+
+    /// An inbox as the plugin's scripts leave it.
+    @discardableResult
+    private func inbox(_ root: URL, pid: Int32, session: String?, cwd: String = "/Users/p/Code/vignette",
+                       alive: Date? = Date(), past: [String] = [], transcript: URL? = nil) throws -> URL {
+        let folder = root.appendingPathComponent("\(pid)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        if let session { try Data("\(session)\n".utf8).write(to: folder.appendingPathComponent("session")) }
+        try Data("\(cwd)\n".utf8).write(to: folder.appendingPathComponent("cwd"))
+        if !past.isEmpty { try Data(past.map { $0 + "\n" }.joined().utf8).write(to: folder.appendingPathComponent("past")) }
+        if let transcript { try Data("\(transcript.path)\n".utf8).write(to: folder.appendingPathComponent("transcript")) }
+        if let alive {
+            let file = folder.appendingPathComponent("alive")
+            try Data().write(to: file)
+            try FileManager.default.setAttributes([.modificationDate: alive], ofItemAtPath: file.path)
+        }
+        return folder
+    }
+
+    private func temporaryFolder() -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("inboxes-\(UUID().uuidString)")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
     }
 
     /// Collects argv across threads; the connection's runner is `@Sendable`.
@@ -85,17 +96,26 @@ final class AgentConnectionTests: XCTestCase {
     }
 
     func testTheHerdrBinaryIsTheFirstOneThatExists() {
-        XCTAssertEqual(ClaudeCodeConnection.binary { $0 == ClaudeCodeConnection.binaryPaths[1] }, ClaudeCodeConnection.binaryPaths[1])
-        XCTAssertNil(ClaudeCodeConnection.binary { _ in false })
+        XCTAssertEqual(ClaudeCodeConnection.herdrBinary { $0 == ClaudeCodeConnection.herdrPaths[1] }, ClaudeCodeConnection.herdrPaths[1])
+        XCTAssertNil(ClaudeCodeConnection.herdrBinary { _ in false })
     }
 
-    func testOnlyClaudePanesWithASessionAreOffered() {
-        let (connection, _) = claude(["pane": (0, paneList(session: session), false)])
+    /// A session is offered while its process runs and its monitor does. An inbox whose process has
+    /// gone is removed, since nothing else would; one whose monitor stopped stays, unlisted.
+    func testOnlySessionsWithARunningMonitorAreOffered() throws {
+        let root = temporaryFolder()
+        let now = Date()
+        try inbox(root, pid: 101, session: session)
+        try inbox(root, pid: 102, session: "0f0f0f0f-0000-4000-8000-000000000000", alive: now.addingTimeInterval(-60))
+        let gone = try inbox(root, pid: 103, session: "1f0f0f0f-0000-4000-8000-000000000000")
+        try inbox(root, pid: 1010, session: nil)
+        let (connection, _) = claude(inboxes: root, running: [101, 102, 1010], now: now)
         let found = connection.destinations()
-        XCTAssertEqual(found.map(\.id), [session], "a pane herdr cannot identify is not a conversation")
-        XCTAssertEqual(found.first?.name, "Closed agent loop")
+        XCTAssertEqual(found.map(\.id), [session])
+        XCTAssertEqual(found.first?.name, "New session in vignette", "no transcript yet")
         XCTAssertEqual(found.first?.detail, "vignette")
         XCTAssertEqual(found.first?.address.guardTier, .preflight)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: gone.path))
     }
 
     /// A transcript's tail as Claude Code writes it: titles that change, messages, and entries with
@@ -128,29 +148,38 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(ClaudeCodeConnection.tail(of: file, bytes: 100).map { String(decoding: $0, as: UTF8.self) }, "{\"a\":1}\n{\"b\":2}\n")
     }
 
-    /// The transcript is found in whichever project folder it is in, and names the session in full;
-    /// the pane's title, which herdr cuts short, is only the fallback. The project is the pane's
-    /// folder, not the one the session's shell was last in.
-    func testAPaneIsNamedByItsSessionsTranscript() throws {
-        let projects = FileManager.default.temporaryDirectory.appendingPathComponent("projects-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: projects) }
+    /// The transcript the hooks named, or else the one found in whichever project folder it is in,
+    /// names the session. The project is the folder Claude Code runs in, not the one the session's
+    /// shell was last in.
+    func testASessionIsNamedByItsTranscript() throws {
+        let root = temporaryFolder()
+        let projects = root.appendingPathComponent("projects")
         let folder = projects.appendingPathComponent("-Users-p-Code-elsewhere")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data(transcriptTail.utf8).write(to: folder.appendingPathComponent("\(session).jsonl"))
+        let inboxes = root.appendingPathComponent("inboxes")
+        try inbox(inboxes, pid: 101, session: session)
 
-        var (connection, _) = claude(["pane": (0, paneList(session: session), false)])
+        var (connection, _) = claude(inboxes: inboxes)
         connection.transcripts = projects
         let found = connection.destinations()
         XCTAssertEqual(found.map(\.name), ["Closed agent loop, whole"])
         XCTAssertEqual(found.first?.detail, "vignette")
         XCTAssertNotNil(found.first?.lastUsed)
+
+        let named = root.appendingPathComponent("named.jsonl")
+        try Data("{\"type\":\"ai-title\",\"aiTitle\":\"From the hook\"}\n".utf8).write(to: named)
+        try inbox(inboxes, pid: 101, session: session, transcript: named)
+        XCTAssertEqual(connection.destinations().map(\.name), ["From the hook"])
     }
 
     /// Send starts on the session you came from: herdr's focused pane, or the one session in the
     /// focused pane's tab when that pane runs no agent. A tab with two sessions says nothing.
     func testSendStartsOnTheSessionInHerdrsFocus() {
+        let root = temporaryFolder()
+        XCTAssertNoThrow(try inbox(root, pid: 101, session: session))
         func focus(_ pane: String) -> AgentDestination.Focus? {
-            let (connection, _) = claude(["pane": (0, paneList(session: session, focused: pane), false)])
+            let (connection, _) = claude(inboxes: root, panes: paneList(session: session, focused: pane))
             return connection.destinations().first?.focus
         }
         XCTAssertEqual(focus("w9:p6"), .pane)
@@ -159,7 +188,9 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertNil(focus("w9:pB"), "a Codex pane")
 
         let listed = ClaudeCodeConnection.agents(in: Data(paneList(session: session).utf8), list: "panes")
-        let destinations = listed.compactMap { ClaudeCodeConnection.destination($0) }
+        let destinations = listed.compactMap { agent in
+            agent.session.map { ClaudeCodeConnection.destination(session: $0, cwd: agent.cwd, transcript: .init()) }
+        }
         func marked(_ extra: ClaudeCodeConnection.HerdrAgent, focus: String) -> [AgentDestination.Focus?] {
             ClaudeCodeConnection.markFocus(destinations, agents: listed + [extra], focus: (focus, "w9:t1")).map(\.focus)
         }
@@ -271,41 +302,43 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual([unknown, old, new].sorted(by: AgentDestination.newestFirst).map(\.id), ["2", "1", "3"])
     }
 
-    func testTheRequestGoesToThePaneRunningTheBoundSession() {
-        let (connection, calls) = claude(["agent": (0, agentList(session: session, pane: "w9:pZ"), false)])
+    /// The request lands in the inbox holding the session, and in no other.
+    func testTheRequestGoesToTheInboxHoldingTheSession() throws {
+        let root = temporaryFolder()
+        let folder = try inbox(root, pid: 102, session: session)
+        try inbox(root, pid: 101, session: "0f0f0f0f-0000-4000-8000-000000000000")
+        let (connection, calls) = claude(inboxes: root)
         let destination = AgentDestination(id: session, name: "x", address: .claudeSession(session))
-        guard case .accepted(let detail) = connection.submit("hello", to: destination) else {
-            return XCTFail("a session in a pane is submittable")
+        guard case .accepted(let detail) = connection.submit("look here [From Vignette]", to: destination) else {
+            return XCTFail("a session with a live inbox is submittable")
         }
-        XCTAssertTrue(detail.contains("w9:pZ"))
-        XCTAssertEqual(calls().last?.prefix(3).map { $0 }, ["agent", "prompt", "w9:pZ"])
+        XCTAssertTrue(detail.contains("inbox=102"))
+        let lines = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasSuffix(".line") }
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(try String(contentsOf: folder.appendingPathComponent(lines[0]), encoding: .utf8),
+                       "look here [From Vignette]\n")
+        XCTAssertEqual(calls(), [], "herdr sends nothing")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("101").path).filter { $0.hasSuffix(".line") }, [])
     }
 
-    func testASessionThatIsInNoPaneIsAnErrorAndNeverAnotherPane() {
-        let (connection, calls) = claude(["agent": (0, agentList(session: "0f0f0f0f-0000-4000-8000-000000000000"), false)])
+    /// A session in no inbox is an error, never another session's inbox. When the process that ran
+    /// it has since run `/clear` or `/resume`, the card says so.
+    func testASessionInNoInboxIsAnErrorAndNeverAnother() throws {
+        let root = temporaryFolder()
+        let folder = try inbox(root, pid: 101, session: "0f0f0f0f-0000-4000-8000-000000000000")
+        let (connection, _) = claude(inboxes: root)
         let destination = AgentDestination(id: session, name: "x", address: .claudeSession(session))
-        guard case .destinationChanged = connection.submit("hello", to: destination) else {
-            return XCTFail("a missing session must not fall back to the focused pane")
+        guard case .destinationChanged(_, let reason) = connection.submit("hello", to: destination) else {
+            return XCTFail("a missing session must not fall back to another")
         }
-        XCTAssertEqual(calls().count, 1, "nothing is submitted once the guard fails")
-    }
+        XCTAssertEqual(reason, ClaudeCodeConnection.closed)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasSuffix(".line") }, [])
 
-    func testAnAgentWaitingOnItsOwnPromptIsNotInterrupted() {
-        let (connection, calls) = claude(["agent": (0, agentList(session: session, status: "blocked"), false)])
-        let destination = AgentDestination(id: session, name: "x", address: .claudeSession(session))
-        guard case .notSubmitted = connection.submit("hello", to: destination) else {
-            return XCTFail("a blocked agent is a definite non-submission")
+        try inbox(root, pid: 101, session: "0f0f0f0f-0000-4000-8000-000000000000", past: [session])
+        guard case .destinationChanged(_, let clearedReason) = connection.submit("hello", to: destination) else {
+            return XCTFail("a cleared session is gone from its inbox")
         }
-        XCTAssertEqual(calls().count, 1)
-    }
-
-    func testAPromptThatNeverAnsweredIsUncertainRatherThanFailed() {
-        let (connection, _) = claude(["agent": (0, agentList(session: session), false),
-                                      "agent prompt w9:p6 hello": (15, "", true)])
-        let destination = AgentDestination(id: session, name: "x", address: .claudeSession(session))
-        guard case .uncertain = connection.submit("hello", to: destination) else {
-            return XCTFail("a call killed on its deadline may already have been accepted")
-        }
+        XCTAssertEqual(clearedReason, ClaudeCodeConnection.cleared)
     }
 
     // MARK: Codex, by thread UUID

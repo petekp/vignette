@@ -56,8 +56,8 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   any screenshots still waiting to be drawn on.
 - **`sendInstructions`** is the sentence after the image in the line Send and Reply put in a session,
   with no control in the window. `From Vignette: "<path>".` before it is fixed: the skill loads on
-  "From Vignette:", and the path is the drawing. It is kept to one line, since herdr submits the line
-  with Return, so line breaks and tabs become spaces. An empty one leaves the line at the path.
+  "From Vignette:", and the path is the drawing. It is kept to one line, since the plugin delivers
+  each line as its own message, so line breaks and tabs become spaces. An empty one leaves the line at the path.
 - **`sendWithReturn`** is Send with Return, in the Agents tab. On, Return in the message box beside
   Send sends the drawing, as in a chat app. Off, Return there only points at ⌘Return, since Vignette
   picked the session and a Return typed out of habit would hand the drawing to it. ⌘Return sends
@@ -100,8 +100,8 @@ stack, toast, and annotator while you tweak.
 
 ### The drawing editor's numbers
 
-These set how the editor feels and how a mark looks. The panel has them in its Editor and Marks
-sections, and a change reaches an open editor at once. Sizes are in screen points unless the table
+These set how the editor feels. The panel has them in its Editor section, and a change reaches an
+open editor at once. Sizes are in screen points unless the table
 says otherwise, so they look the same at any zoom.
 
 | Key | Default | What it sets |
@@ -118,15 +118,45 @@ says otherwise, so they look the same at any zoom.
 | `shortestArrow` | 8 | A new arrow's shortest length |
 | `textDragDelay` | 0.15 | Seconds a Text tool press waits before a sideways drag sets a wrap width. `motion` does not change it. |
 | `textDragDistance` | 24 | The sideways travel that drag needs |
-| `newTextSize` | 24 | A new text's size, in points of the drawing |
+| `newTextSize` | 17 | A new text's size, in points of the drawing |
 | `selectionOutlineWidth` | 3.5 | The selection outline's whole width, light edge included |
-| `textWeight` | 500 | From 100 to 900, rounded to the nearest of the system font's nine weights |
-| `textLineHeight` | 1.35 | A multiple of the text's size |
+| `noteSettleDuration` | 0.25 | Seconds a note takes to move to its balanced lines when typing ends. `motion` scales it. |
+
+### How marks look
+
+These set how every mark is drawn. The panel has them in its Marks and Notes sections. A change
+reaches every place marks are drawn at once: the editor, the cards, a card in flight, a stitch, a
+dragged card, and what Done, Send and Copy Drawing render. Widths are in points of the drawing.
+
+| Key | Default | What it sets |
+|---|---|---|
+| `personColor` | `#e03131` | A person's marks |
+| `agentColor` | `#364fc7` | Every agent's marks |
+| `edgeColor` | `#ffffff` | The edge around every mark |
+| `noteTextColor` | `#ffffff` | The words on a note's tag |
+| `strokeWidth` | 3.5 | A shape's stroke |
+| `edgeWidth` | 1.5 | The edge outside a stroke and around a tag. 0 turns it off. |
+| `shadowOpacity` | 1 | A multiplier on the marks' shadows' darkness. 0 turns them off. |
 | `arrowheadLength` | 4.5 | A multiple of the stroke width |
 | `arrowheadWidth` | 4 | A multiple of the stroke width |
+| `textFont` | `rounded` | A person's notes |
+| `textWeight` | 600 | From 100 to 900, the nearest weight the font has |
+| `agentTextFont` | `monospaced` | An agent's notes |
+| `agentTextWeight` | 600 | From 100 to 900 |
+| `agentTextSize` | 1.33 | An agent's note, as a percentage of the image's width. A person's is `newTextSize`. |
+| `textLineHeight` | 1.32 | A multiple of the text's size |
+| `notePaddingTop` | 0.42 | The tag above the words, a multiple of the text's size |
+| `notePaddingBottom` | 0.47 | Below the words |
+| `notePaddingSide` | 0.8 | Each side of the words |
+| `noteMaxWidth` | 18 | A note without a wrap width wraps at this many times its size, or at the image's edge |
+| `badgeInset` | 0.35 | An agent's badge from its tag's left edge, a multiple of the text's size |
+| `badgeOverlap` | 0.2 | How far the badge overlaps the tag's top edge, from 0 to 1.36, its height |
 
-`textWeight`, `textLineHeight` and the arrowhead apply wherever marks are drawn: the editor, the
-cards, a card in flight, a stitch, a dragged card, and what Done, Send and Copy Drawing render.
+- A colour is `#rrggbb`.
+- A font is `rounded`, `monospaced`, `serif` or `default`, which pick one of the system font's
+  designs, or the name of an installed font family, such as `Avenir Next`.
+- A colour or a font that is not valid is replaced by the default and logged as
+  `[settings] warning clamped`, like a number out of range.
 
 ## Invalid files
 

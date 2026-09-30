@@ -11,7 +11,7 @@
 
 `beats.toml` holds the wording, the timing, the framing and the marks.
 docs/trailer-pipeline-2026-09-26.md says how the pieces fit. Needs Xcode, xcodegen, ffmpeg and
-Python 3.11 or later, Google Chrome, Ghostty and herdr.
+Python 3.11 or later, Google Chrome, Ghostty and Claude Code.
 """
 import argparse
 import datetime
@@ -39,13 +39,14 @@ PATHS = {
     'record_bin': os.path.join(OUT, 'bin', 'record'),
     'stage_bin': os.path.join(OUT, 'bin', 'stage'),
     'cut_bin': os.path.join(OUT, 'bin', 'cut'),
-    'game': os.path.join(HERE, 'stage', 'mew'),
+    'game': os.path.join(HERE, 'stage', 'postcard'),
     'stage': os.path.join(OUT, 'stage'),
     'watch': os.path.join(OUT, 'stage', 'watch'),
     'cards': os.path.join(OUT, 'stage', 'cards'),
     'settings': os.path.join(OUT, 'stage', 'settings.json'),
-    'herdr': os.path.join(OUT, 'stage', 'bin', 'herdr'),
-    'mew': os.path.join(OUT, 'stage', 'mew'),
+    # Where the take's Claude Code works on a copy of the app, and the path its header shows. The
+    # take makes it and removes it after.
+    'work': os.path.expanduser('~/Code/postcard'),
     'chrome': os.path.join(OUT, 'stage', 'chrome'),
     'claude': os.path.join(OUT, 'stage', 'claude'),
     'pids': os.path.join(OUT, 'stage', 'pids.json'),
@@ -83,21 +84,21 @@ def replace_once(text, old, new, where):
     return text.replace(old, new)
 
 
-def replace_array(text, owner, new, where):
-    """Replaces the `static let binaryPaths = [...]` inside `struct <owner>`."""
+def replace_array(text, owner, name, new, where):
+    """Replaces the `static let <name> = [...]` inside `struct <owner>`."""
     start = text.find(f'struct {owner}')
     if start < 0:
         sys.exit(f'build: no struct {owner} in {where}; the stage patch needs updating')
-    match = re.compile(r'static let binaryPaths = \[.*?\]\n', re.S).search(text, start)
+    match = re.compile(rf'static let {name} = \[.*?\]\n', re.S).search(text, start)
     if not match:
-        sys.exit(f'build: no binaryPaths in {owner}; the stage patch needs updating')
-    return text[:match.start()] + f'static let binaryPaths: [String] = {new}\n' + text[match.end():]
+        sys.exit(f'build: no {name} in {owner}; the stage patch needs updating')
+    return text[:match.start()] + f'static let {name}: [String] = {new}\n' + text[match.end():]
 
 
 def build():
     src = PATHS['app_src']
     os.makedirs(src, exist_ok=True)
-    for folder in ['Sources', 'Resources', 'skills', 'Tests']:
+    for folder in ['Sources', 'Resources', 'skills', 'agent-plugin', 'Tests']:
         run(['rsync', '-a', '--delete', '--exclude', '__pycache__', f'{REPO}/{folder}/', f'{src}/{folder}/'])
     for file in ['LICENSE', 'project.yml']:
         shutil.copy2(os.path.join(REPO, file), os.path.join(src, file))
@@ -111,16 +112,29 @@ def build():
     stage_name, stage_bundle, stage_scheme = f'{name} Demo', f'{bundle}.demo', f'{scheme}-demo'
     project = project.replace(f'PRODUCT_BUNDLE_IDENTIFIER: {bundle}', f'PRODUCT_BUNDLE_IDENTIFIER: {stage_bundle}')
     project = replace_once(project, f'CFBundleURLSchemes: [{scheme}]', f'CFBundleURLSchemes: [{stage_scheme}]', 'project.yml')
+    # A take never checks for updates: a found version would put a dot on the menu bar icon.
+    project = replace_once(project, 'SUEnableAutomaticChecks: true', 'SUEnableAutomaticChecks: false', 'project.yml')
     with open(project_path, 'w') as f:
         f.write(project)
 
-    # Send and Reply reach herdr through a wrapper that names the trailer's own herdr session, and
-    # there is no Codex, so a take lists none of your sessions and sends nothing to one.
+    # Send lists the Claude Code sessions running the stage copy's own plugin, which only the
+    # trailer's Claude Code has. There is no Codex, and no herdr, whose focus would name one of your
+    # panes, so a take lists none of your sessions and sends nothing to one.
     path = os.path.join(src, 'Sources', 'AgentConnection.swift')
     with open(path) as f:
         text = f.read()
-    text = replace_array(text, 'ClaudeCodeConnection', json.dumps([PATHS['herdr']]), 'AgentConnection.swift')
-    text = replace_array(text, 'CodexConnection', '[]', 'AgentConnection.swift')
+    text = replace_array(text, 'ClaudeCodeConnection', 'herdrPaths', '[]', 'AgentConnection.swift')
+    text = replace_array(text, 'CodexConnection', 'binaryPaths', '[]', 'AgentConnection.swift')
+    with open(path, 'w') as f:
+        f.write(text)
+    # The skill in the plugin names the real app's URL scheme and log; the stage copy's must name
+    # its own, or the trailer's Claude Code would drive your Vignette.
+    path = os.path.join(src, 'skills', 'vignette', 'SKILL.md')
+    with open(path) as f:
+        text = f.read()
+    text = text.replace(f'{scheme}://', f'{stage_scheme}://').replace(f'Logs/{name}.log', f'Logs/{stage_name}.log')
+    if f'{scheme}://' in text.replace(f'{stage_scheme}://', ''):
+        sys.exit('build: the skill still names the real URL scheme')
     with open(path, 'w') as f:
         f.write(text)
 
@@ -143,9 +157,6 @@ def build():
     app = stage_app()
     if app['bundle'] != stage_bundle or app['scheme'] != stage_scheme:
         sys.exit(f'build: the stage copy came out as {app}')
-    binary = os.path.join(app['path'], 'Contents', 'MacOS', stage_name)
-    if PATHS['herdr'].encode() not in open(binary, 'rb').read():
-        sys.exit("build: the trailer's herdr is not in the binary")
     print(f"built {app['path']}", flush=True)
 
     os.makedirs(PATHS['bin'], exist_ok=True)
@@ -175,51 +186,39 @@ def stage_app():
 # ---- claude ------------------------------------------------------------------------------------
 
 def claude():
-    """The trailer's Claude Code config: the Vignette skill pointed at the stage copy, and herdr's
-    hook, which tells herdr the session's id. Opens a terminal to sign it in the first time."""
-    app = stage_app()
+    """The trailer's Claude Code config, signed in once in a terminal. A take installs the stage
+    copy's plugin into it (`drive.install_plugin`); this clears what the config held before the
+    plugin: the skill on its own, and herdr's hook."""
     home = PATHS['claude']
     os.makedirs(home, exist_ok=True)
-    skill = os.path.join(home, 'skills', 'vignette')
-    shutil.rmtree(skill, ignore_errors=True)
-    shutil.copytree(os.path.join(REPO, 'skills', 'vignette'), skill)
-    path = os.path.join(skill, 'SKILL.md')
-    with open(path) as f:
-        text = f.read()
-    text = text.replace('vignette://', f"{app['scheme']}://").replace('Logs/Vignette.log', f"Logs/{app['name']}.log")
-    with open(path, 'w') as f:
-        f.write(text)
-    print(f'installed the skill for {app["scheme"]}:// in {skill}')
+    shutil.rmtree(os.path.join(home, 'skills', 'vignette'), ignore_errors=True)
+    settings_path = os.path.join(home, 'settings.json')
+    if os.path.exists(settings_path):
+        with open(settings_path) as f:
+            settings = json.load(f)
+        if settings.get('hooks', {}).pop('SessionStart', None) is not None:
+            if not settings['hooks']:
+                del settings['hooks']
+            with open(settings_path, 'w') as f:
+                json.dump(settings, f, indent=2)
+            print("removed herdr's hook from the trailer's config")
+    shutil.rmtree(os.path.join(home, 'hooks'), ignore_errors=True)
 
     env = dict(os.environ, CLAUDE_CONFIG_DIR=home)
-    hook = os.path.join(home, 'hooks', 'herdr-agent-state.sh')
-    if not os.path.exists(hook):
-        # herdr writes to CLAUDE_CONFIG_DIR when it is set. Your own config is watched by its files'
-        # times, never read, so a herdr that ignored the variable is caught.
-        yours = [os.path.expanduser(f) for f in ('~/.claude/settings.json', '~/.claude/hooks/herdr-agent-state.sh')]
-        before = [os.path.getmtime(f) if os.path.exists(f) else None for f in yours]
-        run([drive.HERDR, 'integration', 'install', 'claude'], env=env)
-        after = [os.path.getmtime(f) if os.path.exists(f) else None for f in yours]
-        if before != after:
-            sys.exit('claude: herdr changed ~/.claude instead of the trailer\'s config; check it')
-        if not os.path.exists(hook):
-            sys.exit(f'claude: herdr did not install its hook in {home}')
-    print(f'herdr hook in {hook}')
-
     status = subprocess.run(['claude', 'auth', 'status'], capture_output=True, text=True, env=env).stdout
     if json.loads(status or '{}').get('loggedIn'):
         print("the trailer's Claude Code is signed in")
         return
-    # The first run asks for a theme, a sign-in and trust in the game's folder, in that folder.
-    shutil.rmtree(PATHS['mew'], ignore_errors=True)
-    shutil.copytree(PATHS['game'], PATHS['mew'])
+    # The first run asks for a theme and a sign-in. A take marks its own folder trusted.
+    home_folder = os.path.join(PATHS['stage'], 'sign-in')
+    os.makedirs(home_folder, exist_ok=True)
     script = os.path.join(PATHS['stage'], 'sign-in.sh')
     with open(script, 'w') as f:
         f.write(f"""#!/bin/zsh
 unset -m 'HERDR_*' 'CLAUDE*'
 export CLAUDE_CONFIG_DIR={json.dumps(home)}
-cd {json.dumps(PATHS['mew'])}
-echo "Sign in the trailer's Claude Code, trust this folder, then type /exit."
+cd {json.dumps(home_folder)}
+echo "Sign in the trailer's Claude Code, then type /exit."
 exec claude
 """)
     os.chmod(script, 0o755)
@@ -269,6 +268,7 @@ def restore():
     """Puts back what a take changes on this Mac, and stops what it started, if a take was
     interrupted."""
     drive.clear_leftovers(PATHS, config())
+    drive.remove_work(PATHS)
     if os.path.exists(PATHS['dock']):
         if open(PATHS['dock']).read().strip() == 'false':
             drive.dock_autohide(False)

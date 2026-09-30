@@ -16,7 +16,8 @@ final class ScreenshotRequests {
     struct Callbacks {
         /// Adds marks to a screenshot's drawing and stores it, without showing anything, then answers
         /// nil, or why not. Publication waits for the answer, so a card never appears without its marks.
-        var addMarks: (Screenshot, [AgentMark], @escaping (Drawings.Failure?) -> Void) -> Void = { _, _, done in
+        /// The name is the agent's, which its notes' badges show.
+        var addMarks: (Screenshot, [AgentMark], _ agent: String?, @escaping (Drawings.Failure?) -> Void) -> Void = { _, _, _, done in
             done(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings"))
         }
         /// Shows a published reply's card. Managed replies never reach the watcher's capture path.
@@ -362,7 +363,7 @@ final class ScreenshotRequests {
     /// image are fixed, because the skill loads on the one and the drawing is the other. The person's
     /// message, already one line (`AnnotatorToolbar.Model.sentMessage`), leads, as the request, and
     /// the Vignette part follows in brackets, as a note on what came with it. One line, because
-    /// herdr submits it with Return. The ticket's secret never travels.
+    /// the plugin's monitor makes each line it prints one message. The ticket's secret never travels.
     static func requestLine(record: Record, root: URL, message: String? = nil,
                             instructions: String = SettingsData.defaultSendInstructions) -> String {
         let image = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("image.png").path
@@ -526,7 +527,8 @@ final class ScreenshotRequests {
 
         // 3. The marks, in a drawing the person edits like their own. An image-only reply needs none.
         guard !reply.marks.isEmpty else { return commit(reply, at: destination, done: done) }
-        callbacks.addMarks(Screenshot(url: destination), reply.marks) { [weak self] failure in
+        let agent = requests[reply.requestID]?.address.client.rawValue
+        callbacks.addMarks(Screenshot(url: destination), reply.marks, agent) { [weak self] failure in
             guard let self else { return }
             // A clear during the colour sample took the file back, so the marks had nothing to join:
             // the import ends cancelled, as the clear said, rather than failed.
@@ -717,6 +719,6 @@ final class ScreenshotRequests {
 
 extension String {
     /// The words with one space between each, whatever line breaks, tabs or spaces were there: what
-    /// the line Send puts in a session can hold, since herdr submits it with Return.
+    /// the line Send puts in a session can hold, since the plugin's monitor makes each line one message.
     var asOneLine: String { split(whereSeparator: \.isWhitespace).joined(separator: " ") }
 }

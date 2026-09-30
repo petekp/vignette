@@ -18,6 +18,25 @@ It is the second cut. The first joined its beats with hard cuts, and Pete found 
 13 seconds it jumped from Claude's card, close up, to the empty game, and then showed something
 else. The second plays the take continuously and dissolves only where it skips time.
 
+## Since v3 (2026-09-29)
+
+The v3 story and its reasons are in `docs/trailer-v3-brief-2026-09-28.md`, and the overnight run
+that recorded it in `docs/trailer-v3-overnight-2026-09-29.md`. Three things changed how the
+pipeline works:
+
+- **The places on the page are measured.** Before a take, `drive.measure` loads the page in
+  headless Chrome at the browser's size and reads the rect of every part a mark goes on. A change
+  to Postcard's layout moves the marks with it.
+- **One tempo.** `[rhythm] beat` in `beats.toml` is 0.5 s. The driver presses and clicks on beats
+  (`Stage.on_beat`). The cut starts and ends each span on a beat, makes each dissolve a whole
+  number of half beats, and puts every caption change and camera move on a half beat.
+- **An end card.** `[outro]` in `beats.toml` names the icon, the wordmark and two lines, and
+  `cut.swift` animates them in and out after the last span. The film's last frame scales down,
+  blurs and fades under it, and the first frame dissolves back in at the end, so the film loops.
+
+The v3 cut, its checks and what is left are in `docs/trailer-v3-overnight-2026-09-29.md`. The cut
+table and decisions below describe v2.
+
 ## Where it lives
 
 `media/trailer/`, in the repo. `out/` is ignored by Git.
@@ -31,7 +50,9 @@ else. The second plays the take continuously and dissolves only where it skips t
 | `record.swift` | Records the screen with ScreenCaptureKit and stamps the first frame's time. |
 | `stage.swift` | The desktop's wallpaper, placing a window, a check of which window is under a point, and saving the pasteboard. |
 | `cut.swift` | Renders the plan: crops, dissolves, captions and key caps, into a ProRes master and the poster. |
-| `stage/mew/` | The game, copied from `~/Code/mew`, so the trailer does not depend on that folder. Its `CLAUDE.md` tells the trailer's Claude Code how level 4's layout works. |
+| `stage/postcard/` | Postcard, the trip planner on stage since v3. Each take copies it to `~/Code/postcard`, marked with a `.trailer-take` file, runs Claude Code there, and removes it after. Its `CLAUDE.md` tells the trailer's Claude Code how to answer a drawing. |
+| `stage/mew/` | The game the first two cuts used. No longer used. |
+| `outro/` | The end card's app icon and wordmark, rendered from the app bundle and `site/logotype.svg`. |
 | `out/` | The stage copy of the app, the helpers, the takes and the cut. |
 
 `trailer.py events` lists a take's events with their times, which are what `beats.toml` writes
@@ -42,14 +63,18 @@ times against.
 - **The app is a stage copy.** `build` copies the source to `out/app` and builds it as
   "Vignette Demo" with the bundle id and URL scheme from `project.yml` plus `.demo` and `-demo`. So
   it has its own settings, log, drawings and URLs, and never touches yours.
-- **The stage copy talks only to the trailer's herdr session, and no Codex.** `build` points the
-  app's herdr path at `out/stage/bin/herdr`, which runs herdr with `--session vignette-trailer`.
-  That session's one pane runs the trailer's own Claude Code. The Codex path list is empty. So Send
-  and Reply reach a real Claude Code, the toolbar shows none of your sessions, and nothing reaches
-  one of them.
+- **The stage copy talks only to the trailer's Claude Code, and no Codex.** Since 2026-09-28 Send
+  reaches it through the stage copy's own plugin, `vignette@vignette-demo`, as it reaches anyone's.
+  `build` empties the app's herdr and Codex path lists and patches the plugin's skill to the stage
+  copy's URL scheme and log. The stage copy lists only inboxes under its own Application Support
+  folder, and only the trailer's config has its plugin. So Send and Reply reach a real Claude Code,
+  the toolbar shows none of your sessions, and nothing reaches one of them.
 - **The trailer's Claude Code has its own config.** `trailer.py claude` puts it in
-  `out/stage/claude` (`CLAUDE_CONFIG_DIR`), with the skill patched for the stage copy's URL scheme
-  and herdr's hook, and signs it in once. It never reads your `~/.claude`.
+  `out/stage/claude` (`CLAUDE_CONFIG_DIR`) and signs it in once. Each take installs the plugin
+  there from the marketplace the stage copy writes at launch, and runs `claude` straight in Ghostty.
+  The take waits on the inbox's `turn` file for Claude to start and finish a turn, and waits 20 s
+  after Claude Code starts, so the notices it shows over its input for its first seconds, such as
+  the account's usage, are gone before the camera sees them. It never reads your `~/.claude`.
 - **The whole performance is one take.** The plan had one take per beat. Reaching beat 7's state
   needs beats 1 to 6 anyway, so a take performs them all and the cut picks
   each beat's span from it by the events. A failed check ends the take with its reason, and the
@@ -90,7 +115,7 @@ working. Do not use the Mac while it runs.
 - **Your own Vignette keeps running.** The take never sends it a URL, a key or a click.
 
 If a take is interrupted, `trailer.py restore` shows the Dock again, puts the pasteboard back,
-stops the stage copy, and closes the take's Chrome, Ghostty and herdr session.
+stops the stage copy, and closes the take's Chrome and Ghostty.
 
 ## The cut
 

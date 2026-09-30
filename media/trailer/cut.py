@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 TIME = re.compile(r'^\s*([\w.]+)\s*(?:([+-])\s*([\d.]+))?\s*$')
 
 
@@ -184,15 +185,26 @@ def frame_times(movie):
 
 
 class Edit:
-    """The spans the cut keeps, placed on the cut's clock."""
+    """The spans the cut keeps, placed on the cut's clock. With a beat, each span starts and ends on
+    the take's beats and each dissolve is a whole number of half beats, so a moment on a beat of the
+    take plays on a half beat of the cut."""
 
     def __init__(self, config, r):
         self.spans = []
+        beat = config.get('rhythm', {}).get('beat', 0)
+        origin = r.data['events'][0]['t'] if r.data['events'] else 0.0
         for i, s in enumerate(config['span']):
             t0, t1 = r.time(s['from']), r.time(s['to'])
+            dissolve = s.get('dissolve', 0) if i else 0
+            if beat:
+                t0 = origin + math.floor((t0 - origin) / beat + 1e-6) * beat
+                t1 = origin + math.ceil((t1 - origin) / beat - 1e-6) * beat
+                dissolve = round(dissolve / (beat / 2)) * (beat / 2)
+            if self.spans and beat and t0 < self.spans[-1]['to'] <= r.time(s['from']) + 1e-6:
+                # Moved back onto a beat, the span would start inside the one before.
+                t0 = self.spans[-1]['to']
             if t1 <= t0:
                 sys.exit(f'cut: span {i + 1} ends before it starts')
-            dissolve = s.get('dissolve', 0) if i else 0
             if self.spans:
                 last = self.spans[-1]
                 if dissolve > min(last['length'], t1 - t0):
@@ -244,9 +256,15 @@ def plan(config, take):
     change = style.get('change', 0.45)
     loop = out.get('loop', 0)
 
+    # Caption changes and camera moves land on the cut's half beats.
+    half = config.get('rhythm', {}).get('beat', 0) / 2
+
+    def on_grid(u):
+        return round(u / half) * half if half else u
+
     captions, cues, presses, moves = [], [], [], []
     for beat in (b for b in config['beat'] if b.get('enabled', True)):
-        at = edit.place(r.time(beat['from']))
+        at = on_grid(edit.place(r.time(beat['from'])))
         index = -1
         if beat.get('caption'):
             captions.append({'text': beat['caption'], 'keys': beat.get('keys', [])})
@@ -256,14 +274,16 @@ def plan(config, take):
             presses.append((edit.place(r.time(beat['press'], beat)), index))
         for m in beat.get('camera', []):
             t = r.time(m['at'], beat)
-            moves.append({'at': edit.place(t), 'ease': m.get('ease', 0.001),
+            moves.append({'at': on_grid(edit.place(t)), 'ease': m.get('ease', 0.001),
                           'rect': framed(r.rect(m['rect'], t), m.get('pad', 0), bounds, m.get('least', least))})
     if not moves:
         sys.exit('cut: no beat moves the camera; the first beat needs a camera')
     moves.sort(key=lambda m: m['at'])
     cues.sort()
-    # A looping cut turns its last caption back into its first while the picture dissolves back.
-    if loop and cues and cues[0][0] <= 0 and cues[0][1] >= 0:
+    outro = config.get('outro')
+    # A looping cut turns its last caption back into its first while the picture dissolves back. With
+    # an end card, the first caption comes back with the first frame instead, over the card.
+    if loop and not outro and cues and cues[0][0] <= 0 and cues[0][1] >= 0:
         cues.append((edit.length - change, cues[0][1]))
 
     def caption_at(u):
@@ -305,7 +325,7 @@ def plan(config, take):
         if poster is None and u >= poster_at:
             poster = n
         layers = [[i, round(t - start, 5), round(a, 4)] for i, t, a in edit.layers(u)]
-        if loop and u >= edit.length - loop:
+        if loop and not outro and u >= edit.length - loop:
             layers.append([len(edit.spans), round(edit.spans[0]['from'] - start, 5),
                            round(ease((u - (edit.length - loop)) / loop), 4)])
         x, y, w, h = path[n]
@@ -313,7 +333,30 @@ def plan(config, take):
         frames.append({'layers': layers, 'crop': [round(v * scale, 2) for v in (x, y, w, h)],
                        'caption': index, 'previous': previous, 'morph': round(ease(morph), 4),
                        'lit': lit_at(u, index)})
+    if outro:
+        # The end card holds the film's last frame while the film leaves, and its last caption
+        # fades with it. A looping cut ends with the first frame dissolving in over the card.
+        last = frames[-1]
+        first_caption = cues[0][1] if cues and cues[0][0] <= 0 else -1
+        length = outro['length']
+        for n in range(round(length * fps)):
+            t = n / fps
+            frame = {'layers': last['layers'], 'crop': last['crop'], 'caption': -1, 'previous': -1,
+                     'morph': 1.0, 'lit': 0.0, 'outro': round(t, 5)}
+            gone = ease(t / 0.4)
+            if gone < 1 and last['caption'] >= 0:
+                frame.update(caption=last['caption'], morph=round(1 - gone, 4))
+            if loop and t >= length - loop:
+                a = round(ease((t - (length - loop)) / loop), 4)
+                frame['after'] = [len(edit.spans), round(edit.spans[0]['from'] - start, 5), a]
+                frame['after_crop'] = frames[0]['crop']
+                if first_caption >= 0:
+                    frame.update(caption=first_caption, morph=a)
+            frames.append(frame)
+
     return {
+        'outro': {'icon': os.path.join(HERE, outro['icon']), 'wordmark': os.path.join(HERE, outro['wordmark']),
+                  'tagline': outro['tagline'], 'footer': outro['footer'], 'exit': outro['exit']} if outro else None,
         'source': movie, 'starts': starts,
         'width': out['width'], 'height': out['height'], 'fps': fps,
         'style': {'size': style['size'], 'key_size': style['key_size'], 'x': style['x'], 'y': style['y']},

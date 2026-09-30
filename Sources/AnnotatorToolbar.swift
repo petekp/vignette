@@ -191,8 +191,12 @@ final class AnnotatorToolbar {
                                                       onMessageEnd: { [weak self] in self?.onMessageEnd?() }))
         panel.contentView = hosting
         targetMenuActions.onPick = { [weak self] destination in
-            self?.model.pick(destination)
-            self?.refit()
+            // A turn later, once the menu's own event loop has ended, and on the bar's spring.
+            DispatchQueue.main.async {
+                guard let self else { return }
+                withAnimation(Anim.spring(0.35 * Settings.shared.motionScale)) { self.model.pick(destination) }
+                self.refit()
+            }
         }
         panel.onTab = { [weak self] backward in self?.move(backward: backward) }
         panel.onPress = { [weak self] onField in
@@ -487,7 +491,7 @@ enum ToolbarOffer: Equatable {
     case reply(AgentDestination)
 
     /// A reply goes back where the image came from, unless the whole list has answered without that
-    /// Claude Code session: herdr lists every pane, so it has closed. Codex's listing holds only the
+    /// Claude Code session: the inboxes list every session running the plugin, so it has closed. Codex's listing holds only the
     /// threads used last, so a Codex thread missing from it may still be there.
     init(replyTo: AgentDestination?, destinations: [AgentDestination], listed: Bool, target: AgentDestination?) {
         if let replyTo {
@@ -575,6 +579,10 @@ private struct ToolbarView: View {
     private static let slop = EdgeInsets(top: 7, leading: 2, bottom: 7, trailing: 2)
     /// The tools sit 2 pt apart, so each takes half the gap.
     private static let toolSlop = EdgeInsets(top: 7, leading: 1, bottom: 7, trailing: 1)
+
+    /// The widest the target's project name is drawn. Past it the name is cut, so a long folder name
+    /// cannot stretch the bar.
+    private static let targetNameMax: CGFloat = 132
 
     /// The message field's width in the bar, and the most lines it grows to while it is typed in.
     private static let messageWidth: CGFloat = 220
@@ -705,6 +713,14 @@ private struct ToolbarView: View {
                            removal: .opacity.animation(.easeOut(duration: 0.08 * motion)))
     }
 
+    /// The target's name giving way to the next: the old one goes at once and the new one comes in
+    /// while the name's width is still springing, so the box is never empty for long.
+    private static var nameSwap: AnyTransition {
+        let motion = Settings.shared.motionScale
+        return .asymmetric(insertion: .opacity.animation(.easeIn(duration: 0.12 * motion).delay(0.05 * motion)),
+                           removal: .opacity.animation(.easeOut(duration: 0.06 * motion)))
+    }
+
     /// The bar's background: a blur of what is behind it under a neutral gray, since a material alone
     /// takes on the picture's colour, with a faint light along the top edge and a hairline outside it
     /// so the edge holds against a light picture as well as a dark one.
@@ -784,10 +800,10 @@ private struct ToolbarView: View {
             .clipShape(box)
             .background { box.fill(Color.primary.opacity(0.09)).shadow(color: .black.opacity(grown ? 0.3 : 0), radius: 10, y: 4) }
             .overlay(box.stroke(Color.accentColor.opacity(typing ? 0.8 : 0), lineWidth: 1))
-            // The text field takes presses only on its text; its padding and the room around it in
-            // the bar start typing too, on the press, as the text does.
-            .contentShape(box)
-            .simultaneousGesture(pressToType)
+            // The text field takes presses only on its text. Its padding and the room around it in
+            // the bar start typing too, on the press, through the gesture behind the box. A gesture
+            // on the text as well took the release of a quick click, and the text field then waited
+            // for it with every other event queued behind, Esc included, until the next click.
             .modifier(IBeam())
         }
         .frame(width: Self.messageWidth, height: 30)
@@ -874,10 +890,25 @@ private struct ToolbarView: View {
     /// Where Send goes: the agent's logo and the session's project, apart from Send itself. It opens
     /// the menu for changing it (`AnnotatorToolbar.showTargetMenu`).
     private func targetMenu(_ target: AgentDestination) -> some View {
-        Button(action: onTargetMenu) {
+        // The name's width is set rather than left to the text, so it springs with the bar when the
+        // target changes and the controls beside it move with it. The old name leaves and the new
+        // one comes in the place between, as a control does (`slot`). A long name is cut in the
+        // middle, where a worktree's suffix survives; the tooltip has it whole.
+        let nameWidth = min(ButtonLabel.width(target.project, size: 13), Self.targetNameMax)
+        return Button(action: onTargetMenu) {
             HStack(spacing: 6) {
-                AgentLogo(client: target.client, template: false).frame(width: 14, height: 14)
-                Text(target.project).font(.system(size: 13, weight: .semibold))
+                ZStack(alignment: .leading) {
+                    HStack(spacing: 6) {
+                        AgentLogo(client: target.client, template: false).frame(width: 14, height: 14)
+                        Text(target.project).font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1).truncationMode(.middle)
+                            .frame(width: nameWidth, alignment: .leading)
+                    }
+                    .id(target.id)
+                    .transition(Self.nameSwap)
+                }
+                .frame(width: 14 + 6 + nameWidth, alignment: .leading)
+                .clipped()
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
             }
             .foregroundStyle(.primary)

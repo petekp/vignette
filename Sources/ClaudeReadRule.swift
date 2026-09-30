@@ -2,7 +2,7 @@ import Foundation
 
 /// Claude Code asks before it reads a file outside the session's folder, and the image Send puts in a
 /// session is in Vignette's request folder, so a session stops on that question when it opens the
-/// drawing. herdr then reports the pane `blocked`, and the next Send to it fails until someone answers.
+/// drawing, and every request sent to it after waits behind that question.
 /// This rule in Claude Code's own settings lets it read the sent images, and nothing else of Vignette's,
 /// without asking. The person turns it on: it is their Claude Code's configuration.
 enum ClaudeReadRule {

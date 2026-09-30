@@ -1,0 +1,26 @@
+#!/bin/sh
+# Renders a page of the app as the browser beside you shows it, 904 x 565 at 2x:
+# ./screenshot <file.png> [page] [w,h]. The dev server must be running. STAGE_URL names it.
+set -e
+out="${1:?usage: ./screenshot <file.png> [query] [w,h]}"
+url="${STAGE_URL:-http://localhost:5173/}${2:-}"
+size="${3:-904,565}"
+case "$out" in /*) path="$out" ;; *) path="$PWD/$out" ;; esac
+rm -f "$path"
+profile="$(mktemp -d)"
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir="$profile" \
+  --use-mock-keychain --no-first-run --hide-scrollbars --window-size="$size" --force-device-scale-factor=2 \
+  --virtual-time-budget=3000 --screenshot="$path" "$url" >/dev/null 2>&1 &
+chrome=$!
+# Headless Chrome can stay running after it writes the screenshot, so the script stops it.
+i=0
+while [ ! -s "$path" ] && [ $i -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+sleep 0.3
+kill "$chrome" 2>/dev/null || true
+# It can ignore that too, and a wait would then never return.
+i=0
+while kill -0 "$chrome" 2>/dev/null && [ $i -lt 20 ]; do sleep 0.1; i=$((i + 1)); done
+kill -9 "$chrome" 2>/dev/null || true
+rm -rf "$profile"
+test -s "$path"
+echo "$out"

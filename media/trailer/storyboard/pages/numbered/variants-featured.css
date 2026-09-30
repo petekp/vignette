@@ -1,0 +1,18 @@
+/* The trip's highlight: its picture fills the card. */
+.day.featured { position: relative; overflow: visible; box-shadow: 0 1px 2px rgba(60, 40, 20, 0.08), 0 14px 30px -12px rgba(150, 70, 30, 0.45); }
+.day.featured .art { position: absolute; inset: 0; height: auto; border-radius: var(--radius); overflow: hidden; }
+.day.featured .art svg { height: 100%; }
+.day.featured .art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(34, 24, 12, 0) 30%, rgba(34, 24, 12, 0.35) 45%, rgba(34, 24, 12, 0.55)); }
+.day.featured .body { position: relative; margin-top: 84px; }
+.day.featured .date, .day.featured ul, .day.featured li time { color: #f6e6d2; }
+.day.featured h3 { color: #fffaf2; }
+.day.featured .status { color: #fffaf2; background: rgba(255, 250, 242, 0.2); }
+.day.featured .date .stop { background: #fffaf2; color: var(--accent); }
+.day.featured .button { background: #fffaf2; border-color: #fffaf2; color: var(--ink); }
+.day.featured .flag {
+  position: absolute; top: -10px; left: 14px; z-index: 1;
+  padding: 3px 10px; border-radius: 999px;
+  background: var(--accent); color: #fffdf8;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em;
+  box-shadow: 0 2px 6px rgba(120, 50, 20, 0.35);
+}

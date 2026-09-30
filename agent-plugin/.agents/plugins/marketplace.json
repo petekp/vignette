@@ -1,0 +1,11 @@
+{
+  "name": "vignette",
+  "plugins": [
+    {
+      "name": "vignette",
+      "source": { "source": "local", "path": "./plugins/vignette" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

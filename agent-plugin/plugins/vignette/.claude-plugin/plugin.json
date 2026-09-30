@@ -1,0 +1,10 @@
+{
+  "name": "vignette",
+  "displayName": "Vignette",
+  "version": "6.1.0",
+  "description": "Send drawings from Vignette to this session, and draw back",
+  "author": { "name": "Pete Petrash", "url": "https://github.com/petekp" },
+  "homepage": "https://github.com/petekp/vignette",
+  "repository": "https://github.com/petekp/vignette",
+  "license": "MIT"
+}

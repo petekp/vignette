@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trailer v3 animatic</title>
+<link rel="stylesheet" href="scene.css">
+<style>
+:root { --page: #0e0e10; --panel: #1b1b1e; --ink: #ececec; --muted: #9a9ea5; --line: #2e2e33; --accent: #ff6b35; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Inter", sans-serif; }
+main { padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+#stage { position: relative; background: #000; }
+#stage .frame { position: absolute; inset: 0; border-radius: 6px; }
+#stage #cap { background: transparent; pointer-events: none; }
+.bar { width: 100%; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+button, select { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
+button.on { border-color: var(--accent); color: var(--accent); }
+#play { min-width: 76px; font-weight: 700; }
+#time { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); min-width: 120px; }
+.scrub { position: relative; width: 100%; height: 40px; }
+.scrub input { position: absolute; inset: 0; width: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.scrub .track { position: absolute; left: 0; right: 0; top: 6px; height: 22px; display: flex; border-radius: 6px; overflow: hidden; pointer-events: none; }
+.scrub .track div { border-right: 2px solid var(--page); font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.85); padding: 3px 6px; white-space: nowrap; overflow: hidden; }
+.scrub .head { position: absolute; top: 0; width: 2px; height: 34px; background: #fff; pointer-events: none; }
+.info { width: 100%; display: grid; grid-template-columns: 160px 1fr; gap: 4px 14px; color: var(--muted); }
+.info b { color: var(--ink); }
+.keys { color: var(--muted); font-size: 12px; }
+code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em; }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <div id="stage"><div class="frame" id="under"></div><div class="frame" id="over"></div><div class="frame" id="cap"></div></div>
+  <div class="bar" id="bar">
+    <button id="play">Play</button>
+    <span id="time"></span>
+    <select id="reel"></select>
+    <button id="caps" class="on" title="C">Captions</button>
+    <button id="loopBtn" title="L">Loop</button>
+    <select id="speed"><option value="1">1×</option><option value="0.5">0.5×</option><option value="0.25">0.25×</option></select>
+    <a href="index.html">Storyboard</a>
+  </div>
+  <div class="scrub" id="scrub"><div class="track" id="track"></div><div class="head" id="head"></div><input type="range" id="range" min="0" step="0.01"></div>
+  <div class="info" id="info"></div>
+  <div class="keys">Space plays and pauses. ← and → step 0.1 s, with Shift 1 s. C hides the captions, which is the test that the screen proves them. L loops.</div>
+</main>
+
+<script src="scene.js"></script>
+<script src="story.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const q = new URLSearchParams(location.search);
+const COLORS = ['#d9480f', '#7048e8', '#1c7ed6', '#0c8599', '#2f9e44', '#c2255c', '#495057', '#e67700', '#5c940d'];
+
+let reel = REELS.find(r => r.id === q.get('reel')) || REELS[0];
+let starts, dur, t = parseFloat(q.get('t') || '0'), playing = !q.has('t'), captions = q.get('captions') !== '0';
+let looping = true, speed = 1, last = null;
+
+$('reel').innerHTML = REELS.map(r => `<option value="${r.id}">${r.title}</option>`).join('');
+
+function setReel(r) {
+  reel = r; starts = reelStarts(reel); dur = reelDur(reel);
+  $('reel').value = reel.id;
+  $('range').max = dur;
+  $('track').innerHTML = reel.shots.map((s, i) => `<div style="flex:${s.dur};background:${COLORS[i % COLORS.length]}">${s.id}</div>`).join('');
+  t = Math.min(t, dur);
+}
+
+// The shot playing at time T, and the time inside it.
+function locate(T) {
+  let i = starts.length - 1;
+  while (i > 0 && starts[i] > T) i--;
+  return [i, T - starts[i]];
+}
+
+function size() {
+  const w = Math.min(window.innerWidth - 32, (window.innerHeight - 220) * 1.6);
+  $('stage').style.width = w + 'px'; $('stage').style.height = w / 1.6 + 'px';
+  $('bar').style.width = $('scrub').style.width = $('info').style.width = w + 'px';
+  $('bar').parentElement.querySelector('.keys').style.width = w + 'px';
+  return w;
+}
+
+let width = size();
+window.addEventListener('resize', () => { width = size(); draw(); });
+
+// Two layers: `over` is the shot at T; `under` is what it dissolves from, the previous shot's last
+// frame, or at a looping reel's end, the reel's first frame dissolving in over the top. The caption
+// is a third layer above both, as it is in the cut, so a dissolve never shows two captions.
+function draw() {
+  const [i, lt] = locate(t), shot = reel.shots[i];
+  let under = null, overOpacity = 1, over = frameAt(shot, lt);
+  if (shot.dissolveIn && lt < shot.dissolveIn && i > 0) {
+    const prev = reel.shots[i - 1];
+    under = frameAt(prev, prev.dur); overOpacity = lt / shot.dissolveIn;
+  }
+  if (reel.loop && looping && t > dur - reel.loop) {
+    under = over; over = frameAt(reel.shots[0], 0); overOpacity = (t - (dur - reel.loop)) / reel.loop;
+  }
+  patch($('over'), layerHTML(over, width, false));
+  patch($('cap'), captions && !over.end ? captionHTML(over.caption, width / 1600) : '');
+  $('over').style.opacity = overOpacity;
+  // Into the end card, the film eases back and softens as it fades, as cut.swift draws it.
+  const leave = shot.leaves && under && !(reel.loop && looping && t > dur - reel.loop) ? smooth(lt / shot.dissolveIn) : 0;
+  $('under').style.transform = leave ? `scale(${1 - 0.05 * leave})` : '';
+  $('under').style.filter = leave ? `blur(${14 * leave * width / 1600}px)` : '';
+  if (under) patch($('under'), layerHTML(under, width, false)); else if ($('under').firstChild) $('under').innerHTML = '';
+  $('under').style.display = under ? '' : 'none';
+
+  $('range').value = t;
+  $('head').style.left = (t / dur * 100) + '%';
+  $('time').textContent = `${fmt(t)} / ${fmt(dur)}`;
+  $('play').textContent = playing ? 'Pause' : 'Play';
+  $('info').innerHTML = `<b>${shot.id} · ${shot.title}</b><span>${fmt(lt)} into the shot, ${shot.dur.toFixed(1)} s long. Camera: ${shot.move}</span>
+    <span>Action</span><span>${shot.action}</span><span>On screen</span><span>${shot.screen}</span>`;
+}
+
+// Frame timing, read by checks: how many frames took longer than two 60 Hz frames to draw.
+window.__perf = { frames: 0, slow: 0, worst: 0 };
+function tick(now) {
+  if (playing) {
+    if (last !== null) t += (now - last) / 1000 * speed;
+    if (t >= dur) {
+      if (looping) t = reel.loop ? 0 : t % dur;
+      else { t = dur; playing = false; }
+    }
+  }
+  last = now;
+  const a = performance.now();
+  draw();
+  const took = performance.now() - a;
+  if (playing) { __perf.frames++; if (took > 33) __perf.slow++; __perf.worst = Math.max(__perf.worst, took); }
+  requestAnimationFrame(tick);
+}
+
+$('play').onclick = () => { if (!playing && t >= dur) t = 0; playing = !playing; };
+$('range').oninput = e => { t = parseFloat(e.target.value); playing = false; };
+$('reel').onchange = e => { setReel(REELS.find(r => r.id === e.target.value)); t = 0; playing = true; };
+$('caps').onclick = () => { captions = !captions; $('caps').classList.toggle('on', captions); };
+$('loopBtn').onclick = () => { looping = !looping; $('loopBtn').classList.toggle('on', looping); };
+$('speed').onchange = e => { speed = parseFloat(e.target.value); };
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'SELECT') return;
+  if (e.code === 'Space') { e.preventDefault(); $('play').click(); }
+  else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    e.preventDefault(); playing = false;
+    t = Math.max(0, Math.min(dur, t + (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 1 : 0.1)));
+  }
+  else if (e.key === 'c' || e.key === 'C') $('caps').click();
+  else if (e.key === 'l' || e.key === 'L') $('loopBtn').click();
+});
+
+setReel(reel);
+$('caps').classList.toggle('on', captions);
+$('loopBtn').classList.toggle('on', looping);
+// Load every image before the first frame, so playback never waits on one.
+Promise.all(Object.values(IMG).concat('assets/desk.jpg').map(src => { const im = new Image(); im.src = src; return im.decode().catch(() => {}); }))
+  .then(() => { draw(); requestAnimationFrame(tick); });
+</script>
+</body>
+</html>

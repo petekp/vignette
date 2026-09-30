@@ -118,16 +118,14 @@ final class Drawings {
     /// Adds an agent's marks to the drawing of the screenshot at `url`, and answers how many joined.
     /// When `editor` has that screenshot open, the marks join its drawing as one undo step, and the
     /// editor hands the drawing over at once, which must reach `write`. Otherwise they are added to
-    /// the stored drawing, or a new one at `newPointScale`, and the colour pass runs over the ones
-    /// without a named colour. Either way the file is written before this returns, or it throws.
-    /// `sample` is the colour pass's sample of that screenshot; without one the marks keep the
-    /// colour they start in.
-    func add(_ agentMarks: [AgentMark], to url: URL, editor: EditorView?, sample: ColorSample?,
+    /// the stored drawing, or a new one at `newPointScale`. Either way the file is written before this
+    /// returns, or it throws. `agent` names the agent they are from.
+    func add(_ agentMarks: [AgentMark], from agent: String?, to url: URL, editor: EditorView?,
              style: TextStyle, newPointScale: CGFloat) throws -> Int {
         let name = url.lastPathComponent
         if let editor, editor.core.isOpen, editor.core.drawing.key == url.path {
             let open = editor.core.drawing
-            let made = marks(agentMarks, in: open.pixels, pointScale: open.pointScale, style: editor.core.style, name: name)
+            let made = marks(agentMarks, from: agent, in: open.pixels, pointScale: open.pointScale, style: editor.core.style, name: name)
             lastWrite = nil
             editor.addAgentMarks(made)
             let joined = editor.core.drawing.marks.count - open.marks.count
@@ -142,12 +140,7 @@ final class Drawings {
         }
         let pointScale = min(max(newPointScale, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
         var drawing = read(url, pixels: pixels, style: style) ?? Drawing(key: url.path, pixels: pixels, pointScale: pointScale, marks: [])
-        var made = marks(agentMarks, in: pixels, pointScale: drawing.pointScale, style: style, name: name)
-        if let sample {
-            for index in made.indices where !made[index].colorChosen {
-                made[index].color = sample.pick(for: made[index], pointScale: drawing.pointScale, style: style)
-            }
-        }
+        let made = marks(agentMarks, from: agent, in: pixels, pointScale: drawing.pointScale, style: style, name: name)
         guard !made.isEmpty else { return 0 }
         drawing.marks += made
         guard write(drawing, reason: "built") else {
@@ -156,9 +149,13 @@ final class Drawings {
         return made.count
     }
 
-    /// `AgentMark.marks`, with its one line for texts that do not fit.
-    private func marks(_ agentMarks: [AgentMark], in pixels: PixelSize, pointScale: CGFloat, style: TextStyle, name: String) -> [Mark] {
-        let made = AgentMark.marks(agentMarks, in: pixels, pointScale: pointScale, style: style)
+    /// `AgentMark.marks`, with its one line for texts that do not fit, and one for colours named.
+    private func marks(_ agentMarks: [AgentMark], from agent: String?, in pixels: PixelSize, pointScale: CGFloat, style: TextStyle,
+                       name: String) -> [Mark] {
+        if agentMarks.contains(where: { $0.color != nil }) {
+            Log.write("[marks] color ignored for \(name): an agent's marks are drawn in the agent's colour")
+        }
+        let made = AgentMark.marks(agentMarks, from: agent, in: pixels, pointScale: pointScale, style: style)
         if !made.tooLong.isEmpty {
             Log.write("[marks] text too long for \(name): mark \(made.tooLong.map(String.init).joined(separator: ", ")) is cut off at its edge")
         }

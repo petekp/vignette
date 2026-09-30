@@ -23,13 +23,13 @@ enum AddressGuard: String, Codable {
     /// The receiving runtime resolves the conversation itself and fails when it is gone.
     case runtimeEnforced = "runtime-enforced"
     /// Vignette checks the conversation just before submitting. The window between the check and
-    /// the submission is small but real, and it belongs to the person's own pane.
+    /// the submission is small but real, and it belongs to the person's own terminal.
     case preflight
 }
 
 /// The native identity of a destination, as its client understands it.
 enum AgentAddress: Equatable, Codable {
-    /// A Claude Code session id. herdr resolves it to the pane running it at send time.
+    /// A Claude Code session id. The plugin's inboxes resolve it to the process running it at send time.
     case claudeSession(String)
     /// A Codex thread. `codex queue --thread` finds the engine that owns it, so there is nothing
     /// else to say: the UUID is the whole address.
@@ -117,7 +117,7 @@ struct AgentDestination: Equatable, Identifiable {
     }
 
     /// Whether this session is known to be in use, which is what Send's menu lists. A Claude Code
-    /// session is listed only while it runs in a herdr pane. Nothing says which threads the Codex
+    /// session is listed only while the Vignette plugin's monitor runs in it. Nothing says which threads the Codex
     /// app has open, so a Codex thread counts when it was used in the last day: on 2026-09-25, 2 of
     /// the 15 threads listed had been, and the rest were 33 hours to 17 days old.
     func isActive(now: Date = Date()) -> Bool {
@@ -238,12 +238,15 @@ enum Subprocess {
     /// stop it; nil when it cannot start. It blocks, so callers keep it off the main thread. A
     /// command killed on the deadline may still have been accepted by whatever it was talking to, so
     /// a caller that has to tell a definite failure from an uncertain one reads `timedOut` rather
-    /// than the exit status.
-    static func run(_ binary: String, _ arguments: [String], timeout: TimeInterval)
+    /// than the exit status. `environment` is added to the app's own.
+    static func run(_ binary: String, _ arguments: [String], timeout: TimeInterval, environment: [String: String] = [:])
         -> (status: Int32, output: String, timedOut: Bool)? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = arguments
+        if !environment.isEmpty {
+            process.environment = ProcessInfo.processInfo.environment.merging(environment) { $1 }
+        }
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -269,31 +272,146 @@ enum Subprocess {
     }
 }
 
-// MARK: Claude Code, through herdr
+// MARK: Claude Code, through the plugin's inbox
 
-/// Claude Code has no local command that puts a message into a session that is already running.
-/// herdr, which owns the pane, does: `herdr agent prompt` submits one line to an agent it is
-/// running, refusing one that is waiting on a prompt of its own. herdr also reports each pane's
-/// Claude Code session id, so Vignette addresses the session and resolves it to a pane at send
-/// time; a session that is in no pane is an error and never a different pane's. What the menu says
-/// about a session comes from its own transcript.
+/// Claude Code has no command that puts a message into a session that is already running. The
+/// Vignette plugin gives each session an inbox instead: a folder named by the Claude Code process,
+/// which the plugin's monitor reads between turns, printing each request, which reaches Claude as
+/// the person's message (agent-plugin/, docs/claude-code-without-herdr-2026-09-27.md). Vignette
+/// addresses the session, and checks just before writing that the inbox still holds it: `/clear`
+/// and `/resume` give the same process another session. What the menu says about a session comes
+/// from its own transcript. herdr, when it is there, only says which session has the focus.
 struct ClaudeCodeConnection: AgentConnection {
     let client = AgentClient.claude
-    /// Where herdr may be, and how long one call may take. Injected so tests never run herdr.
-    var binary: () -> String? = { ClaudeCodeConnection.binary() }
+    /// The inboxes, one folder per Claude Code process. Injected so a test never reads the real ones.
+    var inboxes = AgentPlugin.inboxRoot
+    /// Where Claude Code keeps its transcripts, one folder per project, for a session whose inbox
+    /// does not name its transcript yet.
+    var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
+    var isRunning: @Sendable (Int32) -> Bool = { kill($0, 0) == 0 }
+    var now: @Sendable () -> Date = { Date() }
+    /// herdr's binary and its runner, for the focus hint. Injected so tests never run herdr.
+    var herdr: @Sendable () -> String? = { ClaudeCodeConnection.herdrBinary() }
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
         Subprocess.run($0, $1, timeout: $2)
     }
-    /// Where Claude Code keeps its transcripts, one folder per project. Injected so a test never
-    /// reads the real ones.
-    var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
-    /// Whether Claude Code's settings hold `ClaudeReadRule`. Injected so a test never reads them.
-    var readsDrawings: () -> Bool = { ClaudeReadRule.isSet(in: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude")) }
 
     static let listTimeout: TimeInterval = 10
-    static let promptTimeout: TimeInterval = 20
+    /// The monitor touches `alive` every 3 s. An inbox older than this has no monitor reading it.
+    static let aliveWindow: TimeInterval = 10
 
-    /// One agent herdr is running, as `herdr agent list` reports it.
+    static let closed = "This session is closed. Send to another one."
+    static let cleared = "This session was cleared. Pick another one and send again."
+
+    /// One inbox, as the plugin's scripts wrote it.
+    struct Inbox: Equatable {
+        let folder: URL
+        let pid: Int32
+        /// The session the process runs now.
+        var session: String?
+        /// The folder Claude Code runs in, which is the session's project.
+        var cwd: String?
+        /// The session's transcript, from the last hook that ran.
+        var transcript: String?
+        /// The sessions the process ran before this one, which `/clear` and `/resume` leave.
+        var past: [String] = []
+        /// When the monitor last said it was running.
+        var alive: Date?
+    }
+
+    /// Every inbox under `root`. Nothing is read beyond the few short files in each.
+    static func inboxes(in root: URL) -> [Inbox] {
+        let folders = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        return folders.compactMap { folder in
+            guard let pid = Int32(folder.lastPathComponent), pid > 0 else { return nil }
+            func text(_ name: String) -> String {
+                (try? String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8)) ?? ""
+            }
+            func line(_ name: String) -> String? {
+                let line = text(name).trimmingCharacters(in: .whitespacesAndNewlines)
+                return line.isEmpty ? nil : line
+            }
+            let alive = (try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("alive").path))?[.modificationDate] as? Date
+            return Inbox(folder: folder, pid: pid, session: line("session"), cwd: line("cwd"), transcript: line("transcript"),
+                         past: text("past").split(whereSeparator: \.isNewline).map(String.init), alive: alive)
+        }
+    }
+
+    /// The inboxes a request can be written to: the process is running and its monitor is. An
+    /// inbox whose process has gone is removed, since the monitor may have been stopped before it
+    /// could remove it itself.
+    func liveInboxes() -> [Inbox] {
+        Self.inboxes(in: inboxes).filter { inbox in
+            guard isRunning(inbox.pid) else {
+                try? FileManager.default.removeItem(at: inbox.folder)
+                return false
+            }
+            guard inbox.session.map({ UUID(uuidString: $0) != nil }) == true, let alive = inbox.alive else { return false }
+            return now().timeIntervalSince(alive) < Self.aliveWindow
+        }
+    }
+
+    func destinations() -> [AgentDestination] {
+        let folders = (try? FileManager.default.contentsOfDirectory(at: transcripts, includingPropertiesForKeys: nil)) ?? []
+        let listed = liveInboxes().compactMap { inbox -> AgentDestination? in
+            guard let session = inbox.session else { return nil }
+            let file = inbox.transcript.map { URL(fileURLWithPath: $0) }.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+                ?? Self.transcriptFile(session: session, folders: folders)
+            let transcript = file.flatMap { Self.tail(of: $0) }.map(Self.transcript(tail:)) ?? Transcript()
+            return Self.destination(session: session, cwd: inbox.cwd, transcript: transcript)
+        }
+        guard !listed.isEmpty, let herdr = herdr(), let panes = run(herdr, ["pane", "list"], Self.listTimeout), panes.status == 0 else {
+            return listed
+        }
+        let data = Data(panes.output.utf8)
+        return Self.markFocus(listed, agents: Self.agents(in: data, list: "panes"), focus: Self.focus(fromPaneList: data))
+    }
+
+    /// One session as a destination. The transcript names it and says when it was last used. A
+    /// session with no title yet, one nobody has written to, is named by its project. The project is
+    /// the folder Claude Code runs in: the transcript's `cwd` follows the session's shell, so a
+    /// session that ran `cd .scratch` would read as a project called ".scratch" (observed 2026-09-24).
+    static func destination(session: String, cwd: String?, transcript: Transcript) -> AgentDestination {
+        let project = ((cwd ?? transcript.cwd ?? "") as NSString).lastPathComponent
+        return AgentDestination(
+            id: session,
+            name: transcript.title ?? (project.isEmpty ? "New session" : "New session in \(project)"),
+            detail: project,
+            address: .claudeSession(session),
+            lastUsed: transcript.lastUsed)
+    }
+
+    /// Writes the request into the session's inbox, aside and then renamed in, so the monitor never
+    /// prints half of one. It is accepted once it is there: a session in a turn reads it when the
+    /// turn ends, as a Codex thread does a queued message.
+    func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
+        guard case .claudeSession(let session) = destination.address else {
+            return .notSubmitted(code: .noAgent, detail: "not a Claude Code destination", reason: SubmissionOutcome.internalReason)
+        }
+        // The guard: the inbox has to hold this exact session now. A session in no inbox is an
+        // error; it is never redirected to another one.
+        let all = Self.inboxes(in: inboxes)
+        guard let inbox = liveInboxes().first(where: { $0.session == session }) else {
+            let cleared = all.contains { $0.past.contains(session) && isRunning($0.pid) }
+            return .destinationChanged(detail: "Claude Code session \(session) is in no live inbox under \(inboxes.path)",
+                                       reason: cleared ? Self.cleared : Self.closed)
+        }
+        let name = "\(Int64(now().timeIntervalSince1970 * 1000))-\(UUID().uuidString).line"
+        let aside = inbox.folder.appendingPathComponent(".\(name).tmp")
+        do {
+            try Data((line + "\n").utf8).write(to: aside)
+            try FileManager.default.moveItem(at: aside, to: inbox.folder.appendingPathComponent(name))
+        } catch {
+            try? FileManager.default.removeItem(at: aside)
+            return .notSubmitted(code: .sendFailed, detail: "\(inbox.folder.path): \(error.localizedDescription)",
+                                 reason: SubmissionOutcome.internalReason)
+        }
+        return .accepted(detail: "inbox=\(inbox.pid) session=\(session)")
+    }
+
+    // MARK: herdr's focus
+
+    /// One agent herdr is running, as `herdr pane list` reports it.
     struct HerdrAgent: Equatable {
         /// The name herdr answers to: the agent's name, or its pane id when it has none.
         let id: String
@@ -303,15 +421,19 @@ struct ClaudeCodeConnection: AgentConnection {
         let cwd: String
         /// idle, working, blocked, or unknown.
         let status: String
-        /// The agent session herdr says this pane is running, when it knows one: for Claude Code
-        /// that is the conversation's own id. A pane hosts different sessions over time, so this,
-        /// and not the pane, is what a screenshot request is addressed to.
+        /// The agent session herdr says this pane is running, when it knows one.
         var session: String? = nil
-        /// What the pane's title says it is doing. Only a label; two panes may share it.
         var title: String = ""
         /// The tab the pane is in, and whether it is herdr's focused pane.
         var tab: String = ""
         var focused = false
+    }
+
+    /// Where herdr may be. The app is launched by LaunchServices, so it inherits no shell PATH.
+    static let herdrPaths = ["\(NSHomeDirectory())/.local/bin/herdr", "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr"]
+
+    static func herdrBinary(exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
+        herdrPaths.first(where: exists)
     }
 
     /// herdr's focused pane and its tab, from a `herdr pane list` answer, which lists every pane,
@@ -322,21 +444,6 @@ struct ClaudeCodeConnection: AgentConnection {
         guard let pane = panes.first(where: { $0["focused"] as? Bool == true }),
               let id = pane["pane_id"] as? String else { return nil }
         return (id, pane["tab_id"] as? String ?? "")
-    }
-
-    /// What the card says when herdr fails, for the failures more than one step can meet.
-    static let unresponsive = "herdr isn't responding. Check that it's running."
-    static let closed = "This session is closed. Send to another one."
-    static let blocked = "Answer Claude's question in the session, then send again."
-    /// The same, when the question may be the one `ClaudeReadRule` answers.
-    static let blockedWithoutReadRule = "Answer Claude's question, then send again. Settings > Agents can stop it asking about drawings."
-    private var blocked: String { readsDrawings() ? Self.blocked : Self.blockedWithoutReadRule }
-
-    /// Where herdr may be. The app is launched by LaunchServices, so it inherits no shell PATH.
-    static let binaryPaths = ["\(NSHomeDirectory())/.local/bin/herdr", "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr"]
-
-    static func binary(exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
-        binaryPaths.first(where: exists)
     }
 
     /// The agents in a `herdr agent list` answer, or in a `herdr pane list` answer with `list`
@@ -356,23 +463,6 @@ struct ClaudeCodeConnection: AgentConnection {
                               tab: agent["tab_id"] as? String ?? "",
                               focused: agent["focused"] as? Bool ?? false)
         }
-    }
-
-    func destinations() -> [AgentDestination] {
-        guard let herdr = binary(), let list = run(herdr, ["pane", "list"], Self.listTimeout), list.status == 0 else { return [] }
-        let data = Data(list.output.utf8)
-        // A session herdr cannot identify is left out: a pane id is not a conversation, and
-        // addressing one would be the thing this route must not do.
-        let all = Self.agents(in: data, list: "panes")
-        let agents = all.filter { $0.kind == "claude" && $0.session != nil }
-        let folders = (try? FileManager.default.contentsOfDirectory(at: transcripts, includingPropertiesForKeys: nil)) ?? []
-        return Self.markFocus(agents.compactMap { agent in
-            let transcript = agent.session
-                .flatMap { Self.transcriptFile(session: $0, folders: folders) }
-                .flatMap { Self.tail(of: $0) }
-                .map(Self.transcript(tail:))
-            return Self.destination(agent, transcript: transcript ?? Transcript())
-        }, agents: all, focus: Self.focus(fromPaneList: data))
     }
 
     /// Marks where herdr's focus is. `agents` is every agent herdr runs, of any kind. A focused pane
@@ -395,20 +485,7 @@ struct ClaudeCodeConnection: AgentConnection {
         }
     }
 
-    /// One Claude Code pane as a destination, or nil for a pane whose session herdr cannot name.
-    /// The transcript names it and says when it was last used; the pane's title, which is the same
-    /// title cut short, stands in when the transcript has none. Its project is the folder the pane
-    /// runs Claude Code in. The transcript's `cwd` follows the session's shell, so a session that
-    /// ran `cd .scratch` would read as a project called ".scratch" (observed 2026-09-24).
-    static func destination(_ target: HerdrAgent, transcript: Transcript = Transcript()) -> AgentDestination? {
-        guard let session = target.session else { return nil }
-        return AgentDestination(
-            id: session,
-            name: transcript.title ?? (target.title.isEmpty ? target.id : target.title),
-            detail: ((target.cwd.isEmpty ? transcript.cwd ?? "" : target.cwd) as NSString).lastPathComponent,
-            address: .claudeSession(session),
-            lastUsed: transcript.lastUsed)
-    }
+    // MARK: Transcripts
 
     /// What a session's transcript says about it.
     struct Transcript: Equatable {
@@ -473,52 +550,6 @@ struct ClaudeCodeConnection: AgentConnection {
             }
         }
         return found
-    }
-
-    func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
-        guard case .claudeSession(let session) = destination.address else {
-            return .notSubmitted(code: .noAgent, detail: "not a Claude Code destination", reason: SubmissionOutcome.internalReason)
-        }
-        guard let herdr = binary() else {
-            return .notSubmitted(code: .noAgent, detail: "no herdr at \(Self.binaryPaths.joined(separator: " "))",
-                                 reason: "Vignette can't find herdr, which Send uses to reach Claude Code.")
-        }
-        guard let list = run(herdr, ["agent", "list"], Self.listTimeout) else {
-            return .notSubmitted(code: .noAgent, detail: "herdr agent list did not run", reason: Self.unresponsive)
-        }
-        guard list.status == 0 else {
-            return .notSubmitted(code: .noAgent, detail: "herdr agent list: \(Subprocess.detail(list.output) ?? "no output")", reason: Self.unresponsive)
-        }
-        // The guard: the pane has to be running this exact session now, not a session it ran
-        // before. A session in no pane is an error; it is never redirected to another one.
-        let agents = Self.agents(in: Data(list.output.utf8))
-        guard let target = agents.first(where: { $0.session == session }) else {
-            return .destinationChanged(detail: "Claude Code session \(session) is in no herdr pane now", reason: Self.closed)
-        }
-        guard target.status != "blocked" else {
-            return .notSubmitted(code: .sendFailed, detail: "\(target.id) is waiting on a prompt of its own; answer it first", reason: blocked)
-        }
-        guard let sent = run(herdr, ["agent", "prompt", target.pane, line], Self.promptTimeout) else {
-            return .notSubmitted(code: .sendFailed, detail: "herdr agent prompt did not run", reason: Self.unresponsive)
-        }
-        if sent.timedOut {
-            return .uncertain(detail: "herdr agent prompt did not answer in \(Int(Self.promptTimeout)) s",
-                              reason: "herdr didn't confirm it. Check the session.")
-        }
-        guard sent.status == 0 else {
-            let detail = Subprocess.detail(sent.output) ?? "herdr said nothing"
-            // herdr checks the pane again on its own side. Only `agent_not_found` says the session
-            // is gone; `agent_blocked` says it is there, waiting on a prompt of its own, which is
-            // the same non-submission the preflight above reports and is worth retrying.
-            if detail.contains("agent_not_found") {
-                return .destinationChanged(detail: detail, reason: Self.closed)
-            }
-            if detail.contains("agent_blocked") {
-                return .notSubmitted(code: .sendFailed, detail: "\(detail); answer the agent's own prompt first", reason: blocked)
-            }
-            return .notSubmitted(code: .sendFailed, detail: detail, reason: SubmissionOutcome.quoted("herdr", detail))
-        }
-        return .accepted(detail: "pane=\(target.pane) session=\(session)")
     }
 }
 

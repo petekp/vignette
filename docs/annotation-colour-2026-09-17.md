@@ -1,5 +1,8 @@
 # The colour a mark is drawn in (2026-09-17)
 
+History. The colour pass this note describes was removed on 2026-09-29: a mark's colour now says
+who drew it, and a white edge gives the contrast (`docs/mark-colour-2026-09-29.md`).
+
 Pete: "Hide the colour palette by default and draw in red only. Then look into a heuristic that
 picks a different colour from the background under the drawn shape, so a minimum contrast ratio is
 always met (red on a red or dark-red region would switch), without the user choosing."
@@ -179,3 +182,12 @@ still leaves those marks alone. Only the user's half of that guard went with `se
 To bring a palette back: a swatch list in `ready` (or a subset of `CANDIDATES` named in
 `config.ts`), a `setColor` call on the page that writes `colorChosen` the way the deleted one did,
 and the swatch block and its divider in `AnnotatorToolbar`.
+
+## A text is measured around its tag (2026-09-29)
+
+A text is now a tag filled with its colour (`docs/note-tags-2026-09-29.md`). The tag hides what is
+under it, so the pixels under its letters no longer matter. What the colour must stand out from is
+what surrounds the tag. The sample for a text is the tag's rect grown by its corner radius, and only
+the points in the border band of that rect count, as for a rectangle's frame. The measure and the
+pick are unchanged. An agent's note is violet whatever it covers, unless the agent names a colour,
+so the pass leaves it alone.

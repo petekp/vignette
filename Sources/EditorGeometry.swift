@@ -12,7 +12,9 @@ struct EditorGeometry {
     /// Screen pt per image px.
     let zoom: CGFloat
     let layouts: TextLayoutCache
-    let arrowhead: ArrowheadStyle
+    let markStyle: MarkStyle
+    /// The text being typed, whose lines are not balanced, so none moves under the caret.
+    var typing: Mark.ID? = nil
 
     var image: CGRect { pixels.bounds }
 
@@ -22,9 +24,16 @@ struct EditorGeometry {
     /// `points` pt, in px.
     func pt(_ points: CGFloat) -> CGFloat { points * pointScale }
 
-    /// `text` laid out in the style of a mark an agent made or not (`TextStyle.forAgent`).
-    func layout(_ text: Mark.Text, agent: Bool) -> TextLayout {
-        layouts.layout(text, imageWidth: image.width, pointScale: pointScale, style: style.forAgent(agent))
+    /// `text` laid out in the style of `mark` (`TextStyle.forMark`), balanced unless it is being typed.
+    func layout(_ text: Mark.Text, of mark: Mark) -> TextLayout {
+        layouts.layout(text, imageWidth: image.width, pointScale: pointScale, style: style(of: mark))
+    }
+
+    /// The style `mark`'s text is set in here.
+    func style(of mark: Mark) -> TextStyle {
+        var style = style.forMark(mark)
+        style.balanced = mark.id != typing
+        return style
     }
 
     /// The rect a mark covers: a frame, an arrow's body with its arc, or a text's box. The same rect
@@ -33,7 +42,7 @@ struct EditorGeometry {
         switch mark.geometry {
         case .rectangle(let frame), .ellipse(let frame): return frame
         case .arrow(let arrow): return arrow.exactBody.bounds
-        case .text(let text): return layout(text, agent: mark.agent).box
+        case .text(let text): return layout(text, of: mark).box
         }
     }
 
@@ -108,7 +117,7 @@ struct EditorGeometry {
     // MARK: What a point hits
 
     /// How far from a stroke's centre line it is hit: half the stroke on screen plus the hit margin.
-    var hitBand: CGFloat { pt(Mark.strokeWidth) / 2 + screen(metrics.hitMargin) }
+    var hitBand: CGFloat { pt(markStyle.strokeWidth) / 2 + screen(metrics.hitMargin) }
 
     enum Hit {
         /// On the stroke, this far from its centre line.
@@ -124,7 +133,7 @@ struct EditorGeometry {
     func hit(_ mark: Mark, at point: CGPoint, insideCounts: Bool) -> Hit? {
         switch mark.geometry {
         case .text(let text):
-            return layout(text, agent: mark.agent).box.encloses(point) ? .box : nil
+            return layout(text, of: mark).box.encloses(point) ? .box : nil
         case .rectangle(let frame):
             let distance = Self.distance(from: point, toOutlineOf: frame)
             if distance <= hitBand { return .stroke(distance) }
@@ -171,18 +180,21 @@ struct EditorGeometry {
     /// outline's width on screen, so all of it lies outside the mark.
     var outlineOffset: CGFloat { screen(metrics.selectionOutlineWidth) / 2 }
 
-    /// The rect a mark's ink covers, in px: a stroke's whole width, an arrowhead, and a text's
-    /// letters with their outline.
+    /// The rect a mark's ink covers, in px: a stroke's whole width, an arrowhead, and a text's tag
+    /// with the part of an agent's badge above it, all with their edge (`MarkStyle.edgeWidth`).
     func inkExtent(of mark: Mark) -> CGRect {
+        let edge = markStyle.edgeWidth * pointScale
         if case .text(let text) = mark.geometry {
-            let outline = pt(Mark.Text.outlineWidth)
-            return layout(text, agent: mark.agent).box.insetBy(dx: -outline, dy: -outline)
+            let layout = layout(text, of: mark)
+            let tag = layout.box.insetBy(dx: -edge, dy: -edge)
+            guard let badge = layout.badge else { return tag }
+            return tag.union(badge.frame(on: layout.box))
         }
-        guard let shape = mark.shape(pointScale: pointScale, arrowhead: arrowhead) else { return extent(of: mark) }
+        guard let shape = mark.shape(pointScale: pointScale, markStyle: markStyle) else { return extent(of: mark) }
         var ink = CGRect.null
         if let stroked = shape.stroked { ink = ink.union(stroked.boundingBoxOfPath.insetBy(dx: -shape.lineWidth / 2, dy: -shape.lineWidth / 2)) }
         if let filled = shape.filled { ink = ink.union(filled.boundingBoxOfPath) }
-        return ink
+        return ink.insetBy(dx: -edge, dy: -edge)
     }
 
     /// The frame drawn around selected marks: their ink grown by `outlineOffset`, so the outline lies
@@ -199,7 +211,8 @@ struct EditorGeometry {
     }
 
     /// One mark's selection or hover outline, in px: a rectangle's or a text's selection frame, and the
-    /// outer edge of an ellipse's or an arrow's ink grown by `outlineOffset`, so it runs outside the stroke.
+    /// outer edge of an ellipse's or an arrow's ink, its white edge included, grown by `outlineOffset`,
+    /// so it runs outside the stroke.
     func outline(of mark: Mark) -> CGPath {
         let frame = { CGPath(rect: selectionFrame(of: [mark]) ?? extent(of: mark), transform: nil) }
         var parts: [CGPath] = []
@@ -208,8 +221,8 @@ struct EditorGeometry {
         case .ellipse(let bounds): parts.append(CGPath(ellipseIn: bounds, transform: nil))  // fills the ring's hole
         case .arrow: break
         }
-        guard let shape = mark.shape(pointScale: pointScale, arrowhead: arrowhead) else { return frame() }
-        let grow = 2 * outlineOffset
+        guard let shape = mark.shape(pointScale: pointScale, markStyle: markStyle) else { return frame() }
+        let grow = 2 * (outlineOffset + markStyle.edgeWidth * pointScale)
         if let stroked = shape.stroked {
             parts.append(stroked.copy(strokingWithWidth: shape.lineWidth + grow, lineCap: .round, lineJoin: .round, miterLimit: 10))
         }
@@ -285,7 +298,7 @@ struct EditorGeometry {
     func brush(_ brush: CGRect, selects mark: Mark) -> Bool {
         switch mark.geometry {
         case .text(let text):
-            return layout(text, agent: mark.agent).box.intersects(brush)
+            return layout(text, of: mark).box.intersects(brush)
         case .rectangle(let frame):
             guard frame.intersects(brush) || brush.contains(frame) else { return false }
             let inside = brush.minX > frame.minX && brush.maxX < frame.maxX && brush.minY > frame.minY && brush.maxY < frame.maxY
@@ -497,8 +510,8 @@ struct EditorGeometry {
     /// A text resized by dragging `handle` by `delta`. A left or right edge sets the wrap width and
     /// keeps the top; a corner, or the top or bottom edge, scales the whole text, font included,
     /// about the opposite side, or the centre with `fromCenter`.
-    func resized(_ text: Mark.Text, agent: Bool, by handle: EditorCore.HandlePosition, delta: CGVector, fromCenter: Bool) -> Mark.Text {
-        let box = layout(text, agent: agent).box
+    func resized(_ text: Mark.Text, of mark: Mark, by handle: EditorCore.HandlePosition, delta: CGVector, fromCenter: Bool) -> Mark.Text {
+        let box = layout(text, of: mark).box
         var result = text
         if handle.ySide == 0 {
             let narrowest = pt(text.size)
@@ -534,22 +547,24 @@ struct EditorGeometry {
         return result
     }
 
-    /// The size of a text being typed: `start`, or smaller down to `floor`, so that its widest line,
-    /// broken only at its hard line breaks, fits in its room beside `anchor` (`room(for:)`) and its
-    /// lines fit in the room above or below it.
-    func fittedSize(_ text: Mark.Text, agent: Bool, from start: CGFloat, floor: CGFloat, anchor: TextAnchor) -> CGFloat {
-        let room = room(for: anchor), style = style.forAgent(agent)
+    /// The size of a text being typed: `start`, or smaller down to `floor`, so that its tag, broken
+    /// only at its hard line breaks and no wider than `TextLayout.widestTag`, fits in its room beside
+    /// `anchor` (`room(for:)`) and its lines fit in the room above or below it. A tag that reaches its
+    /// widest wraps rather than shrinks, where the room holds that width.
+    func fittedSize(_ text: Mark.Text, of mark: Mark, from start: CGFloat, floor: CGFloat, anchor: TextAnchor) -> CGFloat {
+        let room = room(for: anchor), textStyle = style(of: mark)
         var probe = text
         probe.wrap = .greatestFiniteMagnitude
         var size = start
-        // Glyph widths follow the size only nearly, so a second pass checks the first.
-        for _ in 0..<3 {
+        // Glyph widths follow the size only nearly, since the system font's tracking changes with its
+        // size, so each pass checks the one before, and aims a hair under the room to end inside it.
+        for _ in 0..<6 {
             probe.size = size
-            let layout = TextLayout(probe, imageWidth: image.width, pointScale: pointScale, style: style)
-            let widest = layout.lines.map(\.rect.width).max() ?? 0
+            let layout = TextLayout(probe, imageWidth: image.width, pointScale: pointScale, style: textStyle)
+            let widest = min(layout.box.width, TextLayout.widestTag(size: size, pointScale: pointScale, style: style))
             let factor = min(widest > 0 ? room.width / widest : 1, layout.box.height > 0 ? room.height / layout.box.height : 1)
             guard factor < 1, factor.isFinite, size > floor else { break }
-            size = max(floor, size * factor)
+            size = max(floor, size * factor * 0.9995)
         }
         return min(start, max(floor, size))
     }
@@ -560,6 +575,7 @@ struct EditorGeometry {
     /// bottom edge takes the whole width or height, since `Mark.placed` moves its text left or up as
     /// it grows, and a trailing one that close to the left edge takes the whole width.
     func room(for anchor: TextAnchor) -> CGSize {
+        let anchor = anchor.side
         let space = space(at: anchor)
         let left = image.width * TextLayout.margin, right = image.width * (1 - TextLayout.margin)
         let width: CGFloat
@@ -585,38 +601,69 @@ struct EditorGeometry {
         return CGSize(width: width, height: anchor.vertical == .bottom ? anchor.point.y : image.height - anchor.point.y)
     }
 
-    /// `text` moved onto `anchor`: its anchored edge, or its centre, on the anchor's point. A text
-    /// without a wrap width that is wider than its room on a trailing or centred anchor takes the
-    /// room as its wrap width, so it wraps there rather than crossing the point it hangs from; a
-    /// leading one already wraps at the image's edge.
-    func anchored(_ text: Mark.Text, agent: Bool, to anchor: TextAnchor) -> Mark.Text {
+    /// `text` moved onto `anchor`: its anchored edge, or its centre, on the anchor's point, or on a
+    /// ray from it touching the point with its edge. A text without a wrap width whose tag is wider
+    /// than its room, or than `TextLayout.widestTag`, on a trailing, centred or ray anchor takes the
+    /// narrower as its wrap width, so it wraps there rather than crossing the point it hangs from; a
+    /// leading one already wraps at the image's edge or its widest.
+    func anchored(_ text: Mark.Text, of mark: Mark, to anchor: TextAnchor) -> Mark.Text {
         var result = text
         result.origin = anchor.point
-        if anchor.horizontal != .leading {
-            let room = room(for: anchor).width
+        if anchor.horizontal != .leading || anchor.ray != nil {
+            let room = min(room(for: anchor).width, TextLayout.widestTag(size: text.size, pointScale: pointScale, style: style))
             if result.wrap == nil {
                 var unwrapped = result
                 unwrapped.wrap = .greatestFiniteMagnitude
-                let widest = layout(unwrapped, agent: agent).lines.map(\.rect.width).max() ?? 0
-                if widest > room { result.wrap = room }
+                if layout(unwrapped, of: mark).box.width > room { result.wrap = room }
             }
-            let width = layout(result, agent: agent).box.width
+        }
+        if let ray = anchor.ray {
+            let layout = layout(result, of: mark)
+            let reach = Self.edge(of: layout.box.size, radius: layout.radius, toward: CGVector(dx: -ray.dx, dy: -ray.dy)) - pt(markStyle.strokeWidth)
+            let center = CGPoint(x: anchor.point.x + ray.dx * max(reach, 0), y: anchor.point.y + ray.dy * max(reach, 0))
+            result.origin = CGPoint(x: center.x - layout.box.width / 2, y: center.y - layout.box.height / 2)
+            return result
+        }
+        if anchor.horizontal != .leading {
+            let width = layout(result, of: mark).box.width
             let left = image.width * TextLayout.margin, right = image.width * (1 - TextLayout.margin)
             result.origin.x = anchor.horizontal == .trailing
                 ? anchor.point.x - width
                 : min(max(anchor.point.x - width / 2, left), max(left, right - width))
         }
-        if anchor.vertical == .bottom { result.origin.y = anchor.point.y - layout(result, agent: agent).box.height }
+        if anchor.vertical == .bottom { result.origin.y = anchor.point.y - layout(result, of: mark).box.height }
         return result
+    }
+
+    /// How far from the middle of a tag `size` wide and tall, with corners of `radius`, its edge is in
+    /// `direction`, a unit vector.
+    static func edge(of size: CGSize, radius: CGFloat, toward direction: CGVector) -> CGFloat {
+        let halfWidth = size.width / 2, halfHeight = size.height / 2, corner = min(radius, halfWidth, halfHeight)
+        // Inside the tag, as its signed distance says: negative inside, positive outside.
+        func inside(_ distance: CGFloat) -> Bool {
+            let dx = abs(direction.dx * distance) - (halfWidth - corner), dy = abs(direction.dy * distance) - (halfHeight - corner)
+            return hypot(max(dx, 0), max(dy, 0)) + min(max(dx, dy), 0) - corner < 0
+        }
+        var low: CGFloat = 0, high = hypot(halfWidth, halfHeight)
+        for _ in 0..<32 {
+            let middle = (low + high) / 2
+            if inside(middle) { low = middle } else { high = middle }
+        }
+        return high
+    }
+
+    /// A one-line tag's height at `size` pt, in px.
+    func tagHeight(size: CGFloat) -> CGFloat {
+        pt(size) * (style.lineHeight + style.padTop + style.padBottom)
     }
 
     /// Where a note typed for the box `frame` is held, `EditorCore.noteGap` beyond its stroke: to its
     /// right when there is room for a few words, else below it, else above it, where it grows upward,
-    /// else inside its top left corner. Beside a box shorter than a line, the first line is centred on
+    /// else inside its top left corner. Beside a box shorter than a one-line tag, the tag is centred on
     /// the box; beside a taller one, it starts at the box's top.
     func notePlace(beside frame: CGRect, size: CGFloat) -> TextAnchor {
-        let ink = frame.insetBy(dx: -pt(Mark.strokeWidth) / 2, dy: -pt(Mark.strokeWidth) / 2)
-        let gap = pt(EditorCore.noteGap), line = pt(size) * style.lineHeight
+        let ink = frame.insetBy(dx: -pt(markStyle.strokeWidth) / 2, dy: -pt(markStyle.strokeWidth) / 2)
+        let gap = pt(EditorCore.noteGap), line = tagHeight(size: size)
         if fitsWords(space(at: TextAnchor(CGPoint(x: ink.maxX + gap, y: ink.minY))).width, size: size) {
             return TextAnchor(CGPoint(x: ink.maxX + gap, y: frame.height < line ? frame.midY - line / 2 : ink.minY))
         }
@@ -626,26 +673,13 @@ struct EditorGeometry {
         return TextAnchor(CGPoint(x: frame.minX + gap, y: frame.minY + gap))
     }
 
-    /// Where a note typed for `arrow` is held: `EditorCore.noteGap` beyond its tail, on the side the
-    /// arrow leaves the tail from, so the arrow leads from the note to what it points at. Beside the
-    /// tail, with the first line centred on it, when the arrow leaves it across; above or below it,
-    /// centred, when the arrow leaves it up or down. A side without room for a few words, or a line,
-    /// gives way to the next side the arrow leaves least towards, and to the first when none has room.
+    /// Where a note typed for `arrow` is held: on the arrow's line carried back past its tail, with the
+    /// tail just inside the tag's edge, so the arrow runs straight out of the note to what it points
+    /// at. The tag moves along that line as it grows, and `Mark.placed` keeps it inside the image.
     func notePlace(atTailOf arrow: Mark.Arrow, size: CGFloat) -> TextAnchor {
-        let tail = arrow.start, gap = pt(EditorCore.noteGap) + pt(Mark.strokeWidth) / 2
-        let line = pt(size) * style.lineHeight
         let travel = arrow.exactBody.tangent(at: 0)
-        let away = CGVector(dx: -travel.dx, dy: -travel.dy)
-        let left = TextAnchor(CGPoint(x: tail.x - gap, y: tail.y - line / 2), horizontal: .trailing)
-        let right = TextAnchor(CGPoint(x: tail.x + gap, y: tail.y - line / 2))
-        let above = TextAnchor(CGPoint(x: tail.x, y: tail.y - gap), horizontal: .center, vertical: .bottom)
-        let below = TextAnchor(CGPoint(x: tail.x, y: tail.y + gap), horizontal: .center)
-        let across = away.dx < 0 ? [left, right] : [right, left]
-        let upDown = away.dy < 0 ? [above, below] : [below, above]
-        let sides = abs(away.dx) >= abs(away.dy) ? [across[0], upDown[0], upDown[1]] : [upDown[0], across[0], across[1]]
-        return sides.first { side in
-            side.horizontal == .center ? space(at: side).height >= line : fitsWords(space(at: side).width, size: size)
-        } ?? sides[0]
+        guard travel.dx != 0 || travel.dy != 0 else { return TextAnchor(textOrigin(at: arrow.start, size: size)) }
+        return TextAnchor(arrow.start, ray: CGVector(dx: -travel.dx, dy: -travel.dy))
     }
 
     /// Room across for a few words at `size`: the least a note beside a mark starts in.
@@ -653,16 +687,16 @@ struct EditorGeometry {
         width >= max(image.width * TextLayout.minimumRoom, 6 * pt(size))
     }
 
-    /// The origin of a new text whose first line has its left end and vertical centre at `point`.
+    /// The origin of a new text whose one-line tag has its left edge and vertical centre at `point`.
     func textOrigin(at point: CGPoint, size: CGFloat) -> CGPoint {
-        CGPoint(x: point.x, y: point.y - pt(size) * style.lineHeight / 2)
+        CGPoint(x: point.x, y: point.y - tagHeight(size: size) / 2)
     }
 }
 
 /// Where a text being typed is held while it grows and shrinks: a point in image px, and which of
 /// the text's edges, or its centre, stays on it across and down. A text typed where it was clicked is
-/// held by its top left corner; a note is held on the side of its mark it hangs from
-/// (`EditorGeometry.notePlace`).
+/// held by its top left corner; a note for a box is held on the side of the box it hangs from, and a
+/// note for an arrow on the ray back from the arrow's tail (`EditorGeometry.notePlace`).
 struct TextAnchor: Equatable {
     enum Horizontal { case leading, center, trailing }
     enum Vertical { case top, bottom }
@@ -670,12 +704,24 @@ struct TextAnchor: Equatable {
     var point: CGPoint
     var horizontal: Horizontal = .leading
     var vertical: Vertical = .top
+    /// A unit vector: the tag's middle lies on the ray from `point` this way, with `point` on its edge.
+    /// `horizontal` and `vertical` then say only which side's room it grows into.
+    var ray: CGVector?
 
     init(_ point: CGPoint, horizontal: Horizontal = .leading, vertical: Vertical = .top) {
         self.point = point
         self.horizontal = horizontal
         self.vertical = vertical
     }
+
+    /// A tag on the ray from `point` along `ray`, growing into the room on the side the ray leads to.
+    init(_ point: CGPoint, ray: CGVector) {
+        self.init(point, horizontal: ray.dx < -0.5 ? .trailing : ray.dx > 0.5 ? .leading : .center, vertical: ray.dy < -0.5 ? .bottom : .top)
+        self.ray = ray
+    }
+
+    /// This anchor as the side its text grows into, for the room it has.
+    var side: TextAnchor { TextAnchor(point, horizontal: horizontal, vertical: vertical) }
 }
 
 extension CGRect {
@@ -701,9 +747,7 @@ final class TextLayoutCache {
         let y: CGFloat
         let imageWidth: CGFloat
         let pointScale: CGFloat
-        let weight: CGFloat
-        let lineHeight: CGFloat
-        let monospaced: Bool
+        let style: TextStyle
     }
 
     /// Past this many layouts the cache starts again, so texts moved or typed into leave nothing behind.
@@ -712,8 +756,7 @@ final class TextLayoutCache {
 
     func layout(_ text: Mark.Text, imageWidth: CGFloat, pointScale: CGFloat, style: TextStyle) -> TextLayout {
         let key = Key(text: text.text, wrap: text.wrap, size: text.size, x: text.origin.x, y: text.origin.y,
-                      imageWidth: imageWidth, pointScale: pointScale, weight: style.weight.rawValue, lineHeight: style.lineHeight,
-                      monospaced: style.monospaced)
+                      imageWidth: imageWidth, pointScale: pointScale, style: style)
         if let layout = layouts[key] { return layout }
         let layout = TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: style)
         if layouts.count >= Self.capacity { layouts.removeAll(keepingCapacity: true) }

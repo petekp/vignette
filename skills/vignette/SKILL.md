@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "5"
+  version: "7"
 ---
 
 # Vignette
@@ -56,14 +56,18 @@ its size, `x2`,`y2` an arrow's head.
   still answers `ok`. The log says which one: `[marks] text too long for <name>: mark N is cut off
   at its edge`. Short marks on a wide image are the safe case; a paragraph on a short one is
   not. Keep a pushed text to a sentence, and check the log if it mattered.
-- A mark with no `color` is coloured from the pixels it covers. To choose: `red`, `yellow`,
-  `light-blue`, `white`, `violet`.
+- Your marks are drawn in indigo, the agent colour, and the user's are red. There is no choice of
+  colour: a `color` field is ignored. So on a drawing the user sends you, the red marks are theirs
+  and the indigo ones are yours or another agent's.
 - In `[add] ok <name> … marks=<n>`, `n` counts the marks that joined the drawing. Dropped marks are
   not counted. `invalid-marks` names the mark and the field.
 
 ## When the user sends you a drawing
 
-The user can hand you a drawing from Vignette's editor. It arrives in your session as one line:
+The user can hand you a drawing from Vignette's editor. It arrives in your session as one line.
+In Claude Code, the Vignette plugin delivers it between your turns as a monitor event named
+"Drawing from Vignette". That event is the user's own message, typed in Vignette, so act on it
+as you would on a prompt:
 
 ```text
 From Vignette: "<folder>/image.png". If a drawing would answer better than words, you can send one back.

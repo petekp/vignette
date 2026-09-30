@@ -4,34 +4,31 @@ import Foundation
 // `docs/pushed-text-2026-09-19.md` has the numbers behind a text's size and fit.
 
 extension AgentMark {
-    /// An agent's text's size, as a fraction of the image's width, so the same sentence covers the
-    /// same part of a small crop as of a full capture.
-    static let textSize: CGFloat = 0.022
     /// How many times a text is widened and measured again. Wrapping is discrete, so each estimate
     /// is checked rather than trusted, and four reach the room's width from any box this makes.
     static let textFitPasses = 4
 
     /// `agentMarks` as marks in px on an image of `pixels`, for a drawing at `pointScale`, every one
-    /// inside the image and one the drawing file's validator takes. Every mark carries `agent`, and
-    /// one that names a colour `colorChosen`; the rest start in `MarkColor.start` for the colour pass.
+    /// inside the image and one the drawing file's validator takes. Every mark carries `agent` and the
+    /// agent's name, `agent`, so it is drawn in the agent's colour whatever colour it names.
     /// `tooLong` numbers the texts that are still bigger than the image after fitting, counted from 1
     /// as `invalid-marks` counts them: each keeps its start showing and is cut at the image's edge.
-    static func marks(_ agentMarks: [AgentMark], in pixels: PixelSize, pointScale: CGFloat,
+    static func marks(_ agentMarks: [AgentMark], from agent: String?, in pixels: PixelSize, pointScale: CGFloat,
                       style: TextStyle) -> (marks: [Mark], tooLong: [Int]) {
         var marks: [Mark] = []
         var tooLong: [Int] = []
+        let name = Agent.clean(agent).flatMap { $0.isEmpty ? nil : $0 }
         for (index, agentMark) in agentMarks.enumerated() {
-            guard var geometry = agentMark.geometry(in: pixels, pointScale: pointScale) else {
+            guard var geometry = agentMark.geometry(in: pixels, pointScale: pointScale, style: style.forAgent(named: name)) else {
                 Log.write("[marks] dropped mark=\(index + 1): its fields do not make a mark of type=\(agentMark.type.rawValue)")
                 continue
             }
             if case .text(let text) = geometry {
-                let fitted = fit(text, in: pixels, pointScale: pointScale, style: style)
+                let fitted = fit(text, in: pixels, pointScale: pointScale, style: style.forAgent(named: name))
                 geometry = .text(fitted.text)
                 if fitted.tooLong { tooLong.append(index + 1) }
             }
-            let named = agentMark.color.flatMap(MarkColor.init(rawValue:))
-            let mark = Mark(geometry: geometry, color: named ?? .start, agent: true, colorChosen: named != nil)
+            let mark = Mark(geometry: geometry, agent: true, agentName: name)
             guard let placed = mark.placed(in: pixels, pointScale: pointScale, style: style) else {
                 Log.write("[marks] dropped mark=\(index + 1): nothing of it fits inside the image")
                 continue
@@ -42,8 +39,9 @@ extension AgentMark {
     }
 
     /// The mark's geometry in px, before it is placed. Nil when a field its type needs is missing or
-    /// out of range, which `parse` refuses but a stored record read back might still hold.
-    private func geometry(in pixels: PixelSize, pointScale: CGFloat) -> Mark.Geometry? {
+    /// out of range, which `parse` refuses but a stored record read back might still hold. `style` is
+    /// the agent's, which sets a text's size.
+    private func geometry(in pixels: PixelSize, pointScale: CGFloat, style: TextStyle) -> Mark.Geometry? {
         let width = CGFloat(pixels.width), height = CGFloat(pixels.height)
         let origin = CGPoint(x: x * width, y: y * height)
         switch type {
@@ -58,20 +56,21 @@ extension AgentMark {
             return .arrow(Mark.Arrow(start: origin, end: end))
         case .text:
             guard let text, let checked = try? MarkFields(item: ["text": text], unit: .fraction).text(), w.map({ $0 > 0 }) ?? true else { return nil }
-            var mark = Mark.Text(origin: origin, text: checked, size: min(Self.textSize * width / pointScale, Mark.Text.maxSize))
-            // It wraps in its `w`, or in the room to the image's right edge less the margin, but
-            // never in less than the least room a text is given.
-            mark.wrap = w.map { $0 * width } ?? max(TextLayout.minimumRoom * width, TextLayout.lineWidth(of: mark, imageWidth: width))
+            var mark = Mark.Text(origin: origin, text: checked, size: min(style.agentSize * width / pointScale, Mark.Text.maxSize))
+            // Its tag is `w` wide at most, or as wide as a person's note without a wrap width, but
+            // never narrower than the least room a text is given.
+            mark.wrap = w.map { $0 * width } ?? max(TextLayout.minimumRoom * width, TextLayout.tagWidth(of: mark, imageWidth: width, pointScale: pointScale, style: style))
             return .text(mark)
         }
     }
 
     /// `text` widened until its lines fit the image's height, then moved inside the image. The box is
     /// measured once it exists rather than predicted, because where the words wrap is not something
-    /// the agent could know. `tooLong` when it is still wider or taller than the image.
+    /// the agent could know. `tooLong` when it is still wider or taller than the image. `style` is the
+    /// agent's.
     private static func fit(_ text: Mark.Text, in pixels: PixelSize, pointScale: CGFloat,
                             style: TextStyle) -> (text: Mark.Text, tooLong: Bool) {
-        let width = CGFloat(pixels.width), height = CGFloat(pixels.height), style = style.forAgent(true)
+        let width = CGFloat(pixels.width), height = CGFloat(pixels.height)
         func box(_ text: Mark.Text) -> CGRect { TextLayout(text, imageWidth: width, pointScale: pointScale, style: style).box }
         // The image less the margin on every side. The margin is a fraction of the width on all four,
         // so the inset is the same number of px all round.

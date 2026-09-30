@@ -32,7 +32,7 @@ final class StateReportTests: XCTestCase {
         let marks = [Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 40, y: 40), text: "Zanzibar", wrap: nil, size: 24))),
                      Mark(geometry: .rectangle(CGRect(x: 100, y: 200, width: 300, height: 100)), agent: true)]
         _ = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: PixelSize(width: 1000, height: 600), pointScale: 1, marks: marks),
-                              style: .standard, metrics: .standard, arrowhead: .standard, pickColor: { _ in nil }))
+                              style: .standard, metrics: .standard, markStyle: .standard))
         _ = core.reduce(.zoomChanged(1))
         // A double-click types into the text.
         core.click(50, 50, count: 2)

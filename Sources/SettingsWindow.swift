@@ -40,8 +40,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
     struct Callbacks {
         var restoreAppleDefaults: () -> Void = {}
         var openTweaks: () -> Void = {}
-        var installAgentSkill: (URL) -> [SkillInstaller.Result] = { _ in [] }
-        var removeAgentSkill: (URL) -> [SkillInstaller.Result] = { _ in [] }
+        /// Both answer on the main thread once the agent's tool has, which takes a second or more.
+        var installAgentPlugin: (URL, @escaping ([AgentPlugin.Result]) -> Void) -> Void = { _, done in done([]) }
+        var removeAgentPlugin: (URL, @escaping (AgentPlugin.Result) -> Void) -> Void = { root, done in
+            done(AgentPlugin.Result(root: root, outcome: .absent))
+        }
         var folderDenied: () -> Bool = { false }
     }
 
@@ -186,7 +189,7 @@ struct SettingsView: View {
     /// Title bar plus a margin: how much of the screen's visible height a form may not use.
     static let screenRoom: CGFloat = 60
     /// The Agents footer, and the line under the setup page's heading.
-    static let agentsLine = "Adds a skill that lets your coding agents show you images and reply to drawings you send them."
+    static let agentsLine = "Adds a plugin that lets you send drawings to your coding agents, and lets them show you images and reply with drawings."
     /// macOS's Accessibility alert gives no reason, so the row gives it, and the way around it.
     static let accessibilityReason = "Lets Vignette notice the double tap in any app. A key combination doesn't need it."
 
@@ -195,10 +198,14 @@ struct SettingsView: View {
 
     @ObservedObject private var settings = Settings.shared
     /// What is on disk for each agent, read on show and after every switch.
-    @State private var agentRows = SkillInstaller.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
-    /// Why the last install or removal failed, by agent directory. The switch shows what is on disk,
-    /// so after a failure it is back where it was, and this says why.
+    @State private var agentRows = AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
+    /// Why the last install or removal failed, by agent directory. The switch shows what the agent's
+    /// settings say, so after a failure it is back where it was, and this says why.
     @State private var agentFailures: [URL: String] = [:]
+    /// The switches whose install or removal is running, and where each is going.
+    @State private var agentWorking: [URL: Bool] = [:]
+    /// The agents installed while this window was up, whose open sessions don't have the plugin yet.
+    @State private var agentsJustInstalled: Set<URL> = []
     /// Whether Claude Code's settings hold `ClaudeReadRule`, and why the last change to it failed.
     @State private var claudeReads = false
     @State private var claudeReadsFailure: String?
@@ -321,8 +328,10 @@ struct SettingsView: View {
             } else {
                 ForEach(agentRows) { row in
                     Toggle(isOn: installed(row)) {
-                        AgentName(row: row, failure: agentFailures[row.root])
+                        AgentName(row: row, failure: agentFailures[row.root],
+                                  working: agentWorking[row.root], justInstalled: agentsJustInstalled.contains(row.root))
                     }
+                    .disabled(agentWorking[row.root] != nil || !row.hasTool)
                 }
             }
         } footer: {
@@ -350,26 +359,29 @@ struct SettingsView: View {
         }
     }
 
-    /// On installs the skill and off removes whatever is at `<root>/skills/vignette`. The switch
-    /// reads the disk, so a failed install leaves it off.
-    private func installed(_ row: AgentSkillStatus) -> Binding<Bool> {
-        Binding(get: { row.installed }, set: { on in
-            let results = on ? callbacks.installAgentSkill(row.root) : callbacks.removeAgentSkill(row.root)
-            if let failed = results.first(where: { $0.outcome == .failed }) {
-                agentFailures[row.root] = "Couldn't \(on ? "install" : "remove"): \(failed.detail)"
-            } else {
-                agentFailures[row.root] = nil
+    /// On installs the plugin and off removes it. While the agent's tool runs the switch shows where
+    /// it is going; after, it reads the agent's settings, so a failed install leaves it off.
+    private func installed(_ row: AgentPluginStatus) -> Binding<Bool> {
+        Binding(get: { agentWorking[row.root] ?? row.installed }, set: { on in
+            agentWorking[row.root] = on
+            agentFailures[row.root] = nil
+            let finish = { (results: [AgentPlugin.Result]) in
+                agentWorking[row.root] = nil
+                let failed = results.first { [.failed, .noTool].contains($0.outcome) }
+                agentFailures[row.root] = failed.map { "Couldn't \(on ? "install" : "remove"): \($0.detail)" }
+                if on && failed == nil { agentsJustInstalled.insert(row.root) } else if !on { agentsJustInstalled.remove(row.root) }
+                refreshAgents()
             }
-            refreshAgents()
+            if on { callbacks.installAgentPlugin(row.root, finish) } else { callbacks.removeAgentPlugin(row.root) { finish([$0]) } }
         })
     }
 
     private func refreshAgents() {
-        agentRows = SkillInstaller.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
+        agentRows = AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
         claudeReads = claudeRow.map { ClaudeReadRule.isSet(in: $0.root) } ?? false
     }
 
-    private var claudeRow: AgentSkillStatus? { agentRows.first { $0.logoKey == AgentClient.claude.rawValue } }
+    private var claudeRow: AgentPluginStatus? { agentRows.first { $0.logoKey == AgentClient.claude.rawValue } }
 
     // MARK: Developer
 
@@ -509,13 +521,22 @@ struct PermissionRow: View {
     }
 }
 
-/// An agent's logo and name, and why its last install failed.
+/// An agent's logo and name, and what its switch is doing or why it can't.
 struct AgentName: View {
-    let row: AgentSkillStatus
+    let row: AgentPluginStatus
     var failure: String?
-    /// Send reaches a Claude Code session only through the herdr pane it runs in, so without herdr
-    /// Claude Code is never in Send's menu, and this row is the one place that says why.
-    private var needsHerdr: Bool { row.logoKey == AgentClient.claude.rawValue && ClaudeCodeConnection.binary() == nil }
+    /// Whether an install (true) or a removal (false) is running.
+    var working: Bool?
+    var justInstalled = false
+
+    /// One line under the name, the most pressing first.
+    private var note: String? {
+        if let working { return working ? "Installing…" : "Removing…" }
+        if !row.hasTool { return "Needs the `\(row.client == .claude ? "claude" : "codex")` command, which Vignette can't find." }
+        // Claude Code reads its plugins when a session starts.
+        if justInstalled && row.client == .claude { return "Sessions already open need `/reload-plugins` to use it." }
+        return nil
+    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -526,8 +547,8 @@ struct AgentName: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name)
-                if needsHerdr {
-                    Text("Send reaches Claude Code through [herdr](https://herdr.dev), which Vignette can't find.")
+                if failure == nil, let note {
+                    Text(.init(note))
                         .font(.subheadline).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

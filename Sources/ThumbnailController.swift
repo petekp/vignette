@@ -393,7 +393,8 @@ final class ThumbnailController: NSObject {
         // A new shot never closes an open annotator: the reducer answers `join` and the card joins the panel.
         send(.newShot(shot.url.path))
         if visible { insert(card) } else { present(cards: [card], stack: false) }
-        if !model.isStack { scheduleDismiss(after: ui.thumbnailSeconds) }
+        // An agent's card is something to read, not the echo of a capture the person just made.
+        if !model.isStack { scheduleDismiss(after: ui.thumbnailSeconds * (card.agent == nil ? 1 : 2)) }
     }
 
     enum StackToggle: Equatable { case shown(Int), dismissed, empty }
@@ -441,10 +442,12 @@ final class ThumbnailController: NSObject {
 
     /// The panel can refuse key status right after resigning it (a dismissal being reversed), so try twice.
     /// The stack has a focused card from the moment it takes keys, so arrows, Space, and Return act
-    /// on the newest card without a click or a first arrow press.
-    private func takeKeys() {
+    /// on the newest card without a click or a first arrow press. `focus` names the card to focus
+    /// instead: the one that just came back from the annotator, which was the last one looked at.
+    private func takeKeys(focus: UUID? = nil) {
         panel.acceptsKeys = true
-        if model.focused == nil { model.focused = model.hoveredCard ?? model.cards.first?.id }
+        if let focus, model.cards.contains(where: { $0.id == focus }) { model.focused = focus }
+        else if model.focused == nil { model.focused = model.hoveredCard ?? model.cards.first?.id }
         panel.makeKey()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self, self.visible, self.model.isStack, !self.transition.isActive, !self.panel.isKeyWindow else { return }
@@ -603,7 +606,7 @@ final class ThumbnailController: NSObject {
             marks?.setScale(screen.backingScaleFactor)
         }
         // At the card's size at rest: a stack narrowed for the annotator shows the same bitmaps smaller.
-        marks?.show(drawing, filling: card.size, backingScale: screen.backingScaleFactor, style: ui.textStyle, arrowhead: ui.arrowhead)
+        marks?.show(drawing, filling: card.size, backingScale: screen.backingScaleFactor, style: ui.textStyle, markStyle: ui.markStyle)
         return marks
     }
 
@@ -628,10 +631,10 @@ final class ThumbnailController: NSObject {
 
     /// Re-applies layout tweaks to whatever is on screen. Called when settings.ui changes.
     func applyTweaks() {
-        let style = ui.textStyle, arrowhead = ui.arrowhead
+        let style = ui.textStyle, markStyle = ui.markStyle
         // Marks drawn outside the column: in flight, and a lone thumbnail's while its image is in the annotator.
-        flights.restyle(style, arrowhead: arrowhead)
-        sessionCard?.marks?.restyle(style, arrowhead: arrowhead)
+        flights.restyle(style, markStyle: markStyle)
+        sessionCard?.marks?.restyle(style, markStyle: markStyle)
         guard visible else { return }
         model.cards = model.cards.map { card in
             let size = layout.cardSize(for: card.pointSize)
@@ -640,7 +643,7 @@ final class ThumbnailController: NSObject {
                 : Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize),
                                     space: screenSpace) ?? card.image
             if let marks = card.marks, let drawing = marks.drawing {
-                marks.show(drawing, filling: size, backingScale: screen.backingScaleFactor, style: style, arrowhead: arrowhead)
+                marks.show(drawing, filling: size, backingScale: screen.backingScaleFactor, style: style, markStyle: markStyle)
             }
             return card.with(size: size).with(image: image)
         }
@@ -1064,7 +1067,7 @@ final class ThumbnailController: NSObject {
             self.flights.dropShadow(id: card.id)   // the card draws it now, in this same commit
             // The card view comes back on SwiftUI's next commit; lift the flight image after it.
             DispatchQueue.main.async { self.flights.lift(id: card.id) }
-            if !self.transition.isActive, self.visible, self.model.isStack { self.takeKeys() }
+            if !self.transition.isActive, self.visible, self.model.isStack { self.takeKeys(focus: card.id) }
             // A lone thumbnail leaves on its own; the copied mark usually sets a shorter timer first.
             if !self.model.isStack, self.dismissTimer == nil { self.scheduleDismiss(after: self.ui.thumbnailSeconds) }
         })
@@ -1095,7 +1098,7 @@ final class ThumbnailController: NSObject {
         guard let drawing, !drawing.marks.isEmpty else { return nil }
         let marks = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.textQueue)
         marks.setScale(screen.backingScaleFactor)
-        marks.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: ui.textStyle, arrowhead: ui.arrowhead, adopting: sources.compactMap { $0 })
+        marks.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: ui.textStyle, markStyle: ui.markStyle, adopting: sources.compactMap { $0 })
         return marks
     }
 

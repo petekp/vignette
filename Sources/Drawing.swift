@@ -40,51 +40,34 @@ enum MarkKind: String, Codable, CaseIterable {
     case ellipse, rectangle, arrow, text
 }
 
-/// The five colours a mark is drawn in. The order of the cases is the order the colour pass tries
-/// them in, and the raw values are the ids a drawing file and an agent's `marks=` name.
-enum MarkColor: String, Encodable, CaseIterable {
-    case red
-    case yellow
-    case lightBlue = "light-blue"
-    case white
-    case violet
-
-    /// The colour a new mark starts in, before the colour pass has looked at what it covers.
-    static let start = MarkColor.red
-
-    var hex: String {
-        switch self {
-        case .red: return "#e03131"
-        case .yellow: return "#ffc034"
-        case .lightBlue: return "#4dabf7"
-        case .white: return "#f3f3f3"
-        case .violet: return "#ae3ec9"
-        }
-    }
+/// The colour a mark is drawn in, which says who drew it: a person's marks are red and every agent's
+/// are indigo. A white edge around every mark keeps it visible whatever it is drawn over
+/// (`docs/mark-colour-2026-09-29.md`), so the colour carries only its author.
+enum MarkColor: CaseIterable {
+    case person
+    case agent
 }
 
 /// One mark on a drawing, in px.
 struct Mark: Equatable, Identifiable {
-    /// Every stroke's width, in pt: the outline of a rectangle or an ellipse, and an arrow's body.
-    static let strokeWidth: CGFloat = 3.5
-
     /// Names the mark while the app runs, so a selection or an undo step follows it across deletes
     /// and reorders. Never written to a file: a mark read back gets a new one.
     let id: UUID
     var geometry: Geometry
-    var color: MarkColor
-    /// An agent made it, so reopening the drawing never selects it.
+    /// An agent made it: it is drawn in the agent's colour, and reopening the drawing never selects it.
     var agent: Bool
-    /// An agent named its colour, so the colour pass leaves it alone.
-    var colorChosen: Bool
+    /// Which agent made it, as `add?agent=` or a reply's client names it (`Agent.clean`): what the
+    /// badge on its note says. Nil for a person's mark, and for an agent's from before the name was kept.
+    var agentName: String?
 
-    init(id: UUID = UUID(), geometry: Geometry, color: MarkColor = .start, agent: Bool = false, colorChosen: Bool = false) {
+    init(id: UUID = UUID(), geometry: Geometry, agent: Bool = false, agentName: String? = nil) {
         self.id = id
         self.geometry = geometry
-        self.color = color
         self.agent = agent
-        self.colorChosen = colorChosen
+        self.agentName = agent ? agentName : nil
     }
+
+    var color: MarkColor { agent ? .agent : .person }
 
     enum Geometry: Equatable {
         /// The frame. Its width and height are more than 0 in a mark read from a file or a paste.
@@ -147,7 +130,7 @@ struct MarkProblem: Error, CustomStringConvertible {
 
 /// One mark's fields as JSONSerialization decoded them, read through the checks every mark from
 /// outside the process passes: a drawing file, a paste, an agent's `marks=`, a reply. The type is
-/// known, numbers are finite, the colour is one of the five, a text holds something and at most
+/// known, numbers are finite, a text holds something and at most
 /// `maxTextLength` characters, sizes are more than 0, and an arrow's ends differ.
 struct MarkFields {
     /// What a number is: px, which may be anything finite, or a fraction of the image, from 0 to 1.
@@ -204,15 +187,6 @@ struct MarkFields {
         return text
     }
 
-    /// Nil when the mark names none.
-    func color() throws -> MarkColor? {
-        guard let raw = item["color"] else { return nil }
-        guard let id = raw as? String, let color = MarkColor(rawValue: id) else {
-            throw MarkProblem("color must be one of \(MarkColor.allCases.map(\.rawValue).joined(separator: ", "))")
-        }
-        return color
-    }
-
     /// False when the mark leaves the field out.
     func flag(_ key: String) throws -> Bool {
         guard let raw = item[key] else { return false }
@@ -220,6 +194,14 @@ struct MarkFields {
             throw MarkProblem("\(key) must be true or false")
         }
         return flag.boolValue
+    }
+
+    /// The name of the agent that made the mark, as it may be stored (`Agent.clean`). Nil when the
+    /// mark leaves it out or it holds nothing.
+    func agentName() throws -> String? {
+        guard let raw = item["agentName"] else { return nil }
+        guard let name = raw as? String else { throw MarkProblem("agentName must be a string") }
+        return Agent.clean(name).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// A freehand arrow's `via`: a list of `[x, y]` pairs, in px. Empty when the mark leaves it out.
@@ -251,7 +233,6 @@ extension Mark {
         guard let item = item as? [String: Any] else { throw MarkProblem("not an object") }
         let fields = MarkFields(item: item, unit: .px)
         let kind = try fields.kind()
-        guard let color = try fields.color() else { throw MarkProblem("color is missing") }
         let geometry: Geometry
         switch kind {
         case .rectangle, .ellipse:
@@ -268,7 +249,7 @@ extension Mark {
             geometry = .text(Text(origin: CGPoint(x: try fields.number("x"), y: try fields.number("y")),
                                   text: try fields.text(), wrap: try fields.optionalSize("wrap"), size: size))
         }
-        self.init(geometry: geometry, color: color, agent: try fields.flag("agent"), colorChosen: try fields.flag("colorChosen"))
+        self.init(geometry: geometry, agent: try fields.flag("agent"), agentName: try fields.agentName())
     }
 }
 
@@ -318,7 +299,7 @@ extension Mark {
             arrow.bend = arrow.largestBend(arrow.bend, inside: bounds)
             placed.geometry = .arrow(arrow)
         case .text(var text):
-            let style = style.forAgent(agent)
+            let style = style.forMark(self)
             guard [text.origin.x, text.origin.y, text.size, text.wrap ?? 0].allSatisfy(\.isFinite),
                   (text.size * pointScale).isFinite else { return nil }
             if let wrap = text.wrap, wrap > bounds.width { text.wrap = bounds.width }
@@ -369,9 +350,8 @@ extension Mark {
 // MARK: - The file's encoding
 
 /// A mark as a drawing file and a paste write it: flat fields, without the ones its type does not
-/// use, and without `bend`, `via`, `wrap`, `agent` and `colorChosen` at their defaults. `color` and
-/// a text's `size` are always written. A build that predates `via` reads a freehand arrow as the
-/// straight one between its ends.
+/// use, and without `bend`, `via`, `wrap`, `agent` and `agentName` at their defaults. A text's `size`
+/// is always written. A mark's colour is not: it follows from `agent`.
 private struct MarkRecord: Encodable {
     let type: MarkKind
     let x: CGFloat
@@ -385,9 +365,8 @@ private struct MarkRecord: Encodable {
     var text: String?
     var wrap: CGFloat?
     var size: CGFloat?
-    let color: MarkColor
     var agent: Bool?
-    var colorChosen: Bool?
+    var agentName: String?
 
     init(_ mark: Mark) {
         switch mark.geometry {
@@ -411,9 +390,8 @@ private struct MarkRecord: Encodable {
             size = text.size
         }
         type = mark.kind
-        color = mark.color
         agent = mark.agent ? true : nil
-        colorChosen = mark.colorChosen ? true : nil
+        agentName = mark.agentName
     }
 }
 
@@ -550,7 +528,8 @@ struct AgentMark: Codable, Equatable {
     var x2: Double?
     var y2: Double?
     var text: String?
-    /// A `MarkColor` id, which `parse` checks; the colour pass picks one when this is absent.
+    /// A colour the agent named. It is accepted, so a skill from before agents' marks had one colour
+    /// still pushes, and ignored: every agent's mark is drawn in `MarkColor.agent`.
     var color: String?
 
     /// How many marks one push may carry.
@@ -603,7 +582,7 @@ extension AgentMark {
         type = try fields.kind()
         x = try fields.number("x")
         y = try fields.number("y")
-        color = try fields.color()?.rawValue
+        color = item["color"] as? String
         switch type {
         case .ellipse, .rectangle:
             w = try fields.size("w")

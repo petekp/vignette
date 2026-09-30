@@ -1,0 +1,166 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code Edge Cases</title><style>
+  :root { --desk:#17181c; --ink:#f2f2f4; --muted:#9a9aa2; --faint:#6d6d75; --bar:rgba(44,44,48,.92);
+    --hair:rgba(255,255,255,.15); --chip:rgba(255,255,255,.09); --tool-on:rgba(255,255,255,.17);
+    --accent:#0a84ff; --claude:#d97757; --menu:rgba(38,38,42,.97); --wait:#8e8e96; --ok:#30d158; --bad:#ff453a; --note:#ffb340; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px 60px; background:radial-gradient(120% 80% at 50% 0%,#2a2c33 0%,var(--desk) 60%);
+    color:var(--ink); font:13px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif; -webkit-font-smoothing:antialiased; }
+  header, section { max-width:1100px; margin:0 auto; }
+  header { margin-bottom:22px; }
+  h1 { font-size:20px; margin:0 0 6px; font-weight:650; }
+  header p { margin:0; color:var(--muted); max-width:72ch; }
+  section { margin-bottom:28px; padding:20px 20px 26px; border:1px solid rgba(255,255,255,.07); border-radius:16px; background:rgba(255,255,255,.02); }
+  section h2 { font-size:15px; margin:0 0 4px; font-weight:650; }
+  section > p { margin:0 0 20px; color:var(--muted); max-width:80ch; }
+  .row { display:flex; flex-wrap:wrap; gap:28px 36px; justify-content:center; align-items:flex-start; }
+  figure { margin:0; display:flex; flex-direction:column; align-items:center; }
+  figcaption { margin-top:12px; color:var(--muted); font-size:12.5px; max-width:300px; text-align:center; }
+  figcaption b { color:var(--ink); font-weight:600; }
+  .stage { position:relative; height:300px; width:640px; display:flex; justify-content:center; }
+  .bar { display:flex; align-items:center; gap:2px; height:44px; padding:0 7px; background:var(--bar); border-radius:12px; white-space:nowrap;
+    box-shadow:0 6px 14px rgba(0,0,0,.35), inset 0 0 0 .5px var(--hair); }
+  .tool { width:32px; height:30px; border-radius:7px; display:grid; place-items:center; color:var(--ink); }
+  .tool svg { width:15px; height:15px; } .tool.on { background:var(--tool-on); }
+  .div { width:1px; height:20px; background:rgba(255,255,255,.14); margin:0 7px; }
+  .btn { height:30px; padding:0 11px; border-radius:7px; display:inline-flex; align-items:center; gap:7px; font-weight:550; color:var(--ink); }
+  .btn.plain { background:var(--chip); } .btn.primary { background:var(--accent); color:#fff; font-weight:600; }
+  .btn.off { background:rgba(255,255,255,.05); color:rgba(255,255,255,.35); }
+  .field { width:150px; height:30px; border-radius:7px; background:rgba(0,0,0,.25); box-shadow:inset 0 0 0 .5px var(--hair); color:var(--faint); display:flex; align-items:center; padding:0 9px; font-size:12.5px; }
+  .key { font-size:11px; font-weight:500; opacity:.7; }
+  .chev { width:9px; height:9px; opacity:.7; }
+  .logo { width:14px; height:14px; flex:none; fill:var(--claude); }
+  .target { background:var(--chip); padding:0 9px 0 8px; gap:6px; }
+  .target.open { background:rgba(255,255,255,.16); }
+  .asks { font-size:11px; font-weight:600; color:var(--note); }
+  .menu { position:absolute; top:52px; width:330px; padding:5px; border-radius:10px; background:var(--menu);
+    box-shadow:0 12px 34px rgba(0,0,0,.55), inset 0 0 0 .5px rgba(255,255,255,.16); }
+  .mh { font-size:11px; font-weight:600; color:var(--faint); padding:4px 9px 3px; }
+  .mi { display:grid; grid-template-columns:14px 16px 1fr; align-items:start; column-gap:6px; padding:5px 9px; border-radius:5px; font-size:13px; }
+  .mi .logo { margin-top:2px; } .mi .ck { font-size:11px; margin-top:1px; }
+  .mi.hl { background:var(--accent); } .mi.hl .t2, .mi.hl .sub { color:rgba(255,255,255,.85); }
+  .mi.dis { opacity:.5; }
+  .t1 { font-weight:500; } .t2 { color:var(--muted); font-size:12px; margin-left:6px; }
+  .sub { grid-column:3; font-size:11.5px; color:var(--note); margin-top:1px; }
+  .mi.dis .sub { color:var(--muted); }
+  .msep { height:1px; background:rgba(255,255,255,.1); margin:4px 9px; }
+  .pin { position:absolute; font-size:11px; color:#7fd1c1; white-space:nowrap; }
+  /* Cards */
+  .card { position:relative; width:250px; height:160px; border-radius:10px; overflow:hidden;
+    box-shadow:0 14px 30px rgba(0,0,0,.5), 0 0 0 .5px rgba(255,255,255,.14);
+    background:linear-gradient(135deg,#3b4a63,#27303f 55%,#1e2430); }
+  .card .fake { position:absolute; inset:14px; border-radius:6px; background:repeating-linear-gradient(180deg,rgba(255,255,255,.08) 0 8px,transparent 8px 18px); }
+  .card .scrib { position:absolute; left:120px; top:40px; width:90px; height:44px; border:2.5px solid #ff5a5f; border-radius:50%; }
+  .mark { position:absolute; inset:0; background:rgba(0,0,0,.55); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; text-align:center; padding:0 14px; }
+  .disc { position:relative; width:38px; height:38px; border-radius:50%; background:#fff; display:grid; place-items:center; }
+  .disc .logo { width:20px; height:20px; }
+  .badge { position:absolute; right:-4px; bottom:-4px; width:17px; height:17px; border-radius:50%; display:grid; place-items:center;
+    font-size:10px; font-weight:800; color:#fff; box-shadow:0 0 0 2px rgba(0,0,0,.55); }
+  .badge.wait { background:var(--wait); } .badge.ok { background:var(--ok); } .badge.bad { background:var(--bad); }
+  .words { font-weight:650; font-size:13px; }
+  .why { font-size:11.5px; color:rgba(255,255,255,.78); line-height:1.3; }
+  .cbtn { margin-top:2px; height:24px; padding:0 10px; border-radius:6px; background:rgba(255,255,255,.18); font-size:11.5px; font-weight:600; display:inline-flex; align-items:center; }
+  .cbtn.blue { background:var(--accent); }
+  .btns { display:flex; gap:6px; }
+  .draft { font-size:11px; color:var(--faint); text-align:center; margin-top:14px; }
+
+  .tip { position:absolute; max-width:290px; padding:7px 10px; border-radius:7px; background:rgba(30,30,34,.98); font-size:12px; line-height:1.35; color:var(--ink);
+    box-shadow:0 8px 22px rgba(0,0,0,.5), inset 0 0 0 .5px rgba(255,255,255,.16); }
+  .pop { position:relative; width:300px; padding:14px 15px 13px; border-radius:12px; background:rgba(40,40,44,.98); font-size:12.5px; line-height:1.4;
+    box-shadow:0 14px 34px rgba(0,0,0,.55), inset 0 0 0 .5px rgba(255,255,255,.16); text-align:left; }
+  .pop::before { content:""; position:absolute; top:-7px; left:50%; margin-left:-7px; border:7px solid transparent; border-top:0; border-bottom-color:rgba(40,40,44,.98); }
+  .pop h3 { margin:0 0 6px; font-size:13px; font-weight:650; }
+  .pop p { margin:0 0 8px; color:#d0d0d6; }
+  .pop .acts { display:flex; gap:8px; justify-content:flex-end; margin-top:10px; align-items:center; }
+  .pop .link { color:#4da3ff; font-weight:500; margin-right:auto; white-space:nowrap; }
+  .pbtn { height:24px; padding:0 11px; border-radius:6px; background:rgba(255,255,255,.14); font-weight:550; font-size:12px; display:inline-flex; align-items:center; white-space:nowrap; }
+  .pbtn.blue { background:var(--accent); color:#fff; }
+  .whyl { font-size:11.5px; color:#9fcbff; text-decoration:underline; text-underline-offset:2px; }
+  @media (max-width:700px) { .stage { zoom:.55; } }
+</style></head><body><svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-select" viewBox="0 0 16 16"><path d="M3 1.8 12.6 9.3 8.4 9.8 10.7 14.4 8.9 15.2 6.6 10.6 3.4 13.4Z" fill="currentColor"/></symbol>
+    <symbol id="i-rect" viewBox="0 0 16 16"><rect x="1.8" y="3.3" width="12.4" height="9.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 16 16"><path d="M3 13 13 3M6 3h7v7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 10 10"><path d="M2 3.6 5 6.6 8 3.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-claude" viewBox="0 0 94 94"><path d="M18.3658 62.2435L36.7823 51.9165L37.0858 51.012L36.7823 50.5083H35.8716L32.7853 50.3206L22.2616 50.0389L13.1546 49.6634L4.30054 49.194L2.07438 48.7246L0 45.9551L0.202378 44.5938L2.07438 43.3264L4.75589 43.5611L10.6755 43.9836L19.5801 44.5938L26.0056 44.9693L35.568 45.9551H37.0858L37.2882 45.3448L36.7823 44.9693L36.3775 44.5938L27.1693 38.3507L17.2022 31.7789L11.9909 27.9767L9.20822 26.0522L7.79157 24.2684L7.18443 20.3254L9.71416 17.5089L13.1546 17.7436L14.0147 17.9783L17.5057 20.654L24.9431 26.4277L34.6573 33.5627L36.0739 34.7362L36.6444 34.3512L36.7317 34.079L36.0739 32.9994L30.8121 23.4704L25.1961 13.7537L22.6664 9.71675L22.0086 7.32277C21.7539 6.31812 21.6039 5.48695 21.6039 4.45938L24.4878 0.516349L26.1068 0L30.0026 0.516349L31.6216 1.92457L34.0502 7.46359L37.9459 16.1476L44.0173 27.9767L45.7881 31.4973L46.7494 34.7362L47.1036 35.722H47.7107V35.1587L48.2166 28.4931L49.1274 20.3254L50.0381 9.81063L50.3416 6.85336L51.8089 3.28586L54.7434 1.36128L57.0201 2.44092L58.8921 5.11655L58.6391 6.85336L57.5261 14.0822L55.3505 25.395L53.9338 32.9994H54.7434L55.7047 32.0136L59.5498 26.944L65.9753 18.8702L68.8086 15.6782L72.1479 12.1577L74.2729 10.4678H78.3204L81.2549 14.8802L79.9395 19.4335L75.7907 24.6909L72.3503 29.1503L67.4173 35.7593L64.3563 41.0732L64.6308 41.5116L65.3682 41.4487L76.499 39.0548L82.5198 37.9751L89.7042 36.7547L92.9423 38.2568L93.2964 39.8058L92.0316 42.9509L84.3412 44.8285L75.3354 46.6592L61.9245 49.8162L61.776 49.9356L61.9513 50.1956L67.9991 50.743L70.5795 50.8839H76.9038L88.6923 51.7757L91.7786 53.7942L93.6 56.282L93.2964 58.2066L88.5405 60.6006L82.1656 59.0985L67.2402 55.531L62.1302 54.2636H61.4218V54.6861L65.6718 58.8638L73.514 65.9049L83.2787 75.0114L83.7846 77.2646L82.5198 79.0483L81.2043 78.8606L72.6032 72.3827L69.264 69.4724L61.776 63.1354H61.2701V63.7926L62.9903 66.3274L72.1479 80.081L72.6032 84.3057L71.9455 85.667L69.5676 86.5119L66.9872 86.0425L61.5736 78.4851L56.0588 70.0357L51.6065 62.4313L51.0687 62.7708L48.419 91.0652L47.2048 92.5204L44.3715 93.6L41.9935 91.8162L40.7286 88.9059L41.9935 83.1322L43.5114 75.6217L44.7256 69.6602L45.8387 62.2435L46.5185 59.7659L46.4584 59.6001L45.9153 59.6914L40.3239 67.3601L31.824 78.8606L25.0949 86.0425L23.4759 86.6997L20.6932 85.2445L20.9462 82.6628L22.5146 80.3627L31.824 68.5336L37.44 61.1639L41.0595 56.9335L41.0243 56.3216L40.8245 56.3046L16.0891 72.4297L11.6874 72.993L9.76476 71.2092L10.0177 68.2989L10.9284 67.3601L18.3658 62.2435Z"/></symbol>
+  </defs>
+</svg>
+<header><h1>Sending to Claude Code without herdr: the edge cases</h1>
+<p>A sketch for <code>docs/claude-code-without-herdr-2026-09-27.md</code>. It shows where the notes and states would appear. Session names are invented and the wording is a draft.</p></header>
+
+<section><h2>1. Choosing a session that asks first</h2>
+<p>The target next to Send opens the list of recent sessions. A session that runs with permission prompts off gets a second line, so you know before sending that it will ask you to approve the drawing in its terminal.</p>
+<div class="row">
+<figure><div class="stage"><div class="bar">
+  <div class="tool on"><svg><use href="#i-select"/></svg></div><div class="tool"><svg><use href="#i-rect"/></svg></div><div class="tool"><svg><use href="#i-arrow"/></svg></div>
+  <div class="div"></div><div class="btn plain">Copy</div><div style="width:4px"></div><div class="btn target open"><svg class="logo"><use href="#i-claude"/></svg>mew <svg class="chev"><use href="#i-chev"/></svg></div><div style="width:4px"></div><div class="field">Message</div><div style="width:4px"></div><div class="btn primary">Send <span class="key">⌘↩</span></div></div>
+<div class="menu" style="left:245px">
+<div class="mh">Send to</div>
+<div class="mi hl"><span class="ck">✓</span><svg class="logo"><use href="#i-claude"/></svg><span><span class="t1">Fix the stack insert</span><span class="t2">mew</span></span></div>
+<div class="mi "><span class="ck"></span><svg class="logo"><use href="#i-claude"/></svg><span><span class="t1">Landing page copy</span><span class="t2">site</span></span><span class=sub>Asks you to approve it in the session</span></div>
+<div class="mi "><span class="ck"></span><svg class="logo"><use href="#i-claude"/></svg><span><span class="t1">Trailer beats</span><span class="t2">trailer</span></span></div>
+<div class="mi "><span class="ck"></span><svg class="logo"><use href="#i-claude"/></svg><span><span class="t1">Onboarding flow</span><span class="t2">atlas</span></span></div>
+</div></div>
+<figcaption><b>The target's menu, open.</b> The second session skips permission prompts, so its row says it will ask.</figcaption></figure>
+</div>
+<div class="row" style="margin-top:8px">
+<figure><div class="stage" style="height:150px"><div class="bar">
+  <div class="tool on"><svg><use href="#i-select"/></svg></div><div class="tool"><svg><use href="#i-rect"/></svg></div><div class="tool"><svg><use href="#i-arrow"/></svg></div>
+  <div class="div"></div><div class="btn plain">Copy</div><div style="width:4px"></div><div class="btn target"><svg class="logo"><use href="#i-claude"/></svg>site <span class="asks">· Asks first</span> <svg class="chev"><use href="#i-chev"/></svg></div><div style="width:4px"></div><div class="field">Message</div><div style="width:4px"></div><div class="btn primary">Send <span class="key">⌘↩</span></div></div><div class="tip" style="top:54px;left:210px">This session runs with permission prompts off, so Claude Code asks you before it takes a drawing from another app. <span style="color:#4da3ff">Learn More</span></div></div>
+<figcaption><b>When Vignette picks that session itself,</b> the target says so too. <b>Hovering it</b> explains why, in the bar’s own tooltip, with a link to the help page. A menu row gets the same text as its tooltip.</figcaption></figure>
+</div></section>
+
+<section><h2>2. After Send, on the card</h2>
+<p>The card the drawing came from reports, as it does now. Clicking a card opens it in the editor, so going to the session is a button on the card, not a click on the card.</p>
+<div class="row">
+<figure><div class="card"><div class="fake"></div><div class="scrib"></div><div class="mark">
+<div class="disc"><svg class="logo"><use href="#i-claude"/></svg><div class="badge wait">…</div></div><div class="words">Waiting in site</div>
+<div class="why">Approve it in the session. <span class="whyl">Why?</span></div><div class="cbtn">Show Session</div></div></div>
+<figcaption><b>Held for approval.</b> After about 3 seconds with no delivery. Grey, not red, because nothing has failed. Show Session brings its terminal app forward.</figcaption></figure>
+<figure><div class="card"><div class="fake"></div><div class="scrib"></div><div class="mark">
+<div class="disc"><svg class="logo"><use href="#i-claude"/></svg><div class="badge ok">✓</div></div><div class="words">Sent to site</div></div></div>
+<figcaption><b>You press Approve in the terminal.</b> Vignette sees the line arrive and the card turns to sent, as usual.</figcaption></figure>
+<figure><div class="card"><div class="fake"></div><div class="scrib"></div><div class="mark">
+<div class="disc"><svg class="logo"><use href="#i-claude"/></svg><div class="badge bad">!</div></div><div class="words">Not sent</div>
+<div class="why">The session didn’t take it. <span class="whyl">Why?</span></div>
+<div class="btns"><div class="cbtn blue">Copy for Claude Code</div></div></div></div>
+<figcaption><b>Nothing after five minutes,</b> or declined. Copy for Claude Code puts the request on the clipboard to paste into the session. Drawing back still works after a paste.</figcaption></figure>
+</div><div class="row" style="margin-top:26px">
+<figure><div class="pop"><h3>Why Claude Code is asking</h3>
+<p>This session runs with permission prompts off. In that mode Claude Code asks before it takes a message from another app, Vignette included, so nothing reaches the session without you.</p>
+<p>Press Approve in the session and the drawing goes through. To stop being asked, choose Accept under Messages from your other sessions in Claude Code’s /config. That applies to messages from every app and session, not only Vignette.</p>
+<div class="acts"><span class="link">Learn More</span><div class="pbtn blue">Show Session</div></div></div>
+<figcaption><b>Why? on a waiting card.</b> What is happening, what to do now, and the setting that changes it, with what that setting costs.</figcaption></figure>
+<figure><div class="pop"><h3>Why it wasn’t sent</h3>
+<p>Claude Code didn’t take the drawing within five minutes. Either nobody answered the approval in the session, or the session is set to hold or refuse messages from other apps.</p>
+<p>Copy it and paste it into the session instead. The session can still send a drawing back.</p>
+<div class="acts"><span class="link">Learn More</span><div class="pbtn blue">Copy for Claude Code</div></div></div>
+<figcaption><b>Why? on a failed card.</b> Vignette can’t tell which kind of hold it was, so it names both.</figcaption></figure>
+</div>
+</section>
+
+<section><h2>3. A Claude Code update Vignette doesn't support yet</h2>
+<p>Vignette checks each session's messaging version when it lists them. Nobody finds out by losing a drawing.</p>
+<div class="row">
+<figure><div class="stage"><div class="bar">
+  <div class="tool on"><svg><use href="#i-select"/></svg></div><div class="tool"><svg><use href="#i-rect"/></svg></div><div class="tool"><svg><use href="#i-arrow"/></svg></div>
+  <div class="div"></div><div class="btn plain">Copy</div><div style="width:4px"></div><div class="btn target open"><svg class="logo"><use href="#i-claude"/></svg>mew <svg class="chev"><use href="#i-chev"/></svg></div><div style="width:4px"></div><div class="field">Message</div><div style="width:4px"></div><div class="btn primary">Copy for Claude Code</div></div>
+<div class="menu" style="left:170px">
+<div class="mh">Send to</div>
+<div class="mi dis"><span class="ck">✓</span><svg class="logo"><use href="#i-claude"/></svg><span><span class="t1">Fix the stack insert</span><span class="t2">mew</span></span><span class=sub>Needs a Vignette update to send here</span></div>
+<div class="mi dis"><span class="ck"></span><svg class="logo"><use href="#i-claude"/></svg><span><span class="t1">Onboarding flow</span><span class="t2">atlas</span></span><span class=sub>Needs a Vignette update to send here</span></div>
+</div></div>
+<figcaption><b>Every Claude Code session on the new version.</b> Its rows say why, and Copy for Claude Code, with an ⓘ beside it, takes Send's place. Codex and herdr sessions are unaffected.</figcaption></figure>
+</div><div class="row" style="margin-top:6px">
+<figure><div class="pop" style="width:360px"><h3>This Claude Code needs a newer Vignette</h3>
+<p>Claude Code 2.2.0 changed how other apps send to its sessions, and this version of Vignette doesn’t support the change yet. Sending to Codex and to sessions in herdr still works.</p>
+<p>Until the update arrives, copy the drawing and paste it into the session. The session can still send a drawing back.</p>
+<div class="acts" style="justify-content:space-between"><span class="link">Learn More</span></div><div class="acts" style="margin-top:6px"><div class="pbtn">Copy for Claude Code</div><div class="pbtn blue">Check for Updates…</div></div></div>
+<figcaption><b>The ⓘ beside Copy for Claude Code opens this,</b> and a greyed row’s tooltip gives its first sentence. Check for Updates… runs the updater, so the fix is one click away once it ships.</figcaption></figure>
+</div>
+</section>
+<section><h2>4. The help page behind Learn More</h2>
+<p>One page in Vignette’s guide, “Sending to Claude Code”, with a section for each case: sessions that ask first, a drawing that wasn’t taken, and a Claude Code version Vignette doesn’t support yet. Each Learn More opens its own section. The page explains the Claude Code setting in full and links to Anthropic’s cross-session messaging docs, so the text in the app stays short. The page can change without a new Vignette, for example on the day a Claude Code release breaks sending.</p></section>
+<p class="draft">Wording is a draft. It goes through the copy review before it's built.</p>
+</body></html>

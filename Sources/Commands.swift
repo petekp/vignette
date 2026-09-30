@@ -63,7 +63,7 @@ enum Commands {
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
         Fixed(name: "cancel", summary: "close the annotator without copying, as Esc would"),
         Fixed(name: "settings", summary: "open the Settings window"),
-        Fixed(name: "install-skill", summary: "copy the bundled agent skill into ~/.claude/skills and ~/.codex/skills; &root=<dir> installs into that directory instead (needs \"debug\": true)"),
+        Fixed(name: "install-skill", summary: "install the Vignette plugin, which carries the agent skill, into Claude Code and Codex; &root=<dir> installs into that one config folder, named .claude or .codex (needs \"debug\": true)"),
         Fixed(name: "reply", summary: "an agent's reply to a screenshot request: \(Identity.urlScheme)://reply?file=<attempt envelope>; the bundled reply helper writes that envelope and waits for the receipt Vignette writes back"),
         Fixed(name: "requests", summary: "list the open screenshot requests; &clear=<id or all> stops one taking replies, cancels its unpublished imports, and removes the files Vignette owns"),
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Vignette first recorded"),

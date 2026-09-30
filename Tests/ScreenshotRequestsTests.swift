@@ -25,7 +25,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         requests = ScreenshotRequests(root: root)
         requests.callbacks = ScreenshotRequests.Callbacks(
-            addMarks: { [unowned self] _, marks, done in
+            addMarks: { [unowned self] _, marks, _, done in
                 self.added.append(marks)
                 guard self.heldAdd == nil else { self.heldAdd = done; return }
                 done(self.addFails ? Drawings.Failure(code: .writeFailed, description: "disk full") : nil)

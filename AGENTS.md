@@ -20,9 +20,11 @@ the measurements and the reasoning; a rule here points at its note.
   (`TransitionLayer.swift`), the zoom's springs and limits (`AnnotationController.swift`), the
   stitch's gap, padding, and badge (`Stitch.swift`), the editor's steps (`EditorCore`: the nudges,
   the copy offset, the snap angle, the 0.3 s hand-over), the editor's own colours (`EditorStyle`),
-  the stroke width and the text outline (`Mark.strokeWidth`, `Mark.Text.outlineWidth`), and the
-  colour pass (`ColorPass.swift`). The editor's sizes, its text's weight and line height, and the
-  arrowhead's proportions are `UITweaks`, the Editor and Marks sections of the panel. A change
+  the badge's own proportions (`NoteBadge`) and the tag's shadows (`NoteTag`). The editor's sizes
+  and how every mark looks are `UITweaks`, the Editor, Marks and Notes sections of the panel: the
+  colours, the stroke and edge widths, the shadows' strength and the arrowhead reach the drawing as
+  `MarkStyle`, and the fonts, weights, sizes, padding, width cap and the badge's place as
+  `TextStyle` (`docs/mark-style-settings-2026-09-29.md`). A change
   reaches every place that draws marks at once: the open editor (`AnnotationController.applyTweaks`),
   the cards and flights (`ThumbnailController.applyTweaks`), and the next stitch, drag image and
   rendering, which read the settings when they draw. What a user would tune belongs in `UITweaks`
@@ -46,7 +48,7 @@ the measurements and the reasoning; a rule here points at its note.
   it in AppKit. `EditorLayers.swift` draws the picture and the overlay, `EditorTextView.swift` the
   text being typed, and `MarkLayers.swift` the marks, for the editor, the cards (`MarksView.swift`)
   and the flights. `MarkRendering.swift` is the renderer and `MarkGeometry.swift` the geometry it
-  shares; `ColorPass.swift` is the colour pass, `AgentMarks.swift` turns an agent's marks into a
+  shares; `AgentMarks.swift` turns an agent's marks into a
   drawing's, `RenderingQueue.swift` runs the renderings, and `Drawings.swift` keeps the drawings on
   disk. `docs/editor.md` says how the editor behaves.
 - `scripts/build.sh` regenerates the Xcode project and builds the app.
@@ -56,13 +58,15 @@ the measurements and the reasoning; a rule here points at its note.
   and an instance running from it, untouched.
 - `media/trailer/trailer.py all` records the trailer from the current source: it builds a stage copy
   of the app with its own bundle id, sets up a desktop with the game in Chrome and the trailer's own
-  Claude Code in a herdr session, drives every beat while it records the screen, and cuts the result
-  from `beats.toml`. `trailer.py claude` signs that Claude Code in once. A take takes over the screen
-  for 5 to 8 minutes. `docs/trailer-pipeline-2026-09-26.md` says how.
+  Claude Code in Ghostty, with the stage copy's plugin, drives every beat while it records the
+  screen, and cuts the result from `beats.toml`. `trailer.py claude` signs that Claude Code in once.
+  A take takes over the screen for 5 to 8 minutes. `docs/trailer-pipeline-2026-09-26.md` says how.
 - `Sources/AgentConnection.swift`, `Sources/ScreenshotRequests.swift`, `Sources/ReplyProtocol.swift`,
   `Sources/ReplyCommand.swift` and `skills/vignette/scripts/reply` are the closed loop: a drawing
   sent to an agent session and that agent's drawing sent back. See the rules below and
-  `docs/closed-agent-loop-implementation-2026-09-20.md`.
+  `docs/closed-agent-loop-implementation-2026-09-20.md`. `agent-plugin/` is the plugin Claude Code
+  and Codex install, which carries the skill and, for Claude Code, delivers what Send sends, and
+  `Sources/AgentPlugin.swift` installs it (`docs/claude-code-without-herdr-2026-09-27.md`).
 - `Sources/Identity.swift` reads the bundle id, name, and URL scheme from the bundle and derives
   the log name, the status item's autosave name, the Application Support folder, and the Carbon
   hotkey signature from them, so a fork renames things in project.yml only. A second launch of
@@ -228,7 +232,7 @@ answers a submission as its folder's `mode` file says (ok, gone, blocked or hang
 The stage copy runs it in place of herdr when launched with `--env FAKE_HERDR=<folder>`. Launched
 with `--env CFFIXED_USER_HOME=<folder>` as well, the app takes that folder for the home folder, so
 the Agents tab and setup read and write a scratch `.claude` rather than the user's; its log is then
-under that folder's `Library/Logs`.
+under that folder's `Library/Logs`, which must exist before the launch, or the log lines are dropped.
 
 ## Rules that are not obvious from the code
 
@@ -429,12 +433,14 @@ under that folder's `Library/Logs`.
   window sets `allowsToolTipsWhenApplicationIsInactive`, which the panel does not. Text the user
   must see there is drawn, like a greyed strip row's reason (`UnavailableReason`).
 - Which card a key acts on is one variable, `model.focused`. The stack focuses the newest card the
-  moment it takes keys (`takeKeys`), so arrows, Space, and Return act on a card without a first
-  click, and the pointer moves the focus too: moving onto a card focuses it, and leaving it leaves
-  the focus there. The pointer only moves it while the stack holds the keys and no card is in the
-  annotator; while the annotator has them nothing moves. A shortcut runs on the selection when there
+  moment it takes keys (`takeKeys`), or the card that just came back from the annotator, the last one
+  looked at, so arrows, Space, and Return act on a card without a first click, and the pointer moves
+  the focus too: moving onto a card focuses it, and leaving it leaves the focus there. The pointer only
+  moves it while the stack holds the keys and no card is in the annotator; while the annotator has
+  them nothing moves. A shortcut runs on the selection when there
   is one, else on the focused card (`targetCards`). The ring says where the focus is: the accent
-  color on a selected card, white on a focused one.
+  color on a selected card, white on a focused one. It grows out of the card's resting border and
+  shrinks back into it, and the selection circle fades in with it.
 - The panel widens to the left while cards are selected, to hold the selection strip
   (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:reveal:)` makes the room:
   the icon column, the gap to the cards, and the room the labels grow into, whether they are out or
@@ -657,7 +663,7 @@ under that folder's `Library/Logs`.
   (`ToolbarPanel.sendEvent`), since SwiftUI's buttons ask for them as a field does; a press on a
   button leaves them with the editor. The field counts as typed in only while the panel is key
   (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. There is no
-  palette, so which colour a mark is drawn in is the colour pass's, not the user's. Send starts on
+  palette: a mark's colour says who drew it. Send starts on
   the session you came from (`AgentDestination.defaultTarget`). When the app before Vignette
   (`FocusReturn.previousApp`) was the Codex app, that is the thread it shows, named by the title of
   its page (`AgentApp.openThread`, through Accessibility), or else the Codex thread used last;
@@ -669,9 +675,12 @@ under that folder's `Library/Logs`.
   as plain text.
   Otherwise it is herdr's focused pane, or the one agent in its tab when that pane runs none, else
   the session used last. Reading the page asks the Codex app, which is Electron, to build its
-  accessibility tree, and it keeps it until it quits. The target shows the agent's logo and the
-  project. Its menu lists the active sessions used last, five at most, with the target always among
-  them (`AgentDestination.menu`): a Claude Code session is active while it runs in a herdr pane, and
+  accessibility tree, and it keeps it until it quits.
+  The target shows the agent's logo and the project, cut in the middle past 132 pt with the whole
+  name in its tooltip. Its width is set rather than left to the text, so it springs with the bar. A
+  pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
+  made inside it jumped instead of animating. Its menu lists the active sessions used last, five at
+  most, with the target always among them (`AgentDestination.menu`): a Claude Code session is active while it runs in a herdr pane, and
   a Codex thread when it was used in the last day, since nothing says which threads the Codex app
   has open. The target settles once, from herdr's answer (about 60 ms, before the bar is up) or
   from the whole list, and after that changes only when its session is gone, so it never changes
@@ -699,7 +708,10 @@ under that folder's `Library/Logs`.
   so the reducer says nothing about this. The panel always keeps
   the room above and below the bar that the message field grows into, clear, since a panel that
   grew when the field took focus moved the bar for a frame. The field grows down, and up out of the
-  bar once it nears the bottom of the visible screen (`Model.roomBelow`, `GrowingField`).
+  bar once it nears the bottom of the visible screen (`Model.roomBelow`, `GrowingField`). No SwiftUI
+  gesture may sit on the field's text: one took the release of a quick click, and the text field then
+  waited for it with every event queued behind, Esc included, until the next click. The padding's
+  gesture is behind the box.
   `[state] annotator.toolbar` is the panel's frame without that room, or null when it is off screen.
   Tab goes from the last mark to the bar's controls and back (`AnnotatorToolbar.enter`, `move`,
   `EditorView.enterCanvas`). While a control has the focus the editor keeps the keys and hands Tab
@@ -729,14 +741,20 @@ under that folder's `Library/Logs`.
 - A mark has one geometry, and the renderer owns it. `Mark.shape(pointScale:arrowhead:)` gives a
   rectangle's, an ellipse's or an arrow's paths, which the renderer draws and `MarkLayers` puts in
   `CAShapeLayer`s, so a shape looks the same in the editor, on a card, in flight and in the PNG. A
-  text's letters are drawn only by the renderer (`MarkRendering.swift`): its outline is stroked a
-  glyph at a time and then filled in one pass, which took a 2,000-character text from 240 ms to
-  61 ms (`docs/native-editor-2026-09-23.md`). An agent's text is set in SF Mono and a person's in SF
-  Pro Rounded: every place that lays a text out takes the style from its mark
-  (`TextStyle.forAgent(mark.agent)`), and the editor's `layout(_:agent:)` has no default, so none
-  can forget. `EditorTextView`, the text being typed, sets every
-  line's baseline from `TextLayout` through its layout manager's delegate, so typing and the drawn
-  text meet within half a point.
+  text is a note: a rounded tag in the mark's colour with its words on it, and on an agent's note a
+  badge naming the agent (`docs/note-tags-2026-09-29.md`). `TextLayout` owns the tag's geometry,
+  its padding, the 18 em cap and the balanced line breaks, and its `box` is the tag, which is what a
+  press hits and what is kept inside the image. The tag, the badge and the letters are drawn only by
+  the renderer (`MarkRendering.swift`, `NoteTag.draw`), with every letter filled in one pass. An
+  agent's text is set in SF Mono and a person's in SF Pro Rounded, and an agent's badge names it:
+  every place that lays a text out takes the style from its mark (`TextStyle.forMark`), and the
+  editor's `layout(_:of:)` takes the mark, so none can forget. The text being typed wraps without
+  balancing, and when typing ends its view springs to the balanced lines
+  (`TypingField.settle`) before the drawn note replaces it. `EditorTextView`, the text being typed,
+  draws the tag with `NoteTag.draw` under its words, wraps at the layout's `wrapWidth`, and sets
+  every line's baseline from `TextLayout` through its layout manager's delegate, so typing and the
+  drawn text meet within half a point. The badge's logo comes from `AgentLogos`, which rasterizes
+  `Resources/agents/<name>.svg` once so any thread can draw it.
 - `MarkLayers` is the one on-screen drawer for marks: the editor (`EditorPicture`), a card
   (`MarksView`) and a flight, so a mark looks the same in each and nothing steps when a flight hands
   over to the editor. A text is a bitmap the renderer draws off the main thread, on
@@ -787,12 +805,13 @@ under that folder's `Library/Logs`.
   card's copied mark back (`takeBackCopied`), with the toast "Could not copy the drawing; see the
   log". `[annotate] done <file> <n> bytes, copied` is logged when the file is written. A drawing
   with no marks copies the original file and writes nothing.
-- A mark's colour is picked by the colour pass (`ColorPass.swift`), not by the user. The core runs
-  it outside undo history when the hand-over timer fires, when typing ends, and before a park, Done,
-  Send or a copy of the drawing; never at open, and never on a mark an agent named a colour for
-  (`colorChosen`). A mark whose sample has not arrived stays owed (`colorOwed`) until
-  `colorSampleArrived()`. `docs/editor.md` has the sample and the measure, and
-  `docs/annotation-colour-2026-09-17.md` the numbers and why the measure is not a WCAG ratio.
+- A mark's colour says who drew it and is not stored: `Mark.color` names a person's colour or the
+  agent colour (`MarkColor`, from `agent`), and `MarkStyle.color` gives the settings' red or indigo.
+  Contrast comes from a 1.5 pt white edge (`MarkStyle.edgeWidth`) around every mark, notes included,
+  which casts the tag's shadows. An agent's
+  `color` in `marks=` is ignored and logged. An agent's note becomes the person's when typing ends
+  with its words changed (`EditorCore.endTyping`), as one undo step; a move or a resize keeps it the
+  agent's. `docs/mark-colour-2026-09-29.md` has the reasons and the candidates.
 - A drawing's sizes are in points of its own `pointScale`. A new drawing in the annotator takes the
   backing scale of the screen it opens on; one an agent's marks create takes `NSScreen.main`'s, the
   best guess with no annotator open. Both are clamped to `Drawing.pointScales`. A stored drawing
@@ -846,7 +865,7 @@ under that folder's `Library/Logs`.
   `Thumbnailer.converted(_:to:)` had redrawn it. A capture from the same display is already in that
   space; an agent's push, a stitch or a capture from another display can be in another. The redraw
   is 8-bit, so a deeper image is left as it is. A cache entry records the space it was decoded in,
-  and a lookup in another space misses. Renderings, stitches and the colour pass read the file
+  and a lookup in another space misses. Renderings and stitches read the file
   itself, so their output does not change. The editor shows the screenshot decoded no larger than
   the visible screen in device pixels, which is the same decode a flight asks for and is counted in
   the thumbnail cache's budget (both ask `Thumbnailer.screenPixels(on:)` and the screen's colour
@@ -893,6 +912,21 @@ under that folder's `Library/Logs`.
   disable path and the only way back in the UI. `appleThumbnail` stays a settings.json key with no
   control, because `restoreAppleDefaults()` writes Apple's old value into it and that is what makes
   a restore survive the next launch's reconcile.
+- Updates come from Sparkle (`Updater.swift`). The app checks the feed that `SUFeedURL` names once a
+  day, and nothing installs until the person presses Install in Sparkle's window. A version a
+  scheduled check finds waits as a gentle reminder, Sparkle's name for one that does not take the
+  focus (`supportsGentleScheduledUpdateReminders`): a dot on the status item, with a clear ring cut
+  into the icon around it, and an "Update Available…" item at the top of its menu. With the menu bar
+  icon hidden there is nowhere to show the reminder, so Sparkle shows its window, without activating
+  the app. `[update]` lines log what each check found, and `[state] app.update` says what is waiting.
+  Sparkle compares `CFBundleVersion`, which the build phase stamps with the commit count. So each
+  release needs more commits behind it than the last, which a release cut from main has. Every
+  download is checked against `SUPublicEDKey`. Installs trust only images signed with the private key
+  in the Keychain account `vignette`, so a lost key leaves every install unable to update. The
+  trailer's stage copy turns the checks off. Sparkle relaunches an updated app through
+  LaunchServices, with no environment, so a test copy that must stay on scratch files sets
+  `VIGNETTE_SETTINGS` and `CFFIXED_USER_HOME` under `LSEnvironment` in its Info.plist.
+  `docs/updater-2026-09-27.md` has the tests.
 
 ### Agents
 
@@ -1020,33 +1054,46 @@ under that folder's `Library/Logs`.
   has no card to report on, so the card it answers takes a `replyFailed` mark, "Reply not shown"
   (`ScreenshotRequests.Callbacks.replyFailed`). A published reply is its own card and nothing else
   says it arrived. `docs/send-confirmation-2026-09-26.md` has the frames.
-- The agent skill (`skills/vignette/SKILL.md`) ships in the bundle as a folder resource
-  (project.yml), and `SkillInstaller.swift` copies it out. A root is an agent's own directory,
-  `~/.claude` or `~/.codex`, and only one that exists; the skill lands in `<root>/skills/vignette`.
-  Roots are parameters everywhere, so a test never reaches the real ones, and the live check is
-  `install-skill?root=<dir>` (debug only). Links are resolved all the way, including one at the
-  skill folder itself (`destination(in:)`), so a skill the user keeps elsewhere is rewritten where
-  it lives and two roots reaching one folder are one copy reported for both. Removing takes the
-  entry at `<resolved skills>/vignette` away without following it, so a link goes and its target
-  stays (`entry(in:)`). An install overwrites whatever is there, and `matches(source:installed:)`
-  is what makes a launch with nothing to change say nothing. The copy is staged beside the
-  destination and moved into place, so a failed install leaves the old one where it was.
+- The agent plugin (`agent-plugin/`) and the skill it carries (`skills/vignette/SKILL.md`) ship in
+  the bundle as folder resources (project.yml), and `AgentPlugin.swift` installs them.
+  `AgentPlugin.stage` writes a marketplace into Application Support: the template, the skill copied
+  into `plugins/vignette/skills/vignette`, `scripts/inbox-root` naming this app's inboxes, and both
+  marketplace lists named for the URL scheme, so a fork installs `vignette@<its scheme>`. It is
+  assembled beside the old copy and swapped in whole. Each agent installs from it with its own
+  command line tool (`PluginHost`): `claude plugin marketplace add`, then `claude plugin install
+  … --scope user`; `codex plugin marketplace add`, then `codex plugin add`. Claude Code reads a
+  folder marketplace in place. Codex copies the plugin into its cache, so its update is `codex
+  plugin add` again. A root is `~/.claude` or `~/.codex`, or where `CLAUDE_CONFIG_DIR` and
+  `CODEX_HOME` point, and only one that exists. Roots are parameters everywhere, so a test never
+  reaches the real ones, and the live check is `install-skill?root=<dir>` (debug only, a folder
+  named `.claude` or `.codex`). The tools get the app's `HOME`, so a test copy launched with
+  `CFFIXED_USER_HOME` installs into its scratch home. The `codex` on this Mac is a vite-plus shim
+  that finds its package through `HOME`, so such a test links the scratch home's `.vite-plus` to the
+  real one, and unlinks it before anything lists Codex threads. Whether the plugin is on is read from
+  the agent's own settings (`enabledPlugins` in Claude Code's settings.json, `[plugins."<id>"]` in
+  Codex's config.toml), so a window asks without running a tool. Installs run one at a time on
+  `AgentPlugins`' queue and answer on the main thread, and each result logs one `[plugin]` line.
+  A launch writes the marketplace and updates an installed plugin whose listed version differs from
+  the bundle's, or whose marketplace copy changed. It installs the plugin only where the skill from
+  before the plugin is (`<root>/skills/vignette`, and `~/.agents/skills/vignette` for Codex), since
+  that person chose the skill. Once the plugin is in, a folder there is removed; a link is the
+  person's own and stays, with a `[plugin] kept` line. A launch never removes the plugin, and never
+  installs it anywhere else. Raise the version in both of the plugin's manifests with every change
+  to the plugin or the skill, and the skill's own `metadata.version` with every change to the skill.
   `agentSkill` in settings.json records only that the offer was made. Setup's last page makes it
   and records `off`. A file that finished setup before that page existed, or a setup closed before
   it, still reads `unasked`, and with an agent directory present the next launch makes the offer
-  once as the Settings window at the Agents section, since the toast carries no button. That window comes up with `orderFront` and
-  does not activate the app: the user did not ask for it. Disk is the rest of the truth. A launch
-  rewrites every copy that is there and holds an earlier version than the bundle's, or none
-  (`metadata.version` in SKILL.md's frontmatter, `SkillInstaller.version(of:)`), installs nothing
-  new, and removes nothing, so an older build never replaces a newer skill and the checkout the skill
-  is written in keeps its edits. Raise the version with every change to the skill. A launch that
-  keeps a differing copy logs `[skill] kept`; the Agents tab's switches, setup's last page and `install-skill` are the only things that
-  put the skill somewhere or take it away. A failed install or removal in the Agents tab leaves the
-  switch where the disk is and says why under the agent's name, with no toast. An older file holding `on` is read as `off` (`validated()`).
-  The app carries the skill because someone who downloads Vignette needs their agent to learn the
-  `vignette://` contract, and the app is the one thing they are sure to have and the one thing that
-  knows which commands its version supports. `docs/menu-settings-revamp-2026-09-20.md` is the
-  installer as it works now.
+  once as the Settings window at the Agents section, since the toast carries no button. That window
+  comes up with `orderFront` and does not activate the app: the user did not ask for it. The Agents
+  tab's switches, setup's last page and `install-skill` are the only things that install the plugin
+  somewhere new, and the switch is the only thing that removes it. A switch says Installing… or
+  Removing… until the tool answers, and a failure is said under the agent's name, with no toast.
+  Without the agent's tool the switch is off and says which command is missing. After a Claude Code
+  install it says sessions already open need `/reload-plugins`. An older file holding `on` is read
+  as `off` (`validated()`). The app carries the plugin because someone who downloads Vignette needs
+  their agent to learn the `vignette://` contract and, for Claude Code, to receive what Send sends.
+  The app is the one thing they are sure to have and the one thing that knows which commands its
+  version supports. `docs/claude-code-without-herdr-2026-09-27.md` has the design and its tests.
 
 ## Adding things
 
@@ -1061,7 +1108,3 @@ under that folder's `Library/Logs`.
   `[annotate] next <name> 2 of 3`.
 - An editor tool: add an `EditorCore.Tool` case with its label, key and SF Symbol, and handle it
   in the core's presses and drags. The toolbar shows every case.
-- A colour: add a `MarkColor` case with its hex. The order of `MarkColor.allCases` is the colour
-  pass's order, and a case's raw value is what the file format and an agent's `marks=` name.
-  `docs/editor.md`, `docs/commands.md` and the skill list the ids, so add the new one there too.
-  There is no palette in the toolbar.

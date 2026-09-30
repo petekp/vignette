@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private var statusItem: NSStatusItem?
+    /// The dot on the status item while an update waits (Updater).
+    private var updateDot: NSView?
+    private var updater: Updater?
     private var watcher: ScreenshotWatcher?
     /// True on a first launch whose folder macOS protects, until setup asks for it.
     private var watcherWaitsForSetup = false
@@ -50,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var pendingAdds: [String: PendingAdd] = [:]
     /// Sending drawings to agent sessions and taking their drawings back. See ScreenshotRequests.
     private let requests = ScreenshotRequests(root: ScreenshotRequests.defaultRoot)
+    private let agentPlugins = AgentPlugins()
     /// The screenshot each request sent this launch was made from, until its client answers.
     private var sentShots: [String: Screenshot] = [:]
 
@@ -64,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[settings] warning Apple screencapture type=\(type) is a format the watcher ignores")
         }
         updateStatusItem()
+        startUpdater()
         // It records the frontmost app from the moment it exists, which has to be before the first
         // window of ours can take the focus.
         _ = FocusReturn.shared
@@ -96,8 +101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         settingsWindow.callbacks = SettingsWindowController.Callbacks(
             restoreAppleDefaults: { [weak self] in self?.restoreAppleDefaults() },
             openTweaks: { [weak self] in self?.debugPanel.toggle() },
-            installAgentSkill: { [weak self] root in self?.installAgentSkill(into: [root], toast: false) ?? [] },
-            removeAgentSkill: { [weak self] root in self?.removeAgentSkill(from: [root], toast: false) ?? [] },
+            installAgentPlugin: { [weak self] root, done in self?.installAgentPlugin(into: [root], toast: false) { done($0) } },
+            removeAgentPlugin: { [weak self] root, done in self?.removeAgentPlugin(from: root, completion: done) },
             folderDenied: { [weak self] in self?.watcher?.isDenied ?? false })
         // Before the watcher, so a capture taken during launch already lands the way Vignette needs.
         settings.reconcileApple()
@@ -115,20 +120,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
         if let notice = settings.startupNotice { thumbnail.showFeedback(notice) }
         // Setup comes first and has the launch to itself: two windows competing for a first-time
-        // user is worse than the skill offer waiting until the next launch.
+        // user is worse than the plugin offer waiting until the next launch.
         if setupWindow.isUnasked {
-            // The login item and the skill wait for the window to close, which applies the
+            // The login item and the plugin wait for the window to close, which applies the
             // switches it shows.
             setupWindow.show(protectedArea: watcherWaitsForSetup ? ScreenshotWatcher.protectedArea(of: watchFolder) : nil,
                              callbacks: SetupWindowController.Callbacks(
                                 hasScreenshots: { [weak self] in self?.hasScreenshots ?? false },
                                 folderAccess: { [weak self] in self?.folderAccess ?? .ask },
                                 askFolder: { [weak self] in self?.askForFolder() },
-                                installAgentSkill: { [weak self] roots in self?.installAgentSkill(into: roots) }))
+                                installAgentPlugin: { [weak self] roots in self?.installAgentPlugin(into: roots) }))
         } else {
             // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
             LoginItem.apply(settings.data.launchAtLogin)
-            startAgentSkill()
+            startAgentPlugin()
         }
         requests.refreshKeptLists()
         // The contract for agents: after this line every command answers.
@@ -182,98 +187,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
-        if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem() }
+        if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
         if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
     }
 
-    // MARK: The agent skill
+    // MARK: The agent plugin
 
-    /// Launch: the offer if it has never been made, and a fresh copy of the skill for every agent
-    /// that already has one. Nothing is installed where there is none and nothing is removed — disk
-    /// is the truth, and putting the skill there or taking it away is the user's to ask for.
-    private func startAgentSkill() {
-        if settings.data.agentSkillChoice == .unasked { offerAgentSkill() }
-        let existing = SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
-            .filter { SkillInstaller.state(of: $0) == .installed }
-        if !existing.isEmpty { installAgentSkill(into: existing, onlyNewer: true) }
+    /// Launch: the offer if it has never been made, then the marketplace written and every
+    /// installed plugin brought up to this app's version (`AgentPlugins.launch`). A plugin goes in
+    /// by itself only where the skill from before the plugin was, since that person chose the skill.
+    private func startAgentPlugin() {
+        if settings.data.agentSkillChoice == .unasked { offerAgentPlugin() }
+        agentPlugins.launch { [weak self] results in self?.report(results, verb: "update", toast: true) }
     }
 
-    /// The Agents tab's switch, the setup window, and `install-skill`, which always write; and the
-    /// launch, which writes only a newer version (`onlyNewer`). The Agents tab shows a failure under
-    /// the agent's name, so it asks for no toast.
-    @discardableResult
-    func installAgentSkill(into roots: [URL], toast: Bool = true, onlyNewer: Bool = false) -> [SkillInstaller.Result] {
-        guard let source = SkillInstaller.bundled else {
-            Log.write("[skill] error missing-file \(SkillInstaller.skillName) is not in the bundle")
-            return roots.map { SkillInstaller.Result(root: $0, path: SkillInstaller.destination(in: $0), outcome: .failed,
-                                                     detail: "the skill is missing from this copy of Vignette") }
+    /// The Agents tab's switch, the setup window and `install-skill`. The Agents tab shows a failure
+    /// under the agent's name, so it asks for no toast.
+    func installAgentPlugin(into roots: [URL], toast: Bool = true, completion: @escaping ([AgentPlugin.Result]) -> Void = { _ in }) {
+        agentPlugins.install(into: roots) { [weak self] results in
+            self?.report(results, verb: "install", toast: toast)
+            completion(results)
         }
-        return report(SkillInstaller.install(source: source, into: roots, onlyNewer: onlyNewer), verb: "install", toast: toast)
     }
 
     /// The Agents tab's switch, turned off.
-    @discardableResult
-    func removeAgentSkill(from roots: [URL], toast: Bool = true) -> [SkillInstaller.Result] {
-        report(SkillInstaller.remove(from: roots), verb: "remove", toast: toast)
+    func removeAgentPlugin(from root: URL, completion: @escaping (AgentPlugin.Result) -> Void) {
+        agentPlugins.remove(from: root, completion: completion)
     }
 
-    /// One line for everything that changed, and a toast for everything that failed. A launch with
-    /// every copy already current says nothing.
-    @discardableResult
-    private func report(_ results: [SkillInstaller.Result], verb: String, toast: Bool) -> [SkillInstaller.Result] {
-        for result in results where ![.unchanged, .absent].contains(result.outcome) {
-            Log.write("[skill] \(result.outcome.rawValue) \(result.path.path)\(result.detail.isEmpty ? "" : " \(result.detail)")")
-        }
+    /// A toast for everything that failed; `AgentPlugins` has logged each result.
+    private func report(_ results: [AgentPlugin.Result], verb: String, toast: Bool) {
         for result in results where result.outcome == .failed && toast {
-            thumbnail.showFeedback("Couldn't \(verb) the skill for \(SkillInstaller.agentName(of: result.root))")
+            let name = AgentPlugin.client(of: result.root)?.label ?? result.root.lastPathComponent
+            thumbnail.showFeedback("Couldn't \(verb) the Vignette plugin for \(name)")
         }
-        return results
     }
 
     /// The offer, once: the app has never asked and this Mac has an agent directory. The offer is
     /// the Settings window, since the toast carries no button, and the answer is the buttons in it.
     /// Recorded as `off` as it is made, so the question is asked once whatever the user does.
-    private func offerAgentSkill() {
-        let roots = SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
+    private func offerAgentPlugin() {
+        let roots = AgentPlugin.roots(home: FileManager.default.homeDirectoryForCurrentUser)
         guard !roots.isEmpty else { return }
         settings.update { $0.agentSkill = AgentSkill.off.rawValue }
-        Log.write("[skill] offered \(roots.map(\.lastPathComponent).joined(separator: " "))")
+        Log.write("[plugin] offered \(roots.map(\.lastPathComponent).joined(separator: " "))")
         settingsWindow.show(tab: .agents, activating: false)
     }
 
-    /// Where the skill is sitting right now, for the state report. Two agents reaching one folder
-    /// name it once.
-    private func installedSkillPaths() -> [String] {
-        var paths: [String] = []
-        for root in SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
-        where SkillInstaller.state(of: root) == .installed {
-            let path = SkillInstaller.destination(in: root).path
-            if !paths.contains(path) { paths.append(path) }
-        }
-        return paths
+    /// The agent folders whose settings have the plugin on, for the state report.
+    private func installedPluginRoots() -> [String] {
+        AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser).filter(\.installed).map(\.root.path)
     }
 
-    /// `vignette://install-skill`, for a script: it installs for every agent on this Mac, or with
-    /// `root=` into that one directory. It writes no setting; the skill's own presence on disk is
-    /// what a later launch reads.
+    /// `vignette://install-skill`, for a script: it installs the plugin for every agent on this Mac,
+    /// or with `root=` into that one config folder, and answers when the agents' tools have. It
+    /// writes no setting; the agents' own settings are what a later launch reads.
     private func installSkill(_ request: CommandRequest) {
         if let root = request.root, !settings.data.debug {
             Commands.error("install-skill", .debugDisabled, "root=\(root.path) needs \"debug\": true in settings.json"); return
         }
-        guard SkillInstaller.bundled != nil else {
-            Commands.error("install-skill", .missingFile, "\(SkillInstaller.skillName) is not in the bundle"); return
+        guard AgentPlugin.bundled != nil, AgentPlugin.bundledSkill != nil else {
+            Commands.error("install-skill", .missingFile, "the plugin is not in the bundle"); return
         }
-        let roots = request.root.map { [$0] } ?? SkillInstaller.roots(home: FileManager.default.homeDirectoryForCurrentUser)
+        let roots = request.root.map { [$0] } ?? AgentPlugin.roots(home: FileManager.default.homeDirectoryForCurrentUser)
         guard !roots.isEmpty else {
-            Commands.error("install-skill", .noAgent, "no \(SkillInstaller.agentDirectories.joined(separator: " or ")) in this home folder"); return
+            Commands.error("install-skill", .noAgent, "no .claude or .codex in this home folder"); return
         }
-        let results = installAgentSkill(into: roots)
-        let detail = results.map { "\($0.path.path)=\($0.outcome.rawValue)" }.joined(separator: " ")
-        if let bad = results.first(where: { $0.outcome == .failed }) {
-            Commands.error("install-skill", .writeFailed, bad.detail.isEmpty ? detail : "\(detail) \(bad.detail)")
-            return
+        installAgentPlugin(into: roots) { results in
+            let detail = results.filter { ![.absent].contains($0.outcome) }
+                .map { "\($0.root.path)=\($0.outcome.rawValue)" }.joined(separator: " ")
+            if let bad = results.first(where: { [.failed, .noTool].contains($0.outcome) }) {
+                Commands.error("install-skill", bad.outcome == .noTool ? .noAgent : .writeFailed,
+                               bad.detail.isEmpty ? detail : "\(detail) \(bad.detail)")
+                return
+            }
+            Commands.ok("install-skill", detail)
         }
-        Commands.ok("install-skill", detail)
     }
 
     private func registerHotKey() {
@@ -348,13 +337,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Copy Drawing does, else the stored one.
     func stitch(_ shots: [Screenshot]) {
         guard shots.count >= 2 else { Commands.error("stitch", .notEnoughFiles, "needs 2, got \(shots.count)"); return }
-        let ui = settings.data.ui, style = ui.textStyle, arrowhead = ui.arrowhead, limit = ui.stitchLongSide
+        let ui = settings.data.ui, style = ui.textStyle, markStyle = ui.markStyle, limit = ui.stitchLongSide
         let pieces = shots.map { shot in
             Stitch.Piece(url: shot.url, drawing: annotator.openDrawing(of: shot.url)
                 ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: style) })
         }
         DispatchQueue.global(qos: .userInitiated).async {
-            let composed = Stitch.compose(pieces, style: style, arrowhead: arrowhead, longSideLimit: limit)
+            let composed = Stitch.compose(pieces, style: style, markStyle: markStyle, longSideLimit: limit)
             DispatchQueue.main.async { MainActor.assumeIsolated { [weak self] in self?.finishStitch(shots, composed) } }
         }
     }
@@ -396,14 +385,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     /// Agents' marks joining a screenshot's drawing: the one open in the editor, or the stored one.
-    /// The colour pass's sample is made off the main thread first, and `done` answers once the
-    /// drawing is written, with how many marks joined it. A new drawing takes the main screen's
-    /// point scale, the best guess with no annotator open.
-    private func addMarks(_ marks: [AgentMark], to url: URL, done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
+    /// `done` answers once the drawing is written, with how many marks joined it. A new drawing takes
+    /// the main screen's point scale, the best guess with no annotator open. `agent` names the agent
+    /// they are from.
+    private func addMarks(_ marks: [AgentMark], from agent: String?, to url: URL, done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
+        // A turn later, as it always has been: callers set their own state after asking.
         Task {
-            let sample = await Self.colorSample(of: url)
             do {
-                done(.success(try drawings.add(marks, to: url, editor: annotator.editor, sample: sample, style: settings.data.ui.textStyle,
+                done(.success(try drawings.add(marks, from: agent, to: url, editor: annotator.editor, style: settings.data.ui.textStyle,
                                                newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)))
             } catch let failure as Drawings.Failure {
                 done(.failure(failure))
@@ -411,10 +400,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 done(.failure(Drawings.Failure(code: .writeFailed, description: "\(error)")))
             }
         }
-    }
-
-    private nonisolated static func colorSample(of url: URL) async -> ColorSample? {
-        ColorSample(imageAt: url)
     }
 
     /// Where a screenshot's rendering is written: `<name>-annotated.png` beside it.
@@ -457,7 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: style) }
             guard let drawing, !drawing.marks.isEmpty else { return (shot, nil) }
             return (shot, RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: annotatedURL(for: shot),
-                                                       style: style, arrowhead: ui.arrowhead))
+                                                       style: style, markStyle: ui.markStyle))
         }
         if let last = renderings.compactMap(\.rendering).last {
             last.whenDone { [weak self] _ in self?.finishCopyAnnotated(renderings) }
@@ -512,7 +497,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         let file = annotatedURL(for: shot)
         let ui = settings.data.ui
-        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: ui.textStyle, arrowhead: ui.arrowhead,
+        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: ui.textStyle, markStyle: ui.markStyle,
                                                      order: .first)
         Clipboard.copyRendering(rendering, file: file)
         rendering.whenDone { [weak self] output in
@@ -546,7 +531,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
             drawn += 1
             let file = annotatedURL(for: shot)
-            let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: ui.textStyle, arrowhead: ui.arrowhead)
+            let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: ui.textStyle, markStyle: ui.markStyle)
             rendering.whenDone { output in
                 if let failure = output.failure {
                     Log.write("[drag] error \(failure.code.rawValue) \(name): \(failure); the drop gets no image for it")
@@ -655,7 +640,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             "bundle": Bundle.main.bundlePath,
             "appleThumbnail": settings.data.appleThumbnail, "recentCount": settings.data.recentCount, "hotkey": settings.data.recentHotkey, "debug": settings.data.debug,
             "launchAtLogin": settings.data.launchAtLogin, "loginItem": LoginItem.status,
-            "agentSkill": ["setting": settings.data.agentSkill, "installed": installedSkillPaths()] as [String: Any],
+            "update": updater?.stateJSON as Any,
+            "agentSkill": ["setting": settings.data.agentSkill, "installed": installedPluginRoots()] as [String: Any],
         ] as [String: Any]
         report.sections["annotator"] = annotator.stateJSON
         report.sections["editor"] = annotator.editor.core.inspection
@@ -719,6 +705,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.removeAllItems()
         let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
 
+        if let version = updater?.waiting {
+            let updateItem = NSMenuItem(title: "Update Available…", action: #selector(checkForUpdates), keyEquivalent: "")
+            updateItem.badge = NSMenuItemBadge(string: version)
+            menu.addItem(updateItem)
+            menu.addItem(.separator())
+        }
+
         let recentItem = NSMenuItem(title: "Show Recent Screenshots", action: #selector(toggleRecent), keyEquivalent: "")
         // A status item's menu is not the main menu, so this key equivalent is live only while the
         // menu is open; the global press is the Carbon hotkey's.
@@ -751,7 +744,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
 
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Check for Updates…", action: #selector(openReleases), keyEquivalent: "")
+        menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
 
         menu.addItem(.separator())
         if settings.data.debug {
@@ -766,10 +759,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
     }
 
-    /// Opens the releases page rather than comparing versions: the page names the latest version and
-    /// carries the download, and the app has no updater to hand off to yet.
-    @objc private func openReleases() {
-        NSWorkspace.shared.open(Identity.releasesURL)
+    @objc private func checkForUpdates() {
+        updater?.checkForUpdates(nil)
+    }
+
+    private func startUpdater() {
+        let updater = Updater()
+        updater.hasStatusItem = { [weak self] in self?.statusItem != nil }
+        updater.onChange = { [weak self] in self?.showUpdateDot() }
+        self.updater = updater
+    }
+
+    /// A dot at the icon's top right while an update waits, in the accent colour so it reads as
+    /// news rather than as part of the icon. An outline in the icon's own colour keeps it visible on
+    /// any menu bar, and a clear gap cut into the icon keeps it off the glyph's stroke. They appear
+    /// and leave together.
+    private func showUpdateDot() {
+        let wanted = updater?.waiting != nil
+        guard let button = statusItem?.button, let icon = NSImage(named: "MenuBarIcon") else { updateDot = nil; return }
+        let duration = 0.3 * settings.motionScale
+        let dotSize: CGFloat = 4, outline: CGFloat = 1, gap: CGFloat = 1
+        let size = dotSize + outline * 2
+        let bounds = button.bounds
+        let frame = NSRect(x: bounds.maxX - 1 - size, y: button.isFlipped ? 0 : bounds.height - size, width: size, height: size)
+        if wanted, updateDot == nil {
+            let badge = NSView(frame: frame)
+            badge.autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+            badge.wantsLayer = true
+            // A template image, so the menu bar draws the outline in the icon's colour: white on a
+            // dark bar, black on a light one.
+            let ring = NSImageView(frame: badge.bounds)
+            ring.imageScaling = .scaleNone
+            ring.image = Self.ring(size: size, hole: dotSize)
+            badge.addSubview(ring)
+            let dot = NSView(frame: badge.bounds.insetBy(dx: outline, dy: outline))
+            dot.wantsLayer = true
+            dot.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+            dot.layer?.cornerRadius = dotSize / 2
+            badge.addSubview(dot)
+            button.addSubview(badge)
+            updateDot = badge
+            setIcon(Self.icon(icon, clearedAround: frame.insetBy(dx: -gap, dy: -gap), in: button), on: button, fading: duration)
+            guard duration > 0, let layer = badge.layer else { return }
+            // AppKit anchors a view's layer at its corner, so the scale is written about the centre.
+            let center = CATransform3DMakeTranslation(size / 2, size / 2, 0)
+            let small = CATransform3DConcat(CATransform3DConcat(CATransform3DInvert(center), CATransform3DMakeScale(0.3, 0.3, 1)), center)
+            let appear = CASpringAnimation(perceptualDuration: duration, bounce: 0.3)
+            appear.keyPath = "transform"
+            appear.fromValue = small
+            appear.toValue = CATransform3DIdentity
+            appear.duration = appear.settlingDuration
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            fade.toValue = 1
+            fade.duration = duration / 2
+            layer.add(appear, forKey: "appear")
+            layer.add(fade, forKey: "fade")
+        } else if !wanted, let badge = updateDot {
+            updateDot = nil
+            icon.isTemplate = true
+            setIcon(icon, on: button, fading: duration)
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = duration
+                badge.animator().alphaValue = 0
+            }, completionHandler: { badge.removeFromSuperview() })
+        }
+    }
+
+    /// A template disc `size` across with a hole `hole` across. The hole is half a point smaller
+    /// than the dot it frames, so the two overlap and no background shows between them.
+    private static func ring(size: CGFloat, hole: CGFloat) -> NSImage {
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            NSBezierPath(ovalIn: rect).fill()
+            NSGraphicsContext.current?.compositingOperation = .destinationOut
+            let inner = (size - hole) / 2 + 0.25
+            NSBezierPath(ovalIn: rect.insetBy(dx: inner, dy: inner)).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    private func setIcon(_ image: NSImage, on button: NSStatusBarButton, fading duration: Double) {
+        image.accessibilityDescription = Identity.name
+        if duration > 0, let layer = button.layer {
+            let transition = CATransition()
+            transition.type = .fade
+            transition.duration = duration
+            layer.add(transition, forKey: "icon")
+        }
+        button.image = image
+    }
+
+    /// The icon with a clear circle filling `dot`, which is in the button's coordinates.
+    /// The button draws the icon at its own size, centred.
+    private static func icon(_ icon: NSImage, clearedAround dot: NSRect, in button: NSStatusBarButton) -> NSImage {
+        let size = icon.size
+        let origin = NSPoint(x: (button.bounds.width - size.width) / 2, y: (button.bounds.height - size.height) / 2)
+        var center = NSPoint(x: dot.midX - origin.x, y: dot.midY - origin.y)
+        if button.isFlipped { center.y = size.height - center.y }
+        let radius = dot.width / 2
+        let image = NSImage(size: size, flipped: false) { rect in
+            icon.draw(in: rect)
+            NSGraphicsContext.current?.compositingOperation = .destinationOut
+            NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     @objc private func openSettings() {
@@ -866,7 +963,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request))")
             return
         }
-        addMarks(marks, to: destination) { [weak self] result in
+        addMarks(marks, from: request.agent, to: destination) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let joined):
@@ -902,9 +999,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         requests.connections = [.claude: ClaudeCodeConnection(),
                                 .codex: CodexConnection()]
         requests.callbacks = ScreenshotRequests.Callbacks(
-            addMarks: { [weak self] shot, marks, done in
+            addMarks: { [weak self] shot, marks, agent, done in
                 guard let self else { return done(Drawings.Failure(code: .writeFailed, description: "the app is gone")) }
-                addMarks(marks, to: shot.url) { result in
+                addMarks(marks, from: agent, to: shot.url) { result in
                     if case .failure(let failure) = result { done(failure) } else { done(nil) }
                 }
             },
@@ -956,8 +1053,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard let client = AgentApp.client(of: app), let pid = app?.processIdentifier else {
             return listDestinations(for: shot, asked: asked, cameFrom: nil)
         }
-        // The thread open in the agent's app is read before anything is listed: herdr's answer comes
-        // first and would settle the target on a pane you were not in.
+        // The thread open in the agent's app is read before anything is listed: Claude Code's list
+        // comes first and would settle the target on the session in herdr's focus, which you were not in.
         DispatchQueue.global(qos: .userInitiated).async {
             let open = AgentApp.openThread(pid: pid)
             DispatchQueue.main.async { [weak self] in
@@ -1007,7 +1104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return submit(bytes, of: shot, to: destination, message: message)
         }
         let ui = settings.data.ui
-        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: nil, style: ui.textStyle, arrowhead: ui.arrowhead)
+        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: nil, style: ui.textStyle, markStyle: ui.markStyle)
         rendering.whenDone { [weak self] output in
             guard let self else { return }
             // A rendering that answers after the session that pressed Send has ended belongs to no
@@ -1141,6 +1238,7 @@ extension AppDelegate: NSMenuDelegate, NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case #selector(toggleRecent), #selector(annotateLast): return hasScreenshots
+        case #selector(checkForUpdates): return updater?.canCheck ?? false
         default: return true
         }
     }

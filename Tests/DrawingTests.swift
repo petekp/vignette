@@ -4,10 +4,9 @@ import XCTest
 final class DrawingTests: XCTestCase {
     private let image = PixelSize(width: 400, height: 100)
 
-    func testTheFiveColoursInTheOrderTheColourPassTriesThem() {
-        XCTAssertEqual(MarkColor.allCases.map(\.rawValue), ["red", "yellow", "light-blue", "white", "violet"])
-        XCTAssertEqual(MarkColor.allCases.map(\.hex), ["#e03131", "#ffc034", "#4dabf7", "#f3f3f3", "#ae3ec9"])
-        XCTAssertEqual(MarkColor.start, .red)
+    func testAMarksColourSaysWhoDrewIt() {
+        XCTAssertEqual(Mark(geometry: .rectangle(CGRect(x: 0, y: 0, width: 5, height: 5))).color, .person)
+        XCTAssertEqual(Mark(geometry: .rectangle(CGRect(x: 0, y: 0, width: 5, height: 5)), agent: true).color, .agent)
     }
 
     // MARK: The validator
@@ -24,10 +23,7 @@ final class DrawingTests: XCTestCase {
             (#"{"type": "rectangle", "x": 1, "w": 5, "h": 5, "color": "red"}"#, "y must be a finite number"),
             (#"{"type": "rectangle", "x": 1, "y": 1, "w": 0, "h": 5, "color": "red"}"#, "w must be more than 0"),
             (#"{"type": "ellipse", "x": 1, "y": 1, "w": 5, "h": -5, "color": "red"}"#, "h must be more than 0"),
-            (#"{"type": "rectangle", "x": 1, "y": 1, "w": 5, "h": 5}"#, "color is missing"),
-            (#"{"type": "rectangle", "x": 1, "y": 1, "w": 5, "h": 5, "color": "blue"}"#, "color must be one of red, yellow, light-blue, white, violet"),
             (#"{"type": "rectangle", "x": 1, "y": 1, "w": 5, "h": 5, "color": "red", "agent": 1}"#, "agent must be true or false"),
-            (#"{"type": "rectangle", "x": 1, "y": 1, "w": 5, "h": 5, "color": "red", "colorChosen": "yes"}"#, "colorChosen must be true or false"),
             (#"{"type": "arrow", "x": 1, "y": 1, "x2": 1, "y2": 1, "color": "red"}"#, "the arrow ends where it starts"),
             (#"{"type": "arrow", "x": 1, "y": 1, "x2": 5, "y2": 1, "bend": null, "color": "red"}"#, "bend must be a finite number"),
             (#"{"type": "arrow", "x": 1, "y": 1, "x2": 5, "y2": 1, "via": [1, 2], "color": "red"}"#, "via must be a list of [x, y] points"),
@@ -143,7 +139,7 @@ final class DrawingTests: XCTestCase {
         let atTheEdge = Mark.Text(origin: CGPoint(x: 395, y: 0), text: "Hello there", wrap: 800, size: 24)
         guard case .text(let cut)? = placed(.text(atTheEdge)) else { return XCTFail() }
         XCTAssertEqual(cut.wrap, 400, "a wrap width wider than the image is cut to it")
-        XCTAssertEqual(cut.origin.x, 0)
+        XCTAssertEqual(TextLayout(cut, imageWidth: 400, pointScale: 1, style: .standard).box.maxX, 400, accuracy: 0.001, "and its tag moves in")
     }
 
     /// A text with less than 15% of the image's width to its right moves left instead of wrapping
@@ -175,24 +171,26 @@ final class DrawingTests: XCTestCase {
         // A text with a wrap width keeps its x; one wider than the image starts at its left edge.
         let wrapped = Mark.Text(origin: CGPoint(x: 1560, y: 100), text: "The header", wrap: 30, size: 24)
         XCTAssertEqual(TextLayout.leftEdge(of: wrapped, imageWidth: 1600, pointScale: 2, style: .standard), 1560)
+        // A long one moves left until its widest tag fits before the margin.
         let long = Mark.Text(origin: CGPoint(x: 1560, y: 100), text: String(repeating: "the header should not scroll ", count: 6), size: 24)
-        XCTAssertEqual(TextLayout.leftEdge(of: long, imageWidth: 1600, pointScale: 2, style: .standard), 0)
+        let left = TextLayout.leftEdge(of: long, imageWidth: 1600, pointScale: 2, style: .standard)
+        var moved = long
+        moved.origin.x = left
+        XCTAssertEqual(TextLayout(moved, imageWidth: 1600, pointScale: 2, style: .standard).box.maxX, 1600 * 0.98, accuracy: 0.001)
     }
 
     // MARK: Copied marks
 
     func testCopiedMarksComeBackThroughTheValidator() throws {
         let marks = [
-            Mark(geometry: .rectangle(CGRect(x: 1, y: 2, width: 3, height: 4)), color: .yellow),
+            Mark(geometry: .rectangle(CGRect(x: 1, y: 2, width: 3, height: 4))),
             Mark(geometry: .arrow(.init(start: CGPoint(x: 5, y: 6), end: CGPoint(x: 7, y: 8), bend: 12)), agent: true),
-            Mark(geometry: .text(.init(origin: CGPoint(x: 9, y: 10), text: "copied", wrap: 120, size: 30)), color: .white, colorChosen: true),
+            Mark(geometry: .text(.init(origin: CGPoint(x: 9, y: 10), text: "copied", wrap: 120, size: 30))),
         ]
         let copied = try XCTUnwrap(CopiedMarks(data: try CopiedMarks(pointScale: 2, marks: marks).encoded()))
         XCTAssertEqual(copied.pointScale, 2)
         XCTAssertEqual(copied.marks.map(\.geometry), marks.map(\.geometry))
-        XCTAssertEqual(copied.marks.map(\.color), marks.map(\.color))
         XCTAssertEqual(copied.marks.map(\.agent), marks.map(\.agent))
-        XCTAssertEqual(copied.marks.map(\.colorChosen), marks.map(\.colorChosen))
 
         // Another app can write the type: a mark that fails is dropped and the rest are pasted.
         let written = #"{"version": 1, "pointScale": 1, "marks": [{"type": "rectangle", "x": 1e999, "y": 0, "w": 1, "h": 1, "color": "red"}, {"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1, "color": "red"}]}"#

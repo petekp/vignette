@@ -74,9 +74,6 @@ struct EditorCore {
 
     // MARK: Inputs
 
-    /// The colour pass's pick for one mark, or nil while it cannot pick yet; the mark stays owed.
-    typealias ColorPick = (Mark) -> MarkColor?
-
     /// What finishing the drawing does: copy it and close (Done), or hand it to an agent session (Send).
     enum Finish: Equatable { case done, send }
 
@@ -89,8 +86,8 @@ struct EditorCore {
 
     enum Input {
         /// A screenshot opens with its drawing, or an empty one whose point scale is the display's.
-        /// `arrowhead` is the renderer's, which the selection frame goes around.
-        case open(Drawing, style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle, pickColor: ColorPick)
+        /// `markStyle` is the renderer's, which the selection frame goes around.
+        case open(Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle)
         /// The pointer moved with no button held.
         case pointerMoved(Pointer)
         /// The pointer left the canvas.
@@ -113,7 +110,7 @@ struct EditorCore {
         /// The text style, sizes and arrowhead the host uses now, in place of the ones `open` gave. The
         /// drawing, the selection, the history, a gesture and a typing session stay; a text keeps its
         /// origin, and its lines break where the new style breaks them.
-        case tweaksChanged(style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle)
+        case tweaksChanged(style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle)
         /// The text of the typing session is now this.
         case typingChanged(String)
         /// The text view ended the session on its own.
@@ -381,9 +378,8 @@ struct EditorCore {
     private(set) var drawing = Drawing(key: "", pixels: PixelSize(width: 0, height: 0), pointScale: 1, marks: [])
     private(set) var style = TextStyle.standard
     private(set) var metrics = EditorMetrics.standard
-    private(set) var arrowhead = ArrowheadStyle.standard
+    private(set) var markStyle = MarkStyle.standard
     private let layouts = TextLayoutCache()
-    private var pickColor: ColorPick = { _ in nil }
     private(set) var tool = Tool.rectangle
     /// The host's to set, whenever what its bar offers changes. Opening an image leaves it alone.
     var finishes = Finishes()
@@ -393,8 +389,6 @@ struct EditorCore {
     private(set) var typing: Typing?
     private(set) var undoSteps: [EditStep] = []
     private(set) var redoSteps: [EditStep] = []
-    /// Marks added or changed since the colour pass last looked at them.
-    private(set) var colorOwed: Set<Mark.ID> = []
     /// Screen pt per image px.
     private(set) var zoom: CGFloat = 1
     /// The changes an open gesture or typing session has made so far.
@@ -483,11 +477,13 @@ struct EditorCore {
         let size: CGFloat
         /// The session began with a single click on the selected text, so a second click selects all of it.
         var startedByClick: Bool
+        /// The words when the session began. An agent's note whose words the person changed is theirs.
+        var startText = ""
     }
 
     var geometry: EditorGeometry {
         EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: style, metrics: metrics, zoom: zoom, layouts: layouts,
-                       arrowhead: arrowhead)
+                       markStyle: markStyle, typing: typing?.id)
     }
 
     var canUndo: Bool { !undoSteps.isEmpty }
@@ -497,8 +493,8 @@ struct EditorCore {
 
     mutating func reduce(_ input: Input) -> [Effect] {
         effects = []
-        if case .open(let drawing, let style, let metrics, let arrowhead, let pickColor) = input {
-            open(drawing, style: style, metrics: metrics, arrowhead: arrowhead, pickColor: pickColor)
+        if case .open(let drawing, let style, let metrics, let markStyle) = input {
+            open(drawing, style: style, metrics: metrics, markStyle: markStyle)
         } else if isOpen {
             if !input.keepsNudge { nudging = false }
             if !input.keepsNoteMark { noteMark = nil }
@@ -541,10 +537,10 @@ struct EditorCore {
             selection = (backward ? order.last : order.first).map { [$0] } ?? []
         case .zoomChanged(let zoom):
             if zoom > 0, zoom.isFinite { self.zoom = zoom }
-        case .tweaksChanged(let style, let metrics, let arrowhead):
+        case .tweaksChanged(let style, let metrics, let markStyle):
             self.style = style
             self.metrics = metrics
-            self.arrowhead = arrowhead
+            self.markStyle = markStyle
         case .typingChanged(let text): typed(text)
         case .typingEnded: endTyping()
         case .timerFired: timerFired()
@@ -587,8 +583,7 @@ struct EditorCore {
 
     // MARK: Opening, parking and handing over
 
-    private mutating func open(_ drawing: Drawing, style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle,
-                               pickColor: @escaping ColorPick) {
+    private mutating func open(_ drawing: Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle) {
         if typing != nil { emit(.endTyping) }
         let zoom = self.zoom, pending = effects
         self = EditorCore()
@@ -599,8 +594,7 @@ struct EditorCore {
         self.drawing = drawing
         self.style = style
         self.metrics = metrics
-        self.arrowhead = arrowhead
-        self.pickColor = pickColor
+        self.markStyle = markStyle
         tool = drawing.marks.isEmpty ? .rectangle : .select
         // The newest mark the person drew, never an agent's.
         if let newest = drawing.marks.last(where: { !$0.agent }) { selection = [newest.id] }
@@ -610,12 +604,11 @@ struct EditorCore {
         emit(.tool(tool))
     }
 
-    /// Ends what is under way the way park, Done and Send need: a drag as if released, typing with
-    /// its empty text removed, and the colour pass over whatever it still owes.
+    /// Ends what is under way the way park, Done and Send need: a drag as if released, and typing
+    /// with its empty text removed.
     private mutating func finishForHost() {
         if gesture != nil { released(nil) }
         if typing != nil { endTyping() }
-        runColorPass()
     }
 
     private mutating func finish(_ finish: Finish) {
@@ -637,7 +630,6 @@ struct EditorCore {
     private mutating func timerFired() {
         // The button is held: the drawing waits for the release.
         if gesture != nil { return emit(.scheduleTimer) }
-        runColorPass()
         if unsaved { handOver() }
     }
 
@@ -661,32 +653,6 @@ struct EditorCore {
     private mutating func changed() {
         unsaved = true
         emit(.scheduleTimer)
-    }
-
-    // MARK: The colour pass
-
-    private mutating func owe(_ ids: [Mark.ID]) {
-        for id in ids where mark(id)?.colorChosen == false { colorOwed.insert(id) }
-    }
-
-    /// Picks a colour for every owed mark, or those of `only`, outside history. A mark a gesture or
-    /// a typing session is changing waits for it to end; one the pick cannot answer yet stays owed.
-    private mutating func runColorPass(only ids: Set<Mark.ID>? = nil) {
-        let busy = Set(edit?.touched ?? []).union(typing.map { [$0.id] } ?? [])
-        for index in drawing.marks.indices {
-            let mark = drawing.marks[index]
-            guard colorOwed.contains(mark.id), !busy.contains(mark.id), ids?.contains(mark.id) ?? true else { continue }
-            guard !mark.colorChosen else {
-                colorOwed.remove(mark.id)
-                continue
-            }
-            guard let color = pickColor(mark) else { continue }
-            colorOwed.remove(mark.id)
-            if color != mark.color {
-                drawing.marks[index].color = color
-                changed()
-            }
-        }
     }
 
     // MARK: Changing marks
@@ -732,7 +698,6 @@ struct EditorCore {
         self.edit = nil
         guard let step = edit.step(ending: drawing.marks, selection: selection) else { return false }
         push(step)
-        owe(step.changes.compactMap { $0.after?.mark.id })
         changed()
         return true
     }
@@ -765,8 +730,6 @@ struct EditorCore {
         drawing.marks = step.applied(to: drawing.marks, forward: forward)
         let ids = Set(drawing.marks.map(\.id))
         selection = (forward ? step.selectionAfter : step.selectionBefore).intersection(ids)
-        // The colour belongs to where a mark is, so the next pass colours it for where it is now.
-        owe(step.changes.compactMap { (forward ? $0.after : $0.before)?.mark.id })
         changed()
     }
 
@@ -955,7 +918,7 @@ struct EditorCore {
             case .ellipse(let frame):
                 mark.geometry = .ellipse(geometry.resized(frame, by: position, delta: delta, proportional: modifiers.contains(.shift), fromCenter: modifiers.contains(.option)))
             case .text(let text):
-                mark.geometry = .text(geometry.resized(text, agent: mark.agent, by: position, delta: delta, fromCenter: modifiers.contains(.option)))
+                mark.geometry = .text(geometry.resized(text, of: mark, by: position, delta: delta, fromCenter: modifiers.contains(.option)))
             case .arrow:
                 return
             }
@@ -1015,7 +978,7 @@ struct EditorCore {
             let moved = geometry.translated(original, by: delta)
             if copying {
                 replace(original)
-                let copy = Mark(id: copyID, geometry: moved.geometry, color: moved.color, agent: moved.agent, colorChosen: moved.colorChosen)
+                let copy = Mark(id: copyID, geometry: moved.geometry, agent: moved.agent, agentName: moved.agentName)
                 if mark(copyID) == nil { add(copy) } else { replace(copy) }
             } else {
                 replace(moved)
@@ -1125,7 +1088,7 @@ struct EditorCore {
                 overlay.frame = outline
                 overlay.handles = geometry.handles(around: outline, of: only.id, markSize: frame.size)
             case .text(let text):
-                let box = geometry.layout(text, agent: only.agent).box
+                let box = geometry.layout(text, of: only).box
                 let outline = geometry.selectionFrame(of: [only]) ?? box
                 overlay.frame = outline
                 if typing?.id != only.id { overlay.handles = geometry.handles(around: outline, of: only.id, markSize: box.size) }
@@ -1146,7 +1109,7 @@ struct EditorCore {
         if let gesture, gesture.phase == .wrapping {
             let span = wrapSpan(gesture), size = metrics.newTextSize
             let top = geometry.textOrigin(at: geometry.inside(gesture.press.location), size: size).y
-            overlay.wrap = CGRect(x: span.minX, y: top, width: span.width, height: geometry.pt(size) * style.lineHeight)
+            overlay.wrap = CGRect(x: span.minX, y: top, width: span.width, height: geometry.tagHeight(size: size))
         }
         return overlay
     }
@@ -1197,7 +1160,7 @@ struct EditorCore {
     /// The box of the text being typed.
     var typingBox: CGRect? {
         guard let typing, let mark = mark(typing.id), case .text(let text) = mark.geometry else { return nil }
-        return geometry.layout(text, agent: mark.agent).box
+        return geometry.layout(text, of: mark).box
     }
 
     var cursor: Cursor {
@@ -1263,8 +1226,10 @@ struct EditorCore {
         let id = UUID()
         var edit = MarkEdit(marks: drawing.marks, selectionBefore: selection)
         edit.note(id)
-        let text = geometry.anchored(Mark.Text(origin: anchor.point, text: "", wrap: wrap, size: metrics.newTextSize), agent: false, to: anchor)
-        guard let placed = geometry.placed(Mark(id: id, geometry: .text(text))) else { return }
+        var mark = Mark(id: id, geometry: .text(Mark.Text(origin: anchor.point, text: "", wrap: wrap, size: metrics.newTextSize)))
+        guard case .text(let empty) = mark.geometry else { return }
+        mark.geometry = .text(geometry.anchored(empty, of: mark, to: anchor))
+        guard let placed = geometry.placed(mark) else { return }
         drawing.marks.append(placed)
         beginTyping(id, caret: .end, edit: edit, anchor: anchor)
     }
@@ -1277,7 +1242,8 @@ struct EditorCore {
         self.edit = edit
         self.edit?.note(id)
         selection = [id]
-        typing = Typing(id: id, anchor: anchor ?? TextAnchor(text.origin), wrap: text.wrap, size: text.size, startedByClick: false)
+        typing = Typing(id: id, anchor: anchor ?? TextAnchor(text.origin), wrap: text.wrap, size: text.size, startedByClick: false,
+                        startText: text.text)
         emit(.beginTyping(id, caret))
     }
 
@@ -1291,23 +1257,45 @@ struct EditorCore {
         text.origin = typing.anchor.point
         text.wrap = typing.wrap
         if text.wrap == nil {
-            text.size = geometry.fittedSize(text, agent: mark.agent, from: typing.size, floor: min(typing.size, metrics.newTextSize / 2),
+            text.size = geometry.fittedSize(text, of: mark, from: typing.size, floor: min(typing.size, metrics.newTextSize / 2),
                                             anchor: typing.anchor)
         }
-        mark.geometry = .text(geometry.anchored(text, agent: mark.agent, to: typing.anchor))
+        mark.geometry = .text(geometry.anchored(text, of: mark, to: typing.anchor))
         guard let grown = geometry.placed(mark) else { return }
         replace(grown)
         changed()
     }
 
-    /// Ends the session. A text left with no words goes; otherwise the text stays selected and the
-    /// colour pass picks its colour now.
+    /// Ends the session. A text left with no words goes; otherwise the text stays selected.
     private mutating func endTyping() {
         guard let typing else { return }
         self.typing = nil
         emit(.endTyping)
+        if var mark = mark(typing.id), mark.agent, !Self.isBlank(mark), case .text(let text) = mark.geometry, text.text != typing.startText {
+            // The words are the person's now, so the note is drawn as theirs: their colour, their
+            // face, and no badge.
+            mark.agent = false
+            mark.agentName = nil
+            if let placed = geometry.placed(mark) {
+                replace(placed)
+                changed()
+            }
+        }
+        let anchor = typing.anchor
+        if var mark = mark(typing.id), !Self.isBlank(mark), case .text(var text) = mark.geometry,
+           anchor.horizontal != .leading || anchor.vertical != .top || anchor.ray != nil {
+            // Its lines are balanced now, and narrower, so a note held by its right edge, its middle,
+            // its bottom or an arrow's tail is held there again at its new size.
+            text.origin = anchor.point
+            text.wrap = typing.wrap
+            mark.geometry = .text(geometry.anchored(text, of: mark, to: anchor))
+            if let placed = geometry.placed(mark), placed != self.mark(typing.id) {
+                replace(placed)
+                changed()
+            }
+        }
         if let mark = mark(typing.id), Self.isBlank(mark) { remove(typing.id) }
-        if commitEdit(), mark(typing.id) != nil { runColorPass(only: [typing.id]) }
+        commitEdit()
     }
 
     static func isBlank(_ mark: Mark) -> Bool {
@@ -1498,7 +1486,7 @@ struct EditorCore {
 
     /// A mark with the same fields and a new id.
     private static func fresh(_ mark: Mark) -> Mark {
-        Mark(geometry: mark.geometry, color: mark.color, agent: mark.agent, colorChosen: mark.colorChosen)
+        Mark(geometry: mark.geometry, agent: mark.agent, agentName: mark.agentName)
     }
 
     // MARK: Clipboard
@@ -1507,7 +1495,6 @@ struct EditorCore {
     private mutating func copy(verb: String) {
         let marks = drawing.marks.filter { selection.contains($0.id) }
         guard !marks.isEmpty else {
-            runColorPass()
             emit(.copyDrawing(drawingForHost))
             emit(.toast("Copied drawing"))
             return
@@ -1596,15 +1583,14 @@ struct EditorCore {
 
     // MARK: Agents' marks
 
-    /// Agents' marks join the open drawing as one undo step, coloured at once where they named no
-    /// colour, and go to the host straight away. The selection stays as it was.
+    /// Agents' marks join the open drawing as one undo step, and go to the host straight away. The
+    /// selection stays as it was.
     private mutating func join(_ marks: [Mark]) {
         let placed = marks.compactMap { geometry.placed(Self.fresh($0)) }
         guard !placed.isEmpty else { return }
         step { core in
             for mark in placed { core.add(mark) }
         }
-        runColorPass(only: Set(placed.map(\.id)))
         handOver()
     }
 

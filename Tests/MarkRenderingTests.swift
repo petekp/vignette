@@ -19,27 +19,28 @@ final class MarkRenderingTests: XCTestCase {
     func testADisplayP3RenderingKeepsItsSizeItsProfileAndEveryPixelTheMarksLeaveAlone() throws {
         let p3 = try XCTUnwrap(CGColorSpace(name: CGColorSpace.displayP3))
         // Every pixel differs from its neighbours, so a pixel moved or converted anywhere shows.
-        let url = try writeTestImage(width: 120, height: 80, space: p3, dpi: 144, in: dir) { x, y in
+        let url = try writeTestImage(width: 240, height: 160, space: p3, dpi: 144, in: dir) { x, y in
             (UInt8((x * 37 + y * 11) % 256), UInt8((x * 13 + y * 57) % 256), UInt8((x * y) % 256))
         }
         let frame = CGRect(x: 30, y: 20, width: 40, height: 30)
-        let drawing = Drawing(key: url.path, pixels: PixelSize(width: 120, height: 80), pointScale: 2, marks: [Mark(geometry: .rectangle(frame))])
-        let png = try Rendering.png(of: drawing, imageAt: url, style: .standard, arrowhead: .standard)
+        let drawing = Drawing(key: url.path, pixels: PixelSize(width: 240, height: 160), pointScale: 2, marks: [Mark(geometry: .rectangle(frame))])
+        let png = try Rendering.png(of: drawing, imageAt: url, style: .standard, markStyle: .standard)
 
         let source = try decode(Data(contentsOf: url)), rendered = try decode(png)
-        XCTAssertEqual([rendered.width, rendered.height], [120, 80])
+        XCTAssertEqual([rendered.width, rendered.height], [240, 160])
         XCTAssertEqual(rendered.colorSpace?.name, CGColorSpace.displayP3)
         XCTAssertEqual(rendered.colorSpace?.copyICCData() as Data?, source.colorSpace?.copyICCData() as Data?)
         let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(try XCTUnwrap(CGImageSourceCreateWithData(png as CFData, nil)), 0, nil) as? [CFString: Any])
         XCTAssertEqual(properties[kCGImagePropertyDPIWidth] as? Double, 144, "it pastes at the size the screenshot does")
 
-        // The stroke reaches half its 7 px width either side of the frame, and a px more for its edge.
-        let reach: CGFloat = 4.5
+        // The stroke reaches half its 7 px width either side of the frame, its white edge 3 px past
+        // that, and the edge's shadow, 6 px down and blurred over 20 px, past that.
+        let reach: CGFloat = 36
         let before = try pixels(of: source), after = try pixels(of: rendered)
         var changedOutside = 0, inked = 0
-        for y in 0..<80 {
-            for x in 0..<120 {
-                let i = (y * 120 + x) * 4
+        for y in 0..<160 {
+            for x in 0..<240 {
+                let i = (y * 240 + x) * 4
                 let pixel = CGRect(x: x, y: y, width: 1, height: 1)
                 let underStroke = frame.insetBy(dx: -reach, dy: -reach).intersects(pixel) && !frame.insetBy(dx: reach, dy: reach).contains(pixel)
                 guard before[i..<i + 4] != after[i..<i + 4] else { continue }
@@ -49,8 +50,8 @@ final class MarkRenderingTests: XCTestCase {
         XCTAssertEqual(changedOutside, 0, "every pixel outside the mark is the screenshot's own")
         XCTAssertGreaterThan(inked, 700)
         // Red is defined in sRGB and converted into the image's space.
-        let red = try XCTUnwrap(MarkColor.red.cgColor.converted(to: p3, intent: .defaultIntent, options: nil)?.components)
-        let i = (35 * 120 + 30) * 4
+        let red = try XCTUnwrap(MarkStyle.standard.personColor.cgColor.converted(to: p3, intent: .defaultIntent, options: nil)?.components)
+        let i = (35 * 240 + 30) * 4
         XCTAssertEqual(Array(after[i..<i + 3]), red.prefix(3).map { UInt8(($0 * 255).rounded()) }, "the middle of the left stroke")
     }
 
@@ -62,8 +63,8 @@ final class MarkRenderingTests: XCTestCase {
         }
         let frame = CGRect(x: 6, y: 6, width: 12, height: 12)
         let drawing = Drawing(key: url.path, pixels: PixelSize(width: 40, height: 60), pointScale: 1,
-                              marks: [Mark(geometry: .rectangle(frame), color: .yellow)])
-        let rendered = try decode(Rendering.png(of: drawing, imageAt: url, style: .standard, arrowhead: .standard))
+                              marks: [Mark(geometry: .rectangle(frame))])
+        let rendered = try decode(Rendering.png(of: drawing, imageAt: url, style: .standard, markStyle: .standard))
         XCTAssertEqual([rendered.width, rendered.height], [40, 60])
 
         // ImageIO's own turned copy says where each colour is displayed.
@@ -72,15 +73,16 @@ final class MarkRenderingTests: XCTestCase {
                                         kCGImageSourceThumbnailMaxPixelSize: 60]
         let displayed = try pixels(of: XCTUnwrap(CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)))
         let after = try pixels(of: rendered)
+        // Near enough rather than equal: the mark's shadow reaches a little way over some of them.
         for (x, y) in [(30, 10), (30, 50), (10, 50), (3, 25)] {
             let i = (y * 40 + x) * 4
-            XCTAssertEqual(after[i..<i + 3], displayed[i..<i + 3], "(\(x), \(y))")
+            XCTAssertTrue(zip(after[i..<i + 3], displayed[i..<i + 3]).allSatisfy { abs(Int($0) - Int($1)) <= 8 }, "(\(x), \(y))")
         }
         let onStroke = (12 * 40 + 6) * 4
-        XCTAssertEqual(Array(after[onStroke..<onStroke + 3]), [255, 192, 52], "the rectangle's left side, in the displayed top-left corner")
+        XCTAssertEqual(Array(after[onStroke..<onStroke + 3]), [0xe0, 0x31, 0x31], "the rectangle's left side, in the displayed top-left corner")
 
         let madeOnTheFilesOwnSize = Drawing(key: url.path, pixels: PixelSize(width: 60, height: 40), pointScale: 1, marks: drawing.marks)
-        XCTAssertThrowsError(try Rendering.png(of: madeOnTheFilesOwnSize, imageAt: url, style: .standard, arrowhead: .standard)) {
+        XCTAssertThrowsError(try Rendering.png(of: madeOnTheFilesOwnSize, imageAt: url, style: .standard, markStyle: .standard)) {
             XCTAssertEqual(($0 as? Rendering.Failure)?.code, .unreadableImage)
         }
     }
@@ -89,7 +91,7 @@ final class MarkRenderingTests: XCTestCase {
         let url = dir.appendingPathComponent("Screenshot.png")
         try Data("not a png".utf8).write(to: url)
         let drawing = Drawing(key: url.path, pixels: PixelSize(width: 10, height: 10), pointScale: 1, marks: [])
-        XCTAssertThrowsError(try Rendering.png(of: drawing, imageAt: url, style: .standard, arrowhead: .standard)) {
+        XCTAssertThrowsError(try Rendering.png(of: drawing, imageAt: url, style: .standard, markStyle: .standard)) {
             XCTAssertEqual(($0 as? Rendering.Failure)?.code, .unreadableImage)
         }
     }
@@ -102,11 +104,11 @@ final class MarkRenderingTests: XCTestCase {
         let drawing = Drawing(key: url.path, pixels: pixels, pointScale: 2, marks: [
             Mark(geometry: .rectangle(CGRect(x: 300, y: 600, width: 1500, height: 1200))),
             Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 2800, y: 6000), end: CGPoint(x: 600, y: 2400), bend: 400))),
-            Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 300, y: 4000), text: "The header should stay pinned", size: 24)), color: .yellow),
+            Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 300, y: 4000), text: "The header should stay pinned", size: 24))),
         ])
         var rendered: Result<Data, Error>?
         DispatchQueue.global(qos: .userInitiated).sync {
-            rendered = Result { try Rendering.png(of: drawing, imageAt: url, style: .standard, arrowhead: .standard) }
+            rendered = Result { try Rendering.png(of: drawing, imageAt: url, style: .standard, markStyle: .standard) }
         }
         let image = try decode(XCTUnwrap(rendered).get())
         XCTAssertEqual([image.width, image.height], [3102, 6780])
@@ -129,7 +131,7 @@ final class MarkRenderingTests: XCTestCase {
         let later = PendingRendering()
         Clipboard.copyRendering(later, file: file, to: pasteboard)
         XCTAssertEqual(pasteboard.string(forType: .string), file.path, "the path is there at once")
-        let png = try Rendering.png(of: drawing, imageAt: url, style: .standard, arrowhead: .standard)
+        let png = try Rendering.png(of: drawing, imageAt: url, style: .standard, markStyle: .standard)
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { later.finish(png: png, file: file, failure: nil) }
         let asked = Date()
         XCTAssertEqual(pasteboard.data(forType: .png), png)
@@ -138,7 +140,7 @@ final class MarkRenderingTests: XCTestCase {
         XCTAssertEqual(pasteboard.string(forType: .fileURL), file.absoluteString)
 
         // The queue writes the file it was given, with the bytes the clipboard holds.
-        let rendered = RenderingQueue.shared.render(drawing, imageAt: url, writingTo: file, style: .standard, arrowhead: .standard)
+        let rendered = RenderingQueue.shared.render(drawing, imageAt: url, writingTo: file, style: .standard, markStyle: .standard)
         let output = try XCTUnwrap(rendered.wait(timeout: 10))
         XCTAssertNil(output.failure)
         XCTAssertEqual(output.file, file)
@@ -178,7 +180,7 @@ final class MarkRenderingTests: XCTestCase {
     func testATextWithChineseCharactersAndAnEmojiDrawsInkForBoth() throws {
         let text = Mark.Text(origin: CGPoint(x: 10, y: 10), text: "这个😀", size: 24)
         let drawn = try marksAlone(Drawing(key: "", pixels: PixelSize(width: 300, height: 100), pointScale: 2,
-                                           marks: [Mark(geometry: .text(text), color: .lightBlue)]))
+                                           marks: [Mark(geometry: .text(text))]))
 
         let line = try XCTUnwrap(TextLayout(text, imageWidth: 300, pointScale: 2, style: .standard).lines.first)
         let chineseEnd = line.rect.minX + CTLineGetOffsetForStringIndex(line.ctLine, 2, nil)
@@ -190,55 +192,56 @@ final class MarkRenderingTests: XCTestCase {
             }
             return found
         }
-        XCTAssertGreaterThan(count(from: line.rect.minX, to: chineseEnd) { Array($0) == [77, 171, 247, 255] }, 50,
-                             "the Chinese characters are filled in the mark's colour")
-        XCTAssertGreaterThan(count(from: line.rect.minX, to: chineseEnd) { $0[$0.startIndex + 3] == 255 && $0.prefix(3).allSatisfy { $0 < 30 } }, 20,
-                             "and outlined in near-black")
+        XCTAssertGreaterThan(count(from: line.rect.minX, to: chineseEnd) { Array($0) == [0xe0, 0x31, 0x31, 255] }, 50,
+                             "the tag behind the Chinese characters is the mark's colour")
+        XCTAssertGreaterThan(count(from: line.rect.minX, to: chineseEnd) { $0[$0.startIndex + 3] == 255 && $0.prefix(3).allSatisfy { $0 > 240 } }, 20,
+                             "and the characters are white on it")
         XCTAssertGreaterThan(count(from: chineseEnd, to: emojiEnd) { $0[$0.startIndex] > 200 && $0[$0.startIndex + 1] > 150 && $0[$0.startIndex + 2] < 100 }, 50,
                              "the emoji draws in its own yellow")
     }
 
-    /// The letters are filled with the path their outline is stroked on, so the outline is as wide on
-    /// one side of a stroke as on the other, wherever between pixels the text starts.
-    func testTheOutlineIsCentredOnTheLetters() throws {
-        for pointScale: CGFloat in [1, 2] {
-            let text = Mark.Text(origin: CGPoint(x: 20.3, y: 10.7), text: "I -", size: 24)
-            let pixels = PixelSize(width: 300, height: 150)
-            let drawn = try marksAlone(Drawing(key: "", pixels: pixels, pointScale: pointScale, marks: [Mark(geometry: .text(text), color: .white)]))
-            let layout = TextLayout(text, imageWidth: 300, pointScale: pointScale, style: .standard)
-            let line = try XCTUnwrap(layout.lines.first)
-            func offset(_ index: Int) -> CGFloat { line.rect.minX + CTLineGetOffsetForStringIndex(line.ctLine, index, nil) }
-            // How much of each pixel along a row or a column is letter and how much is outline, from
-            // its alpha and its red: the letter is #f3f3f3 and the outline's red is 15.75 of 255.
-            func rings(_ points: [(x: Int, y: Int)]) -> (before: CGFloat, after: CGFloat) {
-                let samples = points.map { point -> (letter: CGFloat, outline: CGFloat) in
-                    let i = (point.y * pixels.width + point.x) * 4
-                    let alpha = CGFloat(drawn[i + 3]) / 255, red = CGFloat(drawn[i]) / 255
-                    let letter = (red - alpha * 15.75 / 255) / ((243 - 15.75) / 255)
-                    return (letter, alpha - letter)
-                }
-                let middle = samples.indices.reduce(0) { $0 + CGFloat($1) * samples[$1].letter } / samples.reduce(0) { $0 + $1.letter }
-                return (samples.indices.filter { CGFloat($0) < middle }.reduce(0) { $0 + samples[$1].outline },
-                        samples.indices.filter { CGFloat($0) > middle }.reduce(0) { $0 + samples[$1].outline })
-            }
-            // Across the I's stem, halfway up it.
-            let row = Int(line.baseline - CTFontGetCapHeight(layout.font) / 2)
-            let stem = rings((Int(offset(0)) - 3...Int(offset(1)) + 3).map { (x: $0, y: row) })
-            XCTAssertEqual(stem.before, pointScale, accuracy: 0.3, "1 pt of outline left of the stem at scale \(pointScale)")
-            XCTAssertEqual(stem.before, stem.after, accuracy: 0.25, "and as much right of it, at scale \(pointScale)")
-            // Down through the middle of the hyphen.
-            let column = Int((offset(2) + offset(3)) / 2)
-            let bar = rings((Int(line.rect.minY)...Int(line.rect.maxY)).map { (x: column, y: $0) })
-            XCTAssertEqual(bar.before, pointScale, accuracy: 0.3, "1 pt of outline above the hyphen at scale \(pointScale)")
-            XCTAssertEqual(bar.before, bar.after, accuracy: 0.25, "and as much below it, at scale \(pointScale)")
+    /// A note is a tag filled with its mark's colour and rounded at its corners, inside a white edge,
+    /// its words white, and an agent's note carries a white badge on its top edge.
+    func testANoteIsARoundedTagInItsColourWithItsWordsAndAnAgentsBadge() throws {
+        let pixels = PixelSize(width: 400, height: 200)
+        let person = Mark.Text(origin: CGPoint(x: 20, y: 20), text: "IIII", size: 24)
+        let agents = Mark.Text(origin: CGPoint(x: 20, y: 110), text: "IIII", size: 24)
+        let drawn = try marksAlone(Drawing(key: "", pixels: pixels, pointScale: 1, marks: [
+            Mark(geometry: .text(person)),
+            Mark(geometry: .text(agents), agent: true, agentName: "claude"),
+        ]))
+        func pixel(_ x: CGFloat, _ y: CGFloat) -> [UInt8] {
+            let i = (Int(y) * pixels.width + Int(x)) * 4
+            return Array(drawn[i..<i + 4])
         }
+        let layout = TextLayout(person, imageWidth: 400, pointScale: 1, style: .standard)
+        let box = layout.box, line = try XCTUnwrap(layout.lines.first)
+        XCTAssertEqual(pixel(box.minX + 4, box.midY), [0xe0, 0x31, 0x31, 255], "the padding is the mark's red")
+        XCTAssertNotEqual(pixel(box.minX + 1, box.minY + 1), [0xe0, 0x31, 0x31, 255], "the corner is rounded off")
+        XCTAssertTrue(pixel(box.maxX + 1, box.midY).allSatisfy { $0 > 240 }, "a white edge runs round it")
+        XCTAssertLessThan(pixel(box.maxX + 3, box.midY)[3], 255, "and past the edge only its shadow is drawn")
+        let stem = line.rect.minX + CTLineGetOffsetForStringIndex(line.ctLine, 1, nil) / 2
+        XCTAssertEqual(pixel(stem, line.baseline - 4), [255, 255, 255, 255], "white words on red")
+
+        let agent = TextLayout(agents, imageWidth: 400, pointScale: 1, style: TextStyle.standard.forAgent(named: "claude"))
+        let badge = try XCTUnwrap(agent.badge).frame(on: agent.box)
+        XCTAssertLessThan(badge.minY, agent.box.minY, "the badge crosses the tag's top edge")
+        XCTAssertGreaterThan(agent.lines[0].rect.minY, badge.maxY, "and the words start below it")
+        XCTAssertEqual(pixel(badge.maxX - badge.height / 2, badge.minY + 2), [255, 255, 255, 255], "the badge is white above the tag")
+
+        let long = TextLayout(agents, imageWidth: 400, pointScale: 1,
+                              style: TextStyle.standard.forAgent(named: "an-agent-with-a-very-long-name"))
+        let longBadge = try XCTUnwrap(long.badge)
+        XCTAssertLessThanOrEqual(CTLineGetTypographicBounds(longBadge.line, nil, nil, nil), NoteBadge.longestLabel * longBadge.fontSize + 0.5,
+                                 "a long name is cut short")
+        XCTAssertGreaterThanOrEqual(long.box.width, longBadge.leastTagWidth(padSide: long.padding.side) - 1e-9, "and the tag is as wide as its badge")
     }
 
     /// The head is aimed from the point on the body one head-length back from the tip, and the body
     /// stops there, so its round cap never shows past the tip or through a side, however tight the arc.
     func testTheArrowheadIsAimedAlongTheBodyAndCoversItsEnd() {
-        let stroke = Mark.strokeWidth * 2
-        let full = ArrowheadStyle.standard.length * stroke
+        let stroke = MarkStyle.standard.strokeWidth * 2
+        let full = MarkStyle.standard.arrowheadLength * stroke
         let arrows: [(Mark.Arrow, headLength: CGFloat)] = [
             (Mark.Arrow(start: CGPoint(x: 10, y: 10), end: CGPoint(x: 400, y: 10)), full),
             (Mark.Arrow(start: CGPoint(x: 400, y: 300), end: CGPoint(x: 20, y: 40)), full),
@@ -290,13 +293,13 @@ final class MarkRenderingTests: XCTestCase {
     }
 
     func testAShortArrowGetsASmallerHeadOfTheSameShape() {
-        let stroke = Mark.strokeWidth * 2
+        let stroke = MarkStyle.standard.strokeWidth * 2
         let arrow = Mark.Arrow(start: CGPoint(x: 10, y: 10), end: CGPoint(x: 30, y: 10))
         let head = Arrowhead(body: arrow.body(pointScale: 2), strokeWidth: stroke, style: .standard)
         let baseX = (head.corners.0.x + head.corners.1.x) / 2
         XCTAssertEqual(arrow.end.x - baseX, 10, accuracy: 1e-9, "half the body")
         XCTAssertEqual(abs(head.corners.0.y - head.corners.1.y) / (arrow.end.x - baseX),
-                       ArrowheadStyle.standard.width / ArrowheadStyle.standard.length, accuracy: 1e-9)
+                       MarkStyle.standard.arrowheadWidth / MarkStyle.standard.arrowheadLength, accuracy: 1e-9)
         XCTAssertGreaterThan(head.bodyEnd, 0, "some body still shows")
     }
 
@@ -307,7 +310,7 @@ final class MarkRenderingTests: XCTestCase {
                                           bytesPerRow: 0, space: sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         ctx.translateBy(x: 0, y: CGFloat(drawing.pixels.height))
         ctx.scaleBy(x: 1, y: -1)
-        drawing.draw(in: ctx, style: .standard, arrowhead: .standard)
+        drawing.draw(in: ctx, style: .standard, markStyle: .standard)
         return try pixels(of: XCTUnwrap(ctx.makeImage()))
     }
 
@@ -353,4 +356,24 @@ func pixels(of image: CGImage) throws -> [UInt8] {
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
     }
     return bytes
+}
+
+extension TextStyle {
+    /// The default style with another weight for a person's notes and another line height.
+    static func tweaked(weight: Double, lineHeight: Double) -> TextStyle {
+        var ui = UITweaks()
+        ui.textWeight = weight
+        ui.textLineHeight = lineHeight
+        return ui.textStyle
+    }
+}
+
+extension MarkStyle {
+    /// The default style with another arrowhead.
+    static func tweaked(arrowheadLength: Double, arrowheadWidth: Double) -> MarkStyle {
+        var ui = UITweaks()
+        ui.arrowheadLength = arrowheadLength
+        ui.arrowheadWidth = arrowheadWidth
+        return ui.markStyle
+    }
 }

@@ -1,23 +1,47 @@
 # For agents
 
-The agent feature is secondary and experimental. It is a skill that teaches Claude Code or Codex
-the `vignette://` contract: push an image with `add`, draw on it with `marks=`, read
-`<name>-annotated.png` back. The skill's text is at `skills/vignette/SKILL.md` in the repo, and it
-ships in the app bundle. The marks format is in [commands.md](commands.md).
+The agent features are secondary and experimental. They come as a plugin for Claude Code and Codex
+that ships inside the app. The plugin carries a skill that teaches the agent the `vignette://`
+contract: push an image with `add`, draw on it with `marks=`, read `<name>-annotated.png` back, and
+answer a drawing with one of its own. For Claude Code, the plugin also delivers what Send sends. The
+skill's text is at `skills/vignette/SKILL.md` in the repo, and the marks format is in
+[commands.md](commands.md).
 
 ## Installing
 
-Setup's last page offers the skill when this Mac has `~/.claude` or `~/.codex`, with a switch for
-each agent, and installs the ones left on when setup closes. A settings file from before that page,
+Setup's last page offers the plugin when this Mac has `~/.claude` or `~/.codex`, with a switch for
+each agent. Setup installs the ones left on when it closes. A settings file from before that page,
 or a setup closed before reaching it, gets the offer once, as the Settings window at the Agents
 section. `agentSkill` in settings.json records only that the offer was made. The Agents tab lists
-every agent found on this Mac with a switch that adds or removes the skill. Disk is the only record:
-a launch updates a copy that holds an older version than the app's, or none (`metadata.version`
-in `SKILL.md`), keeps any other, and installs nothing new. `open -g vignette://install-skill`
-installs for every agent from a script.
+every agent found on this Mac with a switch that adds or removes the plugin.
+`open -g vignette://install-skill` installs it for every agent from a script.
 
-Links are resolved all the way, so the skill is written where it really lives. An agent whose
-`skills` is a link into a repository of yours, or whose `vignette` folder is a link to a skill you
-keep elsewhere, has that folder updated in place. Two agents reaching one folder share the one copy.
-Installing replaces whatever is at the skill's path with the app's copy. Remove takes away the entry
-under that agent's `skills` and nothing else, so a link goes and what it pointed at stays.
+Each agent installs the plugin with its own command-line tool, from a copy of the plugin the app
+writes to `~/Library/Application Support/<bundle id>/agent-plugin`:
+
+| | Claude Code | Codex |
+|---|---|---|
+| Install | `claude plugin marketplace add`, then `claude plugin install vignette@vignette --scope user` | `codex plugin marketplace add`, then `codex plugin add` |
+| Needs | the `claude` command | the `codex` command |
+
+Without the command, the switch is off and says which command is missing. A Claude Code session
+that was already open when you installed the plugin needs `/reload-plugins` before it can take a
+drawing.
+
+A launch updates an installed plugin when the app carries a different version of it. It installs
+nothing new, with one exception: an agent that has the skill from before the plugin gets the plugin
+in its place. The old skill folder is then removed. A link is left where it is, since it is your
+own arrangement.
+
+## Receiving a drawing in Claude Code
+
+Each running Claude Code session with the plugin has an inbox folder under
+`~/Library/Application Support/<bundle id>/claude-sessions/`. Send writes one line into it, and the
+plugin's monitor hands the line to the session between turns, as an event named "Drawing from
+Vignette". A session that is busy gets it when its turn ends. Closing the session removes its inbox,
+and the session leaves Send's menu.
+
+The line names the drawing's path, which is outside the session's project. Claude Code's auto mode
+asks once, the first time, whether it may read outside the working directories. Setup and the
+Agents tab offer a read rule for `~/.claude/settings.json` that lets Claude Code open sent drawings
+without asking in the other modes.

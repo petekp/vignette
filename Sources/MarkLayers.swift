@@ -47,48 +47,92 @@ final class MarkLayers {
     typealias Plan = (Text, Mark, Mark.Text) -> Bool
 
     private struct Shown {
-        let layout: (Mark.Text, _ agent: Bool) -> TextLayout
+        let layout: (Mark.Text, Mark) -> TextLayout
         let plan: Plan
     }
 
-    /// A rectangle's, an ellipse's or an arrow's layers: the stroke, and over it the arrowhead's fill.
+    /// A rectangle's, an ellipse's or an arrow's layers, as the renderer draws it (`Mark.draw`): its
+    /// white edge once for each shadow the edge casts, and over them the stroke and the arrowhead's
+    /// fill. Each edge is a stroke and a head in one container, so the two cast one shadow together.
     private final class ShapeMark {
-        let stroke = CAShapeLayer()
-        let fill = CAShapeLayer()
+        let root = CALayer()
+        private let edges: [(container: CALayer, stroke: CAShapeLayer, fill: CAShapeLayer)]
+        private let stroke = CAShapeLayer()
+        private let fill = CAShapeLayer()
         var mark: Mark?
-        var arrowhead: ArrowheadStyle?
+        var markStyle: MarkStyle?
 
         init(scale: CGFloat) {
-            for shape in [stroke, fill] {
-                shape.anchorPoint = .zero
-                shape.contentsScale = scale
+            edges = NoteTag.shadows.map { _ in (CALayer(), CAShapeLayer(), CAShapeLayer()) }
+            root.anchorPoint = .zero
+            for edge in edges {
+                edge.container.anchorPoint = .zero
+                edge.container.addSublayer(edge.stroke)
+                edge.container.addSublayer(edge.fill)
+                root.addSublayer(edge.container)
             }
-            stroke.fillColor = nil
-            stroke.lineCap = .round
-            stroke.lineJoin = .round
-            fill.strokeColor = nil
-            stroke.addSublayer(fill)
+            root.addSublayer(stroke)
+            root.addSublayer(fill)
+            for shape in shapeLayers {
+                shape.anchorPoint = .zero
+                shape.lineCap = .round
+                shape.lineJoin = .round
+            }
+            setScale(scale)
         }
 
-        func show(_ mark: Mark, _ shape: MarkShape, arrowhead: ArrowheadStyle) {
+        private var shapeLayers: [CAShapeLayer] { edges.flatMap { [$0.stroke, $0.fill] } + [stroke, fill] }
+
+        func setScale(_ scale: CGFloat) {
+            for shape in shapeLayers { shape.contentsScale = scale }
+            for edge in edges { edge.container.contentsScale = scale }
+        }
+
+        func show(_ mark: Mark, _ shape: MarkShape, pointScale: CGFloat, markStyle: MarkStyle) {
+            let edge = markStyle.edgeWidth * pointScale
+            let size = Mark.shadowSize * pointScale
+            let edgeColor = markStyle.edgeColor.cgColor, color = markStyle.color(mark.color)
+            for (layers, shadow) in zip(edges, NoteTag.shadows) {
+                layers.stroke.path = shape.stroked
+                layers.stroke.lineWidth = shape.lineWidth + 2 * edge
+                layers.stroke.strokeColor = edgeColor
+                layers.stroke.fillColor = nil
+                layers.fill.path = shape.filled
+                layers.fill.lineWidth = 2 * edge
+                layers.fill.strokeColor = edgeColor
+                layers.fill.fillColor = edgeColor
+                // Core Animation's radius is about half the blur Core Graphics takes for the same shadow.
+                layers.container.shadowColor = CGColor(gray: 0, alpha: 1)
+                layers.container.shadowOpacity = Float(min(1, shadow.alpha * markStyle.shadowOpacity))
+                layers.container.shadowOffset = CGSize(width: 0, height: shadow.y * size)
+                layers.container.shadowRadius = shadow.blur * size / 2
+            }
             stroke.path = shape.stroked
             stroke.lineWidth = shape.lineWidth
-            stroke.strokeColor = mark.color.cgColor
+            stroke.strokeColor = color
+            stroke.fillColor = nil
             fill.path = shape.filled
-            fill.fillColor = mark.color.cgColor
+            fill.fillColor = color
+            fill.strokeColor = nil
             self.mark = mark
-            self.arrowhead = arrowhead
+            self.markStyle = markStyle
         }
     }
 
     /// What a text bitmap is drawn for: the mark, the part of the image it may cover, in px, its
-    /// resolution, in device px per px, and the style its words are set in. It covers as much of
-    /// `region` as the text's letters may touch, grown to whole device pixels.
+    /// resolution, in device px per px, and the styles it is drawn in. It covers as much of `region`
+    /// as the text's letters may touch, grown to whole device pixels.
     struct Target: Equatable {
         let mark: Mark
         let region: CGRect
         let scale: CGFloat
-        let style: TextStyle
+        let style: Styles
+    }
+
+    /// The two styles a note is drawn in: how its words are set, and how it is painted.
+    struct Styles: Equatable, Sendable {
+        let text: TextStyle
+        let paint: MarkStyle
     }
 
     enum Part { case whole, detail }
@@ -214,18 +258,15 @@ final class MarkLayers {
 
     /// Marks shown at one scale over a part of the image, a card's or a flight's, shown again in a
     /// new text style and arrowhead. Each text keeps the bitmap it has until its new one arrives.
-    func restyle(_ style: TextStyle, arrowhead: ArrowheadStyle) {
+    func restyle(_ style: TextStyle, markStyle: MarkStyle) {
         guard let drawing, let wholeShow else { return }
-        show(drawing, scale: wholeShow.scale, bound: wholeShow.bound, style: style, arrowhead: arrowhead)
+        show(drawing, scale: wholeShow.scale, bound: wholeShow.bound, style: style, markStyle: markStyle)
     }
 
     /// The device pixels per point of the screen the marks are on, for the shape layers.
     func setScale(_ scale: CGFloat) {
         contentsScale = scale
-        for record in shapes.values {
-            record.stroke.contentsScale = scale
-            record.fill.contentsScale = scale
-        }
+        for record in shapes.values { record.setScale(scale) }
     }
 
     /// Shows `drawing`'s marks in order, the newest on top. `plan` says what each text wants drawn,
@@ -233,7 +274,7 @@ final class MarkLayers {
     /// layout, which a text that only moved sideways is checked against. A text new here shows the
     /// bitmap one of `sources` has of the same words in the same place and style, until its own
     /// arrives.
-    func show(_ drawing: Drawing, arrowhead: ArrowheadStyle, layout: @escaping (Mark.Text, _ agent: Bool) -> TextLayout,
+    func show(_ drawing: Drawing, markStyle: MarkStyle, layout: @escaping (Mark.Text, Mark) -> TextLayout,
               adopting sources: [MarkLayers] = [], plan: @escaping Plan) {
         guard !isParked, drawing.pixels == pixels else { return }
         self.drawing = drawing
@@ -261,15 +302,15 @@ final class MarkLayers {
                 layers.append(record.detail)
             } else {
                 let record = shapes[mark.id] ?? ShapeMark(scale: contentsScale)
-                if record.mark != mark || record.arrowhead != arrowhead, let shape = mark.shape(pointScale: drawing.pointScale, arrowhead: arrowhead) {
-                    record.show(mark, shape, arrowhead: arrowhead)
+                if record.mark != mark || record.markStyle != markStyle, let shape = mark.shape(pointScale: drawing.pointScale, markStyle: markStyle) {
+                    record.show(mark, shape, pointScale: drawing.pointScale, markStyle: markStyle)
                 }
                 shapes[mark.id] = record
-                layers.append(record.stroke)
+                layers.append(record.root)
             }
         }
         for id in shapes.keys where !seen.contains(id) {
-            shapes[id]?.stroke.removeFromSuperlayer()
+            shapes[id]?.root.removeFromSuperlayer()
             shapes[id] = nil
         }
         for id in texts.keys where !seen.contains(id) {
@@ -287,13 +328,14 @@ final class MarkLayers {
 
     /// Shows `drawing` with every text drawn whole at `scale` device px to a px, over the part of
     /// `bound` its letters may touch: the plan for a picture that does not zoom.
-    func show(_ drawing: Drawing, scale: CGFloat, bound: CGRect, style: TextStyle, arrowhead: ArrowheadStyle, adopting sources: [MarkLayers] = []) {
+    func show(_ drawing: Drawing, scale: CGFloat, bound: CGRect, style: TextStyle, markStyle: MarkStyle, adopting sources: [MarkLayers] = []) {
         guard !isParked else { return }
         wholeShow = (scale, bound)
         let imageWidth = CGFloat(drawing.pixels.width), pointScale = drawing.pointScale
-        show(drawing, arrowhead: arrowhead, layout: { TextLayout($0, imageWidth: imageWidth, pointScale: pointScale, style: style.forAgent($1)) },
+        let styles = Styles(text: style, paint: markStyle)
+        show(drawing, markStyle: markStyle, layout: { TextLayout($0, imageWidth: imageWidth, pointScale: pointScale, style: style.forMark($1)) },
              adopting: sources) { record, mark, _ in
-            record.wantWhole = Target(mark: mark, region: bound, scale: scale, style: style)
+            record.wantWhole = Target(mark: mark, region: bound, scale: scale, style: styles)
             return true
         }
     }
@@ -330,7 +372,7 @@ final class MarkLayers {
 
     /// The same mark but for its id, which a drawing read from its file gives every mark anew.
     nonisolated fileprivate static func alike(_ a: Mark, _ b: Mark) -> Bool {
-        a.geometry == b.geometry && a.color == b.color && a.agent == b.agent && a.colorChosen == b.colorChosen
+        a.geometry == b.geometry && a.agent == b.agent && a.agentName == b.agentName
     }
 
     /// The text whose mark is gone but whose bitmap shows `mark` exactly, now under `mark`'s id: a
@@ -457,13 +499,13 @@ final class MarkLayers {
     /// The offset that takes `old` to `new`, when that is all that changed and the renderer would
     /// draw the moved text as the old one moved. A text with no wrap width wraps at the image's edge,
     /// so a sideways move slides it only while its lines break in the same places.
-    private static func translation(from old: Mark, to new: Mark, layout: (Mark.Text, _ agent: Bool) -> TextLayout) -> CGVector? {
-        guard old.color == new.color, old.agent == new.agent, old.colorChosen == new.colorChosen,
+    private static func translation(from old: Mark, to new: Mark, layout: (Mark.Text, Mark) -> TextLayout) -> CGVector? {
+        guard old.agent == new.agent, old.agentName == new.agentName,
               case .text(let a) = old.geometry, case .text(let b) = new.geometry,
               a.text == b.text, a.size == b.size, a.wrap == b.wrap else { return nil }
         let offset = CGVector(dx: b.origin.x - a.origin.x, dy: b.origin.y - a.origin.y)
         if a.wrap == nil, offset.dx != 0 {
-            let before = layout(a, old.agent).lines, after = layout(b, new.agent).lines
+            let before = layout(a, old).lines, after = layout(b, new).lines
             guard before.count == after.count,
                   zip(before, after).allSatisfy({ CTLineGetStringRange($0.ctLine).length == CTLineGetStringRange($1.ctLine).length })
             else { return nil }
@@ -471,10 +513,10 @@ final class MarkLayers {
         return offset
     }
 
-    /// What the renderer may touch for a text laid out in `box`, in px: the box grown by its outline
-    /// and a quarter of its size, for glyphs that reach past their line.
-    nonisolated static func padded(_ text: Mark.Text, box: CGRect, pointScale: CGFloat) -> CGRect {
-        let pad = (Mark.Text.outlineWidth + text.size / 4) * pointScale
+    /// What the renderer may touch for a text whose tag is `box`, in px: the box grown by the tag's
+    /// edge, its shadows and its badge (`NoteTag.reach`).
+    nonisolated static func padded(_ text: Mark.Text, box: CGRect, pointScale: CGFloat, markStyle: MarkStyle) -> CGRect {
+        let pad = NoteTag.reach(fontSize: text.size * pointScale, edge: markStyle.edgeWidth * pointScale)
         return box.insetBy(dx: -pad - 1, dy: -pad - 1)
     }
 
@@ -489,8 +531,8 @@ final class MarkLayers {
     /// The rect a bitmap for `target` covers, in px: the part of its region the text may touch.
     nonisolated private static func covered(by target: Target, pointScale: CGFloat, imageWidth: CGFloat) -> CGRect {
         guard case .text(let text) = target.mark.geometry else { return .null }
-        let box = TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: target.style.forAgent(target.mark.agent)).box
-        return aligned(padded(text, box: box, pointScale: pointScale).intersection(target.region), scale: target.scale)
+        let box = TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: target.style.text.forMark(target.mark)).box
+        return aligned(padded(text, box: box, pointScale: pointScale, markStyle: target.style.paint).intersection(target.region), scale: target.scale)
     }
 
     nonisolated private static let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
@@ -539,10 +581,9 @@ final class MarkLayers {
     /// `mark` drawn by the renderer over `region` of an image `imageWidth` px wide, `scale` device px
     /// to a px.
     nonisolated private static func bitmap(of mark: Mark, pointScale: CGFloat, imageWidth: CGFloat, region: CGRect, scale: CGFloat,
-                                           style: TextStyle) -> IOSurface? {
+                                           style: Styles) -> IOSurface? {
         bitmap(region: region, scale: scale) { ctx in
-            // A text has no arrowhead.
-            mark.draw(in: ctx, pointScale: pointScale, imageWidth: imageWidth, style: style, arrowhead: .standard)
+            mark.draw(in: ctx, pointScale: pointScale, imageWidth: imageWidth, style: style.text, markStyle: style.paint)
         }
     }
 }

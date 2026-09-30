@@ -85,6 +85,10 @@ final class EditorView: NSView {
     /// The text view of a typing session that ended, kept over its text until the text's bitmap is
     /// on its layer, so the words are on screen in every frame.
     private var lingering: TypingField?
+    /// Moves the lingering text view from the lines as typed to the balanced ones (`TypingField.settle`).
+    private var settling: Tween?
+    /// How long that takes, in seconds, with the motion scale applied; 0 goes straight to the new lines.
+    var noteSettleDuration: TimeInterval = 0
     private var handOverTimer: Timer?
     private var restTimer: Timer?
     private var zoomMoving = false
@@ -122,17 +126,15 @@ final class EditorView: NSView {
 
     /// Opens a screenshot with its drawing, an empty one when it has none. `image` is the screenshot
     /// decoded at any size, or nil until its decode arrives (`setImage`); it fills the drawing's
-    /// `pixels`, shown at `picture` in the view. `pickColor` is the colour pass's pick, which may
-    /// answer nil until its sample exists (`colorSampleArrived`). The strokes are on screen when
-    /// this returns; each text follows a moment later, once its bitmap is drawn off the main thread.
-    func open(_ drawing: Drawing, image: CGImage?, picture: CGRect, style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle,
-              pickColor: @escaping EditorCore.ColorPick) {
+    /// `pixels`, shown at `picture` in the view. The strokes are on screen when this returns; each
+    /// text follows a moment later, once its bitmap is drawn off the main thread.
+    func open(_ drawing: Drawing, image: CGImage?, picture: CGRect, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle) {
         stopTimers()
         heldArrows = []
         screenshotName = URL(fileURLWithPath: drawing.key).deletingPathExtension().lastPathComponent
         self.picture.open(image, pixels: drawing.pixels)
         placedPicture = picture
-        handle(.open(drawing, style: style, metrics: metrics, arrowhead: arrowhead, pickColor: pickColor))
+        handle(.open(drawing, style: style, metrics: metrics, markStyle: markStyle))
         dropLingering()
         guard core.isOpen else {
             Log.write("[editor] error open-refused \(screenshotName): pixels=\(drawing.pixels.width)x\(drawing.pixels.height) pointScale=\(drawing.pointScale)")
@@ -142,8 +144,8 @@ final class EditorView: NSView {
         window?.makeFirstResponder(self)
     }
 
-    /// The drawing to store, at once: a gesture ends as if released, typing ends, and the colour pass
-    /// runs. Nil when nothing is open. The editor then ignores every input until the next `open`, and
+    /// The drawing to store, at once: a gesture ends as if released, and typing ends. Nil when nothing
+    /// is open. The editor then ignores every input until the next `open`, and
     /// what it shows stays as it is: a text bitmap still being drawn is never put on screen.
     func park() -> Drawing? {
         guard core.isOpen else { return nil }
@@ -206,23 +208,18 @@ final class EditorView: NSView {
     /// Agents' marks joining the open drawing, already in px. They go to the host at once.
     func addAgentMarks(_ marks: [Mark]) { handle(.agentMarks(marks)) }
 
-    /// The colour pass's sample exists now: marks it could not colour before are coloured.
-    func colorSampleArrived() {
-        if !core.colorOwed.isEmpty { handle(.timerFired) }
-    }
-
     /// The tweaks changed: the text style, the sizes and the arrowhead replace the ones `open` gave,
     /// and the drawing, the selection, the history and a typing session stay. The strokes take a new
     /// arrowhead at once. Each text keeps its bitmap until one in the new style arrives, and a text
     /// being typed is laid out again where it is.
-    func applyTweaks(style: TextStyle, metrics: EditorMetrics, arrowhead: ArrowheadStyle) {
-        guard core.isOpen, style != core.style || metrics != core.metrics || arrowhead != core.arrowhead else { return }
-        let restyled = style != core.style
-        for effect in core.reduce(.tweaksChanged(style: style, metrics: metrics, arrowhead: arrowhead)) { run(effect, event: nil) }
+    func applyTweaks(style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle) {
+        guard core.isOpen, style != core.style || metrics != core.metrics || markStyle != core.markStyle else { return }
+        let restyled = style != core.style || markStyle != core.markStyle
+        for effect in core.reduce(.tweaksChanged(style: style, metrics: metrics, markStyle: markStyle)) { run(effect, event: nil) }
         if restyled {
             for field in [typingField, lingering].compactMap({ $0 }) {
                 guard let mark = core.mark(field.id), case .text(let text) = mark.geometry else { continue }
-                field.setStyle(style.forAgent(mark.agent), size: text.size, pointScale: core.drawing.pointScale, imageWidth: CGFloat(core.drawing.pixels.width))
+                field.setStyle(style.forMark(mark), paint: markStyle, size: text.size, pointScale: core.drawing.pointScale, imageWidth: CGFloat(core.drawing.pixels.width))
             }
         }
         refresh()
@@ -330,12 +327,44 @@ final class EditorView: NSView {
         let transform = toView
         let geometry = core.geometry
         picture.layer.setAffineTransform(transform)
-        picture.show(core.drawing, typing: core.typing?.id, covered: lingering?.id, geometry: geometry, resolution: resolution,
-                     gesture: core.gesture != nil)
-        overlay.show(core.overlay, drawing: core.drawing, geometry: geometry, transform: transform)
+        picture.show(core.drawing, typing: core.typing?.id, covered: lingering?.id, hiding: settling == nil ? nil : lingering?.id,
+                     geometry: geometry, resolution: resolution, gesture: core.gesture != nil)
+        showOverlay()
         placeTypingField()
         settleLingering()
         CATransaction.commit()
+    }
+
+    private func showOverlay() {
+        overlay.show(settlingOverlay(core.overlay), drawing: core.drawing, geometry: core.geometry, transform: toView)
+    }
+
+    /// While a note settles, its selection follows the tag as drawn rather than the core's layout:
+    /// each edge of the outline and its handles is moved as far as the tag's edge on that side still
+    /// has to go.
+    private func settlingOverlay(_ overlay: EditorCore.Overlay) -> EditorCore.Overlay {
+        guard settling != nil, let field = lingering, let now = field.settlingBox, overlay.selected == [field.id],
+              let mark = core.mark(field.id), case .text(let text) = mark.geometry else { return overlay }
+        let end = core.geometry.layout(text, of: mark).box
+        guard end.width > 0, end.height > 0 else { return overlay }
+        func shift(_ value: CGFloat, from low: CGFloat, _ span: CGFloat, by a: CGFloat, _ b: CGFloat) -> CGFloat {
+            let t = min(max((value - low) / span, 0), 1)
+            return value + a + (b - a) * t
+        }
+        func move(_ rect: CGRect) -> CGRect {
+            let left = shift(rect.minX, from: end.minX, end.width, by: now.minX - end.minX, now.maxX - end.maxX)
+            let right = shift(rect.maxX, from: end.minX, end.width, by: now.minX - end.minX, now.maxX - end.maxX)
+            let top = shift(rect.minY, from: end.minY, end.height, by: now.minY - end.minY, now.maxY - end.maxY)
+            let bottom = shift(rect.maxY, from: end.minY, end.height, by: now.minY - end.minY, now.maxY - end.maxY)
+            return CGRect(x: left, y: top, width: right - left, height: bottom - top)
+        }
+        var moved = overlay
+        // The frame is the text's own outline, so it is drawn once, where the tag is.
+        moved.selected = []
+        if moved.hovered == field.id { moved.hovered = nil }
+        moved.frame = overlay.frame.map(move)
+        moved.handles = overlay.handles.map { .init(mark: $0.mark, position: $0.position, square: $0.square.map(move), hitArea: move($0.hitArea)) }
+        return moved
     }
 
     private var backingScale: CGFloat { window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2 }
@@ -406,7 +435,8 @@ final class EditorView: NSView {
             endTyping()
             dropLingering()
             let field = TypingField(id: id, text: text, color: mark.color, pointScale: core.drawing.pointScale,
-                                    imageWidth: CGFloat(core.drawing.pixels.width), style: core.style.forAgent(mark.agent))
+                                    imageWidth: CGFloat(core.drawing.pixels.width), style: core.style.forMark(mark),
+                                    paint: core.markStyle)
             field.onChange = { [weak self] words in self?.handle(.typingChanged(words)) }
             field.onResign = { [weak self, weak field] in
                 // The text view gave up the keys to something other than the editor.
@@ -420,8 +450,7 @@ final class EditorView: NSView {
             placeTypingField()
             window?.makeFirstResponder(field.textView)
         }
-        guard let field = typingField, case .text(let typed)? = core.mark(id)?.geometry else { return }
-        field.setCaret(caret, boxOrigin: typed.origin)
+        typingField?.setCaret(caret)
     }
 
     private func endTyping() {
@@ -433,18 +462,54 @@ final class EditorView: NSView {
         field.textView.isEditable = false
         field.textView.isSelectable = false
         lingering = field
+        settleLines(field)
+    }
+
+    /// Typing ended and the text's lines are balanced now, which can break them in other places, and
+    /// an agent's note whose words the person changed is theirs now: the tag springs to its new size
+    /// and colour while the words as typed fade out and the new ones fade in. The text's bitmap stays
+    /// hidden until that is over.
+    private func settleLines(_ field: TypingField) {
+        guard noteSettleDuration > 0, let typed = field.layout, let mark = core.mark(field.id), case .text(let text) = mark.geometry,
+              !EditorCore.isBlank(mark) else { return }
+        let balanced = core.geometry.layout(text, of: mark)
+        let ranges = { (layout: TextLayout) in layout.lines.map { CTLineGetStringRange($0.ctLine).length } }
+        guard balanced.box != typed.box || ranges(balanced) != ranges(typed) || field.color != mark.color else { return }
+        let transform = toView
+        field.settle(to: balanced, color: mark.color) { $0.applying(transform) }
+        let tween = Tween(initial: 0) { [weak self, weak field] value in
+            field?.settled = value
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            self?.showOverlay()
+            CATransaction.commit()
+        }
+        settling = tween
+        tween.animate(to: 1, duration: noteSettleDuration, curve: "spring") { [weak self] in
+            guard let self, settling === tween else { return }
+            settling = nil
+            refresh()
+        }
     }
 
     /// Takes the ended session's text view away once its text's bitmap shows the text, or the text is
     /// gone; until then it follows the zoom over the text.
     private func settleLingering() {
         guard let field = lingering else { return }
-        guard let mark = core.mark(field.id), case .text(let text) = mark.geometry, !picture.isDrawn(field.id) else { return dropLingering() }
+        guard let mark = core.mark(field.id), case .text(let text) = mark.geometry else { return dropLingering() }
         let transform = toView
-        field.place(text, box: core.geometry.layout(text, agent: mark.agent).box, imageWidth: CGFloat(core.drawing.pixels.width)) { $0.applying(transform) }
+        if field.isSettling {
+            field.follow { $0.applying(transform) }
+            if settling == nil, picture.isDrawn(field.id) { dropLingering() }
+            return
+        }
+        guard !picture.isDrawn(field.id) else { return dropLingering() }
+        field.place(core.geometry.layout(text, of: mark), color: mark.color) { $0.applying(transform) }
     }
 
     private func dropLingering() {
+        settling?.stop()
+        settling = nil
         lingering?.textView.removeFromSuperview()
         lingering = nil
     }
@@ -465,12 +530,12 @@ final class EditorView: NSView {
     /// its words at the text's size, which gets smaller as it grows. An input method's composition
     /// keeps its size until it is confirmed, since restyling the words would end it.
     private func placeTypingField() {
-        guard let field = typingField, let box = core.typingBox, let mark = core.mark(field.id), case .text(let text) = mark.geometry else { return }
+        guard let field = typingField, let mark = core.mark(field.id), case .text(let text) = mark.geometry else { return }
         if field.size != text.size, !field.textView.hasMarkedText() {
-            field.setStyle(core.style.forAgent(mark.agent), size: text.size, pointScale: core.drawing.pointScale, imageWidth: CGFloat(core.drawing.pixels.width))
+            field.setStyle(core.style.forMark(mark), paint: core.markStyle, size: text.size, pointScale: core.drawing.pointScale, imageWidth: CGFloat(core.drawing.pixels.width))
         }
         let transform = toView
-        field.place(text, box: box, imageWidth: CGFloat(core.drawing.pixels.width)) { $0.applying(transform) }
+        field.place(core.geometry.layout(text, of: mark), color: mark.color) { $0.applying(transform) }
     }
 
     /// A key pressed while typing. The core takes the few `takesKey` names, but never during an input

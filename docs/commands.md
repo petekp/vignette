@@ -28,7 +28,7 @@ open -g vignette://cancel                     # close the annotator without copy
 open -g "vignette://state?tag=t1"             # one [state] {json} line in the log, tag echoed
 open -g vignette://help                       # list every command in the log
 open -g vignette://settings                   # open the Settings window
-open -g vignette://install-skill              # install the agent skill for Claude Code and Codex
+open -g vignette://install-skill              # install the Vignette plugin for Claude Code and Codex
 open -g vignette://restore-apple-defaults     # put Apple's screencapture defaults back
 open -g vignette://tweaks                     # live UI tweaks panel (needs "debug": true)
 ```
@@ -40,7 +40,7 @@ itself, with one object per mark. Every number is a fraction of the image, so a 
 on its pixel size:
 
 ```json
-[{"type": "ellipse", "x": 0.12, "y": 0.30, "w": 0.20, "h": 0.10, "color": "red"},
+[{"type": "ellipse", "x": 0.12, "y": 0.30, "w": 0.20, "h": 0.10},
  {"type": "arrow", "x": 0.5, "y": 0.5, "x2": 0.7, "y2": 0.6},
  {"type": "text", "x": 0.1, "y": 0.8, "w": 0.5, "text": "Header should not scroll"}]
 ```
@@ -54,8 +54,8 @@ is widened first. Text too long to fit is cut off at the edge and logged as
 `[marks] text too long for <name>`, and [pushed-text-2026-09-19.md](pushed-text-2026-09-19.md) has
 the numbers.
 
-`color` is optional. A mark may name `red`, `yellow`, `light-blue`, `white`, or `violet`, and keeps
-it. A mark that names none is coloured from what it covers, like your own marks. Pushed marks join
+Every agent's mark is drawn in the agent colour, indigo, so the person can tell it from their own. A
+`color` field is accepted and ignored, with one `[marks] color ignored for <name>` line. Pushed marks join
 the image's drawing before the card appears, so the card and Copy Drawing show them, and the editor
 can move, retype, or delete them. A push to the image open in the editor joins its drawing as one
 undo step.

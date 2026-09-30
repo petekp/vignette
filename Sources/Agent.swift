@@ -56,7 +56,7 @@ enum Agent {
 
     /// The Claude Code session a pushed file came from, when its push named one. The id is the
     /// pusher's claim: `add` has no authenticated sender. Sending to it still goes through the
-    /// check that the session is in a herdr pane (`ClaudeCodeConnection.submit`).
+    /// check that the session is running with the plugin's inbox (`ClaudeCodeConnection.submit`).
     static func origin(of url: URL) -> AgentDestination? {
         guard of(url)?.lowercased() == AgentClient.claude.rawValue,
               let session = cleanSession(read(sessionAttribute, of: url)) else { return nil }

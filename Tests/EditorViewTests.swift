@@ -42,8 +42,7 @@ final class EditorViewTests: XCTestCase {
         ctx.setFillColor(CGColor(gray: 0.9, alpha: 1))
         ctx.fill(CGRect(x: 0, y: 0, width: 100, height: 60))
         view.open(Drawing(key: "/tmp/Screenshot test.png", pixels: Self.pixels, pointScale: 1, marks: marks), image: ctx.makeImage()!,
-                  picture: CGRect(x: 0, y: 0, width: 1000, height: 600), style: .standard, metrics: .standard, arrowhead: .standard,
-                  pickColor: { _ in nil })
+                  picture: CGRect(x: 0, y: 0, width: 1000, height: 600), style: .standard, metrics: .standard, markStyle: .standard)
     }
 
     // MARK: Events
@@ -171,10 +170,12 @@ final class EditorViewTests: XCTestCase {
         mouse(.leftMouseUp, 200, 300)
         let field = try XCTUnwrap(textView)
         XCTAssertTrue(window.firstResponder === field, "the text view has the keys")
-        let box = try XCTUnwrap(view.core.typingBox)
+        let mark = try XCTUnwrap(view.core.drawing.marks.last)
+        let layout = view.core.layout(try XCTUnwrap(text(mark)))
+        let words = CGPoint(x: layout.box.minX + layout.padding.side, y: layout.box.minY + layout.padding.top)
         let origin = field.convert(field.textContainerOrigin, to: view)
-        XCTAssertEqual(origin.x, view.viewPoint(forImagePoint: box.origin).x, accuracy: 1e-9)
-        XCTAssertEqual(origin.y, view.viewPoint(forImagePoint: box.origin).y, accuracy: 1e-9)
+        XCTAssertEqual(origin.x, view.viewPoint(forImagePoint: words).x, accuracy: 1e-9)
+        XCTAssertEqual(origin.y, view.viewPoint(forImagePoint: words).y, accuracy: 1e-9)
 
         type("vrat \"quoted\" -- x")
         XCTAssertEqual(field.string, "vrat \"quoted\" -- x", "tool keys type, and nothing is replaced")
@@ -333,18 +334,18 @@ final class EditorViewTests: XCTestCase {
         let drawing = view.core.drawing
         let flight = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.textQueue)
         let scale = view.bounds.width / CGFloat(drawing.pixels.width) * window.backingScaleFactor
-        flight.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: .standard, arrowhead: .standard, adopting: [view.marks])
+        flight.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: .standard, markStyle: .standard, adopting: [view.marks])
         XCTAssertTrue(flight.isDrawn(drawing.marks[0].id), "the editor's bitmap is the one the flight wants")
         XCTAssertEqual(flight.bitmapPixels, view.marks.bitmapPixels)
         let restyled = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.textQueue)
-        restyled.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: TextStyle(weight: .bold, lineHeight: 2), arrowhead: .standard,
+        restyled.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: .tweaked(weight: 700, lineHeight: 2), markStyle: .standard,
                       adopting: [view.marks])
         XCTAssertFalse(restyled.isDrawn(drawing.marks[0].id), "a bitmap in another style is never taken")
 
         let editor = view.marks
         _ = view.park()
         let home = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.textQueue)
-        home.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: .standard, arrowhead: .standard, adopting: [editor])
+        home.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: .standard, markStyle: .standard, adopting: [editor])
         XCTAssertTrue(home.isDrawn(drawing.marks[0].id), "the parked editor's bitmap goes home as it is")
     }
 
@@ -434,8 +435,8 @@ final class EditorViewTests: XCTestCase {
         defer { if suspended { MarkLayers.textQueue.resume() } }
         open([Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 600, y: 100), end: CGPoint(x: 900, y: 100)))),
               Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 100), text: "A\nB", wrap: nil, size: 24)))])
-        let tall = TextStyle(weight: .medium, lineHeight: 4)
-        view.applyTweaks(style: tall, metrics: .standard, arrowhead: ArrowheadStyle(length: 4.5, width: 12))
+        let tall = TextStyle.tweaked(weight: 500, lineHeight: 4)
+        view.applyTweaks(style: tall, metrics: .standard, markStyle: .tweaked(arrowheadLength: 4.5, arrowheadWidth: 12))
         MarkLayers.textQueue.resume()
         suspended = false
         settleTexts()
@@ -451,8 +452,8 @@ final class EditorViewTests: XCTestCase {
         mouse(.leftMouseDown, 150, 450)
         mouse(.leftMouseUp, 150, 450)
         type("Typed")
-        let bold = TextStyle(weight: .bold, lineHeight: 2)
-        view.applyTweaks(style: bold, metrics: .standard, arrowhead: .standard)
+        let bold = TextStyle.tweaked(weight: 700, lineHeight: 2)
+        view.applyTweaks(style: bold, metrics: .standard, markStyle: .standard)
         let field = try XCTUnwrap(textView)
         XCTAssertTrue(window.firstResponder === field, "typing goes on")
         XCTAssertEqual(field.string, "Typed")
@@ -479,14 +480,19 @@ final class EditorViewTests: XCTestCase {
               Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 100, y: 400), end: CGPoint(x: 400, y: 400))))])
         key("a", 0, .command)
         XCTAssertEqual(view.core.selection.count, 3)
-        let rep = try capture { self.isBlue(self.pixel($0, 250, 56)) }
+        let rep = try capture { self.isBlue(self.pixel($0, 250, 55)) }
 
         // Each stroke is 3.5 px about its line, so its colour covers the two rows either side of the
-        // line whole, and the outline's 3.5 pt run outside it, the blue in their middle.
+        // line whole. Its 1.5 px white edge covers the next row whole, and the outline's 3.5 pt run
+        // outside that, the blue in their middle.
         for (x, y, outside) in [(250, 60, -1), (250, 210, 1), (650, 60, -1), (650, 210, 1), (180, 400, -1), (180, 400, 1)] {
             for row in y - 1...y { XCTAssertTrue(isRed(pixel(rep, x, row)), "stroke at \(x),\(row): \(pixel(rep, x, row))") }
-            let blue = y + outside * 4 - (outside < 0 ? 0 : 1)
-            XCTAssertTrue(isBlue(pixel(rep, x, blue)), "outline at \(x),\(blue): \(pixel(rep, x, blue))")
+            let edge = y + outside * 3 - (outside < 0 ? 0 : 1)
+            XCTAssertTrue(min(pixel(rep, x, edge).r, pixel(rep, x, edge).g, pixel(rep, x, edge).b) > 0.9, "edge at \(x),\(edge): \(pixel(rep, x, edge))")
+            // The blue line can fall across two rows, so either is bluer than anything else there.
+            let blue = y + outside * 5
+            let rows = [blue, blue - outside].map { pixel(rep, x, $0) }
+            XCTAssertTrue(rows.contains { $0.b > 0.85 && $0.b - $0.r > 0.35 }, "outline at \(x),\(blue): \(rows)")
         }
     }
 
@@ -514,7 +520,6 @@ final class EditorViewTests: XCTestCase {
         func centre(_ point: CGPoint) { view.pictureRect = CGRect(x: 500 - point.x * zoom, y: 300 - point.y * zoom, width: 3000, height: 1800) }
         let background = { (c: (r: CGFloat, g: CGFloat, b: CGFloat)) in self.isBackground(c) }
         let red = { (c: (r: CGFloat, g: CGFloat, b: CGFloat)) in self.isRed(c) }
-        let dark = { (c: (r: CGFloat, g: CGFloat, b: CGFloat)) in max(c.r, c.g, c.b) < 0.2 }
 
         // The rectangle's top edge, captured before the zoom rests: a stroke needs nothing drawn again.
         centre(CGPoint(x: 250, y: 60))
@@ -524,18 +529,20 @@ final class EditorViewTests: XCTestCase {
         XCTAssertGreaterThan(column.filter { red(self.pixel(rep, $0.0, $0.1)) }.count, 9 * scale, "the stroke is 3.5 px, 10.5 pt at zoom 3")
         let stroke = edges(rep, column, [background, red])
         XCTAssertEqual(stroke.edges, 2)
-        XCTAssertLessThanOrEqual(stroke.soft, stroke.edges + 1, "about one soft pixel at each edge of the stroke")
+        // The white edge reads as the light background here; its shadow can darken one pixel more.
+        XCTAssertLessThanOrEqual(stroke.soft, stroke.edges + 2, "about one soft pixel at each edge of the stroke")
 
         // Across the first H, near the top of its stems, captured once the zoom has rested and the
-        // text is drawn for it.
-        centre(CGPoint(x: 606, y: 412))
+        // text is drawn for it. The words start inside the tag's padding.
+        centre(CGPoint(x: 600 + 24 * TextStyle.standard.padSide + 6, y: 412 + 24 * TextStyle.standard.padTop))
         RunLoop.main.run(until: Date(timeIntervalSinceNow: EditorView.restDelay * 3))
         settleTexts()
         rep = try capture(nominal: false) { _ in true }
         let row = (rep.pixelsWide / 2 - 45 * scale...rep.pixelsWide / 2 + 45 * scale).map { ($0, rep.pixelsHigh / 2) }
-        XCTAssertGreaterThan(row.filter { red(self.pixel(rep, $0.0, $0.1)) }.count, 4 * scale, "the stems' fill")
-        let letters = edges(rep, row, [background, red, dark])
-        XCTAssertGreaterThanOrEqual(letters.edges, 4, "into and out of the outline and the fill")
+        let white = { (c: (r: CGFloat, g: CGFloat, b: CGFloat)) in min(c.r, c.g, c.b) > 0.9 }
+        XCTAssertGreaterThan(row.filter { white(self.pixel(rep, $0.0, $0.1)) }.count, 4 * scale, "the stems' fill")
+        let letters = edges(rep, row, [red, white])
+        XCTAssertGreaterThanOrEqual(letters.edges, 4, "into and out of both stems, from the tag")
         XCTAssertLessThanOrEqual(letters.soft, letters.edges + 2, "about one soft pixel at each edge of the letters")
     }
 

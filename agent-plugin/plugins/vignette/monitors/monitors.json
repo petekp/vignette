@@ -1,0 +1,7 @@
+[
+  {
+    "name": "vignette",
+    "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/inbox.sh",
+    "description": "Drawing from Vignette"
+  }
+]

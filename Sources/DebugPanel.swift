@@ -182,16 +182,38 @@ struct DebugPanelView: View {
                     Tweak("Shortest arrow", \.shortestArrow, 0...40, unit: "pt")
                     Tweak("Text drag wait", \.textDragDelay, 0...1, step: 0.05, unit: "s")
                     Tweak("Text drag distance", \.textDragDistance, 0...80, unit: "pt")
-                    Text("Sizes are screen points, the same at any zoom. A press with the Text tool sets how wide the text wraps if it is held this long and then dragged this far sideways.")
+                    Tweak("Note settles", \.noteSettleDuration, 0...1, step: 0.05, unit: "s")
+                    Text("Sizes are screen points, the same at any zoom. A press with the Text tool sets how wide the text wraps if it is held this long and then dragged this far sideways. When typing ends, a note's lines are evened out over the settle time.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Marks") {
-                    Tweak("New text size", \.newTextSize, 8...96, unit: "pt")
-                    Tweak("Text weight", \.textWeight, 100...900, step: 100)
-                    Tweak("Line height", \.textLineHeight, 1...2, step: 0.05)
+                    ColorTweak("Person colour", \.personColor)
+                    ColorTweak("Agent colour", \.agentColor)
+                    ColorTweak("Edge colour", \.edgeColor)
+                    ColorTweak("Note text colour", \.noteTextColor)
+                    Tweak("Stroke width", \.strokeWidth, 0.5...12, step: 0.25, unit: "pt")
+                    Tweak("Edge width", \.edgeWidth, 0...6, step: 0.25, unit: "pt")
+                    Tweak("Shadow opacity", \.shadowOpacity, 0...3, step: 0.05)
                     Tweak("Arrowhead length", \.arrowheadLength, 1...10, step: 0.25)
                     Tweak("Arrowhead width", \.arrowheadWidth, 1...10, step: 0.25)
-                    Text("New text size is in the drawing's points. Text weight runs from 100, Ultralight, to 900, Black. 500 is Medium. Line height is a multiple of the text's size. The arrowhead's length and width are multiples of the stroke width.")
+                    Text("Widths are in the drawing's points. Shadow opacity multiplies the shadows' darkness. The arrowhead's length and width are multiples of the stroke width.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Notes") {
+                    FontTweak("Person font", \.textFont)
+                    Tweak("Person weight", \.textWeight, 100...900, step: 100)
+                    Tweak("New text size", \.newTextSize, 8...96, unit: "pt")
+                    FontTweak("Agent font", \.agentTextFont)
+                    Tweak("Agent weight", \.agentTextWeight, 100...900, step: 100)
+                    Tweak("Agent text size", \.agentTextSize, 0.5...4, step: 0.01, unit: "%")
+                    Tweak("Line height", \.textLineHeight, 1...2, step: 0.05)
+                    Tweak("Padding top", \.notePaddingTop, 0...2, step: 0.01)
+                    Tweak("Padding bottom", \.notePaddingBottom, 0...2, step: 0.01)
+                    Tweak("Padding sides", \.notePaddingSide, 0...2, step: 0.01)
+                    Tweak("Widest note", \.noteMaxWidth, 4...60, step: 0.5)
+                    Tweak("Badge inset", \.badgeInset, 0...3, step: 0.01)
+                    Tweak("Badge overlap", \.badgeOverlap, 0...Double(NoteBadge.height), step: 0.01)
+                    Text("A font is rounded, monospaced, serif, default, or the name of an installed font family. Weights run from 100, Ultralight, to 900, Black. New text size is in the drawing's points. An agent's text size is a percentage of the image's width. The rest are multiples of the text's size.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Stitch") {
@@ -235,6 +257,56 @@ private struct Tweak: View {
             Slider(value: Binding(get: { value }, set: { v in settings.update { $0.ui[keyPath: path] = v } }), in: range, step: step)
             Text(step < 1 ? String(format: "%.2f", value) + unit : "\(Int(value))\(unit)")
                 .monospacedDigit().font(.caption).frame(width: 52, alignment: .trailing)
+        }
+    }
+}
+
+/// A colour setting, `#rrggbb`, picked in the system colour panel.
+@MainActor
+private struct ColorTweak: View {
+    let label: String
+    let path: WritableKeyPath<UITweaks, String>
+    @ObservedObject private var settings = Settings.shared
+
+    init(_ label: String, _ path: WritableKeyPath<UITweaks, String>) {
+        self.label = label; self.path = path
+    }
+
+    var body: some View {
+        let hex = settings.data.ui[keyPath: path]
+        HStack {
+            Text(label).frame(width: 140, alignment: .leading)
+            ColorPicker("", selection: Binding(get: { (SRGB(hex: hex) ?? SRGB(hex: UITweaks()[keyPath: path])!).cgColor },
+                                               set: { color in if let picked = SRGB(color)?.hex { settings.update { $0.ui[keyPath: path] = picked } } }),
+                        supportsOpacity: false)
+                .labelsHidden()
+            Spacer()
+            Text(hex).monospacedDigit().font(.caption)
+        }
+    }
+}
+
+/// A font setting: a system design's name or an installed family's. One that is not installed is
+/// not saved.
+@MainActor
+private struct FontTweak: View {
+    let label: String
+    let path: WritableKeyPath<UITweaks, String>
+    @ObservedObject private var settings = Settings.shared
+    @State private var typed: String?
+
+    init(_ label: String, _ path: WritableKeyPath<UITweaks, String>) {
+        self.label = label; self.path = path
+    }
+
+    var body: some View {
+        HStack {
+            Text(label).frame(width: 140, alignment: .leading)
+            TextField("", text: Binding(get: { typed ?? settings.data.ui[keyPath: path] }, set: { typed = $0 }))
+                .onSubmit {
+                    if let typed, TextStyle.isInstalled(typed) { settings.update { $0.ui[keyPath: path] = typed } }
+                    typed = nil
+                }
         }
     }
 }

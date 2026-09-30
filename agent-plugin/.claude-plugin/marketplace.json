@@ -1,0 +1,12 @@
+{
+  "name": "vignette",
+  "description": "The plugin Vignette installs for Claude Code",
+  "owner": { "name": "Vignette", "url": "https://github.com/petekp/vignette" },
+  "plugins": [
+    {
+      "name": "vignette",
+      "source": "./plugins/vignette",
+      "description": "Send drawings from Vignette to this session, and draw back"
+    }
+  ]
+}

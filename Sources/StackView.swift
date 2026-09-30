@@ -219,12 +219,18 @@ private struct CardView: View {
                     .transition(.opacity)
             }
         }
-        // After the dim, so a selected or focused card keeps its ring while the dim is up.
+        // After the dim, so a selected or focused card keeps its ring while the dim is up. The ring
+        // grows out of the resting border rather than switching on, and shrinks back into it.
         .overlay {
             if !isOut && !isForming {
-                RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
-                    .stroke(ringColor, lineWidth: ringWidth)
-                    .allowsHitTesting(false)
+                let shape = RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
+                ZStack {
+                    shape.stroke(.white.opacity(ui.cardBorderOpacity), lineWidth: ui.cardBorderWidth)
+                    shape.stroke(ringColor, lineWidth: ringWidth)
+                }
+                .animation(Anim.spring(0.22 * motion), value: ringWidth)
+                .animation(Anim.spring(0.22 * motion), value: selected)
+                .allowsHitTesting(false)
             }
         }
         // Copy in the bottom-left corner, delete in the bottom-right, both as icons; Copy says its
@@ -256,7 +262,8 @@ private struct CardView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            if showsCircle {
+            // Its own fade, so a circle that comes with the keyboard's focus fades in as a hovered one does.
+            ZStack(alignment: .topLeading) { if showsCircle {
                 SelectionCircle(number: model.selectionNumber(of: card.id), size: ui.selectionCircleSize)
                     .padding(CardView.hitSlop(.topLeading))
                     .contentShape(Rectangle())
@@ -270,7 +277,8 @@ private struct CardView: View {
                     .padding(CardView.hitSlop(.topLeading).negated)
                     .padding(CardView.buttonPad)
                     .transition(.opacity)
-            }
+            } }
+            .animation(Anim.spring(0.2 * motion), value: showsCircle)
         }
         .frame(width: size.width, height: size.height)
         // The thumbnail fills the card, so an image whose shape differs from the card's box hangs
@@ -307,12 +315,9 @@ private struct CardView: View {
 
     private var ui: UITweaks { Settings.shared.motionUI }
     private var motion: Double { Settings.shared.motionScale }
-    private var ringColor: Color {
-        if selected { return .accentColor }
-        if focused { return .white.opacity(0.9) }
-        return .white.opacity(ui.cardBorderOpacity)
-    }
-    private var ringWidth: CGFloat { selected || focused ? max(2, ui.cardBorderWidth) : ui.cardBorderWidth }
+    /// The ring a selected or focused card wears over its resting border. It is 0 wide on any other card.
+    private var ringColor: Color { selected ? .accentColor : .white.opacity(0.9) }
+    private var ringWidth: CGFloat { selected || focused ? max(2, ui.cardBorderWidth) : 0 }
 
     /// Newest (bottom) card first, in and out: the cards nearest the cursor move at once, so a
     /// dismissal feels immediate even when the top of the column is still leaving. The per-card
@@ -451,7 +456,10 @@ private struct SelectionStrip: View {
         let labelBox = StackLayout.current.stripLabelBox(reveal: reveal)
         let shots = cards.map(\.shot)
         VStack(spacing: ui.buttonSpacing) {
-            ForEach(Config.stripRows.map { Config.stripAction(in: $0, for: shots) }, id: \.id) { action in
+            // A row keeps its identity when it changes what it shows (Draw and Open share one), so it
+            // moves with the strip; as two identities, the old one faded out where it had been.
+            ForEach(Config.stripRows, id: \.[0].id) { row in
+                let action = Config.stripAction(in: row, for: shots)
                 let reason = action.unavailableReason(for: shots)
                 Button { model.onAction(action, cards) } label: {
                     HStack(spacing: 0) {
@@ -514,6 +522,11 @@ struct TactileButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let fill: AnyShapeStyle = hovered ? AnyShapeStyle(.white.opacity(0.18)) : AnyShapeStyle(.clear)
+        let pressed = configuration.isPressed
+        // The springs reach only the fill and the scales. Around the whole label they also carried
+        // any change to the label made in the same update, such as a new width when a menu opened
+        // by the press closes, which then moved on its own spring while the controls around it
+        // moved on another.
         return configuration.label
             .foregroundStyle(.primary)
             .background {
@@ -525,10 +538,10 @@ struct TactileButtonStyle: ButtonStyle {
                     }
                 }
                 .padding(hitSlop)
+                .animation(Anim.spring(0.12 * motion), value: hovered)
             }
-            .scaleEffect(configuration.isPressed ? 0.9 : (hovered ? hoverScale : 1), anchor: anchor)
-            .animation(Anim.spring(0.2 * motion, bounce: 0.3), value: configuration.isPressed)
-            .animation(Anim.spring(0.12 * motion), value: hovered)
+            .animation(Anim.spring(0.12 * motion)) { $0.scaleEffect(hovered && !pressed ? hoverScale : 1, anchor: anchor) }
+            .animation(Anim.spring(0.2 * motion, bounce: 0.3)) { $0.scaleEffect(pressed ? 0.9 : 1, anchor: anchor) }
             .onHover { hovered = $0 }
     }
 }

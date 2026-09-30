@@ -4,8 +4,9 @@
 #   scripts/release.sh 0.1.0             a full release: notarized and stapled
 #   scripts/release.sh 0.1.0 --dry-run   everything but notarization, for checking the pipeline
 #
-# Needs scripts/signing.env with a Developer ID identity, and (unless --dry-run) notarytool
-# credentials stored under $NOTARY_PROFILE. See docs/building.md.
+# Needs scripts/signing.env with a Developer ID identity, the update signing key in the Keychain
+# under $SPARKLE_ACCOUNT, and (unless --dry-run) notarytool credentials stored under
+# $NOTARY_PROFILE. See docs/building.md.
 set -e
 cd "$(dirname "$0")/.."
 
@@ -27,10 +28,12 @@ fi
 
 scheme=$(sed -n 's/^name: *//p' project.yml)
 notary_profile="${NOTARY_PROFILE:-vignette}"
+sparkle_account="${SPARKLE_ACCOUNT:-vignette}"
 out="build/dist"
 archive="build/release/$scheme.xcarchive"
 app="$out/$scheme.app"
 dmg="$out/$scheme-$version.dmg"
+appcast="$out/appcast.xml"
 
 # --- what a release cannot be built without -------------------------------------------------
 
@@ -83,6 +86,26 @@ cat > "$export_options" <<PLIST
 </plist>
 PLIST
 xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$export_options" -exportPath "$out" >/dev/null
+
+# Sparkle's tools come with the package the archive resolved.
+sparkle_bin="build/release/SourcePackages/artifacts/sparkle/Sparkle/bin"
+if [[ ! -x "$sparkle_bin/generate_appcast" ]]; then
+  echo "Sparkle's generate_appcast is not at $sparkle_bin" >&2; exit 1
+fi
+# The key the app's SUPublicEDKey names. An appcast signed with any other key is refused by every
+# install, so check before packaging rather than after notarizing.
+public_key=$("$sparkle_bin/generate_keys" --account "$sparkle_account" -p 2>/dev/null || true)
+expected_key=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$app/Contents/Info.plist")
+if [[ "$public_key" != "$expected_key" ]]; then
+  echo "the Keychain's key under \"$sparkle_account\" is not the app's SUPublicEDKey; see docs/building.md" >&2; exit 1
+fi
+# Downloads live under the release's tag, beside the feed that SUFeedURL names:
+# https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml
+feed_url=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$app/Contents/Info.plist")
+releases=${feed_url%/latest/download/appcast.xml}
+if [[ "$releases" == "$feed_url" ]]; then
+  echo "SUFeedURL is not a GitHub latest-release appcast URL: $feed_url" >&2; exit 1
+fi
 
 # --- check the things notarization rejects silently --------------------------------------------
 
@@ -147,9 +170,25 @@ device=""
 hdiutil convert "$staging.rw.dmg" -format UDZO -ov -quiet -o "$dmg"
 codesign --sign "$CODE_SIGN_IDENTITY" --timestamp "$dmg"
 
+# --- appcast -----------------------------------------------------------------------------------
+
+# The feed Sparkle reads, signed over the image's final bytes, so it runs after stapling. GitHub
+# serves each release's assets under its tag, and the app's SUFeedURL names the latest release's
+# appcast.xml, so every release uploads both files.
+write_appcast() {
+  local feed=$(mktemp -d)
+  cp "$dmg" "$feed/"
+  "$sparkle_bin/generate_appcast" --account "$sparkle_account" \
+    --download-url-prefix "$releases/download/v$version/" \
+    -o "$PWD/$appcast" "$feed" >/dev/null
+  rm -rf "$feed"
+  echo "==> appcast: $PWD/$appcast"
+}
+
 # --- notarize ----------------------------------------------------------------------------------
 
 if $dry_run; then
+  write_appcast
   echo "built (not notarized): $PWD/$dmg"
   echo "a dry run cannot be distributed: macOS will refuse to open it on another Mac."
   exit 0
@@ -163,8 +202,9 @@ echo "==> verifying the stapled image"
 xcrun stapler validate "$dmg"
 # What Gatekeeper will say when the user opens it.
 spctl --assess --type open --context context:primary-signature -v "$dmg"
+write_appcast
 
 echo
 echo "released: $PWD/$dmg"
 echo "next: git tag v$version && git push origin v$version"
-echo "      gh release create v$version \"$dmg\" --title \"$scheme $version\""
+echo "      gh release create v$version \"$dmg\" \"$appcast\" --title \"$scheme $version\""

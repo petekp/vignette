@@ -25,7 +25,7 @@ func say(_ line: String) {
 
 // MARK: desktop
 
-/// The stage's wallpaper: a dark plum field with a soft glow behind the browser. It is a window at
+/// The stage's wallpaper: a dark umber field with a warm glow behind the browser. It is a window at
 /// the normal level, ordered in before the stage's windows, so the windows of every other app stay
 /// behind it and the stage's own come up in front.
 final class Desktop: NSObject, NSApplicationDelegate {
@@ -57,14 +57,14 @@ final class Desktop: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Two soft glows over a near-black plum, with a little noise so the gradient does not band once
+    /// Two soft glows over a near-black umber, with a little noise so the gradient does not band once
     /// the video is compressed.
     func wallpaper(size: NSSize, scale: CGFloat) -> NSImage {
         let w = Int(size.width * scale), h = Int(size.height * scale)
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: space,
                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        ctx.setFillColor(CGColor(srgbRed: 0.055, green: 0.027, blue: 0.047, alpha: 1))
+        ctx.setFillColor(CGColor(srgbRed: 0.058, green: 0.046, blue: 0.036, alpha: 1))
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
         func glow(_ x: Double, _ y: Double, _ radius: Double, _ r: Double, _ g: Double, _ b: Double, _ a: Double) {
             let colors = [CGColor(srgbRed: r, green: g, blue: b, alpha: a), CGColor(srgbRed: r, green: g, blue: b, alpha: 0)] as CFArray
@@ -73,8 +73,8 @@ final class Desktop: NSObject, NSApplicationDelegate {
             ctx.drawRadialGradient(gradient, startCenter: centre, startRadius: 0, endCenter: centre,
                                    endRadius: radius * Double(w), options: [])
         }
-        glow(0.66, 0.3, 0.62, 0.30, 0.09, 0.22, 0.85)
-        glow(0.18, 0.85, 0.5, 0.14, 0.07, 0.2, 0.7)
+        glow(0.66, 0.3, 0.62, 0.34, 0.15, 0.08, 0.8)
+        glow(0.18, 0.85, 0.5, 0.15, 0.13, 0.07, 0.65)
         let data = ctx.data!.bindMemory(to: UInt8.self, capacity: ctx.bytesPerRow * h)
         var seed: UInt64 = 0x9e3779b97f4a7c15
         for i in stride(from: 0, to: ctx.bytesPerRow * h, by: 4) {

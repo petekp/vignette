@@ -1,0 +1,53 @@
+/* The trailer's scene pieces, shared by the storyboard and the animatic. Sizes are in screen points. */
+
+.frame { position: relative; width: 100%; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 6px; background: #000; }
+.frame .scene { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.frame .cap { position: absolute; display: flex; align-items: center; gap: 0.35em; background: rgba(12,12,14,0.86);
+  color: #fff; font-weight: 700; border-radius: 999px; transform-origin: 0 0; white-space: nowrap;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); }
+.frame .cap .k { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5em; height: 1.5em;
+  padding: 0 0.3em; border-radius: 0.3em; background: rgba(255,255,255,0.12); color: #cfd2d6; font-weight: 600; }
+.frame .cap .k.lit { background: #fff; color: #111; }
+.frame .endcard { position: absolute; inset: 0; background: #0c0c0e; color: #fff; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 0.5em; }
+
+/* Scene pieces, in screen points */
+.pt { position: absolute; }
+.term { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; line-height: 17px; color: #d6d6d6; white-space: pre; }
+.term .u { color: #8b949e; } .term .g { color: #8b949e; } .term .ok { color: #3fb950; }
+.term .add { background: #12361f; color: #b7f0c4; } .term .del { background: #3d1414; color: #f3b7b7; }
+.term .hint { color: #8b949e; }
+.card-img { position: absolute; border-radius: 9px; overflow: hidden; background: #1a1a1a;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.5); }
+.card-img img, .card-img svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ring-focus { position: absolute; border: 3px solid #fff; border-radius: 12px; }
+.ring-sel { position: absolute; border: 3px solid #0a84ff; border-radius: 12px; }
+.selcircle { position: absolute; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,0.25); }
+.selcircle.on { background: #0a84ff; border-color: #fff; color: #fff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.tab { position: absolute; background: #fff; color: #222; border-radius: 999px; font: 600 10px/1 -apple-system, sans-serif;
+  padding: 4px 7px; display: flex; gap: 4px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+.badge { position: absolute; background: rgba(0,0,0,0.72); color: #fff; font: 600 10px/1 -apple-system, sans-serif; border-radius: 5px; padding: 3px 5px; }
+.toolbar { position: absolute; height: 44px; border-radius: 12px; background: rgba(34,34,36,0.96);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.1);
+  display: flex; align-items: center; gap: 6px; padding: 0 8px; color: #e8e8e8; font: 600 13px/1 -apple-system, sans-serif; }
+.toolbar .tool { width: 30px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.toolbar .tool.on { background: rgba(255,255,255,0.14); }
+.toolbar .sep { width: 1px; height: 22px; background: rgba(255,255,255,0.15); margin: 0 4px; }
+.toolbar .btn { height: 30px; border-radius: 8px; background: rgba(255,255,255,0.1); padding: 0 12px; display: flex; align-items: center; gap: 6px; }
+.toolbar .btn.blue { background: #0a6cff; color: #fff; }
+.toolbar .field { height: 30px; border-radius: 8px; background: rgba(0,0,0,0.35); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+  padding: 0 10px; display: flex; align-items: center; font-weight: 500; color: #fff; }
+.toolbar .field.focus { box-shadow: inset 0 0 0 2px #0a84ff; }
+.toolbar .field .ph { color: #8a8a8e; }
+.toolbar .kbd { font-size: 11px; opacity: 0.75; }
+.menu { position: absolute; border-radius: 9px; background: rgba(44,44,46,0.97); box-shadow: 0 10px 30px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.12);
+  padding: 5px; color: #eee; font: 13px/1.2 -apple-system, sans-serif; }
+.menu .hd { color: #8e8e93; font-size: 11px; font-weight: 600; padding: 3px 8px 4px; }
+.menu .row { display: grid; grid-template-columns: 14px 16px 1fr; gap: 6px; align-items: center; padding: 5px 8px; border-radius: 5px; }
+.menu .row.hot { background: #0a6cff; }
+.menu .row small { display: block; color: #a1a1a6; font-size: 11px; }
+.menu .row.hot small { color: #dce8ff; }
+.strip { position: absolute; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.strip div { background: rgba(34,34,36,0.94); color: #eee; border-radius: 9px; padding: 7px 10px; font: 600 12px/1 -apple-system, sans-serif;
+  display: flex; gap: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.strip div span { color: #9a9aa0; font-weight: 500; }

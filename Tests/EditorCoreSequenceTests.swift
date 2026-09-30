@@ -65,13 +65,13 @@ private struct SequenceRun {
                               pixels: PixelSize(width: Int.random(in: 240...1800, using: &rng), height: Int.random(in: 160...1400, using: &rng)),
                               pointScale: [1, 1.5, 2, 3].randomElement(using: &rng)!, marks: [])
         let geometry = EditorGeometry(pixels: drawing.pixels, pointScale: drawing.pointScale, style: .standard, metrics: .standard, zoom: 1, layouts: TextLayoutCache(),
-                                      arrowhead: .standard)
+                                      markStyle: .standard)
         drawing.marks = (0..<Int.random(in: 0...5, using: &rng)).compactMap { _ in geometry.placed(randomMark(in: drawing.pixels, agent: Bool.random(using: &rng))) }
         return drawing
     }
 
     static func open(_ drawing: Drawing) -> Core.Input {
-        .open(drawing, style: .standard, metrics: .standard, arrowhead: .standard, pickColor: { mark in Self.pick(mark) })
+        .open(drawing, style: .standard, metrics: .standard, markStyle: .standard)
     }
 
     /// Opens `drawing` outside the sequence, as the host does after a park.
@@ -83,23 +83,11 @@ private struct SequenceRun {
 
     /// A drawing just opened: history starts again.
     mutating func opened() {
-        states = [Depth(marks: Self.plain(core.drawing.marks))]
+        states = [Depth(marks: core.drawing.marks)]
         gestureStart = nil
         editSelection = nil
         typingOrigin = nil
         buttonDown = false
-    }
-
-    /// A pick that depends only on where the mark is, and that sometimes cannot answer yet.
-    static func pick(_ mark: Mark) -> MarkColor? {
-        let seed: CGFloat
-        switch mark.geometry {
-        case .rectangle(let frame), .ellipse(let frame): seed = frame.minX + frame.minY
-        case .arrow(let arrow): seed = arrow.start.x + arrow.end.y
-        case .text(let text): seed = text.origin.x + text.origin.y
-        }
-        let index = Int(abs(seed.rounded())) % 7
-        return index < 5 ? MarkColor.allCases[index] : nil
     }
 
     mutating func nextInput() -> Core.Input {
@@ -252,7 +240,7 @@ private struct SequenceRun {
             geometry = .text(Mark.Text(origin: CGPoint(x: x(), y: y()), text: ["agent note", "one\ntwo", "a sentence of several words"].randomElement(using: &rng)!,
                                        wrap: Bool.random(using: &rng) ? nil : CGFloat.random(in: 20...w, using: &rng), size: CGFloat.random(in: 8...60, using: &rng)))
         }
-        return Mark(geometry: geometry, color: MarkColor.allCases.randomElement(using: &rng)!, agent: agent, colorChosen: agent && Bool.random(using: &rng))
+        return Mark(geometry: geometry, agent: agent)
     }
 
     // MARK: Checking
@@ -336,7 +324,7 @@ private struct SequenceRun {
         let d0 = before.undoSteps.count, d1 = core.undoSteps.count
         let settledBefore = before.gesture == nil && before.typing == nil
         let settled = core.gesture == nil && core.typing == nil
-        let marks = Self.plain(core.drawing.marks)
+        let marks = core.drawing.marks
         var undo = false, redo = false, nudge = false, paste = false
         if case .keyDown(let key, let modifiers, _) = input {
             undo = settledBefore && key == .character("z") && modifiers == .command
@@ -372,7 +360,7 @@ private struct SequenceRun {
         }
         if d1 == d0 + 2, paste, before.typing != nil, settled {
             // The paste ended the typing, its own step, then added its marks as another.
-            let typed = Self.plain(core.drawing.marks.filter { mark in before.drawing.marks.contains { $0.id == mark.id } })
+            let typed = core.drawing.marks.filter { mark in before.drawing.marks.contains { $0.id == mark.id } }
             if typed == states[d0].marks { return "a typing session that changed nothing added a step" }
             states = Array(states.prefix(d0 + 1)) + [Depth(marks: typed, selectionBefore: editSelection), Depth(marks: marks, selectionAfter: core.selection)]
             return nil
@@ -382,7 +370,7 @@ private struct SequenceRun {
         if case .agentMarks = input {
             // Agents' marks join as a step of their own while a gesture or a typing session goes on,
             // so the step holds the marks with what those have changed so far put back.
-            step = Depth(marks: Self.plain(joined()), selectionBefore: before.selection, selectionAfter: core.selection)
+            step = Depth(marks: joined(), selectionBefore: before.selection, selectionAfter: core.selection)
         } else if settled {
             let selectionBefore: Set<Mark.ID>?
             if settledBefore {
@@ -397,7 +385,7 @@ private struct SequenceRun {
             step = Depth(marks: marks, selectionBefore: selectionBefore, selectionAfter: core.selection)
         } else if before.typing != nil {
             // A press that ends typing commits it and starts something new in the same input.
-            step = Depth(marks: Self.plain(core.drawing.marks), selectionBefore: editSelection)
+            step = Depth(marks: core.drawing.marks, selectionBefore: editSelection)
         } else {
             return "the undo depth went from \(d0) to \(d1) with a gesture or typing still open"
         }
@@ -438,14 +426,6 @@ private struct SequenceRun {
             do { _ = try Mark(validating: item) } catch { return "mark \(index + 1): \(error)" }
         }
         return nil
-    }
-
-    static func plain(_ marks: [Mark]) -> [Mark] {
-        marks.map { mark in
-            var mark = mark
-            mark.color = .red
-            return mark
-        }
     }
 
     static func close(_ a: Mark, _ b: Mark) -> Bool {

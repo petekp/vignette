@@ -71,13 +71,13 @@ All eighteen were decided on 2026-09-22.
 | Rectangle | frame `x y w h` | Rectangle tool, agents |
 | Ellipse | frame `x y w h`. The ellipse fills the frame. | Agents |
 | Arrow | start `x y`, end `x2 y2`, and either `bend` or `via` | Arrow tool, agents. Only the Arrow tool makes `via`. |
-| Text | `x y` of the box's top-left corner, `text`, `wrap` width or none, `size` | Text tool, agents, Cmd+V |
+| Text | `x y` of the tag's top-left corner, `text`, `wrap`, the widest the tag may be, or none, `size` | Text tool, agents, Cmd+V |
 
 Every mark also has:
 
-- `color`, one of the five ids under Style;
-- `agent`, true when an agent made it;
-- `colorChosen`, true when an agent named its colour, so the colour pass leaves it alone.
+- `agent`, true when an agent made it, which also decides its colour (Style);
+- `agentName`, on an agent's mark, the agent's name (`claude`, `codex`), which its note's badge
+  shows.
 
 Notes:
 
@@ -104,7 +104,7 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   "pixels": [3024, 1964],
   "pointScale": 2,
   "marks": [
-    { "type": "rectangle", "x": 410, "y": 220, "w": 640, "h": 180, "color": "red" }
+    { "type": "rectangle", "x": 410, "y": 220, "w": 640, "h": 180 }
   ]
 }
 ```
@@ -113,16 +113,16 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   image's size no longer fits it. The image opens without it, with a log line, and the file stays on
   disk.
 - `pointScale` is between 0.5 and 8.
-- A mark's fields are the ones its type uses. `bend`, `via`, `wrap`, `agent` and `colorChosen` are
-  left out at their defaults. A build from before `via` reads a freehand arrow as the straight arrow
-  between its ends, so the file's `version` did not change. `color` and a text's `size` are always written. A mark has no id in the file.
+- A mark's fields are the ones its type uses. `bend`, `via`, `wrap`, `agent` and `agentName` are
+  left out at their defaults. A text's `size` is always written. A mark has no id and no colour in
+  the file.
 - The host writes the file atomically whenever it receives the drawing: after the 300 ms pause, at
   park, and when the app quits.
 - A drawing with no marks has no file.
 - Builds from different worktrees share this folder. A file whose `version` is newer than the build
   knows is left alone: the image opens without it, and the build never writes over it.
 - Everything read from a file is checked with the same validator as agents' marks. Numbers must be
-  finite, types and colours known, a text's `size` at most 1,000 pt, and a text at most 2,000
+  finite, types known, a text's `size` at most 1,000 pt, and a text at most 2,000
   characters and 100,000 bytes. A mark that fails is dropped, with a log line. A mark that no longer
   fits inside the image is moved in, with a log line. A file that does not parse is renamed to
   `<id>.json.invalid` at launch, with a log line. If a file stops parsing while the app runs, its
@@ -132,18 +132,17 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
 ### Style
 
 - Every stroke is 3.5 pt wide and solid, with round caps and joins. Shapes have no fill.
-- A mark is drawn in one of five colours:
+- A mark's colour says who drew it, and nothing else decides it:
 
-| Id | Colour | Order in the colour pass |
-|---|---|---|
-| `red` | `#e03131` | 1, and the colour a new mark starts in |
-| `yellow` | `#ffc034` | 2 |
-| `light-blue` | `#4dabf7` | 3 |
-| `white` | `#f3f3f3` | 4 |
-| `violet` | `#ae3ec9` | 5 |
+| Who | Colour |
+|---|---|
+| A person | Red, `#e03131` |
+| An agent | Indigo, `#364fc7`, the same for every agent |
 
-The ids are the ones agents name in `marks=`. The toolbar has no palette. The colour pass picks the
-colour.
+- Every mark has a 1.5 pt white edge and casts a soft shadow, so it shows on any screenshot: on a
+  dark or busy one the edge separates it from the picture, and on one of its own colour the edge
+  still draws its shape. `docs/mark-colour-2026-09-29.md` has the reasons.
+- The toolbar has no palette, and an agent cannot choose a colour.
 
 ### Agents' marks
 
@@ -157,25 +156,28 @@ An agent's text is set in SF Mono wherever it is drawn: the editor, a card, a fl
 
 | What | How it looks |
 |---|---|
-| Stroke | 3.5 pt, centred on the outline, with round caps and joins |
+| Stroke | 3.5 pt, centred on the outline, with round caps and joins, inside a 1.5 pt white edge on each side. The edge casts the tag's shadows, as a 17 pt note's tag would. |
 | Rectangle | A closed path with sharp corners |
 | Ellipse | Inscribed in its frame |
 | Arrow body | A straight line, or a circular arc through both ends and the bend point |
 | Arrowhead | A filled triangle at the tip, per Decision 18 |
-| Text | SF Pro Rounded at 24 pt, left-aligned, in the mark's colour. Weight and line height are tuned in the tweaks panel, starting at Medium and 1.35 times the size. |
-| Text outline | Near-black `hsl(240 5% 6.5%)`, 1 pt outside the letters, on screen and in every rendering |
+| Text | SF Pro Rounded at 17 pt, left-aligned, on a tag. Weight and line height are tuned in the tweaks panel, starting at Semibold and 1.32 times the size. An agent's text is SF Mono. |
+| Tag | Filled with the mark's colour, inside a 1.5 pt white edge, with padding of 0.42 em above, 0.47 em below and 0.8 em at the sides. Its corners are half the height of a one-line tag, so one line is a pill. The edge casts two faint shadows. |
+| Words on a tag | White |
+| Tag width | As wide as its longest line. A text without a wrap width wraps at 18 em, or at the image's edge less 2% if that is closer. Lines are balanced: the tag takes the narrowest width that keeps the same number of lines. While typing, lines wrap without balancing, so words do not jump from line to line under the caret. When typing ends, the tag springs to its balanced size over `ui.noteSettleDuration` while the words cross-fade to their new lines. |
+| Agent's badge | A white capsule on the top edge of an agent's tag, 0.35 em from its left, with the agent's logo and name. It rises above the tag and overlaps its edge by 0.2 em, so the tag keeps a person's note's padding. A name longer than 10 em is cut short with an ellipsis. The tag is at least as wide as the badge. The badge's shadow is lighter than the tag's. |
 | Selection outline | A 1.5 screen pt line in `#3182ed` over a light edge, so it shows on blue and dark screenshots. The two together are `ui.selectionOutlineWidth` wide, 3.5 screen pt by default. It runs outside the mark's ink, so the mark's colour shows. The frame around several selected marks uses the same line. |
 | Hover | Lighter than the selection outline, so the two can be told apart |
 | Resize handles | 8 screen pt squares with a near-black fill and a 1.5 screen pt blue stroke, at the four corners of the selection outline |
 | Arrow dots | Circles of radius 4 screen pt, white fill, 1.5 screen pt blue stroke. A hovered dot gets a 12 screen pt halo, blue at 20% opacity. |
 | Brush | A rectangle with a 1 screen pt stroke, grey at 25% opacity, over a grey fill at 10% |
-| Caret while typing | Near-white, whatever the text's colour |
-| Selected text while typing | Blue background, white letters, no outline |
+| Caret while typing | The colour of the words on the tag |
+| Selected text while typing | Blue background, white letters |
 | Cursors | The system's: a crosshair while drawing, the arrow in Select, resize cursors on handles, an open hand on arrow dots, a closed hand while moving |
 | Confirmation | A small dark capsule at the bottom centre of the frame, over the picture. It stays up for `ui.toastSeconds` and takes no clicks. |
 | Behind the image | `#1a1a1a`, so a screenshot's transparent pixels are never see-through: in the editor, on a card and in flight |
 
-Marks, text and the outline scale with the zoom. Handles, selection and hover outlines, dots, the
+Marks and text scale with the zoom. Handles, selection and hover outlines, dots, the
 brush and hit areas stay the same size on screen. Each step of a zoom moves both in the same frame.
 
 ## 3. Tools
@@ -433,24 +435,23 @@ switch to the Text tool and no click to place it.
   2. Below, at the box's left edge.
   3. Above, where the note grows upward, away from the box.
   4. Inside the box's top left corner.
-- An arrow's note goes 8 pt past its tail, on the side the arrow leaves the tail from, so the arrow
-  leads from the note to what it points at. An arrow drawn to the right has its note to the left of
-  its tail, and the note grows leftward, away from the arrow. Beside the tail, the first line is
-  centred on it; above or below it, the note is centred on it. A side without room for a few words,
-  or for a line above or below, gives way to the next side the arrow leaves least towards.
-- From there the note grows, shrinks and wraps like any text, keeping the edge that faces its
-  mark where it started. A note to the left of a tail wraps at its room rather than cross the tail.
-  Opened again later, a note grows to the right like any other text.
+- An arrow's note sits on the arrow's line, carried back past its tail. The tail lies one stroke
+  width inside the tag's edge, so the arrow runs straight out of the note to what it points at. As
+  the note grows, the tag moves out along that line. A tag that would leave the image moves inside
+  it, and the tail may then be off its edge.
+- From there the note grows, shrinks and wraps like any text. A box's note keeps the edge that
+  faces the box where it started. A note wraps at its room or at 18 em, whichever is narrower,
+  rather than cross its mark. Opened again later, a note grows to the right like any other text.
 - The note and its typing are one undo step, as with the Text tool.
 - The keys reach the text as typed, so an input method or a dead key composes as usual.
 
 ### How a text grows
 
-- A text without a wrap width gets smaller as it is typed, just enough to end at the image's right
-  edge, less a margin of 2% of the image's width, and above the image's bottom. So a note on a small
-  screenshot does not fill it after a few words.
-- It stops at half the new-text size, 12 pt by default, which is still easy to read. From there it
-  wraps where its right edge would pass the margin. Agents' texts use the same margin.
+- A text without a wrap width wraps at 18 em. Where the room to the image's right edge, less a
+  margin of 2% of the image's width, is narrower than that, the text first gets smaller as it is
+  typed, until an 18 em tag fits the room, and then wraps. It also gets smaller to stay above the
+  image's bottom. So a note on a small screenshot does not fill it after a few words.
+- It stops at half the new-text size, 8.5 pt by default. Agents' texts use the same margin.
 - Deleting words brings it back up, never past the size it had when typing began. A text with a
   wrap width keeps its size and wraps in that width.
 - A text that starts with less than 15% of the image's width to its right moves left as it grows,
@@ -502,7 +503,6 @@ Keys that act on a selection are in section 4. The rest:
   - agents' marks added to the open drawing.
 - Selecting is never a step. Undo and redo put back the selection that belonged to the step.
 - Cmd+Z during a drag cancels the drag and undoes nothing more.
-- The colour pass is never a step. After an undo, the next pass colours the mark for where it is.
 - History starts empty each time a screenshot opens.
 
 ## 8. Clipboard, paste and drop
@@ -537,8 +537,7 @@ Copied marks:
 - Anywhere else, including another screenshot or after a cut, they land where the originals were.
 - Positions and sizes carry over in pt, so a mark keeps its look on a screenshot of another scale.
 - Either way they are kept inside the image.
-- A pasted mark keeps the original's fields. The colour pass colours it for where it lands, unless an
-  agent named its colour.
+- A pasted mark keeps the original's fields, so an agent's mark pasted is still the agent's.
 
 A mark is selected right after it is drawn, and on reopen the newest mark is selected. So Cmd+C at
 those moments copies that mark, not the drawing. The rule stays, because the visible selection
@@ -663,37 +662,26 @@ a session the host picked; the host sets both keys from what its toolbar offers
 - [flight-press-2026-09-23.md](flight-press-2026-09-23.md) has the measurements, and two cases in
   which a press can still pass through a flying card.
 
-### The colour pass
-
-A mark is drawn in red unless red is too close to what it covers:
-
-| Step | Rule |
-|---|---|
-| When | 300 ms after the last change, never while the button is held. A text's colour is picked when typing ends. Also before every park, Done, Send and Cmd+C of the drawing. |
-| Which marks | Every mark added or changed since the last pass, except marks whose colour an agent named. Opening a drawing never runs the pass. |
-| The sample | The screenshot, scaled to 320 px on its long side |
-| A rectangle or ellipse | A 20 by 20 grid over its frame. Only points within 15% of the frame's shorter side from an edge count. |
-| An arrow | 41 points along its drawn body, arc included, plus one on each side. The sides are 1% of the sample's long side away. |
-| A text | A 20 by 20 grid over each of its lines |
-| The measure | CIE76 distance in CIELAB between the colour and each sampled pixel. The distance used is the one at the 10th percentile, so a few stray pixels do not decide. |
-| The pick | The first colour in order whose distance is at least 55. If none is, the furthest one. |
-| History | Outside undo history |
-
 ### Agents' marks
 
-- `add?marks=` adds to a drawing without opening the editor. The marks become px, the colour pass
-  runs, and the host writes the file. The command answers once the file is written, and the card
+- `add?marks=` adds to a drawing without opening the editor. The marks become px, and the host
+  writes the file. The command answers once the file is written, and the card
   appears after that.
 - If the screenshot already has a drawing, the marks are added to it.
 - If the screenshot is open in the editor, the marks join the open drawing as one undo step. Adding
   never waits for the editor and is never refused because of it.
 - Every mark is moved inside the image. One that has nothing inside it is dropped, with a log line.
-- A mark that names a colour keeps it. Other marks go through the colour pass.
-- Agents' marks carry `agent`, so reopening never selects one.
+- Every agent's mark is indigo. A `color` the agent names is ignored, with one
+  `[marks] color ignored` line.
+- Agents' marks carry `agent` and the agent's name, so reopening never selects one and each note's
+  badge names its agent.
+- An agent's mark stays the agent's when the person moves or resizes it. A note whose words the
+  person changes becomes theirs when typing ends: it springs to their colour and face, and its
+  badge fades out.
 - An agent's text is sized and fitted like this:
-  - Its size is 2.2% of the image's width.
-  - It wraps in its `w` when it has one, as given. Without `w`, it wraps in the room to the right
-    edge less a 2% margin, and never in less than 15% of the width.
+  - Its size is 1.33% of the image's width, set in SF Mono Semibold.
+  - Its tag is at most `w` wide when it has one. Without `w`, it wraps like a person's note: at
+    18 em, or the room to the right edge less a 2% margin, and never in less than 15% of the width.
   - It is widened until it fits the image's height, in up to four passes.
   - It is then moved inside the image.
   - A text that still does not fit is cut at the edge and named in one

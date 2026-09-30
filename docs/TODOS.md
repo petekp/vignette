@@ -6,38 +6,40 @@ Things decided or raised but not built. Each entry says what, why, and what it w
 
 ### Updates that reach every install (raised 2026-09-27)
 
-Vignette has no updater yet. "Check for Updates…" opens the latest release on GitHub
-(`Identity.releasesURL`), and nothing tells a user that a new version exists. Someone who installs a
-build without an updater has to find each later version themselves. So the first public build has
-to carry the updater, and it has to be tested before the release.
+Built on 2026-09-27 and tested on a local test copy (`docs/updater-2026-09-27.md`). What is left is a
+real release: 0.1.2 cut with the updater, then 0.1.3 reaching it through the GitHub feed. That
+release also covers the cases the local test could not reach:
 
-Recommended: Sparkle 2, which most Mac apps outside the App Store use. It reads a feed of versions
-(an appcast), checks each download's EdDSA signature, and replaces the app in place. The feed and the
-downloads can live on GitHub Releases. Adding it changes `project.yml` and `scripts/release.sh`, which
-are release tooling, so each change needs Pete's approval.
+- Accessibility and the folder permission after an update.
+- An install in a folder the user cannot write to, where Sparkle asks for an administrator's
+  password.
+- A copy running from the disk image.
+- A send waiting for its answer when the update installs.
 
-Test it on installs of the stage copy, which has its own bundle id, from a feed served out of a
-scratch folder, so no test touches Pete's install. Cases to cover:
+### A fresh install of 0.1.3 skipped setup (raised 2026-09-29)
 
-- **The update itself.** From the current release to the next, through the updater. An update that
-  arrives while the stack or the editor is open, or while a send waits for its answer. A declined
-  update, a skipped version, a failed download, and no network.
-- **Settings.** A newer build migrates an older settings file (`Settings.migrate`). A default changed
-  in the new build reaches the install, since the file keeps only the `ui` values that differ. An
-  older build installed by hand over a newer one opens the newer file read-only.
-- **Permissions.** Accessibility trust survives the update. It is tied to the signature's designated
-  requirement, so every release must be signed with the same Developer ID. The folder permission for
-  a watch folder on the Desktop, in Documents or in Downloads survives too, and the login item opens
-  the new version.
-- **Stored data.** The new build opens drawings the old one wrote. Open screenshot requests and
-  replies still waiting to be imported come through the relaunch. An agent holding the old skill
-  can still reply (`ReplyProtocol.version`).
-- **The agent skill.** The first launch after an update rewrites the older copies of the skill it
-  finds (`SkillInstaller.version(of:)`), and leaves a newer or edited copy alone.
-- **Apple's screenshot settings.** The launch reconcile runs again, and `appleOriginal` is kept, so
-  Restore still puts back what was there before Vignette.
-- **Where the app lives.** /Applications, ~/Applications, a folder the user cannot write to, where
-  Sparkle asks for an administrator's password, and a copy still running from the disk image.
+Pete installed 0.1.3 from the landing page on a second MacBook that had never run Vignette. Four
+things went wrong:
+
+- **The disk image looked unnotarized.** After the download, macOS asked whether he was sure he
+  wanted to open the disk image.
+- **No setup window appeared.** He dragged Vignette into Applications from the image's window,
+  opened it, and never saw setup.
+- **macOS asked for the Desktop folder.** He allowed it, though his screenshots on that Mac are in
+  Dropbox.
+- **Double-tapping right Shift did nothing.** The Settings window showed that Accessibility was
+  still needed.
+
+To investigate:
+
+- Whether the released image is notarized and stapled (`spctl` and `stapler validate` on the
+  downloaded file), and what `scripts/release.sh` does for both.
+- Why setup did not open. Check the `setup` key in that Mac's settings file and its log's first
+  launch.
+- Why the folder prompt came with no setup row to explain it. `watcherWaitsForSetup` should hold
+  the watcher until setup's Allow…. Also check which folder macOS's `location` named on that Mac,
+  since Vignette follows it.
+- Once setup runs, whether it asks for Accessibility when the shortcut needs it.
 
 ## Not placed yet
 
@@ -55,11 +57,21 @@ The window the disk image opens, where you drag Vignette to Applications, should
 nothing else. The look is Pete's to choose. The change is to the release script, so it needs his
 approval for that change before it is made.
 
-### A new demo video (raised 2026-09-24)
+### The trailer's camera (raised 2026-09-29)
 
-The tldraw-era video left the site and the README with the native editor, and a still of the stack
-and the editor leads in its place (`site/stack-and-editor.png`). A new recording replaces the still
-when Pete makes one.
+The v3 trailer is live (`8bc1aad`, `docs/trailer-v3-overnight-2026-09-29.md`). Pete's notes on it,
+all in the cut, so `trailer.py cut` from the same take shows each fix without a new recording:
+
+- **The slow zoom on the editor distracts.** While the camera holds, it creeps in (`drift` and
+  `drift_most` under `[camera]` in `beats.toml`). Pete finds it unnecessary. Setting `drift = 0`
+  is the likely fix.
+- **Claude's card is cut off on the right** when it lands in the corner. The card's right edge is
+  about 17 points from the screen's edge, and the same slow zoom crops more than that, so the
+  first fix may cure this too. Not yet checked.
+- **The camera drops a few pixels** when the first drawing's editor appears and the zoom in on it
+  begins. Not yet measured; the camera move toward `editor` at `editor.landed` is where to look.
+
+`site/stack-and-editor.png` is no longer used by the page and is still deployed.
 
 ### The annotator's redesign: agent controls and comments (raised 2026-09-24)
 
@@ -70,13 +82,6 @@ beside session tabs, a message field and Send (Cmd+Return). Paused on 2026-09-24
 videos. The bar's Send and Reply came forward the same day, with a target beside Send in place of
 tabs: `docs/send-and-reply-2026-09-24.md`. `docs/annotator-redesign-2026-09-24.md` has what's decided, what's open and a mockup. When
 it resumes, settle the Return rule first. It would change the site's pitch and the recordings.
-
-### Agents' marks in their own typeface (raised 2026-09-24)
-
-Tell an agent's marks from a person's by typeface, not colour. Colour stays with the colour pass,
-which picks whatever stands out against the image, and a colour reserved for agents would work
-against that. Since 2026-09-26 an agent's texts are set in SF Mono (`TextStyle.forAgent`). Open:
-what marks the difference on a box or an arrow, which have no typeface.
 
 ### Xcode's JSON project format (raised 2026-09-21)
 

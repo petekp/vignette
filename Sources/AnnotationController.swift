@@ -49,17 +49,15 @@ final class AnnotationController {
     private var eventProbe: Timer?
     /// The flight has put the image down on this frame, from `landed` until the next `prepare`.
     private var hasLanded = false
-    /// The colour pass's sample of the screenshot in the editor, once it is made.
-    private var colorSample: (key: String, sample: ColorSample)?
     /// Takes the frame and then the window down behind the flight home (`hideWindows`).
     private let removal = Removal()
-    /// Counts `open`s, so a decode, a sample or a send's rendering only lands on the open that asked
+    /// Counts `open`s, so a decode or a send's rendering only lands on the open that asked
     /// for it: the same file can be closed and opened again while the first is still on its way.
     private var openGeneration = 0
     /// Where the toolbar's Send or Reply goes once the editor hands over the drawing. A key that
     /// sends goes where the bar's filled button would.
     private var sendingTo: AgentDestination?
-    /// The text style of the tweaks, which the colour pass lays a text out in to sample under it.
+    /// The text style of the tweaks.
     private var textStyle = TextStyle.standard
 
     /// Room the annotator needs below its window: the toolbar and its gap.
@@ -203,17 +201,11 @@ final class AnnotationController {
         let drawing = storedDrawing?(shot.url, pixels) ?? Drawing(key: key, pixels: pixels, pointScale: pointScale, marks: [])
         let maxPixel = Thumbnailer.screenPixels(on: screen), space = screen.colorSpace?.cgColorSpace
         let decoded = Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space).flatMap(Self.cgImage)
-        colorSample = nil
         let ui = Settings.shared.data.ui
         textStyle = ui.textStyle
-        // Read here and captured: the pick runs inside the core's own reduce, where the editor's core
-        // cannot be read.
-        let scale = drawing.pointScale
         editor.open(drawing, image: decoded, picture: container?.bounds ?? .zero, style: textStyle, metrics: ui.editorMetrics,
-                    arrowhead: ui.arrowhead, pickColor: { [weak self] mark in
-                        guard let self, let sample = colorSample, sample.key == key else { return nil }
-                        return sample.sample.pick(for: mark, pointScale: scale, style: textStyle)
-                    })
+                    markStyle: ui.markStyle)
+        editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
         if decoded != nil { loaded(key, started: started) }
         else {
             Thumbnailer.load(at: shot.url, maxPixel: maxPixel, space: space) { [weak self] image in
@@ -226,15 +218,6 @@ final class AnnotationController {
                 editor.setImage(cg)
                 loaded(key, started: started)
             }
-        }
-        let url = shot.url
-        DispatchQueue.global(qos: .userInitiated).async {
-            let sample = ColorSample(imageAt: url)
-            DispatchQueue.main.async { MainActor.assumeIsolated { [weak self] in
-                guard let self, let sample, openGeneration == generation, current?.url.path == key else { return }
-                colorSample = (key, sample)
-                editor.colorSampleArrived()
-            } }
         }
     }
 
@@ -674,7 +657,6 @@ final class AnnotationController {
             window?.orderOut(nil)
             // The window is out of sight, so the screenshot and the marks' layers are let go.
             editor.clear()
-            colorSample = nil
         }
     }
 
@@ -754,7 +736,8 @@ final class AnnotationController {
     func applyTweaks() {
         let ui = Settings.shared.data.ui
         textStyle = ui.textStyle
-        editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, arrowhead: ui.arrowhead)
+        editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, markStyle: ui.markStyle)
+        editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
     }
 
     /// A new image opened: `replyTo` is the session it came from, when it names one, and the list
@@ -928,6 +911,13 @@ final class AnnotationWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
     override func performClose(_ sender: Any?) { onCloseRequest?() }
+    /// Esc reaches the window only when no view took it, which means the editor was not the first
+    /// responder. It still closes, as Esc does from the editor, and says what held the keys.
+    override func keyDown(with event: NSEvent) {
+        guard event.keyCode == 53 else { return super.keyDown(with: event) }
+        Log.write("[annotate] esc reached the window firstResponder=\(firstResponder.map { String(describing: type(of: $0)) } ?? "none")")
+        onCloseRequest?()
+    }
 }
 
 /// Takes the annotator's frame off screen behind the flight home. `hide` runs on the next turn of

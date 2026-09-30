@@ -345,8 +345,8 @@ final class TransitionLayer {
     }
 
     /// Every flight's marks shown again in a new text style and arrowhead.
-    func restyle(_ style: TextStyle, arrowhead: ArrowheadStyle) {
-        for flight in model.flights { flight.marks?.restyle(style, arrowhead: arrowhead) }
+    func restyle(_ style: TextStyle, markStyle: MarkStyle) {
+        for flight in model.flights { flight.marks?.restyle(style, markStyle: markStyle) }
     }
 
     func setImage(id: UUID, _ image: NSImage) {

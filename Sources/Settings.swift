@@ -99,7 +99,7 @@ struct SettingsData: Codable, Equatable {
         if d.agentSkillChoice == .on {
             notes.append("agentSkill \"on\" -> \"off\""); d.agentSkill = AgentSkill.off.rawValue
         }
-        // The line Send puts in a session is one line, since herdr submits it with Return.
+        // The line Send puts in a session is one line, since the plugin's monitor makes each line one message.
         let instructions = String(d.sendInstructions.asOneLine.prefix(MarkFields.maxTextLength))
         if instructions != d.sendInstructions { notes.append("sendInstructions made one line of \(instructions.count) characters"); d.sendInstructions = instructions }
         if SetupState(rawValue: d.setup) == nil {
@@ -107,6 +107,15 @@ struct SettingsData: Codable, Equatable {
         }
         if !["spring", "easeOut", "easeInOut", "linear"].contains(d.ui.slideInCurve) {
             notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"
+        }
+        for (name, path) in [("personColor", \UITweaks.personColor), ("agentColor", \.agentColor), ("edgeColor", \.edgeColor),
+                             ("noteTextColor", \.noteTextColor)] where SRGB(hex: d.ui[keyPath: path]) == nil {
+            let fixed = UITweaks()[keyPath: path]
+            notes.append("ui.\(name) \"\(d.ui[keyPath: path])\" -> \"\(fixed)\": a colour is #rrggbb"); d.ui[keyPath: path] = fixed
+        }
+        for (name, path) in [("textFont", \UITweaks.textFont), ("agentTextFont", \.agentTextFont)] where !TextStyle.isInstalled(d.ui[keyPath: path]) {
+            let fixed = UITweaks()[keyPath: path]
+            notes.append("ui.\(name) \"\(d.ui[keyPath: path])\" -> \"\(fixed)\": no font family of that name is installed"); d.ui[keyPath: path] = fixed
         }
         if d.ui.backdropBands < 1 || d.ui.backdropBands > 64 {
             let fixed = min(max(d.ui.backdropBands, 1), 64)
@@ -212,11 +221,29 @@ struct UITweaks: Codable, Equatable {
     var shortestArrow = 8.0          // a new arrow's shortest length
     var textDragDelay = 0.15         // seconds a Text tool press waits before a sideways drag sets a wrap width; a threshold, not motion
     var textDragDistance = 24.0      // and the sideways travel it needs
-    var newTextSize = 24.0           // pt of the drawing, not of the screen
+    var newTextSize = 17.0           // pt of the drawing, not of the screen
     var selectionOutlineWidth = 3.5  // the whole outline, light edge included; it runs this far outside a mark
-    // Marks
-    var textWeight = 500.0           // 100 Ultralight to 900 Black, as the nearest of the system font's nine weights
-    var textLineHeight = 1.35        // a multiple of the text's size
+    var noteSettleDuration = 0.25    // seconds a note takes to move to its balanced lines when typing ends
+    // Marks (`MarkStyle`, `TextStyle`, `docs/mark-style-settings-2026-09-29.md`)
+    var personColor = "#e03131"      // a person's marks, as #rrggbb
+    var agentColor = "#364fc7"       // every agent's marks
+    var edgeColor = "#ffffff"        // the edge around every mark
+    var noteTextColor = "#ffffff"    // the words on a note's tag
+    var strokeWidth = 3.5            // pt of the drawing
+    var edgeWidth = 1.5              // pt, outside a stroke on both sides and around a note's tag
+    var shadowOpacity = 1.0          // multiplies the marks' shadows' darkness; 0 turns them off
+    var textFont = "rounded"         // a person's notes: rounded, monospaced, serif, default, or an installed font family
+    var agentTextFont = "monospaced" // an agent's notes
+    var textWeight = 600.0           // 100 Ultralight to 900 Black, as the nearest of the font's weights
+    var agentTextWeight = 600.0
+    var agentTextSize = 1.33         // an agent's note, as a percentage of the image's width
+    var textLineHeight = 1.32        // a multiple of the text's size
+    var notePaddingTop = 0.42        // the tag around a note's words, in multiples of the text's size
+    var notePaddingBottom = 0.47
+    var notePaddingSide = 0.8
+    var noteMaxWidth = 18.0          // a note without a wrap width wraps at this many times its size
+    var badgeInset = 0.35            // an agent's badge from its tag's left edge, in multiples of the text's size
+    var badgeOverlap = 0.2           // and how far it overlaps the tag's top edge
     var arrowheadLength = 4.5        // multiples of the stroke width
     var arrowheadWidth = 4.0
     // Stitch
@@ -242,6 +269,7 @@ struct UITweaks: Codable, Equatable {
         u.slideInDuration *= scale; u.slideOutDuration *= scale
         u.staggerDelay *= scale; u.staggerTotalMax *= scale
         u.relayoutDuration *= scale; u.shiftUpDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
+        u.noteSettleDuration *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
         u.flightArc *= scale; u.flightDepth *= scale
@@ -291,8 +319,16 @@ struct UITweaks: Codable, Equatable {
         // A drawing file refuses a text larger than `Mark.Text.maxSize`, so a new one past it would be
         // dropped when the drawing is read again.
         Bound("newTextSize", \.newTextSize, 1...Double(Mark.Text.maxSize)),
-        Bound("selectionOutlineWidth", \.selectionOutlineWidth, 0...1000),
-        Bound("textWeight", \.textWeight, 100...900), Bound("textLineHeight", \.textLineHeight, 0.1...10),
+        Bound("selectionOutlineWidth", \.selectionOutlineWidth, 0...1000), Bound("noteSettleDuration", \.noteSettleDuration, 0...60),
+        Bound("strokeWidth", \.strokeWidth, 0.1...100), Bound("edgeWidth", \.edgeWidth, 0...100),
+        Bound("shadowOpacity", \.shadowOpacity, 0...10),
+        Bound("textWeight", \.textWeight, 100...900), Bound("agentTextWeight", \.agentTextWeight, 100...900),
+        // A text past `Mark.Text.maxSize` is capped there, so a larger share of the width is the same.
+        Bound("agentTextSize", \.agentTextSize, 0.01...100), Bound("textLineHeight", \.textLineHeight, 0.1...10),
+        Bound("notePaddingTop", \.notePaddingTop, 0...10), Bound("notePaddingBottom", \.notePaddingBottom, 0...10),
+        Bound("notePaddingSide", \.notePaddingSide, 0...10), Bound("noteMaxWidth", \.noteMaxWidth, 1...1000),
+        // `NoteTag.reach` leaves room above a tag for the badge's whole height, and no more.
+        Bound("badgeInset", \.badgeInset, 0...100), Bound("badgeOverlap", \.badgeOverlap, 0...Double(NoteBadge.height)),
         Bound("arrowheadLength", \.arrowheadLength, 0...100), Bound("arrowheadWidth", \.arrowheadWidth, 0...100),
         // The floor is the slider's, because below it a stitch is not a smaller picture but a
         // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
@@ -333,14 +369,27 @@ extension UITweaks {
     }
 
     /// The style every text is set in. The system font draws only its nine named weights, whatever
-    /// weight it is asked for (measured on macOS 15), so `textWeight` picks one: 100 is the first.
+    /// weight it is asked for (measured on macOS 15), so a weight picks one: 100 is the first.
     var textStyle: TextStyle {
-        let weights: [NSFont.Weight] = [.ultraLight, .thin, .light, .regular, .medium, .semibold, .bold, .heavy, .black]
-        let weight = textWeight.isFinite ? min(max(textWeight, 100), 900) : UITweaks().textWeight
-        return TextStyle(weight: weights[Int((weight / 100).rounded()) - 1], lineHeight: textLineHeight)
+        func named(_ value: Double, _ fallback: Double) -> NSFont.Weight {
+            let weights: [NSFont.Weight] = [.ultraLight, .thin, .light, .regular, .medium, .semibold, .bold, .heavy, .black]
+            let weight = value.isFinite ? min(max(value, 100), 900) : fallback
+            return weights[Int((weight / 100).rounded()) - 1]
+        }
+        return TextStyle(personFont: textFont, personWeight: named(textWeight, UITweaks().textWeight),
+                         agentFont: agentTextFont, agentWeight: named(agentTextWeight, UITweaks().agentTextWeight),
+                         lineHeight: textLineHeight, padTop: notePaddingTop, padBottom: notePaddingBottom, padSide: notePaddingSide,
+                         widthCap: noteMaxWidth, badgeInset: badgeInset, badgeOverlap: badgeOverlap, agentSize: agentTextSize / 100)
     }
 
-    var arrowhead: ArrowheadStyle { ArrowheadStyle(length: arrowheadLength, width: arrowheadWidth) }
+    /// How every mark is painted. A colour that is not `#rrggbb` takes the default's, as `validated`
+    /// has already reported.
+    var markStyle: MarkStyle {
+        func color(_ path: KeyPath<UITweaks, String>) -> SRGB { SRGB(hex: self[keyPath: path]) ?? SRGB(hex: UITweaks()[keyPath: path])! }
+        return MarkStyle(strokeWidth: strokeWidth, edgeWidth: edgeWidth, personColor: color(\.personColor), agentColor: color(\.agentColor),
+                         edgeColor: color(\.edgeColor), wordColor: color(\.noteTextColor), shadowOpacity: shadowOpacity,
+                         arrowheadLength: arrowheadLength, arrowheadWidth: arrowheadWidth)
+    }
 }
 
 /// The `com.apple.screencapture` values Vignette found before it wrote any of its own, so

@@ -21,11 +21,10 @@ survives a relaunch.
 
 Three places hold what you are most likely to change:
 
-- `~/.config/vignette/settings.json`: folder, counts, timing, hotkey, backdrop, and the editor's
-  sizes. No rebuild.
+- `~/.config/vignette/settings.json`: folder, counts, timing, hotkey, backdrop, the editor's
+  sizes, and how marks look: their colours, stroke, edge, fonts and text sizes. No rebuild.
 - `Sources/Config.swift`: the actions list.
-- `Sources/EditorCore.swift` and `Sources/Drawing.swift`: the editor's tools (`EditorCore.Tool`),
-  the colours a mark may be drawn in (`MarkColor`), and the stroke width (`Mark.strokeWidth`).
+- `Sources/EditorCore.swift`: the editor's tools (`EditorCore.Tool`).
 
 See [AGENTS.md](../AGENTS.md) for the working loop.
 
@@ -79,7 +78,7 @@ already mounted, because the new image would then mount under another name.
 ./scripts/release.sh 0.1.0             # the real thing
 ```
 
-It refuses to run without two things:
+It refuses to run without three things:
 
 - **A Developer ID certificate** in `scripts/signing.env`, with `DEVELOPMENT_TEAM` set. An ad-hoc or
   self-signed build cannot be notarized.
@@ -92,6 +91,13 @@ It refuses to run without two things:
 
   The app-specific password comes from appleid.apple.com under Sign-In and Security. The profile
   name is `vignette`; `NOTARY_PROFILE` in the environment picks another.
+- **The update signing key** in your login Keychain, under the account `vignette`.
+  `SPARKLE_ACCOUNT` in the environment picks another. Before building the disk image, the script
+  checks that the key's public half is the app's `SUPublicEDKey`. After stapling, Sparkle's
+  `generate_appcast` signs the image and writes `build/dist/appcast.xml`. The Keychain may ask for
+  your password the first time a Sparkle tool reads the key; choose Always Allow. Keep a backup of
+  the key in a password manager: `generate_keys --account vignette -x <file>` exports it. Installs
+  trust only this key, so without it no later version can reach them.
 
 It also refuses a dirty working tree, so the artifact matches the tag it goes out under.
 
@@ -110,8 +116,13 @@ Publishing is two commands, which the script prints when it finishes:
 
 ```
 git tag v0.1.0 && git push origin v0.1.0
-gh release create v0.1.0 build/dist/Vignette-0.1.0.dmg --title "Vignette 0.1.0"
+gh release create v0.1.0 build/dist/Vignette-0.1.0.dmg build/dist/appcast.xml --title "Vignette 0.1.0"
 ```
+
+Upload `appcast.xml` with every release. The app reads
+`https://github.com/petekp/vignette/releases/latest/download/appcast.xml`, which GitHub redirects to
+the newest release's copy, so a release without it leaves every install on the version before.
+Installs of 0.1.0 and 0.1.1 have no updater and never read it.
 
 The README and the site link to `/releases/latest`, so both go live the moment the first release
 exists and 404 before it.
@@ -124,3 +135,6 @@ exists and 404 before it.
 2. Add `scripts/signing.env` with your certificate. Or accept ad-hoc and re-grant Accessibility
    after each rebuild if you use the double-tap hotkey.
 3. Run `./scripts/build.sh --test`. A clone builds with no manual step.
+4. Point `SUFeedURL` in `project.yml` at your own releases and make your own update key.
+   `generate_keys --account <name>` prints the public key for `SUPublicEDKey`, and
+   `SPARKLE_ACCOUNT=<name>` tells `scripts/release.sh` to sign with it.

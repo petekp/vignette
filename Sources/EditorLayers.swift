@@ -63,6 +63,7 @@ final class EditorPicture {
         let gesture: Bool
         let typing: Mark.ID?
         let covered: Mark.ID?
+        let hiding: Mark.ID?
     }
 
     init() {
@@ -109,9 +110,12 @@ final class EditorPicture {
     /// Shows `drawing` without the mark being typed. `gesture` is true while one is under way: a
     /// text that only moved slides its bitmap along, and is drawn again once the gesture is over.
     /// `covered` is a text something else shows until its bitmap arrives, which stays hidden until then.
-    func show(_ drawing: Drawing, typing: Mark.ID?, covered: Mark.ID?, geometry: EditorGeometry, resolution: Resolution, gesture: Bool) {
-        let state = State(drawing: drawing, geometry: geometry, resolution: resolution, gesture: gesture, typing: typing, covered: covered)
-        marks.show(drawing, arrowhead: geometry.arrowhead, layout: { geometry.layout($0, agent: $1) }) { record, mark, text in
+    /// `hiding` is a text something else shows for now, whose bitmap is drawn but kept hidden.
+    func show(_ drawing: Drawing, typing: Mark.ID?, covered: Mark.ID?, hiding: Mark.ID? = nil, geometry: EditorGeometry,
+              resolution: Resolution, gesture: Bool) {
+        let state = State(drawing: drawing, geometry: geometry, resolution: resolution, gesture: gesture, typing: typing, covered: covered,
+                          hiding: hiding)
+        marks.show(drawing, markStyle: geometry.markStyle, layout: { geometry.layout($0, of: $1) }) { record, mark, text in
             Self.plan(record, mark, text, state)
         }
     }
@@ -129,8 +133,10 @@ final class EditorPicture {
             record.whole.isHidden = true
             return true
         }
-        let resolution = state.resolution, gesture = state.gesture, style = state.geometry.style
-        let whole = MarkLayers.padded(text, box: state.geometry.layout(text, agent: mark.agent).box, pointScale: state.geometry.pointScale)
+        let resolution = state.resolution, gesture = state.gesture
+        let style = MarkLayers.Styles(text: state.geometry.style, paint: state.geometry.markStyle)
+        let whole = MarkLayers.padded(text, box: state.geometry.layout(text, of: mark).box, pointScale: state.geometry.pointScale,
+                                      markStyle: state.geometry.markStyle)
             .intersection(state.drawing.pixels.bounds)
         guard !whole.isNull, !whole.isEmpty, resolution.scale > 0 else {
             record.clearWhole()
@@ -189,6 +195,12 @@ final class EditorPicture {
         record.wantDetail = wantDetail
         // Let go before its replacement comes, so the text never holds more than two bitmaps.
         if record.detailDrawn != wantDetail { record.clearDetail() }
+        if state.hiding == mark.id {
+            record.wantDetail = nil
+            record.clearDetail()
+            record.whole.isHidden = true
+            return visible
+        }
         record.whole.isHidden = (state.covered == mark.id && record.drawn != want) || (!record.detail.isHidden && !resolution.moving)
         return visible
     }
@@ -251,7 +263,7 @@ final class EditorOverlayLayers {
         let marks = drawing.marks.filter { ids.contains($0.id) }
         // An outline's path also follows the selection outline's width, the arrowhead and the text style.
         if let shown, shown.overlay == overlay, shown.marks == marks, shown.transform == transform,
-           shown.geometry.metrics == geometry.metrics, shown.geometry.arrowhead == geometry.arrowhead, shown.geometry.style == geometry.style { return }
+           shown.geometry.metrics == geometry.metrics, shown.geometry.markStyle == geometry.markStyle, shown.geometry.style == geometry.style { return }
         shown = (overlay, marks, transform, geometry)
         var transform = transform
         let zoom = transform.a

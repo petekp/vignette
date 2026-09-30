@@ -179,6 +179,8 @@ final class SettingsTests: XCTestCase {
         d.ui.backdropBands = 0
         d.ui.hoverScale = .nan
         d.sendInstructions = "Answer\nwith a drawing\t "
+        d.ui.agentColor = "indigo"
+        d.ui.textFont = "No Such Family"
         let (fixed, notes) = d.validated()
         XCTAssertEqual(fixed.recentCount, 1000)
         XCTAssertEqual(fixed.screenshotsFolder, "~/Desktop")
@@ -186,7 +188,9 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(fixed.ui.backdropBands, 1)
         XCTAssertEqual(fixed.ui.hoverScale, UITweaks().hoverScale)
         XCTAssertEqual(fixed.sendInstructions, "Answer with a drawing", "herdr submits the line with Return")
-        XCTAssertEqual(notes.count, 6, notes.joined(separator: "; "))
+        XCTAssertEqual(fixed.ui.agentColor, "#364fc7")
+        XCTAssertEqual(fixed.ui.textFont, "rounded")
+        XCTAssertEqual(notes.count, 8, notes.joined(separator: "; "))
     }
 
     @MainActor

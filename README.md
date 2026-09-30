@@ -60,16 +60,17 @@ Code, and pick from the options it sends back. Recorded live, with Claude's work
 These features are experimental.
 
 - **Your agent shows you things**<br>
-  With the skill that ships with the app, Claude Code or Codex can put a screenshot in your stack
-  with its own marks on it. You can change its marks like your own. Setup offers to install the
-  skill, and Settings → Agents adds or removes it.
+  With the Vignette plugin, which ships with the app, Claude Code or Codex can put a screenshot in
+  your stack with its own marks on it. You can change its marks like your own. Setup offers to
+  install the plugin, and Settings → Agents adds or removes it.
 - **Send and Reply**<br>
   Send hands your drawing, with a message if you type one, to the Claude Code or Codex session you
   were just in. Click the session to pick another. On a screenshot from your agent, Reply sends
   your drawing straight back.
 - **What Send needs**<br>
-  Claude Code sessions need to be running in [herdr](https://herdr.dev), a terminal workspace for
-  coding agents. Sending to Codex needs the `codex` command-line tool.
+  Claude Code gets your drawing through the plugin, in any terminal. A session that was already
+  open when you installed the plugin needs `/reload-plugins` first. Sending to Codex needs the `codex`
+  command-line tool.
 
 ### The app
 
@@ -89,10 +90,12 @@ The first launch opens a short setup:
 - If macOS saves your screenshots to the Desktop, Documents or Downloads, allow Vignette to read
   that folder. macOS asks once.
 - Pick the shortcut. The double tap needs Accessibility permission. A key combination needs none.
-- If Claude Code or Codex is installed, choose whether to add the agent skill.
+- If Claude Code or Codex is installed, choose whether to add the Vignette plugin.
 
 Vignette turns off macOS's floating thumbnail and shows its own. Restore, in Settings →
 Screenshots, puts macOS's screenshot settings back.
+
+Vignette checks for updates once a day. It installs one only when you choose Install.
 
 Or build it yourself:
 
@@ -132,7 +135,8 @@ Send takes the same rendering to an agent session instead (`ScreenshotRequests`,
 - [Commands](docs/commands.md): every action as a `vignette://` URL, the marks format, the log.
 - [Settings](docs/settings.md): `settings.json`, the `ui` numbers, the tweaks panel.
 - [Building](docs/building.md): build, sign, where things live, forking.
-- [For agents](docs/agents.md): the skill that ships with the app and how it is installed.
+- [For agents](docs/agents.md): the plugin that ships with the app, the skill it carries, and how
+  it is installed.
 
 `AGENTS.md` is the onboarding for anyone changing the app, person or agent. The dated notes in
 `docs/` record the measurements and reasoning behind particular changes.

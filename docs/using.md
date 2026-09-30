@@ -104,15 +104,14 @@ gesture.
 When a coding agent session can take the drawing, the toolbar shows it beside Send: the agent's
 logo and the project's folder. It starts on the session you were last in, and a click on it picks
 another. Cmd+Return sends. On a card an agent sent you, the toolbar has one button, Reply, and
-Return sends your drawing back to that session. Claude Code sessions can take a drawing only inside
-herdr; Codex threads can anywhere.
+Return sends your drawing back to that session. A Claude Code session takes a drawing through the
+Vignette plugin, in any terminal. Codex threads need the `codex` command-line tool.
 
 Cmd+C with nothing selected copies the drawing, the same image Return copies, and leaves the editor
 open. With marks selected it copies the marks, which paste into this image or another one.
 
-A mark is drawn in red unless red is what it sits on. Then it is drawn in yellow, light blue, white
-or violet, whichever is far enough from the pixels under it. The colour is picked a moment after you
-stop changing a mark, and for a text when you stop typing.
+Your marks are red and an agent's are indigo. Every mark has a thin white edge and a soft shadow, so
+it shows on any screenshot. An agent's note becomes yours when you change its words.
 
 Pinch, Cmd+scroll, or Cmd+plus and Cmd+minus zoom the image. Cmd+0 fits it again. A plain scroll
 moves around a zoomed-in image. The window grows with the image: each side widens or heightens until

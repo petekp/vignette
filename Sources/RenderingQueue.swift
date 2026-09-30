@@ -20,10 +20,10 @@ final class RenderingQueue: @unchecked Sendable {
     /// Renders `drawing` over the image at `url` in `order`, and writes the PNG to `file` when one
     /// is given. Renderings of the same order run in the order asked. `style` must have been made on
     /// the main thread.
-    func render(_ drawing: Drawing, imageAt url: URL, writingTo file: URL?, style: TextStyle, arrowhead: ArrowheadStyle,
+    func render(_ drawing: Drawing, imageAt url: URL, writingTo file: URL?, style: TextStyle, markStyle: MarkStyle,
                 order: Order = .inTurn) -> PendingRendering {
         let pending = PendingRendering()
-        let job: @Sendable () -> Void = { Self.run(drawing, imageAt: url, writingTo: file, style: style, arrowhead: arrowhead, into: pending) }
+        let job: @Sendable () -> Void = { Self.run(drawing, imageAt: url, writingTo: file, style: style, markStyle: markStyle, into: pending) }
         lock.withLock { if order == .first { firstJobs.append(job) } else { jobs.append(job) } }
         queue.async { [self] in
             let next = lock.withLock { firstJobs.isEmpty ? jobs.removeFirst() : firstJobs.removeFirst() }
@@ -32,10 +32,10 @@ final class RenderingQueue: @unchecked Sendable {
         return pending
     }
 
-    private static func run(_ drawing: Drawing, imageAt url: URL, writingTo file: URL?, style: TextStyle, arrowhead: ArrowheadStyle,
+    private static func run(_ drawing: Drawing, imageAt url: URL, writingTo file: URL?, style: TextStyle, markStyle: MarkStyle,
                             into pending: PendingRendering) {
         do {
-            let png = try Rendering.png(of: drawing, imageAt: url, style: style, arrowhead: arrowhead)
+            let png = try Rendering.png(of: drawing, imageAt: url, style: style, markStyle: markStyle)
             guard let file else { return pending.finish(png: png, file: nil, failure: nil) }
             do {
                 try png.write(to: file, options: .atomic)

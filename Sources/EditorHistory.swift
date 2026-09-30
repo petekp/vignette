@@ -40,7 +40,7 @@ struct MarkEdit {
 
     /// `marks` with every mark this edit touched put back as it was, in its place.
     func reverted(_ marks: [Mark]) -> [Mark] {
-        EditStep.placing(touched.map { ($0, before($0)) }, in: marks, keepingColors: false)
+        EditStep.placing(touched.map { ($0, before($0)) }, in: marks)
     }
 
     /// The undo step from where this edit began to `marks` and `selection`, or nil when the marks
@@ -83,22 +83,18 @@ struct EditStep {
     }
 
     /// `marks` as they were before this step (`forward` false) or after it (true), for the marks it
-    /// touched; every other mark is left alone. A mark that exists now keeps its colour, because the
-    /// colour pass is not part of history.
+    /// touched; every other mark is left alone.
     func applied(to marks: [Mark], forward: Bool) -> [Mark] {
-        Self.placing(changes.map { ($0.id, forward ? $0.after : $0.before) }, in: marks, keepingColors: true)
+        Self.placing(changes.map { ($0.id, forward ? $0.after : $0.before) }, in: marks)
     }
 
     /// `marks` with every listed mark taken out and put back as `placed` says, at its index, lowest
     /// index first so each lands where it was; a nil `placed` leaves the mark out.
-    static func placing(_ targets: [(id: Mark.ID, placed: PlacedMark?)], in marks: [Mark], keepingColors: Bool) -> [Mark] {
+    static func placing(_ targets: [(id: Mark.ID, placed: PlacedMark?)], in marks: [Mark]) -> [Mark] {
         let ids = Set(targets.map(\.id))
-        let current = Dictionary(marks.filter { ids.contains($0.id) }.map { ($0.id, $0.color) }, uniquingKeysWith: { first, _ in first })
         var result = marks.filter { !ids.contains($0.id) }
         for placed in targets.compactMap(\.placed).sorted(by: { $0.index < $1.index }) {
-            var mark = placed.mark
-            if keepingColors, let color = current[mark.id] { mark.color = color }
-            result.insert(mark, at: min(max(placed.index, 0), result.count))
+            result.insert(placed.mark, at: min(max(placed.index, 0), result.count))
         }
         return result
     }

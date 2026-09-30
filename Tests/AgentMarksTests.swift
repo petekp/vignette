@@ -12,13 +12,13 @@ final class AgentMarksTests: XCTestCase {
         TextLayout(text, imageWidth: CGFloat(pixels.width), pointScale: pointScale, style: .standard)
     }
 
-    func testALongSentenceGetsTextOf2Point2PercentOfTheWidthWrappedInsideTheImage() throws {
+    func testALongSentenceGetsTextOf1Point33PercentOfTheWidthWrappedInsideTheImage() throws {
         let pixels = PixelSize(width: 1800, height: 1200)
         // Near the bottom right, so it has to wrap and then move up and in.
-        let result = AgentMark.marks([AgentMark(type: .text, x: 0.6, y: 0.95, text: sentence)], in: pixels, pointScale: 2, style: .standard)
+        let result = AgentMark.marks([AgentMark(type: .text, x: 0.6, y: 0.95, text: sentence)], from: nil, in: pixels, pointScale: 2, style: .standard)
         XCTAssertEqual(result.tooLong, [])
         let text = try XCTUnwrap(texts(result.marks).first)
-        XCTAssertEqual(text.size * 2, 0.022 * 1800, accuracy: 1e-9, "2.2% of the width, in px")
+        XCTAssertEqual(text.size * 2, 0.0133 * 1800, accuracy: 1e-9, "1.33% of the width, in px")
         let fitted = layout(text, pixels, 2)
         XCTAssertGreaterThan(fitted.lines.count, 1)
         let margin = 0.02 * 1800 - 0.001
@@ -27,7 +27,7 @@ final class AgentMarksTests: XCTestCase {
 
     func testATextWithAWidthWrapsThere() throws {
         let pixels = PixelSize(width: 1800, height: 1200)
-        let result = AgentMark.marks([AgentMark(type: .text, x: 0.1, y: 0.1, w: 0.25, text: sentence)], in: pixels, pointScale: 2, style: .standard)
+        let result = AgentMark.marks([AgentMark(type: .text, x: 0.1, y: 0.1, w: 0.25, text: sentence)], from: nil, in: pixels, pointScale: 2, style: .standard)
         let text = try XCTUnwrap(texts(result.marks).first)
         XCTAssertEqual(text.wrap, 450)
         let lines = layout(text, pixels, 2).lines
@@ -39,7 +39,7 @@ final class AgentMarksTests: XCTestCase {
     func testATextTooTallForTheImageIsWidenedFirst() throws {
         // At x 0.88 the room to the edge is a narrow column, which would run far past the bottom.
         let pixels = PixelSize(width: 2800, height: 600)
-        let result = AgentMark.marks([AgentMark(type: .text, x: 0.88, y: 0.1, text: sentence + " " + sentence)], in: pixels, pointScale: 2, style: .standard)
+        let result = AgentMark.marks([AgentMark(type: .text, x: 0.88, y: 0.1, text: sentence + " " + sentence)], from: nil, in: pixels, pointScale: 2, style: .standard)
         XCTAssertEqual(result.tooLong, [])
         let fitted = layout(try XCTUnwrap(texts(result.marks).first), pixels, 2)
         XCTAssertTrue(pixels.bounds.contains(fitted.box), "\(fitted.box)")
@@ -48,18 +48,18 @@ final class AgentMarksTests: XCTestCase {
 
     func testASentenceTooLongForASmallImageIsReported() throws {
         let pixels = PixelSize(width: 800, height: 200)
-        let long = String(repeating: sentence + " ", count: 10)
+        let long = String(repeating: sentence + " ", count: 17)
         let result = AgentMark.marks([
             AgentMark(type: .rectangle, x: 0.1, y: 0.1, w: 0.2, h: 0.2),
             AgentMark(type: .text, x: 0.3, y: 0.3, text: long),
-        ], in: pixels, pointScale: 1, style: .standard)
+        ], from: nil, in: pixels, pointScale: 1, style: .standard)
         XCTAssertEqual(result.tooLong, [2], "counted from 1")
         let text = try XCTUnwrap(texts(result.marks).first)
         XCTAssertEqual(text.origin.y, 0, "its start shows")
         XCTAssertLessThanOrEqual(layout(text, pixels, 1).box.maxX, 800, "as wide as the image allows")
     }
 
-    func testEveryMarkIsAnAgentsAndANamedColourIsKept() throws {
+    func testEveryMarkIsAnAgentsInTheAgentsColour() throws {
         let pixels = PixelSize(width: 1000, height: 500)
         let result = AgentMark.marks([
             AgentMark(type: .rectangle, x: 0.1, y: 0.2, w: 0.3, h: 0.4, color: "violet"),
@@ -67,15 +67,14 @@ final class AgentMarksTests: XCTestCase {
             AgentMark(type: .arrow, x: 0.9, y: 0.1, x2: 0.5, y2: 0.3),
             // Not something `parse` passes, but a stored record read back could hold it.
             AgentMark(type: .rectangle, x: 0.1, y: 0.1),
-        ], in: pixels, pointScale: 2, style: .standard)
+        ], from: nil, in: pixels, pointScale: 2, style: .standard)
         XCTAssertEqual(result.marks.map(\.geometry), [
             .rectangle(CGRect(x: 100, y: 100, width: 300, height: 200)),
             .ellipse(CGRect(x: 600, y: 250, width: 400, height: 100)),
             .arrow(Mark.Arrow(start: CGPoint(x: 900, y: 50), end: CGPoint(x: 500, y: 150))),
         ], "in px, and the ellipse that reached past the right edge moved inside; the mark without a size is dropped")
         XCTAssertTrue(result.marks.allSatisfy(\.agent))
-        XCTAssertEqual(result.marks.map(\.color), [.violet, .red, .red])
-        XCTAssertEqual(result.marks.map(\.colorChosen), [true, false, false])
+        XCTAssertEqual(result.marks.map(\.color), [.agent, .agent, .agent], "whatever colour a mark names")
     }
 
     /// The marks are ones a drawing file's validator takes, so a drawing built from them reads back
@@ -85,20 +84,21 @@ final class AgentMarksTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let lines = LogLines()
         let store = DrawingStore(directory: dir, log: { lines.append($0) })
-        // So wide that 2.2% of it at this point scale is past the largest size a file may hold.
-        let pixels = PixelSize(width: 24000, height: 2000)
+        // So wide that 1.33% of it at this point scale is past the largest size a file may hold.
+        let pixels = PixelSize(width: 40000, height: 2000)
         let result = AgentMark.marks([
             AgentMark(type: .rectangle, x: 0.9, y: 0.5, w: 0.3, h: 0.6, color: "white"),
             AgentMark(type: .arrow, x: 0.1, y: 0.9, x2: 0.3, y2: 0.2),
             AgentMark(type: .text, x: 0.95, y: 0.95, text: sentence),
             AgentMark(type: .text, x: 0.2, y: 0.1, w: 0.1, text: "Here"),
-        ], in: pixels, pointScale: 0.5, style: .standard)
+        ], from: "claude", in: pixels, pointScale: 0.5, style: .standard)
         XCTAssertEqual(texts(result.marks).map(\.size), [Mark.Text.maxSize, Mark.Text.maxSize])
         let drawing = Drawing(key: "/shots/Screenshot.png", pixels: pixels, pointScale: 0.5, marks: result.marks)
         try store.write(drawing)
         let read = try XCTUnwrap(store.read(key: drawing.key, pixels: pixels, style: .standard))
         XCTAssertEqual(read.marks.map(\.geometry), result.marks.map(\.geometry))
         XCTAssertEqual(read.marks.map(\.color), result.marks.map(\.color))
+        XCTAssertEqual(read.marks.map(\.agentName), Array(repeating: "claude", count: 4), "each mark keeps the agent's name")
         XCTAssertEqual(lines.all, [])
     }
 }

@@ -100,7 +100,7 @@ final class DragSourceView: NSView, NSDraggingSource {
                 // The drawing's px, from the image's top-left with y down, onto the picture's rect.
                 ctx.translateBy(x: drawn.minX, y: drawn.minY)
                 ctx.scaleBy(x: drawn.width / CGFloat(drawing.pixels.width), y: drawn.height / CGFloat(drawing.pixels.height))
-                drawing.draw(in: ctx, style: ui.textStyle, arrowhead: ui.arrowhead)
+                drawing.draw(in: ctx, style: ui.textStyle, markStyle: ui.markStyle)
             }
             return true
         }

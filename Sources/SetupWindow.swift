@@ -38,7 +38,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         var folderAccess: () -> FolderAccess = { .granted }
         /// Starts the watcher, whose first read of a protected folder is what raises macOS's prompt.
         var askFolder: () -> Void = {}
-        var installAgentSkill: ([URL]) -> Void = { _ in }
+        var installAgentPlugin: ([URL]) -> Void = { _ in }
     }
 
     private let settings = Settings.shared
@@ -58,7 +58,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             return
         }
         let model = SetupModel(protectedArea: protectedArea,
-                               agents: SkillInstaller.statuses(home: FileManager.default.homeDirectoryForCurrentUser),
+                               agents: AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser),
                                callbacks: callbacks)
         model.granted = { [weak self] in self?.granted() }
         model.folderAnswered = { [weak self] access in self?.folderAnswered(access) }
@@ -117,12 +117,12 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         // Vignette can't work without the folder, so a window closed before it asked asks now.
         if model.callbacks.folderAccess() == .ask { model.callbacks.askFolder() }
         settings.update { $0.setup = SetupState.done.rawValue }
-        // The skill is installed only for someone who saw the page offering it. Closed earlier, the
+        // The plugin is installed only for someone who saw the page offering it. Closed earlier, the
         // offer is left unmade, and the next launch makes it in the Settings window.
         var skill = "not-offered"
         if model.sawAgents {
             let roots = model.agents.filter { !$0.installed && model.chosen.contains($0.root) }.map(\.root)
-            if !roots.isEmpty { model.callbacks.installAgentSkill(roots) }
+            if !roots.isEmpty { model.callbacks.installAgentPlugin(roots) }
             if let claude = model.claudeWithoutReadRule, model.claudeReads { ClaudeReadRule.apply(true, in: claude) }
             settings.update { $0.agentSkill = AgentSkill.off.rawValue }
             skill = roots.isEmpty ? "none" : roots.map(\.lastPathComponent).joined(separator: ",")
@@ -140,7 +140,7 @@ final class SetupModel: ObservableObject {
     enum Page { case welcome, shortcut, agents }
 
     let protectedArea: String?
-    let agents: [AgentSkillStatus]
+    let agents: [AgentPluginStatus]
     let callbacks: SetupWindowController.Callbacks
     var granted: () -> Void = {}
     var folderAnswered: (FolderAccess) -> Void = { _ in }
@@ -149,8 +149,8 @@ final class SetupModel: ObservableObject {
     @Published var page = Page.welcome
     /// Whether the last move was forward, which decides the side the pages slide to.
     @Published var forward = true
-    /// The agents whose switch is on. All of them to start: the user installed Vignette to work
-    /// with them, and a switch they can see is still their choice.
+    /// The agents whose switch is on. All that can take the plugin to start: the user installed
+    /// Vignette to work with them, and a switch they can see is still their choice.
     @Published var chosen: Set<URL>
     /// Claude Code's directory when its settings lack `ClaudeReadRule`, which this page then offers,
     /// on to start for the same reason as the skill.
@@ -158,11 +158,11 @@ final class SetupModel: ObservableObject {
     @Published var claudeReads = true
     private(set) var sawAgents = false
 
-    init(protectedArea: String?, agents: [AgentSkillStatus], callbacks: SetupWindowController.Callbacks) {
+    init(protectedArea: String?, agents: [AgentPluginStatus], callbacks: SetupWindowController.Callbacks) {
         self.protectedArea = protectedArea
         self.agents = agents
         self.callbacks = callbacks
-        chosen = Set(agents.map(\.root))
+        chosen = Set(agents.filter(\.hasTool).map(\.root))
         claudeWithoutReadRule = agents.first { $0.logoKey == AgentClient.claude.rawValue }
             .map(\.root).flatMap { ClaudeReadRule.isSet(in: $0) ? nil : $0 }
     }
@@ -347,6 +347,7 @@ struct SetupView: View {
                             }
                         } else {
                             Toggle(isOn: chosen(row.root)) { AgentName(row: row) }
+                                .disabled(!row.hasTool)
                         }
                     }
                 }

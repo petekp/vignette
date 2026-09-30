@@ -40,9 +40,8 @@ enum ReplyCommand {
          {"type": "rectangle", "x": 0.10, "y": 0.10, "w": 0.30, "h": 0.20},
          {"type": "text",      "x": 0.10, "y": 0.80, "w": 0.50, "text": "This header should not scroll"}]
 
-    At most \(AgentMark.maxCount) marks. A mark with no "color" is coloured from the pixels it covers; to choose
-    one, name it: \(MarkColor.allCases.map(\.rawValue).joined(separator: ", ")). Without --image the marks go on
-    the picture you were sent. With it they go on yours, sent as a PNG of at most \(ReplyProtocol.maxImageBytes / 1_048_576) MB, and
+    At most \(AgentMark.maxCount) marks. They are drawn in the agent's colour, so the person can tell them from
+    their own. Without --image the marks go on the picture you were sent. With it they go on yours, sent as a PNG of at most \(ReplyProtocol.maxImageBytes / 1_048_576) MB, and
     the marks may be an empty array. A JPEG or any other image macOS reads is converted.
 
     Prints one JSON line and exits 0 accepted, 1 not sent, 2 refused, or 3 unconfirmed. Not sent

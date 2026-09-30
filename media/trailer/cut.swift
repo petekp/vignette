@@ -22,6 +22,21 @@ struct Plan: Decodable {
         let previous: Int
         let morph: Double
         let lit: Double
+        /// Seconds into the end card, on its frames.
+        let outro: Double?
+        /// The trailer's first frame dissolving in over the end card, when the trailer loops:
+        /// [source, time in the movie, opacity], with the crop it is shown at.
+        let after: [Double]?
+        let afterCrop: [Double]?
+    }
+    /// The end card: the app icon rises in, the wordmark writes itself on, then the two lines under
+    /// it. Each part leaves in the reverse order from `exit`. Times are seconds into the end card.
+    struct Outro: Decodable {
+        let icon: String
+        let wordmark: String
+        let tagline: String
+        let footer: String
+        let exit: Double
     }
     struct Caption: Decodable {
         let text: String
@@ -45,6 +60,7 @@ struct Plan: Decodable {
     let style: Style
     let captions: [Caption]
     let frames: [Frame]
+    let outro: Outro?
 }
 
 func fail(_ message: String) -> Never {
@@ -257,7 +273,177 @@ func drawCaption(_ c: CaptionFrame, in ctx: CGContext) {
     ctx.restoreGState()
 }
 
+// MARK: The end card
+
+func clamp01(_ x: Double) -> Double { min(max(x, 0), 1) }
+
+/// Ease in and out, starting and ending at rest.
+func smooth(_ x: Double) -> Double { let u = clamp01(x); return u * u * (3 - 2 * u) }
+
+/// A critically damped spring's progress from 0 to 1, 99% there after `length` seconds.
+func settle(_ t: Double, from start: Double, over length: Double) -> Double {
+    guard t > start else { return 0 }
+    let w = 6.64 / length, u = t - start
+    return 1 - (1 + w * u) * exp(-w * u)
+}
+
+/// How far a part has gone out, from the end card's exit time plus its own delay.
+func leaving(_ t: Double, exit: Double, delay: Double) -> Double {
+    let u = clamp01((t - exit - delay) / 0.5)
+    return u * u * u
+}
+
+func loadImage(_ path: String) -> CGImage {
+    guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { fail("cut: cannot read \(path)") }
+    return image
+}
+
+struct EndCard {
+    let spec: Plan.Outro
+    let icon: CGImage
+    let wordmark: CGImage
+    let tagline: CTLine
+    let footer: CTLine
+    let width: Double
+    let height: Double
+
+    init(_ spec: Plan.Outro, width: Int, height: Int) {
+        self.spec = spec
+        icon = loadImage(spec.icon)
+        wordmark = loadImage(spec.wordmark)
+        func text(_ s: String, size: Double, weight: NSFont.Weight, color: NSColor, kern: Double) -> CTLine {
+            CTLineCreateWithAttributedString(NSAttributedString(string: s, attributes: [
+                .font: NSFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color, .kern: kern,
+            ]))
+        }
+        tagline = text(spec.tagline, size: 27, weight: .regular, color: NSColor(srgbRed: 0.84, green: 0.81, blue: 0.77, alpha: 1), kern: -0.1)
+        footer = text(spec.footer, size: 18, weight: .medium, color: NSColor(srgbRed: 0.55, green: 0.52, blue: 0.49, alpha: 1), kern: 0.4)
+        self.width = Double(width)
+        self.height = Double(height)
+    }
+
+    /// The card's background: near black, warmed by a faint glow behind the icon.
+    func background() -> CIImage {
+        let ctx = CGContext(data: nil, width: Int(width), height: Int(height), bitsPerComponent: 8, bytesPerRow: 0,
+                            space: sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(srgbRed: 0.043, green: 0.039, blue: 0.035, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let glow = CGGradient(colorsSpace: sRGB, colors: [
+            CGColor(srgbRed: 1, green: 0.93, blue: 0.84, alpha: 0.07), CGColor(srgbRed: 1, green: 0.93, blue: 0.84, alpha: 0),
+        ] as CFArray, locations: [0, 1])!
+        let centre = CGPoint(x: width / 2, y: height * 0.56)
+        ctx.drawRadialGradient(glow, startCenter: centre, startRadius: 0, endCenter: centre, endRadius: width * 0.42, options: [])
+        return CIImage(cgImage: ctx.makeImage()!)
+    }
+
+    /// The icon, the wordmark and the two lines at `t` seconds into the card, on a clear layer.
+    func layer(at t: Double) -> CIImage {
+        let ctx = CGContext(data: nil, width: Int(width), height: Int(height), bitsPerComponent: 8, bytesPerRow: 0,
+                            space: sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        // Top-left coordinates, as the rest of the cut uses.
+        ctx.translateBy(x: 0, y: height)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.interpolationQuality = .high
+        let cx = width / 2
+        let exit = spec.exit
+
+        // The icon rises into place and settles, and leaves last.
+        let rise = settle(t, from: 0.5, over: 1.1)
+        let iconOut = leaving(t, exit: exit, delay: 0.16)
+        let iconAlpha = smooth((t - 0.5) / 0.5) * (1 - iconOut)
+        if iconAlpha > 0 {
+            let size = 248 * (0.88 + 0.12 * rise) * (1 - 0.04 * iconOut)
+            let cy = 372 + 34 * (1 - rise) - 10 * iconOut
+            ctx.saveGState()
+            ctx.setAlpha(iconAlpha)
+            ctx.translateBy(x: cx, y: cy)
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.draw(icon, in: CGRect(x: -size / 2, y: -size / 2, width: size, height: size))
+            ctx.restoreGState()
+        }
+
+        // The wordmark writes itself on from the left behind a soft edge.
+        let write = smooth((t - 1.0) / 1.0)
+        let markOut = leaving(t, exit: exit, delay: 0.08)
+        if write > 0 && markOut < 1 {
+            let h = 78.0, w = h * Double(wordmark.width) / Double(wordmark.height)
+            let rect = CGRect(x: cx - w / 2, y: 560 - h / 2 - 10 * markOut + 8 * (1 - write), width: w, height: h)
+            let feather = 90.0
+            let edge = rect.minX - feather + (rect.width + feather * 2) * write
+            ctx.saveGState()
+            ctx.setAlpha(1 - markOut)
+            ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+            ctx.saveGState()
+            ctx.translateBy(x: rect.minX, y: rect.maxY)
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.draw(wordmark, in: CGRect(x: 0, y: 0, width: rect.width, height: rect.height))
+            ctx.restoreGState()
+            // What is not written yet is cleared, fading across the feather.
+            let clear = CGGradient(colorsSpace: sRGB, colors: [
+                CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0), CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1),
+            ] as CFArray, locations: [0, 1])!
+            ctx.setBlendMode(.destinationOut)
+            ctx.saveGState()
+            ctx.clip(to: CGRect(x: edge - feather, y: rect.minY - 20, width: rect.maxX - edge + feather + 20, height: rect.height + 40))
+            ctx.drawLinearGradient(clear, start: CGPoint(x: edge - feather, y: 0), end: CGPoint(x: edge, y: 0),
+                                   options: [.drawsAfterEndLocation])
+            ctx.restoreGState()
+            ctx.endTransparencyLayer()
+            ctx.restoreGState()
+        }
+
+        // The two lines come up after the wordmark and leave first.
+        func draw(_ line: CTLine, centreY: Double, start: Double, delay: Double) {
+            let inP = smooth((t - start) / 0.6), out = leaving(t, exit: exit, delay: delay)
+            let alpha = inP * (1 - out)
+            guard alpha > 0 else { return }
+            var ascent: CGFloat = 0, descent: CGFloat = 0
+            let w = Double(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+            ctx.saveGState()
+            ctx.setAlpha(alpha)
+            ctx.translateBy(x: cx - w / 2, y: centreY + (ascent - descent) / 2 + 10 * (1 - inP) - 8 * out)
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.textPosition = .zero
+            CTLineDraw(line, ctx)
+            ctx.restoreGState()
+        }
+        draw(tagline, centreY: 652, start: 1.9, delay: 0)
+        draw(footer, centreY: 700, start: 2.15, delay: 0)
+        return CIImage(cgImage: ctx.makeImage()!)
+    }
+}
+
+/// The film as it leaves for the end card: it eases back, softens and fades into the card's
+/// background over the card's first 0.8 s.
+func filmLeaving(_ picture: CIImage, at t: Double, over background: CIImage) -> CIImage {
+    let p = smooth(t / 0.8)
+    guard p < 1 else { return background }
+    let extent = picture.extent
+    let scale = 1 - 0.05 * p
+    let moved = picture.clampedToExtent().applyingGaussianBlur(sigma: 14 * p).cropped(to: extent)
+        .transformed(by: CGAffineTransform(translationX: -extent.midX, y: -extent.midY)
+            .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+            .concatenating(CGAffineTransform(translationX: extent.midX, y: extent.midY)))
+    let faded = moved.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1 - p)])
+    return faded.composited(over: background).cropped(to: extent)
+}
+
 // MARK: Rendering
+
+/// A crop of a frame of the take, scaled to the output size with Lanczos.
+func scaledCrop(_ buffer: CVPixelBuffer, crop c: [Double], width outW: Double, height outH: Double) -> CIImage {
+    let srcH = Double(CVPixelBufferGetHeight(buffer))
+    let image = CIImage(cvPixelBuffer: buffer, options: [.colorSpace: sRGB])
+    let crop = CGRect(x: c[0], y: srcH - c[1] - c[3], width: c[2], height: c[3])
+    let scale = outH / crop.height
+    let lanczos = CIFilter(name: "CILanczosScaleTransform", parameters: [
+        kCIInputImageKey: image.cropped(to: crop).transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY)),
+        kCIInputScaleKey: scale,
+        kCIInputAspectRatioKey: (outW / crop.width) / scale,
+    ])!
+    return lanczos.outputImage!.cropped(to: CGRect(x: 0, y: 0, width: outW, height: outH))
+}
 
 func render(_ plan: Plan) async throws {
     let asset = AVURLAsset(url: URL(fileURLWithPath: plan.source))
@@ -291,24 +477,16 @@ func render(_ plan: Plan) async throws {
     let outW = Double(plan.width), outH = Double(plan.height)
     let tint = CIImage(color: CIColor(red: 14 / 255, green: 10 / 255, blue: 16 / 255, alpha: 0.74))
 
+    let card = plan.outro.map { EndCard($0, width: plan.width, height: plan.height) }
+    let cardBackground = card?.background()
+
     for (i, frame) in plan.frames.enumerated() {
-        let c = frame.crop
         var picture: CIImage?
         for layer in frame.layers {
             let index = Int(layer[0])
             let source = sources[index] ?? Source(asset: asset, track: track, start: plan.starts[index])
             sources[index] = source
-            let buffer = try source.frame(at: layer[1])
-            let srcH = Double(CVPixelBufferGetHeight(buffer))
-            let image = CIImage(cvPixelBuffer: buffer, options: [.colorSpace: sRGB])
-            let crop = CGRect(x: c[0], y: srcH - c[1] - c[3], width: c[2], height: c[3])
-            let scale = outH / crop.height
-            let lanczos = CIFilter(name: "CILanczosScaleTransform", parameters: [
-                kCIInputImageKey: image.cropped(to: crop).transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY)),
-                kCIInputScaleKey: scale,
-                kCIInputAspectRatioKey: (outW / crop.width) / scale,
-            ])!
-            let scaled = lanczos.outputImage!.cropped(to: CGRect(x: 0, y: 0, width: outW, height: outH))
+            let scaled = scaledCrop(try source.frame(at: layer[1]), crop: frame.crop, width: outW, height: outH)
             if let below = picture {
                 picture = below.applyingFilter("CIDissolveTransition", parameters: [
                     kCIInputTargetImageKey: scaled, kCIInputTimeKey: layer[2],
@@ -318,9 +496,23 @@ func render(_ plan: Plan) async throws {
             }
         }
         // A source no later frame reads is finished with.
-        let lowest = frame.layers.map { Int($0[0]) }.min() ?? 0
+        let lowest = (frame.layers.map { Int($0[0]) } + (frame.after.map { [Int($0[0])] } ?? [])).min() ?? 0
         for key in sources.keys where key < lowest { sources[key] = nil }
         guard var picture else { fail("cut: frame \(i) shows nothing") }
+
+        if let t = frame.outro, let card, let cardBackground {
+            picture = card.layer(at: t).composited(over: filmLeaving(picture, at: t, over: cardBackground))
+                .cropped(to: picture.extent)
+        }
+        if let after = frame.after, let crop = frame.afterCrop {
+            let index = Int(after[0])
+            let source = sources[index] ?? Source(asset: asset, track: track, start: plan.starts[index])
+            sources[index] = source
+            let first = scaledCrop(try source.frame(at: after[1]), crop: crop, width: outW, height: outH)
+            picture = picture.applyingFilter("CIDissolveTransition", parameters: [
+                kCIInputTargetImageKey: first, kCIInputTimeKey: after[2],
+            ]).cropped(to: picture.extent)
+        }
 
         let caption = CaptionFrame(frame, layouts: layouts)
         if let caption {
