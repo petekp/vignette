@@ -6,7 +6,7 @@
 
 What if macOS's built-in screenshot tool had kept evolving after 2010 and been built with agents in mind?
 
-Vignette is a free Mac menu bar app. It keeps your recent screenshots a double tap away, lets you
+Vignette is a free and open source Mac menu bar app. It keeps your recent screenshots a double tap away, lets you
 draw on them, and hands them to Claude Code or Codex, which can send you screenshots of their own.
 You still take screenshots with Cmd+Shift+3, 4 and 5.
 
