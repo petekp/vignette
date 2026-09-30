@@ -40,9 +40,8 @@ struct AnnotatorTransition: Equatable {
         case show                // reveal the annotator in place of the landed card
         case park(String)        // ask the editor to park; answer with `.parked`
         case abandon(String)     // the editor holds this key and nobody saw it: close it at once, no fit on the way out
-        case returnCard(String)  // fly the card back to its slot
+        case returnCard(String, copied: Bool)  // fly the card back; `copied` when its result is on the clipboard
         case hideAnnotator       // the annotator is done; nothing returns
-        case markCopied(String)  // the returned card shows the copied mark when it lands
         case join(String)        // a new shot joins the panel while the annotator stays open
     }
 
@@ -75,11 +74,11 @@ struct AnnotatorTransition: Equatable {
                 return [.show]
             case .close:
                 phase = .idle
-                return [.abandon(k), .returnCard(k)]
+                return [.abandon(k), .returnCard(k, copied: false)]
             case .annotate(let k2):
                 if k2 == k { return [] }
                 phase = .flyingOut(k2)
-                return [.abandon(k), .returnCard(k), .prepare(k2)]
+                return [.abandon(k), .returnCard(k, copied: false), .prepare(k2)]
             case .finish:
                 // The editor holds the keys from `prepare`, so Return can finish before the window
                 // is up; the drawing is parked as usual and the card comes back marked copied.
@@ -134,15 +133,15 @@ struct AnnotatorTransition: Equatable {
                 switch next {
                 case .annotate(let k2):
                     phase = .flyingOut(k2)
-                    return [.returnCard(k), .prepare(k2)]
+                    return [.returnCard(k, copied: false), .prepare(k2)]
                 case .close:
-                    // A lone thumbnail left the panel when the annotator opened; returnCard brings it
+                    // A lone thumbnail left the panel when the annotator opened; returnCard flies it
                     // back to the corner, so the editor never leaves without a flight.
                     phase = .idle
-                    return [.returnCard(k)]
+                    return [.returnCard(k, copied: false)]
                 case .finish:
                     phase = .idle
-                    return [.returnCard(k), .markCopied(k)]
+                    return [.returnCard(k, copied: true)]
                 case .dismiss, .remove:
                     phase = .idle
                     return [.hideAnnotator]
@@ -223,9 +222,8 @@ extension AnnotatorTransition.Effect: CustomStringConvertible {
         case .show: return "show"
         case .park(let k): return "park(\(short(k)))"
         case .abandon(let k): return "abandon(\(short(k)))"
-        case .returnCard(let k): return "returnCard(\(short(k)))"
+        case .returnCard(let k, let copied): return "returnCard(\(short(k))\(copied ? " copied" : ""))"
         case .hideAnnotator: return "hideAnnotator"
-        case .markCopied(let k): return "markCopied(\(short(k)))"
         case .join(let k): return "join(\(short(k)))"
         }
     }

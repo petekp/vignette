@@ -38,7 +38,6 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
     /// What the window asks AppDelegate for rather than doing itself: its own actions, which
     /// already log, and the watcher's answer about the folder.
     struct Callbacks {
-        var restoreAppleDefaults: () -> Void = {}
         var openTweaks: () -> Void = {}
         /// Both answer on the main thread once the agent's tool has, which takes a second or more.
         var installAgentPlugin: (URL, @escaping ([AgentPlugin.Result]) -> Void) -> Void = { _, done in done([]) }
@@ -310,8 +309,10 @@ struct SettingsView: View {
                 Text("JPEG").tag("jpg")
             }
             Toggle("Shadow on window screenshots", isOn: binding(\.windowShadow))
+        } footer: {
+            footer("These change macOS's own screenshot settings.")
         }
-        Section("After a screenshot") {
+        Section {
             Toggle("Copy to the clipboard", isOn: binding(\.copyOnCapture))
             Toggle(isOn: binding(\.annotateOnCapture)) {
                 Text("Open it to draw")
@@ -326,9 +327,7 @@ struct SettingsView: View {
                         .frame(width: 72, alignment: .trailing)
                 }
             }
-        }
-        Section {
-            // After Restore, or a file that turned it on: the way back to Vignette replacing it.
+            // Only a file that turned it on, or a Restore from an earlier version, gets here.
             if settings.data.appleThumbnail {
                 LabeledContent {
                     Button("Turn Off") { settings.update { $0.appleThumbnail = false } }
@@ -337,12 +336,10 @@ struct SettingsView: View {
                     Text("macOS holds each screenshot back while its thumbnail shows, so Vignette gets it about 5 seconds late.")
                 }
             }
-            LabeledContent("macOS screenshot settings") {
-                Button(settings.appleRestored ? "Restored" : "Restore") { callbacks.restoreAppleDefaults() }
-                    .disabled(settings.data.appleOriginal == nil || settings.appleRestored)
-            }
+        } header: {
+            Text("After a screenshot")
         } footer: {
-            footer("While Vignette runs, it replaces the macOS thumbnail. Restore keeps the macOS thumbnail on, and puts back the folder, format and shadow macOS used before.")
+            footer("While Vignette runs, its thumbnail replaces the macOS one. Quit Vignette and the macOS thumbnail comes back.")
         }
     }
 

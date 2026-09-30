@@ -645,16 +645,6 @@ final class Settings: ObservableObject {
         scheduleWrite()
     }
 
-    /// The settings already match what Apple's were before Vignette changed them, so Restore has
-    /// nothing left to put back.
-    var appleRestored: Bool {
-        guard let original = data.appleOriginal else { return false }
-        return AppleScreencapture.samePath(data.screenshotsFolder, original.location ?? SettingsData().screenshotsFolder)
-            && data.appleThumbnail == (original.showThumbnail ?? true)
-            && data.windowShadow == !(original.disableShadow ?? false)
-            && data.format == (original.type ?? "png")
-    }
-
     /// Puts Apple's screencapture defaults back to the recorded originals and mirrors them in the
     /// settings so the two do not disagree. Returns what changed, or nil when nothing was recorded.
     func restoreAppleDefaults() -> [String]? {

@@ -109,7 +109,9 @@ The editor has four tools: V selects, R draws rectangles, A arrows, and T text. 
 on the rectangle tool. Reopening a card you have already drawn on opens on the selection tool with
 the mark you drew last already selected, so a drag, an arrow key or Delete acts on it without a
 click first. Return copies the drawing and sends the card home. Esc cancels a drag in progress, and
-at rest closes the editor without copying. [The drawing editor](editor.md) lists every key and
+at rest closes the editor without copying. A card opened from the stack goes back to its place
+there. A thumbnail opened on its own leaves the screen, since there is nothing left to do with it;
+the screenshot and its drawing are still in the recent stack. [The drawing editor](editor.md) lists every key and
 gesture.
 
 When a coding agent session can take the drawing, the toolbar shows it beside Send: the agent's

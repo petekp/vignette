@@ -404,8 +404,8 @@ screenshot location for such a launch is written with the same variable:
   marks its card (`ThumbnailController.showCopied`), a failed copy (`showNotCopied`) or send
   (`SendMark`) says why on the card, and a card that is not on screen comes up as the lone
   thumbnail to say it. A paste the editor cannot take beeps. A settings.json that did not parse is
-  a warning at the top of the Settings window's General tab, and Restore reads Restored once
-  Apple's values are back (`Settings.appleRestored`). A command from a script answers in the log.
+  a warning at the top of the Settings window's General tab. A command from a script answers in
+  the log.
   `docs/no-toasts-2026-09-30.md` has what each toast became.
 - Two vocabularies, and they do not mix. Every string a user reads says draw: the buttons, the menu
   items, the toggles, the section headings, the marks on cards. Every name a script, a log reader or a
@@ -654,10 +654,12 @@ screenshot location for such a launch is written with the same variable:
 - Which image is in the annotator, where it came from, and what is in flight has one owner:
   `AnnotatorTransition` (a pure reducer) held by `ThumbnailController`. Controllers send events
   (annotate, shown, parked, close, finish, newShot, dismiss, remove) and run the effects it returns
-  (prepare, show, park, abandon, returnCard, markCopied, hideAnnotator, join). Done sends `finish`:
-  the card returns and takes the copied mark, and a lone thumbnail, which left the panel when the
-  annotator opened, comes back to the corner for it. Esc and Send send `close`: the card returns the
-  same way, without the copied mark. Quick draw sends `dismiss`. A `prepare` is never emitted while a
+  (prepare, show, park, abandon, returnCard, hideAnnotator, join). Done sends `finish`: the card
+  returns and takes the copied mark (`returnCard`'s `copied`), and a lone thumbnail, which left the
+  panel when the annotator opened, comes back to the corner for it. Esc and Send send `close`: the
+  card returns without the copied mark. A lone thumbnail that comes home with nothing to show, no
+  send or failure mark and no other card in the corner, does not land: it flies into the corner and
+  off the screen's edge (`ThumbnailController.leavesAtOnce`, `flyAway`). Quick draw sends `dismiss`. A `prepare` is never emitted while a
   park is in flight, which is what serializes rapid swaps; a new screenshot during a lone annotation
   joins the panel instead of closing the editor. Every event logs one
   `[transition] <event> -> <phase> effects=…` line. The annotator never hides itself: Esc, a click
@@ -960,10 +962,11 @@ screenshot location for such a launch is written with the same variable:
   `defaults write` from another process). Picking a folder in Vignette writes `location`, so the two
   never differ, and the observer ignores that write coming back as the folder it already has.
   `type` and `disable-shadow` are never reconciled. The reconcile is silent; the Screenshots tab
-  says that Vignette replaces the thumbnail while it runs, in the footer under its Restore button. That button is the
-  disable path. `restoreAppleDefaults()` writes Apple's old value into `appleThumbnail`, which is
-  what makes a restore survive the next launch's reconcile, and while it is on the tab offers Turn
-  Off, the way back. `target` is ⌘⇧5's Save to: `file`, or `clipboard`, `mail` or `preview`, which
+  says under "After a screenshot" that Vignette replaces the thumbnail while it runs. It has no
+  Restore button: the folder, format and shadow above it are macOS's own settings, and quitting
+  already hands the thumbnail back. `vignette://restore-apple-defaults` writes Apple's old value
+  into `appleThumbnail`, which is what makes a restore survive the next launch's reconcile, and
+  while that is on the tab offers Turn Off, the way back. `target` is ⌘⇧5's Save to: `file`, or `clipboard`, `mail` or `preview`, which
   leave the folder with no new screenshots. Vignette observes it and writes it only from Save to
   Folder, which the menu, setup's shortcut page and the Screenshots tab offer while it is not
   `file` (`Settings.appleTarget`); a choice the person made in ⌘⇧5 is theirs to undo.

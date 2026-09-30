@@ -183,6 +183,13 @@ struct StackLayout {
         return NSRect(x: panelFrame.maxX - inset - size.width, y: y, width: size.width, height: size.height)
     }
 
+    /// Where a card of `size` rests as the lone thumbnail, whether or not the panel is up.
+    func loneCardFrame(size: NSSize, area: StackArea) -> NSRect {
+        let viewport = viewportHeight(content: contentHeight(cards: [size]), area: area)
+        return cardFrame(index: 0, cards: [size], panelFrame: panelFrame(viewport: viewport, area: area, showsStrip: false),
+                         scroll: 0, safeBottom: area.safeBottom)
+    }
+
     /// Where a card at `frame` is drawn while the pointer is on it: the hover scale grows it about
     /// its centre.
     func hovered(_ frame: NSRect) -> NSRect {

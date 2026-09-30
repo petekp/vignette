@@ -156,7 +156,8 @@ final class ThumbnailController: NSObject {
     private let flights = TransitionLayer()
     private let model = StackModel()
     private var hosting: NSHostingView<StackView>!
-    private var dismissTimer: Timer?
+    /// When a lone thumbnail leaves the corner (`leaveCorner(after:)`).
+    private var leaveTimer: Timer?
     private let outsideClick = OutsideClick()
     private var visible = false {
         didSet {
@@ -392,7 +393,7 @@ final class ThumbnailController: NSObject {
         send(.newShot(shot.url.path))
         if visible { insert(card) } else { present(cards: [card], stack: false) }
         // An agent's card is something to read, not the echo of a capture the person just made.
-        if !model.isStack { scheduleDismiss(after: ui.thumbnailSeconds * (card.agent == nil ? 1 : 2)) }
+        leaveCorner(after: ui.thumbnailSeconds * (card.agent == nil ? 1 : 2))
     }
 
     enum StackToggle: Equatable { case shown(Int), dismissed, empty }
@@ -619,9 +620,11 @@ final class ThumbnailController: NSObject {
         for url in urls { send(.remove(url.path)) }
         for card in model.cards where urls.contains(card.shot.url) { flights.end(id: card.id) }
         endSweep()
+        // When no card would be left, they slide out with the panel rather than vanish, and the
+        // slide-out's end takes them out. A panel already sliding out is left to that end too.
+        if !visible || model.cards.allSatisfy({ urls.contains($0.shot.url) }) { dismiss(); return }
         model.removeCards { urls.contains($0.shot.url) }
         model.setSelection(model.selection.filter { id in model.cards.contains { $0.id == id } })
-        if model.cards.isEmpty { dismiss(); return }
         // The focused card is where keys act; when its file goes, the newest takes the focus.
         if let focused = model.focused, !model.cards.contains(where: { $0.id == focused }) { model.focused = model.cards.first?.id }
         relayout()
@@ -724,7 +727,7 @@ final class ThumbnailController: NSObject {
         // A card still on its way back from the annotator shows the mark when it lands.
         let hold = ui.markSeconds + ui.expandDuration
         DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.copied.subtract(ids) }
-        if !model.isStack { scheduleDismiss(after: hold) }
+        leaveCorner(after: hold)
     }
 
     /// The request for `shot` is stored and its card is going home: the card shows where it is going
@@ -768,7 +771,7 @@ final class ThumbnailController: NSObject {
             guard let self, self.model.sendMarks[key]?.request == request else { return }
             self.model.sendMarks[key] = nil
         }
-        if !model.isStack { scheduleDismiss(after: hold) }
+        leaveCorner(after: hold)
     }
 
     /// A copy the card was marked for did not happen: the mark comes off, and a card still on its
@@ -793,7 +796,7 @@ final class ThumbnailController: NSObject {
             guard let self, self.model.notCopied[key] == reason else { return }
             self.model.notCopied[key] = nil
         }
-        if !model.isStack && !inAnnotator { scheduleDismiss(after: hold) }
+        leaveCorner(after: hold)
     }
 
     func dismiss() {
@@ -802,7 +805,7 @@ final class ThumbnailController: NSObject {
         endQueue()
         dismissGeneration += 1
         let gen = dismissGeneration
-        dismissTimer?.invalidate()
+        leaveTimer?.invalidate()
         outsideClick.stop()
         releaseKeys()
         backdrop.hide()
@@ -957,7 +960,7 @@ final class ThumbnailController: NSObject {
             sessionCard = card
             loadedKeys.remove(key)
             takingEvents = nil
-            dismissTimer?.invalidate()
+            leaveTimer?.invalidate()
             // The selection stays: the card comes back to its slot, and a queued run needs the rest
             // of it to still be there when the last card is done.
             _ = model.outCards.insert(card.id)
@@ -997,13 +1000,7 @@ final class ThumbnailController: NSObject {
         case .show:
             onAnnotatorShow?()
             guard let card = sessionCard else { return }
-            if !model.isStack {
-                // A lone thumbnail has nothing to keep open behind the annotator; cards that joined stay.
-                // Its marks stay with it: it comes back to the corner when the session ends.
-                model.cards.removeAll { $0.id == card.id }
-                model.outCards.remove(card.id)
-                if model.cards.isEmpty { visible = false; panel.orderOut(nil) } else { relayout() }
-            }
+            if !model.isStack { takeOutOfPanel(card) }
         case .park:
             parkedMarks = annotatorMarks()
             onAnnotatorHide? { [weak self] in self?.send(.parked) }
@@ -1011,12 +1008,14 @@ final class ThumbnailController: NSObject {
             // Before the editor lets its marks go: the flight home carries what the abandon parks.
             parkedMarks = annotatorMarks()
             onAnnotatorAbandon?()
-        case .returnCard(let key):
+        case .returnCard(let key, let copied):
             guard let card = sessionCard, card.shot.url.path == key else { return }
             // With another file coming from the queue the session is not over: the dim stays up and
             // the user's app does not get the focus back between two cards.
             if !transition.isActive, handover == nil { sessionCard = nil; dim.hide(); endSession() }
-            returnCard(currentCard(card))
+            // A copy that already failed (`takeBackCopied`) leaves the card unmarked.
+            returnCard(currentCard(card), copied: copied && uncopied != key)
+            uncopied = nil
         case .hideAnnotator:
             // While the stack slides out, the image is flying to its slot's offscreen position
             // (see `dismiss`); that flight ends itself, and the slide-out's completion clears the card.
@@ -1026,9 +1025,6 @@ final class ThumbnailController: NSObject {
             parkedMarks = nil
             dim.hide()
             endSession()
-        case .markCopied(let key):
-            if uncopied == key { uncopied = nil; return }
-            if let card = model.cards.first(where: { $0.shot.url.path == key }) { showCopied([card.shot]) }
         case .join:
             break   // `show(_:)` inserts the card; the reducer only confirms the annotator stays open.
         }
@@ -1039,13 +1035,16 @@ final class ThumbnailController: NSObject {
         restoreFocusOnEnd = false
     }
 
-    private func returnCard(_ card: Card) {
+    private func returnCard(_ card: Card, copied: Bool) {
+        if leavesAtOnce(card, copied: copied) { return flyAway(card) }
         if !model.cards.contains(where: { $0.id == card.id }) {
             // A lone thumbnail left the panel when the annotator opened (see `.show`); it comes back
             // to the corner as an empty slot the flight lands on. No slide-in: the flight is the entrance.
             if visible { insert(card, entrance: .inPlace) } else { present(cards: [card], stack: false, entrance: .inPlace) }
             _ = model.outCards.insert(card.id)
         }
+        // Shown when the card lands, like every mark on a card still on its way back.
+        if copied { showCopied([card.shot]) }
         guard visible, model.cards.contains(where: { $0.id == card.id }) else {
             model.outCards.remove(card.id); flights.end(id: card.id); return
         }
@@ -1061,9 +1060,46 @@ final class ThumbnailController: NSObject {
             // The card view comes back on SwiftUI's next commit; lift the flight image after it.
             DispatchQueue.main.async { self.flights.lift(id: card.id) }
             if !self.transition.isActive, self.visible, self.model.isStack { self.takeKeys(focus: card.id) }
-            // A lone thumbnail leaves on its own; the copied mark usually sets a shorter timer first.
-            if !self.model.isStack, self.dismissTimer == nil { self.scheduleDismiss(after: self.ui.thumbnailSeconds) }
+            // A card that lands with a mark left the corner's time to the mark.
+            if !self.showsMark(card) { self.leaveCorner(after: self.ui.thumbnailSeconds) }
         })
+    }
+
+    /// A lone thumbnail that comes home with no mark to show, and nothing else in the corner, is
+    /// done: it leaves at once rather than waiting out its time there. `copied` is the mark it is
+    /// about to take.
+    private func leavesAtOnce(_ card: Card, copied: Bool) -> Bool {
+        !model.isStack && !copied && !showsMark(card) && model.cards.allSatisfy { $0.id == card.id }
+    }
+
+    /// A copied, send or not-copied mark is up on `card`. Each one set the corner's time when it went up.
+    private func showsMark(_ card: Card) -> Bool {
+        let key = card.shot.url.path
+        return model.copied.contains(card.id) || model.sendMarks[key] != nil || model.notCopied[key] != nil
+    }
+
+    /// The image flies from the editor into the corner and on off the screen's edge: the offscreen
+    /// slot a lone thumbnail slides in from, which is also where `annotate` flies a card from when
+    /// nothing is on screen.
+    private func flyAway(_ card: Card) {
+        // Esc during the flight out: the card has not left the panel yet (see `.show`).
+        if model.cards.contains(where: { $0.id == card.id }) { takeOutOfPanel(card) }
+        readArea()
+        var slot = layout.loneCardFrame(size: card.size, area: area)
+        slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
+        flights.fly(id: card.id, image: flightImage(for: card), marks: homeFlightMarks(for: card), from: annotationFrame, to: slot,
+                    lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
+            self?.flights.end(id: card.id)
+            card.marks?.clear()   // the card is gone for good, as `removeCards` would have it
+        })
+    }
+
+    /// A lone thumbnail has nothing to keep open behind the annotator; cards that joined stay. Its
+    /// marks stay with it, for the flight home.
+    private func takeOutOfPanel(_ card: Card) {
+        model.cards.removeAll { $0.id == card.id }
+        model.outCards.remove(card.id)
+        if model.cards.isEmpty { visible = false; panel.orderOut(nil) } else { relayout() }
     }
 
     /// Swallows every press on the slot a click just opened a card from, for as long as a second
@@ -1505,7 +1541,7 @@ final class ThumbnailController: NSObject {
             pinnedScreen = NSScreen.main ?? NSScreen.screens[0]
             FocusReturn.shared.sessionStarting()
         }
-        dismissTimer?.invalidate()
+        leaveTimer?.invalidate()
         dismissGeneration += 1
         flights.endAll()
         model.entering = nil
@@ -1658,15 +1694,21 @@ final class ThumbnailController: NSObject {
         }
     }
 
-    private func scheduleDismiss(after seconds: TimeInterval) {
-        dismissTimer?.invalidate()
+    /// A lone thumbnail leaves the corner `seconds` from now. The newest news sets the time, so
+    /// each call replaces the last: a fresh capture's `thumbnailSeconds`, a mark's hold, a landing
+    /// with no mark. A copy therefore shortens a fresh thumbnail's stay, which is the point: the
+    /// person is done with it. It does not leave while the pointer is on a card, a card is in the
+    /// annotator or flying to or from it, or a send waits for its answer, which sets a time of its
+    /// own (`hold`). The recent stack stays until it is dismissed.
+    private func leaveCorner(after seconds: TimeInterval) {
+        guard !model.isStack else { return }
+        leaveTimer?.invalidate()
         // Fires on the main run loop, like every other Timer here.
-        dismissTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+        leaveTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                // A card still being delivered stays until the client answers, which its mark shows.
                 let delivering = self.model.cards.contains { self.model.sendMarks[$0.shot.url.path]?.state == .sending }
-                if self.model.hoveredCard != nil || self.transition.isActive || delivering { self.scheduleDismiss(after: 1.5); return }
+                if self.model.hoveredCard != nil || self.transition.isActive || delivering { self.leaveCorner(after: 1.5); return }
                 self.dismiss()
             }
         }

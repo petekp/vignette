@@ -13,7 +13,7 @@ final class AnnotatorTransitionTests: XCTestCase {
         XCTAssertEqual(t.reduce(.annotate("2")), [.park("1")])
         XCTAssertEqual(t.reduce(.annotate("3")), [], "a second request during the park emits nothing")
         XCTAssertEqual(t.phase, .parking("1", then: .annotate("3")))
-        XCTAssertEqual(t.reduce(.parked), [.returnCard("1"), .prepare("3")])
+        XCTAssertEqual(t.reduce(.parked), [.returnCard("1", copied: false), .prepare("3")])
         XCTAssertEqual(t.reduce(.shown), [.show])
         XCTAssertEqual(t.phase, .annotating("3"))
     }
@@ -21,7 +21,7 @@ final class AnnotatorTransitionTests: XCTestCase {
     func testClosingDuringTheFlightTurnsTheCardAroundWithoutAPark() {
         var t = T()
         XCTAssertEqual(t.reduce(.annotate("a")), [.prepare("a")])
-        XCTAssertEqual(t.reduce(.close), [.abandon("a"), .returnCard("a")], "no park: the window never came up")
+        XCTAssertEqual(t.reduce(.close), [.abandon("a"), .returnCard("a", copied: false)], "no park: the window never came up")
         XCTAssertEqual(t.phase, .idle)
         XCTAssertEqual(t.reduce(.parked), [], "a park that was never asked for answers nothing")
     }
@@ -29,7 +29,7 @@ final class AnnotatorTransitionTests: XCTestCase {
     func testAnnotatingAnotherCardDuringTheFlightSwapsAtOnce() {
         var t = T()
         _ = t.reduce(.annotate("a"))
-        XCTAssertEqual(t.reduce(.annotate("b")), [.abandon("a"), .returnCard("a"), .prepare("b")])
+        XCTAssertEqual(t.reduce(.annotate("b")), [.abandon("a"), .returnCard("a", copied: false), .prepare("b")])
         XCTAssertEqual(t.phase, .flyingOut("b"))
         XCTAssertEqual(t.reduce(.annotate("b")), [], "the key already flying out")
         XCTAssertEqual(t.reduce(.shown), [.show])
@@ -53,7 +53,7 @@ final class AnnotatorTransitionTests: XCTestCase {
         XCTAssertEqual(t.reduce(.newShot("b")), [.join("b")])
         XCTAssertEqual(t.phase, .annotating("a"))
         XCTAssertEqual(t.reduce(.close), [.park("a")])
-        XCTAssertEqual(t.reduce(.parked), [.returnCard("a")], "a lone thumbnail flies back to the corner")
+        XCTAssertEqual(t.reduce(.parked), [.returnCard("a", copied: false)], "a lone thumbnail flies back to the corner")
         XCTAssertEqual(t.phase, .idle)
     }
 
@@ -61,7 +61,7 @@ final class AnnotatorTransitionTests: XCTestCase {
         var t = T()
         _ = t.reduce(.annotate("a")); _ = t.reduce(.shown)
         XCTAssertEqual(t.reduce(.close), [.park("a")])
-        XCTAssertEqual(t.reduce(.parked), [.returnCard("a")])
+        XCTAssertEqual(t.reduce(.parked), [.returnCard("a", copied: false)])
         XCTAssertEqual(t.phase, .idle)
     }
 
@@ -87,7 +87,7 @@ final class AnnotatorTransitionTests: XCTestCase {
         _ = t.reduce(.annotate("a")); _ = t.reduce(.shown)
         _ = t.reduce(.annotate("b"))
         _ = t.reduce(.remove("b"))
-        XCTAssertEqual(t.reduce(.parked), [.returnCard("a")])
+        XCTAssertEqual(t.reduce(.parked), [.returnCard("a", copied: false)])
     }
 
     func testStrayEventsDoNothing() {
@@ -100,7 +100,7 @@ final class AnnotatorTransitionTests: XCTestCase {
         var t = T()
         _ = t.reduce(.annotate("a")); _ = t.reduce(.shown)
         XCTAssertEqual(t.reduce(.finish), [.park("a")])
-        XCTAssertEqual(t.reduce(.parked), [.returnCard("a"), .markCopied("a")])
+        XCTAssertEqual(t.reduce(.parked), [.returnCard("a", copied: true)])
         XCTAssertEqual(t.phase, .idle)
     }
 
@@ -115,10 +115,10 @@ final class AnnotatorTransitionTests: XCTestCase {
         var t = T()
         _ = t.reduce(.annotate("a")); _ = t.reduce(.shown); _ = t.reduce(.finish)
         XCTAssertEqual(t.reduce(.annotate("a")), [], "the finishing key is coming back anyway")
-        XCTAssertEqual(t.reduce(.parked), [.returnCard("a"), .markCopied("a")])
+        XCTAssertEqual(t.reduce(.parked), [.returnCard("a", copied: true)])
         _ = t.reduce(.annotate("a")); _ = t.reduce(.shown); _ = t.reduce(.finish)
         _ = t.reduce(.annotate("b"))
-        XCTAssertEqual(t.reduce(.parked), [.returnCard("a"), .prepare("b")])
+        XCTAssertEqual(t.reduce(.parked), [.returnCard("a", copied: false), .prepare("b")])
     }
 
     // MARK: Random sequences
@@ -181,7 +181,7 @@ final class AnnotatorTransitionTests: XCTestCase {
                                 preparedKey = nil
                             case .returnCard, .hideAnnotator:
                                 preparedKey = nil
-                            case .join, .markCopied:
+                            case .join:
                                 break
                             }
                         }

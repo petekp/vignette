@@ -109,7 +109,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotator.onCopyDrawing = { [weak self] shot, drawing in self?.copyDrawing(drawing, of: shot) }
         thumbnail.dragItems = { [weak self] cards in self?.dragItems(cards) ?? [] }
         settingsWindow.callbacks = SettingsWindowController.Callbacks(
-            restoreAppleDefaults: { [weak self] in self?.restoreAppleDefaults() },
             openTweaks: { [weak self] in self?.debugPanel.toggle() },
             installAgentPlugin: { [weak self] root, done in self?.installAgentPlugin(into: [root]) { done($0) } },
             removeAgentPlugin: { [weak self] root, done in self?.removeAgentPlugin(from: root, completion: done) },

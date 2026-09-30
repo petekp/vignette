@@ -38,9 +38,9 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
 - **`appleThumbnail`** is the value Vignette keeps Apple's floating thumbnail at while it runs. The
   first launch turns it off, because Apple's thumbnail holds the file back for about five seconds.
   Every launch puts it back if something else changed it. Quitting Vignette turns Apple's thumbnail
-  back on when macOS showed it before, and the next launch turns it off again. Restore, in
-  Settings → Screenshots, sets it to what macOS had before, and Turn Off there sets it back to
-  `false`.
+  back on when macOS showed it before, and the next launch turns it off again. The
+  `restore-apple-defaults` command sets it to what macOS had before. While it is `true`,
+  Settings → Screenshots shows a Turn Off button that sets it back to `false`.
 - **`windowShadow`** is Apple's drop shadow around a captured window, another Apple default that
   Vignette writes. Turn it off for window shots with no shadow margin.
 - **`format`** is the file type Apple saves, such as `"png"`. Vignette writes this one too.
