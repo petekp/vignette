@@ -77,7 +77,7 @@ struct SettingsData: Codable, Equatable {
 
     /// What picking "Key combination" writes. The default shortcut is the double tap, so this
     /// cannot be read off a fresh `SettingsData`.
-    static let defaultKeyCombination = "cmd+shift+6"
+    static let defaultKeyCombination = "cmd+shift+2"
 
     /// Clamps values that would crash or break layout math and reports each correction.
     /// Design limits live in the debug panel; these are only the bounds the code cannot survive.

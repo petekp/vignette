@@ -44,7 +44,7 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
 - **`format`** is the file type Apple saves, such as `"png"`. Vignette writes this one too.
 - **`recentCount`** is how many cards the recent stack holds. Raise it to reach further back.
 - **`recentHotkey`** opens the recent stack. `"double-rshift"` by default, a double tap of right
-  Shift, which needs Accessibility permission. A key combination such as `"cmd+shift+6"` needs none.
+  Shift, which needs Accessibility permission. A key combination, `"cmd+shift+2"` when first picked, needs none.
   The setup window on first launch is where this is normally chosen.
 - **`hideMenuBarIcon`** removes Vignette's menu bar icon. Opening Vignette again, from Finder or
   Spotlight, still opens the Settings window, and so does `vignette://settings`.

@@ -26,6 +26,7 @@ The "Fix next" list is worked through, uncommitted. What each item came to:
 | Item | Outcome |
 |---|---|
 | Recorder accepts ⌘Q, ⌘C, ⌘⇧3 | Fixed. It beeps, keeps listening, and says why under the box. |
+| Default combination ⌘⇧6 is the Touch Bar screenshot shortcut | Fixed. The default is ⌘⇧2, beside the capture keys, which macOS does not claim. Xcode uses it for Devices and Simulators. |
 | Hotkey registration not checked | Measured: Carbon answers success for combinations macOS or another app owns (⌘⇧3, ⌃Space, Raycast's ⌥Space). Only a real failure is logged now. Setup's live try is what proves the keys. |
 | Done returns focus to System Settings | Fixed in 0d73cf5. |
 | Double tap dead after revoke and grant | Not a bug. Measured: the monitors keep firing after a revoke. |
@@ -57,9 +58,6 @@ The checks behind the uncommitted work:
 Still open:
 
 - A power-off or crash during setup leaves Apple's thumbnail off until Vignette runs again.
-- ⌘⇧6, the default key combination, is the Touch Bar screenshot shortcut on Touch Bar Macs.
-  Whether macOS or Vignette gets it there is unmeasured. It matters only to someone who picks a
-  key combination, and setup's try shows whether it works.
 - 0.1.2 has to be cut again for these fixes, then walked through once more in the VM.
 
 The VM harness lives in `.scratch/vm.py`; how it works is in Claude's memory for this project.
