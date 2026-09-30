@@ -91,6 +91,19 @@ final class SettingsTests: XCTestCase {
         XCTAssertNotNil((try json())["appleOriginal"])
     }
 
+    /// A folder Vignette can't write: the launch says so and runs read-only, rather than logging a
+    /// file it never made and starting over as a first launch every time.
+    @MainActor
+    func testAFileThatCannotBeCreatedIsReadOnlyWithANotice() throws {
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path) }
+        let boot = Settings.bootstrap(at: file)
+        XCTAssertTrue(boot.readOnly)
+        XCTAssertEqual(boot.notice?.title, "Settings can't be saved")
+        XCTAssertFalse(boot.log.contains { $0.hasPrefix("created") })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
     @MainActor
     func testNegativeCountIsClampedInMemoryAndLogged() throws {
         try write(#"{"recentCount": -1, "ui": {"backdropWidth": 0, "cardShadowOpacity": 3}}"#)

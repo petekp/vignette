@@ -18,6 +18,14 @@ enum AppLocation {
         let bundle = Bundle.main.bundleURL
         guard isOnDiskImage(bundle) else { return }
         let destination = destination(for: bundle)
+        // A disk image kept from before an update would otherwise put the older build over the
+        // newer one. The one in Applications is what the person wants running.
+        if let installed = buildNumber(of: destination), let this = buildNumber(of: bundle), installed > this {
+            Log.write("[install] \(destination.path) is newer (\(installed) > \(this)); opening it")
+            reopen(destination, ejecting: diskImageVolume(of: bundle))
+            Log.flush()
+            exit(0)
+        }
         Log.write("[install] running from \(bundle.path); offering \(destination.path)")
 
         let alert = NSAlert()
@@ -25,9 +33,9 @@ enum AppLocation {
         alert.informativeText = "\(Identity.name) is running from the disk image. Moving it to Applications lets it open at login and ejects the disk image."
         alert.addButton(withTitle: "Move to Applications")
         alert.addButton(withTitle: "Quit")
-        NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else {
+        guard runKeyed(alert) == .alertFirstButtonReturn else {
             Log.write("[install] quit without moving")
+            Log.flush()
             exit(0)
         }
 
@@ -38,12 +46,24 @@ enum AppLocation {
             let failed = NSAlert()
             failed.messageText = "\(Identity.name) couldn't be moved to Applications."
             failed.informativeText = "Drag \(Identity.name) from the disk image to your Applications folder, then open it from there."
-            failed.runModal()
+            _ = runKeyed(failed)
+            Log.flush()
             exit(1)
         }
         Log.write("[install] moved to \(destination.path)")
         reopen(destination, ejecting: diskImageVolume(of: bundle))
+        Log.flush()
         exit(0)
+    }
+
+    /// Runs the alert as a panel that takes the keys without activating the app. macOS refuses to
+    /// activate a menu bar app that asks before `NSApp.run` (measured on macOS 15, launched from
+    /// Finder), and an alert in an inactive app has no default button, so Return did nothing.
+    @MainActor
+    private static func runKeyed(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        alert.layout()
+        (alert.window as? NSPanel)?.styleMask.insert(.nonactivatingPanel)
+        return alert.runModal()
     }
 
     /// In the moved copy: ejects the disk image it was moved from once the copy that moved it has
@@ -54,6 +74,11 @@ enum AppLocation {
         let volume = URL(fileURLWithPath: args[i + 1], isDirectory: true)
         guard isOnReadOnlyVolume(volume) else { return }
         eject(volume, attemptsLeft: 10)
+    }
+
+    /// `CFBundleVersion`, the commit count the build phase stamps, so a later build is a larger number.
+    private static func buildNumber(of app: URL) -> Int? {
+        (Bundle(url: app)?.infoDictionary?["CFBundleVersion"] as? String).flatMap(Int.init)
     }
 
     /// A disk image is a read-only volume, and so is the path macOS translocates an app to; a build

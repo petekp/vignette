@@ -50,7 +50,21 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
 
     /// Whether a first launch should open this. Recorded as done when the window closes rather than
     /// when it opens, so a launch quit part way through asks again.
-    var isUnasked: Bool { settings.data.setupChoice == .unasked }
+    ///
+    /// The permissions it asks for belong to this Mac, and a settings.json synced from another Mac
+    /// through dotfiles says `done` too. So this Mac keeps its own record in the app's defaults,
+    /// which also stands in for a file that cannot be written. A setup finished before that record
+    /// existed left the file's `done` and, from every launch, the Application Support folder. A test
+    /// launch has only its scratch file to go by.
+    var isUnasked: Bool {
+        if Settings.isOverridden { return settings.data.setupChoice == .unasked }
+        if UserDefaults.standard.bool(forKey: SetupWindowController.doneOnThisMacKey) { return false }
+        return !(settings.data.setupChoice == .done && launchedHereBefore)
+    }
+
+    private static let doneOnThisMacKey = "setupDoneOnThisMac"
+    /// Read before this launch creates the folder.
+    private let launchedHereBefore = FileManager.default.fileExists(atPath: Identity.applicationSupportURL.path)
 
     /// `protectedArea` names the folder macOS will ask about ("your Desktop"), or is nil when it
     /// won't ask, which leaves the welcome page without a folder row.
@@ -126,6 +140,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         // Vignette can't work without the folder, so a window closed before it asked asks now.
         if model.callbacks.folderAccess() == .ask { model.callbacks.askFolder() }
         settings.update { $0.setup = SetupState.done.rawValue }
+        UserDefaults.standard.set(true, forKey: SetupWindowController.doneOnThisMacKey)
         // The plugin is installed only for someone who saw the page offering it. Closed earlier, the
         // offer is left unmade, and the next launch makes it in the Settings window.
         var skill = "not-offered"
@@ -343,6 +358,9 @@ struct SetupView: View {
         } else if folder != .granted {
             // Nothing can appear until Vignette can read the folder, so that comes before trying the keys.
             folderRow(model.protectedArea ?? "your screenshots folder")
+        } else if settings.appleTarget != "file" {
+            // A capture made now would never reach the folder, so the try below would fail.
+            CaptureTargetRow(isDefault: true)
         } else if !hasShots {
             // Ahead of `fired`: with nothing in the folder the shortcut opens nothing, so saying
             // it worked would be saying so about an empty corner.
@@ -437,7 +455,7 @@ struct SetupView: View {
     private var pageIsDone: Bool {
         switch model.page {
         case .welcome: return model.protectedArea == nil || folder == .granted
-        case .shortcut: return (!settings.data.usesDoubleTap || trusted) && folder == .granted
+        case .shortcut: return (!settings.data.usesDoubleTap || trusted) && folder == .granted && settings.appleTarget == "file"
         case .agents: return true
         }
     }

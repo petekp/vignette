@@ -107,8 +107,11 @@ final class ScreenshotWatcherTests: XCTestCase {
         let watcher = ScreenshotWatcher(folder: later, onNew: { reported.insert($0); newSeen.fulfill() }, onRemoved: { _ in })
         XCTAssertNil(watcher.newest())
         try FileManager.default.createDirectory(at: later, withIntermediateDirectories: true)
+        // A volume mounting brings files older than the watcher, which are not new captures.
+        _ = try png("later/old.png", mtime: Date().addingTimeInterval(-3600))
         let first = try png("later/first.png")
         XCTAssertEqual(watcher.newest(), first, "an unwatched folder is listed on every read")
+        XCTAssertEqual(watcher.recent(limit: 10).files, 2)
         watcher.rescan(reason: "test")   // retries the watch; the file that arrived meanwhile is reported too
         let second = try png("later/second.png")
         wait(for: [newSeen], timeout: 5)

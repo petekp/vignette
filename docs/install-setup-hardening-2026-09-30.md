@@ -15,54 +15,52 @@ working afterwards leaves the person with no feedback from either app.
 
 ## Status
 
-Built and verified, uncommitted:
+Sections 1 to 4 below are fixed and committed (0d73cf5), with three defects the VM found:
 
-- **Section 1, silent captures.** Apple's thumbnail comes back when Vignette quits, SIGTERM
-  included. Vignette's menu leads with "Allow Access to Your Screenshots…" or "Allow
-  Accessibility for the Shortcut…" when either is missing.
-- **Section 2, setup.**
-  - A closed setup window stays closed.
-  - The shortcut page shows the folder row until the folder is readable.
-  - Setup comes back after a grant in System Settings.
-  - iCloud Drive, `~/Library/CloudStorage` and other volumes count as protected.
-  - Done returns the focus to the app the person was in.
-- **Section 3, agent tools.** Tools run with a `PATH` that finds `node`. A failed install from
-  setup opens the Agents tab with the reason.
-- **Section 4, upgrades.** 0.1.1's old defaults are dropped on upgrade.
-- **Three defects found in the VM, not by the audits:**
-  - **A quit during setup ran setup's close handler.** AppKit closes the window after
-    `applicationWillTerminate`, so the quit asked for the folder, registered the login item and
-    installed plugins. A quit now applies nothing.
-  - **The double tap fired twice while Vignette was the active app.** The global and local
-    monitors both reported each Shift press, so the stack opened and closed at once. Each event
-    now counts once.
-  - **The focus went back to macOS's Accessibility alert** after setup, a process that is gone
-    by then. Only a regular app gets it back now.
+- A quit during setup ran setup's close handler. A quit now applies nothing.
+- The double tap fired twice while Vignette was the active app. Each event now counts once.
+- The focus went back to macOS's Accessibility alert after setup. Only a regular app gets it back.
 
-The checks behind it:
+The "Fix next" list is worked through, uncommitted. What each item came to:
 
-- Unit tests pass.
-- The e2e suite passes. It has two new scenarios: `first_launch` (quit during setup) and `upgrade`
-  (a 0.1.1 file).
-- A fresh macOS 15.7 VM ran the fixed build, signed with the Developer ID. Four paths were checked:
-  - Continue without Allow, then Don't Allow, then the grant from System Settings.
-  - The Accessibility grant.
-  - The double tap and the hold.
-  - Done, and Quit & Reopen from System Settings.
-- The 0.1.2 disk image from before these fixes was installed the way a download is: the quarantine
-  flag set, dragged to Applications. macOS showed only its usual "downloaded from the Internet"
-  question, which says Apple checked the app.
+| Item | Outcome |
+|---|---|
+| Recorder accepts ⌘Q, ⌘C, ⌘⇧3 | Fixed. It beeps, keeps listening, and says why under the box. |
+| Hotkey registration not checked | Measured: Carbon answers success for combinations macOS or another app owns (⌘⇧3, ⌃Space, Raycast's ⌥Space). Only a real failure is logged now. Setup's live try is what proves the keys. |
+| Done returns focus to System Settings | Fixed in 0d73cf5. |
+| Double tap dead after revoke and grant | Not a bug. Measured: the monitors keep firing after a revoke. |
+| Allow… for Accessibility pressed twice | Fixed. A press while macOS's alert is up is skipped and logged. |
+| `~/.config` not writable | Fixed. The launch says so in the log and in Settings, runs read-only, and setup is recorded per Mac. |
+| Old disk image replaces a newer install | Fixed. A newer copy in Applications is opened instead, and the image ejected. |
+| A volume mounting reports every file | Fixed. Files older than the moment the folder was found missing are indexed silently. |
+| Sweep deletes drawings in an unreadable folder | Not a bug. Measured: with Desktop access refused, the file is still visible to `stat`, and the drawing stays. |
+| Shell lookup runs before setup | Left as is. Deferring it moves an unexplained prompt to a later page, and no prompt has been seen. |
+| ⌘⇧5 set to Clipboard, Mail or Preview | Fixed. The menu, setup and the Screenshots tab say so, with Save to Folder. |
+| `appleOriginal` lost with settings.json | Left as is. Apple's thumbnail is handed back at quit, so a new record reads its true value. |
+| No way back after Restore | Fixed. The Screenshots tab offers Turn Off while the macOS thumbnail is on. |
+| Removed login item comes back | Fixed. A removal in System Settings turns Open at login off. It reads `.notFound`, measured. |
+| Dotfiles carry `setup: done` to a new Mac | Fixed. Setup's done is kept per Mac in the app's defaults. Upgraders count as done. |
 
-Measured M1: the watcher's `open` blocks while macOS's folder prompt is up, and fails with "Operation
-not permitted" the moment the person answers Don't Allow. So the pending state is visible to setup.
+The install path itself was checked on the notarized 0.1.2 image in a fresh macOS 15.7 VM:
+Gatekeeper's prompt, Move to Applications, the image ejecting, setup, and a reinstall over a running
+copy. One defect came out of it: the move alert came up inactive, so Return did nothing. macOS
+refuses to activate a menu bar app before it has finished launching. The alert is now a panel that
+takes the keys without activating the app.
+
+The checks behind the uncommitted work:
+
+- Unit tests pass. New: the recorder refusals, a folder that cannot be written, and a folder that
+  appears with old files.
+- The e2e suite passes.
+- Each fix above was driven in the VM on a Developer ID build.
 
 Still open:
 
-- The Gatekeeper and move-to-Applications paths with a notarized build of these fixes. That needs
-  Pete's `scripts/release.sh 0.1.2`.
-- A power-off or crash during setup leaves Apple's thumbnail off until Vignette runs again. No code
-  runs then.
-- The "Fix next" list below.
+- A power-off or crash during setup leaves Apple's thumbnail off until Vignette runs again.
+- ⌘⇧6, the default key combination, is the Touch Bar screenshot shortcut on Touch Bar Macs.
+  Whether macOS or Vignette gets it there is unmeasured. It matters only to someone who picks a
+  key combination, and setup's try shows whether it works.
+- 0.1.2 has to be cut again for these fixes, then walked through once more in the VM.
 
 The VM harness lives in `.scratch/vm.py`; how it works is in Claude's memory for this project.
 

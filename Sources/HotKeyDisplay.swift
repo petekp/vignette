@@ -92,6 +92,17 @@ extension HotKeySpec {
         return (HotKeySpec.specialKeys[name]?.keyEquivalent ?? name, HotKeySpec.eventModifiers(modifiers))
     }
 
+    /// Why a combination can't be the shortcut, or nil. A Carbon hotkey takes its key from every
+    /// app: ⌘ with one key is a command every app has (⌘Q would quit nothing), ⌘⇧3, 4 and 5 are
+    /// macOS's screenshots, and ⌃ with Space or an arrow switches input sources and spaces.
+    static func refusal(keyCode: UInt32, modifiers: UInt32) -> String? {
+        let glyphs = HotKeySpec.key(keyCode: keyCode, modifiers: modifiers).glyphs
+        if modifiers == UInt32(cmdKey) { return "\(glyphs) is a command in every app. Add ⌥ or ⌃." }
+        if modifiers == UInt32(cmdKey | shiftKey), [20, 21, 23].contains(keyCode) { return "\(glyphs) takes screenshots. Try another combination." }
+        if modifiers == UInt32(controlKey), [49, 123, 124, 125, 126].contains(keyCode) { return "macOS uses \(glyphs). Try another combination." }
+        return nil
+    }
+
     /// Carbon modifier flags from NSEvent modifier flags (command, shift, option, control only).
     static func carbonModifiers(_ flags: NSEvent.ModifierFlags) -> UInt32 {
         var mods: UInt32 = 0

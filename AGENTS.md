@@ -38,6 +38,8 @@ the measurements and the reasoning; a rule here points at its note.
   that should watch a scratch folder: `defaults write <bundle id>.screencapture location <folder>`. The tweak panel writes to whichever file the instance was launched
   with, so copy the real file over the scratch copy before a test round and, before relaunching the
   real build, merge back any `ui` keys that changed (`[settings] wrote ui.…` in the log lists them).
+  A file that cannot be created (a `~/.config` another tool owns) leaves the launch read-only, with
+  `[settings] error cannot create` and a notice in the General tab, and never reads as a first launch.
   A file that does not parse is moved to `settings.json.invalid` and replaced with defaults; bad
   numbers are clamped in memory and logged as `[settings] warning clamped`. `appleOriginal` records
   Apple's screencapture values before Vignette changed them; `open -g vignette://restore-apple-defaults`
@@ -261,7 +263,11 @@ screenshot location for such a launch is written with the same variable:
   or a modifier double tap (`ModifierTap.swift`, `"double-rshift"`), which needs the app trusted
   for Accessibility because it watches key events with NSEvent monitors. Both fire the stack on
   the press and `hold` when the key stays down 0.4 s, so a held tap opens the stack and then
-  lifts the newest card out of it. When the press closed an open stack, the hold brings it back
+  lifts the newest card out of it. `RegisterEventHotKey` answers success for a combination macOS
+  or another app already uses (measured with ⌘⇧3, ⌃Space and Raycast's ⌥Space), so only the keys
+  firing prove a combination works, which is what setup's try shows. The recorder refuses ⌘ with
+  one key, ⌘⇧3/4/5 and macOS's ⌃ shortcuts (`HotKeySpec.refusal`) and says why under the box.
+  When the press closed an open stack, the hold brings it back
   (a presentation during the slide-out reuses the cards, which turn around) and lifts the card
   that was focused, or the newest. `annotateOnCapture` sends a new capture straight to
   `annotate` instead of `show`.
@@ -292,7 +298,8 @@ screenshot location for such a launch is written with the same variable:
   folder) the reads list it directly and the watch is retried every 2 seconds, logging a change of
   reason rather than every attempt. A folder that was there but unreadable is indexed silently by
   the first listing that works, so a grant does not report every file in it as a new capture; a
-  missing folder is indexed as empty and what arrives in it is reported. `isDenied` (macOS refused
+  missing folder is indexed as empty, and when it appears, as a volume mounts, the files dated
+  before it was found missing are indexed silently and only newer ones are reported. `isDenied` (macOS refused
   the app the folder, at its open or at its listing) and `isReadable` (a listing worked) are what
   setup and the Screenshots tab read. A first launch whose folder is inside the Desktop, Documents
   or Downloads (`ScreenshotWatcher.protectedArea`) makes no watcher until setup's Allow…, its
@@ -352,12 +359,19 @@ screenshot location for such a launch is written with the same variable:
   Screenshot, are greyed out while the folder is empty (`validateMenuItem`), which is the rest of
   that silence: both used to answer only in the log. `setup` in
   settings.json records `unasked` then `done`, written when the window closes rather than when it
-  opens, so a launch quit part way through asks again. `ShortcutSetting` is the one shortcut
+  opens, so a launch quit part way through asks again. The permissions belong to the Mac, and a
+  settings.json synced by dotfiles carries `done` to a new one, so the app's own defaults keep
+  `setupDoneOnThisMac` too, and a file's `done` counts without it only where an earlier launch left
+  the Application Support folder, as every release did (`SetupWindowController.isUnasked`). A test
+  launch goes by its scratch file alone. `ShortcutSetting` is the one shortcut
   control, shared with the Settings window's General tab: a pop-up of double taps, then Key
   Combination…, which shows a recorder that starts listening at once. A new settings file starts with
   `launchAtLogin` on: first run turns Apple's thumbnail off, so a restart that does not bring
   Vignette back leaves every capture silent. The window shows the switch, and the login item is
-  registered when it closes, not during the launch it is showing in. The folder row is a
+  registered when it closes, not during the launch it is showing in. A login item the person
+  removed under Open at Login reads `.notFound` (measured), and a launch then turns
+  `launchAtLogin` off instead of registering it again; a copy that moved is told apart by the path
+  it registered from (`LoginItem.removedByPerson`). The folder row is a
   permission, not a choice of folder: it appears only for a folder inside the Desktop, Documents or
   Downloads, its Allow… starts the watcher, whose first read raises macOS's prompt, and a refusal
   turns it into a warning whose Allow… opens Privacy & Security > Files and Folders. The window's one
@@ -378,7 +392,10 @@ screenshot location for such a launch is written with the same variable:
   unmounted an APFS image's volume and left the image attached, so opening the same file again
   mounted nothing. `VIGNETTE_SETTINGS` is passed to the moved copy, so a test launch stays on its
   scratch file. The destination is /Applications, or ~/Applications for a user who cannot write
-  there.
+  there. A copy there with a higher `CFBundleVersion` is opened instead, and the image ejected, so an
+  old image never replaces what the updater installed. The alert is a non-activating panel
+  (`runKeyed`): macOS refuses to activate a menu bar app before `NSApp.run`, and an inactive alert has
+  no default button, so Return did nothing (measured on macOS 15, opened from Finder).
 
 ### Words and motion
 
@@ -942,9 +959,12 @@ screenshot location for such a launch is written with the same variable:
   never differ, and the observer ignores that write coming back as the folder it already has.
   `type` and `disable-shadow` are never reconciled. The reconcile is silent; the Screenshots tab
   says that Vignette replaces the thumbnail while it runs, in the footer under its Restore button. That button is the
-  disable path and the only way back in the UI. `appleThumbnail` stays a settings.json key with no
-  control, because `restoreAppleDefaults()` writes Apple's old value into it and that is what makes
-  a restore survive the next launch's reconcile.
+  disable path. `restoreAppleDefaults()` writes Apple's old value into `appleThumbnail`, which is
+  what makes a restore survive the next launch's reconcile, and while it is on the tab offers Turn
+  Off, the way back. `target` is ⌘⇧5's Save to: `file`, or `clipboard`, `mail` or `preview`, which
+  leave the folder with no new screenshots. Vignette observes it and writes it only from Save to
+  Folder, which the menu, setup's shortcut page and the Screenshots tab offer while it is not
+  `file` (`Settings.appleTarget`); a choice the person made in ⌘⇧5 is theirs to undo.
 - Updates come from Sparkle (`Updater.swift`). The app checks the feed that `SUFeedURL` names once a
   day, and nothing installs until the person presses Install in Sparkle's window. A version a
   scheduled check finds waits as a gentle reminder, Sparkle's name for one that does not take the

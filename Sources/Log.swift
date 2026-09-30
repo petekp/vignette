@@ -17,6 +17,10 @@ enum Log {
         queue.async { append("\(stamp.string(from: now)) \(oneLine(message))\n", to: url, rotateAt: rotateAtBytes) }
     }
 
+    /// Waits for the lines already written to reach the file. `exit` ends the process without
+    /// running the queue, so a caller that exits flushes first.
+    static func flush() { queue.sync {} }
+
     /// The first line of a launch: the date, so a log spanning days can be read.
     static func writeLaunch(_ message: String) {
         let now = Date()

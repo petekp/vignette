@@ -435,6 +435,9 @@ final class Settings: ObservableObject {
     var onChange: ((SettingsData, SettingsData) -> Void)?
     /// The system's Reduce Motion switch, kept current by the workspace notification.
     @Published private(set) var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    /// Where macOS sends a capture (`AppleScreencapture.target`), kept current by an observer.
+    /// Anything but `file` leaves the watch folder with no new screenshots.
+    @Published private(set) var appleTarget = AppleScreencapture.target
     private var motionObserver: Any?
 
     /// 0 to 1: what every animation duration is multiplied by. Reduce Motion makes it 0.
@@ -442,9 +445,17 @@ final class Settings: ObservableObject {
     /// The tweaks every animation reads: layout as in `data.ui`, durations scaled by `motionScale`.
     var motionUI: UITweaks { data.ui.scaledForMotion(motionScale) }
     /// What the Settings window says when this launch had to set the file aside. nil when all was well.
-    let startupNotice: String?
-    /// True when the file was written by a newer Vignette. Writes would drop its keys, so none happen.
+    let startupNotice: Notice?
+
+    /// What went wrong with the file at launch, as the General tab says it.
+    struct Notice {
+        var title: String
+        var detail: String
+    }
+    /// True when the file was written by a newer Vignette, whose keys a write would drop, or when it
+    /// cannot be written at all. Nothing is written then, and `readOnlyReason` says why.
     private(set) var readOnly = false
+    private(set) var readOnlyReason = ""
 
     private var directorySource: DispatchSourceFileSystemObject?
     private var fileSource: DispatchSourceFileSystemObject?
@@ -453,12 +464,14 @@ final class Settings: ObservableObject {
     private var reloadWork: DispatchWorkItem?
     private var writeWork: DispatchWorkItem?
     private var appleLocation: AppleScreencapture.Observer?
+    private var appleTargetObserver: AppleScreencapture.Observer?
 
     private init() {
         let boot = Settings.bootstrap(at: Settings.fileURL)
         data = boot.data
         startupNotice = boot.notice
         readOnly = boot.readOnly
+        readOnlyReason = boot.readOnlyReason
         for line in boot.log { Log.write("[settings] \(line)") }
         if let written = boot.written { lastWritten = written }
         lastWrittenData = boot.data
@@ -479,8 +492,9 @@ final class Settings: ObservableObject {
     struct Bootstrap {
         var data: SettingsData
         var log: [String] = []
-        var notice: String?
+        var notice: Notice?
         var readOnly = false
+        var readOnlyReason = ""
         var written: Data?
     }
 
@@ -493,6 +507,7 @@ final class Settings: ObservableObject {
             var boot = Bootstrap(data: loaded.data, log: loaded.log)
             if loaded.fileVersion > currentVersion {
                 boot.readOnly = true
+                boot.readOnlyReason = "the file is from a newer version"
                 boot.log.append("warning file version \(loaded.fileVersion) is newer than this build's \(currentVersion); not writing to it")
                 let validated = loaded.data.validated()
                 boot.data = validated.data
@@ -524,8 +539,21 @@ final class Settings: ObservableObject {
             // capture silent. The setup window shows this switch, and closing it registers the item.
             d.launchAtLogin = true
             var boot = Bootstrap(data: d)
-            boot.written = (try? encoder().encode(d)).flatMap { write($0, to: url) }
-            boot.log.append("created \(url.path)")
+            do {
+                let raw = try encoder().encode(d)
+                try writeOrThrow(raw, to: url)
+                boot.written = raw
+                boot.log.append("created \(url.path)")
+            } catch {
+                // A `~/.config` that belongs to root is common on developer Macs. Without this, every
+                // launch would find no file and start over as a first launch.
+                let folder = (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
+                boot.readOnly = true
+                boot.readOnlyReason = "\(folder) cannot be written"
+                boot.log.append("error cannot create \(url.path): \(error.localizedDescription); running on defaults without saving")
+                boot.notice = Notice(title: "Settings can't be saved",
+                                     detail: "Vignette can't write to \(folder). Changes last until it quits.")
+            }
             return boot
         case .invalid(let reason):
             let aside = url.appendingPathExtension("invalid")
@@ -538,11 +566,14 @@ final class Settings: ObservableObject {
             if moved {
                 boot.log.append("moved the invalid file to \(aside.path) and replaced it with defaults")
                 boot.written = (try? encoder().encode(d)).flatMap { write($0, to: url) }
-                boot.notice = "Vignette is using the default settings. Your file was kept as settings.json.invalid."
+                boot.notice = Notice(title: "settings.json could not be read",
+                                     detail: "Vignette is using the default settings. Your file was kept as settings.json.invalid.")
             } else {
                 boot.log.append("could not move the invalid file aside; running on defaults without writing")
                 boot.readOnly = true
-                boot.notice = "Vignette is using the default settings and will not save changes until the file is fixed."
+                boot.readOnlyReason = "the invalid file could not be moved aside"
+                boot.notice = Notice(title: "settings.json could not be read",
+                                     detail: "Vignette is using the default settings and will not save changes until the file is fixed.")
             }
             return boot
         }
@@ -689,7 +720,20 @@ final class Settings: ObservableObject {
             Log.write("[settings] reconciled apple show-thumbnail=\(data.appleThumbnail)")
         }
         followAppleLocation()
-        appleLocation = AppleScreencapture.observeLocation { [weak self] in self?.followAppleLocation() }
+        appleLocation = AppleScreencapture.observe("location") { [weak self] in self?.followAppleLocation() }
+        appleTargetObserver = AppleScreencapture.observe("target") { [weak self] in
+            guard let self, appleTarget != AppleScreencapture.target else { return }
+            appleTarget = AppleScreencapture.target
+            Log.write("[settings] apple target=\(appleTarget)")
+        }
+        if appleTarget != "file" { Log.write("[settings] apple target=\(appleTarget): no screenshot reaches the folder") }
+    }
+
+    /// Asks macOS to save captures as files again, for someone whose ⌘⇧5 Options sends them to the
+    /// Clipboard, Mail or Preview. With Copy to Clipboard on, Vignette still puts each one there.
+    func saveCapturesAsFiles() {
+        AppleScreencapture.set("target", "file")
+        appleTarget = AppleScreencapture.target
     }
 
     /// Takes Apple's save location as the watch folder when the two differ. Compared expanded,
@@ -727,8 +771,12 @@ final class Settings: ObservableObject {
 
     @discardableResult
     private static func write(_ raw: Data, to url: URL) -> Data? {
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        do { try raw.write(to: url, options: .atomic); return raw } catch { return nil }
+        (try? writeOrThrow(raw, to: url)).map { raw }
+    }
+
+    private static func writeOrThrow(_ raw: Data, to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try raw.write(to: url, options: .atomic)
     }
 
     private static func deepMerge(_ base: [String: Any], _ over: [String: Any]) -> [String: Any] {
@@ -740,7 +788,7 @@ final class Settings: ObservableObject {
     }
 
     private func writeNow(_ d: SettingsData) {
-        if readOnly { Log.write("[settings] warning not written: the file is from a newer version"); return }
+        if readOnly { Log.write("[settings] warning not written: \(readOnlyReason)"); return }
         guard let raw = try? Settings.encoder().encode(d) else { return }
         // Tweak-panel changes are not logged as they happen (a drag is many of them); the write is.
         if let previous = lastWrittenData {
@@ -812,6 +860,7 @@ final class Settings: ObservableObject {
             for line in loaded.log { Log.write("[settings] \(line)") }
             if loaded.fileVersion > Settings.currentVersion, !readOnly {
                 readOnly = true
+                readOnlyReason = "the file is from a newer version"
                 Log.write("[settings] warning file version \(loaded.fileVersion) is newer than this build's \(Settings.currentVersion); not writing to it")
             }
             // The app owns this record; a pasted or older file must not erase it.
@@ -836,6 +885,20 @@ enum AppleScreencapture {
     static func string(_ key: String) -> String? { CFPreferencesCopyAppValue(key as CFString, domain) as? String }
     static func bool(_ key: String) -> Bool? { CFPreferencesCopyAppValue(key as CFString, domain) as? Bool }
 
+    /// Where macOS sends a capture: `file`, or `clipboard`, `mail` or `preview` when ⌘⇧5's Options
+    /// name those. Unset means a file.
+    static var target: String { string("target") ?? "file" }
+
+    /// The target as the Screenshot app's Options menu names it.
+    static func targetName(_ target: String) -> String {
+        switch target {
+        case "clipboard": "the Clipboard"
+        case "mail": "Mail"
+        case "preview": "Preview"
+        default: target
+        }
+    }
+
     /// Where macOS saves screenshots: the `location` key, or the Desktop when it is unset.
     static var location: String { string("location") ?? SettingsData().screenshotsFolder }
 
@@ -847,25 +910,27 @@ enum AppleScreencapture {
         return standard(a) == standard(b)
     }
 
-    /// Calls `changed` on the main thread whenever `location` changes, whoever changed it: the
-    /// preferences daemon tells every process observing the key. Measured with a `defaults write`
-    /// from another process: 10 to 35 ms.
-    static func observeLocation(_ changed: @escaping @MainActor @Sendable () -> Void) -> Observer? {
-        UserDefaults(suiteName: domainName).map { Observer(defaults: $0, changed: changed) }
+    /// Calls `changed` on the main thread whenever `key` changes, whoever changed it: the
+    /// preferences daemon tells every process observing the key. Measured for `location` with a
+    /// `defaults write` from another process: 10 to 35 ms.
+    static func observe(_ key: String, _ changed: @escaping @MainActor @Sendable () -> Void) -> Observer? {
+        UserDefaults(suiteName: domainName).map { Observer(defaults: $0, key: key, changed: changed) }
     }
 
     final class Observer: NSObject {
         private let defaults: UserDefaults
+        private let key: String
         private let changed: @MainActor @Sendable () -> Void
 
-        init(defaults: UserDefaults, changed: @escaping @MainActor @Sendable () -> Void) {
+        init(defaults: UserDefaults, key: String, changed: @escaping @MainActor @Sendable () -> Void) {
             self.defaults = defaults
+            self.key = key
             self.changed = changed
             super.init()
-            defaults.addObserver(self, forKeyPath: "location", options: [], context: nil)
+            defaults.addObserver(self, forKeyPath: key, options: [], context: nil)
         }
 
-        deinit { defaults.removeObserver(self, forKeyPath: "location") }
+        deinit { defaults.removeObserver(self, forKeyPath: key) }
 
         override func observeValue(forKeyPath keyPath: String?, of object: Any?,
                                    change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {

@@ -24,6 +24,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
         var watching = false              // the directory source is live
         var indexed = false               // `files` came from a listing that worked, or the folder is missing
         var denied = false                // macOS refused this app the folder
+        var missingSince: Date?           // when a listing first found no folder, until one finds it
     }
     private let state = OSAllocatedUnfairLock(initialState: State())
 
@@ -144,6 +145,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
         if source == nil { start() }
         let listing = ScreenshotWatcher.read(folder)
         let read = listing.files
+        let now = Date()
         // macOS can let the folder be opened for events and still refuse its listing.
         if listing.refused {
             state.withLock { $0.denied = true }
@@ -154,14 +156,21 @@ final class ScreenshotWatcher: @unchecked Sendable {
         let change = state.withLock { s -> (added: [String], removed: [String]) in
             // A folder that could not be read held its files all along, so the first listing that
             // works is the folder as it was, not a batch of new captures: after a grant every file
-            // would otherwise be copied and shown. A missing folder was indexed as empty, and what
-            // arrives in it later is reported.
+            // would otherwise be copied and shown. A missing folder was indexed as empty.
+            if listing.missing { s.missingSince = s.missingSince ?? now }
             guard s.indexed else {
                 if let read { s.files = read; s.indexed = true }
                 return ([], [])
             }
             let current = read ?? [:]
-            let change = ScreenshotWatcher.diff(known: Set(s.files.keys), current: Set(current.keys))
+            var known = Set(s.files.keys)
+            // A folder that appears, as a network or external volume mounts, brings the files it
+            // already held: only those modified after it was found missing are new captures.
+            if let since = s.missingSince, !listing.missing, read != nil {
+                known.formUnion(current.filter { $0.value < since }.keys)
+                s.missingSince = nil
+            }
+            let change = ScreenshotWatcher.diff(known: known, current: Set(current.keys))
             s.files = current
             return change
         }
@@ -231,26 +240,26 @@ final class ScreenshotWatcher: @unchecked Sendable {
     /// attributes too and costs about 20 times more (measured on 1300 files: 7 ms against 110 ms).
     static func listing(of folder: URL) -> [String: Date] { read(folder).files ?? [:] }
 
-    /// The listing; empty for a folder that does not exist, which is what it holds; nil for a folder
-    /// that is there but could not be read, with `refused` when macOS refused the app it.
-    private static func read(_ folder: URL) -> (files: [String: Date]?, refused: Bool) {
+    /// The listing; empty for a folder that does not exist, which is what it holds, with `missing`;
+    /// nil for a folder that is there but could not be read, with `refused` when macOS refused the app it.
+    private static func read(_ folder: URL) -> (files: [String: Date]?, refused: Bool, missing: Bool) {
         let urls: [URL]
         do {
             urls = try FileManager.default.contentsOfDirectory(
                 at: folder, includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles)
         } catch CocoaError.fileReadNoSuchFile {
-            return ([:], false)
+            return ([:], false, true)
         } catch {
             let posix = (error as NSError).userInfo[NSUnderlyingErrorKey] as? NSError
             let refused = (error as? CocoaError)?.code == .fileReadNoPermission
                 || (posix?.domain == NSPOSIXErrorDomain && [Int(EPERM), Int(EACCES)].contains(posix?.code))
-            return (nil, refused)
+            return (nil, refused, false)
         }
         var files: [String: Date] = [:]
         for url in urls where isCandidate(url.lastPathComponent) {
             if let date = modificationDate(of: url) { files[url.lastPathComponent] = date }
         }
-        return (files, false)
+        return (files, false, false)
     }
 
     static func modificationDate(of url: URL) -> Date? {

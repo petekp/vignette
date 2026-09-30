@@ -243,14 +243,14 @@ struct SettingsView: View {
     // MARK: General
 
     @ViewBuilder private var general: some View {
-        // A settings.json this launch could not parse. Only a person who edits the file by hand
-        // meets this, and this window is where they look.
+        // A settings.json this launch could not parse or create. Only a person who edits the file
+        // by hand, or whose `~/.config` another tool owns, meets this, and this window is where they look.
         if let notice = settings.startupNotice {
             Section {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.json could not be read")
-                        Text(notice).font(.subheadline).foregroundStyle(.secondary)
+                        Text(notice.title)
+                        Text(notice.detail).font(.subheadline).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 } icon: {
@@ -299,6 +299,7 @@ struct SettingsView: View {
     @ViewBuilder private var screenshots: some View {
         Section {
             SaveToPicker()
+            if settings.appleTarget != "file" { CaptureTargetRow() }
             if folderDenied {
                 PermissionRow(symbol: "folder", title: "Vignette doesn't have access to this folder", status: .refused) {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)
@@ -327,6 +328,15 @@ struct SettingsView: View {
             }
         }
         Section {
+            // After Restore, or a file that turned it on: the way back to Vignette replacing it.
+            if settings.data.appleThumbnail {
+                LabeledContent {
+                    Button("Turn Off") { settings.update { $0.appleThumbnail = false } }
+                } label: {
+                    Text("The macOS thumbnail is on")
+                    Text("macOS holds each screenshot back while its thumbnail shows, so Vignette gets it about 5 seconds late.")
+                }
+            }
             LabeledContent("macOS screenshot settings") {
                 Button(settings.appleRestored ? "Restored" : "Restore") { callbacks.restoreAppleDefaults() }
                     .disabled(settings.data.appleOriginal == nil || settings.appleRestored)
@@ -512,6 +522,7 @@ struct PermissionRow: View {
     var isDefault = false
     /// macOS's own prompt is up and has not been answered.
     var busy = false
+    var button = "Allow…"
     let allow: () -> Void
 
     var body: some View {
@@ -520,7 +531,7 @@ struct PermissionRow: View {
                 Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(Color.installed)
                     .accessibilityLabel("Allowed")
             } else {
-                Button("Allow…", action: allow).keyboardShortcut(isDefault && !busy ? .defaultAction : nil).disabled(busy)
+                Button(button, action: allow).keyboardShortcut(isDefault && !busy ? .defaultAction : nil).disabled(busy)
             }
         } label: {
             Label {
@@ -539,6 +550,19 @@ struct PermissionRow: View {
                 }
             }
         }
+    }
+}
+
+/// Shown while ⌘⇧5's Options send captures to the Clipboard, Mail or Preview, where no file
+/// reaches the folder. The button asks macOS to save them as files again.
+struct CaptureTargetRow: View {
+    @ObservedObject private var settings = Settings.shared
+    var isDefault = false
+
+    var body: some View {
+        PermissionRow(symbol: "folder", title: "macOS sends screenshots to \(AppleScreencapture.targetName(settings.appleTarget))",
+                      reason: "Vignette shows only screenshots saved to a folder.", status: .refused,
+                      isDefault: isDefault, button: "Save to Folder") { settings.saveCapturesAsFiles() }
     }
 }
 
@@ -590,6 +614,8 @@ private struct ShortcutRecorder: NSViewRepresentable {
     let text: String
     /// Starts listening as the view appears, for a recorder the user just asked for.
     var recordNow = false
+    /// Why the last press can't be the shortcut, or nil once there is nothing to explain.
+    var onRefusal: (String?) -> Void = { _ in }
     let onCommit: (String) -> Void
 
     func makeNSView(context: Context) -> ShortcutRecorderView {
@@ -601,6 +627,7 @@ private struct ShortcutRecorder: NSViewRepresentable {
     func updateNSView(_ view: ShortcutRecorderView, context: Context) {
         view.text = text
         view.onCommit = onCommit
+        view.onRefusal = onRefusal
     }
 }
 
@@ -610,9 +637,11 @@ private struct ShortcutRecorder: NSViewRepresentable {
 private final class ShortcutRecorderView: NSView {
     var text = "" { didSet { if text != oldValue { needsDisplay = true } } }
     var onCommit: (String) -> Void = { _ in }
+    var onRefusal: (String?) -> Void = { _ in }
     var recordOnWindow = false
 
     private var recording = false { didSet { needsDisplay = true } }
+    private var refused = false
     private var outsideClick: Any?
 
     override var acceptsFirstResponder: Bool { true }
@@ -687,6 +716,7 @@ private final class ShortcutRecorderView: NSView {
 
     private func stop() {
         recording = false
+        if refused { refused = false; onRefusal(nil) }
         if let outsideClick { NSEvent.removeMonitor(outsideClick) }
         outsideClick = nil
     }
@@ -699,6 +729,12 @@ private final class ShortcutRecorderView: NSView {
               let shortcut = HotKeySpec.text(keyCode: UInt32(event.keyCode), modifiers: HotKeySpec.carbonModifiers(flags)) else {
             NSSound.beep()
             stop()
+            return
+        }
+        if let reason = HotKeySpec.refusal(keyCode: UInt32(event.keyCode), modifiers: HotKeySpec.carbonModifiers(flags)) {
+            NSSound.beep()
+            refused = true
+            onRefusal(reason)
             return
         }
         stop()
@@ -718,6 +754,7 @@ struct ShortcutSetting: View {
     /// Set by picking Key Combination…: the ellipsis promised a question, so the recorder that
     /// appears starts listening.
     @State private var recordNow = false
+    @State private var refusal: String?
 
     static let doubleTaps = ["double-rshift", "double-lshift", "double-rcmd", "double-ropt"]
     private static let combination = "combination"
@@ -737,14 +774,19 @@ struct ShortcutSetting: View {
         }
         if !settings.data.usesDoubleTap {
             LabeledContent("Keys") {
-                ShortcutRecorder(text: HotKeySpec.parse(settings.data.recentHotkey)?.glyphs ?? settings.data.recentHotkey,
-                                 recordNow: recordNow) { shortcut in
-                    settings.update { $0.recentHotkey = shortcut }
+                VStack(alignment: .trailing, spacing: 4) {
+                    ShortcutRecorder(text: HotKeySpec.parse(settings.data.recentHotkey)?.glyphs ?? settings.data.recentHotkey,
+                                     recordNow: recordNow, onRefusal: { refusal = $0 }) { shortcut in
+                        settings.update { $0.recentHotkey = shortcut }
+                    }
+                    .frame(width: 150, height: 24)
+                    // An AppKit view has no text baseline, so the row would line the label up with its
+                    // bottom edge. This is where the text it draws sits.
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                    if let refusal {
+                        Text(refusal).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-                .frame(width: 150, height: 24)
-                // An AppKit view has no text baseline, so the row would line the label up with its
-                // bottom edge. This is where the text it draws sits.
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             }
         }
     }
@@ -800,6 +842,9 @@ enum Accessibility {
     /// which poll for it.
     @MainActor
     static func request() {
+        // macOS queues one alert per request, so a second press while one is up would leave another
+        // waiting behind it, which comes up after the first is answered.
+        guard !alertIsUp else { Log.write("[accessibility] macOS's alert is already up"); return }
         let asking = NSApp.keyWindow
         _ = ModifierTap.trusted(prompt: true)
         Task { @MainActor in

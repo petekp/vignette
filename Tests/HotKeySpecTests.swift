@@ -94,6 +94,20 @@ final class HotKeySpecTests: XCTestCase {
         XCTAssertNil(HotKeySpec.parse("double-rshift")?.menuKeyEquivalent)
     }
 
+    /// A Carbon hotkey takes its key from every app, so the recorder must never register one.
+    func testTheRecorderRefusesWhatEveryAppOrMacOSUses() {
+        func refusal(_ text: String) -> String? {
+            guard case let .key(code, mods)? = HotKeySpec.parse(text) else { return "unparsed" }
+            return HotKeySpec.refusal(keyCode: code, modifiers: mods)
+        }
+        for taken in ["cmd+q", "cmd+w", "cmd+c", "cmd+space", "cmd+shift+3", "cmd+shift+4", "cmd+shift+5", "ctrl+space", "ctrl+left"] {
+            XCTAssertNotNil(refusal(taken), taken)
+        }
+        for free in ["cmd+shift+6", "ctrl+opt+cmd+9", "opt+space", "cmd+opt+s", "ctrl+shift+left"] {
+            XCTAssertNil(refusal(free), free)
+        }
+    }
+
     func testCarbonModifiersFromEventFlags() {
         XCTAssertEqual(HotKeySpec.carbonModifiers([.command, .shift]), UInt32(cmdKey | shiftKey))
         XCTAssertEqual(HotKeySpec.carbonModifiers([.option, .control]), UInt32(optionKey | controlKey))

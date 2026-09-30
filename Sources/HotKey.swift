@@ -12,6 +12,10 @@ final class HotKey {
     private let holdSeconds: TimeInterval
     private var holdTimer: Timer?
     private var isDown = false
+    /// `RegisterEventHotKey`'s answer. It is noErr for a combination macOS or another app already
+    /// uses (measured on macOS 15 with ⌘⇧3, ⌃Space and Raycast's ⌥Space), so it proves nothing
+    /// about the keys reaching this app; only an invalid key or modifier fails it.
+    private(set) var status: OSStatus = noErr
 
     init(keyCode: UInt32, modifiers: UInt32, holdSeconds: TimeInterval = 0.4, action: @escaping () -> Void, hold: (() -> Void)? = nil) {
         self.action = action
@@ -33,7 +37,7 @@ final class HotKey {
             return noErr
         }, 2, &specs, selfPtr, &handler)
         let id = EventHotKeyID(signature: Identity.hotKeySignature, id: 1)
-        RegisterEventHotKey(keyCode, modifiers, id, GetApplicationEventTarget(), 0, &ref)
+        status = RegisterEventHotKey(keyCode, modifiers, id, GetApplicationEventTarget(), 0, &ref)
     }
 
     private func pressed() {

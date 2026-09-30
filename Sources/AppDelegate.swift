@@ -142,7 +142,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                                 installAgentPlugin: { [weak self] roots in self?.installAgentPluginFromSetup(roots) }))
         } else {
             // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
-            LoginItem.apply(settings.data.launchAtLogin)
+            // A removal in System Settings is a wish too, and turns the setting off instead.
+            if settings.data.launchAtLogin, LoginItem.removedByPerson {
+                Log.write("[login] removed in System Settings; Open at login is off")
+                settings.update { $0.launchAtLogin = false }
+            } else {
+                LoginItem.apply(settings.data.launchAtLogin)
+            }
             startAgentPlugin()
         }
         requests.refreshKeptLists()
@@ -307,7 +313,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         switch HotKeySpec.parse(settings.data.recentHotkey) {
         case .key(let keyCode, let modifiers):
-            hotKey = HotKey(keyCode: keyCode, modifiers: modifiers, action: fire, hold: hold)
+            let registered = HotKey(keyCode: keyCode, modifiers: modifiers, action: fire, hold: hold)
+            guard registered.status == noErr else {
+                Log.write("[hotkey] error \(settings.data.recentHotkey) not registered: status \(registered.status)")
+                return
+            }
+            hotKey = registered
         case .doubleTap(let keyCode):
             modifierTap = ModifierTap(keyCode: keyCode, action: fire, hold: hold)
         case nil:
@@ -730,6 +741,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if watcher?.isDenied == true {
             blocked.append(NSMenuItem(title: "Allow Access to Your Screenshots…", action: #selector(openFilesAndFolders), keyEquivalent: ""))
         }
+        if settings.appleTarget != "file" {
+            let item = NSMenuItem(title: "Save Screenshots to a Folder", action: #selector(saveCapturesAsFiles), keyEquivalent: "")
+            if #available(macOS 14.4, *) {
+                item.subtitle = "macOS sends them to \(AppleScreencapture.targetName(settings.appleTarget))."
+            }
+            blocked.append(item)
+        }
         if settings.data.usesDoubleTap, !ModifierTap.trusted(prompt: false) {
             blocked.append(NSMenuItem(title: "Allow Accessibility for the Shortcut…", action: #selector(requestAccessibility), keyEquivalent: ""))
         }
@@ -797,6 +815,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     @objc private func openFilesAndFolders() {
         // macOS doesn't ask twice, so the answer is changed where it keeps it.
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)
+    }
+
+    @objc private func saveCapturesAsFiles() {
+        settings.saveCapturesAsFiles()
     }
 
     @objc private func requestAccessibility() {
