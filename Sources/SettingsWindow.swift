@@ -46,6 +46,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
             done(AgentPlugin.Result(root: root, outcome: .absent))
         }
         var folderDenied: () -> Bool = { false }
+        /// Why the last install failed, by agent directory, whatever started it.
+        var agentFailures: () -> [URL: String] = { [:] }
     }
 
     var callbacks = Callbacks()
@@ -330,7 +332,7 @@ struct SettingsView: View {
                     .disabled(settings.data.appleOriginal == nil || settings.appleRestored)
             }
         } footer: {
-            footer("Vignette replaces the macOS thumbnail. Restore puts back the thumbnail and the folder, format and shadow macOS used before.")
+            footer("While Vignette runs, it replaces the macOS thumbnail. Restore keeps the macOS thumbnail on, and puts back the folder, format and shadow macOS used before.")
         }
     }
 
@@ -352,7 +354,10 @@ struct SettingsView: View {
         } footer: {
             if !agentRows.isEmpty { footer(SettingsView.agentsLine) }
         }
-        .onAppear(perform: refreshAgents)
+        .onAppear {
+            agentFailures = callbacks.agentFailures()
+            refreshAgents()
+        }
         .onReceive(NotificationCenter.default.publisher(for: AgentTools.found)) { _ in refreshAgents() }
         if let claude = claudeRow {
             Section {

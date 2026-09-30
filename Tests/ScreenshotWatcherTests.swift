@@ -39,6 +39,10 @@ final class ScreenshotWatcherTests: XCTestCase {
         XCTAssertEqual(area("/Users/someone/Downloads"), "your Downloads folder")
         XCTAssertNil(area("/Users/someone/DesktopArchive"))
         XCTAssertNil(area("/Users/someone/Dropbox/Screenshots"))
+        XCTAssertEqual(area("/Users/someone/Library/Mobile Documents/com~apple~CloudDocs/Shots"), "your iCloud Drive")
+        XCTAssertEqual(area("/Users/someone/Library/CloudStorage/Dropbox/Screenshots"), "your Dropbox folder")
+        XCTAssertEqual(area("/Users/someone/Library/CloudStorage/GoogleDrive-a@b.com/My Drive"), "your GoogleDrive folder")
+        XCTAssertEqual(area("/Volumes/Shots/2026"), "that disk")
     }
 
     func testCandidatesAreScreenshotFormatsAndNotOutputs() {

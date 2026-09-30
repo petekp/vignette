@@ -16,8 +16,13 @@ final class FocusReturn {
         observer = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] note in
+            // Only an app the person works in. macOS's permission alerts run as apps of their own
+            // (universalAccessAuthWarn for Accessibility) and take the focus while they are up, and
+            // Vignette opens System Settings for a permission; closing setup after a grant should go
+            // back to the app the person was in, not to either.
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  app != NSRunningApplication.current else { return }
+                  app != NSRunningApplication.current, app.activationPolicy == .regular,
+                  app.bundleIdentifier != "com.apple.systempreferences" else { return }
             // NSWorkspace delivers notifications registered with queue: .main on the main thread.
             MainActor.assumeIsolated {
                 self?.previousApp = app

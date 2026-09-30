@@ -44,6 +44,9 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     private let settings = Settings.shared
     private var window: NSWindow?
     private var model: SetupModel?
+    /// Set when the app starts to quit. AppKit closes the window after `applicationWillTerminate`,
+    /// and a quit is not an answer: nothing the window would apply on closing is applied.
+    var quitting = false
 
     /// Whether a first launch should open this. Recorded as done when the window closes rather than
     /// when it opens, so a launch quit part way through asks again.
@@ -108,12 +111,18 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     }
 
     private func comeBack() {
+        guard model != nil else { return }   // closed: a grant made later must not reopen it
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func windowWillClose(_ notification: Notification) {
         guard let model else { return }
+        if quitting {
+            Log.write("[setup] quit before it was done; asks again at the next launch")
+            self.model = nil
+            return
+        }
         // Vignette can't work without the folder, so a window closed before it asked asks now.
         if model.callbacks.folderAccess() == .ask { model.callbacks.askFolder() }
         settings.update { $0.setup = SetupState.done.rawValue }
@@ -131,6 +140,12 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         LoginItem.apply(settings.data.launchAtLogin)
         DispatchQueue.main.async { FocusReturn.shared.restore(reason: "setup closed") }
         self.model = nil
+        // The view's poll would otherwise keep running in the closed window. Let go after this
+        // turn, since AppKit is still closing the window.
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.contentViewController = nil
+            self?.window = nil
+        }
     }
 }
 
@@ -249,8 +264,9 @@ struct SetupView: View {
         hasShots = model.callbacks.hasScreenshots()
         let before = folder
         folder = model.callbacks.folderAccess()
-        // Only after `.waiting`: a folder already allowed answers at once, with no prompt to cover us.
-        if before == .waiting, folder == .granted || folder == .refused { model.folderAnswered(folder) }
+        // After an answer to macOS's prompt, or a change made in System Settings after a refusal.
+        // Not from `.ask`: a folder already allowed answers at once, with no prompt to cover us.
+        if before != .ask, before != folder, folder == .granted || folder == .refused { model.folderAnswered(folder) }
     }
 
     @ViewBuilder private func page(_ page: SetupModel.Page) -> some View {
@@ -324,7 +340,10 @@ struct SetupView: View {
             // A step to take, not a fault: nothing has gone wrong on a fresh install.
             PermissionRow(symbol: "lock.fill", title: "Needs Accessibility permission",
                           reason: SettingsView.accessibilityReason, status: .ask, isDefault: true) { Accessibility.request() }
-        } else if folder == .granted, !hasShots {
+        } else if folder != .granted {
+            // Nothing can appear until Vignette can read the folder, so that comes before trying the keys.
+            folderRow(model.protectedArea ?? "your screenshots folder")
+        } else if !hasShots {
             // Ahead of `fired`: with nothing in the folder the shortcut opens nothing, so saying
             // it worked would be saying so about an empty corner.
             line("Take a screenshot with ⌘⇧4 first.", symbol: "camera", tint: .accentColor)
@@ -418,7 +437,7 @@ struct SetupView: View {
     private var pageIsDone: Bool {
         switch model.page {
         case .welcome: return model.protectedArea == nil || folder == .granted
-        case .shortcut: return !settings.data.usesDoubleTap || trusted
+        case .shortcut: return (!settings.data.usesDoubleTap || trusted) && folder == .granted
         case .agents: return true
         }
     }

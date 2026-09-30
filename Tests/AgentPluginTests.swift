@@ -229,6 +229,25 @@ final class AgentPluginTests: XCTestCase {
         let shell = "Last login: Tue\nnvm: using node v22\n/Users/x/.nvm/versions/node/v22.1.0/bin/claude\n  /opt/tools/codex  \nclaude not found\n"
         XCTAssertEqual(AgentTools.parse(shell, names: ["claude", "codex"]),
                        ["claude": "/Users/x/.nvm/versions/node/v22.1.0/bin/claude", "codex": "/opt/tools/codex"])
+        XCTAssertEqual(AgentTools.parsePath(shell + "\nVIGNETTE_SHELL_PATH=/a/bin:/usr/bin\n"), "/a/bin:/usr/bin")
+    }
+
+    /// npm installs a tool as a `#!/usr/bin/env node` script, with `node` in the same folder, and an
+    /// app opened from Finder has no such folder on its `PATH`.
+    func testAToolWhoseInterpreterIsBesideItRuns() throws {
+        let bin = dir.appendingPathComponent("node/bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let interpreter = bin.appendingPathComponent("fakenode"), tool = bin.appendingPathComponent("codex")
+        try "#!/bin/sh\necho ran by fakenode\n".write(to: interpreter, atomically: true, encoding: .utf8)
+        try "#!/usr/bin/env fakenode\n".write(to: tool, atomically: true, encoding: .utf8)
+        for file in [interpreter, tool] { try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path) }
+        let linked = dir.appendingPathComponent("codex")
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: tool)
+        for binary in [tool.path, linked.path] {
+            let result = try XCTUnwrap(Subprocess.run(binary, [], timeout: 5))
+            XCTAssertEqual(result.status, 0, result.output)
+            XCTAssertEqual(result.output.trimmingCharacters(in: .whitespacesAndNewlines), "ran by fakenode")
+        }
     }
 
     func testATestLaunchNeverGetsThePersonsOwnAgentFolders() throws {

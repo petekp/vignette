@@ -22,7 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var watcher: ScreenshotWatcher?
     /// True on a first launch whose folder macOS protects, until setup asks for it.
     private var watcherWaitsForSetup = false
+    /// Why the last plugin install failed, by agent directory, for the Agents tab.
+    private var pluginFailures: [URL: String] = [:]
     private var wakeObserver: Any?
+    private var terminateSignal: DispatchSourceSignal?
     private var screenObserver: Any?
     private var hotKey: HotKey?
     private var pressDismissed = false      // the last hotkey press closed the stack
@@ -58,6 +61,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         replaceOlderInstances()
+        // `kill` and `killall` send SIGTERM, which would end the process without
+        // `applicationWillTerminate`: no settings flush, and Apple's thumbnail left off.
+        signal(SIGTERM, SIG_IGN)
+        terminateSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        terminateSignal?.setEventHandler { NSApp.terminate(nil) }
+        terminateSignal?.resume()
         AppLocation.ejectDiskImageIfAsked()
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppDelegate.makeMainMenu()
@@ -104,7 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             openTweaks: { [weak self] in self?.debugPanel.toggle() },
             installAgentPlugin: { [weak self] root, done in self?.installAgentPlugin(into: [root]) { done($0) } },
             removeAgentPlugin: { [weak self] root, done in self?.removeAgentPlugin(from: root, completion: done) },
-            folderDenied: { [weak self] in self?.watcher?.isDenied ?? false })
+            folderDenied: { [weak self] in self?.watcher?.isDenied ?? false },
+            agentFailures: { [weak self] in self?.pluginFailures ?? [:] })
         // Before the watcher, so a capture taken during launch already lands the way Vignette needs.
         settings.reconcileApple()
         startDrawings()
@@ -129,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                                 hasScreenshots: { [weak self] in self?.hasScreenshots ?? false },
                                 folderAccess: { [weak self] in self?.folderAccess ?? .ask },
                                 askFolder: { [weak self] in self?.askForFolder() },
-                                installAgentPlugin: { [weak self] roots in self?.installAgentPlugin(into: roots) }))
+                                installAgentPlugin: { [weak self] roots in self?.installAgentPluginFromSetup(roots) }))
         } else {
             // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
             LoginItem.apply(settings.data.launchAtLogin)
@@ -149,8 +159,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        setupWindow.quitting = true
         annotator.storeForQuit()
         settings.flush()
+        // A newer launch replacing this one has already turned Apple's thumbnail off for itself.
+        let replaced = NSRunningApplication.runningApplications(withBundleIdentifier: Identity.bundleID)
+            .contains { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+        if !replaced { settings.handBackAppleThumbnail() }
         Log.write("[app] terminating pid=\(ProcessInfo.processInfo.processIdentifier)")
     }
 
@@ -204,7 +219,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// The Agents tab's switch, the setup window and `install-skill`. `AgentPlugins` logs each
     /// result, and the Agents tab shows a failure under the agent's name.
     func installAgentPlugin(into roots: [URL], completion: @escaping ([AgentPlugin.Result]) -> Void = { _ in }) {
-        agentPlugins.install(into: roots, completion: completion)
+        agentPlugins.install(into: roots) { [weak self] results in
+            for result in results {
+                let failed = [.failed, .noTool].contains(result.outcome)
+                self?.pluginFailures[result.root] = failed ? "Couldn't install: \(result.detail)" : nil
+            }
+            completion(results)
+        }
+    }
+
+    /// Setup has closed by the time its install answers, so a failure opens the Agents tab, which
+    /// says why and whose switch tries again.
+    private func installAgentPluginFromSetup(_ roots: [URL]) {
+        installAgentPlugin(into: roots) { [weak self] results in
+            guard results.contains(where: { [.failed, .noTool].contains($0.outcome) }) else { return }
+            self?.settingsWindow.show(tab: .agents, activating: false)
+        }
     }
 
     /// The Agents tab's switch, turned off.
@@ -694,6 +724,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.removeAllItems()
         let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
 
+        // What stops Vignette working comes first, as the way to fix it. Apple's thumbnail is off
+        // while Vignette runs, so without these a capture would show nothing and say nothing.
+        var blocked: [NSMenuItem] = []
+        if watcher?.isDenied == true {
+            blocked.append(NSMenuItem(title: "Allow Access to Your Screenshots…", action: #selector(openFilesAndFolders), keyEquivalent: ""))
+        }
+        if settings.data.usesDoubleTap, !ModifierTap.trusted(prompt: false) {
+            blocked.append(NSMenuItem(title: "Allow Accessibility for the Shortcut…", action: #selector(requestAccessibility), keyEquivalent: ""))
+        }
+        for item in blocked {
+            item.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Needs permission")?
+                .withSymbolConfiguration(.init(paletteColors: [.white, .systemYellow]))
+            menu.addItem(item)
+        }
+        if !blocked.isEmpty { menu.addItem(.separator()) }
+
         if let version = updater?.waiting {
             let updateItem = NSMenuItem(title: "Update Available…", action: #selector(checkForUpdates), keyEquivalent: "")
             updateItem.badge = NSMenuItemBadge(string: version)
@@ -746,6 +792,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
         menu.addItem(withTitle: "Quit Vignette", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
+    }
+
+    @objc private func openFilesAndFolders() {
+        // macOS doesn't ask twice, so the answer is changed where it keeps it.
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)
+    }
+
+    @objc private func requestAccessibility() {
+        Accessibility.request()
     }
 
     @objc private func checkForUpdates() {

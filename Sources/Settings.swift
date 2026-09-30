@@ -583,15 +583,28 @@ final class Settings: ObservableObject {
     /// Brings a file's raw JSON up to `currentVersion`. Files with no `version` are version 0.
     /// A file from a newer version is returned unchanged. A bump that changes a key rewrites it
     /// here, between the guard and the stamp, one step per version. Version 1 introduced the
-    /// version field. Version 2 writes only the `ui` values that differ from the defaults, which
-    /// changes no key, so a file from before it is read as it is.
+    /// version field. Version 2 writes only the `ui` values that differ from the defaults.
     static func migrate(_ raw: [String: Any]) -> (json: [String: Any], from: Int) {
         var json = raw
         let from = (json["version"] as? NSNumber)?.intValue ?? 0
         guard from < currentVersion else { return (json, from) }
+        // 0.1.0 and 0.1.1 wrote every `ui` value, so a value there is a choice only where it
+        // differs from their default. Kept, their old defaults would read as choices from now on.
+        if from < 2, var ui = json["ui"] as? [String: Any] {
+            for (key, old) in Self.uiDefaultsBeforeVersion2 where (ui[key] as? NSNumber)?.doubleValue == old {
+                ui[key] = nil
+            }
+            json["ui"] = ui
+        }
         json["version"] = currentVersion
         return (json, from)
     }
+
+    /// The `ui` defaults of 0.1.0 and 0.1.1 that differ from today's. The rest equal today's, and
+    /// a version 2 write leaves those out anyway.
+    static let uiDefaultsBeforeVersion2: [String: Double] = [
+        "slideInDuration": 0.75, "annotationScreenInset": 65, "newTextSize": 24, "textWeight": 500, "textLineHeight": 1.35,
+    ]
 
     /// Applies immediately; the file write is coalesced so slider drags do not thrash the disk.
     func update(_ change: (inout SettingsData) -> Void) {
@@ -661,6 +674,15 @@ final class Settings: ObservableObject {
     /// the file past the clipboard fill. Then take macOS's save location as the watch folder, and
     /// keep taking it while the app runs, so a folder picked in ⌘⇧5's Options menu is the one
     /// Vignette watches. `type` and `disable-shadow` are left alone, since both of their values work.
+    /// Vignette replaces Apple's thumbnail only while it runs. Quitting puts it back, when Apple
+    /// showed it before Vignette, and the next launch's `reconcileApple` takes it away again. So a
+    /// person who quits, turns off Open at login, or removes the app is never left with captures
+    /// that show nothing.
+    func handBackAppleThumbnail() {
+        guard !data.appleThumbnail, data.appleOriginal?.showThumbnail ?? true else { return }
+        AppleScreencapture.set("show-thumbnail", true)
+    }
+
     func reconcileApple() {
         if (AppleScreencapture.bool("show-thumbnail") ?? true) != data.appleThumbnail {
             AppleScreencapture.set("show-thumbnail", data.appleThumbnail)

@@ -14,6 +14,8 @@ enum AgentTools {
 
     private static let lock = NSLock()
     private static var fromShell: [String: String] = [:]
+    /// The login shell's `PATH`, once it has answered.
+    private static var shellPath: String?
     private static let shellDone = DispatchSemaphore(value: 0)
     private static var started = false
 
@@ -71,9 +73,10 @@ enum AgentTools {
             Log.write("[tools] test launch: codex=\(env["VIGNETTE_CODEX"] ?? "none") herdr=\(env["VIGNETTE_HERDR"] ?? "none"), from VIGNETTE_CODEX and VIGNETTE_HERDR")
         }
         DispatchQueue.global(qos: .utility).async {
-            let found = shellPaths(names)
+            let (found, path) = shellPaths(names)
             let new = lock.withLock { () -> Bool in
                 fromShell = found
+                shellPath = path
                 return !found.isEmpty
             }
             shellDone.signal()
@@ -83,13 +86,36 @@ enum AgentTools {
     }
 
     /// The person's login shell, interactive so it reads the files where nvm and the like set up
-    /// `PATH`, asked `command -v` for each name, with nothing on its input.
-    private static func shellPaths(_ names: [String]) -> [String: String] {
+    /// `PATH`, asked `command -v` for each name and for its `PATH`, with nothing on its input.
+    private static func shellPaths(_ names: [String]) -> (found: [String: String], path: String?) {
         guard let entry = getpwuid(getuid()), let shell = entry.pointee.pw_shell.map({ String(cString: $0) }),
               FileManager.default.isExecutableFile(atPath: shell),
-              let result = Subprocess.run(shell, ["-ilc", "command -v \(names.joined(separator: " "))"], timeout: shellTimeout,
-                                          environment: ["TERM": "dumb"]) else { return [:] }
-        return parse(result.output, names: names)
+              let result = Subprocess.run(shell, ["-ilc", "command -v \(names.joined(separator: " ")); printf '\\n\(pathMarker)%s\\n' \"$PATH\""],
+                                          timeout: shellTimeout, environment: ["TERM": "dumb"]) else { return ([:], nil) }
+        return (parse(result.output, names: names), parsePath(result.output))
+    }
+
+    private static let pathMarker = "VIGNETTE_SHELL_PATH="
+
+    /// The `PATH` the shell printed after `pathMarker`, or nil.
+    static func parsePath(_ output: String) -> String? {
+        output.split(whereSeparator: \.isNewline).last { $0.hasPrefix(pathMarker) }
+            .map { String($0.dropFirst(pathMarker.count)) }.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// The `PATH` to run `binary` with. An app opened from Finder has only the system's folders, and
+    /// a tool npm installed is a `#!/usr/bin/env node` script, which fails without `node` on it. So
+    /// the tool's own folder comes first, as written and with its links resolved, since npm, nvm,
+    /// Volta and Homebrew keep `node` beside the command. Then the login shell's `PATH`, once it
+    /// has answered, then the system's.
+    static func searchPath(for binary: String, shell: String? = nil, system: String? = ProcessInfo.processInfo.environment["PATH"]) -> String {
+        let url = URL(fileURLWithPath: binary)
+        var folders = [url.deletingLastPathComponent().path, url.resolvingSymlinksInPath().deletingLastPathComponent().path]
+        for path in [shell ?? lock.withLock({ shellPath }), system ?? "/usr/bin:/bin:/usr/sbin:/sbin"] {
+            folders += (path ?? "").split(separator: ":").map(String.init)
+        }
+        var seen = Set<String>()
+        return folders.filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: ":")
     }
 
     /// The lines of `command -v` output that are absolute paths to one of `names`. Anything else a

@@ -234,19 +234,25 @@ extension AgentConnection {
 
 /// How the connections run the command line tools they talk through.
 enum Subprocess {
+    /// The app's environment with `adding` over it and a `PATH` that finds what `binary` needs.
+    static func environment(for binary: String, adding: [String: String] = [:]) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment.merging(adding) { $1 }
+        environment["PATH"] = AgentTools.searchPath(for: binary)
+        return environment
+    }
+
     /// Runs a command and returns its status, its combined output, and whether the watchdog had to
     /// stop it; nil when it cannot start. It blocks, so callers keep it off the main thread. A
     /// command killed on the deadline may still have been accepted by whatever it was talking to, so
     /// a caller that has to tell a definite failure from an uncertain one reads `timedOut` rather
-    /// than the exit status. `environment` is added to the app's own.
+    /// than the exit status. `environment` is added to the app's own, with `PATH` from
+    /// `AgentTools.searchPath`.
     static func run(_ binary: String, _ arguments: [String], timeout: TimeInterval, environment: [String: String] = [:])
         -> (status: Int32, output: String, timedOut: Bool)? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = arguments
-        if !environment.isEmpty {
-            process.environment = ProcessInfo.processInfo.environment.merging(environment) { $1 }
-        }
+        process.environment = Self.environment(for: binary, adding: environment)
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe

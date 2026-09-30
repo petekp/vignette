@@ -133,6 +133,7 @@ enum AppServer {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = arguments
+        process.environment = Subprocess.environment(for: binary)
         let input = Pipe(), output = Pipe()
         process.standardInput = input
         process.standardOutput = output

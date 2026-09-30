@@ -926,9 +926,14 @@ screenshot location for such a launch is written with the same variable:
   clipboard when the watcher reports the file, so with both on a Cmd+V inside that gap pastes what
   was there before. Installing Vignette is choosing what happens after a capture, so that is not a
   question the setup window asks and there is no toggle for it; `appleOriginal`, captured in the
-  same turn, is the way back. `Settings.reconcileApple()` runs at every launch, before the watcher,
-  and puts back `show-thumbnail` if something outside the app turned it on, since Apple's thumbnail
-  breaks Vignette rather than merely differing from it. The save location runs the other way:
+  same turn, is the way back. Vignette replaces the thumbnail only while it runs: quitting puts
+  `show-thumbnail` back on when Apple showed it before Vignette (`Settings.handBackAppleThumbnail`),
+  unless a newer launch of the same bundle id is replacing this one, and `Settings.reconcileApple()`
+  turns it off again at the next launch, before the watcher. So quitting, turning Open at login off,
+  or removing the app never leaves captures that show nothing. SIGTERM is turned into a normal quit
+  for the same reason; a crash or a force quit still leaves it off until the next launch. The
+  reconcile also undoes anything outside the app that turned it on, since Apple's thumbnail breaks
+  Vignette rather than merely differing from it. The save location runs the other way:
   Vignette follows macOS's. The launch takes `location` as `screenshotsFolder` (unset reads as
   `~/Desktop`), and a key-value observer on the domain (`AppleScreencapture.observeLocation`) takes
   every later change, a folder picked in ⌘⇧5's Options menu included, as it is written
@@ -936,7 +941,7 @@ screenshot location for such a launch is written with the same variable:
   `defaults write` from another process). Picking a folder in Vignette writes `location`, so the two
   never differ, and the observer ignores that write coming back as the folder it already has.
   `type` and `disable-shadow` are never reconciled. The reconcile is silent; the Screenshots tab
-  says that Vignette replaces the thumbnail in the footer under its Restore button. That button is the
+  says that Vignette replaces the thumbnail while it runs, in the footer under its Restore button. That button is the
   disable path and the only way back in the UI. `appleThumbnail` stays a settings.json key with no
   control, because `restoreAppleDefaults()` writes Apple's old value into it and that is what makes
   a restore survive the next launch's reconcile.
@@ -1012,8 +1017,7 @@ screenshot location for such a launch is written with the same variable:
   `~/.claude/settings.json`'s `permissions.allow`, which lets Claude Code open the sent images
   without asking. It writes through a link to that file, since people keep it in a dotfiles
   repository; a skill's `allowed-tools` was tried and made Claude Code ask to use the skill
-  instead. Without herdr, the Agents tab and setup say Send reaches Claude Code only through it
-  (`AgentName`). The two tiers
+  instead. The two tiers
   are recorded on every request and reported in `[state] requests`; `docs/closed-agent-loop-implementation-2026-09-20.md` says why the weaker one
   is still allowed to submit.
 - A `vignette://` URL has no authenticated sender, so a reply is authorized by a per-request bearer

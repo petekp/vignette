@@ -286,6 +286,58 @@ def settings_repair(app):
     app.stop()
 
 
+def apple_thumbnail(app):
+    """Apple's show-thumbnail in the test copy's own screencapture domain, or None when unset."""
+    env = dict(os.environ, CFFIXED_USER_HOME=app.home)
+    out = subprocess.run(['defaults', 'read', f"{app.copy['bundle']}.screencapture", 'show-thumbnail'],
+                         env=env, capture_output=True, text=True)
+    return None if out.returncode else out.stdout.strip() == '1'
+
+
+def first_launch(app):
+    """A first launch shows setup and turns Apple's thumbnail off. Quitting during setup puts the
+    thumbnail back and leaves setup to show again at the next launch."""
+    # No settings file: this is a first launch. Only Apple's location and the update checks are set.
+    app.defaults(f"{app.copy['bundle']}.screencapture", 'location', app.watch)
+    app.defaults(app.copy['bundle'], 'SUEnableAutomaticChecks', '-bool', 'false')
+    offset = app.log_size()
+    app.launch()   # not start(), which writes a settings file with setup done
+    app.wait_log('[setup] shown', offset)
+    if apple_thumbnail(app) is not False:
+        raise Failed(f"Apple's thumbnail is {apple_thumbnail(app)} while Vignette runs, not off")
+    app.report.step("setup is shown and Apple's thumbnail is off")
+    app.stop()
+    if apple_thumbnail(app) is not True:
+        raise Failed(f"Apple's thumbnail is {apple_thumbnail(app)} after quitting, not back on")
+    with open(app.settings) as f:
+        if json.load(f).get('setup') != 'unasked':
+            raise Failed('setup was recorded as done though it was quit part way')
+    app.report.step("quitting put Apple's thumbnail back and left setup to ask again")
+    offset = app.log_size()
+    app.launch()
+    app.wait_log('[setup] shown', offset)
+    if apple_thumbnail(app) is not False:
+        raise Failed("the next launch did not turn Apple's thumbnail off again")
+    app.report.step("the next launch shows setup again and turns the thumbnail off")
+    app.stop()
+
+
+def upgrade(app):
+    """A settings file from 0.1.1, which wrote every ui value, keeps only what differs from
+    0.1.1's defaults: those are the person's choices."""
+    old_defaults = {'newTextSize': 24, 'textWeight': 500, 'textLineHeight': 1.35, 'slideInDuration': 0.75,
+                    'annotationScreenInset': 65}
+    app.write_settings(version=1, ui=dict(old_defaults, motion=0.5))
+    start(app)
+    app.wait_state(lambda s: True, 'the state')
+    with open(app.settings) as f:
+        data = json.load(f)
+    if data.get('version') != 2 or data.get('ui') != {'motion': 0.5}:
+        raise Failed(f"after the upgrade the file is version {data.get('version')} with ui {data.get('ui')}")
+    app.report.step("0.1.1's defaults were dropped and the one choice kept", detail=json.dumps(data['ui']))
+    app.stop()
+
+
 # ---- With input --------------------------------------------------------------------------------
 
 
@@ -406,4 +458,4 @@ def agent_marks_editable(app):
     close_editor(app)
 
 
-ALL = [launch, agent_push, annotate_open, send_target, copy_types, stitch, relaunch, settings_repair, draw_and_done, send_and_reply, agent_marks_editable]
+ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, copy_types, stitch, relaunch, settings_repair, draw_and_done, send_and_reply, agent_marks_editable]
