@@ -17,7 +17,7 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   "recentCount": 30,
   "recentHotkey": "double-rshift",
   "hideMenuBarIcon": false,
-  "launchAtLogin": false,
+  "launchAtLogin": true,
   "quickAnnotate": false,
   "sendWithReturn": false,
   "sendInstructions": "If a drawing would answer better than words, you can send one back.",
@@ -32,36 +32,40 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
 ```
 
 - **`screenshotsFolder`** is one setting for two things: where Cmd+Shift+3/4/5 saves and what
-  Vignette watches. Vignette follows macOS here: pick a folder in the Options menu of ⌘⇧5 and
-  Vignette watches it at once. Set it here, or with Save to in Settings → Screenshots, and macOS
+  Vignette watches. Vignette follows macOS here: pick a folder in the Options menu of Cmd+Shift+5
+  and Vignette watches it at once. Set it here, or with Save to in Settings → Screenshots, and macOS
   saves there.
-- **`appleThumbnail`** is the value Vignette keeps Apple's floating thumbnail at. The first launch
-  turns it off, because Apple's thumbnail holds the file back for about five seconds, and every
-  launch puts it back if something else changed it. `restore-apple-defaults` sets it to what macOS
-  had before.
+- **`appleThumbnail`** is the value Vignette keeps Apple's floating thumbnail at while it runs. The
+  first launch turns it off, because Apple's thumbnail holds the file back for about five seconds.
+  Every launch puts it back if something else changed it. Quitting Vignette turns Apple's thumbnail
+  back on when macOS showed it before, and the next launch turns it off again. Restore, in
+  Settings → Screenshots, sets it to what macOS had before, and Turn Off there sets it back to
+  `false`.
 - **`windowShadow`** is Apple's drop shadow around a captured window, another Apple default that
   Vignette writes. Turn it off for window shots with no shadow margin.
 - **`format`** is the file type Apple saves, such as `"png"`. Vignette writes this one too.
 - **`recentCount`** is how many cards the recent stack holds. Raise it to reach further back.
 - **`recentHotkey`** opens the recent stack. `"double-rshift"` by default, a double tap of right
-  Shift, which needs Accessibility permission. A key combination, `"cmd+shift+2"` when first picked, needs none.
-  The setup window on first launch is where this is normally chosen.
+  Shift, which needs Accessibility permission. A key combination needs none. Picking Key
+  Combination… writes `"cmd+shift+2"` and waits for the keys you want. The setup window on first
+  launch is where this is normally chosen.
 - **`hideMenuBarIcon`** removes Vignette's menu bar icon. Opening Vignette again, from Finder or
   Spotlight, still opens the Settings window, and so does `vignette://settings`.
-- **`launchAtLogin`** is Open at login, which adds Vignette to your login items. It starts on,
-  because the first launch turns Apple's thumbnail off: after a restart without Vignette, a capture
-  would show nothing. The setup window shows the switch and applies it when you close the window.
-- **`quickAnnotate`** is Close after copying a drawing. On, Done copies the image you drew on and
-  closes the annotator and the stack at once, instead of returning you to the stack. It also drops
-  any screenshots still waiting to be drawn on.
+- **`launchAtLogin`** is Open at login, which adds Vignette to your login items. A new settings file
+  has it on. The setup window shows the switch and applies it when you close the window. If you
+  remove Vignette under Open at Login in System Settings, the next launch turns this off instead of
+  adding it back.
+- **`quickAnnotate`** is Close after copying a drawing. On, Copy in the annotator, or Return, copies
+  the image you drew on and closes the annotator and the stack at once, instead of returning you to
+  the stack. It also drops any screenshots still waiting to be drawn on.
 - **`sendInstructions`** is the sentence after the image in the line Send and Reply put in a session,
   with no control in the window. `From Vignette: "<path>".` before it is fixed: the skill loads on
   "From Vignette:", and the path is the drawing. It is kept to one line, since the plugin delivers
   each line as its own message, so line breaks and tabs become spaces. An empty one leaves the line at the path.
 - **`sendWithReturn`** is Send with Return, in the Agents tab. On, Return in the message box beside
-  Send sends the drawing, as in a chat app. Off, Return there only points at ⌘Return, since Vignette
-  picked the session and a Return typed out of habit would hand the drawing to it. ⌘Return sends
-  either way, and Return beside Reply always sends.
+  Send sends the drawing, as in a chat app. Off, Return there only points at Cmd+Return, since
+  Vignette picked the session and a Return typed out of habit would hand the drawing to it.
+  Cmd+Return sends either way, and Return beside Reply always sends.
 - **`annotateOnCapture`** is Open it to draw, and Open to Draw in the menu bar: it opens every new
   screenshot in the annotator right away, instead of showing a thumbnail.
 - **`copyOnCapture`** puts every new screenshot on the clipboard as it lands: the image, plus its
@@ -96,7 +100,7 @@ ignored, and a key you leave out takes its default, so a line you no longer want
 
 With `debug` on, Tweak UI… in the Settings window's Developer tab, or `open -g vignette://tweaks`,
 opens a floating panel of sliders that edits these live. It has buttons to summon the thumbnail,
-stack, toast, and annotator while you tweak.
+stack, and annotator while you tweak.
 
 ### The drawing editor's numbers
 
@@ -126,7 +130,7 @@ says otherwise, so they look the same at any zoom.
 
 These set how every mark is drawn. The panel has them in its Marks and Notes sections. A change
 reaches every place marks are drawn at once: the editor, the cards, a card in flight, a stitch, a
-dragged card, and what Done, Send and Copy Drawing render. Widths are in points of the drawing.
+dragged card, and what Copy, Send and Copy Drawing render. Widths are in points of the drawing.
 
 | Key | Default | What it sets |
 |---|---|---|
@@ -161,4 +165,7 @@ dragged card, and what Done, Send and Copy Drawing render. Widths are in points 
 ## Invalid files
 
 A file that does not parse is moved aside as `settings.json.invalid` and replaced with defaults. A
-toast says so.
+warning at the top of Settings → General says so.
+
+If Vignette cannot create the file, for example because another tool owns `~/.config`, it runs on
+the defaults without saving. The same place says so, and changes last until Vignette quits.

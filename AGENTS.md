@@ -92,7 +92,7 @@ Before you drive the app:
   alone`, and it registers no login item. To test the plugin, also launch with
   `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`). It runs no codex and
   no herdr unless `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names one (`AgentTools.forSessions`), since
-  any other found on the Mac lists and sends to the person's own sessions; the launch logs
+  any other found on the Mac reaches the person's own sessions; the launch logs
   `[tools] test launch: codex=… herdr=…`. The plugin's skill names the copy's own URL scheme and log
   (`AgentPlugin.stage`).
 - Stop a test copy by its PID before you launch another copy of the same bundle id. On 2026-09-26,
@@ -141,8 +141,9 @@ The steps below have the details.
    colour of the text beside it.
    `&session=<id>` names the Claude Code session pushing it, recorded beside the name as
    `com.petepetrash.vignette.session`, so the card's bar is Reply and goes back there
-   (`Agent.origin(of:)`). The id is the pusher's claim; sending to it still checks the session is in
-   a herdr pane. Anything but a UUID is not recorded, and `[add]` still answers `ok`.
+   (`Agent.origin(of:)`). The id is the pusher's claim. Sending to it still checks that a live
+   plugin inbox holds that session (`ClaudeCodeConnection.submit`). Anything but a UUID is not
+   recorded, and `[add]` still answers `ok`.
    `&marks=<json file>` pushes the agent's own annotations with the image: they join the
    screenshot's drawing before the card appears (`Drawings.add`), and the command answers once that
    drawing is written. That JSON file may also be anywhere; it is read on the main thread, so it is
@@ -718,21 +719,22 @@ screenshot location for such a launch is written with the same variable:
   the list is found by searching the store for the title and its two longest words
   (`AppServer.searchTerms`), since the store holds the first message as typed and the title is it
   as plain text.
-  Otherwise it is herdr's focused pane, or the one agent in its tab when that pane runs none, else
-  the session used last. Reading the page asks the Codex app, which is Electron, to build its
+  Otherwise, when herdr runs, it is the session in herdr's focused pane, or the one session in that
+  pane's tab when the pane runs none. Else it is the session used last. Reading the page asks the Codex app, which is Electron, to build its
   accessibility tree, and it keeps it until it quits.
   The target shows the agent's logo and the project, cut in the middle past 132 pt with the whole
   name in its tooltip. Its width is set rather than left to the text, so it springs with the bar. A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
   made inside it jumped instead of animating. Its menu lists the active sessions used last, five at
-  most, with the target always among them (`AgentDestination.menu`): a Claude Code session is active while it runs in a herdr pane, and
-  a Codex thread when it was used in the last day, since nothing says which threads the Codex app
-  has open. The target settles once, from herdr's answer (about 60 ms, before the bar is up) or
-  from the whole list, and after that changes only when its session is gone, so it never changes
-  under the pointer. Codex's list is kept (`AgentConnection.keepsList`): an opening editor answers
+  most, with the target always among them (`AgentDestination.menu`): a Claude Code session is active while the plugin's monitor runs in it,
+  and a Codex thread when it was used in the last day, since nothing says which threads the Codex
+  app has open. The target settles once, from the first answer that names a focus (herdr's comes in
+  about 60 ms, before the bar is up), or else from the whole list (`Model.answered`). After that it
+  changes only when its session is gone, so it never changes under the pointer. Codex's list is kept (`AgentConnection.keepsList`): an opening editor answers
   from the last one at once and asks for a fresh one, which comes in about 0.1 s for the five
   threads used last (`AppServer.listLimit`), and it is asked for again at launch, on a capture and
-  when the stack opens. herdr is always asked afresh, because its focus moves. Coming from the Codex
+  when the stack opens. Claude Code's list is always asked afresh, because it carries herdr's
+  focus, which moves. Coming from the Codex
   app, a kept list that holds the open thread settles the target at once; one that does not waits
   for the fresh list, since the thread may be newer. Return copies and replies only on a card that names its session; Cmd+Return
   sends or replies (`EditorCore.finishes`). Return never sends to a session Vignette picked, except
@@ -952,7 +954,7 @@ screenshot location for such a launch is written with the same variable:
   reconcile also undoes anything outside the app that turned it on, since Apple's thumbnail breaks
   Vignette rather than merely differing from it. The save location runs the other way:
   Vignette follows macOS's. The launch takes `location` as `screenshotsFolder` (unset reads as
-  `~/Desktop`), and a key-value observer on the domain (`AppleScreencapture.observeLocation`) takes
+  `~/Desktop`), and a key-value observer on the domain (`AppleScreencapture.observe("location")`) takes
   every later change, a folder picked in ⌘⇧5's Options menu included, as it is written
   (`[settings] following apple location=…`; measured on a scratch domain, 10 to 35 ms after a
   `defaults write` from another process). Picking a folder in Vignette writes `location`, so the two
@@ -1019,20 +1021,22 @@ screenshot location for such a launch is written with the same variable:
   not kept. No `codex` on the machine means no Codex destinations, which is not an error.
   `docs/codex-discovery-2026-09-21.md` has the protocol, the timings behind `listLimit`, and what
   was verified against a live desktop session. Claude Code is addressed by
-  its session id, which herdr reports per pane, and only a session in a pane is listed, since only
-  those can receive. `herdr pane list` gives the sessions, the folder each pane runs in, which is
-  its project, and herdr's focus. Its row comes from its transcript, `~/.claude/projects/<folder>/<id>.jsonl`,
-  read from the last 256 KB: the last `ai-title` names it (herdr's pane title is the same title cut
-  to 34 characters, and stands in when there is none), and the last user or assistant entry's
+  its session id, through the plugin's inboxes (`ClaudeCodeConnection`): one folder per Claude Code
+  process, `claude-sessions/<pid>/` under Application Support, holding the session it runs now, its
+  folder and a file its monitor touches every 3 s. Only a session whose process and monitor are both
+  alive is listed, since only those can receive, in any terminal. The inbox's folder is the
+  session's project. Its row comes from its transcript, `~/.claude/projects/<folder>/<id>.jsonl`,
+  read from the last 256 KB: the last `ai-title` names it, and the last user or assistant entry's
   `timestamp` is when it was last used. That entry's `cwd` follows the session's shell, so it is the
-  project only when herdr gives none. The file's modification time is
+  project only when the inbox gives none. The file's modification time is
   not the last use: Claude Code writes entries with no message in them to transcripts it is not
-  using (measured 2026-09-24). herdr's submission API takes a pane and has no
-  expected-session parameter, so Vignette re-lists and checks the pane still holds that exact
-  session immediately before submitting (`AddressGuard.preflight`). A session in no pane is an
-  error and never another pane. The image travels as a path the session opens itself, so a Claude
-  Code session that may not read it stops on a permission prompt. herdr reports that pane as
-  `blocked`, and Vignette records the request as not submitted, with `send-failed`. The Agents tab
+  using (measured 2026-09-24). herdr, when it runs, only says which session has the focus. `/clear`
+  and `/resume` give the same process another session, so Vignette checks that the inbox still
+  holds that exact session immediately before writing the line (`AddressGuard.preflight`). A
+  session in no inbox is an error, "closed" or "cleared", and never another session. The line is
+  accepted once it is in the inbox; the session reads it when its turn ends. The image travels as a
+  path the session opens itself, so a Claude Code session that may not read it stops on a permission
+  prompt, which Vignette cannot see. The Agents tab
   and setup's last page offer `ClaudeReadRule`, one `Read(…/requests/*/image.png)` rule in
   `~/.claude/settings.json`'s `permissions.allow`, which lets Claude Code open the sent images
   without asking. It writes through a link to that file, since people keep it in a dotfiles

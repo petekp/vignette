@@ -31,8 +31,6 @@ parks and zooms the editor, and the rest of the app, which stores and renders it
 
 ## Decisions
 
-All eighteen were decided on 2026-09-22.
-
 | # | Question | Answer | Why |
 |---|---|---|---|
 | 1 | Which tool is active after drawing a mark? | The same tool. The new mark is selected, and its handles work while the tool is active. Over another mark the cursor becomes the Select cursor and the mark gets the hover outline. A press there selects the mark. A press anywhere else draws. V goes back to Select. Section 3 has the details. | Marking several things in a row is common. The cursor and the outline say before the press whether it will select or draw. |
@@ -45,7 +43,7 @@ All eighteen were decided on 2026-09-22.
 | 8 | What sets the size of strokes and text? | Each drawing records its point scale, the px per pt of the display the annotator is on when the drawing's first mark is made. A drawing that an agent's marks start takes the main display's. Every mark in the drawing uses it. | The drawing looks the same on any display it reopens on. A capture file does not say which display took it, so the annotator's display is the best available guess. |
 | 9 | Which font does text use? | SF Pro Rounded for yours, SF Mono for an agent's. | Both are the system's own faces, so nothing is bundled and macOS supplies every script and emoji. The rounded face reads as a note, apart from the SF Pro text in most screenshots. The app already uses it for the numbers on selected cards. SF Mono tells an agent's words from yours at a glance. It is wider, so an agent's note takes more room. |
 | 10 | What do Cmd+C and Cmd+V do? | With marks selected, Cmd+C copies those marks, and Cmd+V pastes them. With nothing selected, Cmd+C copies the drawing as an image, the same PNG Done makes, and the editor stays open. Cmd+V with text adds a text mark. Cmd+V with an image beeps and adds nothing. Section 8 has the details. | The visible selection says what Cmd+C will copy. |
-| 11 | Do marks snap to each other and to the image's edges? | Not in the first version. | Marks point at things in the screenshot, so alignment between marks rarely matters. |
+| 11 | Do marks snap to each other and to the image's edges? | No. | Marks point at things in the screenshot, so alignment between marks rarely matters. |
 | 12 | Can several selected marks be resized together? | No. Several selected marks can be moved, duplicated and deleted. | A group resize would scale the text but not the strokes, which distorts the group. |
 | 13 | How is a drawing stored? | In a JSON file of Vignette's own, in px, with a version number. Section 1 has the format. | A format in px does not depend on the display. |
 | 14 | How fast does park answer? | At once, in the same turn of the run loop. `ThumbnailController` queues an event that arrives while it is still handling one, and runs it right after. | A swap's park and the next card's opening land in the same frame. Queuing the event keeps the transition's events in order. |
@@ -122,8 +120,8 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
 - Builds from different worktrees share this folder. A file whose `version` is newer than the build
   knows is left alone: the image opens without it, and the build never writes over it.
 - Everything read from a file is checked with the same validator as agents' marks. Numbers must be
-  finite, types known, a text's `size` at most 1,000 pt, and a text at most 2,000
-  characters and 100,000 bytes. A mark that fails is dropped, with a log line. A mark that no longer
+  finite, types known, a text's `size` at most 1,000 pt, and a text at most 2,000 characters and
+  100,000 bytes. A mark that fails is dropped, with a log line. A mark that no longer
   fits inside the image is moved in, with a log line. A file that does not parse is renamed to
   `<id>.json.invalid` at launch, with a log line. If a file stops parsing while the app runs, its
   image opens with no drawing and a log line says so. The file stays where it is until the next
@@ -143,31 +141,36 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   dark or busy one the edge separates it from the picture, and on one of its own colour the edge
   still draws its shape. `docs/mark-colour-2026-09-29.md` has the reasons.
 - The toolbar has no palette, and an agent cannot choose a colour.
+- These are the defaults. The tweaks panel's Marks and Notes sections change the colours, the
+  stroke and edge widths, the shadows and the text style for every mark at once
+  (`docs/mark-style-settings-2026-09-29.md`).
 
 ### Agents' marks
 
-`add?marks=` keeps its format, described in [commands.md](commands.md). Every number is a fraction
+`add?marks=` takes the format described in [commands.md](commands.md). Every number is a fraction
 of the image. The fractions become px when the marks arrive. A reply's marks take the same path.
 
 An agent's text is set in SF Mono wherever it is drawn: the editor, a card, a flight and the PNG.
-`TextStyle.forAgent` picks the face from the mark, and every place that lays a text out asks it.
+`TextStyle.forMark` picks the face from the mark, and every place that lays a text out asks it.
 
 ## 2. Look
+
+Most numbers below are defaults. The tweaks panel's Editor, Marks and Notes sections change them.
 
 | What | How it looks |
 |---|---|
 | Stroke | 3.5 pt, centred on the outline, with round caps and joins, inside a 1.5 pt white edge on each side. The edge casts the tag's shadows, as a 17 pt note's tag would. |
 | Rectangle | A closed path with sharp corners |
 | Ellipse | Inscribed in its frame |
-| Arrow body | A straight line, or a circular arc through both ends and the bend point |
+| Arrow body | A straight line, a circular arc through both ends and the bend point, or a freehand arrow's smooth curve through its `via` points |
 | Arrowhead | A filled triangle at the tip, per Decision 18 |
-| Text | SF Pro Rounded at 17 pt, left-aligned, on a tag. Weight and line height are tuned in the tweaks panel, starting at Semibold and 1.32 times the size. An agent's text is SF Mono. |
+| Text | SF Pro Rounded Semibold at 17 pt, left-aligned, on a tag. The line height is 1.32 times the size. An agent's text is SF Mono Semibold. |
 | Tag | Filled with the mark's colour, inside a 1.5 pt white edge, with padding of 0.42 em above, 0.47 em below and 0.8 em at the sides. Its corners are half the height of a one-line tag, so one line is a pill. The edge casts two faint shadows. |
 | Words on a tag | White |
 | Tag width | As wide as its longest line. A text without a wrap width wraps at 18 em, or at the image's edge less 2% if that is closer. Lines are balanced: the tag takes the narrowest width that keeps the same number of lines. While typing, lines wrap without balancing, so words do not jump from line to line under the caret. When typing ends, the tag springs to its balanced size over `ui.noteSettleDuration` while the words cross-fade to their new lines. |
 | Agent's badge | A white capsule on the top edge of an agent's tag, 0.35 em from its left, with the agent's logo and name. It rises above the tag and overlaps its edge by 0.2 em, so the tag keeps a person's note's padding. A name longer than 10 em is cut short with an ellipsis. The tag is at least as wide as the badge. The badge's shadow is lighter than the tag's. |
 | Selection outline | A 1.5 screen pt line in `#3182ed` over a light edge, so it shows on blue and dark screenshots. The two together are `ui.selectionOutlineWidth` wide, 3.5 screen pt by default. It runs outside the mark's ink, so the mark's colour shows. The frame around several selected marks uses the same line. |
-| Hover | Lighter than the selection outline, so the two can be told apart |
+| Hover | The selection outline at half opacity, so the two can be told apart |
 | Resize handles | 8 screen pt squares with a near-black fill and a 1.5 screen pt blue stroke, at the four corners of the selection outline |
 | Arrow dots | Circles of radius 4 screen pt, white fill, 1.5 screen pt blue stroke. A hovered dot gets a 12 screen pt halo, blue at 20% opacity. |
 | Brush | A rectangle with a 1 screen pt stroke, grey at 25% opacity, over a grey fill at 10% |
@@ -176,8 +179,8 @@ An agent's text is set in SF Mono wherever it is drawn: the editor, a card, a fl
 | Cursors | The system's: a crosshair while drawing, the arrow in Select, resize cursors on handles, an open hand on arrow dots, a closed hand while moving |
 | Behind the image | `#1a1a1a`, so a screenshot's transparent pixels are never see-through: in the editor, on a card and in flight |
 
-Marks and text scale with the zoom. Handles, selection and hover outlines, dots, the
-brush and hit areas stay the same size on screen. Each step of a zoom moves both in the same frame.
+Marks and text scale with the zoom. Handles, selection and hover outlines, dots, the brush and hit
+areas stay the same size on screen. Each step of a zoom moves both in the same frame.
 
 ## 3. Tools
 
@@ -186,7 +189,7 @@ brush and hit areas stay the same size on screen. Each step of a zoom moves both
 | Trigger | Result |
 |---|---|
 | V, R, A, T, with or without Shift, while not typing | Select, Rectangle, Arrow, Text. Right after a box or an arrow is drawn, the next key can still make the letter the start of a note (section 5, A note for a box or an arrow). |
-| Any other letter while not typing | Nothing, except right after a box or an arrow is drawn, where it starts a note |
+| Any other letter while not typing | Right after a box or an arrow is drawn, it starts a note. Otherwise M and P go to the message field (section 6), and the rest do nothing. |
 | The toolbar's buttons | The same four tools |
 | A new screenshot opens | Rectangle |
 | A screenshot with a drawing opens | Select, with the newest mark the person drew selected. An agent's mark is never the one picked. |
@@ -273,7 +276,7 @@ Hover, press and release use one rule:
 |---|---|
 | Rectangle, ellipse, arrow | Within the hit band of the stroke's centre line. The band is the stroke's half-width on screen plus 4 screen pt. |
 | Text | Anywhere inside its box |
-| A selected rectangle or ellipse | Anywhere inside it, or within its band |
+| A selected rectangle or ellipse, in Select | Anywhere inside it, or within its band |
 | Any selected mark's handles | Within the handle's hit area, which beats every mark |
 
 - When several marks are hit, the one whose stroke is closest wins. A text box beats strokes under
@@ -292,8 +295,9 @@ Hover, press and release use one rule:
 
 | Trigger | Result |
 |---|---|
-| Press on a mark | It alone is selected, on the press |
-| Shift+press on an unselected mark | It is added, on the press |
+| Press on an unselected mark | It alone is selected, on the press |
+| Click on one of several selected marks | It alone is selected, on release |
+| Shift+press or Cmd+press on an unselected mark | It is added, on the press |
 | Shift+click or Cmd+click on a selected mark | It is removed, on release |
 | Press on empty space | The selection clears on the press |
 | Drag from empty space | A brush. Marks whose outline it crosses, or that lie wholly inside it, are selected as it moves. A brush wholly inside a hollow rectangle does not select the rectangle. A brush inside a text box selects the text. |
@@ -321,7 +325,7 @@ Hover, press and release use one rule:
 
 | Trigger | Result |
 |---|---|
-| A single rectangle or ellipse is selected | A frame around its ink, four corner squares, and invisible edge handles that change the cursor |
+| A single rectangle, ellipse or text is selected | A frame around its ink, four corner squares, and invisible edge handles that change the cursor. A text being typed has no handles. |
 | Corner handle hit area | A 13.5 screen pt square centred on the corner |
 | Edge handle hit area | A 9 screen pt strip along the whole side |
 | A mark under 16 screen pt a side | All four corners, with hit areas outside the mark |
@@ -492,7 +496,7 @@ Keys that act on a selection are in section 4. The rest:
 - One owner handles Cmd+Z, Shift+Cmd+Z and any Undo or Redo menu item.
 - Each step is one thing the person did:
   - creating a mark;
-  - moving, resizing or bending;
+  - moving, resizing, bending, or dragging an arrow's end;
   - one nudge press, including its repeats;
   - duplicating;
   - deleting;
@@ -539,15 +543,13 @@ Copied marks:
 - A pasted mark keeps the original's fields, so an agent's mark pasted is still the agent's.
 
 A mark is selected right after it is drawn, and on reopen the newest mark is selected. So Cmd+C at
-those moments copies that mark, not the drawing. The rule stays, because the visible selection
-always says what Cmd+C will copy. A click on empty space clears the selection, whatever tool is
-active, so copying the whole drawing is always one click and Cmd+C away. A copy shows nothing, as in
-other Mac apps.
+those moments copies that mark, not the drawing, as the visible selection shows. A click on empty
+space clears the selection, whatever tool is active, so copying the whole drawing is always one
+click and Cmd+C away. A copy shows nothing, as in other Mac apps.
 
-Return still copies the drawing and closes the editor. It stays the main way to share. The one
-exception is a card that names the session it came from, where Return replies. Return never sends to
-a session the host picked; the host sets both keys from what its toolbar offers
-(`EditorCore.finishes`).
+Return copies the drawing and closes the editor. It is the main way to share. On a card that names
+the session it came from, Return replies instead. Return never sends to a session the host picked.
+The host sets what Return and Cmd+Return do from what its toolbar offers (`EditorCore.finishes`).
 
 ## 9. Around the editor
 
@@ -574,17 +576,18 @@ a session the host picked; the host sets both keys from what its toolbar offers
 
 - The native toolbar shows the four tools, then one of three offers: Copy alone when there is no
   session to send to; Copy, the target session, a message field and Send; or a message field and
-  Reply on a card that names the session it came from. Copy is Done.
+  Reply on a card that names the session it came from. Copy does what Done does.
   `docs/send-and-reply-2026-09-24.md` has the rules.
 - The message field is one line in the bar. While it is typed in, it grows down past the bar's
-  bottom, up to six lines, and the bar keeps its size. Once it would come within 8 pt of the bottom
-  of the visible screen, the top of the Dock when the Dock is there, it grows up out of the top of
-  the bar instead. Past six lines it scrolls. M or P in the editor puts the keys in it. Cmd+Return in it sends. Return replies on a
-  card that names its session; beside Send it sends nothing and bounces Send's ⌘↩, since Return
-  never sends to a session Vignette picked, unless Send with Return is on in Settings > Agents
-  (`sendWithReturn`). Esc, or a click on the image, hands the keys back to the
-  editor, and the field shrinks back to one line.
-  What it holds leads the line Send puts in the session (`docs/request-line-2026-09-25.md`). It is
+  bottom, up to six lines, and the bar keeps its size. When growing down would bring it within 8 pt
+  of the bottom of the visible screen, or of the Dock's top, it grows up out of the bar instead.
+  Past six lines it scrolls.
+- M or P in the editor puts the keys in the message field. Cmd+Return in it sends. Return in it
+  replies on a card that names its session. Beside Send, Return sends nothing and bounces Send's ⌘↩,
+  because Return never sends to a session Vignette picked. Send with Return in Settings > Agents
+  (`sendWithReturn`) makes Return send there too. Esc, or a click on the image, hands the keys back
+  to the editor, and the field shrinks back to one line.
+- The message leads the line Send puts in the session (`docs/request-line-2026-09-25.md`). It is
   kept until the next image opens, so a send that fails keeps it.
 - Tab goes through the marks in reading order, then the bar's controls in order (the tools, Copy,
   the target, the message field, the filled button), then back to the first mark. Shift+Tab goes
@@ -596,9 +599,9 @@ a session the host picked; the host sets both keys from what its toolbar offers
   on to the next control. A press on the image or on the bar takes the focus away.
 - Each tool's tooltip gives its name and key, such as "Rectangle (R)". The bar draws its tooltips
   itself, under the control, or over it when the Dock is close below. One comes up after the
-  pointer rests a second, and while one is up the next comes at once. AppKit's never came up on the
-  bar until it was clicked: AppKit shows a window's tooltips only while it is key or was the last
-  window clicked, and the editor's window holds the keys.
+  pointer rests a second, and while one is up the next comes at once. The bar cannot use AppKit's
+  tooltips: AppKit shows a window's tooltips only while it is key or was the last window clicked,
+  and the editor's window holds the keys.
 - Every control on the bar takes presses up to the bar's top and bottom edges and into the gaps
   beside it. A press anywhere on the message field, or in the bar around it, starts typing, with
   the I-beam over all of it.
@@ -635,8 +638,9 @@ a session the host picked; the host sets both keys from what its toolbar offers
 
 - Renderings run off the main thread, one at a time, drawing straight at the output size. The
   largest capture on this Mac is 3102 by 6780 px, about 85 MB as a bitmap.
-- Done puts a promised PNG on the clipboard at once and sends the card home. The rendering fills the
-  promise, and a paste that comes before it finishes waits for it, for up to 5 seconds. The
+- Done puts the `-annotated.png` file's path on the clipboard at once as text, promises the PNG, a
+  TIFF and the file, and sends the card home. The rendering fills the promise, and a paste that
+  comes before it finishes waits for it, for up to 5 seconds. The
   `-annotated.png` file is written when the rendering finishes. Done's rendering goes ahead of any
   that has not started.
 - A rendering that fails answers `unreadable-image` or `write-failed`. After Done, it also takes the
@@ -661,8 +665,7 @@ a session the host picked; the host sets both keys from what its toolbar offers
 ### Agents' marks
 
 - `add?marks=` adds to a drawing without opening the editor. The marks become px, and the host
-  writes the file. The command answers once the file is written, and the card
-  appears after that.
+  writes the file. The command answers once the file is written, and the card appears after that.
 - If the screenshot already has a drawing, the marks are added to it.
 - If the screenshot is open in the editor, the marks join the open drawing as one undo step. Adding
   never waits for the editor and is never refused because of it.

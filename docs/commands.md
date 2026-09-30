@@ -6,8 +6,8 @@ Every action is a URL. `open -g` leaves your terminal in front, and plain `open`
 Vignette. Without `?file=` an action acts on the newest file it can take: `annotate` passes over a
 newer recording, and `open` over newer screenshots. `file=` repeats for several. A file the action
 cannot take, such as a recording given to `annotate`, answers `unsupported-type`. Percent-encode
-every path. A path must be inside the watch folder, except for `add`, which copies an image in from
-anywhere.
+every path. A path must be inside the watch folder, unless `debug` is on. `add` is the exception: it
+copies an image in from anywhere.
 
 ```
 open -g vignette://copy                       # copy to clipboard
@@ -16,19 +16,20 @@ open -g vignette://copy-annotated             # copy with the drawing rendered i
 open -g vignette://paths                      # copy the path as text
 open -g vignette://open                       # open the newest recording in the app that plays movies
 open -g "vignette://trash?file=~/Dropbox/Screenshots/x.png"
-open -g "vignette://stitch?file=/a.png&file=/b.png"
+open -g "vignette://stitch?file=~/Dropbox/Screenshots/a.png&file=~/Dropbox/Screenshots/b.png"
 open -g vignette://last                       # show the thumbnail for the newest screenshot
 open -g "vignette://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a tab naming the agent
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude&session=$CLAUDE_CODE_SESSION_ID"  # the same, and Reply on the card goes back to that Claude Code session
 open -g "vignette://add?file=/tmp/agent/x.png&marks=/tmp/agent/marks.json"  # the same, with the agent's drawing on it
-open -g vignette://recent                     # toggle the recent stack (same as the hotkey)
+open -g vignette://recent                     # toggle the recent stack (same as the shortcut)
 open -g vignette://dismiss                    # close the thumbnail or the stack
 open -g vignette://cancel                     # close the annotator without copying, as Esc would
 open -g "vignette://state?tag=t1"             # one [state] {json} line in the log, tag echoed
 open -g vignette://help                       # list every command in the log
 open -g vignette://settings                   # open the Settings window
 open -g vignette://install-skill              # install the Vignette plugin for Claude Code and Codex
+open -g vignette://requests                   # list the open screenshot requests; &clear=<id or all> clears them
 open -g vignette://restore-apple-defaults     # put Apple's screencapture defaults back
 open -g vignette://tweaks                     # live UI tweaks panel (needs "debug": true)
 ```
@@ -72,6 +73,6 @@ menu bar opens it. The codes are fixed:
 
 ## Input events
 
-`scripts/input.sh` posts real input events for clicks, drags, and the hotkey itself. It needs the
+`scripts/input.sh` posts real input events for clicks, drags, and the shortcut itself. It needs the
 terminal trusted for Accessibility. Its coordinates, and every frame in the `[state]` line, are
 global points with the origin at the top-left of the primary display, y down.

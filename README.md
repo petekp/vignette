@@ -4,7 +4,7 @@
   <a href="https://vignette.pete.design"><img src="docs/logotype.svg" width="150" alt="Vignette"></a>
 </p>
 
-What if macOS's built-in screenshot tool continuing evolving after 2010 and was built with AI in mind? Meet Vignette.
+What if macOS's built-in screenshot tool had kept evolving after 2010 and been built with AI in mind? Meet Vignette.
 
 Vignette is a free Mac menu bar app. It keeps your recent screenshots a double tap away, lets you
 draw on them, and hands them to Claude Code or Codex, which can send you screenshots of their own.
@@ -44,8 +44,8 @@ Code, and pick from the options it sends back. Recorded live, with Claude's work
 ### Drawing
 
 - **Simple by design**<br>
-  Three drawing tools: rectangle, arrow and text. No colour picker. Marks are red, and where red
-  would be hard to see, Vignette picks a colour that stands out.
+  Three drawing tools: rectangle, arrow and text. No colour picker. Your marks are red and an
+  agent's are indigo. A thin white edge keeps them visible on any screenshot.
 - **Notes and freehand arrows**<br>
   Type right after drawing a box or an arrow and a note starts beside it. Arrows follow your hand,
   and a nearly straight stroke draws a straight arrow.
@@ -92,8 +92,9 @@ The first launch opens a short setup:
 - Pick the shortcut. The double tap needs Accessibility permission. A key combination needs none.
 - If Claude Code or Codex is installed, choose whether to add the Vignette plugin.
 
-Vignette turns off macOS's floating thumbnail and shows its own. Restore, in Settings →
-Screenshots, puts macOS's screenshot settings back.
+While Vignette runs, it turns off macOS's floating thumbnail and shows its own. Quitting Vignette
+turns macOS's thumbnail back on. Restore, in Settings → Screenshots, keeps macOS's thumbnail on and
+puts back its other screenshot settings.
 
 Vignette checks for updates once a day. It installs one only when you choose Install.
 

@@ -44,6 +44,9 @@ plugin's monitor hands the line to the session between turns, as an event named 
 Vignette". A session that is busy gets it when its turn ends. Closing the session removes its inbox,
 and the session leaves Send's menu.
 
+This works in any terminal. herdr is optional. When it runs, Send starts on the session in herdr's
+focused pane. Otherwise Send starts on the session used last.
+
 The line names the drawing's path, which is outside the session's project. Claude Code's auto mode
 asks once, the first time, whether it may read outside the working directories. Setup and the
 Agents tab offer a read rule for `~/.claude/settings.json` that lets Claude Code open sent drawings

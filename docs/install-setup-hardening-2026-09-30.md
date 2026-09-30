@@ -15,13 +15,21 @@ working afterwards leaves the person with no feedback from either app.
 
 ## Status
 
-Sections 1 to 4 below are fixed and committed (0d73cf5), with three defects the VM found:
+Every item below is fixed and committed, or measured and left as is:
+
+- Sections 1 to 4: 0d73cf5.
+- The "Fix next" list: 4aabef3.
+- The default key combination: 939c538.
+
+0.1.2 is cut from 939c538 as build 471, notarized and stapled. It is not published yet.
+
+The VM found three more defects in sections 1 to 4, fixed in 0d73cf5:
 
 - A quit during setup ran setup's close handler. A quit now applies nothing.
 - The double tap fired twice while Vignette was the active app. Each event now counts once.
 - The focus went back to macOS's Accessibility alert after setup. Only a regular app gets it back.
 
-The "Fix next" list is worked through, uncommitted. What each item came to:
+What each "Fix next" item came to:
 
 | Item | Outcome |
 |---|---|
@@ -41,24 +49,21 @@ The "Fix next" list is worked through, uncommitted. What each item came to:
 | No way back after Restore | Fixed. The Screenshots tab offers Turn Off while the macOS thumbnail is on. |
 | Removed login item comes back | Fixed. A removal in System Settings turns Open at login off. It reads `.notFound`, measured. |
 | Dotfiles carry `setup: done` to a new Mac | Fixed. Setup's done is kept per Mac in the app's defaults. Upgraders count as done. |
+| AGENTS.md says Send reaches Claude Code only through herdr | Fixed. It describes the plugin's inboxes, and herdr as the focus hint. |
 
-The install path itself was checked on the notarized 0.1.2 image in a fresh macOS 15.7 VM:
-Gatekeeper's prompt, Move to Applications, the image ejecting, setup, and a reinstall over a running
-copy. One defect came out of it: the move alert came up inactive, so Return did nothing. macOS
-refuses to activate a menu bar app before it has finished launching. The alert is now a panel that
-takes the keys without activating the app.
+The install path was walked through on the notarized image in a fresh macOS 15.7 VM: Gatekeeper's
+prompt, Move to Applications, the image ejecting, setup by keyboard, Accessibility, the tap and the
+hold, Done, the login item, the thumbnail handed back at quit, and no second setup. One defect came
+out of it: the move alert came up inactive, so Return did nothing. macOS refuses to activate a menu
+bar app before it has finished launching, so the alert is now a panel that takes the keys without
+activating the app. ⌘⇧2 was checked in a fresh VM on a Release build of 939c538.
 
-The checks behind the uncommitted work:
+Unit tests and the e2e suite pass. New unit tests cover the recorder refusals, a folder that cannot
+be written, and a folder that appears with old files.
 
-- Unit tests pass. New: the recorder refusals, a folder that cannot be written, and a folder that
-  appears with old files.
-- The e2e suite passes.
-- Each fix above was driven in the VM on a Developer ID build.
-
-Still open:
-
-- A power-off or crash during setup leaves Apple's thumbnail off until Vignette runs again.
-- 0.1.2 has to be cut again for these fixes, then walked through once more in the VM.
+One limit remains, accepted: a power-off or crash during setup leaves Apple's thumbnail off. The
+login item is registered only when setup closes, so Vignette does not come back at login, and
+captures show nothing until the person opens it again.
 
 The VM harness lives in `.scratch/vm.py`; how it works is in Claude's memory for this project.
 
@@ -102,7 +107,7 @@ is broken.
   after a refusal never passes through that state.
   - Fix: come back on any change into granted or refused once Allow… has been pressed.
   - Whether the first answer passes through `.waiting` depends on which call raises macOS's
-    prompt. That is measurement M1 below.
+    prompt. Measurement M1 below answered it.
 - **Some protected folders get macOS's prompt at launch, before setup, with no explanation.** The
   code path is confirmed; which folders macOS protects is plausible.
   - `protectedArea` knows only the Desktop, Documents and Downloads. macOS also asks before reading
@@ -192,23 +197,17 @@ These are real but narrower, or need a measurement first.
 - **AGENTS.md says Send reaches Claude Code only through herdr.** The plugin's inbox made herdr
   optional. Fix the sentence.
 
-## How we prove it
+## How it was proved
 
-1. **Unit tests** for the pure parts: the version 1 migration table, `protectedArea`, the reserved
-   combinations, and the environment a tool runs with.
-2. **End-to-end scenarios** on the test copy, with `setup` added to `[state]`:
-   - Setup appears on a first launch and not on the second.
-   - Closing it on each page leaves it closed.
-   - An npm-style `codex` script, named through `VIGNETTE_CODEX`, lists sessions.
-   - An upgrade from a 0.1.1 settings file keeps only real choices.
-   - Apple's thumbnail comes back when the test copy quits. The test copy has its own
-     screencapture domain, so this never touches this Mac's.
-3. **Measurement M1, on this Mac, with Pete clicking.** Reset only the test copy's permissions
-   (`tccutil reset SystemPolicyDesktopFolder com.petepetrash.vignette.e2e`), point it at a folder on
-   the real Desktop, and record which call raises macOS's prompt and what the log says through
-   Allow, Don't Allow, and a later grant in System Settings. Repeat for an external volume and the
-   Dropbox folder.
-4. **A clean Mac.** Install the notarized 0.1.2 disk image on the second MacBook after its reset,
-   following docs/TODOS.md. For repeatable runs, a macOS virtual machine (Tart, about 30 to 50 GB)
-   gives a fresh Mac from a snapshot each time. This Mac has 55 GB free, which is tight.
-5. **Cut 0.1.2 only after all of that passes.** Pete runs `scripts/release.sh 0.1.2`.
+1. **Unit tests** for the pure parts: the version 1 migration table, `protectedArea` and the
+   reserved combinations.
+2. **End-to-end scenarios** on the test copy (`scripts/e2e/scenarios.py`):
+   - `first_launch`: setup appears, Apple's thumbnail goes off, and a quit during setup puts the
+     thumbnail back and leaves setup to show again.
+   - `upgrade`: a 0.1.1 settings file keeps only real choices.
+   - `apple_thumbnail`: the thumbnail comes back when the test copy quits. The test copy has its
+     own screencapture domain, so this never touches this Mac's.
+3. **Measurement M1, on this Mac, with Pete clicking.** The watcher's `open` of a Desktop folder
+   blocks while macOS's prompt is up, then fails with `EPERM` on Don't Allow.
+4. **A clean Mac.** A Tart macOS 15.7 VM, a fresh clone for each run, with the notarized image
+   installed as a download would be.

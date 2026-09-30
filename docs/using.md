@@ -4,20 +4,26 @@
 
 Open the disk image and drag Vignette to Applications. If you open Vignette from the disk image
 instead, it offers to move itself to Applications, reopens from there, and ejects the disk image.
+If Applications already holds a newer Vignette, that copy opens instead.
 
 The first launch opens a setup window, one step per page: a welcome, [the shortcut](#the-shortcut),
-and your coding agents when Claude Code or Codex is installed. Open at login starts on, because
-Vignette turns off Apple's floating thumbnail, so if Vignette is not running after a restart, a
-capture shows nothing. The window adds the login item when you close it.
+and your coding agents when Claude Code or Codex is installed. Open at login starts on, so Vignette
+is running after a restart. The window adds the login item when you close it.
+
+While Vignette runs, it replaces macOS's floating thumbnail with its own. Quitting Vignette turns
+macOS's thumbnail back on.
 
 If your screenshots save to the Desktop, Documents or Downloads, macOS asks once whether Vignette
 may read that folder. The welcome page asks for it, with Allow…, and says why. If you answered
 Don't Allow, the row says so, and its Allow… opens Privacy & Security → Files and Folders. Switch
 Vignette on there, and it starts watching the folder without a relaunch. Settings → Screenshots
-says so too, under Save to.
+says so too, under Save to, and the menu bar menu starts with Allow Access to Your Screenshots….
 
-Vignette watches the folder macOS saves screenshots to. Pick another in the Options menu of ⌘⇧5,
-or with Save to in Settings → Screenshots, and both change to it.
+Vignette watches the folder macOS saves screenshots to. Pick another in the Options menu of
+Cmd+Shift+5, or with Save to in Settings → Screenshots, and both change to it. If Cmd+Shift+5 is
+set to save to the Clipboard, Mail or Preview, no screenshot reaches the folder. The menu bar menu
+then starts with Save Screenshots to a Folder, and setup and Settings → Screenshots offer Save to
+Folder.
 
 ## The stack
 
@@ -87,9 +93,10 @@ drawing, and any other card drops the screenshot. A selected card drags the whol
 Press Return, or click Draw in the strip, to open a card and draw on it.
 
 Return on several selected cards opens them one after another, in the order you picked them.
-Copying or sending each one sends it home and opens the next. They stay selected the whole time, so Cmd+C or Cmd+S
-afterwards still takes all of them. Selecting another card while one is open adds it to the end of
-that run, and deselecting it takes it out. Esc, or closing the stack, drops the rest of the queue.
+Copying or sending each one sends it home and opens the next. They stay selected the whole time,
+so Cmd+C or Cmd+S afterwards still takes all of them. Selecting another card while one is open adds
+it to the end of that run, and deselecting it takes it out. Esc, or closing the stack, drops the
+rest of the queue.
 
 A card on its way to the annotator can be turned around. In the stack, press Esc or click another
 card, and it goes straight home from wherever it is. Anything drawn on it is kept.
@@ -126,10 +133,15 @@ card and the drawing is back. Copy Drawing renders it without opening the editor
 
 The shortcut is either a double tap, of right Shift by default, or a key combination. Pick one
 from the Shortcut menu in the setup window or in Settings → General. Key Combination…, at the
-bottom, asks you to press the keys. The double tap needs Vignette trusted for Accessibility, and a
-key combination needs no permission. Allow… brings up macOS's request, and its Open System
-Settings button opens Privacy & Security → Accessibility with Vignette listed. Switch it on, and
-the setup window comes back and waits for you to press the keys once.
+bottom, sets Cmd+Shift+2 and asks you to press the keys you want. It refuses Cmd with a single key,
+the screenshot keys Cmd+Shift+3, 4 and 5, and the Control shortcuts macOS uses, and says why under
+the box.
+
+The double tap needs Vignette trusted for Accessibility, and a key combination needs no permission.
+Allow… brings up macOS's request, and its Open System Settings button opens Privacy & Security →
+Accessibility with Vignette listed. Switch it on, and the setup window comes back and waits for you
+to press the keys once. Until the double tap has the permission, the menu bar menu starts with
+Allow Accessibility for the Shortcut….
 
 Hold the key, or the second tap, and the newest screenshot lifts out of the stack into the
 annotator: capture, tap-tap-hold, draw. The menu bar shows the same two commands, Show Recent
@@ -144,8 +156,8 @@ opens movies with.
 
 Copy, Copy Paths, and Delete work on recordings. Stitch takes a recording's first frame, the
 picture its card shows. Draw and Copy Drawing work only on screenshots. With a recording in the
-selection, Draw is greyed in the strip, and hovering it says why. Their shortcuts beep. When every selected card is a recording, Draw becomes
-Open.
+selection, Draw is greyed in the strip, and hovering it says why. Their shortcuts beep. When every
+selected card is a recording, Draw becomes Open.
 
 Cmd+C copies a recording as a file, which chat apps attach and terminals paste as its path. Draw on
 Newest Screenshot and the held shortcut skip recordings and open the newest screenshot. Open to
