@@ -261,7 +261,7 @@ struct PluginHost {
         self.binary = binary ?? { PluginHost.binary(for: client) }
     }
 
-    /// Where Claude Code's tool may be. The app is launched by LaunchServices, so it inherits no shell PATH.
+    /// Where Claude Code's installer puts its tool. `AgentTools` looks past these.
     static let claudePaths = [
         "\(NSHomeDirectory())/.local/bin/claude", "\(NSHomeDirectory())/.claude/local/claude",
         "/opt/homebrew/bin/claude", "/usr/local/bin/claude",
@@ -269,7 +269,7 @@ struct PluginHost {
 
     static func binary(for client: AgentClient, exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
         switch client {
-        case .claude: return claudePaths.first(where: exists)
+        case .claude: return AgentTools.path("claude", fixed: claudePaths, exists: exists)
         case .codex: return CodexConnection.binary(exists: exists)
         }
     }
@@ -347,7 +347,7 @@ struct PluginHost {
     private func steps(_ commands: [[String]], done: AgentPlugin.Outcome,
                        tolerated: (String) -> Bool = { _ in false }) -> AgentPlugin.Result {
         guard let tool = binary() else {
-            return AgentPlugin.Result(root: root, outcome: .noTool, detail: "no \(client == .claude ? "claude" : "codex") at \(Self.paths(for: client).joined(separator: " "))")
+            return AgentPlugin.Result(root: root, outcome: .noTool, detail: "no \(client == .claude ? "claude" : "codex") at \(Self.paths(for: client).joined(separator: " ")) or on the login shell's PATH")
         }
         for arguments in commands {
             guard let result = run(tool, arguments, Self.timeout, environment) else {
@@ -365,7 +365,7 @@ struct PluginHost {
     }
 
     static func paths(for client: AgentClient) -> [String] {
-        client == .claude ? claudePaths : CodexConnection.binaryPaths
+        client == .claude ? AgentTools.searched("claude", fixed: claudePaths) : AgentTools.searched("codex", fixed: CodexConnection.binaryPaths)
     }
 }
 

@@ -140,7 +140,7 @@ final class SetupModel: ObservableObject {
     enum Page { case welcome, shortcut, agents }
 
     let protectedArea: String?
-    let agents: [AgentPluginStatus]
+    @Published private(set) var agents: [AgentPluginStatus]
     let callbacks: SetupWindowController.Callbacks
     var granted: () -> Void = {}
     var folderAnswered: (FolderAccess) -> Void = { _ in }
@@ -165,6 +165,26 @@ final class SetupModel: ObservableObject {
         chosen = Set(agents.filter(\.hasTool).map(\.root))
         claudeWithoutReadRule = agents.first { $0.logoKey == AgentClient.claude.rawValue }
             .map(\.root).flatMap { ClaudeReadRule.isSet(in: $0) ? nil : $0 }
+        tools = NotificationCenter.default.addObserver(forName: AgentTools.found, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.toolsFound() }
+        }
+    }
+
+    deinit { tools.map(NotificationCenter.default.removeObserver) }
+
+    private var tools: NSObjectProtocol?
+
+    /// The login shell found a tool the folders did not: its switch comes on, as it would have.
+    private func toolsFound() {
+        let before = Set(agents.filter(\.hasTool).map(\.root))
+        agents = AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
+        chosen.formUnion(agents.filter { $0.hasTool && !before.contains($0.root) }.map(\.root))
+    }
+
+    /// Whether Claude Code's switch is on for an install, which leaves the sessions already open
+    /// without the plugin until they reload.
+    var installsIntoClaude: Bool {
+        agents.contains { $0.client == .claude && !$0.installed && chosen.contains($0.root) }
     }
 
     var pages: [Page] { agents.isEmpty ? [.welcome, .shortcut] : [.welcome, .shortcut, .agents] }
@@ -349,6 +369,11 @@ struct SetupView: View {
                             Toggle(isOn: chosen(row.root)) { AgentName(row: row) }
                                 .disabled(!row.hasTool)
                         }
+                    }
+                } footer: {
+                    if model.installsIntoClaude {
+                        Text("Claude Code sessions already open need `/reload-plugins` to use it.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 if model.claudeWithoutReadRule != nil {

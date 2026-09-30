@@ -338,6 +338,7 @@ struct SettingsView: View {
             if !agentRows.isEmpty { footer(SettingsView.agentsLine) }
         }
         .onAppear(perform: refreshAgents)
+        .onReceive(NotificationCenter.default.publisher(for: AgentTools.found)) { _ in refreshAgents() }
         if let claude = claudeRow {
             Section {
                 Toggle(isOn: Binding(get: { claudeReads }, set: { on in

@@ -15,10 +15,10 @@ Pete asked for four things before the first public release, in this order:
 | Esc does not close the editor | A quick click on the message field lost its release to a SwiftUI gesture on the field, and the text field waited for it with every event queued behind, Esc included, until the next click. | The gesture is off the field's text. The padding's gesture stays behind it. An Esc that reaches the window unhandled also closes, and logs what held the keys. |
 | The focus goes back to the newest card after the editor | `takeKeys` focused the hovered or newest card. | The card coming back from the editor takes the focus. |
 | The focus ring and circle switch on at once | No animation on either. | The ring grows out of the resting border and the circle fades, on 0.2 s springs. |
-| Stitch is disabled with several cards selected | A recording in the selection disables Stitch, and its reason shows only on hover. Recordings are mixed in with screenshots in Pete's folder. | Open question for Pete, below. |
+| Stitch is disabled with several cards selected | A recording in the selection disables Stitch, and its reason shows only on hover. Recordings are mixed in with screenshots in Pete's folder. | Stitch takes a recording's first frame, which is what its card shows (decided 2026-09-29). |
 | Draw lags behind the strip's other rows | Draw and Open share a row and were two identities, so the row faded out where it had been while its twin faded in. The button style's springs also covered the whole label. | One identity per row. The springs reach only the fill and the scale. |
 
-Open question: should Stitch take a recording's first frame, or should the strip say why Stitch is off without a hover?
+Decided 2026-09-29: Stitch takes a recording's first frame. Saying why Stitch is off without a hover would have needed room in the strip for the reason, and the frame is the picture the person sees on the card.
 
 ## 2. First-time install test
 

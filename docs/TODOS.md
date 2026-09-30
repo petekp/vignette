@@ -115,6 +115,9 @@ Waits on two things, either way:
 
 ### Vignette without the agent features (raised 2026-09-26)
 
+After the first public release (decided 2026-09-29): it is a new setting that reaches the editor's
+bar, setup and the stack, and nothing in the release depends on it.
+
 Pete wants an option to leave out the agent features altogether and use Vignette only as a
 replacement for macOS's screenshot thumbnail. With it on, nothing about agents would show: Send,
 Reply, the target menu and the message box in the editor's bar, the Agents tab, setup's skill page,
@@ -122,12 +125,6 @@ and the "From <Name>" tab on a pushed card. Vignette would also stop asking herd
 sessions, which today happens at launch, on a capture and when the stack opens. Open: where the
 switch lives (setup, Settings, or both), and whether `vignette://add` and the skill still work
 while it is on.
-
-### Send to Claude Code without herdr (raised 2026-09-26)
-
-Send reaches a Claude Code session only through the herdr pane it runs in, and most people who
-download Vignette will not run herdr. The Agents tab and setup now say so. Reaching Claude Code
-without herdr needs a way into a running session that Claude Code itself offers; none is known yet.
 
 ### A glint around a new thumbnail (raised 2026-09-26)
 

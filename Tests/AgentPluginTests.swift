@@ -209,6 +209,18 @@ final class AgentPluginTests: XCTestCase {
         XCTAssertEqual(AgentPlugin.legacySkill(at: AgentPlugin.legacyEntry(in: codex)), .none)
     }
 
+    func testAToolIsFoundUnderTheNewestNodeAndInTheShellsAnswer() throws {
+        let home = dir.appendingPathComponent("home")
+        for version in ["v9.11.2", "v22.1.0", "v18.20.4"] {
+            try FileManager.default.createDirectory(at: home.appendingPathComponent(".nvm/versions/node/\(version)/bin"), withIntermediateDirectories: true)
+        }
+        let everywhere = AgentTools.path("claude", fixed: [], home: home.path) { $0.contains("/.nvm/") }
+        XCTAssertEqual(everywhere, home.appendingPathComponent(".nvm/versions/node/v22.1.0/bin/claude").path, "the newest Node's, not the first listed")
+        let shell = "Last login: Tue\nnvm: using node v22\n/Users/x/.nvm/versions/node/v22.1.0/bin/claude\n  /opt/tools/codex  \nclaude not found\n"
+        XCTAssertEqual(AgentTools.parse(shell, names: ["claude", "codex"]),
+                       ["claude": "/Users/x/.nvm/versions/node/v22.1.0/bin/claude", "codex": "/opt/tools/codex"])
+    }
+
     func testATestLaunchNeverGetsThePersonsOwnAgentFolders() throws {
         let person = dir.appendingPathComponent("person"), scratch = dir.appendingPathComponent("scratch")
         for folder in [person, scratch] {

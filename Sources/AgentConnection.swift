@@ -574,16 +574,15 @@ struct CodexConnection: AgentConnection {
 
     static let queueTimeout: TimeInterval = 25
 
-    /// Where the Codex CLI may be. The app is launched by LaunchServices, so it inherits no shell
-    /// PATH. A `no codex at …` error names every path tried, so an install somewhere else is one
-    /// symlink away rather than another setting.
+    /// Where the Codex CLI's installers put it. `AgentTools` looks past these. A `no codex at …`
+    /// error names every folder tried.
     static let binaryPaths = [
         "\(NSHomeDirectory())/.codex/bin/codex", "\(NSHomeDirectory())/.local/bin/codex",
         "\(NSHomeDirectory())/.vite-plus/bin/codex", "/opt/homebrew/bin/codex", "/usr/local/bin/codex",
     ]
 
     static func binary(exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
-        binaryPaths.first(where: exists)
+        AgentTools.path("codex", fixed: binaryPaths, exists: exists)
     }
 
     /// Every Codex session the machine knows about. `thread/list` reads the store all of them
@@ -666,7 +665,7 @@ struct CodexConnection: AgentConnection {
             return .notSubmitted(code: .noAgent, detail: "not a Codex destination", reason: SubmissionOutcome.internalReason)
         }
         guard let codex = binary() else {
-            return .notSubmitted(code: .noAgent, detail: "no codex at \(Self.binaryPaths.joined(separator: " "))",
+            return .notSubmitted(code: .noAgent, detail: "no codex at \(AgentTools.searched("codex", fixed: Self.binaryPaths).joined(separator: " ")) or on the login shell's PATH",
                                  reason: "Install the Codex CLI to send to Codex.")
         }
         guard let result = run(codex, Self.arguments(thread: uuid, message: line), Self.queueTimeout) else {

@@ -24,7 +24,10 @@ writes to `~/Library/Application Support/<bundle id>/agent-plugin`:
 | Install | `claude plugin marketplace add`, then `claude plugin install vignette@vignette --scope user` | `codex plugin marketplace add`, then `codex plugin add` |
 | Needs | the `claude` command | the `codex` command |
 
-Without the command, the switch is off and says which command is missing. A Claude Code session
+Vignette looks for each command where its installer puts it, then in the folders nvm, fnm, Volta,
+Bun, pnpm, asdf and mise put a global command in, then on your login shell's `PATH`. The shell is
+asked once at launch, in the background. Without the command, the switch is off and says which
+command is missing. A Claude Code session
 that was already open when you installed the plugin needs `/reload-plugins` before it can take a
 drawing.
 

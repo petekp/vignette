@@ -67,6 +67,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if let type = AppleScreencapture.string("type"), !ScreenshotWatcher.isCandidate("screenshot.\(type)") {
             Log.write("[settings] warning Apple screencapture type=\(type) is a format the watcher ignores")
         }
+        // The login shell's answer may take seconds; setup and the Agents tab refresh when it comes.
+        AgentTools.start()
         updateStatusItem()
         startUpdater()
         // It records the frontmost app from the moment it exists, which has to be before the first
@@ -338,8 +340,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     func stitch(_ shots: [Screenshot]) {
         guard shots.count >= 2 else { Commands.error("stitch", .notEnoughFiles, "needs 2, got \(shots.count)"); return }
         let ui = settings.data.ui, style = ui.textStyle, markStyle = ui.markStyle, limit = ui.stitchLongSide
+        // A recording has no drawing, and reading its header here could download it from iCloud
+        // on the main thread.
         let pieces = shots.map { shot in
-            Stitch.Piece(url: shot.url, drawing: annotator.openDrawing(of: shot.url)
+            Stitch.Piece(url: shot.url, drawing: shot.kind == .recording ? nil : annotator.openDrawing(of: shot.url)
                 ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: style) })
         }
         DispatchQueue.global(qos: .userInitiated).async {

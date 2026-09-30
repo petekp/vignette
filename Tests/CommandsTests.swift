@@ -201,9 +201,10 @@ final class CommandsTests: XCTestCase {
 
         XCTAssertEqual(Config.defaultAction(for: [recording])?.label, "Open")
         XCTAssertEqual(Config.defaultAction(for: [image])?.label, "Draw")
-        for id in ["annotate", "copy-annotated", "stitch"] {
+        for id in ["annotate", "copy-annotated"] {
             XCTAssertNotNil(Config.action(id: id)?.unavailableReason(for: [image, image, recording]), id)
         }
+        XCTAssertNil(Config.action(id: "stitch")?.unavailableReason(for: [image, recording]), "a recording is stitched as its first frame")
         for id in ["copy", "paths", "trash"] {
             XCTAssertNil(Config.action(id: id)?.unavailableReason(for: [image, recording]), id)
         }

@@ -74,7 +74,7 @@ drawing. The cards stay selected and it comes back when you are done.
 - Cmd+Delete trashes the selection.
 - Return opens the card to draw on.
 
-Cmd+S stitches two or more selected screenshots into one image with numbered badges, saved next to
+Cmd+S stitches two or more selected cards into one image with numbered badges, saved next to
 the originals and copied. Two or three pieces stack, and more go in a grid. Each badge is the number
 the card's circle showed. The selected cards fly together into the new card, which takes their place
 at the bottom of the stack, or opens in the annotator when Open to Draw is on.
@@ -142,9 +142,9 @@ A recording from Cmd+Shift+5 gets a card too, showing its first frame with its l
 corner. Click it, or press Return, to open it in QuickTime Player, or in whichever app your Mac
 opens movies with.
 
-Copy, Copy Paths, and Delete work on recordings. Draw, Copy Drawing, and Stitch work only on
-screenshots. With a recording in the selection, Draw and Stitch are greyed in the strip, and
-hovering one says why. Their shortcuts beep. When every selected card is a recording, Draw becomes
+Copy, Copy Paths, and Delete work on recordings. Stitch takes a recording's first frame, the
+picture its card shows. Draw and Copy Drawing work only on screenshots. With a recording in the
+selection, Draw is greyed in the strip, and hovering it says why. Their shortcuts beep. When every selected card is a recording, Draw becomes
 Open.
 
 Cmd+C copies a recording as a file, which chat apps attach and terminals paste as its path. Draw on

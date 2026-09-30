@@ -27,7 +27,7 @@ enum Config {
         ShotAction(id: "copy-annotated", label: "Copy Drawing", key: .init("c", [.command, .shift]),
                    placement: .shortcut) { shots, app in app.copyAnnotated(shots) },
         ShotAction(id: "stitch", symbol: "rectangle.stack", label: "Stitch", key: .init("s", [.command]),
-                   placement: .strip, minimumCount: 2) { shots, app in app.stitch(shots) },
+                   placement: .strip, minimumCount: 2, kinds: [.image, .recording]) { shots, app in app.stitch(shots) },
         ShotAction(id: "trash", symbol: "trash", label: "Delete", key: .init("\u{7f}", [.command]),
                    placement: .everywhere, kinds: [.image, .recording]) { shots, app in app.moveToTrash(shots) },
     ]

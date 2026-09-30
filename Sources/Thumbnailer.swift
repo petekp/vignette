@@ -248,8 +248,9 @@ enum Thumbnailer: @unchecked Sendable {
         return thumbnail
     }
 
-    /// About 90 ms, most of it decoding video, so it runs where `image` runs: on `queue` for a card.
-    private static func posterFrame(_ url: URL, maxPixel: Int) -> CGImage? {
+    /// A recording's first frame, no larger than `maxPixel` on its long side, or whole for 0. About
+    /// 90 ms, most of it decoding video, so it runs off the main thread: on `queue` for a card.
+    static func posterFrame(_ url: URL, maxPixel: Int) -> CGImage? {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: maxPixel, height: maxPixel)

@@ -309,7 +309,8 @@ under that folder's `Library/Logs`, which must exist before the launch, or the l
   actions by key); the row shows whichever applies, and Draw when neither does. A click on a
   recording opens it in the app macOS opens movies with. A recording never reaches the annotator,
   so `annotateOnCapture`, the hold, and Draw on Newest Screenshot pass over it. Copy puts a recording
-  on the pasteboard as its file URL and path, never its frames.
+  on the pasteboard as its file URL and path, never its frames. Stitch takes its first frame, which
+  is what its card shows (`Thumbnailer.posterFrame`, off the main thread).
   `docs/replacing-apple-capture-2026-09-22.md` has the measurements.
 - The first launch opens the setup window (`SetupWindow.swift`), and it has that launch to itself.
   It is pages, one step each: welcome, with the folder permission when macOS protects the watch
@@ -1094,8 +1095,12 @@ under that folder's `Library/Logs`, which must exist before the launch, or the l
   tab's switches, setup's last page and `install-skill` are the only things that install the plugin
   somewhere new, and the switch is the only thing that removes it. A switch says Installing… or
   Removing… until the tool answers, and a failure is said under the agent's name, with no toast.
-  Without the agent's tool the switch is off and says which command is missing. After a Claude Code
-  install it says sessions already open need `/reload-plugins`. An older file holding `on` is read
+  The tools are found by `AgentTools`: the installers' folders, the version managers' (nvm, fnm,
+  Volta, Bun, pnpm, asdf, mise), then the login shell's `PATH`, asked once at launch off the main
+  thread (`[tools] login shell found …`). A lookup on the main thread answers at once with what is
+  known, and setup and the Agents tab refresh on `AgentTools.found`. Without the agent's tool the
+  switch is off and says which command is missing. After a Claude Code install, the Agents tab and
+  setup's last page say sessions already open need `/reload-plugins`. An older file holding `on` is read
   as `off` (`validated()`). The app carries the plugin because someone who downloads Vignette needs
   their agent to learn the `vignette://` contract and, for Claude Code, to receive what Send sends.
   The app is the one thing they are sure to have and the one thing that knows which commands its

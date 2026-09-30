@@ -69,8 +69,8 @@ These features are experimental.
   your drawing straight back.
 - **What Send needs**<br>
   Claude Code gets your drawing through the plugin, in any terminal. A session that was already
-  open when you installed the plugin needs `/reload-plugins` first. Sending to Codex needs the `codex`
-  command-line tool.
+  open when you installed the plugin needs `/reload-plugins` first. In auto mode, Claude Code asks
+  once before it reads the first drawing. Sending to Codex needs the `codex` command-line tool.
 
 ### The app
 
