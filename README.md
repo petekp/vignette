@@ -14,9 +14,6 @@ You still take screenshots with Cmd+Shift+3, 4 and 5.
 
 https://github.com/user-attachments/assets/1b4d3894-b118-4e7c-aeeb-4e81c6209066
 
-Draw on a screenshot, send it to Claude Code, and pick from the options it sends back. Recorded
-live, with Claude's working time cut. It's also on [the site](https://vignette.pete.design).
-
 ## What it does
 
 ### Capture
