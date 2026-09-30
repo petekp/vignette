@@ -73,7 +73,7 @@ def identity(project):
     """The app's name, bundle id and URL scheme, as project.yml gives them."""
     name = re.search(r'^name: *(\S.*)$', project, re.M).group(1).strip()
     bundle = re.search(r'PRODUCT_BUNDLE_IDENTIFIER: *(\S+)', project).group(1)
-    scheme = re.search(r'CFBundleURLSchemes: *\[([^\]]+)\]', project).group(1).strip()
+    scheme = re.search(r'VIGNETTE_URL_SCHEME: *(\S+)', project).group(1)
     return name, bundle, scheme
 
 
@@ -111,7 +111,7 @@ def build():
     name, bundle, scheme = identity(project)
     stage_name, stage_bundle, stage_scheme = f'{name} Demo', f'{bundle}.demo', f'{scheme}-demo'
     project = project.replace(f'PRODUCT_BUNDLE_IDENTIFIER: {bundle}', f'PRODUCT_BUNDLE_IDENTIFIER: {stage_bundle}')
-    project = replace_once(project, f'CFBundleURLSchemes: [{scheme}]', f'CFBundleURLSchemes: [{stage_scheme}]', 'project.yml')
+    project = replace_once(project, f'VIGNETTE_URL_SCHEME: {scheme}', f'VIGNETTE_URL_SCHEME: {stage_scheme}', 'project.yml')
     # A take never checks for updates: a found version would put a dot on the menu bar icon.
     project = replace_once(project, 'SUEnableAutomaticChecks: true', 'SUEnableAutomaticChecks: false', 'project.yml')
     with open(project_path, 'w') as f:

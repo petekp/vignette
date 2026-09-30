@@ -41,10 +41,12 @@ enum AgentPlugin {
     // MARK: The marketplace
 
     /// Writes the marketplace the agents install from: `template` with `skill` in it, the inbox path
-    /// the scripts read, and `marketplace` as both lists' name. It is assembled beside `folder` and
-    /// swapped in whole, so an agent never reads half of it. Returns whether anything changed.
+    /// the scripts read, and `marketplace`, the URL scheme, as both lists' name. The skill is written
+    /// for Vignette, so a copy with another scheme or name gets a skill naming its own (`retarget`).
+    /// It is assembled beside `folder` and swapped in whole, so an agent never reads half of it.
+    /// Returns whether anything changed.
     @discardableResult
-    static func stage(template: URL, skill: URL, into folder: URL, inboxRoot: URL, marketplace: String) throws -> Bool {
+    static func stage(template: URL, skill: URL, into folder: URL, inboxRoot: URL, marketplace: String, appName: String) throws -> Bool {
         let fileManager = FileManager.default
         let parent = folder.deletingLastPathComponent()
         let staging = parent.appendingPathComponent(".\(folder.lastPathComponent)-incoming")
@@ -56,6 +58,7 @@ enum AgentPlugin {
             let skills = plugin.appendingPathComponent("skills")
             try fileManager.createDirectory(at: skills, withIntermediateDirectories: true)
             try fileManager.copyItem(at: skill, to: skills.appendingPathComponent(name))
+            try retarget(skill: skills.appendingPathComponent(name).appendingPathComponent("SKILL.md"), scheme: marketplace, appName: appName)
             try Data((inboxRoot.path + "\n").utf8).write(to: plugin.appendingPathComponent("scripts/inbox-root"))
             for list in [".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"] {
                 try rename(list: staging.appendingPathComponent(list), to: marketplace)
@@ -74,6 +77,16 @@ enum AgentPlugin {
             try? fileManager.removeItem(at: staging)
             throw error
         }
+    }
+
+    /// Points the skill's commands and log at this copy of the app. Left as written, a test copy's or
+    /// a fork's agent would drive the real Vignette.
+    private static func retarget(skill: URL, scheme: String, appName: String) throws {
+        guard scheme != "vignette" || appName != "Vignette" else { return }
+        let text = try String(contentsOf: skill, encoding: .utf8)
+        try text.replacingOccurrences(of: "vignette://", with: "\(scheme)://")
+            .replacingOccurrences(of: "Logs/Vignette.log", with: "Logs/\(appName).log")
+            .write(to: skill, atomically: true, encoding: .utf8)
     }
 
     /// Sets a marketplace list's top-level `name`, leaving the rest as written.
@@ -421,13 +434,14 @@ final class AgentPlugins: @unchecked Sendable {
     private let marketplaceFolder: URL
     private let inboxRoot: URL
     private let marketplace: String
+    private let appName: String
     /// Makes the host for an agent; tests give one whose tool is a script.
     private let host: (AgentClient, URL) -> PluginHost
 
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser,
          template: URL? = AgentPlugin.bundled, skill: URL? = AgentPlugin.bundledSkill,
          marketplaceFolder: URL = AgentPlugin.marketplaceFolder, inboxRoot: URL = AgentPlugin.inboxRoot,
-         marketplace: String = AgentPlugin.marketplace,
+         marketplace: String = AgentPlugin.marketplace, appName: String = Identity.name,
          host: @escaping (AgentClient, URL) -> PluginHost = { PluginHost(client: $0, root: $1) }) {
         self.home = home
         self.template = template
@@ -435,6 +449,7 @@ final class AgentPlugins: @unchecked Sendable {
         self.marketplaceFolder = marketplaceFolder
         self.inboxRoot = inboxRoot
         self.marketplace = marketplace
+        self.appName = appName
         self.host = host
     }
 
@@ -524,7 +539,7 @@ final class AgentPlugins: @unchecked Sendable {
             throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "the plugin is missing from this copy of \(Identity.name)"])
         }
         let changed = try AgentPlugin.stage(template: template, skill: skill, into: marketplaceFolder,
-                                            inboxRoot: inboxRoot, marketplace: marketplace)
+                                            inboxRoot: inboxRoot, marketplace: marketplace, appName: appName)
         if changed { Log.write("[plugin] staged \(marketplaceFolder.path) version=\(bundledVersion ?? "?")") }
         return changed
     }

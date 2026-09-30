@@ -1,0 +1,185 @@
+# An end-to-end test suite (2026-09-29)
+
+Status: built. All nine scenarios pass, the two that post input in a round with Pete on 2026-09-30.
+"Where things stand" is at the end.
+
+Pete wants a suite of end-to-end tests to run before this release and every later one, so that
+what a person does with Vignette is checked on the running app and a regression is caught before
+it ships.
+
+## Recommendation
+
+- **A small release gate first, then growth.** 0.1.2 waits for the test-launch fence, the runner
+  and five smoke scenarios, not the whole suite. The rest of the release still rests on
+  `scripts/release.sh`, which already checks the stapled image with `stapler validate` and `spctl`,
+  and on the fresh-install checklist on the second MacBook.
+- **One runner, `scripts/e2e`,** that builds a test copy from the current source, launches it on a
+  scratch home, settings file and watch folder, runs scenarios, and writes a report: pass or fail
+  per step, with the log lines, the state, and a capture of the app's own windows.
+- **Scenarios drive the app through `vignette://` commands and `scripts/input.sh`,** and check the
+  `[state]` report, the command's `ok` or `error` line, the files the app writes, the pasteboard,
+  and the pixels of a rendering. Every key or click is gated on the test copy's own `stack.key` or
+  `annotator.key`, read in the same step.
+- **A test launch cannot reach anything of Pete's.** That needs one fence in the app, below, and
+  the runner's own rules.
+
+## The test-launch fence
+
+A test launch is one with `VIGNETTE_SETTINGS` set. Today it already keeps out of `~/.claude`,
+`~/.codex`, Apple's screenshot defaults and the login items. It does not keep out of Codex or the
+update feed, and its skill names the real app.
+
+1. **Codex.** A test launch lists Pete's real Codex threads and can queue a message into one.
+   `CodexConnection.binary()` goes through `AgentTools.path`, which since 8849a39 also looks in the
+   version managers' folders and asks the login shell. That found `~/.vite-plus/bin/codex`, and the
+   tools inherit the app's `HOME`. It also defeats the trailer's fence, which empties
+   `binaryPaths` (`trailer.py`): a take's stage copy now lists Pete's Codex threads, and a recent
+   one can become Send's default target. **Fix:** in a test launch, Codex and herdr are used only
+   when `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names a binary, for listing, for submitting and for
+   the Codex app's title search. It fails closed.
+2. **Claude Code needs no fence.** Send lists only sessions whose plugin wrote an inbox under the
+   copy's own Application Support folder (`liveInboxes`), and a test copy has its own bundle id.
+   herdr only marks which listed session has the focus. A fake session is a folder with an inbox
+   file and a live pid, which `.scratch/fake-sessions.sh` already writes; it moves into the repo.
+3. **The skill.** `skills/vignette/SKILL.md` names `vignette://` and `Vignette.log`, and
+   `AgentPlugin.stage` copies it as it is, so a test copy's plugin tells its agent to drive Pete's
+   Vignette. The trailer patches the source to avoid that. **Fix:** `AgentPlugin.stage` writes the
+   scheme and log name from `Identity`. This also fixes forks, which AGENTS.md says rename things
+   in project.yml only.
+4. **Updates.** A test copy keeps `SUEnableAutomaticChecks` and checks the real feed. With the menu
+   bar icon hidden, Sparkle can put up its window mid-run. **Fix:** a test launch does not start
+   the updater.
+
+With the scheme read from a build setting in project.yml, the test copy is built from the source
+as it is, with its bundle id, name and scheme given on the `xcodebuild` line and its own derived
+data folder. The trailer can then drop its source patches.
+
+## The runner's rules
+
+- **Pete's build is stopped for a run and put back after,** even when a step fails. Both copies
+  would otherwise answer the same double tap, and a key meant for the test stack could reach his.
+  The test copy also gets its own key combination.
+- **Two test bundle ids.** `…vignette.e2e` is granted Accessibility once, by hand; the double tap
+  and the Dock's rect need it. `…vignette.e2e-fresh` is reset with `tccutil` before a run, for the
+  untrusted paths and setup's Accessibility request.
+- **The pasteboard is saved and put back,** skipping concealed types (passwords), and put back by a
+  trap when the runner is stopped. Clipboard managers still record what a run copies.
+- **Files a scenario deletes go to the real Trash;** the runner removes them from it by name.
+- **The Mac stays usable for the run:** `caffeinate`, Do Not Disturb, and a check that the session
+  is unlocked. On 2026-09-29 synthetic keys reached Slack.
+- **Timing:** each wait is on a log line or a state value, never a sleep. The smoke scenarios run
+  at motion 1, because the flights and the press handover are the fragile code and motion 0 skips
+  them.
+- **The driver:** the generic helpers from `media/trailer/drive.py` (`url`, `wait_log`, `state`,
+  `wait_state`, `require_*`, `stop_pid`) are copied into `scripts/e2e`, and the trailer is left
+  alone. `state()` also checks the watch folder, and the window check compares pids, not names,
+  and asks whether the pixel under the point is clear, since the annotator's window spans the
+  screen.
+
+## The scenarios
+
+**The smoke gate for 0.1.2:**
+
+| Scenario | What it checks |
+|---|---|
+| Launch | `[app] ready`; the fence's log lines; no login item; no Codex listed; `vignette://help` lists every command. |
+| Capture and draw | A file in the watch folder shows a card. Draw opens it; wait for `takes events reached=true`; a box and a note are drawn. Done puts a PNG on the pasteboard with the marks in the person's colour. A JPEG capture's copy is `public.jpeg`. |
+| Agent push | `add?marks=` shows a card with the agent's tab and marks. A `color` is ignored and logged. |
+| Send and Reply | Send to a fake session writes one request to its inbox. `scripts/reply` with the ticket makes a reply card; a wrong ticket is refused. Reply goes back to the same fake. |
+| Relaunch | Drawings, settings and open requests survive a relaunch. |
+
+**After the release,** in this order:
+
+- **The stack:** the double tap and hold, arrows, Space, Return, the strip's actions, Stitch with a
+  recording, and Delete.
+- **The editor:** the annotate queue, a swap mid-flight, an interrupted flight, zoom keys, undo, and
+  an agent's note becoming the person's.
+- **Settings:** a live edit reaching the editor, a bad colour repaired, a file that does not parse
+  moved to `.invalid`.
+- **Setup,** on the fresh bundle id.
+- **Memory:** RSS stays bounded after twenty opens.
+- **Frames:** a recording of a flight, checked for a blank or doubled frame. `frames.sh` extracts
+  and tracks; the check itself is still to write.
+
+Some checks need state the app does not report: the setup page, a toast, a card's send mark, and
+whether a note's lines are balanced. Each gets a field in `[state]` when its scenario is built.
+
+## Later: a clean Mac
+
+Installing from the disk image and updating from the previous version need a Mac that has never
+run Vignette. A Tart VM can do it, but it takes days: the image must carry the quarantine flag or
+Gatekeeper never checks it, granting permissions in the guest needs its screen, and posted events
+need its login session. The update test also needs a published release that has the updater: 0.1.2
+updating to 0.1.3, through a feed the test can point at. Until then this stays the manual
+checklist in `docs/first-release-plan-2026-09-29.md`.
+
+## Order of work
+
+1. **Fix the Codex leak** in the test launch. It is live now, in the trailer and in every stage
+   copy.
+2. The rest of the fence: the skill from `Identity`, no updater, the scheme as a build setting.
+3. The runner, its rules and the report.
+4. The five smoke scenarios, then cut 0.1.2.
+5. The later scenarios.
+
+## Decisions for Pete
+
+1. **Does 0.1.2 wait for the smoke gate?** Recommendation: yes. It is steps 1 to 4.
+2. **Where it runs.** Recommendation: this Mac, with your build stopped for the run. A second macOS
+   user account is safer (its own pasteboard, home, Trash and permissions, with no agent sessions
+   and no running Vignette) and costs a one-time setup there.
+3. **The one-time Accessibility grant** for the `.e2e` bundle id, by hand.
+4. **Test hooks in shipping code.** The fence adds `VIGNETTE_CODEX` and `VIGNETTE_HERDR`, and new
+   `[state]` fields later. They only act in a test launch.
+5. **A real Claude Code session.** Recommendation: not in the gate. Once the skill names the test
+   copy, a scenario with a real session can run before a release, signed in and costing tokens.
+
+## Where things stand (2026-09-29)
+
+Pete approved the plan, the release gate, running on this Mac, the test hooks, and granted
+`Vignette E2E` Accessibility.
+
+**Built:**
+
+- **The fence.** A test launch runs codex and herdr only when `VIGNETTE_CODEX` or `VIGNETTE_HERDR`
+  names one (`AgentTools.forSessions`), and logs `[tools] test launch: codex=… herdr=…`. This also
+  closes the leak in the trailer's stage copy. The staged skill names the copy's own scheme and log
+  (`AgentPlugin.stage`). Two unit tests cover both.
+- **The build.** `VIGNETTE_URL_SCHEME` is a build setting in project.yml, and the trailer reads it.
+  `scripts/e2e/build.sh` builds `Vignette E2E` (`com.petepetrash.vignette.e2e`, `vignette-e2e`) from
+  the source as it is. `build.sh fresh` builds the untrusted copy.
+- **Updates in a test copy** are off through Sparkle's own user default,
+  `SUEnableAutomaticChecks false` in the copy's scratch domain, so no code change was needed.
+- **The runner**, `scripts/e2e/e2e.py`, with `probe.swift` for the pasteboard, pixels and test
+  images. It saves the pasteboard, skipping a concealed item, and puts it back on exit or
+  `e2e.py restore`.
+- **`scripts/fake-herdr` is removed.** Nothing ran it.
+
+**Scenarios:**
+
+| Scenario | Input | Result |
+|---|---|---|
+| `launch` | no | pass |
+| `agent_push` | no | pass |
+| `annotate_open` | no | pass: the bar offers Copy alone, so no Codex thread was listed |
+| `send_target` | no | pass: the bar offers Send to the fake session |
+| `stitch` | no | pass |
+| `relaunch` | no | pass |
+| `settings_repair` | no | pass |
+| `draw_and_done` | yes | pass |
+| `send_and_reply` | yes | pass: the helper refuses a ticket copied elsewhere; a guessed secret is `ScreenshotRequestsTests`' case |
+
+**Found while building it:**
+
+- **The git stamp could land before Xcode wrote the Info.plist.** The phase declared no inputs, so
+  nothing ordered it after `ProcessInfoPlistFile`. In the E2E build it ran first, and the app came
+  out as `build=local`, `CFBundleVersion` 0; a release stamped 0 would break Sparkle's version
+  comparison. Fixed with Pete's approval: the phase takes the processed Info.plist as its input, and
+  `release.sh` refuses an archive stamped 0.
+- **A reply's secret is checked against `ticket.json` on disk**, so rewriting that file rewrites the
+  reference. That is not a hole, since whoever can write the file can read the real secret, but it
+  is why the end-to-end check cannot test a wrong secret through the helper.
+- **`add` answers `unreadable-image` for a missing file**, because it checks the image before the
+  file. The skill lists `missing-file` among `add`'s errors. `annotate` does the same on purpose.
+
+**Next:** cut 0.1.2 with the smoke gate passing, then grow the suite in the order above.

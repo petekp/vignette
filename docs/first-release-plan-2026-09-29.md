@@ -26,9 +26,11 @@ order proposed to get there.
    folder permission, Accessibility, the plugin install, and one Send.
 3. **Check today's mark work by hand:** the white edge on a note while typing, an agent's note
    becoming the person's when retyped, and selecting an agent's marks, which Pete could not do.
-4. **Cut 0.1.2 with `scripts/release.sh`.** It is the first build with the updater. It needs the
+4. **Pass the end-to-end smoke gate** (`docs/e2e-suite-plan-2026-09-29.md`), and fix the git stamp's
+   ordering, which can leave a release at `CFBundleVersion` 0.
+5. **Cut 0.1.2 with `scripts/release.sh`.** It is the first build with the updater. It needs the
    update signing key in the Keychain (account `vignette`) and the notarization profile.
-5. **Cut 0.1.3 and let 0.1.2 update to it** through the GitHub feed. That is the only full test of
+6. **Cut 0.1.3 and let 0.1.2 update to it** through the GitHub feed. That is the only full test of
    the updater, and it covers the cases the local test could not (`docs/updater-2026-09-27.md`).
 
 ## Done on 2026-09-29

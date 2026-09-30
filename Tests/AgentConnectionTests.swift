@@ -100,6 +100,18 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertNil(ClaudeCodeConnection.herdrBinary { _ in false })
     }
 
+    /// A test launch reaches sessions only through a tool the environment names: any other codex or
+    /// herdr on the Mac is the person's, and would list and send to their own sessions.
+    func testATestLaunchUsesOnlyTheSessionToolItIsGiven() {
+        let found = { "/Users/p/.vite-plus/bin/codex" }
+        XCTAssertEqual(AgentTools.forSessions("VIGNETTE_CODEX", environment: [:], otherwise: found), found())
+        XCTAssertNil(AgentTools.forSessions("VIGNETTE_CODEX", environment: ["VIGNETTE_SETTINGS": "/tmp/s.json"], otherwise: found))
+        XCTAssertEqual(AgentTools.forSessions("VIGNETTE_CODEX", environment: ["VIGNETTE_SETTINGS": "/tmp/s.json", "VIGNETTE_CODEX": "/tmp/fake-codex"],
+                                              exists: { $0 == "/tmp/fake-codex" }, otherwise: found), "/tmp/fake-codex")
+        XCTAssertNil(AgentTools.forSessions("VIGNETTE_CODEX", environment: ["VIGNETTE_SETTINGS": "/tmp/s.json", "VIGNETTE_CODEX": "/tmp/gone"],
+                                            exists: { _ in false }, otherwise: found))
+    }
+
     /// A session is offered while its process runs and its monitor does. An inbox whose process has
     /// gone is removed, since nothing else would; one whose monitor stopped stays, unlisted.
     func testOnlySessionsWithARunningMonitorAreOffered() throws {

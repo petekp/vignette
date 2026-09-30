@@ -71,6 +71,14 @@ xcodebuild -project "$scheme.xcodeproj" -scheme "$scheme" -configuration Release
   MARKETING_VERSION="$version" \
   CODE_SIGN_IDENTITY="$CODE_SIGN_IDENTITY" DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM"
 
+# Sparkle compares CFBundleVersion, which the build phase stamps with the commit count.
+stamped=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$archive/Products/Applications/$scheme.app/Contents/Info.plist")
+if [[ "$stamped" == 0 || -z "$stamped" ]]; then
+  echo "error: the archive's CFBundleVersion is '$stamped'; the git stamp did not land" >&2
+  exit 1
+fi
+echo "==> CFBundleVersion $stamped"
+
 export_options="build/release/ExportOptions.plist"
 cat > "$export_options" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

@@ -73,3 +73,18 @@ of the plugin needs `CFFIXED_USER_HOME`.
   driving script reads.
 - **Only skip the migration for copies other than the real app.** A plugin already installed
   would still be updated, and setup and the Agents tab would still reach the real folders.
+
+## Codex and herdr (added later on 2026-09-29)
+
+The guard above left one route open. Since `AgentTools` learned to find `codex` through the version
+managers and the login shell, a test launch found `~/.vite-plus/bin/codex`, listed the person's
+Codex threads, and could queue a drawing into one. That also undid the trailer's own fence, which
+empties `CodexConnection.binaryPaths`. A review of the end-to-end plan found it.
+
+A test launch now runs codex and herdr only when `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names one
+(`AgentTools.forSessions`), for listing and for sending, and logs
+`[tools] test launch: codex=… herdr=…`. Claude Code needs no such fence: Send lists only the inboxes
+under the copy's own Application Support folder. The plugin's skill now names the copy's own URL
+scheme and log (`AgentPlugin.stage`), so a test copy's agent cannot drive the real Vignette either.
+`testATestLaunchUsesOnlyTheSessionToolItIsGiven` and `testStageNamesThisCopyOfTheAppInTheSkill`
+cover the two.

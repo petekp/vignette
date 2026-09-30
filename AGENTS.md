@@ -88,7 +88,11 @@ Before you drive the app:
 - A test copy never touches the person's own `~/.claude` and `~/.codex`: with `VIGNETTE_SETTINGS`
   set, `AgentPlugin.roots` leaves them out and the launch logs `[plugin] test launch: left <folder>
   alone`, and it registers no login item. To test the plugin, also launch with
-  `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`).
+  `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`). It runs no codex and
+  no herdr unless `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names one (`AgentTools.forSessions`), since
+  any other found on the Mac lists and sends to the person's own sessions; the launch logs
+  `[tools] test launch: codex=… herdr=…`. The plugin's skill names the copy's own URL scheme and log
+  (`AgentPlugin.stage`).
 - Stop a test copy by its PID before you launch another copy of the same bundle id. On 2026-09-26,
   `open -a <a Release copy> <url>`, sent after a Debug copy of the same bundle id had run, launched a
   second Release instance without `VIGNETTE_SETTINGS`, on the user's real settings file.
@@ -231,12 +235,22 @@ Debug build's narrowing dropped four frames where the Release build's dropped at
 the stack narrows only when the annotator's frame comes near it, so a trace of 1600 by 1000
 images opening measured no narrowing at all, and `stack.widthScale` in `[state]` says whether it did.
 
-Testing Send without a real session: `scripts/fake-herdr` reports one Claude Code session and
-answers a submission as its folder's `mode` file says (ok, gone, blocked or hang, after a delay).
-The stage copy runs it in place of herdr when launched with `--env FAKE_HERDR=<folder>`. Launched
-with `--env CFFIXED_USER_HOME=<folder>` as well, the app takes that folder for the home folder, so
-the Agents tab and setup read and write a scratch `.claude` rather than the user's; its log is then
-under that folder's `Library/Logs`, which must exist before the launch, or the log lines are dropped.
+The end-to-end tests: `scripts/e2e/e2e.py run` builds the test copy (`scripts/e2e/build.sh`: its
+own bundle id, name and URL scheme, given on the `xcodebuild` line) and runs the scenarios in
+`scripts/e2e/scenarios.py`, each on a fresh scratch home, settings file and watch folder. It saves
+the pasteboard and puts it back, even when stopped (`e2e.py restore` after a crash), and writes a
+report under `scripts/e2e/out/runs/`. `--input` adds the scenarios that post keys and clicks, each
+gated on the test copy's own state; they need `Vignette E2E` granted Accessibility once, by hand.
+`docs/e2e-suite-plan-2026-09-29.md` has the design and what is still to come.
+
+Testing Send without a real session: a Claude Code session is an inbox folder under the copy's
+Application Support, `claude-sessions/<pid>/` with `session`, `cwd` and a fresh `alive`, and `<pid>`
+a live process (`App.fake_session` in the runner). Send writes its request line there. Launched
+with `--env CFFIXED_USER_HOME=<folder>`, the app takes that folder for the home folder, so the Agents
+tab and setup read and write a scratch `.claude` rather than the user's; its log is then under that
+folder's `Library/Logs`, which must exist before the launch, or the log lines are dropped. Apple's
+screenshot location for such a launch is written with the same variable:
+`CFFIXED_USER_HOME=<folder> defaults write <bundle id>.screencapture location <watch folder>`.
 
 ## Rules that are not obvious from the code
 

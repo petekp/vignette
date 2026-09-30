@@ -35,8 +35,8 @@ final class AgentPluginTests: XCTestCase {
 
     private func read(_ url: URL) throws -> String { try String(contentsOf: url, encoding: .utf8) }
 
-    private func stage(marketplace: String = "vignette") throws -> Bool {
-        try AgentPlugin.stage(template: template, skill: skill, into: staged, inboxRoot: inboxes, marketplace: marketplace)
+    private func stage(marketplace: String = "vignette", appName: String = "Vignette") throws -> Bool {
+        try AgentPlugin.stage(template: template, skill: skill, into: staged, inboxRoot: inboxes, marketplace: marketplace, appName: appName)
     }
 
     // MARK: The marketplace
@@ -58,6 +58,16 @@ final class AgentPluginTests: XCTestCase {
             let object = try JSONSerialization.jsonObject(with: Data(contentsOf: staged.appendingPathComponent(list))) as? [String: Any]
             XCTAssertEqual(object?["name"] as? String, "vignette-fork", list)
         }
+    }
+
+    /// A test copy's or a fork's skill names its own URL scheme and log; left as written, its agent
+    /// would drive the real Vignette.
+    func testStageNamesThisCopyOfTheAppInTheSkill() throws {
+        try write("---\nname: vignette\n---\nRun `open -g vignette://help` and read `~/Library/Logs/Vignette.log`.\n",
+                  to: skill.appendingPathComponent("SKILL.md"))
+        XCTAssertTrue(try stage(marketplace: "vignette-e2e", appName: "Vignette E2E"))
+        XCTAssertEqual(try read(AgentPlugin.pluginFolder(in: staged).appendingPathComponent("skills/vignette/SKILL.md")),
+                       "---\nname: vignette\n---\nRun `open -g vignette-e2e://help` and read `~/Library/Logs/Vignette E2E.log`.\n")
     }
 
     /// Launch updates the agents only when the copy changed, so an unchanged one has to say so.

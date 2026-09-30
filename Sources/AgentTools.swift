@@ -30,6 +30,17 @@ enum AgentTools {
         return lock.withLock { fromShell[name] }.flatMap { exists($0) ? $0 : nil }
     }
 
+    /// A tool that reaches the person's agent sessions: codex, which lists and queues to their
+    /// threads, and herdr, which reads their panes. In a test launch (`VIGNETTE_SETTINGS` set) it is
+    /// only the one the environment names in `variable`, and none without it, since any other found
+    /// on this Mac is the person's own.
+    static func forSessions(_ variable: String, environment: [String: String] = ProcessInfo.processInfo.environment,
+                            exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
+                            otherwise: () -> String?) -> String? {
+        guard environment["VIGNETTE_SETTINGS"].map({ !$0.isEmpty }) ?? false else { return otherwise() }
+        return environment[variable].flatMap { exists($0) ? $0 : nil }
+    }
+
     /// Every folder `path` looks in before the shell, for an error line that names them.
     static func searched(_ name: String, fixed: [String], home: String = NSHomeDirectory()) -> [String] {
         fixed + managed(name, home: home)
@@ -55,6 +66,10 @@ enum AgentTools {
     /// Asks the login shell once where `names` are. Call at launch.
     static func start(names: [String] = ["claude", "codex"]) {
         guard !lock.withLock({ let was = started; started = true; return was }) else { return }
+        if Settings.isOverridden {
+            let env = ProcessInfo.processInfo.environment
+            Log.write("[tools] test launch: codex=\(env["VIGNETTE_CODEX"] ?? "none") herdr=\(env["VIGNETTE_HERDR"] ?? "none"), from VIGNETTE_CODEX and VIGNETTE_HERDR")
+        }
         DispatchQueue.global(qos: .utility).async {
             let found = shellPaths(names)
             let new = lock.withLock { () -> Bool in

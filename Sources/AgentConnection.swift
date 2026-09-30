@@ -291,7 +291,7 @@ struct ClaudeCodeConnection: AgentConnection {
     var isRunning: @Sendable (Int32) -> Bool = { kill($0, 0) == 0 }
     var now: @Sendable () -> Date = { Date() }
     /// herdr's binary and its runner, for the focus hint. Injected so tests never run herdr.
-    var herdr: @Sendable () -> String? = { ClaudeCodeConnection.herdrBinary() }
+    var herdr: @Sendable () -> String? = { AgentTools.forSessions("VIGNETTE_HERDR") { ClaudeCodeConnection.herdrBinary() } }
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
         Subprocess.run($0, $1, timeout: $2)
     }
@@ -563,7 +563,7 @@ struct CodexConnection: AgentConnection {
     let client = AgentClient.codex
     /// The threads change only when one is used, and a discovery starts a process of its own.
     let keepsList = true
-    var binary: () -> String? = { CodexConnection.binary() }
+    var binary: () -> String? = { AgentTools.forSessions("VIGNETTE_CODEX") { CodexConnection.binary() } }
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
         Subprocess.run($0, $1, timeout: $2)
     }

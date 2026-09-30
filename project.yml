@@ -1,5 +1,5 @@
 # To fork: change `name`, the app target and scheme keys that repeat it, both
-# PRODUCT_BUNDLE_IDENTIFIER values, and the URL scheme below.
+# PRODUCT_BUNDLE_IDENTIFIER values, and VIGNETTE_URL_SCHEME below.
 # The log name, status item, Application Support folder, and hotkey registration follow the
 # bundle at runtime (Sources/Identity.swift); build.sh and run.sh read `name` for the scheme.
 name: Vignette
@@ -66,12 +66,14 @@ targets:
         NSDownloadsFolderUsageDescription: $(PRODUCT_NAME) shows the screenshots macOS saves to your Downloads folder.
         CFBundleURLTypes:
           - CFBundleURLName: $(PRODUCT_BUNDLE_IDENTIFIER)
-            CFBundleURLSchemes: [vignette]
+            CFBundleURLSchemes: [$(VIGNETTE_URL_SCHEME)]
     settings:
       base:
         SWIFT_VERSION: "5.10"
         SWIFT_STRICT_CONCURRENCY: complete
         PRODUCT_BUNDLE_IDENTIFIER: com.petepetrash.vignette
+        # A build setting, so a test copy gets its own scheme on the xcodebuild line (scripts/e2e).
+        VIGNETTE_URL_SCHEME: vignette
         MARKETING_VERSION: "0.1.0"
         # Placeholders: the stamp script below writes the git state into the built Info.plist.
         CURRENT_PROJECT_VERSION: "0"
@@ -98,6 +100,10 @@ targets:
       # xcodebuild is stamped the same way. Run script phases precede code signing.
       - name: Stamp git state
         basedOnDependencyAnalysis: false
+        # The processed Info.plist as an input orders this after Xcode writes it. Without it, the
+        # phase could run first and the written Info.plist replaced the stamp (build=local, version 0).
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
         script: |
           cd "$SRCROOT"
           number=$(git rev-list --count HEAD 2>/dev/null || echo 0)
