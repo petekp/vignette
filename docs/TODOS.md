@@ -39,19 +39,11 @@ models, lay the pieces out in rows that wrap in reading order, and warn when a s
 too small for the model to read. It waits on Pete's decision. The warning's wording needs his
 approval, and the 10 px threshold should first be checked by pasting a few stitches into Claude Code.
 
-### The trailer's camera (raised 2026-09-29)
+### A drop in the trailer's camera (raised 2026-09-29)
 
-The v3 trailer is live (`8bc1aad`, `docs/trailer-v3-overnight-2026-09-29.md`). Pete's notes on it,
-all in the cut, so `trailer.py cut` from the same take shows each fix without a new recording:
-
-- **The slow zoom on the editor distracts.** While the camera holds, it creeps in (`drift` and
-  `drift_most` under `[camera]` in `beats.toml`). Pete finds it unnecessary. Setting `drift = 0`
-  is the likely fix.
-- **Claude's card is cut off on the right** when it lands in the corner. The card's right edge is
-  about 17 points from the screen's edge, and the same slow zoom crops more than that, so the
-  first fix may cure this too. Not yet checked.
-- **The camera drops a few pixels** when the first drawing's editor appears and the zoom in on it
-  begins. Not yet measured. The camera move toward `editor` at `editor.landed` is where to look.
+The camera drops a few pixels when the first drawing's editor appears and the zoom in on it begins.
+Not yet measured. Look at the camera move toward `editor` at `editor.landed` in `beats.toml`. It is
+in the cut, so `trailer.py cut` from the same take shows a fix without a new recording.
 
 `site/stack-and-editor.png` is no longer used by the page and is still deployed.
 

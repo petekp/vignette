@@ -40,8 +40,8 @@ change = 0.45
 
 [camera]
 # While the camera holds on something, it creeps in by this much of its width a second, up to
-# `drift_most`, so a hold is never a frozen frame.
-drift = 0.01
+# `drift_most`. 0 keeps it still.
+drift = 0
 drift_most = 0.03
 
 # The end card: the app icon, the wordmark written on, and two lines under it. `exit` is when its
