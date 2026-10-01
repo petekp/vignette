@@ -427,6 +427,41 @@ def send_and_reply(app):
     app.report.step('the reply is a card')
 
 
+@needs_input
+def corner_select(app):
+    """Two captures share the corner. Hovering one shows its selection circle, and a click on the
+    circle makes the corner the stack, with the card selected and the strip out."""
+    start(app)
+    app.image('Screenshot one.png', folder=app.watch)
+    time.sleep(0.8)
+    second = app.image('Screenshot two.png', folder=app.watch)
+    s = app.wait_state(lambda s: s['stack']['visible'] and not s['stack']['isStack'] and len(s['stack']['cards']) == 2,
+                       'both captures in the corner')
+    app.report.step('two thumbnails in the corner')
+    # The corner never takes the keys, so the gate is this copy's own card, read in the same step.
+    card = card_for(s, second)
+    if card is None or card['frame'] is None:
+        raise Failed(f'no frame for {os.path.basename(second)} in the corner')
+    x, y, w, h = card['frame']
+    app.input('glide', round(x + w / 2), round(y + h / 2), 0.4)
+    s = app.wait_state(lambda s: (s['stack']['hovered'] or '').endswith('Screenshot two.png'), 'the card being hovered', timeout=3)
+    app.capture([x - 10, y - 10, w + 20, h + 20], 'corner-hover')
+    card = card_for(s, second)
+    if card is None or s['stack']['isStack']:
+        raise Failed('the corner changed before the click')
+    x, y, w, h = card['frame']
+    # The circle sits CardView.buttonPad in from the top-left corner, ui.selectionCircleSize across.
+    circle = (round(x + 6 + 9.5), round(y + 6 + 9.5))
+    app.input('glide', *circle, 0.2)
+    app.input('click', *circle)
+    s = app.wait_state(lambda s: s['stack']['isStack'] and len(s['stack']['selected']) == 1 and s['stack']['strip'] is not None,
+                       'the corner becoming the stack with the card selected', timeout=3)
+    if not s['stack']['key']:
+        raise Failed('the stack the corner became does not hold the keys')
+    app.report.step('a click on the circle makes the corner the stack', detail=f"selected={len(s['stack']['selected'])}")
+    app.command('dismiss')
+
+
 def to_screen(s, image_width, px):
     """A point of the image, in px, on screen, for the editor at its fitted size."""
     x, y, w, h = s['annotator']['frame']
@@ -458,4 +493,4 @@ def agent_marks_editable(app):
     close_editor(app)
 
 
-ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, copy_types, stitch, relaunch, settings_repair, draw_and_done, send_and_reply, agent_marks_editable]
+ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, copy_types, stitch, relaunch, settings_repair, draw_and_done, send_and_reply, agent_marks_editable, corner_select]

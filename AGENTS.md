@@ -499,6 +499,10 @@ screenshot location for such a launch is written with the same variable:
   is one, else on the focused card (`targetCards`). The ring says where the focus is: the accent
   color on a selected card, white on a focused one. It grows out of the card's resting border and
   shrinks back into it, and the selection circle fades in with it.
+- Thumbnails in the corner show the selection circle once there are two or more of them
+  (`StackModel.offersSelection`), except while one is in the annotator. Selecting there makes the
+  corner the stack with the cards it holds (`ThumbnailController.becomeStack`): it takes the keys
+  and the backdrop, a click outside closes it, and it stops timing out.
 - The panel widens to the left while cards are selected, to hold the selection strip
   (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:reveal:)` makes the room:
   the icon column, the gap to the cards, and the room the labels grow into, whether they are out or

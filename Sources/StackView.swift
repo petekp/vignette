@@ -137,7 +137,7 @@ private struct CardView: View {
     /// The card itself is under the mouse. A slot whose image is in the transition layer is not:
     /// the flight is what the eye follows, so the hover state arrives with the card that lands.
     private var showsHover: Bool { hovered && !isOut && !isForming }
-    private var showsCircle: Bool { model.isStack && !isOut && !isForming && (hovered || model.inSelectionMode || focused) }
+    private var showsCircle: Bool { model.offersSelection && !isOut && !isForming && (hovered || model.inSelectionMode || focused) }
     private var copied: Bool { model.copied.contains(card.id) }
     private var sendMark: SendMark? { model.sendMarks[card.shot.url.path] }
     private var notCopied: String? { model.notCopied[card.shot.url.path] }

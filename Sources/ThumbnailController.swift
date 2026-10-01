@@ -63,7 +63,7 @@ final class StackModel: ObservableObject {
     /// them in this order, and a card's circle shows its place here.
     @Published private(set) var selection: [UUID] = []
     @Published var focused: UUID? = nil        // keyboard focus ring
-    @Published var isStack = false             // selection UI only exists in the recent stack
+    @Published var isStack = false             // the recent stack, as against thumbnails in the corner
     @Published var scroll: CGFloat = 0         // how far the column is pulled down to show older cards
     @Published var viewport: CGFloat = 0       // visible height of the column, at the stack's full width
     /// The room the Dock keeps at the bottom of the panel when the column is over it. The column
@@ -74,6 +74,10 @@ final class StackModel: ObservableObject {
     @Published var widthScale: CGFloat = 1
 
     var inSelectionMode: Bool { !selection.isEmpty }
+    /// Cards show the selection circle. A corner holding two or more cards offers it too, and
+    /// selecting there makes the corner the stack (`ThumbnailController.becomeStack`). Not while
+    /// a corner card is in the annotator: the corner's session takes the card out of the panel.
+    var offersSelection: Bool { isStack || (cards.count > 1 && !annotating) }
     var onAction: (ShotAction, [Card]) -> Void = { _, _ in }
     var onSweep: (CGFloat) -> Void = { _ in }       // y from the column top, during a drag from a circle
     var onSweepEnd: () -> Void = {}
@@ -1270,6 +1274,17 @@ final class ThumbnailController: NSObject {
         scrollToReveal(index)
     }
 
+    /// A selection begun in the corner turns the corner into the stack, with the cards it holds:
+    /// it takes the keys and the backdrop, a click outside closes it, and it no longer times out.
+    private func becomeStack() {
+        leaveTimer?.invalidate()
+        model.isStack = true
+        outsideClick.start { [weak self] in self?.dismiss() }
+        backdrop.show(on: screen, below: panel)
+        takeKeys(focus: model.hoveredCard)
+        Log.write("[stack] corner became the stack cards=\(model.cards.count)")
+    }
+
     /// The drag is over: it ended, or the cards it was sweeping changed under it, which makes the
     /// anchor point at another card. The selection stays as it is.
     private func endSweep() {
@@ -1281,6 +1296,7 @@ final class ThumbnailController: NSObject {
     /// The drag moved. Its place in the column is kept as a distance from the top of what is on
     /// screen, so the auto-scroll can keep selecting from the same point while the cards move under it.
     private func sweep(toYFromTop y: CGFloat) {
+        if !model.isStack { becomeStack() }
         sweepFromTop = y - drawnContentHeight + model.viewport + model.scroll
         select(toYFromTop: y)
         updateAutoScroll()
