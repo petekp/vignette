@@ -143,22 +143,22 @@ struct SettingsData: Codable, Equatable {
 /// Layout, styling, timing, and backdrop parameters. All in points and seconds.
 struct UITweaks: Codable, Equatable {
     // Cards
-    var cardMaxWidth = 208.0
-    var cardMaxHeight = 86.0
-    var cardMinSide = 114.0
+    var cardMaxWidth = 188.0
+    var cardMaxHeight = 153.0
+    var cardMinSide = 120.0
     var cardSpacing = 10.0
     var panelInset = 19.0            // room for shadows inside the panel
     var screenMargin = 17.0          // distance from the screen corner
     var stackMinScale = 0.5          // how narrow the stack goes to make room for the annotator
     var stackGap = 24.0              // the stack keeps this much between itself and the annotator
-    var cardCornerRadius = 12.0
-    var cardBorderWidth = 2.0
-    var cardBorderOpacity = 0.35
+    var cardCornerRadius = 16.0
+    var cardBorderWidth = 0.5
+    var cardBorderOpacity = 0.4
     var cardShadowRadius = 4.0
-    var cardShadowOpacity = 0.5
-    var cardShadowY = 6.0
+    var cardShadowOpacity = 0.85
+    var cardShadowY = 4.0
     var hoverScale = 1.06
-    var pressScale = 0.96
+    var pressScale = 0.97
     var hoverDim = 0.35             // darkening of a hovered card behind its buttons
     // Hover buttons and selection
     var buttonSize = 27.0
@@ -173,10 +173,10 @@ struct UITweaks: Codable, Equatable {
     var markSeconds = 1.7            // how long a card's copied or sent mark stays
     var slideInDuration = 0.3
     var slideInCurve = "spring"      // spring, easeOut, easeInOut, linear
-    var slideOutDuration = 0.3
-    var staggerDelay = 0.05
+    var slideOutDuration = 0.15
+    var staggerDelay = 0.07
     var staggerTotalMax = 0.3        // the last card never starts later than this
-    var relayoutDuration = 0.2
+    var relayoutDuration = 0.25
     var shiftUpDuration = 0.3        // one card joining a visible stack: how long the others take to shift up
     var expandDuration = 0.35
     var introDuration = 0.95         // setup's window flying into the menu bar icon, once per Mac
@@ -197,23 +197,23 @@ struct UITweaks: Codable, Equatable {
     var backdropTint = 0.65          // darkness at the right edge, 0 to 1
     var backdropTintStart = 0.0      // where the tint begins, 0 = left edge, 1 = right edge
     var backdropBlurRadius = 25.0    // at the right edge
-    var backdropBands = 3            // effect views in the blur ramp
+    var backdropBands = 7            // effect views in the blur ramp
     var backdropRampPower = 1.2      // 1 = linear radius growth, higher keeps the left sharper
     var backdropFadeIn = 0.5
     var backdropFadeOut = 0.35
     var backdropSlideIn = 0.65          // the strip slides in from the screen edge while it fades
-    var backdropSlideOut = 0.3
+    var backdropSlideOut = 0.2
     var dimOpacity = 0.5             // screen darkening behind the annotator
-    var dimBlurRadius = 12.0
+    var dimBlurRadius = 17.0
     var dimFade = 0.4                // the spring settles within this
     // Annotator window
     var annotationMinWidth = 770.0
     var annotationMinHeight = 320.0
-    var annotationCornerRadius = 10.0
-    var annotationToolbarGap = 12.0
+    var annotationCornerRadius = 16.0
+    var annotationToolbarGap = 9.0
     var annotationScreenInset = 60.0
-    var zoomEdgeBandPoints = 120.0   // how far from each edge of the picture a zoom holds that edge
-    var zoomEdgePull = 0.5           // the part of that band in which the edge is held exactly
+    var zoomEdgeBandPoints = 250.0   // how far from each edge of the picture a zoom holds that edge
+    var zoomEdgePull = 0.6           // the part of that band in which the edge is held exactly
     // The editor (`EditorMetrics`): screen pt, the same size at any zoom, unless it says otherwise
     var dragDistance = 4.0           // how far a press travels before it is a drag
     var hitMargin = 4.0              // added to a stroke's half-width to make its hit band
