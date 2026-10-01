@@ -630,7 +630,7 @@ final class Settings: ObservableObject {
         // 0.1.0 and 0.1.1 wrote every `ui` value, so a value there is a choice only where it
         // differs from their default. Kept, their old defaults would read as choices from now on.
         if from < 2, var ui = json["ui"] as? [String: Any] {
-            for (key, old) in Self.uiDefaultsBeforeVersion2 where (ui[key] as? NSNumber)?.doubleValue == old {
+            for (key, old) in Self.uiDefaultsBeforeVersion2 where (ui[key] as? NSObject)?.isEqual(old) == true {
                 ui[key] = nil
             }
             json["ui"] = ui
@@ -639,10 +639,30 @@ final class Settings: ObservableObject {
         return (json, from)
     }
 
-    /// The `ui` defaults of 0.1.0 and 0.1.1 that differ from today's. The rest equal today's, and
-    /// a version 2 write leaves those out anyway.
-    static let uiDefaultsBeforeVersion2: [String: Double] = [
-        "slideInDuration": 0.75, "annotationScreenInset": 65, "newTextSize": 24, "textWeight": 500, "textLineHeight": 1.35,
+    /// Every `ui` default of 0.1.0 and 0.1.1, which are the same, taken from v0.1.1's source. All of
+    /// them, not only those that differ from today's, so a default changed later cannot turn one
+    /// into a choice.
+    static let uiDefaultsBeforeVersion2: [String: Any] = [
+        "slideInCurve": "spring",
+        "cardMaxWidth": 208, "cardMaxHeight": 86, "cardMinSide": 114, "cardSpacing": 10, "panelInset": 19,
+        "screenMargin": 17, "stackMinScale": 0.5, "stackGap": 24, "cardCornerRadius": 12,
+        "cardBorderWidth": 2, "cardBorderOpacity": 0.35, "cardShadowRadius": 4, "cardShadowOpacity": 0.5,
+        "cardShadowY": 6, "hoverScale": 1.06, "pressScale": 0.96, "hoverDim": 0.35, "buttonSize": 27,
+        "buttonIconSize": 11, "buttonSpacing": 4, "selectionCircleSize": 19, "selectionBarHeight": 44,
+        "selectionStripGap": 16, "autoScrollZone": 44, "autoScrollSpeed": 600, "thumbnailSeconds": 5,
+        "toastSeconds": 1.7, "slideInDuration": 0.75, "slideOutDuration": 0.3, "staggerDelay": 0.05,
+        "staggerTotalMax": 0.3, "relayoutDuration": 0.2, "insertDuration": 0.5, "expandDuration": 0.25,
+        "hoverRevealDuration": 0.15, "flightArc": 0.08, "flightArcMax": 64, "flightDepth": 0.05, "motion": 1,
+        "backdropWidth": 290, "backdropTint": 0, "backdropTintStart": 0, "backdropBlurRadius": 13,
+        "backdropBands": 3, "backdropRampPower": 2, "backdropFadeIn": 0.35, "backdropFadeOut": 0.35,
+        "backdropSlideIn": 0.5, "backdropSlideOut": 0.3, "dimOpacity": 0.5, "dimBlurRadius": 12,
+        "dimFade": 0.4, "annotationMinWidth": 770, "annotationMinHeight": 320, "annotationCornerRadius": 10,
+        "annotationToolbarGap": 12, "annotationScreenInset": 65, "zoomEdgeBandPoints": 120,
+        "zoomEdgePull": 0.5, "dragDistance": 4, "hitMargin": 4, "cornerHitSize": 13.5, "edgeHitSize": 9,
+        "smallSide": 16, "handleSize": 8, "dotRadius": 4, "dotHitRadius": 12, "smallestRectangle": 4,
+        "shortestArrow": 8, "textDragDelay": 0.15, "textDragDistance": 24, "newTextSize": 24,
+        "selectionOutlineWidth": 3.5, "textWeight": 500, "textLineHeight": 1.35, "arrowheadLength": 4.5,
+        "arrowheadWidth": 4, "stitchLongSide": 4096,
     ]
 
     /// Applies immediately; the file write is coalesced so slider drags do not thrash the disk.

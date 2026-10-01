@@ -171,10 +171,11 @@ final class SettingsTests: XCTestCase {
 
     @MainActor
     func testMigrateFromVersion1DropsTheOldDefaultsAndKeepsChoices() throws {
-        try write(#"{"version": 1, "ui": {"newTextSize": 24, "textWeight": 700, "slideInDuration": 0.75, "motion": 0.5}}"#)
+        try write(#"{"version": 1, "ui": {"newTextSize": 24, "textWeight": 700, "slideInDuration": 0.75, "cardMaxWidth": 208, "slideInCurve": "spring", "motion": 0.5}}"#)
         guard case .loaded(let loaded) = Settings.load(file) else { return XCTFail("a version 1 file loads") }
         XCTAssertEqual(loaded.data.ui.newTextSize, UITweaks().newTextSize, "0.1.1's default is not a choice")
         XCTAssertEqual(loaded.data.ui.slideInDuration, UITweaks().slideInDuration)
+        XCTAssertEqual(loaded.data.ui.cardMaxWidth, UITweaks().cardMaxWidth, "a default changed after 0.1.1 still moves")
         XCTAssertEqual(loaded.data.ui.textWeight, 700, "a value 0.1.1 did not default to is a choice")
         XCTAssertEqual(loaded.data.ui.motion, 0.5)
         let two = Settings.migrate(["version": 2, "ui": ["newTextSize": 24]]).json["ui"] as? [String: Any]
