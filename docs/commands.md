@@ -32,6 +32,7 @@ open -g vignette://install-skill              # install the Vignette plugin for 
 open -g vignette://requests                   # list the open screenshot requests; &clear=<id or all> clears them
 open -g vignette://restore-apple-defaults     # put Apple's screencapture defaults back
 open -g vignette://tweaks                     # live UI tweaks panel (needs "debug": true)
+open -g vignette://intro-lab                  # the Intro Lab, for the intro into the menu bar icon (needs "debug": true)
 ```
 
 ## Marks

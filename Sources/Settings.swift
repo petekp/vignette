@@ -179,7 +179,13 @@ struct UITweaks: Codable, Equatable {
     var relayoutDuration = 0.2
     var shiftUpDuration = 0.3        // one card joining a visible stack: how long the others take to shift up
     var expandDuration = 0.35
-    var introDuration = 0.7          // setup's window flying into the menu bar icon, once per Mac
+    var introDuration = 0.95         // setup's window flying into the menu bar icon, once per Mac
+    var introFunnel = 1.0            // 0 flies that window as one piece, up to 1 pours it into the icon (docs/intro-funnel-2026-09-30.md)
+    var introFunnelSmoothing = 1.0   // 0 starts and stops each row of the pour abruptly, 1 eases both, so its sides curve without corners
+    var introFunnelCorner = 32.0     // the pour's corners, in points, grown from the window's own as its rows leave
+    var introFunnelSmear = 1.0       // 0 to 1: how far a squeezed row is averaged, so squeezed text softens instead of breaking up
+    var introFunnelRim = 0.9         // 0 to 1: the light along the pour's bent edges
+    var introFunnelFade = 0.1        // the share of each row's travel over which it fades into the icon
     var hoverRevealDuration = 0.15
     // A flight between a stack slot and the annotator, bowed and swelled by FlightCurve
     var flightArc = 0.15             // how far the path bows, as a fraction of its length
@@ -295,7 +301,7 @@ struct UITweaks: Codable, Equatable {
         Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
         Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
         Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("shiftUpDuration", \.shiftUpDuration, 0...60),
-        Bound("expandDuration", \.expandDuration, 0...60), Bound("introDuration", \.introDuration, 0...60),
+        Bound("expandDuration", \.expandDuration, 0...60), Bound("introDuration", \.introDuration, 0...60), Bound("introFunnel", \.introFunnel, 0...1), Bound("introFunnelSmoothing", \.introFunnelSmoothing, 0...1), Bound("introFunnelCorner", \.introFunnelCorner, 0...200), Bound("introFunnelSmear", \.introFunnelSmear, 0...1), Bound("introFunnelRim", \.introFunnelRim, 0...1), Bound("introFunnelFade", \.introFunnelFade, 0...1),
         Bound("hoverRevealDuration", \.hoverRevealDuration, 0...60), Bound("motion", \.motion, 0...1),
         Bound("flightArc", \.flightArc, 0...1), Bound("flightArcMax", \.flightArcMax, 0...2000),
         Bound("flightDepth", \.flightDepth, 0...1),

@@ -68,6 +68,7 @@ enum Commands {
         Fixed(name: "requests", summary: "list the open screenshot requests; &clear=<id or all> stops one taking replies, cancels its unpublished imports, and removes the files Vignette owns"),
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Vignette first recorded"),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
+        Fixed(name: "intro-lab", summary: "open the Intro Lab, for tuning how setup's window goes into the menu bar icon", needsDebug: true),
     ]
 
     /// URLComponents decodes each query value once; `open` does not encode again, so nothing else may.

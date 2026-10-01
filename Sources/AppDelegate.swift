@@ -39,7 +39,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private lazy var debugPanel = DebugPanelController(previews: .init(
         thumbnail: { [weak self] in self?.openLast() },
         stack: { [weak self] in self?.toggleRecent() },
-        annotator: { [weak self] in self?.annotateLast() }))
+        annotator: { [weak self] in self?.annotateLast() },
+        intro: { [weak self] in self?.introLab.show() }))
+    private lazy var introLab = IntroLabController(
+        play: { [weak self] window in
+            self?.introduceMenuBar(from: window, close: { window.close() }, finished: {}) ?? false
+        },
+        iconFrame: { [weak self] in
+            self?.visibleStatusButton.flatMap { button in button.window?.convertToScreen(button.convert(button.bounds, to: nil)) }
+        })
     private let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
     /// What `add` still owes a file it put in the watch folder, by file name. The watcher reports
@@ -612,6 +620,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case "requests": requests.run(clear: request.clear)
         case "restore-apple-defaults": restoreAppleDefaults()
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
+        case "intro-lab": introLab.show(); Commands.ok("intro-lab")
         case "dismiss": thumbnail.dismiss(); Commands.ok("dismiss")
         case "cancel": Commands.ok("cancel", annotator.cancelForDebug() ? "" : "nothing was open")
         default:
@@ -751,11 +760,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return false
         }
         let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
-        let message = blockers().isEmpty
-            ? "\(shortcut?.instruction ?? "Use the shortcut") to see your recent screenshots."
-            : "Click it to finish setting up."
+        let note: MenuBarIntro.Note = missingNote(missing())
+            ?? shortcut.map { .shortcut($0) } ?? .text("Use the shortcut to see your recent screenshots.")
         Log.write("[setup] menu bar intro")
-        menuBarIntro.play(from: window, into: button, message: message, duration: settings.motionUI.introDuration,
+        menuBarIntro.play(from: window, into: button, note: note, duration: settings.motionUI.introDuration,
                           close: close, finished: finished)
         return true
     }
@@ -763,21 +771,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// What stops Vignette working, as menu items that fix it. Apple's thumbnail is off while
     /// Vignette runs, so without these a capture would show nothing and say nothing.
     private func blockers() -> [NSMenuItem] {
-        var blocked: [NSMenuItem] = []
-        if watcher?.isDenied == true {
-            blocked.append(NSMenuItem(title: "Allow Access to Your Screenshots…", action: #selector(openFilesAndFolders), keyEquivalent: ""))
-        }
-        if settings.appleTarget != "file" {
-            let item = NSMenuItem(title: "Save Screenshots to a Folder", action: #selector(saveCapturesAsFiles), keyEquivalent: "")
-            if #available(macOS 14.4, *) {
-                item.subtitle = "macOS sends them to \(AppleScreencapture.targetName(settings.appleTarget))."
+        missing().map { blocker in
+            switch blocker {
+            case .folderAccess:
+                return NSMenuItem(title: "Allow Access to Your Screenshots…", action: #selector(openFilesAndFolders), keyEquivalent: "")
+            case let .saveTarget(target):
+                let item = NSMenuItem(title: "Save Screenshots to a Folder", action: #selector(saveCapturesAsFiles), keyEquivalent: "")
+                if #available(macOS 14.4, *) { item.subtitle = "macOS sends them to \(target)." }
+                return item
+            case .accessibility:
+                return NSMenuItem(title: "Allow Accessibility for the Shortcut…", action: #selector(requestAccessibility), keyEquivalent: "")
             }
-            blocked.append(item)
         }
-        if settings.data.usesDoubleTap, !ModifierTap.trusted(prompt: false) {
-            blocked.append(NSMenuItem(title: "Allow Accessibility for the Shortcut…", action: #selector(requestAccessibility), keyEquivalent: ""))
+    }
+
+    /// What the menu lists first, as the way to fix it, and the intro's popover names.
+    private enum Blocker {
+        case folderAccess
+        /// macOS saves captures somewhere other than a folder, named for a person ("the Clipboard").
+        case saveTarget(String)
+        case accessibility
+    }
+
+    private func missing() -> [Blocker] {
+        var missing: [Blocker] = []
+        if watcher?.isDenied == true { missing.append(.folderAccess) }
+        if settings.appleTarget != "file" { missing.append(.saveTarget(AppleScreencapture.targetName(settings.appleTarget))) }
+        if settings.data.usesDoubleTap, !ModifierTap.trusted(prompt: false) { missing.append(.accessibility) }
+        return missing
+    }
+
+    /// What the intro's popover says is still missing: one sentence for one thing, else a list
+    /// worded as the menu items are.
+    private func missingNote(_ missing: [Blocker]) -> MenuBarIntro.Note? {
+        guard let only = missing.first else { return nil }
+        guard missing.count == 1 else {
+            return .list("Click the icon to:", missing.map { blocker in
+                switch blocker {
+                case .folderAccess: "Allow access to your screenshots"
+                case .saveTarget: "Save screenshots to a folder"
+                case .accessibility: "Allow Accessibility for the shortcut"
+                }
+            })
         }
-        return blocked
+        switch only {
+        case .folderAccess: return .text("\(Identity.name) can't open your screenshots folder. Click the icon to allow it.")
+        case let .saveTarget(target): return .text("macOS sends your screenshots to \(target). Click the icon to save them to a folder.")
+        case .accessibility: return .text("The shortcut needs Accessibility. Click the icon to allow it.")
+        }
     }
 
     private func rebuildMenu(_ menu: NSMenu) {

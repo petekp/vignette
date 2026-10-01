@@ -388,14 +388,22 @@ screenshot location for such a launch is written with the same variable:
   `docs/settings-polish-2026-09-25.md` has the design and its reasons. Closing the window is where
   the menu bar icon is introduced (`MenuBarIntro`), since otherwise it appears in a busy bar with
   nothing pointing at it: a picture of the window covers it, the window closes, and the picture
-  flies into the icon on the flight's bowed path. It accelerates the whole way and arrives at speed,
-  because it goes into something, where a card lands in a slot: a spring that settles spends as long
-  on the last tenth of the way as on the rest. It keeps most of its size until the last stretch, so the eye can follow it, and fades
-  into the icon while a copy of the menu bar's highlight comes up behind the icon. At the impact the
-  icon pops, a light crosses the highlight, and a popover under it names the shortcut, or says to
-  click it while `blockers()` lists something the menu must fix. All of it is timed from one moment
+  pours into the icon, row by row, as macOS's genie pours a window into the Dock: the top edge leads,
+  each row narrows to the icon's width ahead of its travel, and each fades as it enters the icon, so
+  nothing piles up over it. A shader bends the picture (`Sources/IntroFunnel.metal`) and draws its
+  edge, corners and shadow from one distance to the bent shape; SwiftUI's `.shadow` drew nothing
+  under that effect. `docs/intro-funnel-2026-09-30.md` has the design and the measurements, and the
+  Intro Lab (`vignette://intro-lab`, needs `debug`) tunes it. `ui.introFunnel` at 0 flies the
+  picture as one piece instead, on the flight's bowed path. Either way the motion accelerates the
+  whole way and arrives at speed, because it goes into something, where a card lands in a slot: a
+  spring that settles spends as long on the last tenth of the way as on the rest. A copy of the menu
+  bar's highlight comes up behind the icon as the picture reaches it. At the impact the
+  icon pops, a light crosses the highlight, and a popover under it names the shortcut, or, while
+  something the menu must fix is missing (`missing()`, which the menu's own items come from), names
+  that and says to click the icon. All of it is timed from one moment
   on the media clock (`MenuBarIntro.keyframes`), and `ui.introDuration` sets the flight's length.
-  The popover goes at the first click anywhere or after 8 s. The picture is the window as the window
+  The popover draws the shortcut as a key and goes after 5 s, when the shortcut fires, or at a click
+  on the icon; a second intro, from the Intro Lab, closes the first one's. The picture is the window as the window
   server draws it, captured with ScreenCaptureKit's `SCShareableContent.currentProcess`, which lets an
   app capture its own windows without Screen Recording permission (macOS 14.4). The window's views
   drawn with `cacheDisplay` lack the wallpaper's tint, and the picture went flat at the handover;
