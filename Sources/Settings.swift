@@ -171,31 +171,31 @@ struct UITweaks: Codable, Equatable {
     // Timings
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
     var markSeconds = 1.7            // how long a card's copied or sent mark stays
-    var slideInDuration = 0.4
+    var slideInDuration = 0.3
     var slideInCurve = "spring"      // spring, easeOut, easeInOut, linear
     var slideOutDuration = 0.3
     var staggerDelay = 0.05
     var staggerTotalMax = 0.3        // the last card never starts later than this
     var relayoutDuration = 0.2
     var shiftUpDuration = 0.3        // one card joining a visible stack: how long the others take to shift up
-    var expandDuration = 0.25
+    var expandDuration = 0.35
     var introDuration = 0.7          // setup's window flying into the menu bar icon, once per Mac
     var hoverRevealDuration = 0.15
     // A flight between a stack slot and the annotator, bowed and swelled by FlightCurve
-    var flightArc = 0.08             // how far the path bows, as a fraction of its length
+    var flightArc = 0.15             // how far the path bows, as a fraction of its length
     var flightArcMax = 64.0          // the bow never exceeds this many points
-    var flightDepth = 0.05           // how much larger the card is in the middle of the path
+    var flightDepth = 0.07           // how much larger the card is in the middle of the path
     var motion = 1.0                 // multiplier on every animation, 0 to 1; Reduce Motion forces 0
     // Backdrop
-    var backdropWidth = 290.0
-    var backdropTint = 0.0           // darkness at the right edge, 0 to 1
+    var backdropWidth = 180.0
+    var backdropTint = 0.65          // darkness at the right edge, 0 to 1
     var backdropTintStart = 0.0      // where the tint begins, 0 = left edge, 1 = right edge
-    var backdropBlurRadius = 13.0    // at the right edge
+    var backdropBlurRadius = 25.0    // at the right edge
     var backdropBands = 3            // effect views in the blur ramp
-    var backdropRampPower = 2.0      // 1 = linear radius growth, higher keeps the left sharper
-    var backdropFadeIn = 0.35
+    var backdropRampPower = 1.2      // 1 = linear radius growth, higher keeps the left sharper
+    var backdropFadeIn = 0.5
     var backdropFadeOut = 0.35
-    var backdropSlideIn = 0.5           // the strip slides in from the screen edge while it fades
+    var backdropSlideIn = 0.65          // the strip slides in from the screen edge while it fades
     var backdropSlideOut = 0.3
     var dimOpacity = 0.5             // screen darkening behind the annotator
     var dimBlurRadius = 12.0
