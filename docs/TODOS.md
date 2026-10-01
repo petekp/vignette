@@ -45,8 +45,6 @@ The camera drops a few pixels when the first drawing's editor appears and the zo
 Not yet measured. Look at the camera move toward `editor` at `editor.landed` in `beats.toml`. It is
 in the cut, so `trailer.py cut` from the same take shows a fix without a new recording.
 
-`site/stack-and-editor.png` is no longer used by the page and is still deployed.
-
 ### The annotator's redesign: agent controls and comments (raised 2026-09-24)
 
 Pete wants Send to be first-class and Done to stop being ambiguous, and proposed comments pinned to

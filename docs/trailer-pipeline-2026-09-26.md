@@ -51,7 +51,6 @@ table and decisions below describe v2.
 | `stage.swift` | The desktop's wallpaper, placing a window, reading a window's frame, a check of which window is under a point, and saving the pasteboard. |
 | `cut.swift` | Renders the plan: crops, dissolves, captions and key caps, into a ProRes master and the poster. |
 | `stage/postcard/` | Postcard, the trip planner on stage since v3. Each take copies it to `~/Code/postcard`, marked with a `.trailer-take` file, runs Claude Code there, and removes it after. Its `CLAUDE.md` tells the trailer's Claude Code how to answer a drawing. |
-| `stage/mew/` | The game the first two cuts used. No longer used. |
 | `storyboard/` | The animatic and the pages the story was designed against. A take does not read it. |
 | `outro/` | The end card's app icon and wordmark, rendered from the app bundle and `site/logotype.svg`. |
 | `out/` | The stage copy of the app, the helpers, the takes and the cut. |
