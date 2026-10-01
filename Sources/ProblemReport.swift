@@ -1,20 +1,19 @@
 import AppKit
 
-/// Report a Problem…: opens a new GitHub issue on the bug form with the version and the Mac filled
+/// Report a Problem…: opens a new GitHub issue on the feedback form with the version and the Mac filled
 /// in, then shows the log and this app's crash reports in Finder, since a browser cannot attach a
 /// file by itself. The issue address is `VignetteIssuesURL` in Info.plist (project.yml), so a fork
 /// reports to its own repository; without the key there is no menu item.
 enum ProblemReport {
     static let issuesURL = (Bundle.main.infoDictionary?["VignetteIssuesURL"] as? String).flatMap(URL.init(string:))
 
-    /// GitHub fills a form's fields from query items named by their ids, which are `version` and
-    /// `macos` in `.github/ISSUE_TEMPLATE/bug_report.yml`.
+    /// GitHub fills a form's field from the query item named by its id, `details` in
+    /// `.github/ISSUE_TEMPLATE/bug_report.yml`. Released builds open that file by name.
     static func formURL(issues: URL, build: BuildInfo, mac: String) -> URL? {
         var parts = URLComponents(url: issues, resolvingAgainstBaseURL: false)
         parts?.queryItems = [
             URLQueryItem(name: "template", value: "bug_report.yml"),
-            URLQueryItem(name: "version", value: build.description),
-            URLQueryItem(name: "macos", value: mac),
+            URLQueryItem(name: "details", value: "Vignette \(build.description) on \(mac)\n\n"),
         ]
         return parts?.url
     }

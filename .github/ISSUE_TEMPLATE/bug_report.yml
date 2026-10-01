@@ -1,53 +1,10 @@
-name: Report a problem
-description: Something in Vignette went wrong or didn't work the way you expected.
-labels: [bug]
+name: Send feedback
+description: A problem, a question, or an idea.
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Thanks for reporting this. **Report a Problem…** in Vignette's menu bar menu opens this form with the version and your Mac filled in, and shows Vignette's log in Finder.
   - type: textarea
-    id: what-happened
+    id: details
     attributes:
-      label: What happened?
-      description: What you did, and what Vignette did.
+      label: What would you like to share?
+      description: Drop in screenshots, a recording, or Vignette's log. Report a Problem… in Vignette's menu shows the log in Finder. The log lists your screenshots' file names and folders.
     validations:
       required: true
-  - type: textarea
-    id: expected
-    attributes:
-      label: What did you expect?
-  - type: textarea
-    id: steps
-    attributes:
-      label: Steps to make it happen again
-      description: Leave this empty if it happened once and you can't repeat it.
-      placeholder: |
-        1. Take a screenshot with ⌘⇧4
-        2. Double-tap right Shift
-        3. …
-  - type: textarea
-    id: screenshots
-    attributes:
-      label: Screenshots or a recording
-      description: Drop images or a video here. A drawing on one is welcome.
-  - type: input
-    id: version
-    attributes:
-      label: Vignette version
-      description: Report a Problem… fills this in.
-      placeholder: 0.1.2 (473, 158a6c5)
-    validations:
-      required: true
-  - type: input
-    id: macos
-    attributes:
-      label: macOS and Mac
-      description: Report a Problem… fills this in.
-      placeholder: macOS 15.7 (24G222), Mac15,3
-  - type: textarea
-    id: log
-    attributes:
-      label: Log and crash reports
-      description: |
-        Drag `Vignette.log` here from the Finder window Report a Problem… opened, with any Vignette crash reports it shows. The log lists your screenshots' file names and folder paths, so look it over first if that matters to you.
