@@ -401,7 +401,9 @@ screenshot location for such a launch is written with the same variable:
   drawn with `cacheDisplay` lack the wallpaper's tint, and the picture went flat at the handover;
   they are the fallback before 14.4 or when the capture fails or takes over 0.25 s. Neither has the
   outline and the dark-mode rim the window server draws at a window's edge, so the picture draws
-  them, as measured on macOS 15. The picture covers the window before the window closes, because the
+  them, as measured on macOS 15. The capture holds the screen's own pixel values labelled sRGB,
+  so the picture is labelled with the screen's colour space, and while it covers the window only
+  the picture casts a shadow. The picture covers the window before the window closes, because the
   window server takes a window down at once. macOS can give
   the icon a window and draw nothing, under the notch or past the end of a full bar, so the intro
   plays only when `MenuBarIntro.canSee` says the icon shows, and `[state] app.menuBarIcon` reports

@@ -82,8 +82,11 @@ final class MenuBarIntro {
         flight = panel
 
         // The window closes once its picture has been drawn over it: closed first, the window
-        // server takes it down at once and the frames before the picture shows are empty.
+        // server takes it down at once and the frames before the picture shows are empty. While
+        // both are up, only the picture casts a shadow: the two together drew one twice as dark
+        // for three frames.
         CATransaction.flush()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { window.hasShadow = false }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             close()
             let path = FlightPath(from: start, to: end, duration: duration, curve: FlightCurve(ui: Settings.shared.motionUI))
@@ -194,8 +197,13 @@ final class MenuBarIntro {
     private static func picture(of window: NSWindow, _ done: @escaping (NSImage?) -> Void) {
         guard #available(macOS 14.4, *) else { return done(viewsPicture(of: window)) }
         let id = CGWindowID(window.windowNumber), size = window.frame.size, scale = window.backingScaleFactor
+        // The capture holds the screen's own pixel values but is labelled sRGB, so on a Display P3
+        // screen every saturated colour shifted at the handover (measured on macOS 15). Labelled
+        // with the screen's space, the values are shown as they were.
+        let space = window.screen?.colorSpace?.cgColorSpace
         Task { @MainActor in
             let image = await WindowCapture.image(of: id, size: size, scale: scale, within: .milliseconds(250))
+                .map { image in space.flatMap { image.copy(colorSpace: $0) } ?? image }
             done(image.map { NSImage(cgImage: $0, size: size) } ?? viewsPicture(of: window))
         }
     }
@@ -219,12 +227,12 @@ final class MenuBarIntro {
         let radius = windowCornerRadius
         let card = CALayer()
         card.frame = frame
-        // Matched to an active window's on macOS 15: dark and long below it, short at its sides,
-        // and almost none above.
+        // Matched to an active window's on macOS 15 by how much each darkens what is behind it,
+        // beside and below the window: dark and long below it, short at its sides, almost none above.
         card.shadowColor = NSColor.black.cgColor
-        card.shadowOpacity = 0.6
+        card.shadowOpacity = 0.75
         card.shadowRadius = 22
-        card.shadowOffset = CGSize(width: 0, height: -12)
+        card.shadowOffset = CGSize(width: 0, height: -15)
         card.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: frame.size), cornerWidth: radius, cornerHeight: radius, transform: nil)
         let face = CALayer()
         face.name = "face"
