@@ -199,11 +199,11 @@ struct UITweaks: Codable, Equatable {
     var backdropBlurRadius = 25.0    // at the right edge
     var backdropBands = 7            // effect views in the blur ramp
     var backdropRampPower = 1.2      // 1 = linear radius growth, higher keeps the left sharper
-    var backdropFadeIn = 0.5
-    var backdropFadeOut = 0.35
-    var backdropSlideIn = 0.65          // the strip slides in from the screen edge while it fades
+    var backdropFadeIn = 0.25
+    var backdropFadeOut = 0.25
+    var backdropSlideIn = 0.3           // the strip slides in from the screen edge while it fades
     var backdropSlideOut = 0.2
-    var dimOpacity = 0.5             // screen darkening behind the annotator
+    var dimOpacity = 0.3             // screen darkening behind the annotator
     var dimBlurRadius = 17.0
     var dimFade = 0.4                // the spring settles within this
     // Annotator window
