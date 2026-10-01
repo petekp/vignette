@@ -13,7 +13,8 @@ enum ProblemReport {
         var parts = URLComponents(url: issues, resolvingAgainstBaseURL: false)
         parts?.queryItems = [
             URLQueryItem(name: "template", value: "bug_report.yml"),
-            URLQueryItem(name: "details", value: "Vignette \(build.description) on \(mac)\n\n"),
+            // Room to type on top. The blank line keeps `---` a rule; under a line of text it makes a heading.
+            URLQueryItem(name: "details", value: "\n\n---\nVignette \(build.description) on \(mac)"),
         ]
         return parts?.url
     }
