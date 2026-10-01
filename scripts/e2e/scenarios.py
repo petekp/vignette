@@ -55,6 +55,29 @@ def open_editor(app, path):
     offset = app.log_size()
     detail = app.command('annotate', app.file_query(path))
     app.report.step('annotate', detail=detail)
+    return wait_editor(app, offset)
+
+
+def click_to_open(app, path):
+    """Opens the editor as a person does, with a click on the card in the corner, so a run covers
+    the click, the flight and the handover of the keys to the editor."""
+    name = os.path.basename(path)
+    s = app.wait_state(lambda s: s['stack']['visible'] and (card_for(s, path) or {}).get('frame'), f'{name} in the corner')
+    # The corner never takes the keys, so the gate is this copy's own card, read in the same step.
+    x, y, w, h = card_for(s, path)['frame']
+    app.input('glide', round(x + w / 2), round(y + h / 2), 0.4)
+    s = app.wait_state(lambda s: (s['stack']['hovered'] or '').endswith(name), 'the card being hovered', timeout=3)
+    card = card_for(s, path)
+    if card is None or card['frame'] is None:
+        raise Failed(f'{name} left the corner before the click')
+    x, y, w, h = card['frame']
+    offset = app.log_size()
+    app.input('click', round(x + w / 2), round(y + h / 2))
+    app.report.step('clicked the card', detail=name)
+    return wait_editor(app, offset)
+
+
+def wait_editor(app, offset):
     app.wait_log('[annotate] loaded', offset, timeout=10)
     line = app.wait_log('[annotate] takes events', offset, timeout=10)
     if 'reached=true' not in line:
@@ -362,7 +385,7 @@ def draw_and_done(app):
     start(app)
     path = app.image('Screenshot draw.png', folder=app.watch)
     time.sleep(1)
-    s = open_editor(app, path)
+    s = click_to_open(app, path)
     s = draw_box(app, s)
     mark = s['editor']['marks'][0]['frame']
     offset = app.log_size()
@@ -384,7 +407,7 @@ def send_and_reply(app):
     path = app.image('Screenshot send.png', folder=app.watch)
     time.sleep(1)
     app.touch_alive(inbox)
-    s = open_editor(app, path)
+    s = click_to_open(app, path)
     app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == session, 'Send to the fake session')
     s = draw_box(app, app.state())
     app.touch_alive(inbox)
@@ -474,7 +497,7 @@ def agent_marks_editable(app):
     """A person can select an agent's mark with a click and move it by dragging."""
     start(app)
     copy, _ = push(app, [{'type': 'rectangle', 'x': 0.25, 'y': 0.25, 'w': 0.3, 'h': 0.3}])
-    s = open_editor(app, copy)
+    s = click_to_open(app, copy)
     mark = s['editor']['marks'][0]
     if not mark.get('agent'):
         raise Failed(f"the pushed mark is not the agent's: {mark}")

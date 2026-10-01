@@ -245,6 +245,11 @@ own bundle id, name and URL scheme, given on the `xcodebuild` line) and runs the
 the pasteboard and puts it back, even when stopped (`e2e.py restore` after a crash), and writes a
 report under `scripts/e2e/out/runs/`. `--input` adds the scenarios that post keys and clicks, each
 gated on the test copy's own state; they need `Vignette E2E` granted Accessibility once, by hand.
+The terminal that runs them needs Accessibility and Screen Recording. On macOS 15, the run's first
+screen capture can raise a prompt asking whether the terminal may "bypass the system private window
+picker". While that prompt is up, the test copy cannot become active (observed 2026-10-01 in a
+clean VM), so the editor never takes the keys and every scenario that needs them stops at its gate.
+Allow it and run again.
 `docs/e2e-suite-plan-2026-09-29.md` has the design and what is still to come.
 
 Testing Send without a real session: a Claude Code session is an inbox folder under the copy's
