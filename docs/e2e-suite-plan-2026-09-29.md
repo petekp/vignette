@@ -12,7 +12,7 @@ it ships.
 - **A small release gate first, then growth.** 0.1.2 waits for the test-launch fence, the runner
   and five smoke scenarios, not the whole suite. The rest of the release still rests on
   `scripts/release.sh`, which already checks the stapled image with `stapler validate` and `spctl`,
-  and on the fresh-install checklist on the second MacBook.
+  and on fresh installs in a Tart VM (`docs/install-setup-hardening-2026-09-30.md`).
 - **One runner, `scripts/e2e`,** that builds a test copy from the current source, launches it on a
   scratch home, settings file and watch folder, runs scenarios, and writes a report: pass or fail
   per step, with the log lines, the state, and a capture of the app's own windows.
@@ -110,8 +110,9 @@ Installing from the disk image and updating from the previous version need a Mac
 run Vignette. A Tart VM can do it, but it takes days: the image must carry the quarantine flag or
 Gatekeeper never checks it, granting permissions in the guest needs its screen, and posted events
 need its login session. The update test also needs a published release that has the updater: 0.1.2
-updating to 0.1.3, through a feed the test can point at. Until then this stays the manual
-checklist in `docs/first-release-plan-2026-09-29.md`.
+updating to 0.1.3, through a feed the test can point at. Both were checked by hand in a Tart VM:
+the update from 0.1.2 to 0.1.3 in `docs/updater-2026-09-27.md`, and fresh installs in
+`docs/install-setup-hardening-2026-09-30.md`.
 
 ## Order of work
 
