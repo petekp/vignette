@@ -182,21 +182,11 @@ final class ThumbnailController: NSObject {
     private var sweepFromTop: CGFloat?
     private var autoScrollLink: CADisplayLink?
     private var autoScrollTick: CFTimeInterval = 0
-    /// The one owner of the annotation session. Only `send` writes it; see AnnotatorTransition.
-    private var transition = AnnotatorTransition()
-    /// The annotation queue: the files still waiting, in the order they were given, how many the
-    /// run started with, and how many of them have opened, which is what the `[annotate] next` line
-    /// counts. Only the queue continues itself; every other request to annotate replaces it.
-    private var queue: [String] = []
-    private var queueTotal = 0
-    private var queueOpened = 0
-    /// The file the queue hands over to, held for the length of one `send`: it is taken before the
-    /// finished card's effects run, so `returnCard` knows another image follows and leaves the
-    /// session open.
-    private var handover: Screenshot?
-    /// The card the session is about, kept here because a lone thumbnail leaves the model once the annotator shows.
+    /// The one owner of the annotation run, its queue included. Only `handle` writes it; see AnnotationRun.
+    private var run = AnnotationRun()
+    /// The card the run has open, kept here because a lone thumbnail leaves the model once the annotator shows.
     private var sessionCard: Card?
-    private var annotating: Card? { transition.isActive ? sessionCard : nil }
+    private var annotating: Card? { run.isActive ? sessionCard : nil }
     private var annotationFrame: NSRect = .zero
     /// The editor's marks as its park left them, until the flight home has taken their texts. The
     /// editor lets them go once it is hidden, which is before the card is sent home.
@@ -212,10 +202,6 @@ final class ThumbnailController: NSObject {
     /// Cards made in this turn whose stored drawings are still to be read. A stack opening makes
     /// every card in one turn, and reading theirs together gives the column one change of `cards`.
     private var drawingReads: [URL] = []
-    /// True when the session ends by the user's hand, so focus returns to their app once the annotator is gone.
-    private var restoreFocusOnEnd = false
-    /// The file whose Done failed to copy before its card came home, so the card takes no copied mark.
-    private var uncopied: String?
     /// Larger decodes for the flight to the annotator, by file path. Filled on hover.
     private var flightImages: [String: NSImage] = [:]
     private var flightOrder: [String] = []
@@ -243,7 +229,7 @@ final class ThumbnailController: NSObject {
             // Where the card is now, before opening it narrows the stack or takes it out of the column.
             let slot = self.cardFrame(of: card)
             // A click picks the next image by hand, so it replaces whatever the queue had left.
-            if self.transition.isActive { self.endQueue(); self.annotate(card); self.swallowSecondClick(on: slot); return }
+            if self.run.isActive { self.send(.annotate([card.shot.url.path])); self.swallowSecondClick(on: slot); return }
             if self.model.inSelectionMode { self.toggle(card) }
             else if let action = Config.defaultAction(for: [card.shot]) {
                 self.run(action, on: [card])
@@ -264,9 +250,9 @@ final class ThumbnailController: NSObject {
             // the pointer last named. Only while the stack holds the keys and nothing is in the
             // annotator: the stack keeps them through the flight out, and a key there is about the
             // card that is flying, not the one the cursor happens to be over.
-            if let id, self.model.isStack, self.panel.acceptsKeys, !self.transition.isActive { self.model.focused = id }
+            if let id, self.model.isStack, self.panel.acceptsKeys, !self.run.isActive { self.model.focused = id }
         }
-        model.onSelectionChanged = { [weak self] added, removed in self?.queueFromSelection(added: added, removed: removed) }
+        model.onSelectionChanged = { [weak self] added, removed in self?.selectionChanged(added: added, removed: removed) }
     }
 
     /// The screen a presentation started on. `NSScreen.main` follows the active display, which is
@@ -370,7 +356,7 @@ final class ThumbnailController: NSObject {
                             "copied": model.copied.contains(card.id), "notCopied": model.notCopied[card.shot.url.path] as Any]
                 },
                 "selected": model.selectedCards().map(\.shot.url.path),
-                "queue": queue,
+                "queue": run.queue,
                 "focused": model.cards.first { $0.id == model.focused }?.shot.url.path as Any,
                 "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.url.path as Any,
                 "key": panel.isKeyWindow,
@@ -379,7 +365,7 @@ final class ThumbnailController: NSObject {
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h),
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
             ] as [String: Any],
-            "transition": ["phase": "\(transition.phase)", "annotating": annotating?.shot.url.path as Any, "isActive": transition.isActive],
+            "transition": ["phase": "\(run.phase)", "annotating": annotating?.shot.url.path as Any, "isActive": run.isActive],
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
                        "visibleFrame": StateReport.topLeft(s.visibleFrame, primaryHeight: h), "scale": s.backingScaleFactor, "pinned": pinnedScreen != nil],
             "backdrop": backdrop.stateJSON,
@@ -411,10 +397,7 @@ final class ThumbnailController: NSObject {
     @discardableResult
     func toggleRecent(_ shots: [Screenshot], detail: String = "") -> StackToggle {
         if visible && model.isStack { dismiss(); return .dismissed }
-        // Before the dismissal: its park can answer in the same turn, and a queue still holding
-        // files would open the next one then, under a stack that is about to replace the panel.
-        endQueue()   // a stack presented anew starts with nothing queued
-        if transition.isActive { send(.dismiss) }   // a lone annotation gives way to the stack
+        if run.isActive { send(.dismiss(byHand: false)) }   // a lone annotation gives way to the stack
         let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
         guard !cards.isEmpty else { return .empty }
@@ -453,7 +436,7 @@ final class ThumbnailController: NSObject {
         else if model.focused == nil { model.focused = model.hoveredCard ?? model.cards.first?.id }
         panel.makeKey()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            guard let self, self.visible, self.model.isStack, !self.transition.isActive, !self.panel.isKeyWindow else { return }
+            guard let self, self.visible, self.model.isStack, !self.run.isActive, !self.panel.isKeyWindow else { return }
             self.panel.makeKey()
         }
     }
@@ -463,66 +446,46 @@ final class ThumbnailController: NSObject {
     /// can be copied or stitched after the last one.
     func annotate(_ shots: [Screenshot]) {
         guard let first = shots.first else { return }
-        queue = shots.dropFirst().map(\.url.path)
-        queueTotal = shots.count
-        queueOpened = 1
-        annotate(first)
+        // A file that cannot be read never reaches the run, so an image already open stays open.
+        guard openableCard(for: first) != nil else { return }
+        send(.annotate(shots.map(\.url.path)))
     }
 
-    /// Opens the annotator on `shot`, or swaps to it if the annotator is already open. Shows the
-    /// card first if it is not on screen.
-    private func annotate(_ shot: Screenshot) {
+    /// The card `shot` opens from, made now if the panel does not have it. Nil when its header does
+    /// not read, which is logged here.
+    private func openableCard(for shot: Screenshot) -> Card? {
         if visible {
             // A shot the panel does not have yet joins it; the flight starts from its offscreen slot.
             if card(for: shot) == nil, let card = makeCard(shot) { insert(card) }
-            if let card = card(for: shot) { return annotate(card) }
+            if let card = card(for: shot) { return card }
         } else if let card = makeCard(shot) {
             // Not on screen: the card flies straight from its offscreen slot, so nothing waits for a slide-in.
             present(cards: [card], stack: false, entrance: .stayOffscreen)
-            return annotate(card)
+            return card
         }
-        noCard(for: shot)
-    }
-
-    /// `shot` has no card and none could be made: its header did not read. A queue's handover kept
-    /// the session open for it (see `.returnCard`), so with nothing in the annotator now the session
-    /// ends here, as it would have had nothing followed.
-    private func noCard(for shot: Screenshot) {
         Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(shot.url.lastPathComponent)")
-        guard !transition.isActive else { return }
-        endQueue()
-        sessionCard = nil
-        dim.hide()
-        makeRoom(besides: nil, animated: true)
-        endSession()
+        return nil
     }
 
-    /// The editor asked to close (Esc, click outside, Cmd+W). The reducer decides what returns.
+    /// The editor asked to close (Esc, click outside, Cmd+W). The run decides what returns, and
+    /// drops the rest of its list.
     func annotationEnded() {
-        restoreFocusOnEnd = true
-        endQueue()   // ending one card ends the run; the rest of the list is dropped
-        send(.close)
+        send(.cancel)
     }
 
     /// Send: the drawing is stored as a request and the card comes home without a copied mark.
     /// The run carries on, because a queue is a list the person asked for and sending one of its
     /// cards to an agent does not withdraw the rest; only Esc, which is a person stopping, empties
-    /// it. Copying is Done's, so this is `close` rather than `finish`.
+    /// it. Copying is Done's, so the card comes home unmarked.
     func annotationSent() {
-        restoreFocusOnEnd = true
-        send(.close)
+        send(.sent)
     }
 
     /// Done or Return: the result is on the clipboard. The card comes back marked copied; in quick
     /// mode everything closes instead.
     func annotationFinished(quick: Bool) {
-        restoreFocusOnEnd = true
-        if quick {
-            endQueue()   // quick annotate closes everything; nothing follows it
-            if visible { dismiss() } else { send(.dismiss) }
-        } else {
-            send(.finish)
-        }
+        guard quick else { return send(.finish) }
+        if visible { dismiss(byHand: true) } else { send(.dismiss(byHand: true)) }
     }
 
     /// The editor has the screenshot for `key`.
@@ -533,7 +496,7 @@ final class ThumbnailController: NSObject {
 
     /// The annotator's window for `key` takes presses now: one held on its flight goes to it.
     func annotatorTakesEvents(_ key: String) {
-        guard transition.key == key else { return }
+        guard run.key == key else { return }
         takingEvents = key
         for event in flightPress.ready(key) { onAnnotatorPress?(event, key) }
         liftIntoEditor(key)
@@ -542,7 +505,7 @@ final class ThumbnailController: NSObject {
     /// The flight into the editor lifts once the editor has its image and its window takes presses,
     /// and once the flight has arrived, which `lift` waits for itself.
     private func liftIntoEditor(_ key: String) {
-        guard transition.key == key, loadedKeys.contains(key), takingEvents == key, let card = sessionCard else { return }
+        guard run.key == key, loadedKeys.contains(key), takingEvents == key, let card = sessionCard else { return }
         takeFlightTexts(card)
         flights.lift(id: card.id)
     }
@@ -565,7 +528,7 @@ final class ThumbnailController: NSObject {
     /// The image the flight `id` is carrying into the editor, nil for a flight going anywhere else.
     private func keyFlyingIn(_ id: UUID) -> String? {
         guard sessionCard?.id == id else { return nil }
-        switch transition.phase {
+        switch run.phase {
         case .flyingOut(let key), .annotating(let key): return key
         case .idle, .parking: return nil
         }
@@ -617,11 +580,7 @@ final class ThumbnailController: NSObject {
     func remove(_ shots: [Screenshot]) {
         let urls = Set(shots.map(\.url))
         let paths = Set(urls.map(\.path))
-        queue.removeAll { paths.contains($0) }
-        // The file in the annotator going ends the run: the annotator hides, and nothing should
-        // take its place in the same turn.
-        if let key = transition.key, paths.contains(key) { endQueue() }
-        for url in urls { send(.remove(url.path)) }
+        send(.remove(paths.sorted()))
         for card in model.cards where urls.contains(card.shot.url) { flights.end(id: card.id) }
         endSweep()
         // When no card would be left, they slide out with the panel rather than vanish, and the
@@ -666,7 +625,7 @@ final class ThumbnailController: NSObject {
     /// it into the annotator from the slot the stitch just filled.
     @discardableResult
     func stitched(_ pieces: [Screenshot], into url: URL) -> Bool {
-        guard visible, model.isStack, !transition.isActive, pieces.count > 1 else { return false }
+        guard visible, model.isStack, !run.isActive, pieces.count > 1 else { return false }
         let cards = pieces.compactMap { shot in model.cards.first { $0.shot.url == shot.url } }
         guard cards.count == pieces.count, let result = makeStitchedCard(url), let stitched = result.image else { return false }
         // Where each card is now, while the selection bar is still part of the column, with its marks
@@ -782,7 +741,7 @@ final class ThumbnailController: NSObject {
     /// way back from the annotator does not take it when it lands.
     func takeBackCopied(_ shot: Screenshot) {
         let key = shot.url.path
-        if case .parking(key, then: .finish) = transition.phase { uncopied = key }
+        send(.copyFailed(key))
         if let card = model.cards.first(where: { $0.shot.url.path == key }) { model.copied.remove(card.id) }
     }
 
@@ -793,7 +752,7 @@ final class ThumbnailController: NSObject {
         takeBackCopied(shot)
         let key = shot.url.path
         model.notCopied[key] = reason
-        let inAnnotator = transition.key == key
+        let inAnnotator = run.key == key
         if !inAnnotator && !(visible && model.cards.contains { $0.shot.url.path == key }) { show(shot) }
         let hold = (ui.markSeconds + ui.expandDuration) * 3
         DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in
@@ -803,10 +762,11 @@ final class ThumbnailController: NSObject {
         leaveCorner(after: hold)
     }
 
-    func dismiss() {
+    /// `byHand` when the person closed it, as quick Done does: the focus goes back to their app
+    /// once the annotator is gone.
+    func dismiss(byHand: Bool = false) {
         guard visible else { return }
         visible = false
-        endQueue()
         dismissGeneration += 1
         let gen = dismissGeneration
         leaveTimer?.invalidate()
@@ -832,7 +792,7 @@ final class ThumbnailController: NSObject {
         // Before the event: a park that answers in the same turn hides the annotator, and that must
         // leave the flight just aimed offscreen to the slide-out.
         model.slidingOut = true
-        if transition.isActive { send(.dismiss) }
+        if run.isActive { send(.dismiss(byHand: byHand)) }
         // Cards leave the way they came, newest first (see CardView). The selection stays in the
         // layout and slides out with them; the block below clears it once gone.
         model.offscreen = Set(model.cards.map(\.id))
@@ -852,114 +812,66 @@ final class ThumbnailController: NSObject {
         }
     }
 
-    // MARK: Annotation transitions. The reducer decides; this section only runs its effects.
+    // MARK: Annotation run. The run decides; this section only runs its effects.
 
-    private func annotate(_ card: Card) {
-        send(.annotate(card.shot.url.path))
+    private let hold = EventHold<AnnotationRun.Event>()
+
+    /// Every event reaches the run here. One that arrives while another is being handled, as a park
+    /// or a flight answering inside the effects that asked for it, runs right after it.
+    private func send(_ event: AnnotationRun.Event) {
+        hold.send(event) { handle($0) }
     }
 
-    /// Events that arrived while one was still being handled, in the order they came. A park or a
-    /// flight can answer inside the effects of the event that asked for it, and its answer runs once
-    /// that event is done, so the reducer's events stay in order.
-    private var heldEvents: [AnnotatorTransition.Event] = []
-    private var handlingEvent = false
-
-    private func send(_ event: AnnotatorTransition.Event) {
-        heldEvents.append(event)
-        guard !handlingEvent else { return }
-        handlingEvent = true
-        while !heldEvents.isEmpty { handle(heldEvents.removeFirst()) }
-        handlingEvent = false
-    }
-
-    private func handle(_ event: AnnotatorTransition.Event) {
-        let effects = transition.reduce(event)
-        Log.write("[transition] \(event) -> \(transition.phase) effects=\(effects.map(\.description).joined(separator: " "))")
-        // A queue hands over in the turn the finished card is sent home, so its flight back and the
-        // next card's flight out run together, the way a swap's two flights do.
-        if event == .parked, !transition.isActive { handover = takeNext() }
+    private func handle(_ event: AnnotationRun.Event) {
+        // Asked before anything moves: a file the queue opens gets its card made here, and one
+        // that has none is passed over.
+        let effects = run.reduce(event) { key in openableCard(for: Screenshot(url: URL(fileURLWithPath: key))) != nil }
+        Log.write("[transition] \(event) -> \(run) effects=\(effects.map(\.description).joined(separator: " "))")
         // The stack's width is set before this batch's flights are aimed, so a swap's returning
-        // card and the card leaving are aimed at one column. The card leaving is still drawn at the
-        // width the stack had, so it flies from the slot it has now. A handover keeps the annotator
-        // open, so the room is made for the image the queue opens next instead of being given back.
+        // card and the card leaving are aimed at one column, and so are a queue's finished card and
+        // the next one. The card leaving is still drawn at the width the stack had, so it flies from
+        // the slot it has now.
         let leaving = preparedCard(in: effects)
         let slot = leaving.map { cardFrame(of: $0) }
-        let opening = leaving ?? handover.flatMap { shot in model.cards.first { $0.shot.url.path == shot.url.path } }
-        if opening != nil || (releasesRoom(effects) && handover == nil) {
-            makeRoom(besides: opening.map { targetFrame(for: $0) }, animated: true)
+        if leaving != nil || releasesRoom(effects) {
+            makeRoom(besides: leaving.map { targetFrame(for: $0) }, animated: true)
         }
         for effect in effects { perform(effect, leaving: slot) }
         // A press held for, or handed to, an image that is no longer on its way in or in the editor.
-        if let key = flightPress.key, transition.phase != .flyingOut(key), transition.phase != .annotating(key) {
+        if let key = flightPress.key, run.phase != .flyingOut(key), run.phase != .annotating(key) {
             flightPress.ended(key)
         }
-        if let next = handover {
-            handover = nil
-            annotate(next)
-        }
-        model.annotating = transition.isActive
+        model.annotating = run.isActive
     }
 
-    /// Ends the run: nothing waits, and the next run counts from its own first image.
-    /// While a card is in the annotator, a card selected in the stack is queued to be annotated
+    /// While an image is in the annotator, a card selected in the stack is queued to be annotated
     /// next, in the order picked, and one deselected leaves the queue: the same run a selection
-    /// starts when Draw is pressed on it. The card in the annotator itself is not "next".
-    private func queueFromSelection(added: [UUID], removed: [UUID]) {
-        guard transition.isActive else { return }
-        let gone = Set(removed.compactMap { id in model.cards.first { $0.id == id }?.shot.url.path })
-        let before = queue.count
-        queue.removeAll { gone.contains($0) }
-        queueTotal -= before - queue.count
-        for id in added {
-            guard let card = model.cards.first(where: { $0.id == id }), card.shot.kind == .image else { continue }
-            let key = card.shot.url.path
-            guard key != transition.key, !queue.contains(key) else { continue }
-            queue.append(key)
-            queueTotal += 1
-            Log.write("[annotate] queued \((key as NSString).lastPathComponent) \(queueOpened + queue.count) of \(queueTotal)")
+    /// starts when Draw is pressed on it. Recordings never reach the annotator.
+    private func selectionChanged(added: [UUID], removed: [UUID]) {
+        guard run.isActive else { return }
+        func paths(_ ids: [UUID]) -> [String] {
+            ids.compactMap { id in model.cards.first { $0.id == id } }.filter { $0.shot.kind == .image }.map(\.shot.url.path)
         }
-    }
-
-    private func endQueue() {
-        queue = []
-        queueTotal = 0
-        queueOpened = 0
-    }
-
-    /// The next file the queue has for the annotator. Files that have gone since, or cannot be read
-    /// now, drop out: a handover to a file with no card would leave the session open with nothing
-    /// in it.
-    private func takeNext() -> Screenshot? {
-        while !queue.isEmpty {
-            let key = queue.removeFirst()
-            if case .unreadable = Thumbnailer.lookUp(URL(fileURLWithPath: key)) { continue }
-            queueOpened += 1
-            Log.write("[annotate] next \((key as NSString).lastPathComponent) \(queueOpened) of \(queueTotal)")
-            return Screenshot(url: URL(fileURLWithPath: key))
-        }
-        return nil
+        send(.selectionChanged(added: paths(added), removed: paths(removed)))
     }
 
     /// The card a `prepare` in this batch sends to the annotator, if the stack has it.
-    private func preparedCard(in effects: [AnnotatorTransition.Effect]) -> Card? {
-        for effect in effects {
-            if case .prepare(let key) = effect { return model.cards.first { $0.shot.url.path == key } }
-        }
+    private func preparedCard(in effects: [AnnotationRun.Effect]) -> Card? {
+        for case .prepare(let key) in effects { return model.cards.first { $0.shot.url.path == key } }
         return nil
     }
 
     /// Whether this batch takes the annotator off the screen, so nothing is beside the stack.
-    private func releasesRoom(_ effects: [AnnotatorTransition.Effect]) -> Bool {
+    private func releasesRoom(_ effects: [AnnotationRun.Effect]) -> Bool {
         effects.contains { effect in
             if case .returnCard = effect { return true }
             return effect == .hideAnnotator
         }
     }
 
-    private func perform(_ effect: AnnotatorTransition.Effect, leaving slot: NSRect?) {
+    private func perform(_ effect: AnnotationRun.Effect, leaving slot: NSRect?) {
         switch effect {
         case .prepare(let key):
-            uncopied = nil   // the session it was for has ended
             guard let card = model.cards.first(where: { $0.shot.url.path == key }) else { return }
             sessionCard = card
             loadedKeys.remove(key)
@@ -987,12 +899,12 @@ final class ThumbnailController: NSObject {
             // showing.
             flights.fly(id: card.id, image: flightImage(for: card), marks: outFlightMarks(for: card, to: target), from: from, to: target,
                         lookFrom: .card(ui), lookTo: .annotator(ui), on: screen, covered: { [weak self] in
-                guard let self, self.transition.phase == .flyingOut(key) else { return }
+                guard let self, self.run.phase == .flyingOut(key) else { return }
                 self.send(.shown)
             }, arrived: { [weak self] in
                 // On the key, not the phase: Done or Esc is accepted between `covered` and here,
                 // and the window then stays up through the park, still owed its shadow.
-                guard let self, self.transition.key == key, let card = self.sessionCard else { return }
+                guard let self, self.run.key == key, let card = self.sessionCard else { return }
                 self.onAnnotatorLanded?()
                 self.flights.dropShadow(id: card.id)
                 self.liftIntoEditor(key)
@@ -1014,29 +926,25 @@ final class ThumbnailController: NSObject {
             onAnnotatorAbandon?()
         case .returnCard(let key, let copied):
             guard let card = sessionCard, card.shot.url.path == key else { return }
-            // With another file coming from the queue the session is not over: the dim stays up and
-            // the user's app does not get the focus back between two cards.
-            if !transition.isActive, handover == nil { sessionCard = nil; dim.hide(); endSession() }
-            // A copy that already failed (`takeBackCopied`) leaves the card unmarked.
-            returnCard(currentCard(card), copied: copied && uncopied != key)
-            uncopied = nil
+            returnCard(currentCard(card), copied: copied)
         case .hideAnnotator:
             // While the stack slides out, the image is flying to its slot's offscreen position
             // (see `dismiss`); that flight ends itself, and the slide-out's completion clears the card.
             // A lone thumbnail's panel has no such flight.
             if let card = sessionCard, !(model.slidingOut && model.isStack) { model.outCards.remove(card.id); flights.end(id: card.id) }
-            sessionCard = nil
             parkedMarks = nil
-            dim.hide()
-            endSession()
         case .join:
-            break   // `show(_:)` inserts the card; the reducer only confirms the annotator stays open.
+            break   // `show(_:)` inserts the card; the run only confirms the annotator stays open.
+        case .next(let key, let place, let total):
+            Log.write("[annotate] next \((key as NSString).lastPathComponent) \(place) of \(total)")
+        case .queued(let key, let place, let total):
+            Log.write("[annotate] queued \((key as NSString).lastPathComponent) \(place) of \(total)")
+        case .endRun(let restoreFocus):
+            // Only now: between two files of a list the dim stays up and the focus stays here.
+            sessionCard = nil
+            dim.hide()
+            if restoreFocus { FocusReturn.shared.restore(reason: "annotator closed") }
         }
-    }
-
-    private func endSession() {
-        if restoreFocusOnEnd { FocusReturn.shared.restore(reason: "annotator closed") }
-        restoreFocusOnEnd = false
     }
 
     private func returnCard(_ card: Card, copied: Bool) {
@@ -1063,7 +971,7 @@ final class ThumbnailController: NSObject {
             self.flights.dropShadow(id: card.id)   // the card draws it now, in this same commit
             // The card view comes back on SwiftUI's next commit; lift the flight image after it.
             DispatchQueue.main.async { self.flights.lift(id: card.id) }
-            if !self.transition.isActive, self.visible, self.model.isStack { self.takeKeys(focus: card.id) }
+            if !self.run.isActive, self.visible, self.model.isStack { self.takeKeys(focus: card.id) }
             // A card that lands with a mark left the corner's time to the mark.
             if !self.showsMark(card) { self.leaveCorner(after: self.ui.thumbnailSeconds) }
         })
@@ -1724,7 +1632,7 @@ final class ThumbnailController: NSObject {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let delivering = self.model.cards.contains { self.model.sendMarks[$0.shot.url.path]?.state == .sending }
-                if self.model.hoveredCard != nil || self.transition.isActive || delivering { self.leaveCorner(after: 1.5); return }
+                if self.model.hoveredCard != nil || self.run.isActive || delivering { self.leaveCorner(after: 1.5); return }
                 self.dismiss()
             }
         }

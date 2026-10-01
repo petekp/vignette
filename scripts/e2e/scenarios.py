@@ -485,6 +485,52 @@ def corner_select(app):
     app.command('dismiss')
 
 
+@needs_input
+def annotate_queue(app):
+    """A list of three opens in turn: Return sends each card home copied and opens the next with the
+    dim still up, and Esc ends the run with the rest of the list dropped."""
+    start(app)
+    paths = []
+    for name in ['Screenshot q1.png', 'Screenshot q2.png', 'Screenshot q3.png']:
+        paths.append(app.image(name, folder=app.watch))
+        time.sleep(0.8)
+    app.wait_state(lambda s: all(card_for(s, p) for p in paths), 'the three captures in the corner')
+    offset = app.log_size()
+    detail = app.command('annotate', app.file_query(*paths))
+    app.report.step('annotate three', detail=detail)
+    s = wait_editor(app, offset)
+    queued = [os.path.realpath(p) for p in s['stack']['queue']]
+    if queued != [os.path.realpath(p) for p in paths[1:]]:
+        raise Failed(f'the queue is {queued}, not the other two files in order')
+
+    for index in (1, 2):
+        name = os.path.basename(paths[index])
+        offset = app.log_size()
+        app.keys('annotator', 'key', KEY_RETURN)
+        line = app.wait_log('[annotate] next', offset, timeout=10, also=name)
+        # Between two files the run goes on: the dim stays up and the focus stays with Vignette.
+        if not app.state()['dim']['visible']:
+            raise Failed(f'the dim went down while {name} was on its way in')
+        s = wait_editor(app, offset)
+        if not (s['annotator']['current'] or '').endswith(name):
+            raise Failed(f"the editor has {s['annotator']['current']}, not {name}")
+        if 'endRun' in app.log_since(offset):
+            raise Failed(f'the run ended before {name} opened')
+        done = card_for(s, paths[index - 1])
+        if not (done and done['copied']):
+            raise Failed(f'{os.path.basename(paths[index - 1])} came home without its copied mark: {done}')
+        app.report.step(f'Return opened {name}', detail=line.split('] ', 1)[1])
+
+    offset = app.log_size()
+    close_editor(app)
+    s = app.wait_state(lambda s: not s['dim']['visible'], 'the dim going down')
+    if s['stack']['queue'] or s['transition']['isActive']:
+        raise Failed(f"the run is still going after Esc: queue={s['stack']['queue']} {s['transition']}")
+    app.wait_log('endRun', offset, timeout=5)
+    app.report.step('Esc ended the run')
+    app.command('dismiss')
+
+
 def to_screen(s, image_width, px):
     """A point of the image, in px, on screen, for the editor at its fitted size."""
     x, y, w, h = s['annotator']['frame']
@@ -516,4 +562,4 @@ def agent_marks_editable(app):
     close_editor(app)
 
 
-ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, copy_types, stitch, relaunch, settings_repair, draw_and_done, send_and_reply, agent_marks_editable, corner_select]
+ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, copy_types, stitch, relaunch, settings_repair, draw_and_done, annotate_queue, send_and_reply, agent_marks_editable, corner_select]

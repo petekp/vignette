@@ -1,6 +1,6 @@
 # Glossary
 
-The words this project uses for the agent loop, and the ones it avoids. A connection addresses the
+The words this project uses, most of them for the agent loop, and the ones it avoids. A connection addresses the
 agent session itself, not the terminal displaying it. Most of these terms exist to hold that
 distinction.
 
@@ -21,3 +21,6 @@ _Avoid_: Session without qualification when it could mean a drawing session.
 **Screenshot reply**: An image and optional agent marks answering a particular screenshot request. Several distinct replies may answer the same request.
 
 **Reply ticket**: Permission to submit a reply to one screenshot request. Possessing the ticket does not establish which agent process produced the reply.
+
+**Annotation run**: The time from an image opening in the annotator until the annotator closes with nothing after it. A list of files is one run, which opens them in turn. `AnnotationRun` owns it.
+_Avoid_: Session, which `AnnotationController.session` uses for one image's time in the annotator.

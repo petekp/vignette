@@ -126,7 +126,7 @@ final class AnnotatorTransitionTests: XCTestCase {
     /// Plays random events against the reducer with an environment that answers `park` with
     /// `parked` and `prepare` with `shown` after a random delay, and checks the invariants. A delay
     /// of 0 is an answer in the same turn: it arrives while its event is still being handled, and
-    /// runs right after it, before anything else, as `ThumbnailController.send` holds it.
+    /// `EventHold` runs it right after, before anything else, as `ThumbnailController` does.
     func testRandomSequencesKeepTheInvariants() {
         let keys = ["a", "b", "c"]
         var sameTurn = 0
@@ -137,12 +137,7 @@ final class AnnotatorTransitionTests: XCTestCase {
             var parksInFlight = 0
             var preparedKey: String?
             var trace: [String] = []
-            /// When the environment answers an effect: in a later step, or held and run right after
-            /// the event being handled.
-            func answer(_ event: T.Event, at step: Int, holding held: inout [T.Event]) {
-                let delay = Int.random(in: 0...3, using: &rng)
-                if delay == 0 { held.append(event); sameTurn += 1 } else { pending.append((step + delay, event)) }
-            }
+            let hold = EventHold<T.Event>()
             for step in 0..<40 {
                 // Deliver environment answers whose time has come.
                 let due = pending.filter { $0.due <= step }
@@ -157,9 +152,14 @@ final class AnnotatorTransitionTests: XCTestCase {
                 default: break
                 }
                 for sent in events {
-                    var held = [sent]
-                    while !held.isEmpty {
-                        let event = held.removeFirst()
+                    hold.send(sent) { event in
+                        // When the environment answers an effect: in a later step, or in this
+                        // one, which the hold runs right after the event being handled.
+                        func answer(_ answer: T.Event) {
+                            let delay = Int.random(in: 0...3, using: &rng)
+                            if delay == 0 { hold.send(answer) { _ in XCTFail("a held event runs in the loop that holds it") }; sameTurn += 1 }
+                            else { pending.append((step + delay, answer)) }
+                        }
                         let effects = t.reduce(event)
                         trace.append("\(event) -> \(effects) [\(t.phase)]")
                         if event == .parked { parksInFlight -= 1 }
@@ -169,11 +169,11 @@ final class AnnotatorTransitionTests: XCTestCase {
                                 parksInFlight += 1
                                 XCTAssertEqual(parksInFlight, 1, "at most one park in flight (seed \(seed))\n" + trace.joined(separator: "\n"))
                                 XCTAssertEqual(k, preparedKey, "park is for the key that was prepared (seed \(seed))")
-                                answer(.parked, at: step, holding: &held)
+                                answer(.parked)
                             case .prepare(let k):
                                 XCTAssertEqual(parksInFlight, 0, "no prepare while a park is in flight (seed \(seed))\n" + trace.joined(separator: "\n"))
                                 preparedKey = k
-                                answer(.shown, at: step, holding: &held)
+                                answer(.shown)
                             case .show:
                                 XCTAssertEqual(preparedKey, t.key, "a visible annotator shows the prepared image (seed \(seed))")
                             case .abandon(let k):
