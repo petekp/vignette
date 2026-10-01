@@ -433,7 +433,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// the main screen's point scale, the best guess with no annotator open. `agent` names the agent
     /// they are from.
     private func addMarks(_ marks: [AgentMark], from agent: String?, to url: URL, done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
-        // A turn later, as it always has been: callers set their own state after asking.
+        // A turn later, so callers can set their own state after asking.
         Task {
             do {
                 done(.success(try drawings.add(marks, from: agent, to: url, editor: annotator.editor, style: settings.data.ui.textStyle,

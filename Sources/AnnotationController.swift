@@ -24,8 +24,7 @@ final class AnnotationController {
     /// The frame moved: it was placed, a zoom stepped it, or it came home on the way out. The
     /// stack follows it, so it narrows as the frame grows towards it.
     var onFrame: ((NSRect) -> Void)?
-    /// Send or Reply handed the drawing to this agent session.
-    /// Send or Reply, with the message typed in the bar, if any.
+    /// Send or Reply handed the drawing to this agent session, with the message typed in the bar, if any.
     var onSend: ((Screenshot, Drawing, AgentDestination, String?) -> Void)?
     /// Cmd+C with nothing selected: this drawing's rendering goes on the clipboard.
     var onCopyDrawing: ((Screenshot, Drawing) -> Void)?
@@ -320,8 +319,7 @@ final class AnnotationController {
         zoomTarget = target
         aim(at: cursor, to: zoomTarget)
         aimPan(at: cursor)
-        zoomTween.animate(to: zoomTarget, duration: motionScaled(input == .gesture ? trackingSeconds : stepSeconds),
-                          curve: "spring") { [weak self] in self?.arrived() }
+        zoomTween.animate(to: zoomTarget, duration: motionScaled(input == .gesture ? trackingSeconds : stepSeconds)) { [weak self] in self?.arrived() }
     }
 
     /// Points the window's growth at `cursor`. The anchor it starts from is read off the frame on
@@ -631,7 +629,7 @@ final class AnnotationController {
         zoomTarget = 1
         aim(at: Zoom.center, to: 1)
         aimPan(at: Zoom.center)
-        zoomTween.animate(to: 1, duration: motionScaled(fitToCloseSeconds), curve: "spring", completion: once)
+        zoomTween.animate(to: 1, duration: motionScaled(fitToCloseSeconds), completion: once)
         DispatchQueue.main.asyncAfter(deadline: .now() + motionScaled(fitToCloseSeconds) + 0.3) { once() }
     }
 

@@ -95,8 +95,7 @@ The first launch opens a short setup:
 - If Claude Code or Codex is installed, choose whether to add the Vignette plugin.
 
 While Vignette runs, it turns off macOS's floating thumbnail and shows its own. Quitting Vignette
-turns macOS's thumbnail back on. Restore, in Settings → Screenshots, keeps macOS's thumbnail on and
-puts back its other screenshot settings.
+turns macOS's thumbnail back on.
 
 Vignette checks for updates once a day. It installs one only when you choose Install.
 

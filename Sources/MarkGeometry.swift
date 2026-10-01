@@ -353,9 +353,6 @@ struct TextStyle: Hashable, @unchecked Sendable {
         designs[name] != nil || ((CTFontManagerCopyAvailableFontFamilyNames() as? [String]) ?? []).contains(name)
     }
 
-    /// Whether this is an agent's style.
-    var isAgent: Bool { badge != nil }
-
     /// The style `mark`'s text is set in: an agent's in the agent's font with its badge, so its words
     /// read as the agent's at a glance, and a person's in the person's. Every place that lays out or
     /// draws a text asks this, so the editor, the cards, the flights and the rendering agree.

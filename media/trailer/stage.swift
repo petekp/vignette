@@ -3,7 +3,6 @@
 //   stage desktop                     a wallpaper over the whole main screen, behind the stage's windows
 //   stage place <pid> <x> <y> <w> <h> moves an app's front window to a frame
 //   stage frame <pid>                 prints an app's front window frame
-//   stage fields <pid>                prints the frame of every text field in an app's windows
 //   stage owner <x> <y>               which app's window is frontmost under a global point
 //   stage pasteboard save|restore <dir>
 //
@@ -126,27 +125,6 @@ func place(_ pid: pid_t, _ rect: CGRect) {
     say("\(now.minX) \(now.minY) \(now.width) \(now.height)")
 }
 
-func fields(_ pid: pid_t) {
-    let app = AXUIElementCreateApplication(pid)
-    var value: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
-          let windows = value as? [AXUIElement] else { fail("stage: cannot list the windows of \(pid)") }
-    func walk(_ element: AXUIElement, depth: Int) {
-        guard depth < 40 else { return }
-        var role: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
-        if (role as? String) == (kAXTextFieldRole as String), let f = frame(of: element) {
-            say("\(f.minX) \(f.minY) \(f.width) \(f.height)")
-        }
-        var children: CFTypeRef?
-        if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children) == .success,
-           let children = children as? [AXUIElement] {
-            for child in children { walk(child, depth: depth + 1) }
-        }
-    }
-    for window in windows { walk(window, depth: 0) }
-}
-
 // MARK: owner
 
 func owner(x: Double, y: Double) {
@@ -223,9 +201,6 @@ case "frame":
     guard args.count == 3 else { fail("usage: stage frame <pid>") }
     guard let f = frame(of: frontWindow(of: pid(args[2]))) else { fail("stage: cannot read the window's frame") }
     say("\(f.minX) \(f.minY) \(f.width) \(f.height)")
-case "fields":
-    guard args.count == 3 else { fail("usage: stage fields <pid>") }
-    fields(pid(args[2]))
 case "owner":
     guard args.count == 4, let x = Double(args[2]), let y = Double(args[3]) else { fail("usage: stage owner <x> <y>") }
     owner(x: x, y: y)
@@ -233,5 +208,5 @@ case "pasteboard":
     guard args.count == 4, ["save", "restore"].contains(args[2]) else { fail("usage: stage pasteboard save|restore <dir>") }
     pasteboard(args[2], URL(fileURLWithPath: args[3]))
 default:
-    fail("usage: stage desktop | place <pid> <x> <y> <w> <h> | frame <pid> | fields <pid> | owner <x> <y> | pasteboard save|restore <dir>")
+    fail("usage: stage desktop | place <pid> <x> <y> <w> <h> | frame <pid> | owner <x> <y> | pasteboard save|restore <dir>")
 }

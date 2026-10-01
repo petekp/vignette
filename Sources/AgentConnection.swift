@@ -6,11 +6,10 @@ import os
 /// puts a request into it. See docs/glossary.md for the words.
 ///
 /// Two routes exist. Codex is addressed by its thread UUID alone, and the engine that owns the
-/// thread refuses a UUID it does not have. Claude Code is addressed by its session id, which herdr
-/// reports for the pane running it; herdr's submission API takes a pane and has no
-/// expected-session parameter, so Vignette checks the pane still holds that exact session
-/// immediately before it submits. `Address.guardTier` is the difference, and it is
-/// recorded on every request rather than assumed away.
+/// thread refuses a UUID it does not have. Claude Code is addressed by its session id, through the
+/// plugin's inboxes, and nothing on that route refuses a stale id, so Vignette checks that an inbox
+/// still holds that exact session immediately before it writes. `AgentAddress.guardTier` is the
+/// difference, and it is recorded on every request.
 enum AgentClient: String, Codable, CaseIterable {
     case claude, codex
 
@@ -370,7 +369,7 @@ struct ClaudeCodeConnection: AgentConnection {
             return listed
         }
         let data = Data(panes.output.utf8)
-        return Self.markFocus(listed, agents: Self.agents(in: data, list: "panes"), focus: Self.focus(fromPaneList: data))
+        return Self.markFocus(listed, agents: Self.agents(in: data), focus: Self.focus(fromPaneList: data))
     }
 
     /// One session as a destination. The transcript names it and says when it was last used. A
@@ -417,22 +416,13 @@ struct ClaudeCodeConnection: AgentConnection {
 
     // MARK: herdr's focus
 
-    /// One agent herdr is running, as `herdr pane list` reports it.
+    /// One agent herdr is running, of any kind, as `herdr pane list` reports it.
     struct HerdrAgent: Equatable {
-        /// The name herdr answers to: the agent's name, or its pane id when it has none.
-        let id: String
         let pane: String
-        /// claude, codex, cursor, … whichever herdr recognized.
-        let kind: String
-        let cwd: String
-        /// idle, working, blocked, or unknown.
-        let status: String
         /// The agent session herdr says this pane is running, when it knows one.
         var session: String? = nil
-        var title: String = ""
-        /// The tab the pane is in, and whether it is herdr's focused pane.
+        /// The tab the pane is in.
         var tab: String = ""
-        var focused = false
     }
 
     /// Where herdr may be. The app is launched by LaunchServices, so it inherits no shell PATH.
@@ -452,22 +442,16 @@ struct ClaudeCodeConnection: AgentConnection {
         return (id, pane["tab_id"] as? String ?? "")
     }
 
-    /// The agents in a `herdr agent list` answer, or in a `herdr pane list` answer with `list`
-    /// "panes": the same fields, and a pane running no agent is left out. An unparseable answer is
-    /// no agents.
-    static func agents(in data: Data, list: String = "agents") -> [HerdrAgent] {
+    /// The agents in a `herdr pane list` answer. A pane running no agent is left out, and an
+    /// unparseable answer is no agents.
+    static func agents(in data: Data) -> [HerdrAgent] {
         let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let agents = ((root?["result"] as? [String: Any])?[list] as? [[String: Any]]) ?? []
-        return agents.compactMap { agent in
-            guard let pane = agent["pane_id"] as? String, let kind = agent["agent"] as? String else { return nil }
-            let name = (agent["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            let session = (agent["agent_session"] as? [String: Any])?["value"] as? String
-            return HerdrAgent(id: name ?? pane, pane: pane, kind: kind, cwd: agent["cwd"] as? String ?? "",
-                              status: agent["agent_status"] as? String ?? "unknown",
-                              session: (session?.isEmpty ?? true) ? nil : session,
-                              title: agent["terminal_title_stripped"] as? String ?? "",
-                              tab: agent["tab_id"] as? String ?? "",
-                              focused: agent["focused"] as? Bool ?? false)
+        let panes = ((root?["result"] as? [String: Any])?["panes"] as? [[String: Any]]) ?? []
+        return panes.compactMap { pane in
+            guard let id = pane["pane_id"] as? String, pane["agent"] is String else { return nil }
+            let session = (pane["agent_session"] as? [String: Any])?["value"] as? String
+            return HerdrAgent(pane: id, session: (session?.isEmpty ?? true) ? nil : session,
+                              tab: pane["tab_id"] as? String ?? "")
         }
     }
 

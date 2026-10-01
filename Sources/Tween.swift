@@ -1,16 +1,15 @@
 import AppKit
 
-/// Animates one value from wherever it is now, so a new target mid-flight retargets instead of
-/// jumping. Used for window alpha, which NSAnimationContext restarts from the model value.
-/// The "spring" curve also keeps its velocity across retargets, so a reversal mid-flight slows
-/// and turns instead of restarting from rest. Ticks come from the screen's display link, so a
+/// Animates one value on a critically damped spring from wherever it is now, so a new target
+/// mid-flight retargets instead of jumping. Used for window alpha, which NSAnimationContext
+/// restarts from the model value. The spring keeps its velocity across retargets, so a reversal
+/// mid-flight slows and turns instead of restarting from rest. Ticks come from the screen's display link, so a
 /// 120 Hz display gets a step per refresh; a fixed timer would step at 60 Hz on it.
 @MainActor
 final class Tween: NSObject {
     private(set) var value: CGFloat
     private var link: CADisplayLink?
     private var timer: Timer?   // only when no screen can provide a display link
-    private var start: (time: CFTimeInterval, value: CGFloat, target: CGFloat, duration: Double, curve: String)?
     /// A critically damped spring: no overshoot, and `omega` sized so it settles within the duration.
     private var spring: (target: CGFloat, omega: Double, lastTick: CFTimeInterval)?
     private var velocity: CGFloat = 0
@@ -44,28 +43,21 @@ final class Tween: NSObject {
 
     @objc private func linkTick(_ link: CADisplayLink) { tick() }
 
-    func animate(to target: CGFloat, duration: Double, curve: String = "easeOut", completion: (() -> Void)? = nil) {
+    func animate(to target: CGFloat, duration: Double, completion: (() -> Void)? = nil) {
         self.completion = completion
         guard duration > 0, target != value else { set(target); completion?(); return }
-        if curve == "spring" {
-            // A critically damped step response is within 1% of its target at omega * t = 6.6.
-            // A spring already ticking keeps its display link and its last tick: a gesture
-            // retargets it at every input, and a link made anew each time fires its first tick at
-            // an arbitrary part of the refresh, which read as uneven steps (measured: consecutive
-            // steps of 33, 69, 40, and 65 pixels under a wheel that moved evenly).
-            let lastTick = spring?.lastTick ?? CACurrentMediaTime()
-            spring = (target, 6.6 / duration, lastTick)
-            start = nil
-        } else {
-            start = (CACurrentMediaTime(), value, target, duration, curve)
-            spring = nil
-            velocity = 0
-        }
+        // A critically damped step response is within 1% of its target at omega * t = 6.6.
+        // A spring already ticking keeps its display link and its last tick: a gesture
+        // retargets it at every input, and a link made anew each time fires its first tick at
+        // an arbitrary part of the refresh, which read as uneven steps (measured: consecutive
+        // steps of 33, 69, 40, and 65 pixels under a wheel that moved evenly).
+        let lastTick = spring?.lastTick ?? CACurrentMediaTime()
+        spring = (target, 6.6 / duration, lastTick)
         if link == nil && timer == nil { startTicking() }
     }
 
     func set(_ target: CGFloat) {
-        stopTicking(); start = nil; spring = nil
+        stopTicking(); spring = nil
         velocity = 0
         value = target
         apply(target)
@@ -74,22 +66,13 @@ final class Tween: NSObject {
     /// Stops where it is, without a tick and without its completion: what it animates has gone, so
     /// applying the value again would drive a view that is no longer on screen.
     func stop() {
-        stopTicking(); start = nil; spring = nil
+        stopTicking(); spring = nil
         velocity = 0
         completion = nil
     }
 
     private func tick() {
-        if let sp = spring { springTick(sp); return }
-        guard let s = start else { return }
-        let t = min(1, (CACurrentMediaTime() - s.time) / s.duration)
-        value = s.value + (s.target - s.value) * Tween.ease(t, s.curve)
-        apply(value)
-        if t >= 1 {
-            stopTicking(); start = nil
-            let done = completion; completion = nil
-            done?()
-        }
+        if let sp = spring { springTick(sp) }
     }
 
     private func springTick(_ sp: (target: CGFloat, omega: Double, lastTick: CFTimeInterval)) {
@@ -121,13 +104,5 @@ final class Tween: NSObject {
         let decay = exp(-omega * dt)
         let next = (offset + slope * dt) * decay
         return (CGFloat(Double(target) + next), CGFloat((slope - omega * (offset + slope * dt)) * decay))
-    }
-
-    private static func ease(_ t: Double, _ curve: String) -> CGFloat {
-        switch curve {
-        case "linear": return t
-        case "easeInOut": return t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
-        default: return 1 - pow(1 - t, 3)   // easeOut
-        }
     }
 }

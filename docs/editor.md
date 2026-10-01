@@ -395,7 +395,7 @@ The double-click interval is the system's setting, for editing and for zoom.
 | Cmd+Return | Typing ends, then what Cmd+Return does in section 6 |
 | Esc | Typing ends and the text is kept. A second Esc closes the editor. |
 | A toolbar tool button | Typing ends |
-| Done in the toolbar | The typed text is in the PNG |
+| Copy in the toolbar | The typed text is in the PNG |
 | Send | Typing ends first, then the drawing is rendered |
 | The host parks the drawing while text is being typed | Typing ends first, so an empty text is removed |
 

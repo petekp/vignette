@@ -68,7 +68,8 @@ enum ReplyProtocol {
     // MARK: The ticket
 
     /// What the agent is given: where its reply goes and the secret that authorizes it. Written
-    /// into the request's own directory; its path travels in the request line, the secret does not.
+    /// into the request's own directory, beside the image the request line names. The secret never
+    /// travels in the line.
     struct Ticket: Codable, Equatable {
         var protocolVersion = ReplyProtocol.version
         let requestID: String

@@ -949,17 +949,6 @@ def open_card(stage, card, event):
     return s
 
 
-def message_field(stage, s):
-    """The toolbar's message field, found through Accessibility inside the toolbar's frame."""
-    toolbar = s['annotator']['toolbar']
-    out = subprocess.run([stage.paths['stage_bin'], 'fields', str(stage.pid)], capture_output=True, text=True, check=True)
-    for line in out.stdout.splitlines():
-        x, y, w, h = map(float, line.split())
-        if toolbar[0] <= x and x + w <= toolbar[0] + toolbar[2] + 1 and toolbar[1] <= y and y + h <= toolbar[1] + toolbar[3] + 1:
-            return [x, y, w, h]
-    raise TakeFailed(f'no message field in the toolbar at {toolbar}')
-
-
 # ---- The beats -------------------------------------------------------------------------------
 #
 # The film: you capture Postcard's itinerary, draw an arrow and a box on it, and send it. Claude

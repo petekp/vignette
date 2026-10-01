@@ -73,24 +73,7 @@ final class AgentConnectionTests: XCTestCase {
 
     // MARK: Claude Code, by session rather than by pane
 
-    /// Trimmed from a real `herdr agent list` answer: two agents, one of them named.
-    private let namedAgentList = Data("""
-    {"id":"cli:agent:list","result":{"type":"agent_list","agents":[
-      {"agent":"claude","agent_status":"idle","cwd":"/Users/p/Code/one","focused":false,
-       "name":"reviewer","pane_id":"w9:p3","tab_id":"w9:t2","workspace_id":"w9"},
-      {"agent":"codex","agent_status":"working","cwd":"/Users/p/Code/two","focused":true,
-       "pane_id":"w9:p6","tab_id":"w9:t5","workspace_id":"w9"}]}}
-    """.utf8)
-
-    func testReadsEachAgentHerdrLists() {
-        let agents = ClaudeCodeConnection.agents(in: namedAgentList)
-        XCTAssertEqual(agents.map(\.id), ["reviewer", "w9:p6"])
-        XCTAssertEqual(agents.map(\.kind), ["claude", "codex"])
-        XCTAssertEqual(agents.map(\.status), ["idle", "working"])
-        XCTAssertEqual(agents[1].cwd, "/Users/p/Code/two")
-    }
-
-    func testAnswerThatIsNotAnAgentListIsNoAgents() {
+    func testAnswerThatIsNotAPaneListIsNoAgents() {
         XCTAssertEqual(ClaudeCodeConnection.agents(in: Data("not json".utf8)), [])
         XCTAssertEqual(ClaudeCodeConnection.agents(in: Data(#"{"error":{"code":"no_server"}}"#.utf8)), [])
     }
@@ -199,16 +182,16 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertNil(focus("w9:pA"), "another session's pane, even one herdr cannot name")
         XCTAssertNil(focus("w9:pB"), "a Codex pane")
 
-        let listed = ClaudeCodeConnection.agents(in: Data(paneList(session: session).utf8), list: "panes")
+        let listed = ClaudeCodeConnection.agents(in: Data(paneList(session: session).utf8))
         let destinations = listed.compactMap { agent in
-            agent.session.map { ClaudeCodeConnection.destination(session: $0, cwd: agent.cwd, transcript: .init()) }
+            agent.session.map { ClaudeCodeConnection.destination(session: $0, cwd: "", transcript: .init()) }
         }
         func marked(_ extra: ClaudeCodeConnection.HerdrAgent, focus: String) -> [AgentDestination.Focus?] {
             ClaudeCodeConnection.markFocus(destinations, agents: listed + [extra], focus: (focus, "w9:t1")).map(\.focus)
         }
-        let second = ClaudeCodeConnection.HerdrAgent(id: "w9:pD", pane: "w9:pD", kind: "claude", cwd: "", status: "idle", session: "second", tab: "w9:t1")
+        let second = ClaudeCodeConnection.HerdrAgent(pane: "w9:pD", session: "second", tab: "w9:t1")
         XCTAssertEqual(marked(second, focus: "w9:pC"), [nil], "two sessions beside the browser")
-        let codex = ClaudeCodeConnection.HerdrAgent(id: "w9:pE", pane: "w9:pE", kind: "codex", cwd: "", status: "idle", tab: "w9:t1")
+        let codex = ClaudeCodeConnection.HerdrAgent(pane: "w9:pE", tab: "w9:t1")
         XCTAssertEqual(marked(codex, focus: "w9:pE"), [nil], "you are talking to the Codex beside it")
 
         let old = AgentDestination(id: "1", name: "a", address: .claudeSession("1"), lastUsed: Date(timeIntervalSince1970: 100))

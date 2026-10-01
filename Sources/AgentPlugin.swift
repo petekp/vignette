@@ -239,7 +239,7 @@ enum AgentPlugin {
     // MARK: Outcomes
 
     enum Outcome: String {
-        case installed, updated, unchanged, removed
+        case installed, updated, removed
         case absent                 // nothing to remove
         case kept                   // an old skill left where it was, because it is a link
         case noTool = "no-tool"     // the agent's command line tool is not on this Mac
@@ -545,7 +545,7 @@ final class AgentPlugins: @unchecked Sendable {
     }
 
     private func log(_ result: AgentPlugin.Result, _ reason: String = "") -> AgentPlugin.Result {
-        if ![.unchanged, .absent].contains(result.outcome) {
+        if result.outcome != .absent {
             let words = [result.outcome.rawValue, result.root.path, reason, result.detail].filter { !$0.isEmpty }
             Log.write("[plugin] \(words.joined(separator: " "))")
         }

@@ -48,13 +48,13 @@ final class DimPanel: NSPanel {
         // The whole panel fades: the blur and the tint arrive together. It stops just short of
         // opaque: a fully opaque screen-sized window occludes the windows under it, and the
         // window server drops their shadows and controls out of the blur when that happens.
-        alpha.animate(to: 0.995, duration: ui.dimFade, curve: "spring")
+        alpha.animate(to: 0.995, duration: ui.dimFade)
     }
 
     func hide() {
         generation += 1
         let gen = generation
-        alpha.animate(to: 0, duration: Settings.shared.motionUI.dimFade, curve: "spring") { [weak self] in
+        alpha.animate(to: 0, duration: Settings.shared.motionUI.dimFade) { [weak self] in
             guard let self, self.generation == gen else { return }
             self.orderOut(nil)
         }

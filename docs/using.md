@@ -85,8 +85,8 @@ drawing. The cards stay selected and it comes back when you are done.
 - Return opens the card to draw on.
 
 Cmd+S stitches two or more selected cards into one image with numbered badges, saved next to
-the originals and copied. Two or three pieces stack, and more go in a grid. Each badge is the number
-the card's circle showed. The selected cards fly together into the new card, which takes their place
+the originals and copied. Vignette picks the number of columns that keeps the pieces largest once an
+AI model shrinks the image to read it. Each badge is the number the card's circle showed. The selected cards fly together into the new card, which takes their place
 at the bottom of the stack, or opens in the annotator when Open to Draw is on.
 
 Drag a card out to drop it on a chat window, Finder, or a terminal. A card you drew on drops the

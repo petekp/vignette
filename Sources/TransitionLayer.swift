@@ -51,10 +51,8 @@ final class TransitionLayer {
         var blend: CGFloat = 1
         var generation = 0
         /// Runs when `end(id:)` or `endAll()` removes this flight before it arrived, so whatever it
-        /// was covering can take over. Aiming the flight again replaces it; arriving clears it.
-        /// `converge` removes its pieces without running it, which nothing can notice today: only
-        /// the annotator's outbound flight sets a handler, and `ThumbnailController.stitched`
-        /// refuses to start a stitch while the annotator has anything in flight.
+        /// was covering can take over. Aiming the flight again replaces it; arriving clears it. The
+        /// annotator's outbound flight and each of `converge`'s pieces set it.
         var dropped: (() -> Void)?
     }
 

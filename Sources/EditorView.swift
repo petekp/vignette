@@ -485,7 +485,7 @@ final class EditorView: NSView {
             CATransaction.commit()
         }
         settling = tween
-        tween.animate(to: 1, duration: noteSettleDuration, curve: "spring") { [weak self] in
+        tween.animate(to: 1, duration: noteSettleDuration) { [weak self] in
             guard let self, settling === tween else { return }
             settling = nil
             refresh()

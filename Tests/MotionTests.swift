@@ -135,20 +135,20 @@ final class MotionTests: XCTestCase {
         var seen: [CGFloat] = []
         let tween = Tween(initial: 0) { seen.append($0) }
         let done = expectation(description: "settled")
-        tween.animate(to: 1, duration: 0.3, curve: "spring") { done.fulfill() }
+        tween.animate(to: 1, duration: 0.3) { done.fulfill() }
         wait(for: [done], timeout: 2)
         XCTAssertEqual(tween.value, 1)
         XCTAssertEqual(seen, seen.sorted(), "a critically damped spring never overshoots")
         XCTAssertLessThanOrEqual(seen.max() ?? 0, 1)
 
         // Reverse mid-flight: the value turns back from where it is, not from the target.
-        tween.animate(to: 0, duration: 0.3, curve: "spring")
+        tween.animate(to: 0, duration: 0.3)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.08))
         let midway = tween.value
         XCTAssertGreaterThan(midway, 0)
         XCTAssertLessThan(midway, 1)
         let back = expectation(description: "back up")
-        tween.animate(to: 1, duration: 0.3, curve: "spring") { back.fulfill() }
+        tween.animate(to: 1, duration: 0.3) { back.fulfill() }
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
         XCTAssertLessThan(abs(tween.value - midway), 0.2, "no jump on retarget")
         wait(for: [back], timeout: 2)

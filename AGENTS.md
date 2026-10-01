@@ -15,7 +15,7 @@ the measurements and the reasoning; a rule here points at its note.
   a version 2 file read-only. `open -g vignette://tweaks`
   edits them live (needs `debug`). A number stays in code when changing it would mean changing the
   code around it, or when it is a fraction of something rather than a size: the toolbar's rows and
-  buttons (`AnnotatorToolbar.swift`), the card button size and the strip's icon and label sizes
+  buttons (`AnnotatorToolbar.swift`), the strip's icon and label sizes
   (`StackView.swift`, `StackLayout.swift`), the fly-back timing and the annotator's own shadow
   (`TransitionLayer.swift`), the zoom's springs and limits (`AnnotationController.swift`), the
   stitch's gap, padding, and badge (`Stitch.swift`), the editor's steps (`EditorCore`: the nudges,
@@ -826,7 +826,7 @@ screenshot location for such a launch is written with the same variable:
   event into the text view, so an input method or a dead key composes as usual. A tool key then is
   held (`holdKey`, `heldKeys` in the view) until the next key shows whether it began a word. A Cmd key the core does not take goes on to the menu.
   `docs/editor.md` is the behaviour: keys, gestures, what a press hits, the clipboard, the file.
-- A mark has one geometry, and the renderer owns it. `Mark.shape(pointScale:arrowhead:)` gives a
+- A mark has one geometry, and the renderer owns it. `Mark.shape(pointScale:markStyle:)` gives a
   rectangle's, an ellipse's or an arrow's paths, which the renderer draws and `MarkLayers` puts in
   `CAShapeLayer`s, so a shape looks the same in the editor, on a card, in flight and in the PNG. A
   text is a note: a rounded tag in the mark's colour with its words on it, and on an agent's note a

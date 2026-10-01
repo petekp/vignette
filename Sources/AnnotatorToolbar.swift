@@ -362,8 +362,8 @@ final class AnnotatorToolbar {
         if abs(panel.frame.width - size.width) >= 1 || abs(panel.frame.height - size.height) >= 1 {
             panel.setFrame(Self.rect(center: slideX.value, top: slideY.value, size: size), display: true)
         }
-        slideX.animate(to: center, duration: slideSeconds, curve: "spring")
-        slideY.animate(to: top, duration: slideSeconds, curve: "spring")
+        slideX.animate(to: center, duration: slideSeconds)
+        slideY.animate(to: top, duration: slideSeconds)
     }
 
     /// The panel's frame from its centre and top edge, which is what the springs move, so a change of
@@ -926,8 +926,6 @@ private struct ToolbarView: View {
         .modifier(TipSpot(control: .target, text: "“\(target.name)” in \(target.client.label)", hover: tip))
     }
 
-    /// What names a session at a glance: its project's folder, which you chose, or its agent's name
-    /// when it reported none.
     private var entrance: Animation {
         let scale = Settings.shared.motionScale
         guard scale > 0 else { return .linear(duration: 0) }
@@ -935,9 +933,6 @@ private struct ToolbarView: View {
     }
 }
 
-/// An agent's logo from the bundle, or the fallback symbol for a vendor without one. `template`
-/// draws it in the foreground colour, for the white of a filled button. A one-colour logo is always
-/// drawn in the foreground colour.
 /// What went wrong with a send and what to do about it, in the popover on the button.
 private struct FailureReason: View {
     let text: String
@@ -1126,6 +1121,9 @@ private final class TargetMenuActions: NSObject {
     }
 }
 
+/// An agent's logo from the bundle, or the fallback symbol for a vendor without one. `template`
+/// draws it in the foreground colour, for the white of a filled button. A one-colour logo is always
+/// drawn in the foreground colour.
 private struct AgentLogo: View {
     let client: AgentClient
     let template: Bool
