@@ -351,9 +351,12 @@ screenshot location for such a launch is written with the same variable:
   by polling (AXIsProcessTrusted announces nothing), comes back to the front then, since System
   Settings was covering it, and learns the shortcut works from the `.hotKeyFired`
   notification, which `registerHotKey`'s `fire` posts: the keys firing is what proves the setup
-  worked, since the stack appearing does not on a Mac with no screenshots yet. Each fire presses the
-  key picture and turns its ×2 into a check, and the line then asks for the hold, which posts
-  `.hotKeyHeld`. That same poll reads
+  worked, since the stack appearing does not on a Mac with no screenshots yet. Each fire turns the
+  key picture's ×2 into a check, and the line then asks for the hold, which posts `.hotKeyHeld`.
+  A modifier's keycap in the picture goes down while that key is held (`HeldModifiers`), so the
+  picture responds to the keys before Accessibility is granted: a local monitor hears them while
+  setup is key, and a global one everywhere once the app is trusted. A combination's own key never reaches the window,
+  since the hotkey takes it, so its firing presses the picture. That same poll reads
   the watch folder's count, and an empty folder asks for a capture first, ahead of the fired state:
   a tap with nothing to show opens nothing, so reporting success would report it about an empty
   corner. The two menu items that act on a screenshot, Show Recent Screenshots and Draw on Newest
@@ -385,11 +388,21 @@ screenshot location for such a launch is written with the same variable:
   `docs/settings-polish-2026-09-25.md` has the design and its reasons. Closing the window is where
   the menu bar icon is introduced (`MenuBarIntro`), since otherwise it appears in a busy bar with
   nothing pointing at it: a picture of the window covers it, the window closes, and the picture
-  flies into the icon on the flight's spring and path, the icon pops, and a popover under it names
-  the shortcut, or says to click it while `blockers()` lists something the menu must fix. The
-  popover goes at the first click anywhere or after 8 s. The picture is the window's frame view
-  drawn with `cacheDisplay`, since capturing a window needs Screen Recording; it covers the window
-  before the window closes, because the window server takes a window down at once. macOS can give
+  flies into the icon on the flight's bowed path. It accelerates the whole way and arrives at speed,
+  because it goes into something, where a card lands in a slot: a spring that settles spends as long
+  on the last tenth of the way as on the rest. It keeps most of its size until the last stretch, so the eye can follow it, and fades
+  into the icon while a copy of the menu bar's highlight comes up behind the icon. At the impact the
+  icon pops, a light crosses the highlight, and a popover under it names the shortcut, or says to
+  click it while `blockers()` lists something the menu must fix. All of it is timed from one moment
+  on the media clock (`MenuBarIntro.keyframes`), and `ui.introDuration` sets the flight's length.
+  The popover goes at the first click anywhere or after 8 s. The picture is the window as the window
+  server draws it, captured with ScreenCaptureKit's `SCShareableContent.currentProcess`, which lets an
+  app capture its own windows without Screen Recording permission (macOS 14.4). The window's views
+  drawn with `cacheDisplay` lack the wallpaper's tint, and the picture went flat at the handover;
+  they are the fallback before 14.4 or when the capture fails or takes over 0.25 s. Neither has the
+  outline and the dark-mode rim the window server draws at a window's edge, so the picture draws
+  them, as measured on macOS 15. The picture covers the window before the window closes, because the
+  window server takes a window down at once. macOS can give
   the icon a window and draw nothing, under the notch or past the end of a full bar, so the intro
   plays only when `MenuBarIntro.canSee` says the icon shows, and `[state] app.menuBarIcon` reports
   the same answer. With no icon to point at, the last page says to open Vignette again for its

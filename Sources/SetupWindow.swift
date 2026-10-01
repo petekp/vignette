@@ -85,7 +85,12 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
                                callbacks: callbacks)
         model.granted = { [weak self] in self?.granted() }
         model.folderAnswered = { [weak self] access in self?.folderAnswered(access) }
-        model.done = { [weak self] in self?.window?.performClose(nil) }
+        // Not `performClose`: it shows the close button pressed while it simulates the click, and
+        // the intro's picture of the window would carry that pressed button into the menu bar.
+        model.done = { [weak self] in
+            guard let self, let window = self.window, self.windowShouldClose(window) else { return }
+            window.close()
+        }
         self.model = model
         let host = NSHostingController(rootView: SetupView(model: model))
         let win = NSWindow(contentViewController: host)
@@ -543,19 +548,21 @@ struct SetupView: View {
 }
 
 /// The shortcut as keys on a keyboard: one wide keycap marked ×2 for a double tap, or a keycap for
-/// each key of a combination. Each time the shortcut fires, the keys press down and spring back,
-/// and the ×2 turns into a check.
+/// each key of a combination. A modifier's keycap goes down while the person holds that key, so
+/// the picture answers their hand before the shortcut works. Each time the shortcut fires, the ×2
+/// turns into a check.
 struct KeyPicture: View {
     let spec: HotKeySpec?
     var fires = 0
-    /// `Settings.motionScale`: 0 with Reduce Motion, and then the keys do not move.
+    /// `Settings.motionScale`: 0 with Reduce Motion, and then a held key darkens without moving.
     var motion = 1.0
+    @StateObject private var held = HeldModifiers()
 
     var body: some View {
         Group {
-            if let key = spec?.doubleTapKey {
+            if let key = spec?.doubleTapKey, case let .doubleTap(code)? = spec {
                 // A right-hand modifier has its label on the right, as Apple's keyboards print it.
-                keycap(width: 118) {
+                keycap(width: 118, down: held.codes.contains(code)) {
                     VStack(alignment: key.isRight ? .trailing : .leading) {
                         Text(key.glyph).font(.system(size: 17))
                         Spacer()
@@ -568,23 +575,31 @@ struct KeyPicture: View {
                     badge.offset(x: key.isRight ? -10 : 10, y: -10)
                 }
             } else {
+                let modifiers = spec?.keycapModifiers ?? []
                 HStack(spacing: 8) {
-                    ForEach(Array((spec?.keycaps ?? []).enumerated()), id: \.offset) { _, cap in
-                        keycap(width: 56) { Text(cap).font(.system(size: 20)).frame(maxWidth: .infinity, maxHeight: .infinity) }
+                    ForEach(Array((spec?.keycaps ?? []).enumerated()), id: \.offset) { index, cap in
+                        let modifier = index < modifiers.count ? modifiers[index] : []
+                        keycap(width: 56, down: !modifier.isEmpty && held.flags.contains(modifier)) {
+                            Text(cap).font(.system(size: 20)).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
                 }
                 .overlay(alignment: .topTrailing) {
                     if fires > 0 { badge.offset(x: 10, y: -10).transition(.scale.combined(with: .opacity)) }
                 }
+                // The combination's own key never reaches the window, since the hotkey takes it, so
+                // its firing is what presses the picture.
+                .keyframeAnimator(initialValue: 1.0, trigger: fires) { content, scale in
+                    content.scaleEffect(scale)
+                } keyframes: { _ in
+                    CubicKeyframe(motion > 0 ? 0.94 : 1, duration: 0.07)
+                    SpringKeyframe(1, duration: 0.35 * max(motion, 0.01), spring: .bouncy)
+                }
             }
         }
-        .keyframeAnimator(initialValue: 1.0, trigger: fires) { content, scale in
-            content.scaleEffect(scale)
-        } keyframes: { _ in
-            CubicKeyframe(motion > 0 ? 0.94 : 1, duration: 0.07)
-            SpringKeyframe(1, duration: 0.35 * max(motion, 0.01), spring: .bouncy)
-        }
         .animation(Anim.spring(0.3 * motion), value: fires > 0)
+        .onAppear { held.start() }
+        .onDisappear { held.stop() }
         .accessibilityHidden(true)
     }
 
@@ -605,12 +620,52 @@ struct KeyPicture: View {
         .background(Capsule().fill(fires > 0 ? Color.installed : Color.accentColor))
     }
 
-    private func keycap<Content: View>(width: CGFloat, @ViewBuilder _ content: () -> Content) -> some View {
-        content()
+    /// A keycap, raised on its shadow, or `down`: sunk onto the surface, a shade darker and a little
+    /// smaller. It goes down at once, as a key does, and springs back up.
+    private func keycap<Content: View>(width: CGFloat, down: Bool, @ViewBuilder _ content: () -> Content) -> some View {
+        let moves = motion > 0
+        return content()
             .foregroundStyle(.secondary)
             .padding(8)
             .frame(width: width, height: 56)
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color(nsColor: .controlColor))
-                .shadow(color: .black.opacity(0.25), radius: 1, y: 1))
+                .brightness(down ? -0.08 : 0)
+                .shadow(color: .black.opacity(down ? 0 : 0.25), radius: 1, y: down ? 0 : 1))
+            .scaleEffect(down && moves ? 0.95 : 1)
+            .offset(y: down && moves ? 1 : 0)
+            .animation(down ? Anim.spring(0.06 * motion) : Anim.spring(0.3 * motion, bounce: 0.4), value: down)
+    }
+}
+
+/// Which modifier keys the person is holding, by key code, so a picture of a key can go down with
+/// it. It hears them while a Vignette window is key, and anywhere once Vignette is trusted for
+/// Accessibility, which is also when a double tap starts to work. It reads a key as `ModifierTap`
+/// does: the key's code, and whether its modifier is still set.
+@MainActor
+final class HeldModifiers: ObservableObject {
+    @Published private(set) var codes: Set<UInt16> = []
+    var flags: NSEvent.ModifierFlags { codes.reduce(into: []) { $0.insert(ModifierTap.flag(forKeyCode: $1)) } }
+    private var monitors: [Any] = []
+
+    func start() {
+        guard monitors.isEmpty else { return }
+        let changed: (NSEvent) -> Void = { [weak self] event in MainActor.assumeIsolated { self?.changed(event) } }
+        monitors = [NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { changed($0); return $0 },
+                    NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: changed)].compactMap { $0 }
+    }
+
+    func stop() {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors = []
+        codes = []
+    }
+
+    private func changed(_ event: NSEvent) {
+        guard HotKeySpec.modifierCodes.values.contains(event.keyCode) else { return }
+        if event.modifierFlags.contains(ModifierTap.flag(forKeyCode: event.keyCode)) {
+            codes.insert(event.keyCode)
+        } else {
+            codes.remove(event.keyCode)
+        }
     }
 }

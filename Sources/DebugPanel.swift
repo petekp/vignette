@@ -133,6 +133,7 @@ struct DebugPanelView: View {
                 }
                 Section("Flights") {
                     Tweak("Expand to annotator", \.expandDuration, 0...1.5, step: 0.05, unit: "s")
+                    Tweak("Setup into the menu bar", \.introDuration, 0...2, step: 0.05, unit: "s")
                     Tweak("Arc", \.flightArc, 0...0.4, step: 0.01)
                     Tweak("Arc cap", \.flightArcMax, 0...300, step: 2, unit: "pt")
                     Tweak("Depth", \.flightDepth, 0...0.3, step: 0.01)

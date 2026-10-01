@@ -755,7 +755,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             ? "\(shortcut?.instruction ?? "Use the shortcut") to see your recent screenshots."
             : "Click it to finish setting up."
         Log.write("[setup] menu bar intro")
-        menuBarIntro.play(from: window, into: button, message: message, duration: settings.motionUI.expandDuration,
+        menuBarIntro.play(from: window, into: button, message: message, duration: settings.motionUI.introDuration,
                           close: close, finished: finished)
         return true
     }

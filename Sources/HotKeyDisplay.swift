@@ -90,6 +90,13 @@ extension HotKeySpec {
         return caps
     }
 
+    /// The modifier each of `keycaps` stands for, in the same order, and none for the key itself.
+    var keycapModifiers: [NSEvent.ModifierFlags] {
+        guard case let .key(_, modifiers) = self else { return [] }
+        let flags = HotKeySpec.eventModifiers(modifiers)
+        return ([.control, .option, .shift, .command] as [NSEvent.ModifierFlags]).filter { flags.contains($0) } + [[]]
+    }
+
     /// The NSMenuItem key equivalent, so a menu renders the hotkey in its shortcut column.
     /// nil for a double tap, which no menu can draw.
     var menuKeyEquivalent: (key: String, modifiers: NSEvent.ModifierFlags)? {

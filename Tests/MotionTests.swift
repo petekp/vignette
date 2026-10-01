@@ -15,7 +15,7 @@ final class MotionTests: XCTestCase {
         let base = UITweaks()
         let off = base.scaledForMotion(0)
         for path in [\UITweaks.slideInDuration, \.slideOutDuration, \.staggerDelay, \.staggerTotalMax, \.relayoutDuration,
-                     \.expandDuration, \.hoverRevealDuration, \.backdropFadeIn, \.backdropFadeOut, \.backdropSlideIn, \.backdropSlideOut, \.dimFade,
+                     \.expandDuration, \.introDuration, \.hoverRevealDuration, \.backdropFadeIn, \.backdropFadeOut, \.backdropSlideIn, \.backdropSlideOut, \.dimFade,
                      \.flightArc, \.flightDepth] {
             XCTAssertEqual(off[keyPath: path], 0)
         }

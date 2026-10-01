@@ -33,12 +33,7 @@ final class ModifierTap {
         self.holdSeconds = holdSeconds
         self.action = action
         self.hold = hold
-        switch keyCode {
-        case 56, 60: flag = .shift
-        case 55, 54: flag = .command
-        case 58, 61: flag = .option
-        default: flag = .control
-        }
+        flag = Self.flag(forKeyCode: keyCode)
         // Never prompts. The double tap is the default shortcut, so this runs during every launch,
         // and macOS's Accessibility dialog arriving unasked seconds into a first launch is the one
         // people dismiss. The setup window raises it, as the answer to a choice just made.
@@ -60,6 +55,16 @@ final class ModifierTap {
         retry?.invalidate()
         holdTimer?.invalidate()
         monitors.forEach { NSEvent.removeMonitor($0) }
+    }
+
+    /// The modifier a modifier key's code sets, either side of the keyboard.
+    nonisolated static func flag(forKeyCode keyCode: UInt16) -> NSEvent.ModifierFlags {
+        switch keyCode {
+        case 56, 60: .shift
+        case 55, 54: .command
+        case 58, 61: .option
+        default: .control
+        }
     }
 
     nonisolated static func trusted(prompt: Bool) -> Bool {

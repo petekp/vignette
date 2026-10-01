@@ -179,6 +179,7 @@ struct UITweaks: Codable, Equatable {
     var relayoutDuration = 0.2
     var shiftUpDuration = 0.3        // one card joining a visible stack: how long the others take to shift up
     var expandDuration = 0.25
+    var introDuration = 0.7          // setup's window flying into the menu bar icon, once per Mac
     var hoverRevealDuration = 0.15
     // A flight between a stack slot and the annotator, bowed and swelled by FlightCurve
     var flightArc = 0.08             // how far the path bows, as a fraction of its length
@@ -268,6 +269,7 @@ struct UITweaks: Codable, Equatable {
         u.slideInDuration *= scale; u.slideOutDuration *= scale
         u.staggerDelay *= scale; u.staggerTotalMax *= scale
         u.relayoutDuration *= scale; u.shiftUpDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
+        u.introDuration *= scale
         u.noteSettleDuration *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
@@ -293,7 +295,7 @@ struct UITweaks: Codable, Equatable {
         Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
         Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
         Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("shiftUpDuration", \.shiftUpDuration, 0...60),
-        Bound("expandDuration", \.expandDuration, 0...60),
+        Bound("expandDuration", \.expandDuration, 0...60), Bound("introDuration", \.introDuration, 0...60),
         Bound("hoverRevealDuration", \.hoverRevealDuration, 0...60), Bound("motion", \.motion, 0...1),
         Bound("flightArc", \.flightArc, 0...1), Bound("flightArcMax", \.flightArcMax, 0...2000),
         Bound("flightDepth", \.flightDepth, 0...1),
