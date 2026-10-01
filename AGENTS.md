@@ -369,7 +369,8 @@ screenshot location for such a launch is written with the same variable:
   Combination…, which shows a recorder that starts listening at once. A new settings file starts with
   `launchAtLogin` on: first run turns Apple's thumbnail off, so a restart that does not bring
   Vignette back leaves every capture silent. The window shows the switch, and the login item is
-  registered when it closes, not during the launch it is showing in. A login item the person
+  registered when it closes, not during the launch it is showing in, and after the menu bar intro
+  when there is one, since macOS announces a new login item in the corner the intro points at. A login item the person
   removed under Open at Login reads `.notFound` (measured), and a launch then turns
   `launchAtLogin` off instead of registering it again; a copy that moved is told apart by the path
   it registered from (`LoginItem.removedByPerson`). The folder row is a
@@ -381,7 +382,18 @@ screenshot location for such a launch is written with the same variable:
   the buttons are. The skill page's switches start on, and closing the window installs the ones
   still on, but only for someone who reached that page: closed earlier, `agentSkill` stays
   `unasked`, and the next launch offers the skill in the Settings window instead.
-  `docs/settings-polish-2026-09-25.md` has the design and its reasons.
+  `docs/settings-polish-2026-09-25.md` has the design and its reasons. Closing the window is where
+  the menu bar icon is introduced (`MenuBarIntro`), since otherwise it appears in a busy bar with
+  nothing pointing at it: a picture of the window covers it, the window closes, and the picture
+  flies into the icon on the flight's spring and path, the icon pops, and a popover under it names
+  the shortcut, or says to click it while `blockers()` lists something the menu must fix. The
+  popover goes at the first click anywhere or after 8 s. The picture is the window's frame view
+  drawn with `cacheDisplay`, since capturing a window needs Screen Recording; it covers the window
+  before the window closes, because the window server takes a window down at once. macOS can give
+  the icon a window and draw nothing, under the notch or past the end of a full bar, so the intro
+  plays only when `MenuBarIntro.canSee` says the icon shows, and `[state] app.menuBarIcon` reports
+  the same answer. With no icon to point at, the last page says to open Vignette again for its
+  settings.
 - A launch from the disk image offers to move the app to Applications (`AppLocation.swift`),
   from `main` before `Settings.shared` exists, so the copy on the image never creates the settings
   file or touches Apple's defaults. "On the disk image" is a read-only volume or a translocated

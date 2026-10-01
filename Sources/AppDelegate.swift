@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var statusItem: NSStatusItem?
     /// The dot on the status item while an update waits (Updater).
     private var updateDot: NSView?
+    private let menuBarIntro = MenuBarIntro()
     private var updater: Updater?
     private var watcher: ScreenshotWatcher?
     /// True on a first launch whose folder macOS protects, until setup asks for it.
@@ -138,7 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                                 hasScreenshots: { [weak self] in self?.hasScreenshots ?? false },
                                 folderAccess: { [weak self] in self?.folderAccess ?? .ask },
                                 askFolder: { [weak self] in self?.askForFolder() },
-                                installAgentPlugin: { [weak self] roots in self?.installAgentPluginFromSetup(roots) }))
+                                installAgentPlugin: { [weak self] roots in self?.installAgentPluginFromSetup(roots) },
+                                menuBarIconVisible: { [weak self] in self?.visibleStatusButton != nil },
+                                introduceMenuBar: { [weak self] window, close, finished in
+                                    self?.introduceMenuBar(from: window, close: close, finished: finished) ?? false
+                                }))
         } else {
             // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
             // A removal in System Settings is a wish too, and turns the setting off instead.
@@ -670,6 +675,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             "appleThumbnail": settings.data.appleThumbnail, "recentCount": settings.data.recentCount, "hotkey": settings.data.recentHotkey, "debug": settings.data.debug,
             "launchAtLogin": settings.data.launchAtLogin, "loginItem": LoginItem.status,
             "update": updater?.stateJSON as Any,
+            "menuBarIcon": statusItem == nil ? "off" : visibleStatusButton == nil ? "not showing" : "showing",
             "agentSkill": ["setting": settings.data.agentSkill, "installed": installedPluginRoots()] as [String: Any],
         ] as [String: Any]
         report.sections["annotator"] = annotator.stateJSON
@@ -730,12 +736,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         statusItem = item
     }
 
-    private func rebuildMenu(_ menu: NSMenu) {
-        menu.removeAllItems()
-        let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
+    /// The status item's button when a person can see it: not turned off, and not hidden by macOS
+    /// for want of room (`MenuBarIntro.canSee`).
+    private var visibleStatusButton: NSStatusBarButton? {
+        statusItem?.button.flatMap { MenuBarIntro.canSee($0) ? $0 : nil }
+    }
 
-        // What stops Vignette working comes first, as the way to fix it. Apple's thumbnail is off
-        // while Vignette runs, so without these a capture would show nothing and say nothing.
+    /// Setup is closing: its window flies into the menu bar icon, and a popover under the icon says
+    /// how to use Vignette, or, while something still needs the person's permission, that the menu
+    /// has it. False with no icon to point at, and setup closes as any window does.
+    private func introduceMenuBar(from window: NSWindow, close: @escaping () -> Void, finished: @escaping () -> Void) -> Bool {
+        guard let button = visibleStatusButton else {
+            Log.write("[setup] menu bar intro skipped: the icon is \(statusItem == nil ? "off" : "not showing")")
+            return false
+        }
+        let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
+        let message = blockers().isEmpty
+            ? "\(shortcut?.instruction ?? "Use the shortcut") to see your recent screenshots."
+            : "Click it to finish setting up."
+        Log.write("[setup] menu bar intro")
+        menuBarIntro.play(from: window, into: button, message: message, duration: settings.motionUI.expandDuration,
+                          close: close, finished: finished)
+        return true
+    }
+
+    /// What stops Vignette working, as menu items that fix it. Apple's thumbnail is off while
+    /// Vignette runs, so without these a capture would show nothing and say nothing.
+    private func blockers() -> [NSMenuItem] {
         var blocked: [NSMenuItem] = []
         if watcher?.isDenied == true {
             blocked.append(NSMenuItem(title: "Allow Access to Your Screenshots…", action: #selector(openFilesAndFolders), keyEquivalent: ""))
@@ -750,6 +777,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if settings.data.usesDoubleTap, !ModifierTap.trusted(prompt: false) {
             blocked.append(NSMenuItem(title: "Allow Accessibility for the Shortcut…", action: #selector(requestAccessibility), keyEquivalent: ""))
         }
+        return blocked
+    }
+
+    private func rebuildMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
+
+        // What stops Vignette working comes first, as the way to fix it.
+        let blocked = blockers()
         for item in blocked {
             item.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Needs permission")?
                 .withSymbolConfiguration(.init(paletteColors: [.white, .systemYellow]))
@@ -873,9 +909,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             updateDot = badge
             setIcon(Self.icon(icon, clearedAround: frame.insetBy(dx: -gap, dy: -gap), in: button), on: button, fading: duration)
             guard duration > 0, let layer = badge.layer else { return }
-            // AppKit anchors a view's layer at its corner, so the scale is written about the centre.
-            let center = CATransform3DMakeTranslation(size / 2, size / 2, 0)
-            let small = CATransform3DConcat(CATransform3DConcat(CATransform3DInvert(center), CATransform3DMakeScale(0.3, 0.3, 1)), center)
+            let small = CATransform3D.scale(0.3, about: CGPoint(x: size / 2, y: size / 2))
             let appear = CASpringAnimation(perceptualDuration: duration, bounce: 0.3)
             appear.keyPath = "transform"
             appear.fromValue = small

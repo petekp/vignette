@@ -39,6 +39,12 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         /// Starts the watcher, whose first read of a protected folder is what raises macOS's prompt.
         var askFolder: () -> Void = {}
         var installAgentPlugin: ([URL]) -> Void = { _ in }
+        /// Whether the menu bar icon can be seen: it is off, or macOS found no room for it.
+        var menuBarIconVisible: () -> Bool = { true }
+        /// Flies the closing window into the menu bar icon, calls `close` once it may close, and
+        /// `finished` once the intro has gone. False when there is no intro, and the window closes
+        /// as any window does.
+        var introduceMenuBar: (NSWindow, _ close: @escaping () -> Void, _ finished: @escaping () -> Void) -> Bool = { _, _, _ in false }
     }
 
     private let settings = Settings.shared
@@ -130,6 +136,21 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Closing is where the menu bar icon is introduced: the window flies into it, and closes once
+    /// its picture covers it (`MenuBarIntro`). A second close while that waits changes nothing.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !quitting, let model else { return true }
+        if introducing { return false }
+        introducing = model.callbacks.introduceMenuBar(sender, { sender.close() }) { [weak self] in
+            self?.afterIntro?()
+            self?.afterIntro = nil
+        }
+        return !introducing
+    }
+
+    private var introducing = false
+    private var afterIntro: (() -> Void)?
+
     func windowWillClose(_ notification: Notification) {
         guard let model else { return }
         if quitting {
@@ -152,7 +173,14 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             skill = roots.isEmpty ? "none" : roots.map(\.lastPathComponent).joined(separator: ",")
         }
         Log.write("[setup] done hotkey=\(settings.data.recentHotkey) trusted=\(ModifierTap.trusted(prompt: false)) launchAtLogin=\(settings.data.launchAtLogin) skill=\(skill)")
-        LoginItem.apply(settings.data.launchAtLogin)
+        // macOS announces a new login item in the top-right corner, where the intro's popover is,
+        // so the registration waits for it. A quit before then loses nothing: every later launch
+        // registers the item the setting asks for.
+        if introducing {
+            afterIntro = { LoginItem.apply(Settings.shared.data.launchAtLogin) }
+        } else {
+            LoginItem.apply(settings.data.launchAtLogin)
+        }
         DispatchQueue.main.async { FocusReturn.shared.restore(reason: "setup closed") }
         self.model = nil
         // The view's poll would otherwise keep running in the closed window. Let go after this
@@ -248,6 +276,7 @@ struct SetupView: View {
     @State private var held = false
     @State private var hasShots = true
     @State private var folder = FolderAccess.ask
+    @State private var iconVisible = true
     /// Neither the Accessibility grant nor macOS's folder prompt announces its answer, so the
     /// window looks.
     private let poll = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
@@ -262,6 +291,13 @@ struct SetupView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .clipped()
+            // Closing flies the window into the icon and points at it. With no icon to point at,
+            // the last page says where the settings are instead.
+            if model.isLast, !iconVisible {
+                Text("\(Identity.name)'s icon isn't showing in the menu bar. To get back to its settings, open \(Identity.name) again.")
+                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .frame(maxWidth: 400).padding(.bottom, 12)
+            }
             buttons
         }
         .frame(width: SetupView.width, height: SetupView.height)
@@ -277,6 +313,7 @@ struct SetupView: View {
         if now, !trusted { model.granted() }
         trusted = now
         hasShots = model.callbacks.hasScreenshots()
+        iconVisible = model.callbacks.menuBarIconVisible()
         let before = folder
         folder = model.callbacks.folderAccess()
         // After an answer to macOS's prompt, or a change made in System Settings after a refusal.
@@ -344,8 +381,7 @@ struct SetupView: View {
     }
 
     private func shortcutHeading(_ spec: HotKeySpec?) -> String {
-        if let key = spec?.doubleTapKey { return "Tap \(key.label) twice" }
-        return "Press \(spec?.glyphs ?? settings.data.recentHotkey)"
+        spec?.instruction ?? "Press \(settings.data.recentHotkey)"
     }
 
     /// One row that changes in place, rather than rows that come and go: the user is watching this

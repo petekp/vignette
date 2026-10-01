@@ -49,6 +49,12 @@ extension HotKeySpec {
         }
     }
 
+    /// How to use it, as the start of a sentence: "Tap Right Shift twice", "Press ⇧⌘2".
+    var instruction: String {
+        if let key = doubleTapKey { return "Tap \(key.label) twice" }
+        return "Press \(glyphs)"
+    }
+
     /// What to hold to draw on the newest screenshot, for the menu item that does it: with a double
     /// tap it is the second tap, not the key named twice.
     var holdLabel: String {
