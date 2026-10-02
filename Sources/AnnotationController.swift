@@ -45,8 +45,6 @@ final class AnnotationController {
     private let outsideClick = OutsideClick()
     /// Asks the window server, from `show` until it answers, whether a press on the frame reaches this window.
     private var eventProbe: Timer?
-    /// The flight has put the image down on this frame, from `landed` until the next `prepare`.
-    private var hasLanded = false
     /// Takes the frame and then the window down behind the flight home (`hideWindows`).
     private let removal = Removal()
     /// Counts `open`s, so a decode or a send's rendering only lands on the open that asked
@@ -61,47 +59,9 @@ final class AnnotationController {
     /// Room the annotator needs below its window: the toolbar and its gap.
     var spaceBelow: CGFloat { AnnotatorToolbar.height + Settings.shared.data.ui.annotationToolbarGap }
 
-    /// The frame `prepare` fitted the image into; zoom grows the window from here.
-    private var fittedFrame: NSRect = .zero
-    /// How far the image is magnified past the fitted frame. One number: `Zoom.split` divides it
-    /// between the frame's growth and the magnification inside it, one division per side, so those
-    /// two can never disagree about it. The picture itself is magnified uniformly by this level.
-    private(set) var zoomLevel: CGFloat = 1
-    /// Where the level is heading. Every input moves this; one spring carries the level to it, so
-    /// a gesture, a key and a fit bend into each other instead of stepping.
-    private var zoomTarget: CGFloat = 1
-    private lazy var zoomTween = Tween(initial: 1) { [weak self] v in self?.applyZoom(v) }
-    /// How far each side of the frame has grown past the fitted frame. 1 by 1 is the fitted frame.
-    var zoomWindow: CGSize { split(zoomLevel).window }
-    /// Magnification inside a frame that can grow no further on that side, per side; 1 by 1 shows
-    /// the whole image.
-    private(set) var canvasZoom = Zoom.none
-    /// The point the window grows away from, as a fraction of the window: the cursor's own point,
-    /// so what is under it stays under it, or the middle for a key. See `Zoom`.
-    private var zoomAim = ZoomAim.fitted
-    /// The same for the magnification inside a window that can grow no further: where the visible
-    /// middle was when the input arrived, and the point it named.
-    private var zoomPan = ZoomPan.centered
-    /// The middle of the visible part of the image, as a fraction of it.
-    private(set) var zoomCenter = Zoom.center
-    /// The anchor in effect at the level on screen.
-    var zoomAnchor: CGPoint { zoomAim.anchor(at: zoomLevel) }
-    /// How much of a pull below the fitted size the window shows before springing back.
-    private let overpull: CGFloat = 0.3
-    private let maxCanvasZoom: CGFloat = 8
-    /// How far a two-finger double tap zooms in. Preview picks a level from the content; one step
-    /// of twice the fitted size is the same gesture without guessing at what is under the cursor.
-    private let smartZoomFactor = 2.0
-    /// How far Cmd+Plus and Cmd+Minus magnify, as a multiple of the level.
-    private let keyZoomStep = 1.25
-    /// A gesture's spring. Short enough to follow the fingers; long enough that the window still
-    /// moves once per display refresh when events arrive unevenly.
-    private let trackingSeconds = 0.1
-    /// A step's spring: a key, a two-finger double tap, or a fit is a movement the eye follows.
-    private let stepSeconds = 0.3
-    /// The fit the window makes on its way out, before the card flies back. Shorter than a step:
-    /// it is the start of the card leaving rather than a zoom the user asked for.
-    private let fitToCloseSeconds = 0.2
+    /// The zoom's rules and where they put the frame and the picture. The spring is `zoomTween`.
+    private var zoom = AnnotatorZoom()
+    private lazy var zoomTween = Tween(initial: 1) { [weak self] level in self?.run(.tick(level)) }
 
     init() {
         toolbar.onTool = { [weak self] tool in self?.editor.setTool(tool) }
@@ -142,9 +102,13 @@ final class AnnotationController {
             guard let self, let shot = current else { return }
             onCopyDrawing?(shot, drawing)
         }
-        editor.onZoom = { [weak self] request in self?.zoom(request) }
+        editor.onZoom = { [weak self] request in self?.zoomRequested(request) }
         editor.onZoomGesture = { [weak self] event in self?.zoomGesture(event) }
-        editor.onReveal = { [weak self] rect in self?.reveal(rect) }
+        editor.onReveal = { [weak self] rect in
+            guard let self else { return }
+            let pixels = editor.core.drawing.pixels
+            run(.reveal(rect, image: CGSize(width: pixels.width, height: pixels.height)))
+        }
     }
 
     /// Sizes the window to `frame`, opens the image in the editor, and takes the keys, so a key
@@ -161,14 +125,8 @@ final class AnnotationController {
         removal.cancel()
         let win = window ?? makeWindow()
         frameView?.isHidden = false
-        hasLanded = false
-        fittedFrame = frame
-        self.room = room
-        zoomTarget = 1
-        zoomAim = .fitted
-        zoomPan = .centered
-        zoomCenter = Zoom.center
-        canvasZoom = Zoom.none
+        zoom.edge = Self.edgePull(Settings.shared.data.ui)
+        run(.prepare(fitted: frame, room: room))
         zoomTween.set(1)
         place(win, frame: frame)
         applyCornerRadius()
@@ -232,29 +190,21 @@ final class AnnotationController {
         let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main ?? NSScreen.screens[0]
         zoomScreen = screen
         if win.frame != screen.visibleFrame { win.setFrame(screen.visibleFrame, display: false) }
-        moveFrame(to: frame)
+        moveFrame(to: frame, picture: zoom.picture)
     }
 
     /// The one place the frame's rect is set: the frame view, the clip, the shadow's path and the
     /// editor inside it all take it from here, in the same tick, so nothing can be a frame behind.
-    /// `frameOnScreen` reads the result back for anyone who needs the rect.
-    private func moveFrame(to frame: NSRect) {
+    /// `frameOnScreen` reads the result back for anyone who needs the rect. `picture` is where the
+    /// whole picture sits in the editor, in its coordinates, which run down from the top.
+    private func moveFrame(to frame: NSRect, picture: CGRect) {
         guard let win = window, let frameView, let container else { return }
         frameView.frame = NSRect(x: frame.minX - win.frame.minX, y: frame.minY - win.frame.minY, width: frame.width, height: frame.height)
         container.frame = frameView.bounds
         let r = Settings.shared.data.ui.annotationCornerRadius
         frameView.layer?.shadowPath = CGPath(roundedRect: frameView.bounds, cornerWidth: r, cornerHeight: r, transform: nil)
-        editor.setSize(container.bounds.size, picture: pictureRect)
+        editor.setSize(container.bounds.size, picture: picture)
         onFrame?(frame)
-    }
-
-    /// Where the whole picture sits in the editor: the frame magnified by `canvasZoom` and slid so
-    /// that the part of the image `zoomCenter` names fills it. In the editor's own coordinates,
-    /// which run down from the top.
-    private var pictureRect: CGRect {
-        guard let bounds = container?.bounds else { return .zero }
-        let up = Zoom.picture(in: bounds, camera: canvasZoom, center: zoomCenter)
-        return CGRect(x: up.minX, y: bounds.height - up.maxY, width: up.width, height: up.height)
     }
 
     /// The visible frame in screen coordinates.
@@ -265,222 +215,70 @@ final class AnnotationController {
 
     // MARK: Zoom
 
-    /// What asked for a zoom: the fingers on a trackpad, or a key, a two-finger double tap, or a fit.
-    enum ZoomInput { case gesture, step }
+    /// Hands `input` to the zoom and does what it answers. A spring that lands at once, at motion 0,
+    /// ticks and arrives inside `animate`, after the zoom has answered.
+    private func run(_ input: AnnotatorZoom.Input) {
+        switch zoom.reduce(input) {
+        case .spring(let level, let seconds)?:
+            zoomTween.animate(to: level, duration: motionScaled(seconds)) { [weak self] in self?.run(.arrived) }
+        case .place(let frame, let picture)?:
+            guard window != nil else { return }
+            moveFrame(to: frame, picture: picture)
+        case .movePicture(let picture)?:
+            editor.pictureRect = picture
+        case nil:
+            break
+        }
+    }
 
-    /// The editor's zoom keys and its double-click on empty space. Only once the flight has landed:
-    /// the editor takes keys from `prepare` and relayed presses from the flight, and a zoom before
-    /// the landing would grow the window under a flight image still at the fitted frame.
-    private func zoom(_ request: EditorCore.ZoomRequest) {
-        guard window?.isVisible == true, hasLanded else { return }
+    /// The editor's zoom keys and its double-click on empty space.
+    private func zoomRequested(_ request: EditorCore.ZoomRequest) {
         switch request {
-        case .zoomIn: zoom(by: keyZoomStep, at: nil, as: .step)
-        case .zoomOut: zoom(by: 1 / keyZoomStep, at: nil, as: .step)
-        case .fit: zoom(by: nil, at: nil, as: .step)
+        case .zoomIn: run(.zoomIn)
+        case .zoomOut: run(.zoomOut)
+        case .fit: run(.fit)
         case .smart(let point):
-            smartZoom(at: cursorFraction(editor.convert(editor.viewPoint(forImagePoint: point), to: nil)))
+            run(.smart(at: cursorFraction(editor.convert(editor.viewPoint(forImagePoint: point), to: nil))))
         }
     }
 
     /// A pinch, a scroll or a two-finger double tap over the editor. Cmd or ctrl on a scroll zooms,
-    /// as the pinch does; a plain scroll moves the part of a magnified picture in view.
+    /// as the pinch does; a plain scroll moves the part of a magnified picture in view. A trackpad's
+    /// scroll is a gesture, and lifting the fingers lets go of a pull below the fit; momentum after
+    /// the lift is ignored, as a pinch's end is, so the zoom stops where the hand did. A mouse wheel
+    /// has no phases, and each notch is a step.
     private func zoomGesture(_ event: NSEvent) {
         switch event.type {
-        case .magnify: pinch(event.magnification, phase: event.phase, at: event.locationInWindow)
-        case .smartMagnify: smartZoom(at: cursorFraction(event.locationInWindow))
+        case .magnify:
+            if event.phase == .ended || event.phase == .cancelled { run(.lift); return }
+            run(.pinch(by: event.magnification, at: cursorFraction(event.locationInWindow)))
+        case .smartMagnify:
+            run(.smart(at: cursorFraction(event.locationInWindow)))
         case .scrollWheel:
-            if event.modifierFlags.intersection([.command, .control]).isEmpty { pan(event) } else { wheel(event) }
-        default: break
+            let line: CGFloat = event.hasPreciseScrollingDeltas ? 1 : Self.wheelLinePoints
+            if event.modifierFlags.intersection([.command, .control]).isEmpty {
+                run(.pan(by: CGVector(dx: event.scrollingDeltaX * line, dy: event.scrollingDeltaY * line)))
+                return
+            }
+            if event.phase.contains(.ended) || event.phase.contains(.cancelled) { run(.lift); return }
+            guard event.momentumPhase.isEmpty else { return }
+            run(.wheel(points: event.scrollingDeltaY * line, at: cursorFraction(event.locationInWindow),
+                       fingers: !event.phase.isEmpty))
+        default:
+            break
         }
-    }
-
-    /// Zoom in grows each side of the window until that side fills the room, then magnifies the
-    /// image past it. Zoom out reverses that and stops at the fitted size: pulling further shrinks
-    /// the window a little and it springs back once the gesture ends. The toolbar stays where it is.
-    ///
-    /// `factor` multiplies the zoom level; nil asks for the fitted size. `cursor` is the point to
-    /// keep in place, a fraction of the window with y from the top; nil means its middle, which is
-    /// where a key zooms. Both phases honor it: the window grows away from it, and past that the
-    /// picture is magnified about it.
-    func zoom(by factor: Double?, at cursor: CGPoint?, as input: ZoomInput) {
-        guard window != nil, fittedFrame.width > 0 else { return }
-        let cursor = cursor.map(Zoom.clamped) ?? Zoom.center
-        let target: CGFloat
-        if let factor, factor.isFinite, factor > 0 {
-            // Only a hand pulls below the fit: a key or a mouse wheel's notch stops at it, as it
-            // does in Preview, since there is no gesture to let go of.
-            let floor = input == .gesture ? minLevel : 1
-            target = min(maxLevel, max(floor, zoomTarget * CGFloat(factor)))
-        } else {
-            target = 1
-        }
-        // An input that moves nothing (a notch out at the fit, cmd+0 at rest) is over here.
-        guard target != zoomTarget || zoomTween.value != zoomTarget else { return }
-        zoomTarget = target
-        aim(at: cursor, to: zoomTarget)
-        aimPan(at: cursor)
-        zoomTween.animate(to: zoomTarget, duration: motionScaled(input == .gesture ? trackingSeconds : stepSeconds)) { [weak self] in self?.arrived() }
-    }
-
-    /// Points the window's growth at `cursor`. The anchor it starts from is read off the frame on
-    /// screen, so the step carries on from where the window is: a frame the screen edge has nudged
-    /// does not carry that error forward, and a step aimed elsewhere mid-spring bends rather than
-    /// stepping sideways. The anchor it ends at is the one the room allows, so the room gives way
-    /// once, here, rather than the frame sliding part way through the spring. A window at rest
-    /// has nothing to aim.
-    private func aim(at cursor: CGPoint, to target: CGFloat) {
-        guard let onScreen = frameOnScreen, target != zoomLevel else { return }
-        zoomAim = Zoom.aim(at: cursor, of: onScreen, fitted: fittedFrame, window: split(target).window,
-                           from: zoomLevel, to: target, within: room)
-    }
-
-    /// Points the magnification at `cursor`, from the part of the image that is visible now. Like
-    /// `aim`, it starts from what is on screen, so a step aimed elsewhere mid-spring bends.
-    ///
-    /// A cursor near an edge of the picture is pulled onto it first (`ui.zoomEdgeBandPoints`,
-    /// `ui.zoomEdgePull`): only the window's own edge holds the image's edge with it, so without
-    /// the pull the corner the cursor is beside is cropped by the first bit of magnification. The
-    /// band is measured in points of the frame the cursor is over, so its reach is the same on all
-    /// four edges however wide the screenshot is.
-    ///
-    /// The frame's growth is not aimed and needs none of this, but "still growing" and "nothing
-    /// cropped yet" are no longer the same state: each side reaches the room at its own level, so
-    /// the picture is already cropped in the side that got there first while the other is still
-    /// growing. The pull is applied in both directions on every input for that reason. A side that
-    /// is still growing shows the whole image in that direction, so the pull has nothing to hold
-    /// there and `Zoom.clamped(center:camera:)` pins it.
-    private func aimPan(at cursor: CGPoint) {
-        let ui = Settings.shared.data.ui
-        let picture = frameOnScreen?.size ?? fittedFrame.size
-        let aimed = Zoom.pulledToEdges(cursor, in: picture, band: ui.zoomEdgeBandPoints, pull: ui.zoomEdgePull)
-        let camera = split(zoomLevel).camera
-        zoomPan = ZoomPan(center: zoomPan.center(at: camera), camera: camera, cursor: aimed)
     }
 
     /// Zoom's springs are in code rather than in the tweaks, but the motion scale still shortens
     /// them, so `ui.motion: 0` and Reduce Motion land a zoom step at once.
     private func motionScaled(_ seconds: Double) -> Double { seconds * Settings.shared.motionScale }
 
-    /// How a level divides between the frame's growth and the magnification inside it, per side.
-    private func split(_ level: CGFloat) -> (window: CGSize, camera: CGSize) {
-        Zoom.split(level: level, reach: reach, pull: overpull)
+    private static func edgePull(_ ui: UITweaks) -> AnnotatorZoom.EdgePull {
+        AnnotatorZoom.EdgePull(band: ui.zoomEdgeBandPoints, pull: ui.zoomEdgePull)
     }
 
-    /// The rect the frame may grow within, as `prepare` was given it, so the strip the recent stack
-    /// keeps for itself reaches both how far the window may grow and where the frame ends up.
-    private var room = NSRect.zero
-
-    /// How far each side of the window may grow: to the whole of that rect, past the fitted inset
-    /// and the toolbar's room.
-    private var reach: CGSize { Zoom.reach(fitted: fittedFrame, within: room) }
-    /// The level stops where the side that fills the room first has been magnified `maxCanvasZoom`
-    /// past it. That side is the one magnified most, so this is the cap on the whole picture.
-    private var maxLevel: CGFloat { min(reach.width, reach.height) * maxCanvasZoom }
-    /// How far a gesture may pull below the fitted size before the level stops following it.
-    private let minLevel: CGFloat = 0.5
-
-    /// One tick. The frame's rect and the picture inside it both come from this level: each side of
-    /// the frame grows until it can grow no further and the magnification takes the rest. Both are
-    /// set here, in one run loop turn, so they reach the window server in one Core Animation commit.
-    private func applyZoom(_ level: CGFloat) {
-        guard window != nil, fittedFrame.width > 0 else { return }
-        zoomLevel = level
-        let step = split(level)
-        canvasZoom = step.camera
-        zoomCenter = zoomPan.center(at: step.camera)
-        // Kept on screen: a frame grown to the screen's height slides rather than clips.
-        moveFrame(to: Zoom.frame(fitted: fittedFrame, scale: step.window, anchor: zoomAim.anchor(at: level), within: room))
-    }
-
-    /// The spring has arrived. A pull below the fitted size lets go here.
-    private func arrived() {
-        if zoomTarget < 1 { zoom(by: nil, at: nil, as: .step) }
-    }
-
-    /// A trackpad pinch. It follows the fingers about the point they are over. The pull springs
-    /// back the moment the fingers lift.
-    private func pinch(_ magnification: CGFloat, phase: NSEvent.Phase, at locationInWindow: NSPoint) {
-        switch phase {
-        case .ended, .cancelled: release()
-        default: zoom(by: Double(1 + magnification), at: cursorFraction(locationInWindow), as: .gesture)
-        }
-    }
-
-    /// Cmd+wheel or ctrl+wheel. A trackpad's wheel is a gesture, and lifting the fingers releases
-    /// the pull below the fit; momentum after the lift is ignored, as a pinch's end is, so the zoom
-    /// stops where the hand did. A mouse wheel has no phases: each notch is a step, and it stops at
-    /// the fit.
-    private func wheel(_ event: NSEvent) {
-        if event.phase.contains(.ended) || event.phase.contains(.cancelled) { release(); return }
-        guard event.momentumPhase.isEmpty else { return }
-        let dy = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * Self.wheelLinePoints
-        guard dy != 0, dy.isFinite else { return }
-        let cursor = cursorFraction(event.locationInWindow)
-        zoom(by: exp(dy * Self.wheelZoomRate), at: cursor, as: event.phase.isEmpty ? .step : .gesture)
-    }
-
-    /// A plain scroll over a picture magnified past its frame moves the part in view, with the
-    /// fingers, as Preview does. At the fitted size, or on a side that is still growing, there is
-    /// nothing hidden to bring into view.
-    private func pan(_ event: NSEvent) {
-        guard canvasZoom.width > 1 || canvasZoom.height > 1 else { return }
-        let picture = pictureRect
-        guard picture.width > 0, picture.height > 0 else { return }
-        let line: CGFloat = event.hasPreciseScrollingDeltas ? 1 : Self.wheelLinePoints
-        let dx = event.scrollingDeltaX * line, dy = event.scrollingDeltaY * line
-        guard dx.isFinite, dy.isFinite, dx != 0 || dy != 0 else { return }
-        // The content follows the fingers, so the middle of what is in view moves the other way.
-        let center = Zoom.clamped(center: CGPoint(x: zoomCenter.x - dx / picture.width, y: zoomCenter.y - dy / picture.height),
-                                  camera: canvasZoom)
-        zoomPan = ZoomPan(center: center, camera: canvasZoom, cursor: Zoom.center)
-        zoomCenter = center
-        editor.pictureRect = pictureRect
-    }
-
-    /// Moves the part of a magnified picture in view just far enough to show `rect`, in image px,
-    /// with a line's height of room around it: the caret while typing. A text wraps at the image's
-    /// edge, not the frame's, so without this the words typed past the frame ran on out of sight.
-    private func reveal(_ rect: CGRect) {
-        guard canvasZoom.width > 1 || canvasZoom.height > 1 else { return }
-        let pixels = editor.core.drawing.pixels
-        let w = CGFloat(pixels.width), h = CGFloat(pixels.height)
-        guard w > 0, h > 0, [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite) else { return }
-        let visible = Zoom.visible(center: zoomCenter, camera: canvasZoom)
-        // As fractions of the image, y from the top, as `zoomCenter` is.
-        let pad = CGSize(width: min(rect.height / w, visible.width / 4), height: min(rect.height / h, visible.height / 4))
-        let want = CGRect(x: rect.minX / w - pad.width, y: rect.minY / h - pad.height,
-                          width: rect.width / w + 2 * pad.width, height: rect.height / h + 2 * pad.height)
-        var center = zoomCenter
-        if want.minX < visible.minX { center.x -= visible.minX - want.minX } else if want.maxX > visible.maxX { center.x += want.maxX - visible.maxX }
-        if want.minY < visible.minY { center.y -= visible.minY - want.minY } else if want.maxY > visible.maxY { center.y += want.maxY - visible.maxY }
-        center = Zoom.clamped(center: center, camera: canvasZoom)
-        guard center != zoomCenter else { return }
-        zoomPan = ZoomPan(center: center, camera: canvasZoom, cursor: Zoom.center)
-        zoomCenter = center
-        editor.pictureRect = pictureRect
-    }
-
-    /// How much one point of wheel travel zooms: a factor of e to this per point, so 100 points
-    /// of scroll is a zoom of e (2.7 times) in either direction.
-    private static let wheelZoomRate = 0.01
     /// A line of a mouse wheel's notch in points, for wheels that report lines rather than points.
     private static let wheelLinePoints: CGFloat = 10
-
-    /// The fingers lifted. A pull below the fitted size lets go now, rather than when the spring
-    /// catches up with it.
-    private func release() {
-        guard zoomTarget < 1 else { return }
-        zoom(by: nil, at: nil, as: .step)
-    }
-
-    /// A two-finger double tap on the trackpad, or a double-click with the select tool on empty
-    /// space, as Preview and Safari use it: in on the point named, or back to the fitted size from
-    /// anywhere above it. `cursor` is a fraction of the window; nil zooms about its middle.
-    private func smartZoom(at cursor: CGPoint?) {
-        guard window?.isVisible == true else { return }
-        let zoomedIn = zoomTarget > 1.001
-        zoom(by: zoomedIn ? nil : smartZoomFactor, at: zoomedIn ? nil : cursor, as: .step)
-    }
 
     /// A point in the window's coordinates as a fraction of the visible frame, x from the left and
     /// y from the top.
@@ -574,7 +372,7 @@ final class AnnotationController {
     /// The flight is exactly on this frame and is going. The window draws the shadow from here on,
     /// in the same run loop turn the flight drops its own, so it is never drawn twice or missing.
     func landed() {
-        hasLanded = true
+        run(.landed)
         frameView?.layer?.shadowOpacity = Float(TransitionLayer.Look.annotator(Settings.shared.data.ui).shadowOpacity)
     }
 
@@ -583,6 +381,8 @@ final class AnnotationController {
     /// pressed during the flight may have changed it.
     func abandon() {
         guard current != nil else { return }
+        // Nothing zooms before the landing, so there is no fit to wait for.
+        _ = zoom.reduce(.close)
         outsideClick.stop()
         stopProbe()
         current = nil
@@ -616,21 +416,14 @@ final class AnnotationController {
     }
 
     /// Springs the level back to the fitted size and answers once it is there, so the window the
-    /// flight takes over from is the frame the flight starts at. Shorter than a fit the user asked
-    /// for: this one is the start of the card leaving, not a zoom of its own. The deadline is there
-    /// because a zoom arriving mid-fit takes the tween's completion with it, and the window still
-    /// has to come down.
+    /// flight takes over from is the frame the flight starts at. The deadline brings the window down
+    /// even if the spring never reports arriving.
     private func fitBeforeHide(_ done: @escaping () -> Void) {
-        guard window != nil, fittedFrame.width > 0, abs(zoomLevel - 1) > 0.001 || abs(zoomTarget - 1) > 0.001 else {
-            done(); return
-        }
+        guard case .spring(let level, let seconds)? = zoom.reduce(.close), window != nil else { done(); return }
         var answered = false
         let once = { if !answered { answered = true; done() } }
-        zoomTarget = 1
-        aim(at: Zoom.center, to: 1)
-        aimPan(at: Zoom.center)
-        zoomTween.animate(to: 1, duration: motionScaled(fitToCloseSeconds), completion: once)
-        DispatchQueue.main.asyncAfter(deadline: .now() + motionScaled(fitToCloseSeconds) + 0.3) { once() }
+        zoomTween.animate(to: level, duration: motionScaled(seconds), completion: once)
+        DispatchQueue.main.asyncAfter(deadline: .now() + motionScaled(seconds) + 0.3) { once() }
     }
 
     private func hideWindows() {
@@ -725,6 +518,7 @@ final class AnnotationController {
     /// The tweaks changed: the open editor takes their text style, sizes and arrowhead at once.
     func applyTweaks() {
         let ui = Settings.shared.data.ui
+        zoom.edge = Self.edgePull(ui)
         textStyle = ui.textStyle
         editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, markStyle: ui.markStyle)
         editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
@@ -790,12 +584,13 @@ final class AnnotationController {
             "current": current?.url.path as Any,
             "windowVisible": window?.isVisible ?? false,
             "key": window?.isKeyWindow ?? false,
-            "zoom": [zoomWindow.width, zoomWindow.height],
-            "zoomLevel": zoomLevel,
-            "canvasZoom": [canvasZoom.width, canvasZoom.height],
-            "zoomAnchor": [zoomAnchor.x, zoomAnchor.y],
-            "zoomCenter": [zoomCenter.x, zoomCenter.y],
-            "room": StateReport.topLeft(room, primaryHeight: StateReport.primaryHeight),
+            "zoom": [zoom.window.width, zoom.window.height],
+            "zoomLevel": zoom.level,
+            "zoomPhase": zoom.phase.description,
+            "canvasZoom": [zoom.camera.width, zoom.camera.height],
+            "zoomAnchor": [zoom.anchor.x, zoom.anchor.y],
+            "zoomCenter": [zoom.center.x, zoom.center.y],
+            "room": StateReport.topLeft(zoom.room, primaryHeight: StateReport.primaryHeight),
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.barFrame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
             "toolbarFocus": toolbar.model.focus?.name as Any,

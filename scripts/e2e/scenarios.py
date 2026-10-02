@@ -12,6 +12,7 @@ import urllib.parse
 from e2e import AGENT, PERSON, PROBE, Failed, color_near, pixels
 
 KEY_R, KEY_RETURN = 15, 36
+KEY_EQUALS, KEY_MINUS, KEY_ZERO = 24, 27, 29
 
 
 def needs_input(scenario):
@@ -399,6 +400,35 @@ def draw_and_done(app):
 
 
 @needs_input
+def zoom_keys(app):
+    """The zoom keys move the editor's frame once the flight has landed: Cmd+Minus at the fitted
+    size moves nothing, Cmd+Plus grows the frame, and Cmd+0 brings it back to where it opened."""
+    start(app)
+    path = app.image('Screenshot zoom.png', folder=app.watch)
+    time.sleep(1)
+    click_to_open(app, path)
+    s = app.wait_state(lambda s: s['annotator']['zoomPhase'] == 'landed', 'the flight landing')
+    fitted = s['annotator']['frame']
+    app.keys('annotator', 'key', KEY_MINUS, 'cmd')
+    time.sleep(0.5)
+    s = app.state()
+    if s['annotator']['zoomLevel'] != 1 or s['annotator']['frame'] != fitted:
+        raise Failed(f"Cmd+Minus at the fit moved the frame to {s['annotator']['frame']} at {s['annotator']['zoomLevel']}")
+    app.report.step('Cmd+Minus at the fitted size moves nothing')
+    for _ in range(2):
+        app.keys('annotator', 'key', KEY_EQUALS, 'cmd')
+    s = app.wait_state(lambda s: abs(s['annotator']['zoomLevel'] - 1.5625) < 1e-6, 'two zoom steps settling')
+    grown = s['annotator']['frame']
+    if grown[2] <= fitted[2] or grown[3] <= fitted[3]:
+        raise Failed(f'the frame did not grow: {fitted} to {grown}')
+    app.report.step('Cmd+Plus twice grows the frame', detail=f'{fitted} to {grown}')
+    app.keys('annotator', 'key', KEY_ZERO, 'cmd')
+    app.wait_state(lambda s: s['annotator']['zoomLevel'] == 1 and s['annotator']['frame'] == fitted, 'Cmd+0 back to the fitted frame')
+    app.report.step('Cmd+0 brings the frame back to where it opened')
+    close_editor(app)
+
+
+@needs_input
 def send_and_reply(app):
     """Send puts one request line in a fake session's inbox, and a reply through the skill's helper
     comes back as a card. The helper refuses a ticket other than the one beside the image."""
@@ -562,4 +592,4 @@ def agent_marks_editable(app):
     close_editor(app)
 
 
-ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, copy_types, stitch, relaunch, settings_repair, draw_and_done, annotate_queue, send_and_reply, agent_marks_editable, corner_select]
+ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, copy_types, stitch, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, agent_marks_editable, corner_select]
