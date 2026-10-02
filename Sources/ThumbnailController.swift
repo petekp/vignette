@@ -21,24 +21,6 @@ struct Card: Identifiable {
     }
 }
 
-/// Why the selection strip's labels are out. The cursor on the strip brings them out; so does a
-/// selection built from the keyboard, where the shortcuts beside the labels are what a hand on the
-/// keys needs. The mouse takes over when it moves onto a card or the strip, as the focus does.
-/// What a card sent to an agent shows: where it went and how the delivery went. Keyed by the file's
-/// path, because a lone thumbnail's card leaves the panel while it is in the annotator, and a card
-/// shown again after a failure is a new card for the same file.
-struct SendMark: Equatable {
-    /// `replyFailed`: the agent's reply to this send arrived and could not be made a card.
-    /// `queued`: the client holds the send, but nothing reads it until the session is opened.
-    enum State: Equatable { case sending, sent, queued, uncertain, failed, replyFailed }
-    let request: String   // the request's id, so a later send's mark is never taken off by this one's timer
-    let client: AgentClient
-    let project: String
-    var state: State
-    /// What went wrong and what to do about it, once a delivery has failed or gone unconfirmed.
-    var reason: String? = nil
-}
-
 @MainActor
 final class StackModel: ObservableObject {
     @Published var cards: [Card] = []          // index 0 is newest, drawn at the bottom
@@ -56,10 +38,7 @@ final class StackModel: ObservableObject {
     /// the two would overlap. The selection is untouched and the strip comes back when the session
     /// ends. Set from `send`, which is the one place the session changes.
     @Published var annotating = false
-    @Published var copied: Set<UUID> = []      // cards showing the copied mark over their image
-    @Published var copiedLabel = "Copied"      // what that mark says; one action marks every card the same
-    @Published var sendMarks: [String: SendMark] = [:]   // by file path: a card sent to an agent, and how that went
-    @Published var notCopied: [String: String] = [:]     // by file path: a copy that failed, and why
+    @Published var notices = CardNotices()     // what each card says: copied, not copied, or where a send went
     /// The selected cards, in the order they were selected. Every action, Stitch included, takes
     /// them in this order, and a card's circle shows its place here.
     @Published private(set) var selection: [UUID] = []
@@ -350,11 +329,15 @@ final class ThumbnailController: NSObject {
                 "visible": visible, "isStack": model.isStack,
                 "cards": model.cards.indices.map { i -> [String: Any] in
                     let card = model.cards[i]
+                    let notice = model.notices.notice(on: card.shot.url.path)
+                    var notCopied: String?
+                    if case .notCopied(let reason)? = notice { notCopied = reason }
                     return ["file": card.shot.url.path, "frame": StateReport.topLeft(cardFrame(i), primaryHeight: h),
                             "out": model.outCards.contains(card.id), "forming": model.forming.contains(card.id),
                             "drawing": drawings?.keys.contains(card.shot.url.path) ?? false, "agent": card.agent as Any,
                             "kind": card.shot.kind == .recording ? "recording" : "image",
-                            "copied": model.copied.contains(card.id), "notCopied": model.notCopied[card.shot.url.path] as Any]
+                            "copied": notice?.kind == .copied,
+                            "notCopied": notCopied as Any]
                 },
                 "selected": model.selectedCards().map(\.shot.url.path),
                 "queue": run.queue,
@@ -677,90 +660,55 @@ final class ThumbnailController: NSObject {
     /// up as the lone thumbnail wearing the mark, as a failed send's card does, and the mark counts
     /// the rest. `label` is what the mark says, since what was copied is the caller's to name.
     func showCopied(_ shots: [Screenshot], label: String = "Copied") {
-        func onScreen() -> [UUID] { visible ? shots.compactMap { shot in model.cards.first { $0.shot.url == shot.url }?.id } : [] }
-        var ids = onScreen(), label = label
-        if ids.isEmpty, let first = shots.first {
+        var label = label
+        if !shots.contains(where: isSeen), let first = shots.first {
             show(first)
-            ids = onScreen()
             if shots.count > 1 { label += " \(shots.count)" }
         }
-        guard !ids.isEmpty else { return }
-        for shot in shots { model.notCopied[shot.url.path] = nil }   // the newer news
-        model.copiedLabel = label
-        model.copied.formUnion(ids)
         // A card still on its way back from the annotator shows the mark when it lands.
-        let hold = ui.markSeconds + ui.expandDuration
-        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.copied.subtract(ids) }
-        leaveCorner(after: hold)
+        for shot in shots where isSeen(shot) { post(.copied(label: label), on: shot) }
     }
 
     /// The request for `shot` is stored and its card is going home: the card shows where it is going
-    /// from the moment it lands. A copied mark on it comes off; the send is the newer news.
+    /// from the moment it lands.
     func markSending(_ shot: Screenshot, request: String, to destination: AgentDestination) {
-        let key = shot.url.path
-        if let card = model.cards.first(where: { $0.shot.url.path == key }) { model.copied.remove(card.id) }
-        model.sendMarks[key] = SendMark(request: request, client: destination.client, project: destination.project, state: .sending)
+        post(.sending(request: request, client: destination.client, project: destination.project), on: shot)
     }
 
-    /// The client answered for the request `request` about `shot`. The mark says so and holds as the
-    /// copied mark does, a mark with a reason three times as long: a failure, or a send that waits for
-    /// its session to be opened. A card no longer on screen says nothing more about a delivery that
-    /// worked, and comes back as a lone thumbnail about any other.
+    /// The client answered for the request `request` about `shot`. A card no longer on screen says
+    /// nothing more about a delivery that worked, and comes back as a lone thumbnail about any other.
     func delivered(_ shot: Screenshot, request: String, _ state: SendMark.State, reason: String?) {
-        let key = shot.url.path
-        guard var mark = model.sendMarks[key], mark.request == request else { return }
-        mark.state = state
-        mark.reason = reason
-        hold(mark, on: shot)
+        post(.answered(request: request, state: state, reason: reason), on: shot)
     }
 
     /// A reply to a send could not be made a card, so the card that was sent says so, as it says a
-    /// failed send. Long after the send, so it sets a mark of its own rather than updating one,
-    /// except over a later send of the same card still waiting for its answer, which `delivered`
-    /// finds by its request.
+    /// failed send.
     func replyFailed(_ shot: Screenshot, request: String, client: AgentClient, reason: String) {
-        if let current = model.sendMarks[shot.url.path], current.request != request, current.state == .sending { return }
-        hold(SendMark(request: request, client: client, project: client.label, state: .replyFailed, reason: reason), on: shot)
+        post(.replyFailed(request: request, client: client, reason: reason), on: shot)
     }
 
-    private func hold(_ mark: SendMark, on shot: Screenshot) {
-        let key = shot.url.path, request = mark.request, state = mark.state
-        let explained = state != .sending && state != .sent
-        let onScreen = visible && model.cards.contains { $0.shot.url.path == key }
-        guard onScreen || explained else { model.sendMarks[key] = nil; return }
-        model.sendMarks[key] = mark
-        if !onScreen { show(shot) }
-        // Anything but a send that worked has a sentence to read and act on, so it holds three times as long.
-        let hold = (ui.markSeconds + ui.expandDuration) * (explained ? 3 : 1)
-        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in
-            guard let self, self.model.sendMarks[key]?.request == request else { return }
-            self.model.sendMarks[key] = nil
-        }
-        leaveCorner(after: hold)
-    }
-
-    /// A copy the card was marked for did not happen: the mark comes off, and a card still on its
-    /// way back from the annotator does not take it when it lands.
-    func takeBackCopied(_ shot: Screenshot) {
-        let key = shot.url.path
-        send(.copyFailed(key))
-        if let card = model.cards.first(where: { $0.shot.url.path == key }) { model.copied.remove(card.id) }
-    }
-
-    /// A copy of `shot` that failed: its copied mark comes off and the card says why, held three
-    /// times as long as the copied mark, as a failed send's is. A card not on screen comes up as the
+    /// A copy of `shot` that failed: the card says why, and a card still on its way back from the
+    /// annotator does not take the copied mark when it lands. A card not on screen comes up as the
     /// lone thumbnail; one in the annotator, or on its way home, shows the mark when it lands.
     func showNotCopied(_ shot: Screenshot, reason: String) {
-        takeBackCopied(shot)
-        let key = shot.url.path
-        model.notCopied[key] = reason
-        let inAnnotator = run.key == key
-        if !inAnnotator && !(visible && model.cards.contains { $0.shot.url.path == key }) { show(shot) }
-        let hold = (ui.markSeconds + ui.expandDuration) * 3
-        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in
-            guard let self, self.model.notCopied[key] == reason else { return }
-            self.model.notCopied[key] = nil
-        }
+        send(.copyFailed(shot.url.path))
+        post(.notCopied(reason: reason), on: shot)
+    }
+
+    /// The person sees `shot`'s card, or will when it lands: it is on screen, or in the annotator,
+    /// whose card comes home wearing whatever was posted meanwhile.
+    private func isSeen(_ shot: Screenshot) -> Bool {
+        (visible && card(for: shot) != nil) || run.key == shot.url.path
+    }
+
+    /// Puts the notice on `shot`'s card, brings the card up when nobody would see it otherwise, and
+    /// takes the notice down after its hold. The notice's hold sets the corner's time.
+    private func post(_ event: CardNotices.Event, on shot: Screenshot) {
+        let file = shot.url.path, seen = isSeen(shot)
+        guard let posted = model.notices.post(event, on: file, seen: seen, markHold: ui.markSeconds + ui.expandDuration) else { return }
+        if !seen { show(shot) }
+        guard let hold = posted.hold else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.notices.expire(posted.id, on: file) }
         leaveCorner(after: hold)
     }
 
@@ -975,7 +923,7 @@ final class ThumbnailController: NSObject {
             DispatchQueue.main.async { self.flights.lift(id: card.id) }
             if !self.run.isActive, self.visible, self.model.isStack { self.takeKeys(focus: card.id) }
             // A card that lands with a mark left the corner's time to the mark.
-            if !self.showsMark(card) { self.leaveCorner(after: self.ui.thumbnailSeconds) }
+            if !self.showsNotice(card) { self.leaveCorner(after: self.ui.thumbnailSeconds) }
         })
     }
 
@@ -983,14 +931,11 @@ final class ThumbnailController: NSObject {
     /// done: it leaves at once rather than waiting out its time there. `copied` is the mark it is
     /// about to take.
     private func leavesAtOnce(_ card: Card, copied: Bool) -> Bool {
-        !model.isStack && !copied && !showsMark(card) && model.cards.allSatisfy { $0.id == card.id }
+        !model.isStack && !copied && !showsNotice(card) && model.cards.allSatisfy { $0.id == card.id }
     }
 
-    /// A copied, send or not-copied mark is up on `card`. Each one set the corner's time when it went up.
-    private func showsMark(_ card: Card) -> Bool {
-        let key = card.shot.url.path
-        return model.copied.contains(card.id) || model.sendMarks[key] != nil || model.notCopied[key] != nil
-    }
+    /// A notice is up on `card`. Each one set the corner's time when it went up.
+    private func showsNotice(_ card: Card) -> Bool { model.notices.notice(on: card.shot.url.path) != nil }
 
     /// The image flies from the editor into the corner and on off the screen's edge: the offscreen
     /// slot a lone thumbnail slides in from, which is also where `annotate` flies a card from when
@@ -1633,7 +1578,7 @@ final class ThumbnailController: NSObject {
         leaveTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let delivering = self.model.cards.contains { self.model.sendMarks[$0.shot.url.path]?.state == .sending }
+                let delivering = self.model.notices.awaitsAnswer(on: self.model.cards.map(\.shot.url.path))
                 if self.model.hoveredCard != nil || self.run.isActive || delivering { self.leaveCorner(after: 1.5); return }
                 self.dismiss()
             }

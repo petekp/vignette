@@ -138,10 +138,8 @@ private struct CardView: View {
     /// the flight is what the eye follows, so the hover state arrives with the card that lands.
     private var showsHover: Bool { hovered && !isOut && !isForming }
     private var showsCircle: Bool { model.offersSelection && !isOut && !isForming && (hovered || model.inSelectionMode || focused) }
-    private var copied: Bool { model.copied.contains(card.id) }
-    private var sendMark: SendMark? { model.sendMarks[card.shot.url.path] }
-    private var notCopied: String? { model.notCopied[card.shot.url.path] }
-    private var showsButtons: Bool { showsHover && !model.inSelectionMode && !copied && sendMark == nil && notCopied == nil }
+    private var notice: CardNotices.Notice? { model.notices.notice(on: card.shot.url.path) }
+    private var showsButtons: Bool { showsHover && !model.inSelectionMode && notice == nil }
     /// The padding every corner control is given.
     static let buttonPad: CGFloat = 6
     /// How far a corner control's hit area reaches past it into the card.
@@ -266,25 +264,21 @@ private struct CardView: View {
         // outside it, and the clip that hides it does not shrink the hit area. Without this the
         // card takes hover and clicks everywhere its image reaches, over its neighbours.
         .contentShape(Rectangle())
+        // What happened to the card, from the moment it lands until it has said so. One kind of
+        // notice cross-fades into the next; a send keeps its overlay as its state changes.
         .overlay {
-            if copied && !isOut && !isForming {
-                CopiedOverlay(corner: ui.cardCornerRadius, label: model.copiedLabel).transition(.opacity)
+            if let notice, !isOut && !isForming {
+                Group {
+                    switch notice {
+                    case .copied(let label): CopiedOverlay(corner: ui.cardCornerRadius, label: label)
+                    case .notCopied(let reason): CopiedOverlay(corner: ui.cardCornerRadius, label: "Not copied", failure: reason)
+                    case .send(let mark): SendOverlay(mark: mark, corner: ui.cardCornerRadius)
+                    }
+                }
+                .transition(.opacity)
             }
         }
-        .animation(Anim.spring((copied ? 0.15 : 0.4) * motion), value: copied)
-        .overlay {
-            if let reason = notCopied, !isOut && !isForming {
-                CopiedOverlay(corner: ui.cardCornerRadius, label: "Not copied", failure: reason).transition(.opacity)
-            }
-        }
-        .animation(Anim.spring((notCopied == nil ? 0.4 : 0.15) * motion), value: notCopied == nil)
-        // Where a send went and how it went, from the moment the card lands until it has said so.
-        .overlay {
-            if let mark = sendMark, !isOut && !isForming {
-                SendOverlay(mark: mark, corner: ui.cardCornerRadius).transition(.opacity)
-            }
-        }
-        .animation(Anim.spring((sendMark == nil ? 0.4 : 0.15) * motion), value: sendMark == nil)
+        .animation(Anim.spring((notice == nil ? 0.4 : 0.15) * motion), value: notice?.kind)
         .zIndex(showsHover ? 1 : 0)   // the hover scale may hang over the card below
         .scaleEffect(pressed ? ui.pressScale : (showsHover ? ui.hoverScale : 1))
         .animation(Anim.spring(0.25 * motion, bounce: 0.3), value: pressed)

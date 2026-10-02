@@ -448,7 +448,9 @@ screenshot location for such a launch is written with the same variable:
 - Vignette has no toasts. What happened is said on something already on screen. A copy or a stitch
   marks its card (`ThumbnailController.showCopied`), a failed copy (`showNotCopied`) or send
   (`SendMark`) says why on the card, and a card that is not on screen comes up as the lone
-  thumbnail to say it. A paste the editor cannot take beeps. A settings.json that did not parse is
+  thumbnail to say it. A card says one of these at a time, the newest winning, and a send waiting
+  for its answer still gets it after a newer notice took the card, so a failure is never lost
+  (`CardNotices`, `docs/card-notices-2026-10-02.md`). A paste the editor cannot take beeps. A settings.json that did not parse is
   a warning at the top of the Settings window's General tab. A command from a script answers in
   the log.
   `docs/no-toasts-2026-09-30.md` has what each toast became.
@@ -916,9 +918,9 @@ screenshot location for such a launch is written with the same variable:
   A dragged card with a drawing carries the same item (`Clipboard.renderingItem`), rendered in turn
   from the moment the drag begins and written as `<name>-annotated.png`; a card without one drops
   its file.
-  A rendering that fails clears the clipboard, unless something else was copied since, and takes the
-  card's copied mark back (`takeBackCopied`), and the card says "Not copied" and why
-  (`ThumbnailController.showNotCopied`, `Rendering.Failure.reason`). `[annotate] done <file> <n> bytes, copied` is logged when the file is written. A drawing
+  A rendering that fails clears the clipboard, unless something else was copied since, and the card
+  says "Not copied" and why in place of its copied mark (`ThumbnailController.showNotCopied`,
+  `Rendering.Failure.reason`). `[annotate] done <file> <n> bytes, copied` is logged when the file is written. A drawing
   with no marks copies the original file and writes nothing.
 - A mark's colour says who drew it and is not stored: `Mark.color` names a person's colour or the
   agent colour (`MarkColor`, from `agent`), and `MarkStyle.color` gives the settings' red or indigo.
