@@ -299,7 +299,6 @@ final class AnnotationController {
         win.alphaValue = 1
         frameView?.layer?.shadowOpacity = 0
         win.makeKeyAndOrderFront(nil)
-        if toolbar.panel.parent == nil { win.addChildWindow(toolbar.panel, ordered: .above) }
         toolbar.show()
         NSApp.activate(ignoringOtherApps: true)
         // A click outside this app's windows ends the session. The window was ordered in a line ago
@@ -429,10 +428,8 @@ final class AnnotationController {
     private func hideWindows() {
         // Nothing here is on screen any more: a spring still ticking would move a hidden frame.
         zoomTween.stop()
-        // The panel stops being this window's child before the window goes, or AppKit would order
-        // it out with its parent; `hideSoon` then takes it down only if no other image has asked
-        // for it by the next turn of the run loop, and `show` makes it a child of the new window.
-        if let win = window, toolbar.panel.parent === win { win.removeChildWindow(toolbar.panel) }
+        // `hideSoon` takes the bar down only if no other image has asked for it by the next turn
+        // of the run loop.
         toolbar.hideSoon()
         // The flight home is added at this frame in this turn, above this window, and starts moving
         // on the next. The window server takes a window down at once, and ordered out here the
@@ -535,10 +532,9 @@ final class AnnotationController {
         offerChanged()
     }
 
-    /// Return and Cmd+Return do what the bar offers, and the bar centres again on its new width.
+    /// Return and Cmd+Return do what the bar offers.
     private func offerChanged() {
         editor.finishes = toolbar.model.offer.finishes
-        toolbar.refit()
     }
 
     /// True from Send's press until the bar leaves; the button shows the send and takes no second

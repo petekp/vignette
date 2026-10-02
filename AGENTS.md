@@ -763,7 +763,9 @@ screenshot location for such a launch is written with the same variable:
   `docs/annotation-queue-2026-09-17.md` the handover.
 - The annotator's window is borderless and spans the screen's visible frame. The frame inside it is
   sized to the image. Its toolbar is a native panel (`AnnotatorToolbar.swift`) placed under the
-  frame. It shows `EditorCore.Tool.allCases`, the editor reports the active tool through `onTool`,
+  frame, one level above the flight layer, so a flight into or out of the editor passes under it as
+  the editor does. It is not the annotator window's child, since AppKit keeps a child window at its
+  parent's level. It shows `EditorCore.Tool.allCases`, the editor reports the active tool through `onTool`,
   and the bar calls `setTool`, `send` and `done` on the editor. The bar is tools, one divider, then
   what `ToolbarOffer` says the image offers: Copy alone when there is no session to send to; Copy,
   the target, a message field and Send; or the message field and Reply on a card that names the

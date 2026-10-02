@@ -14,6 +14,10 @@ final class AnnotatorToolbar {
         @Published private(set) var destinations: [AgentDestination] = []
         /// Every client has answered. Until then a session missing from the list may only be late.
         @Published private(set) var listed = false
+        /// The last list every client answered: this image's, or while the bar stays up for a swap,
+        /// the image before's. Whether a reply's Claude Code session has closed is read from it, so
+        /// the bar does not show Reply for a closed session until this image's list says so again.
+        @Published private(set) var whole: [AgentDestination]?
         /// The session the open image came from, when it names one: an agent's reply, or a push
         /// that said which session it was. The bar is Reply alone, so the target is never guessed at.
         @Published private(set) var replyTo: AgentDestination?
@@ -96,7 +100,7 @@ final class AnnotatorToolbar {
         }
 
         var offer: ToolbarOffer {
-            ToolbarOffer(replyTo: replyTo, destinations: destinations, listed: listed, target: target)
+            ToolbarOffer(replyTo: replyTo, destinations: whole ?? destinations, listed: whole != nil, target: target)
         }
 
         /// A new image: nothing listed yet, and nothing picked. `carryingTarget`, when the bar is
@@ -111,6 +115,7 @@ final class AnnotatorToolbar {
             guard !carried else { return }
             destinations = []
             target = nil
+            whole = nil
         }
 
         /// Another client answered. The target settles as soon as a focus names a session (herdr's,
@@ -120,6 +125,7 @@ final class AnnotatorToolbar {
         func answered(_ list: [AgentDestination], complete: Bool) {
             destinations = list
             listed = complete
+            if complete { whole = list }
             if let current = target, let fresh = list.first(where: { $0.id == current.id }) { target = fresh }
             guard !picked else { return }
             if carried {
@@ -178,7 +184,9 @@ final class AnnotatorToolbar {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false   // the bar draws its own; a window shadow cannot follow the animated content
-        panel.level = AnnotationWindow.level
+        // Above the flight layer (`.statusBar`): a flight into or out of the editor passes under the
+        // bar as the editor does, so its shadow never falls across the controls.
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.animationBehavior = .none
         panel.isMovable = false
@@ -188,14 +196,21 @@ final class AnnotatorToolbar {
                                                       onTargetMenu: { [weak self] in self?.showTargetMenu() },
                                                       onFocusMessage: { [weak self] in self?.focusMessage() },
                                                       onTargetFrame: { [weak self] in self?.targetFrame = $0 },
+                                                      onWidth: { [weak self] in self?.refit() },
                                                       onMessageEnd: { [weak self] in self?.onMessageEnd?() }))
-        panel.contentView = hosting
+        // `position` alone sizes the panel, about the bar's centre (`onWidth`). As the window's
+        // content view, the hosting view resized the window to its new content from the window's
+        // left edge, and a bar that grew from Reply to Send stayed off centre.
+        hosting.sizingOptions = [.intrinsicContentSize]
+        hosting.autoresizingMask = [.width, .height]
+        let content = NSView()
+        content.addSubview(hosting)
+        panel.contentView = content
         targetMenuActions.onPick = { [weak self] destination in
             // A turn later, once the menu's own event loop has ended, and on the bar's spring.
             DispatchQueue.main.async {
                 guard let self else { return }
                 withAnimation(Anim.spring(0.35 * Settings.shared.motionScale)) { self.model.pick(destination) }
-                self.refit()
             }
         }
         panel.onTab = { [weak self] backward in self?.move(backward: backward) }
@@ -316,14 +331,13 @@ final class AnnotatorToolbar {
         position(slide: true)
     }
 
-    /// Makes room for the bar after its contents changed: Send and the target arrive with the
-    /// session list, a pick in the menu renames the target, and Reply can give way to Send. It
-    /// waits a turn, because SwiftUI lays out the new contents after the model changes, and until
-    /// then the bar measures its old size. The bar
-    /// itself springs to its new width inside the panel (`ToolbarView`); a swap's slide already
-    /// under way carries on. Unlike `place`, it leaves a `hideSoon` or a `hide` alone, and a bar on
-    /// its way out stays where it is.
-    func refit() {
+    /// Makes room for the bar, about its centre, when its width changed: Send and the target arrive
+    /// with the session list, a pick in the menu renames the target, and Reply can give way to
+    /// Send. It waits a turn, since SwiftUI reports the change from inside its layout.
+    /// The bar itself springs to its new width inside the panel (`ToolbarView`); a swap's slide
+    /// already under way carries on. Unlike `place`, it leaves a `hideSoon` or a `hide` alone, and a
+    /// bar on its way out stays where it is.
+    private func refit() {
         DispatchQueue.main.async { [weak self] in
             guard let self, model.shown || !panel.isVisible else { return }
             position(slide: sliding)
@@ -558,6 +572,9 @@ private struct ToolbarView: View {
     let onTargetMenu: () -> Void
     let onFocusMessage: () -> Void
     let onTargetFrame: (CGRect) -> Void
+    /// The bar's width changed. A control coming or going opens or closes in the row, so the
+    /// width moves on every frame of the spring, and the panel grows with it.
+    let onWidth: () -> Void
     let onMessageEnd: () -> Void
     @FocusState private var focused: Bool
     /// Counts Returns in the message field that did not send, each of which bounces Send's ⌘↩.
@@ -649,6 +666,7 @@ private struct ToolbarView: View {
         .background { glass }
         .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
         .fixedSize()
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in onWidth() }
         .padding(AnnotatorToolbar.padding)
         // In: rises a little and settles on a spring. Out: a short fade while it sinks back.
         .opacity(model.shown ? 1 : 0)
@@ -706,9 +724,17 @@ private struct ToolbarView: View {
         tipShown = nil
     }
 
-    /// A control an offer adds or takes away. It leaves quickly, before the controls sliding into its
-    /// place reach it, and a new one fades in once the bar has begun to make room for it.
+    /// A control an offer adds or takes away. Its width grows from nothing as it comes and shrinks to
+    /// nothing as it goes, on the offer's spring, so the controls beside it move with it: placed at its
+    /// full width at once, it was drawn over the message field still sliding out of its way. It fades
+    /// in once it has begun to open, and out before it is cut.
     private static var slot: AnyTransition {
+        AnyTransition.modifier(active: Reveal(fraction: 0), identity: Reveal(fraction: 1)).combined(with: words)
+    }
+
+    /// Words giving way to others in one place: the old ones leave quickly, and the new ones fade in
+    /// a moment later.
+    private static var words: AnyTransition {
         let motion = Settings.shared.motionScale
         return .asymmetric(insertion: .opacity.animation(.easeIn(duration: 0.15 * motion).delay(0.1 * motion)),
                            removal: .opacity.animation(.easeOut(duration: 0.08 * motion)))
@@ -842,7 +868,7 @@ private struct ToolbarView: View {
                     keyText(key, filled: true)
                 }
                 .id(title)
-                .transition(Self.slot)
+                .transition(Self.words)
             }
             .opacity(busy ? 0 : 1)
             .blur(radius: busy ? 4 : 0)
@@ -1057,6 +1083,37 @@ private struct TipPlacement: Layout {
 
 /// The ring around the control the keyboard's focus is on, in the system's focus colour. It comes in
 /// from a little larger, as AppKit's does.
+/// A control drawn at `fraction` of its own width and cut at its trailing edge, so one the offer adds
+/// or takes away opens or closes in the bar's row (`ToolbarView.slot`).
+private struct Reveal: ViewModifier, Animatable {
+    var fraction: CGFloat
+    var animatableData: CGFloat {
+        get { fraction }
+        set { fraction = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        PartWidth(fraction: fraction) { content }
+            // Cut only while it opens or closes: the focus ring is drawn outside the control.
+            .clipShape(Rectangle().inset(by: fraction < 1 ? 0 : -20))
+    }
+}
+
+/// Its one subview at its own size, laid out as `fraction` of its width.
+private struct PartWidth: Layout {
+    var fraction: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let view = subviews.first else { return .zero }
+        let size = view.sizeThatFits(.unspecified)
+        return CGSize(width: size.width * max(fraction, 0), height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+    }
+}
+
 private struct FocusRing: ViewModifier {
     let on: Bool
     func body(content: Content) -> some View {

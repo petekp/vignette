@@ -75,5 +75,18 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertEqual(model.target?.id, "mew", "an answer that settles nothing leaves it")
         model.answered([codex, session("other", focus: .pane)], complete: false)
         XCTAssertEqual(model.target?.id, "other", "this image's own focus replaces it")
+
+        // A reply to a Claude Code session the image before's whole list did not have: that session
+        // has closed, so the bar stays Send rather than narrowing to Reply until this list answers.
+        model.answered([mew], complete: true)
+        let gone = session("gone")
+        model.begin(replyTo: gone, carryingTarget: true)
+        XCTAssertEqual(model.offer, .send(mew))
+        model.answered([codex], complete: false)
+        XCTAssertEqual(model.offer, .send(mew), "a partial answer does not bring Reply back")
+        model.begin(replyTo: mew, carryingTarget: true)
+        XCTAssertEqual(model.offer, .reply(mew), "a session the list has is still there")
+        model.begin(replyTo: gone, carryingTarget: false)
+        XCTAssertEqual(model.offer, .reply(gone), "a new bar has no list yet, so the session may only be late")
     }
 }

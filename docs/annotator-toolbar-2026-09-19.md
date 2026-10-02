@@ -39,10 +39,13 @@ sequences that swap already emit their `prepare` before the run loop turns. A ne
 on `park` would have had to be answered in `AnnotationController` anyway, and the queue's handover —
 which the reducer knows nothing about, on purpose — would still not have been covered by it.
 
-What is left to do when the bar really goes: `hideWindows` detaches the panel from the window before
-ordering the window out, because AppKit orders a child window out with its parent. The panel then
-floats on its own until either `hideSoon` takes it down or `show` makes it a child of the next
-window. Its tool state follows the incoming image as before, from the editor's `onTool`.
+The panel is not a child of the annotator's window. It sits one level above the flight layer
+(`.statusBar`), so a flight into or out of the editor passes under the bar, as the editor does, and
+the flight's shadow never falls across the controls. AppKit keeps a child window at its parent's
+level, which put the bar under every flight, and the flight's shadow jumped from over the bar to
+under it when the editor's window took the shadow over. Ordering the window out leaves the bar up
+until `hideSoon` takes it down, unless the next image asks for it first. Its tool state follows the
+incoming image as before, from the editor's `onTool`.
 
 `[state] annotator.toolbar` is the panel's frame in the state report, or null when it is off screen,
 which is how the numbers below were taken.
