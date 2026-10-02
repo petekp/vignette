@@ -193,7 +193,8 @@ def annotate_open(app):
     """Draw opens the editor on a pushed card with the agent's marks, and the bar offers Copy
     alone when no session is listening.
 
-    Copy alone is also what shows that the test launch listed none of the person's Codex threads."""
+    Copy alone is also what shows that the test launch listed none of the person's Codex threads. A
+    push to the image while it is open joins the editor's drawing and is there when it opens again."""
     start(app)
     copy, _ = push(app, [{'type': 'rectangle', 'x': 0.2, 'y': 0.2, 'w': 0.2, 'h': 0.2},
                          {'type': 'text', 'x': 0.5, 'y': 0.5, 'text': 'look here'}])
@@ -211,6 +212,21 @@ def annotate_open(app):
     toolbar = s['annotator']['toolbar'] or frame
     top, bottom = min(frame[1], toolbar[1]), max(frame[1] + frame[3], toolbar[1] + toolbar[3])
     app.capture([frame[0] - 20, top - 20, frame[2] + 40, bottom - top + 40], 'editor')
+    # A push to the image open in the editor joins the open drawing. The editor writes its drawing
+    # again when it closes, so a push written only to the file would be gone at the next open.
+    marks_path = os.path.join(app.folder, 'more-marks.json')
+    with open(marks_path, 'w') as f:
+        json.dump([{'type': 'ellipse', 'x': 0.6, 'y': 0.2, 'w': 0.2, 'h': 0.2}], f)
+    detail = app.command('add', app.file_query(copy) + '&agent=claude&marks=' + urllib.parse.quote(marks_path, safe=''))
+    if 'marks=1' not in detail:
+        raise Failed(f'add did not join 1 mark to the open drawing: {detail}')
+    s = app.wait_state(lambda s: len(s['editor']['marks']) == 3, "the pushed mark in the open editor")
+    app.report.step('a push joins the open drawing', detail=detail)
+    close_editor(app)
+    s = open_editor(app, copy)
+    if [m['type'] for m in s['editor']['marks']] != ['rectangle', 'text', 'ellipse']:
+        raise Failed(f"reopened, the editor has {s['editor']['marks']}, not the two marks and the pushed one")
+    app.report.step('the pushed mark is still there when the editor opens again')
     close_editor(app)
 
 

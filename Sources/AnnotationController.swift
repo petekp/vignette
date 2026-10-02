@@ -508,13 +508,6 @@ final class AnnotationController {
     /// and the session does not.
     var session: Int? { current == nil ? nil : openGeneration }
 
-    /// The drawing open for `url` as the editor would hand it over now, or nil when that screenshot
-    /// is not open.
-    func openDrawing(of url: URL) -> Drawing? {
-        guard editor.core.isOpen, editor.core.drawing.key == url.path else { return nil }
-        return editor.core.drawingForHost
-    }
-
     /// The tweaks changed: the open editor takes their text style, sizes and arrowhead at once.
     func applyTweaks() {
         let ui = Settings.shared.data.ui

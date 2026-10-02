@@ -374,17 +374,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotate([Screenshot(url: url)])
     }
 
-    /// Each piece carries its drawing into the stitch: the editor's own for the image open in it, as
-    /// Copy Drawing does, else the stored one.
+    /// Each piece carries its drawing as it is now into the stitch.
     func stitch(_ shots: [Screenshot]) {
         guard shots.count >= 2 else { Commands.error("stitch", .notEnoughFiles, "needs 2, got \(shots.count)"); return }
         let ui = settings.data.ui, style = ui.textStyle, markStyle = ui.markStyle, limit = ui.stitchLongSide
-        // A recording has no drawing, and reading its header here could download it from iCloud
-        // on the main thread.
-        let pieces = shots.map { shot in
-            Stitch.Piece(url: shot.url, drawing: shot.kind == .recording ? nil : annotator.openDrawing(of: shot.url)
-                ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: style) })
-        }
+        let pieces = shots.map { Stitch.Piece(url: $0.url, drawing: drawings.current(of: $0.url, style: style)) }
         DispatchQueue.global(qos: .userInitiated).async {
             let composed = Stitch.compose(pieces, style: style, markStyle: markStyle, longSideLimit: limit)
             DispatchQueue.main.async { MainActor.assumeIsolated { [weak self] in self?.finishStitch(shots, composed) } }
@@ -424,6 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/WebKit/\(Identity.bundleID)"),
         ])
         thumbnail.drawings = drawings
+        drawings.open = annotator.editor
         drawings.onChange = { [weak self] key, drawing in self?.thumbnail.setDrawing(drawing, for: key) }
         drawings.sweep(watchFolder: watchFolder) { FileManager.default.fileExists(atPath: $0) }
     }
@@ -436,7 +431,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // A turn later, so callers can set their own state after asking.
         Task {
             do {
-                done(.success(try drawings.add(marks, from: agent, to: url, editor: annotator.editor, style: settings.data.ui.textStyle,
+                done(.success(try drawings.add(marks, from: agent, to: url, style: settings.data.ui.textStyle,
                                                newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)))
             } catch let failure as Drawings.Failure {
                 done(.failure(failure))
@@ -475,15 +470,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         else { Commands.error("trash", .writeFailed, "\(failed.joined(separator: "; ")); trashed \(trashed.count) of \(shots.count)") }
     }
 
-    /// Copy Drawing: each card's drawing, rendered and written beside its screenshot, and the
-    /// original file for a card without one. The card open in the editor renders the editor's own
-    /// drawing, which is ahead of the stored one until the next hand-over. The queue renders these
-    /// in the order asked, so once the last rendering is done every one is.
+    /// Copy Drawing: each card's drawing as it is now, rendered and written beside its screenshot,
+    /// and the original file for a card without one. The queue renders these in the order asked, so
+    /// once the last rendering is done every one is.
     func copyAnnotated(_ shots: [Screenshot]) {
         let ui = settings.data.ui, style = ui.textStyle
         let renderings = shots.map { shot -> (shot: Screenshot, rendering: PendingRendering?) in
-            let drawing = annotator.openDrawing(of: shot.url)
-                ?? PixelSize(imageAt: shot.url).flatMap { drawings.read(shot.url, pixels: $0, style: style) }
+            let drawing = drawings.current(of: shot.url, style: style)
             guard let drawing, !drawing.marks.isEmpty else { return (shot, nil) }
             return (shot, RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: annotatedURL(for: shot),
                                                        style: style, markStyle: ui.markStyle))
@@ -558,9 +551,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// A drag out of the stack drops each card as it shows it: a card with a drawing drops the
     /// drawing, rendered from the moment the drag begins and written beside its screenshot, through
-    /// the item Done's clipboard uses, and a card without one drops its file. The drawing is the
-    /// editor's for the card open in it, which is ahead of the stored one until the next hand-over,
-    /// and otherwise the card's own, which every write and removal reaches at once (`onChange`).
+    /// the item Done's clipboard uses, and a card without one drops its file. The drawing is the one
+    /// now, with the card's own as the stored one, since every write and removal reaches it at once
+    /// (`onChange`) and the drag needs no read from disk.
     /// In turn on the queue, so Done's promise keeps its bound: a drop comes after the pointer has
     /// travelled, which is time a paste does not have.
     private func dragItems(_ cards: [Card]) -> [NSPasteboardWriting] {
@@ -568,7 +561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         var drawn = 0
         let items = cards.map { card -> NSPasteboardWriting in
             let shot = card.shot, name = shot.url.lastPathComponent
-            guard let drawing = annotator.openDrawing(of: shot.url) ?? card.marks?.drawing, !drawing.marks.isEmpty else {
+            guard let drawing = drawings.current(of: shot.url, stored: { card.marks?.drawing }), !drawing.marks.isEmpty else {
                 return shot.url as NSURL
             }
             drawn += 1

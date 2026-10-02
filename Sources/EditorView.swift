@@ -205,9 +205,6 @@ final class EditorView: NSView {
         set { core.finishes = newValue }
     }
 
-    /// Agents' marks joining the open drawing, already in px. They go to the host at once.
-    func addAgentMarks(_ marks: [Mark]) { handle(.agentMarks(marks)) }
-
     /// The tweaks changed: the text style, the sizes and the arrowhead replace the ones `open` gave,
     /// and the drawing, the selection, the history and a typing session stay. The strokes take a new
     /// arrowhead at once. Each text keeps its bitmap until one in the new style arrives, and a text
@@ -841,4 +838,23 @@ private final class CanvasView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+extension EditorView: OpenDrawing {
+    func drawing(of key: String) -> Drawing? {
+        guard core.isOpen, core.drawing.key == key else { return nil }
+        return core.drawingForHost
+    }
+
+    /// The core hands the joined drawing over at once; that hand-over is the answer, so the caller
+    /// writes it and `onHandOver` does not write it a second time.
+    func join(_ marks: [Mark]) -> Drawing? {
+        var joined: Drawing?
+        for effect in core.reduce(.agentMarks(marks)) {
+            if case .handOver(let drawing) = effect { joined = drawing } else { run(effect, event: nil) }
+        }
+        if !core.holdsKey { heldKeys = [] }
+        refresh()
+        return joined
+    }
 }
