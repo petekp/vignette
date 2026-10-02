@@ -46,39 +46,27 @@ final class AppServerTests: XCTestCase {
         XCTAssertTrue(requests[2].contains("\"sortKey\":\"recency_at\""), "the threads asked for are the ones used last")
         XCTAssertTrue(requests[2].contains("\"useStateDbOnly\":true"), "a scan of every rollout took 3 s for a search")
 
-        let title = #"Fix "quoted" \ titles"#
-        let searched = AppServer.discoveryRequests(limit: 7, title: title)
-        XCTAssertEqual(searched.count, 6, "the title and its two longest words")
-        let searches = searched.suffix(3).compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
-        XCTAssertEqual(searches.map { $0["id"] as? Int }, AppServer.searchIDs.map { $0 })
-        let params = searches.first?["params"] as? [String: Any]
-        XCTAssertEqual(params?["searchTerm"] as? String, title, "the title reaches the server as it was read")
-        XCTAssertEqual(params?["limit"] as? Int, AppServer.searchLimit)
+        let shown = AppServer.discoveryRequests(limit: 7, shown: "01a0f064-1706-76e2-8312-bebefa67f004")
+        XCTAssertEqual(shown.count, 4)
+        let read = try? JSONSerialization.jsonObject(with: Data(shown[3].utf8)) as? [String: Any]
+        XCTAssertEqual(read?["id"] as? Int, AppServer.readID)
+        XCTAssertEqual(read?["method"] as? String, "thread/read")
+        XCTAssertEqual((read?["params"] as? [String: Any])?["threadId"] as? String, "01a0f064-1706-76e2-8312-bebefa67f004")
     }
 
-    /// The store searches a thread's first message as it was typed, and the Codex app's title is
-    /// that message as plain text, cut with an ellipsis. So the search is the title without the
-    /// ellipsis, and its two longest words, which a markdown link or a line break cannot split.
-    func testATitleIsSearchedWholeAndByItsLongestWords() {
-        XCTAssertEqual(AppServer.searchTerms(for: "Review notes.md. Then fix the flickering outline when the pointer leaves the ca…"),
-                       ["Review notes.md. Then fix the flickering outline when the pointer leaves the ca", "flickering", "notes.md"])
-        XCTAssertEqual(AppServer.searchTerms(for: "Fix it"), ["Fix it"], "no word of four letters or more")
-        XCTAssertEqual(AppServer.searchTerms(for: "Toolbar"), ["Toolbar"], "a word is searched once")
-        XCTAssertEqual(AppServer.searchTerms(for: "  "), [])
+    /// The read's thread is apart from the listing's, and a refused read is no thread.
+    func testTheReadIsApartFromTheListing() {
+        let listing = #"{"id":2,"result":{"data":[{"id":"a","cwd":"/x","recencyAt":300}]}}"#
+        let read = #"{"id":3,"result":{"thread":{"id":"old","name":"Investigate","cwd":"/y","recencyAt":1,"status":{"type":"notLoaded"}}}}"#
+        XCTAssertEqual(AppServer.threads(in: [read, listing]).map(\.id), ["a"])
+        XCTAssertEqual(AppServer.read(in: [read, listing])?.id, "old")
+        XCTAssertEqual(AppServer.read(in: [read])?.cwd, "/y")
+        XCTAssertNil(AppServer.read(in: [listing, #"{"id":3,"error":{"code":-32600,"message":"thread not loaded: x"}}"#]))
+        XCTAssertNil(AppServer.read(in: [#"{"id":3,"result":{"thread":{"id":"s","cwd":"/y","parentThreadId":"old"}}}"#]),
+                     "a sub-agent's thread is nobody's conversation")
     }
 
-    /// The listing is the threads used last, and the searches find the thread the Codex app shows.
-    /// They are read apart, since a search also finds threads that only mention a word.
-    func testTheListingAndTheSearchesAreReadApart() {
-        let listing = #"{"id":2,"result":{"data":[{"id":"a","cwd":"/x","recencyAt":300},{"id":"b","cwd":"/x","recencyAt":200}]}}"#
-        let byTitle = #"{"id":3,"result":{"data":[{"id":"old","name":"Investigate missing appointments","cwd":"/y","recencyAt":1}]}}"#
-        let byWord = #"{"id":4,"result":{"data":[{"id":"a","cwd":"/x"},{"id":"old","cwd":"/y"},{"id":"other","cwd":"/z"}]}}"#
-        XCTAssertEqual(AppServer.threads(in: [byWord, byTitle, listing]).map(\.id), ["a", "b"])
-        XCTAssertEqual(AppServer.searched(in: [byWord, byTitle, listing]).map(\.id), ["old", "a", "other"],
-                       "in the order of the terms, each thread once")
-    }
-
-    /// An error answers a request too. A Codex that refused the search would otherwise hold every
+    /// An error answers a request too. A Codex that refused the read would otherwise hold every
     /// editor opened from the Codex app until the timeout.
     func testAConversationEndsOnAnErrorAnswer() {
         let responder = """
@@ -92,7 +80,7 @@ final class AppServerTests: XCTestCase {
         """
         let started = Date()
         let lines = AppServer.converse("/usr/bin/python3", ["-c", responder],
-                                       AppServer.discoveryRequests(title: "x"), timeout: 20)
+                                       AppServer.discoveryRequests(shown: "x"), timeout: 20)
         XCTAssertLessThan(Date().timeIntervalSince(started), 15)
         XCTAssertEqual(lines.count, 3)
     }

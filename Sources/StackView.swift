@@ -581,6 +581,7 @@ private struct SendOverlay: View {
         switch state {
         case .sending: return "Sending to \(mark.project)"
         case .sent: return "Sent to \(mark.project)"
+        case .queued: return "Queued for \(mark.project)"
         case .uncertain: return "Check \(mark.project)"
         case .failed: return "Not sent"
         case .replyFailed: return "Reply not shown"
@@ -670,6 +671,9 @@ private struct SendOverlay: View {
                 case .sent:
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 15, weight: .bold))
                         .symbolRenderingMode(.palette).foregroundStyle(.white, .green)
+                case .queued:
+                    // One layer, its hands cut out, so they show the white ring beneath.
+                    Image(systemName: "clock.fill").font(.system(size: 15, weight: .bold)).foregroundStyle(Color.orange)
                 case .uncertain, .failed, .replyFailed:
                     Image(systemName: "exclamationmark.circle.fill").font(.system(size: 15, weight: .bold))
                         .symbolRenderingMode(.palette).foregroundStyle(.white, state == .uncertain ? Color.orange : Color.red)

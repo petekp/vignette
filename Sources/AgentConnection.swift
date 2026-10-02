@@ -98,20 +98,20 @@ struct AgentDestination: Equatable, Identifiable {
 
     /// The sessions as they stand when you came from `client`'s own app, such as the Codex app.
     /// herdr keeps a focused pane while its terminal is behind, so its focus says nothing then and is
-    /// cleared. The app's session is the one named `open`, the thread it shows, or else that client's
-    /// session used last. When `open` names nothing in a list that is not `fresh`, nothing is
-    /// marked: the thread may have started since the list was kept, and the fresh list will say.
-    /// `list` is in Send's order.
-    static func cameFrom(_ client: AgentClient, open: String?, in list: [AgentDestination], fresh: Bool = true) -> [AgentDestination] {
+    /// cleared. The app's session is `shown`, the id of the thread it shows, or else that client's
+    /// session used last. When a list that is not `fresh` lacks `shown`, nothing is marked: the
+    /// thread may have started since the list was kept, and the fresh list will say. `list` is in
+    /// Send's order.
+    static func cameFrom(_ client: AgentClient, shown: String?, in list: [AgentDestination], fresh: Bool = true) -> [AgentDestination] {
         var marked = list.map { destination -> AgentDestination in
             var cleared = destination
             cleared.focus = nil
             return cleared
         }
         let ofClient = marked.indices.filter { marked[$0].client == client }
-        let shown = open.flatMap { title in ofClient.first { marked[$0].isNamed(title) } }
-        guard shown != nil || open == nil || fresh else { return marked }
-        if let index = shown ?? ofClient.first { marked[index].focus = .app }
+        let match = shown.flatMap { id in ofClient.first { marked[$0].id == id } }
+        guard match != nil || shown == nil || fresh else { return marked }
+        if let index = match ?? ofClient.first { marked[index].focus = .app }
         return marked
     }
 
@@ -136,26 +136,6 @@ struct AgentDestination: Equatable, Identifiable {
         return Array(active.prefix(count - 1)) + [target]
     }
 
-    /// Whether a title an app shows is this session's name. Only letters and digits are compared:
-    /// the Codex app takes a name's markdown and tags out, and `CodexConnection.name(of:)` does the
-    /// same closely but not exactly. A title or a name cut short with an ellipsis matches one that
-    /// goes on from where it stops.
-    func isNamed(_ title: String) -> Bool {
-        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let shown = Self.lettersAndDigits(title), own = Self.lettersAndDigits(name)
-        guard !shown.isEmpty, !own.isEmpty else { return false }
-        switch (title.hasSuffix("…"), name.hasSuffix("…")) {
-        case (false, false): return shown == own
-        case (true, false): return own.hasPrefix(shown)
-        case (false, true): return shown.hasPrefix(own)
-        case (true, true): return shown.hasPrefix(own) || own.hasPrefix(shown)
-        }
-    }
-
-    private static func lettersAndDigits(_ text: String) -> String {
-        String(String.UnicodeScalarView(text.lowercased().unicodeScalars.filter(CharacterSet.alphanumerics.contains)))
-    }
-
     /// Send's order: the session used last first. A session with no time comes after every one
     /// with a time, and a tie goes by name.
     static func newestFirst(_ a: AgentDestination, _ b: AgentDestination) -> Bool {
@@ -175,6 +155,9 @@ struct AgentDestination: Equatable, Identifiable {
 enum SubmissionOutcome {
     /// The runtime took the request. It does not mean a model has read the image.
     case accepted(detail: String)
+    /// The runtime took the request and holds it, but nothing has the conversation open, so nothing
+    /// reads it until someone opens it. It arrives then, first.
+    case queued(detail: String, reason: String)
     /// Nothing reached the client. Retrying the same request is safe.
     case notSubmitted(code: CommandError, detail: String, reason: String)
     /// The conversation is gone, replaced, or no longer reachable where it was.
@@ -183,11 +166,16 @@ enum SubmissionOutcome {
     /// retries it nor claims it failed.
     case uncertain(detail: String, reason: String)
 
-    var isAccepted: Bool { if case .accepted = self { return true }; return false }
+    var isAccepted: Bool {
+        switch self {
+        case .accepted, .queued: return true
+        case .notSubmitted, .destinationChanged, .uncertain: return false
+        }
+    }
 
     var detail: String {
         switch self {
-        case .accepted(let d), .destinationChanged(let d, _), .uncertain(let d, _): return d
+        case .accepted(let d), .queued(let d, _), .destinationChanged(let d, _), .uncertain(let d, _): return d
         case .notSubmitted(_, let d, _): return d
         }
     }
@@ -195,11 +183,11 @@ enum SubmissionOutcome {
     var reason: String? {
         switch self {
         case .accepted: return nil
-        case .notSubmitted(_, _, let r), .destinationChanged(_, let r), .uncertain(_, let r): return r
+        case .queued(_, let r), .notSubmitted(_, _, let r), .destinationChanged(_, let r), .uncertain(_, let r): return r
         }
     }
 
-    static let internalReason = "Something went wrong. See the log."
+    static let internalReason = "Something went wrong in Vignette. The log has details."
 
     /// A client's own words, cut to fit a card, for a failure Vignette has no sentence of its own for.
     static func quoted(_ client: String, _ detail: String) -> String {
@@ -218,15 +206,15 @@ protocol AgentConnection: Sendable {
     var keepsList: Bool { get }
     /// The sessions this route can address right now. Empty when the route cannot enumerate.
     func destinations() -> [AgentDestination]
-    /// The same, together with any session named `title` that the route can find though it is not
-    /// among the ones it lists, such as a Codex thread used weeks ago that the Codex app shows.
-    func destinations(named title: String) -> [AgentDestination]
+    /// The same, together with the session `id` when the route can find it though it is not among
+    /// the ones it lists, such as a Codex thread used weeks ago that the Codex app shows.
+    func destinations(including id: String) -> [AgentDestination]
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome
 }
 
 extension AgentConnection {
     var keepsList: Bool { false }
-    func destinations(named title: String) -> [AgentDestination] { destinations() }
+    func destinations(including id: String) -> [AgentDestination] { destinations() }
 }
 
 // MARK: Running a command
@@ -305,8 +293,8 @@ struct ClaudeCodeConnection: AgentConnection {
     /// The monitor touches `alive` every 3 s. An inbox older than this has no monitor reading it.
     static let aliveWindow: TimeInterval = 10
 
-    static let closed = "This session is closed. Send to another one."
-    static let cleared = "This session was cleared. Pick another one and send again."
+    static let closed = "This session has ended. You can send it to another one."
+    static let cleared = "This session was cleared. You can send it to another one."
 
     /// One inbox, as the plugin's scripts wrote it.
     struct Inbox: Equatable {
@@ -561,15 +549,19 @@ struct CodexConnection: AgentConnection {
     var converse: @Sendable (String, [String], [String]) -> [String] = {
         AppServer.converse($0, $1, $2)
     }
+    /// Whether an engine has the thread loaded. Injected so a test never reads the person's Codex folder.
+    var isLoaded: @Sendable (String) -> Bool = { CodexConnection.isLoaded($0) }
 
     static let queueTimeout: TimeInterval = 25
 
-    /// Where the Codex CLI's installers put it. `AgentTools` looks past these. A `no codex at …`
-    /// error names every folder tried.
-    static let binaryPaths = [
-        "\(NSHomeDirectory())/.codex/bin/codex", "\(NSHomeDirectory())/.local/bin/codex",
-        "\(NSHomeDirectory())/.vite-plus/bin/codex", "/opt/homebrew/bin/codex", "/usr/local/bin/codex",
-    ]
+    /// The CLI the Codex app carries, then where the Codex CLI's installers put it. `AgentTools`
+    /// looks past these. A `no codex at …` error names every folder tried.
+    static var binaryPaths: [String] {
+        [AgentApp.codexCLI].compactMap { $0 } + [
+            "\(NSHomeDirectory())/.codex/bin/codex", "\(NSHomeDirectory())/.local/bin/codex",
+            "\(NSHomeDirectory())/.vite-plus/bin/codex", "/opt/homebrew/bin/codex", "/usr/local/bin/codex",
+        ]
+    }
 
     static func binary(exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
         AgentTools.path("codex", fixed: binaryPaths, exists: exists)
@@ -579,20 +571,19 @@ struct CodexConnection: AgentConnection {
     /// share, so an app-server started for the length of this one call answers for every session,
     /// including the ones the ChatGPT desktop app owns. No codex on the machine means no Codex
     /// destinations, which is not an error.
-    func destinations() -> [AgentDestination] { discover(title: nil) }
+    func destinations() -> [AgentDestination] { discover(shown: nil) }
 
-    /// The threads used last, and the thread the Codex app shows under `title`, found by searching
-    /// the store whatever its age (`AppServer.searchTerms`).
-    func destinations(named title: String) -> [AgentDestination] { discover(title: title) }
+    /// The threads used last, and the thread `id`, such as the one the Codex app shows, whatever its
+    /// age.
+    func destinations(including id: String) -> [AgentDestination] { discover(shown: id) }
 
-    private func discover(title: String?) -> [AgentDestination] {
+    private func discover(shown: String?) -> [AgentDestination] {
         guard let codex = binary() else { return [] }
-        let lines = converse(codex, ["app-server"], AppServer.discoveryRequests(title: title))
+        let lines = converse(codex, ["app-server"], AppServer.discoveryRequests(shown: shown))
         let listed = AppServer.threads(in: lines).map(Self.destination)
-        guard let title else { return listed }
-        let shown = AppServer.searched(in: lines).map(Self.destination)
-            .filter { found in found.isNamed(title) && !listed.contains { $0.id == found.id } }
-        return listed + shown
+        guard let shown, let thread = AppServer.read(in: lines), thread.id == shown,
+              !listed.contains(where: { $0.id == shown }) else { return listed }
+        return listed + [Self.destination(thread)]
     }
 
     private static func destination(_ thread: AppServer.Thread) -> AgentDestination {
@@ -607,8 +598,7 @@ struct CodexConnection: AgentConnection {
     /// A thread's name as the Codex app shows it: its own name, or for a thread with none, its first
     /// message, as plain text with its lines joined, cut to 79 characters and an ellipsis when it is
     /// longer than 80. A message an IDE sent is named by the request after its context. That is the
-    /// app's rule, read from its bundle on 2026-09-25. Cutting it where the app does keeps what tells
-    /// two threads apart: at 60 characters, two threads with one long start matched the same title.
+    /// app's rule, read from its bundle on 2026-09-25, so Send names a thread as the app does.
     static func name(of thread: AppServer.Thread) -> String {
         let text = [thread.name ?? "", request(in: thread.preview ?? "")].lazy.map(plainText).first { !$0.isEmpty }
         guard let text else { return "Codex \(thread.id.prefix(8))" }
@@ -624,7 +614,7 @@ struct CodexConnection: AgentConnection {
         return message[marker.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Markdown as the plain text the Codex app shows for it, close enough for `isNamed`: a link or
+    /// Markdown as the plain text the Codex app shows for it, closely but not exactly: a link or
     /// an image keeps its text and an autolink its address; HTML tags, a divider line, and the marks
     /// that start a heading, a quote, a list item or a code fence go; each run of whitespace is one
     /// space. A tag's name is letters, digits and hyphens, so `<environment_context>` is text and
@@ -656,19 +646,34 @@ struct CodexConnection: AgentConnection {
         }
         guard let codex = binary() else {
             return .notSubmitted(code: .noAgent, detail: "no codex at \(AgentTools.searched("codex", fixed: Self.binaryPaths).joined(separator: " ")) or on the login shell's PATH",
-                                 reason: "Install the Codex CLI to send to Codex.")
+                                 reason: "Sending to Codex needs the Codex app or its CLI.")
         }
         guard let result = run(codex, Self.arguments(thread: uuid, message: line), Self.queueTimeout) else {
-            return .notSubmitted(code: .sendFailed, detail: "codex queue did not run", reason: "Codex didn't start. See the log.")
+            return .notSubmitted(code: .sendFailed, detail: "codex queue did not run", reason: "Codex couldn't start. The log has details.")
         }
         if result.timedOut {
             return .uncertain(detail: "codex queue did not answer in \(Int(Self.queueTimeout)) s",
-                              reason: "Codex didn't confirm it. Check the thread.")
+                              reason: "Codex didn't confirm it. It may still have arrived.")
         }
         guard result.status == 0 else {
             return Self.failure(output: result.output, thread: uuid)
         }
+        guard isLoaded(uuid) else {
+            return .queued(detail: "thread=\(uuid) not loaded", reason: "Codex reads it when you open this thread.")
+        }
         return .accepted(detail: "thread=\(uuid)")
+    }
+
+    /// Whether an engine, the Codex app's or a CLI session's, has the thread loaded. `codex queue`
+    /// answers the same either way: it stores the message, an engine with the thread loaded takes it
+    /// within about 10 s, and a thread no engine has loaded keeps it until someone opens the thread.
+    /// An engine holds `thread-writer-locks/<id>.lock` in the Codex folder while it has the thread
+    /// and removes it when it lets go (`codex-rs/rollout/src/writer_lock.rs`, 0.159.2). A crash can
+    /// leave the file behind, which reads as loaded, as every send did before this check.
+    static func isLoaded(_ thread: String,
+                         codexHome: URL = AgentPlugin.root(of: .codex, home: URL(fileURLWithPath: NSHomeDirectory()))) -> Bool {
+        guard UUID(uuidString: thread) != nil else { return true }
+        return FileManager.default.fileExists(atPath: codexHome.appendingPathComponent("thread-writer-locks/\(thread).lock").path)
     }
 
     /// What a nonzero `codex queue` means. A thread the server does not have, or a server that is
@@ -676,13 +681,13 @@ struct CodexConnection: AgentConnection {
     static func failure(output: String, thread: String) -> SubmissionOutcome {
         let detail = Subprocess.detail(output) ?? "codex said nothing"
         let lower = detail.lowercased()
-        let missing = ["thread not found", "no such thread", "session not found", "unknown thread"]
+        let missing = ["no rollout found", "thread not found", "no such thread", "session not found", "unknown thread"]
         let unreachable = ["connection refused", "failed to connect", "connection reset"]
         if missing.contains(where: lower.contains) {
-            return .destinationChanged(detail: detail, reason: "This thread is gone. Send to another one.")
+            return .destinationChanged(detail: detail, reason: "Codex can't find this thread. You can send it to another one.")
         }
         if unreachable.contains(where: lower.contains) {
-            return .destinationChanged(detail: detail, reason: "Codex isn't running. Open it, then send again.")
+            return .destinationChanged(detail: detail, reason: "Codex isn't running. You can send again once it's open.")
         }
         return .notSubmitted(code: .sendFailed, detail: detail, reason: SubmissionOutcome.quoted("Codex", detail))
     }

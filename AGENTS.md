@@ -131,7 +131,9 @@ The steps below have the details.
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
    folder, and `tweaks` and `install-skill?root=` are refused, unless settings.json has
-   `"debug": true`. `add` is the exception, and it takes two paths the folder rule does not cover.
+   `"debug": true`. A `file=` inside the folder is taken by the folder's own spelling
+   (`Commands.inWatchFolder`), so `/tmp/x.png` and `/private/tmp/x.png` reach one drawing.
+   `add` is the exception, and it takes two paths the folder rule does not cover.
    `add?file=` copies an image in from anywhere and the watcher then reports it like a capture,
    minus the copy and annotate toggles (`&annotate` opens the editor). `&agent=<name>` says which
    agent is pushing it: the name is recorded on the copy as the `com.petepetrash.vignette.agent`
@@ -254,7 +256,10 @@ Allow it and run again.
 
 Testing Send without a real session: a Claude Code session is an inbox folder under the copy's
 Application Support, `claude-sessions/<pid>/` with `session`, `cwd` and a fresh `alive`, and `<pid>`
-a live process (`App.fake_session` in the runner). Send writes its request line there. Launched
+a live process (`App.fake_session` in the runner). Send writes its request line there. A Codex
+thread is listed by a fake codex that `VIGNETTE_CODEX` names (`App.fake_codex`,
+`scripts/e2e/fake_codex.py`): it answers `app-server`'s `initialize` and `thread/list`, and records
+each `codex queue --thread <id> --message <line>`, which is how Send hands a Codex thread its line. Launched
 with `--env CFFIXED_USER_HOME=<folder>`, the app takes that folder for the home folder, so the Agents
 tab and setup read and write a scratch `.claude` rather than the user's; its log is then under that
 folder's `Library/Logs`, which must exist before the launch, or the log lines are dropped. Apple's
@@ -447,6 +452,9 @@ screenshot location for such a launch is written with the same variable:
   a warning at the top of the Settings window's General tab. A command from a script answers in
   the log.
   `docs/no-toasts-2026-09-30.md` has what each toast became.
+- `docs/voice.md` is how Vignette speaks: clear, short and humble, pointing to what can happen
+  next. It has the rules and every message written to them. A new or changed message follows it
+  and is added there.
 - Two vocabularies, and they do not mix. Every string a user reads says draw: the buttons, the menu
   items, the toggles, the section headings, the marks on cards. Every name a script, a log reader or a
   compiler reads says annotate: the URL ids (`vignette://annotate`, `copy-annotated`), the log tags
@@ -766,17 +774,17 @@ screenshot location for such a launch is written with the same variable:
   (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. There is no
   palette: a mark's colour says who drew it. Send starts on
   the session you came from (`AgentDestination.defaultTarget`). When the app before Vignette
-  (`FocusReturn.previousApp`) was the Codex app, that is the thread it shows, named by the title of
-  its page (`AgentApp.openThread`, through Accessibility), or else the Codex thread used last;
-  herdr's focus is ignored then, because herdr keeps a focused pane while its terminal is behind.
-  A Codex thread is named the way the app names it (`CodexConnection.name(of:)`), so the title
-  compares with the name, letters and digits only (`AgentDestination.isNamed`). A thread older than
-  the list is found by searching the store for the title and its two longest words
-  (`AppServer.searchTerms`), since the store holds the first message as typed and the title is it
-  as plain text.
+  (`FocusReturn.previousApp`) was the Codex app, that is the thread it shows, or else the Codex
+  thread used last; herdr's focus is ignored then, because herdr keeps a focused pane while its
+  terminal is behind. The thread it shows comes from the app's own log (`AgentApp.shownThread`):
+  each time its window moves to another page, the app logs the page's route, and `/local/<id>` is a
+  thread. That is a log line, not an interface, so a build that drops it gives the thread used last.
+  Accessibility cannot say: the app's window has had no page in its accessibility tree since the
+  app left Electron in late September 2026 (openai/codex#25740). A thread older than the list is
+  read by its id (`thread/read`). A Codex thread is named the way the app names it
+  (`CodexConnection.name(of:)`).
   Otherwise, when herdr runs, it is the session in herdr's focused pane, or the one session in that
-  pane's tab when the pane runs none. Else it is the session used last. Reading the page asks the Codex app, which is Electron, to build its
-  accessibility tree, and it keeps it until it quits.
+  pane's tab when the pane runs none. Else it is the session used last.
   The target shows the agent's logo and the project, cut in the middle past 132 pt with the whole
   name in its tooltip. Its width is set rather than left to the text, so it springs with the bar. A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
@@ -790,7 +798,7 @@ screenshot location for such a launch is written with the same variable:
   threads used last (`AppServer.listLimit`), and it is asked for again at launch, on a capture and
   when the stack opens. Claude Code's list is always asked afresh, because it carries herdr's
   focus, which moves. Coming from the Codex
-  app, a kept list that holds the open thread settles the target at once; one that does not waits
+  app, a kept list that holds the shown thread settles the target at once; one that does not waits
   for the fresh list, since the thread may be newer. Return copies and replies only on a card that names its session; Cmd+Return
   sends or replies (`EditorCore.finishes`). Return never sends to a session Vignette picked, except
   from the message field when the person turned on Send with Return (`sendWithReturn`).
@@ -1053,6 +1061,8 @@ screenshot location for such a launch is written with the same variable:
 
 ### Agents
 
+- `docs/codex-issues.md` tracks the known problems with Codex and the Codex app, with a progress log.
+  Read it before changing anything that talks to Codex, and add to it what you find or fix.
 - `docs/glossary.md` is the vocabulary for the agent loop: agent client, agent session, terminal
   host, destination, delivery route, screenshot request, screenshot reply, reply ticket. It says
   what each one means and what not to call it. The distinctions it keeps are load-bearing, above
@@ -1077,11 +1087,18 @@ screenshot location for such a launch is written with the same variable:
   cleared request's folder is deleted a week later (`clearedKept`, dated by its `request.json`),
   unless one of its replies is still a card, since that reply's record is what shows it.
 - A destination is an agent session, never the terminal displaying it. Codex is addressed by its
-  thread UUID and nothing else: `codex queue --thread` finds the engine that owns the thread, the
-  desktop app's included, and that engine resolves the UUID or fails, which is
-  `AddressGuard.runtimeEnforced`. `AppServer.swift` is the only thing that speaks the app-server
-  protocol, and it only reads: it carries one `thread/list` to a `codex app-server` of its own,
-  asking for the threads used last (`sortKey: recency_at`), and turns the answer into menu rows, each
+  thread UUID and nothing else: `codex queue --thread` resolves the UUID in the thread store or
+  fails, which is `AddressGuard.runtimeEnforced`, and stores the message in Codex's queue. An engine
+  that has the thread loaded, the Codex app's or a CLI session's, takes it within about 10 s. A
+  thread no engine has loaded keeps it until someone opens the thread, and it then runs first.
+  `codex queue` answers the same either way, so Vignette then looks for the lock file an engine
+  holds while it has the thread (`CodexConnection.isLoaded`), and a send to a thread nobody has
+  open is reported as queued. The codex Vignette runs is the one inside the Codex app when the app
+  is installed (`AgentApp.codexCLI`), since the app keeps it in step with its own engine, and
+  otherwise the first `AgentTools` finds. `AppServer.swift` is the only thing that
+  speaks the app-server protocol, and it only reads: it carries a `thread/list` to a `codex
+  app-server` of its own, asking for the threads used last (`sortKey: recency_at`), and a
+  `thread/read` of the thread the Codex app shows, and turns the answers into menu rows, each
   with the thread's own `cwd` and `recencyAt`. An ephemeral thread and a sub-agent's thread (one with
   a `parentThreadId`) are left out. A thread with no name is named by its first message. The thread store is on disk,
   so a server started for the length of that one listing answers for every session, whoever owns
@@ -1168,11 +1185,11 @@ screenshot location for such a launch is written with the same variable:
 - A send reports on the card it was sent from. Once the request is stored the card
   carries a `SendMark` (`ThumbnailController.markSending`), keyed by the file's path because a lone
   thumbnail's card leaves the panel while it is in the editor. It shows the destination's logo and
-  project from the moment the card lands, and `delivered` turns it to sent, uncertain or failed when
-  the client answers. A failure the person must act on carries a `reason`: every `SubmissionOutcome`
-  that is not accepted has one, written where the client knows what went wrong, and `detail` stays
-  for the log. A card gone from the screen by then says nothing more about a success and comes back
-  as a lone thumbnail for a failure. A failure before the request is stored leaves the drawing in
+  project from the moment the card lands, and `delivered` turns it to sent, queued, uncertain or
+  failed when the client answers. Anything but sent carries a `reason`: every `SubmissionOutcome`
+  but `accepted` has one, written where the client knows what happened, and `detail` stays for the
+  log. A card gone from the screen by then says nothing more about a success and comes back as a
+  lone thumbnail for anything else. A failure before the request is stored leaves the drawing in
   the editor, so it shows there: the button reads "Not sent" and a popover on it gives the reason,
   both until a click elsewhere or Send again. A reply that was accepted and could not be made a card
   has no card to report on, so the card it answers takes a `replyFailed` mark, "Reply not shown"
@@ -1193,9 +1210,10 @@ screenshot location for such a launch is written with the same variable:
   database, which `CFFIXED_USER_HOME` does not move). Roots are parameters everywhere, so a test never
   reaches the real ones, and the live check is `install-skill?root=<dir>` (debug only, a folder
   named `.claude` or `.codex`). The tools get the app's `HOME`, so a test copy launched with
-  `CFFIXED_USER_HOME` installs into its scratch home. The `codex` on this Mac is a vite-plus shim
-  that finds its package through `HOME`, so such a test links the scratch home's `.vite-plus` to the
-  real one, and unlinks it before anything lists Codex threads. Whether the plugin is on is read from
+  `CFFIXED_USER_HOME` installs into its scratch home. The Codex app's own codex needs nothing from
+  `HOME`. A vite-plus shim does: it finds its package through `HOME`, so a test that runs one links
+  the scratch home's `.vite-plus` to the real one, and unlinks it before anything lists Codex
+  threads. Whether the plugin is on is read from
   the agent's own settings (`enabledPlugins` in Claude Code's settings.json, `[plugins."<id>"]` in
   Codex's config.toml), so a window asks without running a tool. Installs run one at a time on
   `AgentPlugins`' queue and answer on the main thread, and each result logs one `[plugin]` line.

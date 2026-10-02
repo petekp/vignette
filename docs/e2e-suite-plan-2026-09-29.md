@@ -164,11 +164,15 @@ Pete approved the plan, the release gate, running on this Mac, the test hooks, a
 | `agent_push` | no | pass |
 | `annotate_open` | no | pass: the bar offers Copy alone, so no Codex thread was listed |
 | `send_target` | no | pass: the bar offers Send to the fake session |
+| `send_target_codex` | no | pass: the bar offers Send to the fake codex's thread, listed by `codex app-server` |
 | `stitch` | no | pass |
 | `relaunch` | no | pass |
 | `settings_repair` | no | pass |
 | `draw_and_done` | yes | pass |
 | `send_and_reply` | yes | pass: the helper refuses a ticket copied elsewhere; a guessed secret is `ScreenshotRequestsTests`' case |
+| `send_and_reply_codex` | yes | pass: the same send and reply, through one `codex queue` call to the fake codex |
+| `send_codex_thread_gone` | yes | pass: a send to a thread deleted after the bar offered it fails as a thread that is gone |
+| `send_codex_queued` | yes | pass: a send to a thread no engine has loaded is reported as queued |
 
 **Found while building it:**
 

@@ -157,6 +157,11 @@ final class CommandsTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: escapeLink, withDestinationURL: elsewhere)
         XCTAssertEqual(Commands.policyError(for: escapeLink.appendingPathComponent("x.png"), watchFolder: real, debug: false), .outsideWatchFolder,
                        "a link inside the folder that points out is still outside")
+
+        // One file by two spellings is one file by the folder's, so it reaches one drawing.
+        let url = URL(string: "vignette://annotate?file=\(link.path)/sub/x.png&file=\(elsewhere.path)/y.png")!
+        XCTAssertEqual(Commands.parse(url, watchFolder: real).files.map(\.path),
+                       [real.appendingPathComponent("sub/x.png").path, elsewhere.appendingPathComponent("y.png").path])
     }
 
     // MARK: readability

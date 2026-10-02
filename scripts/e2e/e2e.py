@@ -11,8 +11,9 @@
 The test copy (`scripts/e2e/build.sh`) has its own bundle id, name and URL scheme. Each scenario
 launches it on a fresh scratch home (`CFFIXED_USER_HOME`), settings file (`VIGNETTE_SETTINGS`) and
 watch folder, so it never reads or writes the person's own. A test launch uses no codex and no
-herdr unless `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names one, and Claude Code sessions are fakes:
-an inbox folder held by a `sleep` process, which is all Send looks for.
+herdr unless `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names one, and every agent session is a fake.
+A Claude Code session is an inbox folder held by a `sleep` process, which is all Send looks for. A
+Codex thread is listed by a fake codex (`fake_codex.py`) that `VIGNETTE_CODEX` names.
 
 Before any key or click, a scenario reads the test copy's state in the same step and stops unless
 the editor or the stack is up and key. docs/e2e-suite-plan-2026-09-29.md has the design.
@@ -287,6 +288,36 @@ class App:
                 f.write(text + '\n')
         self.touch_alive(inbox)
         return session, inbox
+
+    def fake_codex(self, project='codex-project', name='Fix the checkout', loaded=True):
+        """A codex that lists one thread, used just now, in `/tmp/e2e/<project>`, and records every
+        call. With `loaded`, an engine has the thread open: its writer lock is in the scratch home's
+        `.codex`, which is where Vignette looks (`CodexConnection.isLoaded`). Returns the thread id
+        and the env that points the launch at it."""
+        folder = os.path.join(self.folder, 'codex')
+        os.makedirs(folder, exist_ok=True)
+        thread = str(uuid.uuid4())
+        with open(os.path.join(folder, 'threads.json'), 'w') as f:
+            json.dump([{'id': thread, 'name': name, 'cwd': f'/tmp/e2e/{project}', 'recencyAt': int(time.time()),
+                        'preview': name}], f)
+        codex = os.path.join(folder, 'codex')
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fake_codex.py')
+        # This Python, by path: the app runs codex with launchd's PATH, where python3 can be Apple's stub.
+        with open(codex, 'w') as f:
+            f.write(f"#!/bin/sh\nexec '{sys.executable}' '{script}' '{folder}' \"$@\"\n")
+        os.chmod(codex, 0o755)
+        if loaded:
+            locks = os.path.join(self.home, '.codex', 'thread-writer-locks')
+            os.makedirs(locks, exist_ok=True)
+            open(os.path.join(locks, f'{thread}.lock'), 'w').close()
+        return thread, {'VIGNETTE_CODEX': codex}
+
+    def codex_calls(self, verb=None):
+        """The fake codex's calls and the requests it answered, oldest first (`fake_codex.py`); with
+        `verb`, only those whose first argument it is."""
+        path = os.path.join(self.folder, 'codex', 'calls.jsonl')
+        calls = [json.loads(line) for line in open(path)] if os.path.exists(path) else []
+        return [c for c in calls if verb is None or c['args'][:1] == [verb]]
 
     def touch_alive(self, inbox):
         with open(os.path.join(inbox, 'alive'), 'w'):

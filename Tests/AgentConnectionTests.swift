@@ -210,33 +210,23 @@ final class AgentConnectionTests: XCTestCase {
         focused.focus = .pane
         let recent = AgentDestination(id: "t1", name: "Review codebase", address: .codexThread(uuid: "t1"))
         let shown = AgentDestination(id: "t2", name: "Build showroom MCP App PoC", address: .codexThread(uuid: "t2"))
-        let unnamed = AgentDestination(id: "t3", name: "Please assess and improve the following: the hover outline flickers when the po…",
-                                       address: .codexThread(uuid: "t3"))
-        let sibling = AgentDestination(id: "t4", name: "Please assess and improve the following: the hover outline flickers when the ca…",
-                                       address: .codexThread(uuid: "t4"))
-        let list = [focused, recent, shown, unnamed, sibling]
-        func target(_ open: String?) -> String? {
-            AgentDestination.defaultTarget(in: AgentDestination.cameFrom(.codex, open: open, in: list))?.id
+        let list = [focused, recent, shown]
+        func target(_ id: String?) -> String? {
+            AgentDestination.defaultTarget(in: AgentDestination.cameFrom(.codex, shown: id, in: list))?.id
         }
-        XCTAssertEqual(target("Build showroom MCP App PoC"), "t2")
-        XCTAssertEqual(target("Please assess and improve the following: the hover outline flickers when the ca…"), "t4",
-                       "the app cuts a title at 80 characters, and so does the name, so a long shared start does not decide")
-        XCTAssertEqual(target("Build showroom MCP App PoC…"), "t2", "a title cut short matches the name it starts")
-        XCTAssertEqual(target("Build showroom: MCP App PoC"), "t2", "only letters and digits are compared")
-        XCTAssertEqual(target("Build showroom"), "t1", "a whole title is not a name's start")
-        XCTAssertEqual(target(nil), "t1", "an unread title gives the Codex thread used last")
-        XCTAssertEqual(target("A thread older than the list"), "t1")
-        XCTAssertEqual(AgentDestination.cameFrom(.codex, open: nil, in: [focused]).map(\.focus), [nil],
+        XCTAssertEqual(target("t2"), "t2")
+        XCTAssertEqual(target(nil), "t1", "an app showing no thread gives the Codex thread used last")
+        XCTAssertEqual(target("t9"), "t1", "a thread the fresh list lacks")
+        XCTAssertEqual(AgentDestination.cameFrom(.codex, shown: nil, in: [focused]).map(\.focus), [nil],
                        "no Codex thread listed: herdr's focus still says nothing")
-        XCTAssertEqual(AgentDestination.cameFrom(.codex, open: "Started a minute ago", in: list, fresh: false).map(\.focus),
-                       [nil, nil, nil, nil, nil], "a kept list may predate the open thread, so the fresh list decides")
-        XCTAssertEqual(AgentDestination.cameFrom(.codex, open: "Build showroom MCP App PoC", in: list, fresh: false)
+        XCTAssertEqual(AgentDestination.cameFrom(.codex, shown: "t9", in: list, fresh: false).map(\.focus),
+                       [nil, nil, nil], "a kept list may predate the shown thread, so the fresh list decides")
+        XCTAssertEqual(AgentDestination.cameFrom(.codex, shown: "t2", in: list, fresh: false)
             .first { $0.focus == .app }?.id, "t2", "a thread the kept list has settles at once")
     }
 
-    /// A thread is named as the Codex app names it, so the title read from the app finds it: the
-    /// app's rule, read from its bundle and checked against its own titles for 144 threads on
-    /// 2026-09-25. A first message is plain text with its lines joined, and an IDE's is its request.
+    /// A thread is named as the Codex app names it: the app's rule, read from its bundle and checked
+    /// against its own titles for 144 threads on 2026-09-25. A first message is plain text with its lines joined, and an IDE's is its request.
     func testAThreadIsNamedAsTheCodexAppNamesIt() {
         func name(_ name: String?, _ preview: String) -> String {
             CodexConnection.name(of: AppServer.Thread(id: "01a0ab02-0000", name: name, cwd: "/x", preview: preview))
@@ -256,17 +246,54 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(name("", " \n "), "Codex 01a0ab02")
     }
 
-    /// Searching by a title's words finds threads that only mention them, so only the thread the
-    /// title names joins the listing.
-    func testASearchAddsOnlyTheThreadTheTitleNames() {
+    /// The Codex app logs the page its window moves to. The thread it shows is the last such line
+    /// in the newest log of its own process, and a page that is not a thread on this Mac is none.
+    /// The lines are the app's own (26.928, 2026-10-01), cut to the fields read.
+    func testTheThreadTheCodexAppShowsIsTheLastPageItsLogNames() throws {
+        let logs = temporaryFolder()
+        func write(_ day: String, _ name: String, _ lines: [String], modified: Date) throws {
+            let folder = logs.appendingPathComponent(day)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent(name)
+            try Data(lines.map { $0 + "\n" }.joined().utf8).write(to: file)
+            try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: file.path)
+        }
+        func page(_ route: String) -> String {
+            "2026-10-02T02:30:20.336Z info [electron-message-handler] IAB_LIFECYCLE received browser sidebar owner sync browserTabId=null conversationId=client-new-thread:b78b originWebContentsId=1 ownerRoutePath=\(route) windowId=1"
+        }
+        let older = "01a0d213-5b49-7352-9da1-46cdacf0be18", shown = "01a0fa21-6386-7b50-8d42-3d21ae412c09"
+        let now = Date()
+        try write("2026/10/01", "codex-desktop-a7ea-52946-t0-i1-033930-0.log", [page("/local/\(older)")], modified: now - 7200)
+        try write("2026/10/02", "codex-desktop-a7ea-52946-t0-i1-000304-0.log",
+                  [page("/local/\(older)"), "info [thread-stream] other", page("/local/\(shown)"), "info later"], modified: now - 60)
+        try write("2026/10/02", "codex-desktop-a7ea-52946-t1-i1-003632-0.log", ["info no pages here"], modified: now)
+        try write("2026/10/02", "codex-desktop-b8fb-61111-t0-i1-010000-0.log", [page("/local/\(older)")], modified: now)
+        let launched = ISO8601DateFormatter().date(from: "2026-10-01T03:39:30Z")
+        XCTAssertEqual(AgentApp.shownThread(pid: 52946, launched: launched, logs: logs), shown)
+        XCTAssertEqual(AgentApp.shownThread(pid: 52946, launched: ISO8601DateFormatter().date(from: "2026-10-03T00:00:00Z"), logs: logs),
+                       nil, "a file from before the process started is another process's")
+        try write("2026/10/02", "codex-desktop-a7ea-52946-t0-i1-000304-0.log", [page("/local/\(shown)"), page("/c/6a1b")], modified: now - 60)
+        XCTAssertNil(AgentApp.shownThread(pid: 52946, launched: launched, logs: logs), "a ChatGPT chat is no Codex thread")
+        XCTAssertNil(AgentApp.thread(inRoute: "/local/client-new-thread:10df"), "a new thread not sent yet")
+        XCTAssertNil(AgentApp.thread(inRoute: "/"))
+        XCTAssertNil(AgentApp.thread(inRoute: "/dots/\(shown)"), "not a thread on this Mac")
+    }
+
+    /// The thread the Codex app shows joins the threads used last when it is older than them, and
+    /// only when the store has it.
+    func testTheShownThreadJoinsTheListingWhateverItsAge() {
         let listing = #"{"id":2,"result":{"data":[{"id":"a","name":"Recent","cwd":"/x","recencyAt":300}]}}"#
-        let byTitle = #"{"id":3,"result":{"data":[]}}"#
-        let byWord = #"{"id":4,"result":{"data":[{"id":"other","name":"Appointments list","cwd":"/y"},{"id":"old","name":"Investigate [missing](x) appointments","cwd":"/y","recencyAt":1}]}}"#
+        let read = #"{"id":3,"result":{"thread":{"id":"old","name":"Investigate appointments","cwd":"/y","recencyAt":1}}}"#
         var connection = CodexConnection()
         connection.binary = { "/bin/codex" }
-        connection.converse = { _, _, _ in [listing, byTitle, byWord] }
-        XCTAssertEqual(connection.destinations(named: "Investigate missing appointments").map(\.id), ["a", "old"])
-        XCTAssertEqual(connection.destinations().map(\.id), ["a"], "without a title, searches are not read")
+        connection.converse = { _, _, _ in [listing, read] }
+        XCTAssertEqual(connection.destinations(including: "old").map(\.id), ["a", "old"])
+        XCTAssertEqual(connection.destinations().map(\.id), ["a"], "without an id, no read is used")
+        let refused = #"{"id":3,"error":{"code":-32600,"message":"thread not loaded: old"}}"#
+        connection.converse = { _, _, _ in [listing, refused] }
+        XCTAssertEqual(connection.destinations(including: "old").map(\.id), ["a"])
+        connection.converse = { _, _, _ in [listing, #"{"id":3,"result":{"thread":{"id":"a","cwd":"/x"}}}"#] }
+        XCTAssertEqual(connection.destinations(including: "a").map(\.id), ["a"], "a listed thread is listed once")
     }
 
     /// Send's menu holds the active sessions used last, five at most, and always the target. A
@@ -345,15 +372,42 @@ final class AgentConnectionTests: XCTestCase {
     }
 
     func testAThreadTheServerDoesNotHaveIsTheDestinationHavingChanged() {
-        guard case .destinationChanged = CodexConnection.failure(output: "Error: thread not found", thread: "t") else {
+        // What codex queue 0.159.2 prints for a thread id no thread has (2026-10-01).
+        let deleted = "Error: failed to queue session message: thread/queue/add failed: failed to read thread: invalid thread-store request: no rollout found for thread id 01a0fa10-0000-7000-8000-00000000dead (code -32603)"
+        guard case .destinationChanged(_, let reason) = CodexConnection.failure(output: deleted, thread: "t") else {
             return XCTFail("a missing thread is not a retryable failure")
         }
+        XCTAssertEqual(reason, "Codex can't find this thread. You can send it to another one.")
         guard case .destinationChanged = CodexConnection.failure(output: "failed to connect to ws://127.0.0.1:9", thread: "t") else {
             return XCTFail("an engine that cannot be reached is not a retryable failure")
         }
         guard case .notSubmitted = CodexConnection.failure(output: "Error: invalid message", thread: "t") else {
             return XCTFail("anything else definitely did not arrive")
         }
+    }
+
+    /// `codex queue` answers the same whether or not an engine has the thread, so a send to a thread
+    /// nobody has open says it waits, and the lock an engine holds on a loaded thread is what tells.
+    func testASendToAThreadNoEngineHasLoadedIsQueued() throws {
+        let thread = "01a0c176-bfab-7662-9ffb-a30cc3490835"
+        var connection = CodexConnection()
+        connection.binary = { "/bin/codex" }
+        connection.run = { _, _, _ in (0, "Queued message 7 for thread \(thread).", false) }
+        let destination = AgentDestination(id: thread, name: "t", address: .codexThread(uuid: thread))
+        connection.isLoaded = { _ in false }
+        guard case .queued(_, let reason) = connection.submit("look", to: destination) else {
+            return XCTFail("a thread no engine has loaded only stores the message")
+        }
+        XCTAssertEqual(reason, "Codex reads it when you open this thread.")
+        connection.isLoaded = { _ in true }
+        guard case .accepted = connection.submit("look", to: destination) else { return XCTFail("a loaded thread takes it") }
+
+        let home = temporaryFolder()
+        XCTAssertFalse(CodexConnection.isLoaded(thread, codexHome: home))
+        let locks = home.appendingPathComponent("thread-writer-locks")
+        try FileManager.default.createDirectory(at: locks, withIntermediateDirectories: true)
+        try Data().write(to: locks.appendingPathComponent("\(thread).lock"))
+        XCTAssertTrue(CodexConnection.isLoaded(thread, codexHome: home))
     }
 
     func testACodexDestinationIsPinnedByTheRuntimeAndAClaudeOneByAPreflightCheck() {

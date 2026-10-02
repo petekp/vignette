@@ -245,6 +245,26 @@ def send_target(app):
     close_editor(app)
 
 
+def send_target_codex(app):
+    """With a Codex thread used just now and no Claude Code session, Send goes to the thread, which
+    the bar names by its project. The listing comes from `codex app-server`'s `thread/list`."""
+    thread, env = app.fake_codex('e2e-codex-project')
+    start(app, **env)
+    copy, _ = push(app, None, name='Settings page.png', agent='claude')
+    open_editor(app, copy)
+    s = app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('listed'), 'the session list', timeout=15)
+    offer = s['annotator']['offer']
+    if offer.get('kind') != 'send' or offer.get('session') != thread or offer.get('client') != 'codex' \
+            or offer.get('project') != 'e2e-codex-project':
+        raise Failed(f'the bar offers {offer}, not Send to the fake Codex thread {thread}')
+    app.report.step('the bar offers Send to the Codex thread', detail=json.dumps(offer))
+    listings = [c for c in app.codex_calls('app-server') if c.get('answered') == 'thread/list']
+    if not listings:
+        raise Failed(f'codex was never asked for its threads: {app.codex_calls()}')
+    app.report.step('the threads came from codex app-server', detail=f'{len(listings)} listings')
+    close_editor(app)
+
+
 def pasteboard_types():
     out = subprocess.run([PROBE, 'pasteboard', 'types'], capture_output=True, text=True, check=True).stdout.splitlines()
     return out[1].split() if len(out) > 1 else []
@@ -446,31 +466,116 @@ def zoom_keys(app):
 
 @needs_input
 def send_and_reply(app):
-    """Send puts one request line in a fake session's inbox, and a reply through the skill's helper
-    comes back as a card. The helper refuses a ticket other than the one beside the image."""
+    """Send puts one request line in a fake Claude Code session's inbox, and a reply through the
+    skill's helper comes back as a card. The helper refuses a ticket other than the one beside the
+    image."""
     session, inbox = app.fake_session('e2e-project')
     start(app)
+
+    def delivered():
+        end = time.monotonic() + 10
+        while not app.lines_in(inbox) and time.monotonic() < end:
+            time.sleep(0.1)
+        lines = app.lines_in(inbox)
+        if len(lines) != 1:
+            raise Failed(f'the inbox has {lines}')
+        app.report.step('one request line in the inbox')
+        return open(os.path.join(inbox, lines[0])).read()
+
+    send_then_reply(app, session, delivered, keep_alive=lambda: app.touch_alive(inbox))
+
+
+@needs_input
+def send_and_reply_codex(app):
+    """Send hands one request line to `codex queue` for the Codex thread, and a reply through the
+    skill's helper comes back as a card, as it does from Claude Code."""
+    thread, env = app.fake_codex('e2e-codex-project')
+    start(app, **env)
+
+    def delivered():
+        queued = app.codex_calls('queue')
+        if len(queued) != 1:
+            raise Failed(f'codex queue ran {len(queued)} times: {queued}')
+        args = queued[0]['args']
+        if args[:3] != ['queue', '--thread', thread] or args[3:4] != ['--message']:
+            raise Failed(f'codex queue was not given the thread and a message: {args}')
+        app.report.step('one codex queue for the thread')
+        return args[4]
+
+    send_then_reply(app, thread, delivered)
+
+
+@needs_input
+def send_codex_thread_gone(app):
+    """A Codex thread deleted after the bar offered it: the send fails as a thread that is gone,
+    not as a failure to retry."""
+    thread, env = app.fake_codex('e2e-codex-project')
+    start(app, **env)
+    path = app.image('Screenshot gone.png', folder=app.watch)
+    time.sleep(1)
+    s = click_to_open(app, path)
+    app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == thread, 'Send to the fake thread')
+    draw_box(app, app.state())
+    with open(os.path.join(app.folder, 'codex', 'gone'), 'w') as f:
+        f.write(thread + '\n')
+    offset = app.log_size()
+    app.keys('annotator', 'key', KEY_RETURN, 'cmd')
+    line = app.wait_log('[send] error', offset, timeout=20)
+    if 'no-agent' not in line or 'no rollout found' not in line:
+        raise Failed(f'the send did not fail as a thread that is gone: {line}')
+    app.report.step('the send failed as a thread that is gone', detail=line.strip()[:160])
+    capture_sent_card(app, path, 'gone-card')
+
+
+@needs_input
+def send_codex_queued(app):
+    """A send to a Codex thread no engine has loaded is stored by codex queue but read by nobody until
+    the thread is opened, so it is reported as queued rather than sent."""
+    thread, env = app.fake_codex('e2e-codex-project', loaded=False)
+    start(app, **env)
+    path = app.image('Screenshot queued.png', folder=app.watch)
+    time.sleep(1)
+    s = click_to_open(app, path)
+    app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == thread, 'Send to the fake thread')
+    draw_box(app, app.state())
+    offset = app.log_size()
+    app.keys('annotator', 'key', KEY_RETURN, 'cmd')
+    line = app.wait_log('[send] queued', offset, timeout=20)
+    if len(app.codex_calls('queue')) != 1:
+        raise Failed(f'codex queue ran {len(app.codex_calls("queue"))} times')
+    app.report.step('the send is reported as queued', detail=line.strip()[:160])
+    capture_sent_card(app, path, 'queued-card')
+
+
+def capture_sent_card(app, path, name):
+    """The card that was sent, with its mark, into the report: the lone thumbnail comes back to say
+    what happened, and its mark is up once it has landed."""
+    s = app.wait_state(lambda s: any(c['file'] == path and not c['out'] for c in s['stack']['cards']), 'the sent card back')
+    time.sleep(1)
+    card = next(c for c in app.state()['stack']['cards'] if c['file'] == path)
+    x, y, w, h = card['frame']
+    app.capture([x - 10, y - 10, w + 20, h + 20], name)
+
+
+def send_then_reply(app, session, delivered, keep_alive=lambda: None):
+    """Opens a capture, draws a box, sends it with Cmd+Return to `session`, which the bar must
+    offer, and answers it with a reply through the skill's helper. `delivered` answers the request
+    line the agent received."""
     path = app.image('Screenshot send.png', folder=app.watch)
     time.sleep(1)
-    app.touch_alive(inbox)
+    keep_alive()
     s = click_to_open(app, path)
     app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == session, 'Send to the fake session')
     s = draw_box(app, app.state())
-    app.touch_alive(inbox)
+    keep_alive()
     offset = app.log_size()
     app.keys('annotator', 'key', KEY_RETURN, 'cmd')
     app.wait_log('[send] ok', offset, timeout=20)
-    end = time.monotonic() + 10
-    while not app.lines_in(inbox) and time.monotonic() < end:
-        time.sleep(0.1)
-    lines = app.lines_in(inbox)
-    if len(lines) != 1:
-        raise Failed(f'the inbox has {lines}')
-    line = open(os.path.join(inbox, lines[0])).read()
+    line = delivered()
     image = re.search(r'"([^"]+/image\.png)"', line)
     if not image:
         raise Failed(f'the request line names no image: {line}')
-    app.report.step('one request line in the inbox', detail=line.strip()[:120])
+    app.report.step('the request line names the image', detail=line.strip()[:120])
     ticket = os.path.join(os.path.dirname(image.group(1)), 'ticket.json')
     marks = os.path.join(app.folder, 'reply.json')
     with open(marks, 'w') as f:
@@ -608,4 +713,6 @@ def agent_marks_editable(app):
     close_editor(app)
 
 
-ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, copy_types, stitch, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, agent_marks_editable, corner_select]
+ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, send_target_codex, copy_types, stitch, relaunch,
+       settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_and_reply_codex, send_codex_thread_gone,
+       send_codex_queued, agent_marks_editable, corner_select]

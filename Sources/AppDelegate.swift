@@ -585,7 +585,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             Log.write("[url] \(url.absoluteString)")
-            run(Commands.parse(url))
+            run(Commands.parse(url, watchFolder: watchFolder))
         }
     }
 
@@ -1151,6 +1151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 let state: SendMark.State
                 switch outcome {
                 case .accepted: state = .sent
+                case .queued: state = .queued
                 case .uncertain: state = .uncertain
                 case .notSubmitted, .destinationChanged: state = .failed
                 }
@@ -1192,21 +1193,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard let client = AgentApp.client(of: app), let pid = app?.processIdentifier else {
             return listDestinations(for: shot, asked: asked, cameFrom: nil)
         }
-        // The thread open in the agent's app is read before anything is listed: Claude Code's list
+        // The thread the agent's app shows is read before anything is listed: Claude Code's list
         // comes first and would settle the target on the session in herdr's focus, which you were not in.
+        let launched = app?.launchDate
         DispatchQueue.global(qos: .userInitiated).async {
-            let open = AgentApp.openThread(pid: pid)
+            let shown = AgentApp.shownThread(pid: pid, launched: launched)
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.annotator.currentKey == shot.url.path else { return }
-                Log.write("[send] came from the \(client.label) app, open thread \(open == nil ? "unread" : "read") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms")
-                self.listDestinations(for: shot, asked: asked, cameFrom: (client, open))
+                Log.write("[send] came from the \(client.label) app, showing \(shown ?? "no thread") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms")
+                self.listDestinations(for: shot, asked: asked, cameFrom: (client, shown))
             }
         }
     }
 
-    private func listDestinations(for shot: Screenshot, asked: CFTimeInterval, cameFrom: (client: AgentClient, open: String?)?) {
-        let named = cameFrom.flatMap { from in from.open.map { (from.client, $0) } }
-        requests.destinations(named: named) { [weak self] found, complete, fresh in
+    private func listDestinations(for shot: Screenshot, asked: CFTimeInterval, cameFrom: (client: AgentClient, shown: String?)?) {
+        let shown = cameFrom.flatMap { from in from.shown.map { (from.client, $0) } }
+        requests.destinations(shown: shown) { [weak self] found, complete, fresh in
             guard let self else { return }
             Log.write("[send] sessions \(found.count)\(complete ? " complete" : "")\(fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
             // Listing the sessions runs subprocesses that can take seconds, so two images' answers
@@ -1214,8 +1216,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             // one that replaced it, and a reply would go to a session it was never about.
             guard self.annotator.currentKey == shot.url.path else { return }
             guard let cameFrom else { return self.annotator.destinationsAnswered(found, complete: complete) }
-            let marked = AgentDestination.cameFrom(cameFrom.client, open: cameFrom.open, in: found, fresh: fresh)
-            // Nothing marked from a kept list means the open thread may be newer than it, so the
+            let marked = AgentDestination.cameFrom(cameFrom.client, shown: cameFrom.shown, in: found, fresh: fresh)
+            // Nothing marked from a kept list means the shown thread may be newer than it, so the
             // target waits for the fresh one rather than settling on the thread used last.
             let waits = !fresh && !marked.contains { $0.focus == .app }
             self.annotator.destinationsAnswered(marked, complete: complete && !waits)
@@ -1256,7 +1258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 let failure = output.failure ?? .writeFailed("the rendering made no image")
                 Commands.error("send", failure.code, "\(name): \(failure)")
                 if case .unreadableImage = failure { annotator.sendFailed(Self.unreadable(name)) }
-                else { annotator.sendFailed("The drawing couldn't be rendered. See the log.") }
+                else { annotator.sendFailed("Vignette couldn't render the drawing. The log has details.") }
                 return
             }
             submit(png, of: shot, to: destination, message: message)
@@ -1273,7 +1275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             record = try requests.send(png: png, source: shot.url, to: destination, message: message,
                                        instructions: settings.data.sendInstructions)
         } catch {
-            annotator.sendFailed((error as? ScreenshotRequests.Refusal)?.reason ?? "The drawing couldn't be sent. See the log.")
+            annotator.sendFailed((error as? ScreenshotRequests.Refusal)?.reason ?? "Vignette couldn't send the drawing. The log has details.")
             return
         }
         // Stored, so the request survives whatever the client does next. The image goes home
