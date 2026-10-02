@@ -582,11 +582,9 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
   bottom, up to six lines, and the bar keeps its size. When growing down would bring it within 8 pt
   of the bottom of the visible screen, or of the Dock's top, it grows up out of the bar instead.
   Past six lines it scrolls.
-- M or P in the editor puts the keys in the message field. Cmd+Return in it sends. Return in it
-  replies on a card that names its session. Beside Send, Return sends nothing and bounces Send's ⌘↩,
-  because Return never sends to a session Vignette picked. Send with Return in Settings > Agents
-  (`sendWithReturn`) makes Return send there too. Esc, or a click on the image, hands the keys back
-  to the editor, and the field shrinks back to one line.
+- M or P in the editor puts the keys in the message field. Return and Cmd+Return in it send, or
+  reply on a card that names its session, since typing a message is the intent to send it. Esc, or a
+  click on the image, hands the keys back to the editor, and the field shrinks back to one line.
 - The message leads the line Send puts in the session (`docs/request-line-2026-09-25.md`). It is
   kept until the next image opens, so a send that fails keeps it.
 - Tab goes through the marks in reading order, then the bar's controls in order (the tools, Copy,

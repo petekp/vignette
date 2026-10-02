@@ -37,12 +37,10 @@ shown before anything is sent, and Return never sends to it.
 | A session to send to | Copy, then the target, the message field, then Send, filled | Copy | Send |
 | It names the session it came from | The message field, then Reply, filled, with the agent's logo | Reply | Reply |
 
-The message field keeps these keys. Cmd+Return sends. Return replies on Reply, and beside Send it
-sends nothing and bounces Send's ⌘↩ instead, so a Return typed as in a chat never hands the
-drawing to a session Vignette picked. Send with Return, in the Agents tab (`sendWithReturn`), makes
-Return beside Send send, as Pete asked on 2026-09-26, following chat apps such as Codex that offer
-the same choice. Send keeps showing ⌘↩, which sends either way; a hint that changed with the focus
-changed the button's width and moved the whole bar. `docs/request-line-2026-09-25.md` has what the
+The message field keeps these keys. Return and Cmd+Return send, or reply on Reply, as in a chat
+app: typing a message is the intent to send it, and the target the message goes to is beside the
+field. Send keeps showing ⌘↩, which sends from anywhere in the editor; a hint that changed with the
+focus changed the button's width and moved the whole bar. `docs/request-line-2026-09-25.md` has what the
 message becomes.
 
 - **Copy is Done** under a label that says what it does. The code and the log still call it done.

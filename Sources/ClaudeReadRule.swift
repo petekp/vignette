@@ -4,7 +4,9 @@ import Foundation
 /// session is in Vignette's request folder, so a session stops on that question when it opens the
 /// drawing, and every request sent to it after waits behind that question.
 /// This rule in Claude Code's own settings lets it read the sent images, and nothing else of Vignette's,
-/// without asking. The person turns it on: it is their Claude Code's configuration.
+/// without asking. Turning Claude Code on adds it and turning it off removes it
+/// (`AppDelegate.turnOnAgents`, `removeAgentPlugin`); the Agents tab's own switch for it is how
+/// someone keeps the plugin without it.
 enum ClaudeReadRule {
     struct Failure: Error { let reason: String }
 
@@ -18,17 +20,19 @@ enum ClaudeReadRule {
         return "Read(" + (path.hasPrefix(homePath) ? "~/" + path.dropFirst(homePath.count) : "/" + path) + ")"
     }
 
-    /// The switch's words, in the Agents tab and on setup's last page.
-    static let title = "Claude Code reads your drawings without asking"
-    static let explanation = "Adds a rule to Claude Code's settings for the drawings you send. Without it, Claude Code asks before opening them."
+    /// The Agents tab's switch.
+    static let title = "Let Claude Code open drawings without asking"
+    static let explanation = "Otherwise Claude Code stops to ask you in its terminal each time you send one. This adds a permission to Claude Code's settings for these drawings only."
+    /// Under setup's agents, while Claude Code is on.
+    static let setupNote = "Claude Code will open the drawings you send without asking you first. You can change this in Settings."
 
-    /// The switch: sets the rule and logs it. Answers why it failed, for the line under the switch.
+    /// Sets the rule, and logs it when that changed the file. Answers why it failed, for the line
+    /// under the switch.
     @discardableResult
     static func apply(_ on: Bool, in root: URL) -> String? {
         let url = settingsFile(in: root)
         do {
-            try set(on, in: root)
-            Log.write("[permissions] \(on ? "added" : "removed") \(rule()) in \(url.path)")
+            if try set(on, in: root) { Log.write("[permissions] \(on ? "added" : "removed") \(rule()) in \(url.path)") }
             return nil
         } catch {
             let reason = (error as? Failure)?.reason ?? error.localizedDescription
@@ -45,9 +49,11 @@ enum ClaudeReadRule {
         return allowList(of: settings).contains(rule)
     }
 
-    /// Adds or removes the rule, leaving every other setting as it was. A file that does not parse is
-    /// left alone and reported, since rewriting it would lose what the person wrote.
-    static func set(_ on: Bool, in root: URL, rule: String = rule()) throws {
+    /// Adds or removes the rule, leaving every other setting as it was, and answers whether the file
+    /// changed. A file that does not parse is left alone and reported, since rewriting it would lose
+    /// what the person wrote.
+    @discardableResult
+    static func set(_ on: Bool, in root: URL, rule: String = rule()) throws -> Bool {
         let url = settingsFile(in: root)
         var settings = try read(url)
         // Anything but a list of rules where one belongs is the person's to fix, not to replace.
@@ -56,7 +62,7 @@ enum ClaudeReadRule {
             throw Failure(reason: "its permissions in settings.json aren't in the shape Vignette expects, so it left them alone")
         }
         var allow = allowList(of: settings)
-        guard allow.contains(rule) != on else { return }
+        guard allow.contains(rule) != on else { return false }
         if on { allow.append(rule) } else { allow.removeAll { $0 == rule } }
         // Off leaves no empty list or section behind, so on and then off is the file as it was.
         var permissions = settings["permissions"] as? [String: Any] ?? [:]
@@ -75,6 +81,7 @@ enum ClaudeReadRule {
         } catch {
             throw Failure(reason: error.localizedDescription)
         }
+        return true
     }
 
     /// The settings as a dictionary; a missing file is empty settings.

@@ -565,7 +565,6 @@ private struct BehindWindowBlur: NSViewRepresentable {
 
 private struct ToolbarView: View {
     @ObservedObject var model: AnnotatorToolbar.Model
-    @ObservedObject private var settings = Settings.shared
     let onTool: (EditorCore.Tool) -> Void
     let onDone: () -> Void
     let onSend: (AgentDestination) -> Void
@@ -577,8 +576,6 @@ private struct ToolbarView: View {
     let onWidth: () -> Void
     let onMessageEnd: () -> Void
     @FocusState private var focused: Bool
-    /// Counts Returns in the message field that did not send, each of which bounces Send's ⌘↩.
-    @State private var sendNudges = 0
     /// The control the pointer is on, and the one whose tooltip is up (`tip`).
     @State private var tipOver: AnnotatorToolbar.Model.Control?
     @State private var tipShown: AnnotatorToolbar.Model.Control?
@@ -643,19 +640,12 @@ private struct ToolbarView: View {
                     .transition(Self.slot)
             }
             if let destination = offer.destination {
-                // Beside Send, Vignette picked the session, so Return in the field sends only when
-                // Settings says so (`sendWithReturn`); otherwise it points at ⌘↩, which sends either way.
-                messageField(returnSends: { !offer.isSend || settings.data.sendWithReturn }) { onSend(destination) }
+                messageField { onSend(destination) }
                     .modifier(Resting(while: model.sending))
                     .padding(.trailing, 4)
                 actionButton(offer.isSend ? "Send" : "Reply", key: offer.isSend ? "⌘↩" : "↩",
                              logo: offer.isSend ? nil : destination.client) { onSend(destination) }
                     .modifier(FocusRing(on: model.focus == .action))
-                    .keyframeAnimator(initialValue: CGFloat(1), trigger: sendNudges) { content, scale in content.scaleEffect(scale) } keyframes: { _ in
-                        let motion = Settings.shared.motionScale
-                        CubicKeyframe(motion > 0 ? 1.08 : 1, duration: 0.09)
-                        SpringKeyframe(1, duration: 0.35 * max(motion, 0.01), spring: .bouncy)
-                    }
             }
         }
         .padding(.horizontal, 7)
@@ -786,11 +776,9 @@ private struct ToolbarView: View {
 
     /// What goes with the drawing, typed in the bar. One line wide in the bar; while it is typed in
     /// it grows down past the bar's bottom, up to `messageLines` lines, and the bar keeps its size.
-    /// Cmd+Return sends (`ToolbarPanel`). Return sends only when `returnSends`: beside Reply, as in
-    /// the editor, and beside Send when `sendWithReturn` is on. It is asked when Return is pressed,
-    /// because the field keeps the submit action it was made with when the setting changes under it.
+    /// Return and Cmd+Return send (`ToolbarPanel`), since typing a message is the intent to send it.
     /// Esc hands the keys back to the editor.
-    private func messageField(returnSends: @escaping () -> Bool, send: @escaping () -> Void) -> some View {
+    private func messageField(send: @escaping () -> Void) -> some View {
         let grown = typing && !model.message.isEmpty
         // The bar's middle is 7 pt above its bottom edge; a margin keeps the field off the Dock.
         let below = model.roomBelow + (AnnotatorToolbar.height - 30) / 2 - 8
@@ -808,9 +796,7 @@ private struct ToolbarView: View {
                     .font(.system(size: 13))
                     .lineLimit(typing ? 1...Self.messageLines : 1...1)
                     .focused($focused)
-                    .onSubmit {
-                        if !returnSends() { sendNudges += 1 } else if !model.sending { send() }
-                    }
+                    .onSubmit { if !model.sending { send() } }
                     .onExitCommand { onMessageEnd() }
                     .onChange(of: model.message) { _, words in
                         if words.count > AnnotatorToolbar.Model.messageLimit { model.message = String(words.prefix(AnnotatorToolbar.Model.messageLimit)) }

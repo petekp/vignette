@@ -19,7 +19,6 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   "hideMenuBarIcon": false,
   "launchAtLogin": true,
   "quickAnnotate": false,
-  "sendWithReturn": false,
   "sendInstructions": "If a drawing would answer better than words, you can send one back.",
   "annotateOnCapture": false,
   "copyOnCapture": true,
@@ -62,10 +61,6 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   with no control in the window. `From Vignette: "<path>".` before it is fixed: the skill loads on
   "From Vignette:", and the path is the drawing. It is kept to one line, since the plugin delivers
   each line as its own message, so line breaks and tabs become spaces. An empty one leaves the line at the path.
-- **`sendWithReturn`** is Send with Return, in the Agents tab. On, Return in the message box beside
-  Send sends the drawing, as in a chat app. Off, Return there only points at Cmd+Return, since
-  Vignette picked the session and a Return typed out of habit would hand the drawing to it.
-  Cmd+Return sends either way, and Return beside Reply always sends.
 - **`annotateOnCapture`** is Open it to draw, and Open to Draw in the menu bar: it opens every new
   screenshot in the annotator right away, instead of showing a thumbnail.
 - **`copyOnCapture`** puts every new screenshot on the clipboard as it lands: the image, plus its

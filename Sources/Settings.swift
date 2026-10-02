@@ -46,7 +46,6 @@ struct SettingsData: Codable, Equatable {
     var hideMenuBarIcon = false              // vignette://settings still opens the window
     var launchAtLogin = false                // registers the app as a login item (System Settings > Login Items)
     var quickAnnotate = false                // Done copies the result and closes the annotator and the stack at once
-    var sendWithReturn = false               // Return in the message field beside Send sends; ⌘Return always does
     var sendInstructions = SettingsData.defaultSendInstructions  // the words after the image in the line Send puts in a session
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands

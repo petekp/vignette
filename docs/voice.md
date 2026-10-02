@@ -67,6 +67,16 @@ anything works inside.
 | Anything else | Vignette couldn't send the drawing. The log has details. |
 | The screenshot is gone | Vignette can't read *name*. It may have been moved or deleted. |
 
+### Settings switches
+
+A switch's line says what changes when it is on, or what happens without it when that is the reason
+to turn it on.
+
+| Switch | Title | Line under it |
+| --- | --- | --- |
+| Claude Code may open sent drawings (`ClaudeReadRule`), in the Agents tab | Let Claude Code open drawings without asking | Otherwise Claude Code stops to ask you in its terminal each time you send one. This adds a permission to Claude Code's settings for these drawings only. |
+| Under setup's agents while Claude Code is on (`ClaudeReadRule.setupNote`) | | Claude Code will open the drawings you send without asking you first. You can change this in Settings. |
+
 ### A copy, on its card ("Not copied")
 
 | When | Reason |

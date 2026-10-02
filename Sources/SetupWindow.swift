@@ -173,7 +173,9 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         if model.sawAgents {
             let roots = model.agents.filter { !$0.installed && model.chosen.contains($0.root) }.map(\.root)
             if !roots.isEmpty { model.callbacks.installAgentPlugin(roots) }
-            if let claude = model.claudeWithoutReadRule, model.claudeReads { ClaudeReadRule.apply(true, in: claude) }
+            // An install brings Claude Code's permission with it (`AppDelegate.turnOnAgents`); a plugin
+            // already in gets it here, since nothing is installed for it.
+            if let claude = model.claude, claude.installed { ClaudeReadRule.apply(true, in: claude.root) }
             settings.update { $0.agentSkill = AgentSkill.off.rawValue }
             skill = roots.isEmpty ? "none" : roots.map(\.lastPathComponent).joined(separator: ",")
         }
@@ -215,10 +217,6 @@ final class SetupModel: ObservableObject {
     /// The agents whose switch is on. All that can take the plugin to start: the user installed
     /// Vignette to work with them, and a switch they can see is still their choice.
     @Published var chosen: Set<URL>
-    /// Claude Code's directory when its settings lack `ClaudeReadRule`, which this page then offers,
-    /// on to start for the same reason as the skill.
-    let claudeWithoutReadRule: URL?
-    @Published var claudeReads = true
     private(set) var sawAgents = false
 
     init(protectedArea: String?, agents: [AgentPluginStatus], callbacks: SetupWindowController.Callbacks) {
@@ -226,8 +224,6 @@ final class SetupModel: ObservableObject {
         self.agents = agents
         self.callbacks = callbacks
         chosen = Set(agents.filter(\.hasTool).map(\.root))
-        claudeWithoutReadRule = agents.first { $0.logoKey == AgentClient.claude.rawValue }
-            .map(\.root).flatMap { ClaudeReadRule.isSet(in: $0) ? nil : $0 }
         tools = NotificationCenter.default.addObserver(forName: AgentTools.found, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.toolsFound() }
         }
@@ -244,11 +240,15 @@ final class SetupModel: ObservableObject {
         chosen.formUnion(agents.filter { $0.hasTool && !before.contains($0.root) }.map(\.root))
     }
 
+    var claude: AgentPluginStatus? { agents.first { $0.client == .claude } }
+
+    /// Whether Claude Code's plugin is in or its switch is on. Closing the window then also gives it
+    /// `ClaudeReadRule`: someone using Vignette with Claude Code wants it to open what they send.
+    var claudeOn: Bool { claude.map { $0.installed || chosen.contains($0.root) } ?? false }
+
     /// Whether Claude Code's switch is on for an install, which leaves the sessions already open
     /// without the plugin until they reload.
-    var installsIntoClaude: Bool {
-        agents.contains { $0.client == .claude && !$0.installed && chosen.contains($0.root) }
-    }
+    var installsIntoClaude: Bool { claude.map { !$0.installed && chosen.contains($0.root) } ?? false }
 
     var pages: [Page] { agents.isEmpty ? [.welcome, .shortcut] : [.welcome, .shortcut, .agents] }
     var index: Int { pages.firstIndex(of: page) ?? 0 }
@@ -449,17 +449,16 @@ struct SetupView: View {
                         }
                     }
                 } footer: {
-                    if model.installsIntoClaude {
-                        Text("Claude Code sessions already open need `/reload-plugins` to use it.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                if model.claudeWithoutReadRule != nil {
-                    Section {
-                        Toggle(isOn: $model.claudeReads) {
-                            Text(ClaudeReadRule.title)
-                            Text(ClaudeReadRule.explanation)
+                    if model.claudeOn {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(ClaudeReadRule.setupNote)
+                            if model.installsIntoClaude {
+                                Text("Claude Code sessions already open need `/reload-plugins` to use it.")
+                            }
                         }
+                        .font(.caption).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }

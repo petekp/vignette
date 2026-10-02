@@ -366,7 +366,7 @@ struct SettingsView: View {
             refreshAgents()
         }
         .onReceive(NotificationCenter.default.publisher(for: AgentTools.found)) { _ in refreshAgents() }
-        if let claude = claudeRow {
+        if let claude = claudeRow, claude.installed {
             Section {
                 Toggle(isOn: Binding(get: { claudeReads }, set: { on in
                     claudeReadsFailure = ClaudeReadRule.apply(on, in: claude.root)
@@ -374,14 +374,6 @@ struct SettingsView: View {
                 })) {
                     Text(ClaudeReadRule.title)
                     Text(claudeReadsFailure ?? ClaudeReadRule.explanation)
-                }
-            }
-        }
-        if !agentRows.isEmpty {
-            Section {
-                Toggle(isOn: binding(\.sendWithReturn)) {
-                    Text("Send with Return")
-                    Text("Return in the message box sends the drawing. ⌘Return always does.")
                 }
             }
         }
@@ -409,7 +401,7 @@ struct SettingsView: View {
         claudeReads = claudeRow.map { ClaudeReadRule.isSet(in: $0.root) } ?? false
     }
 
-    private var claudeRow: AgentPluginStatus? { agentRows.first { $0.logoKey == AgentClient.claude.rawValue } }
+    private var claudeRow: AgentPluginStatus? { agentRows.first { $0.client == .claude } }
 
     // MARK: Developer
 

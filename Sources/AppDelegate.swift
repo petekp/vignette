@@ -119,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.dragItems = { [weak self] cards in self?.dragItems(cards) ?? [] }
         settingsWindow.callbacks = SettingsWindowController.Callbacks(
             openTweaks: { [weak self] in self?.debugPanel.toggle() },
-            installAgentPlugin: { [weak self] root, done in self?.installAgentPlugin(into: [root]) { done($0) } },
+            installAgentPlugin: { [weak self] root, done in self?.turnOnAgents([root]) { done($0) } },
             removeAgentPlugin: { [weak self] root, done in self?.removeAgentPlugin(from: root, completion: done) },
             folderDenied: { [weak self] in self?.watcher?.isDenied ?? false },
             agentFailures: { [weak self] in self?.pluginFailures ?? [:] })
@@ -246,18 +246,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
     }
 
+    /// A person turning agents on, in setup or the Agents tab: the plugin, and for Claude Code the
+    /// permission to open the drawings Vignette sends (`ClaudeReadRule`), once the plugin is in.
+    /// `install-skill` installs without it, since a script must not change a person's settings.
+    func turnOnAgents(_ roots: [URL], completion: @escaping ([AgentPlugin.Result]) -> Void = { _ in }) {
+        installAgentPlugin(into: roots) { results in
+            for result in results where ![.failed, .noTool].contains(result.outcome) && AgentPlugin.client(of: result.root) == .claude {
+                ClaudeReadRule.apply(true, in: result.root)
+            }
+            completion(results)
+        }
+    }
+
     /// Setup has closed by the time its install answers, so a failure opens the Agents tab, which
     /// says why and whose switch tries again.
     private func installAgentPluginFromSetup(_ roots: [URL]) {
-        installAgentPlugin(into: roots) { [weak self] results in
+        turnOnAgents(roots) { [weak self] results in
             guard results.contains(where: { [.failed, .noTool].contains($0.outcome) }) else { return }
             self?.settingsWindow.show(tab: .agents, activating: false)
         }
     }
 
-    /// The Agents tab's switch, turned off.
+    /// The Agents tab's switch, turned off. For Claude Code the permission goes with the plugin, so
+    /// its settings are left as they were before Vignette.
     func removeAgentPlugin(from root: URL, completion: @escaping (AgentPlugin.Result) -> Void) {
-        agentPlugins.remove(from: root, completion: completion)
+        agentPlugins.remove(from: root) { result in
+            if ![.failed, .noTool].contains(result.outcome), AgentPlugin.client(of: root) == .claude {
+                ClaudeReadRule.apply(false, in: root)
+            }
+            completion(result)
+        }
     }
 
     /// The offer, once: the app has never asked and this Mac has an agent directory. The offer is

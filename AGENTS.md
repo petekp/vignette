@@ -802,8 +802,8 @@ screenshot location for such a launch is written with the same variable:
   focus, which moves. Coming from the Codex
   app, a kept list that holds the shown thread settles the target at once; one that does not waits
   for the fresh list, since the thread may be newer. Return copies and replies only on a card that names its session; Cmd+Return
-  sends or replies (`EditorCore.finishes`). Return never sends to a session Vignette picked, except
-  from the message field when the person turned on Send with Return (`sendWithReturn`).
+  sends or replies (`EditorCore.finishes`). On the image, Return never sends to a session Vignette
+  picked. In the message field Return sends, as in a chat app, with the target beside it.
   `docs/send-and-reply-2026-09-24.md` has the rules. While one image follows another with no gap (a click on
   another card, or the queue moving on) the bar stays on screen and springs to the next image's
   place, and keeps the image before's target until the next image's settles (`Model.begin`'s
@@ -1123,10 +1123,11 @@ screenshot location for such a launch is written with the same variable:
   session in no inbox is an error, "closed" or "cleared", and never another session. The line is
   accepted once it is in the inbox; the session reads it when its turn ends. The image travels as a
   path the session opens itself, so a Claude Code session that may not read it stops on a permission
-  prompt, which Vignette cannot see. The Agents tab
-  and setup's last page offer `ClaudeReadRule`, one `Read(…/requests/*/image.png)` rule in
-  `~/.claude/settings.json`'s `permissions.allow`, which lets Claude Code open the sent images
-  without asking. It writes through a link to that file, since people keep it in a dotfiles
+  prompt, which Vignette cannot see. So turning Claude Code on, in setup or the Agents tab, also
+  adds `ClaudeReadRule`, one `Read(…/requests/*/image.png)` rule in `~/.claude/settings.json`'s
+  `permissions.allow`, which lets Claude Code open the sent images without asking, and turning it
+  off there removes the rule. While the plugin is in, the Agents tab has a switch for the rule
+  alone. A launch never adds it, so an install from before this keeps what it had. It writes through a link to that file, since people keep it in a dotfiles
   repository; a skill's `allowed-tools` was tried and made Claude Code ask to use the skill
   instead. The two tiers
   are recorded on every request and reported in `[state] requests`; `docs/closed-agent-loop-implementation-2026-09-20.md` says why the weaker one
