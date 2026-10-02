@@ -516,8 +516,8 @@ enum Rendering {
         /// What a card says, short enough for its mark; `description` has the detail for the log.
         var reason: String {
             switch self {
-            case .unreadableImage: return "The screenshot could not be read"
-            case .writeFailed: return "The drawing could not be saved"
+            case .unreadableImage: return "Vignette couldn't read the screenshot."
+            case .writeFailed: return "Vignette couldn't save the drawing."
             }
         }
     }

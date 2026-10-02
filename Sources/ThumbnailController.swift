@@ -29,7 +29,8 @@ struct Card: Identifiable {
 /// shown again after a failure is a new card for the same file.
 struct SendMark: Equatable {
     /// `replyFailed`: the agent's reply to this send arrived and could not be made a card.
-    enum State: Equatable { case sending, sent, uncertain, failed, replyFailed }
+    /// `queued`: the client holds the send, but nothing reads it until the session is opened.
+    enum State: Equatable { case sending, sent, queued, uncertain, failed, replyFailed }
     let request: String   // the request's id, so a later send's mark is never taken off by this one's timer
     let client: AgentClient
     let project: String
@@ -743,8 +744,9 @@ final class ThumbnailController: NSObject {
     }
 
     /// The client answered for the request `request` about `shot`. The mark says so and holds as the
-    /// copied mark does, a failure three times as long. A card no longer on screen says nothing more
-    /// about a delivery that worked, and comes back as a lone thumbnail about one that did not.
+    /// copied mark does, a mark with a reason three times as long: a failure, or a send that waits for
+    /// its session to be opened. A card no longer on screen says nothing more about a delivery that
+    /// worked, and comes back as a lone thumbnail about any other.
     func delivered(_ shot: Screenshot, request: String, _ state: SendMark.State, reason: String?) {
         let key = shot.url.path
         guard var mark = model.sendMarks[key], mark.request == request else { return }
@@ -764,13 +766,13 @@ final class ThumbnailController: NSObject {
 
     private func hold(_ mark: SendMark, on shot: Screenshot) {
         let key = shot.url.path, request = mark.request, state = mark.state
-        let failed = state != .sending && state != .sent
+        let explained = state != .sending && state != .sent
         let onScreen = visible && model.cards.contains { $0.shot.url.path == key }
-        guard onScreen || failed else { model.sendMarks[key] = nil; return }
+        guard onScreen || explained else { model.sendMarks[key] = nil; return }
         model.sendMarks[key] = mark
         if !onScreen { show(shot) }
-        // A failure has a sentence to read and act on, so it holds three times as long.
-        let hold = (ui.markSeconds + ui.expandDuration) * (failed ? 3 : 1)
+        // Anything but a send that worked has a sentence to read and act on, so it holds three times as long.
+        let hold = (ui.markSeconds + ui.expandDuration) * (explained ? 3 : 1)
         DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in
             guard let self, self.model.sendMarks[key]?.request == request else { return }
             self.model.sendMarks[key] = nil

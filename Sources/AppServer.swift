@@ -33,95 +33,70 @@ enum AppServer {
     }
 
     /// The request lines for one discovery: the handshake, the listing of the threads used last, and,
-    /// given a `title`, the searches that find the thread the Codex app shows under it, whatever its
-    /// age (`searchTerms`). `initialized` is a notification and takes no id. Every listing reads the
-    /// store's state database only (`useStateDbOnly`): the five used last took 0.06 s instead of 0.13
-    /// to 0.26 s, and a search 0.06 s instead of 3.25 s (measured 2026-09-25).
-    static func discoveryRequests(limit: Int = listLimit, title: String? = nil) -> [String] {
+    /// given `shown`, a read of that thread, which finds it whatever its age. `initialized` is a
+    /// notification and takes no id. The listing reads the store's state database only
+    /// (`useStateDbOnly`): the five used last took 0.06 s instead of 0.13 to 0.26 s (measured
+    /// 2026-09-25).
+    static func discoveryRequests(limit: Int = listLimit, shown: String? = nil) -> [String] {
         var lines = [
             #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"Vignette","version":"\#(BuildInfo.current.version)"}}}"#,
             #"{"method":"initialized"}"#,
-            listing(id: listingID, ["limit": limit]),
+            request(id: listingID, "thread/list", ["limit": limit, "sortKey": "recency_at", "useStateDbOnly": true]),
         ]
-        for (id, term) in zip(searchIDs, searchTerms(for: title ?? "")) {
-            lines.append(listing(id: id, ["limit": searchLimit, "searchTerm": term]))
-        }
+        if let shown { lines.append(request(id: readID, "thread/read", ["threadId": shown])) }
         return lines
     }
 
-    /// The id of the listing's answer, and the ids of the searches' answers, one per search term.
+    /// The id of the listing's answer, and of the read's.
     static let listingID = 2
-    static let searchIDs = 3...5
+    static let readID = 3
 
-    /// How many threads each search asks for. Every thread of 144 was among the first ten its terms
-    /// found (measured 2026-09-25).
-    static let searchLimit = 10
-
-    /// What to search the store for to find the thread the Codex app shows under `title`: the title,
-    /// and its two longest words. The store searches a thread's name, or for a thread with none its
-    /// first message as it was typed. The app's title is that text with its markdown and tags taken
-    /// out and its lines joined, cut at 80 characters with an ellipsis. So the title alone, without
-    /// the ellipsis, found 83 of 144 threads, and with its two longest words all 144 (measured
-    /// 2026-09-25). A word finds other threads too; `CodexConnection` keeps only the one the title
-    /// names.
-    static func searchTerms(for title: String) -> [String] {
-        var whole = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if whole.hasSuffix("…") { whole = String(whole.dropLast()).trimmingCharacters(in: .whitespaces) }
-        guard !whole.isEmpty else { return [] }
-        let words = whole.split(separator: " ")
-            .map { $0.trimmingCharacters(in: CharacterSet.punctuationCharacters.union(.symbols)) }
-            .filter { $0.count >= 4 }
-        var terms = [whole]
-        // Longest first, and in the title's order among words of one length, so the terms are stable.
-        for word in words.enumerated().sorted(by: { ($0.element.count, $1.offset) > ($1.element.count, $0.offset) }).map(\.element)
-        where terms.count < 3 && !terms.contains(word) {
-            terms.append(word)
-        }
-        return terms
-    }
-
-    private static func listing(id: Int, _ params: [String: Any]) -> String {
-        let request: [String: Any] = ["id": id, "method": "thread/list",
-                                      "params": params.merging(["sortKey": "recency_at", "useStateDbOnly": true]) { a, _ in a }]
+    private static func request(id: Int, _ method: String, _ params: [String: Any]) -> String {
+        let request: [String: Any] = ["id": id, "method": method, "params": params]
         let data = (try? JSONSerialization.data(withJSONObject: request, options: [.sortedKeys])) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }
 
     /// The threads in the listing's answer, in the order the server gave them.
-    static func threads(in lines: [String]) -> [Thread] { threads(in: lines, answering: [listingID]) }
-
-    /// The threads the searches found, in the order of their terms, each kept once.
-    static func searched(in lines: [String]) -> [Thread] { threads(in: lines, answering: Array(searchIDs)) }
-
-    /// The threads in the answers with these ids. Anything that is not one of those answers is
-    /// ignored, so a notification arriving mid-conversation is not an error. A repeated id is kept
-    /// once: the store's pages can overlap, and two searches can find one thread. An ephemeral thread
-    /// and a sub-agent's thread (one with a `parentThreadId`) are left out: neither is a session a
-    /// person sends to.
-    private static func threads(in lines: [String], answering ids: [Int]) -> [Thread] {
+    static func threads(in lines: [String]) -> [Thread] {
         var found: [Thread] = []
         var seen = Set<String>()
-        let answers: [(id: Int, list: [[String: Any]])] = lines.compactMap { line in
-            guard let data = line.data(using: .utf8),
-                  let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  let id = message["id"] as? Int, ids.contains(id),
-                  let result = message["result"] as? [String: Any],
-                  let list = result["data"] as? [[String: Any]] else { return nil }
-            return (id, list)
-        }
-        for (_, list) in answers.sorted(by: { $0.id < $1.id }) {
-            for item in list {
-                guard let id = item["id"] as? String, let cwd = item["cwd"] as? String,
-                      !seen.contains(id) else { continue }
-                if item["ephemeral"] as? Bool == true { continue }
-                if let parent = item["parentThreadId"] as? String, !parent.isEmpty { continue }
-                seen.insert(id)
-                found.append(Thread(id: id, name: item["name"] as? String, cwd: cwd,
-                                    recencyAt: (item["recencyAt"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) },
-                                    preview: item["preview"] as? String))
-            }
+        for item in answer(listingID, in: lines)?["data"] as? [[String: Any]] ?? [] {
+            guard let thread = thread(item), !seen.contains(thread.id) else { continue }
+            seen.insert(thread.id)
+            found.append(thread)
         }
         return found
+    }
+
+    /// The thread the read found. Nil when there was none, or the server refused it, as it does a
+    /// thread that is not in the store.
+    static func read(in lines: [String]) -> Thread? {
+        (answer(readID, in: lines)?["thread"] as? [String: Any]).flatMap(thread)
+    }
+
+    /// The result of the answer with this id. Anything else is ignored, so a notification arriving
+    /// mid-conversation is not an error.
+    private static func answer(_ id: Int, in lines: [String]) -> [String: Any]? {
+        for line in lines {
+            guard let data = line.data(using: .utf8),
+                  let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  message["id"] as? Int == id else { continue }
+            return message["result"] as? [String: Any]
+        }
+        return nil
+    }
+
+    /// One thread as the server describes it. A repeated id is kept once by the caller: the store's
+    /// pages can overlap. An ephemeral thread and a sub-agent's thread (one with a `parentThreadId`)
+    /// are nil: neither is a session a person sends to.
+    private static func thread(_ item: [String: Any]) -> Thread? {
+        guard let id = item["id"] as? String, let cwd = item["cwd"] as? String else { return nil }
+        if item["ephemeral"] as? Bool == true { return nil }
+        if let parent = item["parentThreadId"] as? String, !parent.isEmpty { return nil }
+        return Thread(id: id, name: item["name"] as? String, cwd: cwd,
+                      recencyAt: (item["recencyAt"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) },
+                      preview: item["preview"] as? String)
     }
 
     /// Writes every request, reads until each one that carries an id has been answered, and ends

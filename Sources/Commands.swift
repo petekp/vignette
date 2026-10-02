@@ -72,10 +72,12 @@ enum Commands {
     ]
 
     /// URLComponents decodes each query value once; `open` does not encode again, so nothing else may.
-    static func parse(_ url: URL) -> CommandRequest {
+    /// A file in `watchFolder` is spelled as the folder is (`inWatchFolder`).
+    static func parse(_ url: URL, watchFolder: URL? = nil) -> CommandRequest {
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let files = items.filter { $0.name == "file" }.compactMap(\.value)
             .map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+            .map { file in watchFolder.map { inWatchFolder(file, watchFolder: $0) } ?? file }
         let annotate = items.first { $0.name == "annotate" }.map { !["0", "false"].contains($0.value ?? "") } ?? false
         return CommandRequest(name: url.host ?? "", files: files,
                               tag: items.first { $0.name == "tag" }?.value, annotate: annotate,
@@ -115,6 +117,17 @@ enum Commands {
         var folder = realPath(watchFolder)
         if !folder.hasSuffix("/") { folder += "/" }
         return realPath(file).hasPrefix(folder) ? nil : .outsideWatchFolder
+    }
+
+    /// `file` by the watch folder's own spelling when it is inside the folder, and as given when it
+    /// is not. A drawing is keyed by the path, and a capture arrives by the folder's spelling, so
+    /// `/tmp/x.png` would reach another drawing than `/private/tmp/x.png`, the same file.
+    static func inWatchFolder(_ file: URL, watchFolder: URL) -> URL {
+        var folder = realPath(watchFolder)
+        if !folder.hasSuffix("/") { folder += "/" }
+        let real = realPath(file)
+        guard real.hasPrefix(folder) else { return file }
+        return watchFolder.standardizedFileURL.appendingPathComponent(String(real.dropFirst(folder.count)))
     }
 
     /// `realpath` of the longest existing prefix, with the rest appended, so a file that does not

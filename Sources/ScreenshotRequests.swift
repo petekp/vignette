@@ -213,9 +213,9 @@ final class ScreenshotRequests {
     /// is kept (`AgentConnection.keepsList`) answers from its last list at once. Every client is
     /// also asked afresh, off the main thread, and the list is answered on the main thread again as
     /// each fresh answer arrives. `complete` means every client has answered, from a kept list or a
-    /// fresh one, and `fresh` that every answer is fresh. herdr answers in about 70 ms. `named` asks
-    /// that client for the session with that name too, such as the thread the Codex app shows.
-    func destinations(named: (client: AgentClient, title: String)? = nil,
+    /// fresh one, and `fresh` that every answer is fresh. herdr answers in about 70 ms. `shown` asks
+    /// that client for the session with that id too, such as the thread the Codex app shows.
+    func destinations(shown: (client: AgentClient, id: String)? = nil,
                       _ completion: @escaping @MainActor (_ found: [AgentDestination], _ complete: Bool, _ fresh: Bool) -> Void) {
         let clients = Array(connections.keys)
         guard !clients.isEmpty else { return completion([], true, true) }
@@ -229,7 +229,7 @@ final class ScreenshotRequests {
         }
         if !answers.lists.isEmpty { deliver() }
         for client in clients {
-            ask(client, named: named?.client == client ? named?.title : nil) { list in
+            ask(client, including: shown?.client == client ? shown?.id : nil) { list in
                 answers.lists[client] = list
                 answers.fresh.insert(client)
                 deliver()
@@ -255,13 +255,13 @@ final class ScreenshotRequests {
     /// the one on its way instead of starting another.
     private var asking: [AgentClient: [@MainActor ([AgentDestination]) -> Void]] = [:]
 
-    /// Asks one client for its sessions off the main thread. An ask for a name runs on its own, and
-    /// its answer is not kept: it holds a session found for one editor.
-    private func ask(_ client: AgentClient, named title: String? = nil, then answer: @escaping @MainActor ([AgentDestination]) -> Void) {
+    /// Asks one client for its sessions off the main thread. An ask that includes a session runs on
+    /// its own, and its answer is not kept: it holds a session found for one editor.
+    private func ask(_ client: AgentClient, including id: String? = nil, then answer: @escaping @MainActor ([AgentDestination]) -> Void) {
         guard let connection = connections[client] else { return }
-        if let title {
+        if let id {
             DispatchQueue.global(qos: .userInitiated).async {
-                let list = connection.destinations(named: title)
+                let list = connection.destinations(including: id)
                 DispatchQueue.main.async { MainActor.assumeIsolated { answer(list) } }
             }
             return
@@ -337,7 +337,7 @@ final class ScreenshotRequests {
     private func finishSubmission(_ id: String, _ outcome: SubmissionOutcome) {
         guard var record = requests[id] else { return }
         switch outcome {
-        case .accepted: record.status = .submitted
+        case .accepted, .queued: record.status = .submitted
         case .uncertain: record.status = .uncertain
         case .notSubmitted, .destinationChanged: record.status = .failed
         }
@@ -347,6 +347,8 @@ final class ScreenshotRequests {
         switch outcome {
         case .accepted(let detail):
             Log.write("[send] ok \(id) \(record.destinationName) \(detail)")
+        case .queued(let detail, _):
+            Log.write("[send] queued \(id) \(record.destinationName) \(detail)")
         case .uncertain(let detail, _):
             Log.write("[send] uncertain \(id) \(record.destinationName) \(detail)")
         case .destinationChanged(let detail, _):
@@ -584,7 +586,7 @@ final class ScreenshotRequests {
         if stage == .failed, let request = requests[reply.requestID] {
             // The agent can fix an image or marks that did not read; a write that failed here cannot.
             let theAgents = code == "payload-unreadable" || code == "draft-failed"
-            callbacks.replyFailed(request, theAgents ? "Ask \(request.address.client.label) to send it again." : "Vignette couldn't save the reply. See the log.")
+            callbacks.replyFailed(request, theAgents ? "You can ask \(request.address.client.label) to send it again." : "Vignette couldn't save the reply. The log has details.")
         }
     }
 
