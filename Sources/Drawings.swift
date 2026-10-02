@@ -1,5 +1,17 @@
 import AppKit
 
+/// The drawing open in the editor. Its marks are ahead of the stored file until the editor's next
+/// hand-over, so it is the drawing as it is now.
+@MainActor
+protocol OpenDrawing: AnyObject {
+    /// The drawing open for `key` as the editor would hand it over now, or nil when that screenshot
+    /// is not open.
+    func drawing(of key: String) -> Drawing?
+    /// Joins `marks`, already in the open drawing's px, as one undo step. Answers the drawing to
+    /// store in place of a hand-over, or nil when none of them joined.
+    func join(_ marks: [Mark]) -> Drawing?
+}
+
 /// The app's drawings: the store on disk, the screenshots that have one, and every change a drawing
 /// takes outside the editor's own hand-over — agents' marks, a screenshot that goes, and the sweep at
 /// launch. Every change to the set is one `[drawings] <n>` line, every write one `[drawing]` line.
@@ -11,9 +23,8 @@ final class Drawings {
     /// A screenshot's drawing changed on disk: written, with the drawing as it is now, or removed
     /// (nil). Every write and removal calls it, whether or not the set of keys changed.
     var onChange: ((_ key: String, _ drawing: Drawing?) -> Void)?
-    /// The last drawing `write` was given, and whether it is on disk: how a push to the open drawing
-    /// learns what the editor's hand-over did with it.
-    private var lastWrite: (key: String, written: Bool)?
+    /// The editor's drawing, which `current` and `add` take over the stored one.
+    weak var open: OpenDrawing?
     /// Counts the writes and removals of each key, so a `load` that began before one is dropped.
     private var revisions: [String: Int] = [:]
     /// Where `load` reads, several at once, so the cards of a stack are read together.
@@ -27,6 +38,21 @@ final class Drawings {
     /// The stored drawing for the screenshot at `url`, whose size as displayed is `pixels`.
     func read(_ url: URL, pixels: PixelSize, style: TextStyle) -> Drawing? {
         store.read(key: url.path, pixels: pixels, style: style)
+    }
+
+    /// The drawing of the screenshot at `url` as it is now: the editor's when it is open there, else
+    /// the stored one. Only a screenshot with a stored drawing has its file read, so one without
+    /// never has its image header read either, which would download it from iCloud.
+    func current(of url: URL, style: TextStyle) -> Drawing? {
+        current(of: url) { [self] in
+            guard keys.contains(url.path), let pixels = PixelSize(imageAt: url) else { return nil }
+            return read(url, pixels: pixels, style: style)
+        }
+    }
+
+    /// `current(of:style:)` for a caller that already holds the stored drawing, as a card does.
+    func current(of url: URL, stored: () -> Drawing?) -> Drawing? {
+        open?.drawing(of: url.path) ?? stored()
     }
 
     /// The stored drawings for the screenshots at `urls`, read together off the main thread: checking
@@ -54,13 +80,11 @@ final class Drawings {
     @discardableResult
     func write(_ drawing: Drawing, reason: String) -> Bool {
         let name = (drawing.key as NSString).lastPathComponent
-        lastWrite = (drawing.key, false)
         if !drawing.marks.isEmpty, !FileManager.default.fileExists(atPath: drawing.key) {
             Log.write("[drawing] dropped \(name): its screenshot is gone")
             return false
         }
         do { try store.write(drawing) } catch { return false }
-        lastWrite = (drawing.key, true)
         if drawing.marks.isEmpty {
             guard keys.remove(drawing.key) != nil else { return true }
             Log.write("[drawing] removed \(name)")
@@ -116,24 +140,18 @@ final class Drawings {
     }
 
     /// Adds an agent's marks to the drawing of the screenshot at `url`, and answers how many joined.
-    /// When `editor` has that screenshot open, the marks join its drawing as one undo step, and the
-    /// editor hands the drawing over at once, which must reach `write`. Otherwise they are added to
-    /// the stored drawing, or a new one at `newPointScale`. Either way the file is written before this
-    /// returns, or it throws. `agent` names the agent they are from.
-    func add(_ agentMarks: [AgentMark], from agent: String?, to url: URL, editor: EditorView?,
-             style: TextStyle, newPointScale: CGFloat) throws -> Int {
+    /// When the editor has that screenshot open, the marks join its drawing as one undo step.
+    /// Otherwise they are added to the stored drawing, or a new one at `newPointScale`. Either way the
+    /// file is written before this returns, or it throws. `agent` names the agent they are from.
+    func add(_ agentMarks: [AgentMark], from agent: String?, to url: URL, style: TextStyle, newPointScale: CGFloat) throws -> Int {
         let name = url.lastPathComponent
-        if let editor, editor.core.isOpen, editor.core.drawing.key == url.path {
-            let open = editor.core.drawing
-            let made = marks(agentMarks, from: agent, in: open.pixels, pointScale: open.pointScale, style: editor.core.style, name: name)
-            lastWrite = nil
-            editor.addAgentMarks(made)
-            let joined = editor.core.drawing.marks.count - open.marks.count
-            guard joined > 0 else { return 0 }
-            guard let lastWrite, lastWrite.key == url.path, lastWrite.written else {
+        if let open, let before = open.drawing(of: url.path) {
+            let made = marks(agentMarks, from: agent, in: before.pixels, pointScale: before.pointScale, style: style, name: name)
+            guard let joined = open.join(made) else { return 0 }
+            guard write(joined, reason: "saved") else {
                 throw Failure(code: .writeFailed, description: "the drawing for \(name) could not be written")
             }
-            return joined
+            return joined.marks.count - before.marks.count
         }
         guard let pixels = PixelSize(imageAt: url) else {
             throw Failure(code: .unreadableImage, description: "\(name) is not an image this Mac can read")

@@ -251,7 +251,7 @@ final class DrawingsTests: XCTestCase {
         let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
         drawings.write(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]), reason: "saved")
 
-        let added = try drawings.add(pushed, from: nil, to: shot, editor: nil, style: .standard, newPointScale: 2)
+        let added = try drawings.add(pushed, from: nil, to: shot, style: .standard, newPointScale: 2)
         XCTAssertEqual(added, 2)
         let stored = try XCTUnwrap(drawings.read(shot, pixels: pixels, style: .standard))
         XCTAssertEqual(stored.pointScale, 1, "a stored drawing keeps its own scale")
@@ -262,42 +262,54 @@ final class DrawingsTests: XCTestCase {
 
         // A screenshot with no drawing gets a new one at the scale it is given.
         let fresh = try redShot()
-        XCTAssertEqual(try drawings.add(pushed, from: nil, to: fresh, editor: nil, style: .standard, newPointScale: 2), 2)
+        XCTAssertEqual(try drawings.add(pushed, from: nil, to: fresh, style: .standard, newPointScale: 2), 2)
         let made = try XCTUnwrap(drawings.read(fresh, pixels: pixels, style: .standard))
         XCTAssertEqual(made.pointScale, 2)
         XCTAssertEqual(made.marks.count, 2)
         XCTAssertEqual(drawings.keys, [shot.path, fresh.path])
     }
 
-    func testAgentsMarksJoinTheOpenDrawingAsOneUndoStep() throws {
+    func testAPushToTheOpenDrawingWritesWhatTheJoinAnswersOnce() throws {
         let shot = try redShot()
         let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
-        let pasteboard = NSPasteboard(name: NSPasteboard.Name("com.petepetrash.vignette.tests.\(UUID().uuidString)"))
-        let view = EditorView(pasteboard: pasteboard)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: .borderless, backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = view
-        defer { _ = view.park(); pasteboard.releaseGlobally(); window.close() }
         let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
-        view.open(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]), image: nil,
-                  picture: CGRect(x: 0, y: 0, width: 300, height: 200), style: .standard, metrics: .standard, markStyle: .standard)
+        let editor = FakeEditor(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]))
+        drawings.open = editor
+        var written: [Drawing?] = []
+        drawings.onChange = { _, drawing in written.append(drawing) }
 
-        view.onHandOver = { [drawings] drawing in drawings!.write(drawing, reason: "saved") }
+        XCTAssertEqual(try drawings.add(pushed, from: nil, to: shot, style: .standard, newPointScale: 2), 2)
+        XCTAssertEqual(editor.drawing.marks.dropFirst().map(\.agent), [true, true], "the marks join the open drawing")
+        XCTAssertEqual(written.map { $0?.marks.count }, [3], "one write, of the joined drawing")
+        XCTAssertEqual(drawings.read(shot, pixels: pixels, style: .standard)?.marks.count, 3)
 
-        XCTAssertEqual(try drawings.add(pushed, from: nil, to: shot, editor: view, style: .standard, newPointScale: 2), 2)
-        XCTAssertEqual(view.core.drawing.marks.count, 3)
-        XCTAssertEqual(view.core.drawing.marks.dropFirst().map(\.agent), [true, true])
-        XCTAssertEqual(drawings.read(shot, pixels: pixels, style: .standard)?.marks.count, 3,
-                       "the editor hands the join over at once, so the push answers with the drawing written")
-
-        view.undo(nil)
-        XCTAssertEqual(view.core.drawing.marks.map(\.geometry), [theirs.geometry], "one undo takes the whole push back")
-
-        // The push answers from the hand-over's write, not from the marks having joined.
+        // The push answers from the write, not from the marks having joined.
         try FileManager.default.removeItem(at: shot)
-        XCTAssertThrowsError(try drawings.add(pushed, from: nil, to: shot, editor: view, style: .standard, newPointScale: 2)) { error in
+        XCTAssertThrowsError(try drawings.add(pushed, from: nil, to: shot, style: .standard, newPointScale: 2)) { error in
             XCTAssertEqual((error as? Drawings.Failure)?.code, .writeFailed)
         }
+    }
+
+    /// The editor hands its drawing over 0.3 s after a change, so until then the open drawing is the
+    /// one now, for a copy, a stitch or a drag.
+    func testTheDrawingNowIsTheOpenOneOverTheStoredOne() throws {
+        let shot = try redShot(), other = try redShot()
+        let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
+        let stored = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
+        let drawn = Mark(geometry: .rectangle(CGRect(x: 90, y: 90, width: 50, height: 40)))
+        drawings.write(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [stored]), reason: "saved")
+        XCTAssertEqual(drawings.current(of: shot, style: .standard)?.marks.map(\.geometry), [stored.geometry])
+        XCTAssertNil(drawings.current(of: other, style: .standard), "a screenshot with no drawing has none")
+
+        let editor = FakeEditor(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [stored, drawn]))
+        drawings.open = editor
+        XCTAssertEqual(drawings.current(of: shot, style: .standard)?.marks.map(\.geometry), [stored.geometry, drawn.geometry])
+        XCTAssertEqual(drawings.current(of: shot, stored: { XCTFail("the open drawing needs no stored one"); return nil })?.marks.count, 2)
+        XCTAssertNil(drawings.current(of: other, style: .standard), "another screenshot is not the open one")
+
+        editor.isOpen = false
+        XCTAssertEqual(drawings.current(of: shot, style: .standard)?.marks.map(\.geometry), [stored.geometry])
+        XCTAssertNil(drawings.current(of: shot, stored: { nil }), "the caller's copy, once nothing is open")
     }
 
     /// A card reads its drawing off the main thread; a write while it reads says what the drawing is
@@ -364,5 +376,22 @@ final class DrawingsTests: XCTestCase {
         Drawings.removeWebEditorData(folders + [dir.appendingPathComponent("never-made")])
         for folder in folders { XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path), folder.path) }
         XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("Caches/app").path), "only those folders go")
+    }
+}
+
+/// The editor's open drawing, without a window: a join adds the marks and answers the drawing.
+@MainActor
+private final class FakeEditor: OpenDrawing {
+    var drawing: Drawing
+    var isOpen = true
+
+    init(_ drawing: Drawing) { self.drawing = drawing }
+
+    func drawing(of key: String) -> Drawing? { isOpen && drawing.key == key ? drawing : nil }
+
+    func join(_ marks: [Mark]) -> Drawing? {
+        guard !marks.isEmpty else { return nil }
+        drawing.marks += marks
+        return drawing
     }
 }

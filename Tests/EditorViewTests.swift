@@ -161,6 +161,23 @@ final class EditorViewTests: XCTestCase {
         XCTAssertNil(view.park())
     }
 
+    /// A push to the open drawing is written by `Drawings.add` from what `join` answers, so the
+    /// join does not also go out through the hand-over, which would write it twice.
+    func testAJoinAnswersWithTheDrawingAndHandsNothingOver() {
+        open()
+        drag(from: (100, 100), to: (300, 250))
+        let pushed = Mark(geometry: .rectangle(CGRect(x: 500, y: 300, width: 100, height: 100)), agent: true)
+        let joined = view.join([pushed])
+        XCTAssertEqual(joined?.marks.compactMap(frame), [CGRect(x: 100, y: 100, width: 200, height: 150), CGRect(x: 500, y: 300, width: 100, height: 100)],
+                       "the person's mark, not yet handed over, and the agent's")
+        XCTAssertEqual(joined?.marks.last?.agent, true)
+        XCTAssertEqual(view.drawing(of: "/tmp/Screenshot test.png")?.marks.count, 2)
+        XCTAssertNil(view.drawing(of: "/tmp/another.png"))
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: EditorCore.handOverDelay + 0.1))
+        XCTAssertTrue(handedOver.isEmpty, "the join carried the person's change too, so the timer has nothing left to hand over")
+        XCTAssertNil(view.join([]), "nothing joined")
+    }
+
     // MARK: Typing
 
     func testATextClickTypesInATextViewAtTheBoxAndReturnKeepsTheText() throws {

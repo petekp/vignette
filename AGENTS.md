@@ -865,9 +865,12 @@ screenshot location for such a launch is written with the same variable:
   `DrawingStore` for the files): one JSON file per screenshot under
   `~/Library/Application Support/<bundle id>/drawings/`, named by a hash of the file path the app
   uses everywhere (`shot.url.path`). The editor hands its drawing over 0.3 s after each change,
-  never while a button is held (`[drawing] saved`), and once more when it parks (`parked`); agents'
-  marks arrive through `Drawings.add` (`built`, or `saved` when they join the open drawing). A
-  drawing with no marks removes its file. A drawing with marks whose screenshot is gone is not
+  never while a button is held (`[drawing] saved`), and once more when it parks (`parked`). Until
+  then the open drawing is ahead of its file, so whatever needs a screenshot's drawing as it is now
+  (Copy Drawing, Stitch, a drag) asks `Drawings.current(of:)`, which answers the open drawing over
+  the stored one. `Drawings` reaches the editor only through `OpenDrawing`, which `EditorView` is.
+  Agents' marks arrive through `Drawings.add` (`built`, or `saved` when they join the open drawing:
+  the editor's `join` answers the joined drawing and `add` writes it). A drawing with no marks removes its file. A drawing with marks whose screenshot is gone is not
   written (`[drawing] dropped <name>: its screenshot is gone`). `onChange` hands each card its
   drawing, so a write reaches the card at once. `load` takes a list and reads it in one job off the
   main thread, and a stack opening reads its cards' drawings in one such job per turn and changes
