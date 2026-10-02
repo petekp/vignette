@@ -648,9 +648,6 @@ private struct ToolbarView: View {
         .mask { Rectangle().padding(.vertical, -(AnnotatorToolbar.messageRoom + AnnotatorToolbar.padding)) }
         .background { glass }
         .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
-        // A change of offer springs the bar to its new width about its centre, which stays under
-        // the image; the panel already has the room (`AnnotatorToolbar.position`).
-        .animation(Anim.spring(0.35 * Settings.shared.motionScale), value: model.offer)
         .fixedSize()
         .padding(AnnotatorToolbar.padding)
         // In: rises a little and settles on a spring. Out: a short fade while it sinks back.
@@ -663,6 +660,10 @@ private struct ToolbarView: View {
         .onChange(of: model.messageAsks) { focused = true }
         // Centred in a panel that may be wider than the bar.
         .frame(maxWidth: .infinity)
+        // A change of offer springs the bar to its new width about its centre, which stays under
+        // the image. The centring is inside the spring: outside it, the bar jumped to its new place
+        // and only its width sprang. The panel already has the room (`AnnotatorToolbar.position`).
+        .animation(Anim.spring(0.35 * Settings.shared.motionScale), value: model.offer)
         .overlayPreferenceValue(TipSpots.self) { spots in
             GeometryReader { geometry in
                 if let shown = tipShown, let spot = spots[shown], let text = spot.text {

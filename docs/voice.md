@@ -26,6 +26,12 @@ new message matches the ones already there. Change a message here and in the cod
 - **No toasts.** A message goes on something already on screen, usually the card it is about
   (`docs/no-toasts-2026-09-30.md`).
 
+## Release notes
+
+Release notes are for people who use Vignette. Give the gist of what they will notice, in a few
+short bullets: a bold name and one sentence. Leave out wording changes, internal rework, and how
+anything works inside.
+
 ## Messages
 
 ### A send, on its card (`SendOverlay`)
