@@ -695,28 +695,33 @@ screenshot location for such a launch is written with the same variable:
   what lets the keys work from `prepare`, and it leaves no moment in which an agent's push could
   miss the open drawing. `openGeneration` drops a decode or a colour sample that answers after
   another image opened.
-- Which image is in the annotator, where it came from, and what is in flight has one owner:
-  `AnnotatorTransition` (a pure reducer) held by `ThumbnailController`. Controllers send events
-  (annotate, shown, parked, close, finish, newShot, dismiss, remove) and run the effects it returns
-  (prepare, show, park, abandon, returnCard, hideAnnotator, join). Done sends `finish`: the card
-  returns and takes the copied mark (`returnCard`'s `copied`), and a lone thumbnail, which left the
-  panel when the annotator opened, comes back to the corner for it. Esc and Send send `close`: the
-  card returns without the copied mark. A lone thumbnail that comes home with nothing to show, no
+- Which image is in the annotator, where it came from, what is in flight and what opens next have
+  one owner: `AnnotationRun`, a pure reducer held by `ThumbnailController`. The controller sends
+  what happened (annotate a list, shown, parked, cancel, sent, finish, dismiss, remove, newShot,
+  selectionChanged, copyFailed) and runs the effects it returns (prepare, show, park, abandon,
+  returnCard, hideAnnotator, join, next, queued, endRun). The moves into and out of the annotator
+  are decided by `AnnotatorTransition`, a pure reducer the run holds privately. Done sends
+  `finish`: the card returns and takes the copied mark (`returnCard`'s `copied`), and a lone
+  thumbnail, which left the panel when the annotator opened, comes back to the corner for it. Esc
+  sends `cancel` and Send sends `sent`, which both reach the transition as `close`: the card returns
+  without the copied mark. A lone thumbnail that comes home with nothing to show, no
   send or failure mark and no other card in the corner, does not land: it flies into the corner and
-  off the screen's edge (`ThumbnailController.leavesAtOnce`, `flyAway`). Quick draw sends `dismiss`. A `prepare` is never emitted while a
+  off the screen's edge (`ThumbnailController.leavesAtOnce`, `flyAway`). Quick draw sends
+  `dismiss(byHand: true)`. A `prepare` is never emitted while a
   park is in flight, which is what serializes rapid swaps; a new screenshot during a lone annotation
   joins the panel instead of closing the editor. Every event logs one
-  `[transition] <event> -> <phase> effects=…` line. The annotator never hides itself: Esc, a click
+  `[transition] <event> -> <phase> [queued=<n>] effects=…` line. The annotator never hides itself: Esc, a click
   outside, Cmd+W and Done ask through `onClosed` and `onFinished`, and the reducer decides. `show`
   is the window coming up behind the flight. The editor parks synchronously, so an effect can answer
   inside the event that asked for it: at zoom 1 there is no fit-out, and `parked` comes back in the
-  same turn as `park`. `ThumbnailController.send` queues an event that arrives while another is
-  being handled and runs it once that one is done, so the reducer's events stay in order. The
+  same turn as `park`. `EventHold` holds an event that arrives while another is being handled and
+  runs it once that one is done, so the reducer's events stay in order. The
   `parking` phase stays for the zoomed case, where the window springs back to the fit before it
   comes down. `dismiss` sets `model.slidingOut` before it sends, so a park that answers in that turn
-  leaves the flight it just aimed offscreen to the slide-out. Add a sequence to
-  `AnnotatorTransitionTests` before changing the table; the random-sequence test checks the
-  invariants, with same-turn answers among its sequences. A swap runs two flights at once, and the
+  leaves the flight it just aimed offscreen to the slide-out. Add a sequence to `AnnotationRunTests`,
+  or to `AnnotatorTransitionTests` for the transition's table, before changing either. Their
+  random-sequence tests check the invariants through `EventHold`, with same-turn answers among
+  their sequences. A swap runs two flights at once, and the
   stack keeps the slot, drawn empty, so the card flies back to the same place.
 - The flight to the annotator can be interrupted. In `flyingOut` the window has not come up, so
   nobody has seen that image: a `close` or an `annotate` of another key answers in the same turn
@@ -727,23 +732,27 @@ screenshot location for such a launch is written with the same variable:
   can have happened. The controller's `.abandon` keeps the parked marks (`parkedMarks`), as `.park`
   does, so the flight home carries the drawing as it was parked, not as it left. `dismiss` and
   `remove` still park from `flyingOut`, because the panel aims that same flight offscreen before the
-  event arrives. Esc during the flight comes back through `onClosed` as `close`.
+  event arrives. Esc during the flight comes back through `onClosed` as `cancel`.
   `docs/flight-interrupt-2026-09-18.md` has the frames.
-- Annotating a list is a queue (`ThumbnailController.queue`, `stack.queue` in the state report): the
-  first file opens and the rest wait, and finishing one opens the next until the list is done. The
-  controller takes the next file in the turn `parked` comes back and sends `annotate` after the
-  finished card's effects, so the card flies home with its copied mark while the next flies out,
-  which is a swap's two flights. The reducer knows nothing of the queue; `returnCard` only ends the
-  session, hides the dim, and hands the focus back when nothing follows. Opening a card does not
-  clear the selection, so after the last one Cmd+C or Cmd+S still takes all of them. While a card is
-  in the annotator, selecting another card in the stack queues it next, in the order picked
-  (`[annotate] queued <name> 3 of 3`), and deselecting it takes it back out (`queueFromSelection`,
-  from the model's `onSelectionChanged`). Esc, a dismissal, quick annotate, and a stack presented
-  anew empty the queue; a file that is gone, or whose header does not read, drops out of it
-  (`takeNext`), and a run ends when the file in the annotator is the one that went; any other
-  request to annotate replaces it. A file can pass that check and still fail to make a card. Then
-  `[annotate] error unreadable-image <name>` is logged, and with nothing in the annotator the
-  session ends (`noCard(for:)`). `docs/annotation-queue-2026-09-17.md` has the handover.
+- Annotating a list is one annotation run with a queue (`AnnotationRun.queue`, `stack.queue` in the
+  state report): the first file opens and the rest wait, and finishing one opens the next until the
+  list is done. When the transition goes idle after a `returnCard`, the run opens the next file in
+  that same batch (`returnCard(A) next(B) prepare(B)`). So the card flies home with its copied mark
+  while the next flies out, which is a swap's two flights, and the room beside the stack is made
+  once for both. Between two files the dim stays up and the focus stays with Vignette. `endRun`
+  comes only when nothing follows: it hides the dim, and hands the focus back when a person's hand
+  ended the run. Opening a card does not clear the selection, so after the last one Cmd+C or Cmd+S
+  still takes all of them. While a card is in the annotator, selecting another card in the stack
+  queues it next, in the order picked (`[annotate] queued <name> 3 of 3`), and deselecting it takes
+  it back out (`selectionChanged`, from the model's `onSelectionChanged`). Esc, a dismissal, quick
+  annotate, a stack presented anew and the open file going all end the run and drop the queue. Done
+  and Send go on to the next file, and any other request to annotate replaces the queue. A queued
+  file that has gone, or whose header no longer reads, is passed over before anything moves:
+  `reduce` asks its `opens` closure, where the controller makes the card or logs `[annotate] error
+  unreadable-image <name>`, and the run opens the file after it or ends. A person's request is
+  checked the same way before it is sent, so a file that cannot be read never closes the image
+  already open. `docs/annotation-run-2026-10-01.md` has the design and
+  `docs/annotation-queue-2026-09-17.md` the handover.
 - The annotator's window is borderless and spans the screen's visible frame. The frame inside it is
   sized to the image. Its toolbar is a native panel (`AnnotatorToolbar.swift`) placed under the
   frame. It shows `EditorCore.Tool.allCases`, the editor reports the active tool through `onTool`,
