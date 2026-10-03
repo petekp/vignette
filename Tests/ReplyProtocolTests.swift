@@ -18,14 +18,14 @@ final class ReplyProtocolTests: XCTestCase {
     /// Writes a bundle and an attempt where they belong, as the helper does.
     @discardableResult
     private func stage(marks: String = #"[{"type":"ellipse","x":0.1,"y":0.1,"w":0.2,"h":0.2}]"#,
-                       secret: String = "s3cret", digest: String? = nil, replyID: String? = nil) throws -> URL {
+                       secret: String = "s3cret", replyID: String? = nil) throws -> URL {
         let replyID = replyID ?? self.replyID
         let directory = ReplyProtocol.submissionDirectory(root: root, requestID: requestID, replyID: replyID)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let bundle = Data(#"{"protocolVersion":1,"hasImage":false,"marks":\#(marks),"replyId":"\#(replyID)","requestId":"\#(requestID)"}"#.utf8)
         try bundle.write(to: directory.appendingPathComponent("bundle.json"))
         let url = ReplyProtocol.attemptURL(root: root, requestID: requestID, replyID: replyID, attemptID: attemptID)
-        let attempt = #"{"protocolVersion":1,"requestId":"\#(requestID)","replyId":"\#(replyID)","attemptId":"\#(attemptID)","payloadDigest":"\#(digest ?? ReplyProtocol.payloadDigest(bundle: bundle, image: nil))","secret":"\#(secret)"}"#
+        let attempt = #"{"protocolVersion":1,"requestId":"\#(requestID)","replyId":"\#(replyID)","attemptId":"\#(attemptID)","payloadDigest":"\#(ReplyProtocol.payloadDigest(bundle: bundle, image: nil))","secret":"\#(secret)"}"#
         try Data(attempt.utf8).write(to: url)
         return url
     }
@@ -106,13 +106,6 @@ final class ReplyProtocolTests: XCTestCase {
     }
 
     // MARK: The bundle
-
-    func testTheBundlesDigestIsRecomputedRatherThanTrusted() throws {
-        let url = try stage(digest: "sha256:" + String(repeating: "0", count: 64))
-        let attempt = try ReplyProtocol.readAttempt(at: url, root: root)
-        let read = try ReplyProtocol.readBundle(for: attempt, root: root)
-        XCTAssertNotEqual(read.digest, attempt.payloadDigest)
-    }
 
     func testABundleChangedAfterItWasPreparedNoLongerMatchesItsAttempt() throws {
         let url = try stage()

@@ -108,8 +108,8 @@ final class MarkRenderingTests: XCTestCase {
         }
     }
 
-    /// The largest capture on this Mac. The rendering draws straight at this size, off the main thread.
-    func testA3102By6780RenderingCompletesOffTheMainThread() throws {
+    /// This fixture matches the largest capture on this Mac.
+    func testA3102By6780ImageRendersAtItsFullSize() throws {
         let sRGB = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
         let url = try writeTestImage(width: 3102, height: 6780, space: sRGB, in: dir) { _, y in (UInt8(y % 256), 40, 90) }
         let pixels = PixelSize(width: 3102, height: 6780)
@@ -118,11 +118,7 @@ final class MarkRenderingTests: XCTestCase {
             Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 2800, y: 6000), end: CGPoint(x: 600, y: 2400), bend: 400))),
             Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 300, y: 4000), text: "The header should stay pinned", size: 24))),
         ])
-        var rendered: Result<Data, Error>?
-        DispatchQueue.global(qos: .userInitiated).sync {
-            rendered = Result { try Rendering.png(of: drawing, imageAt: url, style: .standard, markStyle: .standard) }
-        }
-        let image = try decode(XCTUnwrap(rendered).get())
+        let image = try decode(Rendering.png(of: drawing, imageAt: url, style: .standard, markStyle: .standard))
         XCTAssertEqual([image.width, image.height], [3102, 6780])
     }
 

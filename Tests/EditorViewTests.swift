@@ -411,7 +411,7 @@ final class EditorViewTests: XCTestCase {
         XCTAssertEqual(red(other, x: 100...200, y: 300...330), 0, "the first image's text is not drawn on the second")
     }
 
-    func testWhenTypingEndsTheWordsAreOnScreenInEveryFrame() throws {
+    func testWhenTypingEndsTheWordsStayVisibleInEachSampledCapture() throws {
         open()
         key("t", 17)
         mouse(.leftMouseDown, 100, 100)
@@ -422,25 +422,41 @@ final class EditorViewTests: XCTestCase {
         defer { if suspended { MarkLayers.textQueue.resume() } }
         key("\r", 36)
         XCTAssertNil(view.core.typing)
-        let box = try XCTUnwrap(text(view.core.drawing.marks.first).map { TextLayout($0, imageWidth: 1000, pointScale: 1, style: .standard).box })
+        let mark = try XCTUnwrap(text(view.core.drawing.marks.first))
+        let layout = TextLayout(mark, imageWidth: 1000, pointScale: 1, style: .standard)
+        let box = layout.box
         let columns = Int(box.minX)...Int(box.maxX), rows = Int(box.minY)...Int(box.maxY)
+        let words = try XCTUnwrap(layout.lines.first).rect
+        let wordColumns = Int(words.minX.rounded(.up))..<Int(words.maxX.rounded(.down))
+        let wordRows = Int(words.minY.rounded(.up))..<Int(words.maxY.rounded(.down))
+        func assertVisible(_ rep: NSBitmapImageRep, at stage: String, file: StaticString = #filePath, line: UInt = #line) {
+            XCTAssertGreaterThan(red(rep, x: columns, y: rows), 20, "tag \(stage)", file: file, line: line)
+            // The word area excludes the tag's white edge.
+            // The grey screenshot stays below the white-ink threshold.
+            let ink = wordRows.reduce(0) { sum, y in
+                sum + wordColumns.filter { x in
+                    let color = pixel(rep, x, y)
+                    return min(color.r, color.g, color.b) > 0.94
+                }.count
+            }
+            XCTAssertGreaterThan(ink, 20, "word ink \(stage)", file: file, line: line)
+        }
 
         // Its bitmap cannot be drawn yet, so the text view still shows the words.
         let ended = try capture { _ in true }
-        XCTAssertGreaterThan(red(ended, x: columns, y: rows), 20)
+        assertVisible(ended, at: "before the bitmap arrives")
 
-        // Once the bitmap can be drawn, it takes over from the text view in one frame.
         MarkLayers.textQueue.resume()
         suspended = false
         var frames = 0
         while textView != nil, frames < 100 {
             let frame = try capture { _ in true }
-            XCTAssertGreaterThan(red(frame, x: columns, y: rows), 20, "frame \(frames)")
+            assertVisible(frame, at: "capture \(frames)")
             frames += 1
         }
         XCTAssertNil(textView)
         let drawn = try capture { _ in true }
-        XCTAssertGreaterThan(red(drawn, x: columns, y: rows), 20)
+        assertVisible(drawn, at: "after the text view leaves")
     }
 
     /// New tweaks reach the open editor: the strokes take the arrowhead at once, a text is drawn again

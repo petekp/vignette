@@ -427,8 +427,8 @@ def draw_box(app, s):
 
 @needs_input
 def draw_and_done(app):
-    """A person draws a box and presses Return: the rendering is on the pasteboard, in the
-    person's colour."""
+    """Return copies a rendering of a drawn box in the person's colour. The pasteboard's PNG
+    and file URL match that rendering."""
     start(app)
     path = app.image('Screenshot draw.png', folder=app.watch)
     time.sleep(1)
@@ -443,6 +443,20 @@ def draw_and_done(app):
         raise Failed(f'no rendering after Return: {line}')
     app.report.image(rendering)
     check_marks_drawn(app, rendering, [round(v) for v in mark], PERSON, 'person')
+    pasted_png = os.path.join(app.folder, 'done-pasteboard.png')
+    pasted_url = os.path.join(app.folder, 'done-pasteboard-url.txt')
+    subprocess.run([PROBE, 'pasteboard', 'data', 'public.png', pasted_png], check=True)
+    subprocess.run([PROBE, 'pasteboard', 'data', 'public.file-url', pasted_url], check=True)
+    with open(pasted_png, 'rb') as pasted, open(rendering, 'rb') as rendered:
+        if pasted.read() != rendered.read():
+            raise Failed('Return put different PNG bytes on the pasteboard from its rendering')
+    with open(pasted_url, encoding='utf-8') as pasted:
+        file_url = urllib.parse.urlsplit(pasted.read())
+    if file_url.scheme != 'file' or file_url.netloc not in ('', 'localhost') or file_url.query or file_url.fragment:
+        raise Failed('Return put an invalid file URL on the pasteboard')
+    if os.path.realpath(urllib.parse.unquote(file_url.path)) != os.path.realpath(rendering):
+        raise Failed('Return put a different file URL on the pasteboard from its rendering')
+    app.report.step('Return copied the rendering as PNG bytes and its file URL')
 
 
 @needs_input
@@ -648,8 +662,8 @@ def corner_select(app):
 
 @needs_input
 def annotate_queue(app):
-    """A list of three opens in turn: Return sends each card home copied and opens the next with the
-    dim still up, and Esc ends the run with the rest of the list dropped."""
+    """Return advances through three images with the dim still up and each completed card copied.
+    Cancellation ends a second run while two images are waiting."""
     start(app)
     paths = []
     for name in ['Screenshot q1.png', 'Screenshot q2.png', 'Screenshot q3.png']:
@@ -686,9 +700,27 @@ def annotate_queue(app):
     close_editor(app)
     s = app.wait_state(lambda s: not s['dim']['visible'], 'the dim going down')
     if s['stack']['queue'] or s['transition']['isActive']:
-        raise Failed(f"the run is still going after Esc: queue={s['stack']['queue']} {s['transition']}")
+        raise Failed(f"the run is still going after cancellation: queue={s['stack']['queue']} {s['transition']}")
     app.wait_log('endRun', offset, timeout=5)
-    app.report.step('Esc ended the run')
+    app.report.step('cancellation ended the completed list')
+
+    offset = app.log_size()
+    app.command('annotate', app.file_query(*paths))
+    s = wait_editor(app, offset)
+    if os.path.realpath(s['annotator']['current'] or '') != os.path.realpath(paths[0]):
+        raise Failed(f"the second run opened {s['annotator']['current']}, not its first file")
+    queued = [os.path.realpath(p) for p in s['stack']['queue']]
+    if queued != [os.path.realpath(p) for p in paths[1:]]:
+        raise Failed(f'the second run has no waiting list to cancel: {queued}')
+    offset = app.log_size()
+    close_editor(app)
+    s = app.wait_state(lambda s: not s['dim']['visible'], 'the dim going down after cancelling the waiting list')
+    if s['stack']['queue'] or s['transition']['isActive'] or s['annotator']['current']:
+        raise Failed(f"cancellation left the second run open: queue={s['stack']['queue']} {s['transition']}")
+    app.wait_log('endRun', offset, timeout=5)
+    if '[annotate] next' in app.log_since(offset):
+        raise Failed('cancellation opened a waiting image')
+    app.report.step('cancellation dropped the two waiting images and ended the run')
     app.command('dismiss')
 
 
