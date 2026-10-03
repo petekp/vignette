@@ -1,0 +1,620 @@
+/* Colours are macOS's own: the window background and the label colours. The only other colours are
+   the marks', from the app's MarkStyle: a person's red and an agent's indigo, each with a white edge. */
+:root {
+  --paper: #ffffff;
+  --ink: rgb(0 0 0 / 0.85);
+  --ink-2: rgb(0 0 0 / 0.6);
+  --hair: rgb(0 0 0 / 0.1);
+  --solid: #1d1d1f;
+  --on-solid: #ffffff;
+  --person: #e03131;
+  --agent: #364fc7;
+  --matte: #1a1a1a;
+  --tile: rgb(0 0 0 / 0.04);
+  --rounded: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: system-ui, -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1e1e1e;
+    --ink: rgb(255 255 255 / 0.85);
+    --ink-2: rgb(255 255 255 / 0.55);
+    --hair: rgb(255 255 255 / 0.12);
+    --solid: #f5f5f7;
+    --on-solid: #1e1e1e;
+    --tile: rgb(255 255 255 / 0.05);
+  }
+}
+:root[data-theme="dark"] {
+  --tile: rgb(255 255 255 / 0.05);
+  --paper: #1e1e1e;
+  --ink: rgb(255 255 255 / 0.85);
+  --ink-2: rgb(255 255 255 / 0.55);
+  --hair: rgb(255 255 255 / 0.12);
+  --solid: #f5f5f7;
+  --on-solid: #1e1e1e;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; background: #000; }
+body {
+  margin: 0;
+  padding: 12px;
+  background: #000;
+  color: var(--ink);
+  font: 1.0625rem/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+/* The page is a sheet on black: everything sits in one large panel with continuous corners, the
+   curve iOS uses (UIBezierPath's, which reaches 1.528 times the radius along each edge). A mask
+   draws it, from a tile at each corner and two bands between them. */
+:root {
+  --tl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1.52866483 1.52866483' preserveAspectRatio='none'%3E%3Cpath d='M1.52866 0C1.08849 0 0.86841 0 0.63149 0.07491C0.37282 0.16906 0.16906 0.37282 0.07491 0.63149C0.0 0.86841 0.0 1.08849 0.0 1.52866L1.52866 1.52866Z'/%3E%3C/svg%3E");
+  --tr: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1.52866483 1.52866483' preserveAspectRatio='none'%3E%3Cpath d='M0 0C0.44017 0 0.66026 0 0.89717 0.07491C1.15584 0.16906 1.35961 0.37282 1.45375 0.63149C1.52866 0.86841 1.52866 1.08849 1.52866 1.52866L0 1.52866Z'/%3E%3C/svg%3E");
+  --bl: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1.52866483 1.52866483' preserveAspectRatio='none'%3E%3Cpath d='M1.52866 1.52866C1.08849 1.52866 0.86841 1.52866 0.63149 1.45375C0.37282 1.35961 0.16906 1.15584 0.07491 0.89717C0.0 0.66026 0.0 0.44017 0.0 0.0L1.52866 0.0Z'/%3E%3C/svg%3E");
+  --br: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1.52866483 1.52866483' preserveAspectRatio='none'%3E%3Cpath d='M0 1.52866C0.44017 1.52866 0.66026 1.52866 0.89717 1.45375C1.15584 1.35961 1.35961 1.15584 1.45375 0.89717C1.52866 0.66026 1.52866 0.44017 1.52866 0.0L0 0.0Z'/%3E%3C/svg%3E");
+  --band: linear-gradient(#000 0 0);
+}
+.sheet, .tile {
+  --e: calc(var(--r) * 1.52866483);
+  -webkit-mask:
+    var(--tl) top left / var(--e) var(--e) no-repeat,
+    var(--tr) top right / var(--e) var(--e) no-repeat,
+    var(--bl) bottom left / var(--e) var(--e) no-repeat,
+    var(--br) bottom right / var(--e) var(--e) no-repeat,
+    var(--band) center / calc(100% - 2 * var(--e) + 2px) 100% no-repeat,
+    var(--band) center / 100% calc(100% - 2 * var(--e) + 2px) no-repeat;
+  mask:
+    var(--tl) top left / var(--e) var(--e) no-repeat,
+    var(--tr) top right / var(--e) var(--e) no-repeat,
+    var(--bl) bottom left / var(--e) var(--e) no-repeat,
+    var(--br) bottom right / var(--e) var(--e) no-repeat,
+    var(--band) center / calc(100% - 2 * var(--e) + 2px) 100% no-repeat,
+    var(--band) center / 100% calc(100% - 2 * var(--e) + 2px) no-repeat;
+}
+.sheet {
+  --r: 64px;
+  --sheet-r: 64px;
+  min-height: calc(100vh - 24px);
+  background: var(--paper);
+  overflow: clip;
+}
+@media (max-width: 600px) {
+  body { padding: 6px; }
+  .sheet { --r: 40px; --sheet-r: 40px; min-height: calc(100vh - 12px); }
+}
+
+/* A feature tile. Its corners step in from the sheet's by the gutter that separates them, as nested
+   continuous corners do, and stop at 28 px where the gutter is wider than the sheet's radius. */
+.tile {
+  --r: max(28px, calc(var(--sheet-r) - var(--gutter)));
+  padding: 28px 28px 30px;
+  background: var(--tile);
+}
+
+a { color: inherit; text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; border-radius: 4px; }
+code { font: 0.94em var(--mono); }
+
+.wrap { width: 100%; max-width: calc(72rem + 2 * var(--gutter)); margin-inline: auto; padding-inline: var(--gutter); }
+.sheet { --gutter: clamp(28px, 6vw, 80px); }
+@media (max-width: 600px) { .sheet { --gutter: 22px; } }
+
+/* Masthead */
+.masthead { display: flex; align-items: center; justify-content: space-between; padding-top: clamp(40px, 6vw, 80px); }
+.wordmark { display: flex; }
+.wordmark img { height: 34px; width: auto; }
+.links { display: flex; gap: 18px; }
+.links a { display: flex; color: var(--ink-2); transition: color 0.15s; }
+.links a:hover { color: var(--ink); }
+.links svg { width: 21px; height: 21px; fill: currentColor; }
+
+/* Hero */
+.hero h1 {
+  margin: clamp(56px, 9vw, 112px) 0 0;
+  max-width: 12.5em;
+  font-size: clamp(2.5rem, 1.2rem + 5vw, 5.4rem);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+.lede {
+  margin: 28px 0 0;
+  max-width: 31em;
+  font-size: clamp(1.125rem, 1rem + 0.45vw, 1.35rem);
+  line-height: 1.5;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.get { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin: 32px 0 0; }
+.get span { color: var(--ink-2); font-size: 0.94rem; }
+.download {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 20px 7px 9px;
+  border-radius: 12px;
+  background: var(--solid);
+  color: var(--on-solid);
+  font-weight: 600;
+  text-decoration: none;
+  transition: transform 0.3s var(--spring, ease);
+}
+.download:hover { transform: scale(1.03); }
+.download:active { transform: scale(0.97); }
+/* The icon is black, like the button in light mode, so a faint light rim traces its shape. */
+.download img { width: 34px; height: 34px; filter: drop-shadow(0 0 0.5px rgb(255 255 255 / 0.55)) drop-shadow(0 0 0.5px rgb(255 255 255 / 0.35)); }
+
+.trailer { margin: clamp(48px, 7vw, 80px) 0 0; display: flex; flex-direction: column; align-items: flex-end; }
+.trailer video {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  background: #000;
+  box-shadow: 0 0 0 1px var(--hair), 0 30px 60px -30px rgb(0 0 0 / 0.45);
+}
+.trailer figcaption { margin: 40px 6% 0 0; }
+
+/* A note, as the app draws one: a tag in the mark's colour with a white edge and two soft shadows,
+   the words in SF Pro Rounded. An arrow above points at what it is about. */
+.note-tag {
+  position: relative;
+  display: inline-block;
+  max-width: min(22em, 100%);
+  margin: 0;
+  padding: 0.42em 0.8em 0.47em;
+  border: 0;
+  border-radius: 1.1em;
+  background: var(--person);
+  color: #fff;
+  font: 600 1.0625rem/1.32 var(--rounded);
+  text-align: left;
+  box-shadow: 0 0 0 1.5px #fff, 0 0.18em 0.59em rgb(0 0 0 / 0.14), 0 0.03em 0.06em rgb(0 0 0 / 0.22);
+}
+.note-tag.agent { background: var(--agent); font-family: var(--mono); }
+.note-tag.up::before {
+  content: "";
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: var(--arrow-x, 50%);
+  width: 18px;
+  height: 30px;
+  margin-left: -9px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 30'%3E%3Cg stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 28V9' stroke='%23fff' stroke-width='6'/%3E%3Cpath d='M9 2 2.5 12h13z' fill='%23fff' stroke='%23fff' stroke-width='3'/%3E%3Cpath d='M9 28V10' stroke='%23e03131' stroke-width='3'/%3E%3Cpath d='M9 2 2.5 12h13z' fill='%23e03131'/%3E%3C/g%3E%3C/svg%3E") no-repeat center / contain;
+  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.25));
+}
+button.note-tag { cursor: pointer; transition: transform 0.3s var(--spring, ease), opacity 0.12s; }
+button.note-tag:hover { transform: scale(1.03); }
+button.note-tag:active { transform: scale(0.97); }
+.note-tag.swap { opacity: 0; }
+
+/* Acts */
+.act { margin-top: clamp(112px, 15vw, 200px); }
+.copy { max-width: 36rem; }
+h2 {
+  margin: 0;
+  font-size: clamp(2rem, 1.25rem + 2.8vw, 3.3rem);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+.copy p { margin: 18px 0 0; color: var(--ink-2); font-size: 1.125rem; text-wrap: pretty; }
+
+.stage {
+  position: relative;
+  margin-top: 44px;
+  aspect-ratio: 1440 / 900;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #1c1220;
+  box-shadow: 0 0 0 1px var(--hair), 0 30px 60px -30px rgb(0 0 0 / 0.45);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+@media (max-width: 600px) { .stage { aspect-ratio: 1; } }
+.hint-row { display: flex; justify-content: var(--hint-justify, flex-end); padding: 44px var(--hint-pad, 4%) 0; min-height: 96px; }
+
+.also { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 72px; }
+.also h3, .details dt { margin: 0; font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; }
+.also p, .details dd { margin: 6px 0 0; color: var(--ink-2); text-wrap: pretty; }
+@media (max-width: 800px) { .also { grid-template-columns: 1fr; } }
+
+.copy .aside { margin-top: 14px; font-size: 0.94rem; }
+
+.details { margin-top: clamp(112px, 15vw, 200px); }
+.details dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 36px 0 0; }
+@media (max-width: 900px) { .details dl { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .details dl { grid-template-columns: 1fr; } }
+
+/* The closer: the app icon in front of a fan of cards from the demos, then the download. The fan
+   opens a little wider while the pointer is on Download. */
+.closer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: clamp(96px, 18vw, 240px);
+  padding-bottom: clamp(56px, 7vw, 96px);
+  text-align: center;
+}
+.fan {
+  --spread: 11deg;
+  position: relative;
+  width: 100%;
+  height: clamp(190px, 34vw, 400px);
+}
+.closer:has(.download:hover) .fan { --spread: 13.5deg; }
+@media (max-width: 600px) { .fan { --spread: 9deg; } .closer:has(.download:hover) .fan { --spread: 11deg; } }
+.fan-card {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(36px, 5vw, 60px);
+  width: clamp(128px, 26vw, 330px);
+  aspect-ratio: 1.6;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--matte);
+  box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.25), 0 18px 40px -10px rgb(0 0 0 / 0.55);
+  transform-origin: 50% 320%;
+  transform: translateX(-50%) rotate(calc(var(--i) * var(--spread)));
+  transition: transform 0.5s var(--spring, ease);
+}
+.fan-card { container-type: inline-size; }
+.fan-card .from { top: 1.5cqi; right: 1.5cqi; gap: 0.9cqi; padding: 0.6cqi 1.8cqi 0.6cqi 1.2cqi; font-size: 2.75cqi; }
+.fan-card .from img { width: 3cqi; height: 3cqi; }
+.fan-icon {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: clamp(92px, 15vw, 168px);
+  height: auto;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 18px 30px rgb(0 0 0 / 0.45));
+  z-index: 10;
+}
+.closer-mark { height: clamp(40px, 5vw, 56px); width: auto; margin-top: 36px; }
+.closer-line {
+  margin: 18px 0 0;
+  max-width: 22em;
+  font-size: clamp(1.25rem, 1rem + 1vw, 1.75rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+.closer .get { justify-content: center; margin-top: 32px; }
+.closer-note { margin: 14px 0 0; color: var(--ink-2); font-size: 0.94rem; }
+.closer-links { margin-top: 56px; }
+
+/* ------------------------------------------------------------------------------------------
+   The stage: a Mac screen, 1440 by 900 points, scaled to the stage's width. */
+
+.screen {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1440px;
+  height: 900px;
+  transform-origin: 0 0;
+  overflow: hidden;
+  font-family: var(--sans);
+  color: #fff;
+}
+.wallpaper {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(90% 70% at 80% 100%, #5a2c3c 0%, transparent 70%),
+    radial-gradient(70% 60% at 10% 0%, #2c1d3a 0%, transparent 70%),
+    #1c1220;
+}
+.menubar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 25px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 16px;
+  background: rgb(30 18 30 / 0.55);
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
+  font-size: 13px;
+  color: rgb(255 255 255 / 0.92);
+  z-index: 1;
+}
+.menubar b { font-weight: 700; }
+.menubar i { margin-left: auto; font-style: normal; }
+.menubar .apple { font-size: 15px; line-height: 1; }
+
+.window {
+  position: absolute;
+  border-radius: 11px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.5), inset 0 0 0 0.5px rgb(255 255 255 / 0.15), 0 22px 60px rgb(0 0 0 / 0.55);
+}
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  background: #ece9e4;
+  border-bottom: 1px solid rgb(0 0 0 / 0.08);
+}
+.chrome i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+.chrome i:nth-child(2) { background: #febc2e; }
+.chrome i:nth-child(3) { background: #28c840; }
+.chrome span {
+  flex: 1;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 4px 12px;
+  border-radius: 7px;
+  background: rgb(0 0 0 / 0.06);
+  color: rgb(0 0 0 / 0.55);
+  font-size: 12.5px;
+  text-align: center;
+}
+.window .page { position: relative; }
+.window .page img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; transition: opacity 0.5s; }
+
+.term { background: #0c0e12; color: #c9ccd3; }
+.term .chrome { background: #15171c; border-bottom-color: rgb(255 255 255 / 0.06); }
+.term .chrome i { background: #3a3d44; }
+.term .chrome span { background: none; color: #7c808a; font-weight: 600; }
+.term .out {
+  position: absolute;
+  inset: 40px 0 0 0;
+  padding: 16px 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font: 14px/1.6 var(--mono);
+  white-space: pre-wrap;
+}
+.term .line { opacity: 1; transition: opacity 0.25s; }
+.term .welcome { margin-bottom: 14px; padding: 8px 14px; border: 1px solid #d97757; border-radius: 8px; }
+.term .line.new { opacity: 0; }
+.term .t-dim { color: #6b7080; }
+.term .t-you { color: #e6e6e6; }
+.term .t-claude { color: #d97757; }
+.term .t-ok { color: #5fd38d; }
+.term .t-from { color: #fff; background: rgb(224 49 49 / 0.22); padding: 0 6px; border-radius: 4px; }
+.term .cursor { display: inline-block; width: 8px; height: 17px; background: #c9ccd3; vertical-align: -3px; }
+
+/* A capture's selection, as Cmd+Shift+4 draws it: a grey wash with a hairline edge, the crosshair at
+   the corner being dragged, and the size in pixels beside it. Taken, it flashes and goes. */
+.selection {
+  position: absolute;
+  display: none;
+  background: rgb(110 110 120 / 0.2);
+  outline: 1px solid rgb(255 255 255 / 0.9);
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.28);
+  pointer-events: none;
+}
+.selection.on, .selection.taken { display: block; }
+.selection.taken { background: rgb(255 255 255 / 0.75); outline-color: transparent; box-shadow: none; animation: taken 0.4s ease-out forwards; }
+@keyframes taken { to { opacity: 0; } }
+.selection b {
+  position: absolute;
+  right: -14px;
+  bottom: -14px;
+  width: 28px;
+  height: 28px;
+  background:
+    linear-gradient(#000, #000) center / 1.5px 100% no-repeat,
+    linear-gradient(#000, #000) center / 100% 1.5px no-repeat;
+  filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff);
+}
+.selection i {
+  position: absolute;
+  left: calc(100% + 12px);
+  top: calc(100% + 10px);
+  font: 500 13px/1 system-ui, -apple-system, sans-serif;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  color: #fff;
+  text-shadow: 0 0 2px rgb(0 0 0 / 0.9), 0 1px 3px rgb(0 0 0 / 0.6);
+}
+.selection.taken b, .selection.taken i { display: none; }
+
+.dim {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.3);
+  -webkit-backdrop-filter: blur(17px);
+  backdrop-filter: blur(17px);
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* The stack's backdrop: a strip of blur that grows toward the screen's edge, and a tint. */
+.backdrop { position: absolute; top: 0; bottom: 0; right: 0; width: 230px; opacity: 0; pointer-events: none; }
+.backdrop i, .backdrop b { position: absolute; inset: 0; }
+.backdrop i:nth-child(1) { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); mask-image: linear-gradient(90deg, transparent 0%, #000 20%); -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 20%); }
+.backdrop i:nth-child(2) { backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px); mask-image: linear-gradient(90deg, transparent 15%, #000 40%); -webkit-mask-image: linear-gradient(90deg, transparent 15%, #000 40%); }
+.backdrop i:nth-child(3) { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); mask-image: linear-gradient(90deg, transparent 35%, #000 60%); -webkit-mask-image: linear-gradient(90deg, transparent 35%, #000 60%); }
+.backdrop i:nth-child(4) { backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); mask-image: linear-gradient(90deg, transparent 55%, #000 80%); -webkit-mask-image: linear-gradient(90deg, transparent 55%, #000 80%); }
+.backdrop i:nth-child(5) { backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); mask-image: linear-gradient(90deg, transparent 75%, #000 100%); -webkit-mask-image: linear-gradient(90deg, transparent 75%, #000 100%); }
+.backdrop b { background: linear-gradient(90deg, rgb(0 0 0 / 0), rgb(0 0 0 / 0.65)); }
+
+.column { position: absolute; inset: 0; pointer-events: none; }
+.card {
+  position: absolute;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--matte);
+  box-shadow: 0 4px 8px rgb(0 0 0 / 0.6);
+  pointer-events: auto;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.4);
+  pointer-events: none;
+}
+.card .ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.4);
+  transition: box-shadow 0.3s var(--spring, ease);
+  pointer-events: none;
+  z-index: 3;
+}
+.card.focused .ring { box-shadow: inset 0 0 0 2.5px #fff; }
+.card.away { visibility: hidden; }
+.pic { position: absolute; }
+.pic img, .pic svg.marks { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.pic svg.marks { overflow: visible; }
+.caret { animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.from {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 5px;
+  border-radius: 99px;
+  background: #fff;
+  color: rgb(0 0 0 / 0.85);
+  font: 600 11px/1.2 var(--sans);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.22), 0 1px 3px rgb(0 0 0 / 0.3);
+}
+.from img { width: 13px; height: 13px; }
+
+.notice {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px;
+  background: rgb(0 0 0 / 0.55);
+  opacity: 0;
+  transition: opacity 0.25s;
+  text-align: center;
+}
+.notice > * { transform: scale(0.3); transition: transform 0.4s var(--spring-bouncy, ease), opacity 0.12s; }
+.notice.in { opacity: 1; }
+.notice.in > * { transform: none; }
+.notice.swap > * { opacity: 0; }
+.notice b { font-size: 12px; font-weight: 600; color: #fff; }
+.notice small { font-size: 11px; font-weight: 500; color: rgb(255 255 255 / 0.85); }
+.notice .check, .notice .cross { width: 24px; height: 24px; border-radius: 50%; background: #30d158 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 12.5l3.2 3.2L17 9' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain; }
+.notice .cross { background: #ff453a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 7v6M12 16.5v.5' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E") center / contain; }
+.notice .disc { position: relative; width: 30px; height: 30px; margin-bottom: 2px; border-radius: 50%; background: #fff; display: grid; place-items: center; }
+.notice .disc img { width: 18px; height: 18px; }
+.notice .disc i { position: absolute; right: -5px; bottom: -4px; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
+.notice .disc i::after { content: ""; position: absolute; inset: 2px; border-radius: 50%; }
+.notice .disc i.sending::after { border: 2px solid rgb(0 0 0 / 0.15); border-top-color: rgb(0 0 0 / 0.6); animation: spin 0.8s linear infinite; }
+.notice .disc i.sent::after { background: #30d158 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 12.5l3.2 3.2L17 9' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain; }
+@keyframes spin { to { transform: rotate(1turn); } }
+
+/* The annotator: a frame sized to the image, its toolbar under it. */
+.frame {
+  position: absolute;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--matte);
+  visibility: hidden;
+  cursor: crosshair;
+  box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.2), 0 18px 40px rgb(0 0 0 / 0.5);
+  touch-action: none;
+}
+.frame.up { visibility: visible; }
+.stage[data-tool="select"] .frame { cursor: default; }
+.stage[data-tool="text"] .frame { cursor: text; }
+.flights { position: absolute; inset: 0; pointer-events: none; }
+.flight { position: absolute; border-radius: 16px; overflow: hidden; background: var(--matte); }
+
+.toolbar {
+  position: absolute;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.97);
+  transition: opacity 0.18s, transform 0.35s var(--spring, ease);
+  pointer-events: none;
+}
+.toolbar.up { opacity: 1; transform: none; pointer-events: auto; }
+.bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgb(38 38 40 / 0.9);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 8px 24px rgb(0 0 0 / 0.4);
+  color: rgb(255 255 255 / 0.88);
+  font: 600 13px/1 var(--sans);
+}
+.bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.2s var(--spring-bouncy, ease);
+}
+.bar button:hover { background: rgb(255 255 255 / 0.1); }
+.bar button:active { transform: scale(0.92); }
+.bar .tool { width: 34px; padding: 0; justify-content: center; }
+.bar .tool.on { background: rgb(255 255 255 / 0.2); color: #fff; }
+.bar kbd { font: inherit; opacity: 0.5; }
+.bar .divider { width: 1px; height: 20px; margin: 0 6px; background: rgb(255 255 255 / 0.15); }
+.bar .target img { width: 15px; height: 15px; }
+.bar .target svg { opacity: 0.55; }
+.bar input {
+  width: 190px;
+  height: 30px;
+  margin: 0 4px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+  font: 500 13px var(--sans);
+  outline: none;
+}
+.bar input::placeholder { color: rgb(255 255 255 / 0.4); }
+.bar input:focus { box-shadow: 0 0 0 2px rgb(10 132 255 / 0.7); }
+.bar .send { background: #0a84ff; color: #fff; }
+.bar .send:hover { background: #2b95ff; }
+.bar .send kbd { opacity: 0.7; }
+.bar .send.sending { background: #0a84ff; opacity: 0.8; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+  .caret { animation: none; }
+}

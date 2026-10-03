@@ -5,190 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Vignette</title>
-<meta name="description" content="The modern Mac screenshot tool for the agentic age. Your recent screenshots a double tap away, ready to draw on and hand to Claude Code or Codex, which can send you screenshots of its own.">
+<meta name="description" content="A free, open source screenshot tool for Mac. Your recent screenshots at the edge of your screen, ready to draw on and send to Claude Code or Codex. Your agent can answer with a drawing of its own.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Vignette">
-<meta property="og:description" content="The modern Mac screenshot tool for the agentic age. Your recent screenshots a double tap away, ready to draw on and hand to Claude Code or Codex, which can send you screenshots of its own.">
+<meta property="og:description" content="A free, open source screenshot tool for Mac. Your recent screenshots at the edge of your screen, ready to draw on and send to Claude Code or Codex. Your agent can answer with a drawing of its own.">
 <meta property="og:image" content="https://vignette.pete.design/og.png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The Vignette wordmark beside a column of screenshots with marks drawn on them, one from Claude and one from Codex.">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="The Vignette wordmark and the headline &quot;A picture is worth a thousand-word prompt.&quot; beside a fan of screenshots with red notes drawn on them, one from Claude marked A and B, in front of the app icon.">
 <meta property="og:url" content="https://vignette.pete.design/">
 <link rel="canonical" href="https://vignette.pete.design/">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<style>
-  :root {
-    --ink: 28 28 28;
-    --paper: 252 252 252;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --ink: 219 219 219;
-      --paper: 20 20 20;
-    }
-  }
-  html {
-    font-size: 16px;
-  }
-  body {
-    margin: 0;
-    padding: 3.5rem 1rem 5rem;
-    background: rgb(var(--paper));
-    color: rgb(var(--ink));
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-size: 1rem;
-    line-height: 1.55;
-    -webkit-text-size-adjust: 100%;
-  }
-  main {
-    max-width: 34rem;
-    margin: 0 auto;
-  }
-  .masthead {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: 0 0 1.4rem;
-  }
-  h1.wordmark {
-    margin: 0;
-    line-height: 0;
-  }
-  h1.wordmark img {
-    height: 2.4rem;
-    width: auto;
-    border: 0;
-    border-radius: 0;
-    background: none;
-  }
-  .links {
-    display: flex;
-    gap: 1rem;
-  }
-  .links a {
-    display: flex;
-    color: rgb(var(--ink));
-    opacity: 0.6;
-    text-decoration: none;
-  }
-  .links a:hover,
-  .links a:focus-visible {
-    opacity: 1;
-  }
-  .links svg {
-    width: 22px;
-    height: 22px;
-    fill: currentColor;
-  }
-  p {
-    margin: 0 0 1.4rem;
-  }
-  h2.headline {
-    font-size: 1.75rem;
-    font-weight: 700;
-    line-height: 1.2;
-    margin: 0 0 0.8rem;
-  }
-  ul {
-    margin: 0 0 1.4rem;
-    padding-left: 1.2rem;
-  }
-  li {
-    margin-bottom: 1.4rem;
-  }
-  b {
-    font-weight: 700;
-  }
-  code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 1em;
-  }
-  a {
-    color: inherit;
-    text-underline-offset: 0.2em;
-  }
-  figure,
-  .features {
-    /* Break out of the 34rem text column, staying centred on it. */
-    width: min(64rem, 100vw - 2rem);
-    margin-left: calc(50% - min(64rem, 100vw - 2rem) / 2);
-  }
-  figure {
-    margin-top: 0;
-    margin-bottom: 1.4rem;
-  }
-  .features {
-    margin-top: 0;
-    margin-bottom: 2.8rem;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 2rem 2.5rem;
-  }
-  @media (max-width: 52rem) {
-    .features {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-  @media (max-width: 34rem) {
-    .features {
-      grid-template-columns: 1fr;
-    }
-  }
-  .feature h2 {
-    font-size: 1rem;
-    font-weight: 700;
-    margin: 0 0 .35rem;
-  }
-  .feature p {
-    margin: 0;
-    opacity: .8;
-  }
-  img,
-  video {
-    display: block;
-    width: 100%;
-    height: auto;
-    border: 1px solid rgb(var(--ink) / 0.15);
-    border-radius: 4px;
-    background: #000;
-  }
-  figcaption {
-    max-width: 34rem;
-    margin: 0.6rem auto 0;
-    opacity: 0.65;
-  }
-  .download {
-    margin-bottom: 0.6rem;
-  }
-  .download + figure {
-    margin-top: 2rem;
-  }
-  .download a {
-    display: inline-block;
-    padding: 0.6rem 1.4rem;
-    border: 1px solid rgb(var(--ink) / 0.25);
-    border-radius: 6px;
-    font-weight: 600;
-    text-decoration: none;
-  }
-  .download a:hover,
-  .download a:focus-visible {
-    background: rgb(var(--ink) / 0.06);
-  }
-  footer {
-    margin-top: 2.8rem;
-    opacity: 0.65;
-  }
-</style>
+<link rel="stylesheet" href="demo/site.css">
 </head>
 <body>
-<main>
+<div class="sheet">
 
-<header class="masthead">
-  <h1 class="wordmark"><img src="logotype.svg" alt="Vignette"></h1>
+<header class="masthead wrap">
+  <a class="wordmark" href="/"><img src="logotype.svg" alt="Vignette" width="1508" height="328"></a>
   <nav class="links">
     <a href="https://github.com/petekp/vignette" target="_blank" rel="noopener" aria-label="Vignette on GitHub">
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
@@ -199,22 +36,108 @@
   </nav>
 </header>
 
-<h2 class="headline">The modern Mac screenshot tool for the agentic age.</h2>
+<main>
 
-<p>A picture is worth a thousand-word prompt. Vignette keeps your recent screenshots a double tap
-away, ready to mark up and send straight to Claude Code or Codex. Your agent can send you
-screenshots too, with its own marks on them. You still take screenshots with Cmd+Shift+4.</p>
+<section class="hero wrap">
+  <h1>A picture is worth a thousand‑word prompt.</h1>
+  <p class="lede">Vignette keeps your recent screenshots at the edge of your screen, ready to draw on and
+  send to Claude Code or Codex. Your agent can answer with a drawing of its own.</p>
+  <p class="get">
+    <a class="download" href="https://github.com/petekp/vignette/releases/latest"><img src="demo/app-icon.png" alt="" width="64" height="64">Download Vignette</a>
+    <span>Free and open source, for macOS 14 or later</span>
+  </p>
+  <figure class="trailer">
+    <video id="trailer" width="1600" height="1000" autoplay muted loop playsinline poster="trailer-poster.jpg"
+      aria-label="A trip planner's itinerary gets an arrow from a map stop to a day, with the note &quot;number the days&quot;, and a box around another day, with &quot;make this pop, options?&quot;. Send takes the drawing to Claude Code, which numbers the days and sends back three versions of that day, labelled A, B and C. A box picks C, an arrow brings in the flag from B, Reply sends the drawing back, and Claude builds that version.">
+      <source src="trailer-small.mp4" type="video/mp4" media="(max-width: 600px)">
+      <source src="trailer.webm" type="video/webm">
+      <source src="trailer.mp4" type="video/mp4">
+    </video>
+    <figcaption class="note-tag up">Recorded in the real app</figcaption>
+  </figure>
+</section>
 
-<p class="download"><a href="https://github.com/petekp/vignette/releases/latest">Download Vignette</a></p>
+<section class="act wrap" id="screenshots" aria-labelledby="act-one">
+  <div class="copy">
+    <h2 id="act-one">Your screenshots, a double tap away</h2>
+    <p>Take screenshots with Cmd+Shift+4, as you do now. Double-tap right Shift and the recent ones
+    slide in at the edge of your screen. The app you’re in stays in front.</p>
+  </div>
+  <div class="stage" id="stage-one" aria-label="A Mac screen with a trip planner in Chrome. Take a screenshot, double-tap right Shift to show your recent screenshots, click one to draw on it, and press Return to copy it."></div>
+  <div class="hint-row" data-stage-control style="--hint-justify: center">
+    <button type="button" class="note-tag hint up" id="hint-one" style="--arrow-x: 50%">Take a screenshot</button>
+  </div>
 
-<figure>
-  <video id="trailer" width="1600" height="1000" autoplay muted loop playsinline poster="trailer-poster.jpg"
-    aria-label="A trip planner's itinerary gets an arrow from a map stop to a day, with the note &quot;number the days&quot;, and a box around another day, with &quot;make this pop, options?&quot;. Send takes the drawing to Claude Code, which numbers the days and sends back three versions of that day, labelled A, B and C. A box picks C, an arrow brings in the flag from B, Reply sends the drawing back, and Claude builds that version.">
-    <source src="trailer.webm" type="video/webm">
-    <source src="trailer.mp4" type="video/mp4">
-  </video>
-  <figcaption>Draw on a screenshot, send it to Claude Code, and pick from the options it sends back. Recorded live, with Claude's working time cut.</figcaption>
-</figure>
+  <div class="also">
+    <div class="tile">
+      <h3>Copied as you take it</h3>
+      <p>Every screenshot goes to your clipboard as soon as macOS saves it. Vignette’s card takes the
+      place of macOS’s thumbnail in the corner. Click the card to draw on it.</p>
+    </div>
+    <div class="tile">
+      <h3>Stitch several into one</h3>
+      <p>Select a few cards and Stitch joins them into one image, with each piece numbered. Claude
+      shrinks large images before reading them, so Stitch picks the layout that stays readable.</p>
+    </div>
+    <div class="tile">
+      <h3>Drag into a terminal</h3>
+      <p>Drag a card into Claude Code, a chat or Finder. A card you drew on drops with your drawing on
+      it.</p>
+    </div>
+  </div>
+</section>
+
+<section class="act two wrap" id="agents" aria-labelledby="act-two">
+  <div class="copy">
+    <h2 id="act-two">Draw it for your agent</h2>
+    <p>Send gives your drawing to the Claude Code or Codex session you were just in, with a message
+    if you type one. Your agent can answer with a screenshot of its own, marked in its own colour.
+    Reply sends your answer straight back.</p>
+    <p class="aside">The agent features are experimental. They work through a plugin for Claude Code
+    and Codex, which Vignette offers to install when it first opens.</p>
+  </div>
+  <div class="stage" id="stage-two" aria-label="A Mac screen with Claude Code on the left and a trip planner beside it. Your drawing of the planner is the newest screenshot at the edge of the screen, ready to open and send to Claude."></div>
+  <div class="hint-row" data-stage-control>
+    <button type="button" class="note-tag hint up" id="hint-two">Click your drawing to open it</button>
+  </div>
+</section>
+
+<section class="details wrap" aria-labelledby="details">
+  <h2 id="details">Made to feel like part of your Mac</h2>
+  <dl>
+    <div class="tile"><dt>Your app stays in front</dt><dd>The stack opens without taking focus from the app you’re in. Close it and you’re right where you were.</dd></div>
+    <div class="tile"><dt>Nothing jumps</dt><dd>Cards fly into the editor and back on a spring. Interrupt one and it turns around in mid-air.</dd></div>
+    <div class="tile"><dt>Marks that stand out</dt><dd>A thin white edge keeps every mark visible on any screenshot, dark or light.</dd></div>
+    <div class="tile"><dt>Change it later</dt><dd>Vignette keeps your drawing apart from the screenshot. Open it again later and you can still move, change or delete any mark.</dd></div>
+    <div class="tile"><dt>Several in a row</dt><dd>Open several cards at once. Copy or send one, and the next one opens.</dd></div>
+    <div class="tile"><dt>Your agent can use it too</dt><dd>Every action is a <code>vignette://</code> URL, so your agent can show you screenshots and ask you to draw on them.</dd></div>
+  </dl>
+</section>
+
+</main>
+
+<footer class="closer wrap" aria-labelledby="closer-title">
+  <div class="fan" id="fan" aria-hidden="true">
+    <img class="fan-icon" src="demo/app-icon-large.png" alt="" width="384" height="384">
+  </div>
+  <img class="closer-mark" src="logotype.svg" alt="Vignette" width="1508" height="328">
+  <p class="closer-line" id="closer-title">A picture is worth a thousand‑word prompt.</p>
+  <p class="get">
+    <a class="download" href="https://github.com/petekp/vignette/releases/latest"><img src="demo/app-icon.png" alt="" width="64" height="64">Download Vignette</a>
+  </p>
+  <p class="closer-note">Free and open source, for macOS 14 or later</p>
+  <nav class="links closer-links">
+    <a href="https://github.com/petekp/vignette" target="_blank" rel="noopener" aria-label="Vignette on GitHub">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+    </a>
+    <a href="https://x.com/petekp" target="_blank" rel="noopener" aria-label="Pete on X">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"/></svg>
+    </a>
+  </nav>
+</footer>
+
+</div>
+
 <script>
   // With Reduce Motion on, the trailer waits for a press on play.
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -224,68 +147,6 @@ screenshots too, with its own marks on them. You still take screenshots with Cmd
     trailer.controls = true;
   }
 </script>
-
-<section class="features">
-
-  <div class="feature">
-    <h2>Screenshot history</h2>
-    <p>Double-tap right Shift and your recent screenshots and screen recordings slide in from the right. Arrow keys move, Space selects, and Return opens one, while the app you're in stays in front.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Hold to draw</h2>
-    <p>Double-tap right Shift and hold the second tap. The newest screenshot opens in the editor, ready for a box or an arrow.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Your agent shows you things</h2>
-    <p>The Vignette plugin, which the app installs for Claude Code and Codex, lets your agent put a screenshot in your stack with its own marks on it. You can change its marks like your own. Your agent can also ask you to draw on one and read what you drew.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Send a drawing to a session</h2>
-    <p>Send hands your drawing, with a message if you type one, to the Claude Code or Codex session you were just in. A click picks another. On a screenshot from your agent, Reply sends your drawing straight back. Send reaches Claude Code in any terminal, through the plugin. The agent features are experimental.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Stitch for a model to read</h2>
-    <p>Select several screenshots and Stitch joins them into one numbered image. It picks the layout that stays readable after Claude shrinks the image.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Drag into a terminal</h2>
-    <p>Drag a card into Claude Code, a chat or Finder. A card you drew on drops the drawing.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Copies on capture</h2>
-    <p>Every screenshot goes to the clipboard as soon as macOS saves it, and the file stays in your screenshots folder. Vignette's thumbnail takes the place of macOS's, and a click on it opens the editor.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Three tools, no colour picker</h2>
-    <p>Rectangle, arrow and text. Type right after drawing a box or an arrow and a note starts beside it. Marks are red, and where red would be hard to see, Vignette picks a colour that stands out. Your marks stay apart from the screenshot, so you can change them later.</p>
-  </div>
-
-  <div class="feature">
-    <h2>Scriptable and open source</h2>
-    <p>Every action is a <code>vignette://</code> URL, which is how your agent drives it. Settings are one JSON file, and the source is on GitHub.</p>
-  </div>
-
-</section>
-
-<p class="download"><a href="https://github.com/petekp/vignette/releases/latest">Download Vignette</a></p>
-
-<p>Free, for macOS 14 or later. Open the disk image and drag Vignette to Applications. The app is
-notarized by Apple. It checks for updates once a day and installs one only when you say so. Or
-<a href="https://github.com/petekp/vignette">build it from source</a>.</p>
-
-<p>The double tap needs Accessibility permission, which Vignette asks for when it first opens. If you'd
-rather not grant it, pick a key combination instead. Vignette turns off macOS's thumbnail, and a
-button in Settings turns it back on.</p>
-
-<footer>Vignette is MIT licensed.</footer>
-
-</main>
+<script type="module" src="demo/page.js"></script>
 </body>
 </html>
