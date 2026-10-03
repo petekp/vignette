@@ -1,9 +1,26 @@
 import { Stage, wait, tween, motion, el, copyPNG } from "./vignette.js";
 import { IMAGES, PERSON_MARKS, CLAUDE_MARKS, buildFan } from "./cards.js";
 
-Object.values(IMAGES).forEach((i) => { new Image().src = i.src; });
-
 const coarse = matchMedia("(pointer: coarse)").matches;
+
+function whenNear(element, prepare) {
+  const observer = new IntersectionObserver(([entry]) => {
+    if (!entry.isIntersecting) return;
+    observer.disconnect();
+    prepare();
+  }, { rootMargin: "1200px" });
+  observer.observe(element);
+}
+
+const preparedImages = new Map();
+function prepareImage(image) {
+  if (!preparedImages.has(image)) {
+    const img = new Image();
+    img.src = image.src;
+    preparedImages.set(image, img.decode().catch(() => {}));
+  }
+  return preparedImages.get(image);
+}
 
 // A hint under a stage, and the step it names. A step the visitor can take is a button, which
 // takes the step when pressed: `keys` draws the keys that take it, `glyph` the kind of press, and
@@ -111,11 +128,13 @@ function browser(stage, rect, image, url) {
   const w = stage.addWindow(`<div class="chrome"><i></i><i></i><i></i><span>${url}</span></div><div class="page"></div>`, rect, "browser");
   const page = w.querySelector(".page");
   page.style.height = `${rect.h - 40}px`;
-  const show = (image) => {
+  const show = async (image) => {
+    const previous = [...page.querySelectorAll("img")];
     const next = el("img"); next.src = image.src; next.alt = ""; next.style.opacity = 0;
     page.append(next);
+    await next.decode().catch(() => {});
     requestAnimationFrame(() => requestAnimationFrame(() => { next.style.opacity = 1; }));
-    setTimeout(() => [...page.querySelectorAll("img")].slice(0, -1).forEach((o) => o.remove()), 600);
+    setTimeout(() => previous.forEach((o) => o.remove()), 600);
   };
   const first = el("img"); first.src = image.src; first.alt = ""; page.append(first);
   return { show };
@@ -326,6 +345,7 @@ const term = two.addWindow(`<div class="chrome"><i></i><i></i><i></i><span>postc
 const out = term.querySelector(".out");
 const SITE = { x: 488, y: 170, w: 728, h: 495 };
 const site = browser(two, SITE, IMAGES.itin, "localhost:5391");
+whenNear(two.root, () => { prepareImage(IMAGES.itinR1); prepareImage(IMAGES.itinFinal); });
 // Where a phone's camera looks while Claude answers: the session, then the page it changed.
 const TERM_VIEW = { x: 16, y: 36, w: 470, h: 600 };
 const SITE_VIEW = { x: SITE.x - 20, y: SITE.y - 20, w: SITE.w + 40, h: SITE.h + 40 };
@@ -378,6 +398,8 @@ async function sendIt(message = "") {
   busy = true;
   const card = two.open;
   const reply = !!card.from;
+  prepareImage(reply ? IMAGES.itinFinal : IMAGES.itinR1);
+  if (!reply) prepareImage(IMAGES.variants);
   const typed = message || two.toolbar.querySelector("input")?.value || "";
   two.toolbar.querySelector(".send")?.classList.add("sending");
   const closing = two.close({ notice: { kind: "sending", project: "postcard" } });
@@ -401,12 +423,13 @@ async function sendIt(message = "") {
     ]);
     two.look(SITE_VIEW);
     await wait(0.5);
-    site.show(IMAGES.itinR1);
+    await site.show(IMAGES.itinR1);
     await wait(1.1);
     two.look(TERM_VIEW);
     await say([['<span class="t-dim">  ⎿ Sent you a screenshot of all three</span>', 0.6]]);
     two.look(null);
     await wait(0.4);
+    await prepareImage(IMAGES.variants);
     const claude = await two.insert({ image: IMAGES.variants, marks: CLAUDE_MARKS, from: "Claude" });
     round = 1; busy = false;
     hintTwo(coarse ? "Tap Claude’s card to open it" : "Click Claude’s card to open it", () => two.annotate(claude), { ring: () => claude.el });
@@ -420,7 +443,7 @@ async function sendIt(message = "") {
     ]);
     two.look(SITE_VIEW);
     await wait(0.5);
-    site.show(IMAGES.itinFinal);
+    await site.show(IMAGES.itinFinal);
     await wait(0.4);
     await say([['<span class="t-claude">●</span> Done. It’s in the browser.', 0.2]]);
     round = 2; busy = false;
@@ -454,7 +477,8 @@ two.on((event, card) => {
 
 setupTwo();
 
-buildFan(document.getElementById("fan"));
+const fan = document.getElementById("fan");
+whenNear(fan, () => buildFan(fan));
 
 // Safari applies :active to a pressed button only when the page listens for touches.
 addEventListener("touchstart", () => {}, { passive: true });

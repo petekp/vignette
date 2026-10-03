@@ -581,7 +581,7 @@ export class Stage {
       k.motion.to("lift", 0, UI.shiftUp, UI.flightBounce);
     });
     card.motion.jump("x", this.offX(card));
-    await wait(0.08);
+    await Promise.all([wait(0.08), card.pic.ready]);
     await card.motion.to("x", 0, UI.slideIn, UI.flightBounce);
     return card;
   }

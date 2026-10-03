@@ -52,8 +52,8 @@ export function buildFan(fan) {
     card.append(pic);
     if (c.from) card.append(el("div", "from", `<img src="${new URL("claude.svg", import.meta.url).href}" alt="">From ${c.from}`));
     fan.prepend(card);
-    new ResizeObserver(() => {
-      const k = card.clientWidth / c.view.w;
+    new ResizeObserver(([entry]) => {
+      const k = Math.round(entry.contentRect.width) / c.view.w;
       pic.place({ x: -c.view.x * k, y: -c.view.y * k, w: c.image.w * k, h: c.image.h * k });
     }).observe(card);
   });
