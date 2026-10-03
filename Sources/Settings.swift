@@ -169,7 +169,7 @@ struct UITweaks: Codable, Equatable {
     var autoScrollSpeed = 600.0      // points a second at the very edge of that band
     // Timings
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
-    var markSeconds = 1.7            // how long a card's copied or sent mark stays
+    var markSeconds = 1.7            // how long a card's notice stays; the stored key keeps its older name
     var slideInDuration = 0.3
     var slideInCurve = "spring"      // spring, easeOut, easeInOut, linear
     var slideOutDuration = 0.15

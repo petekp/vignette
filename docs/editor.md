@@ -631,7 +631,7 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
 | Output | What it is |
 |---|---|
 | Done | The screenshot with its marks, at the screenshot's exact pixel size, in its colour profile and with its DPI. With no marks, the host copies the original file and writes nothing. |
-| Send | The same rendering. The editor stays open while it renders. Once the request is stored, the card goes home without a copied mark, and a queue opens its next card. A failed rendering sends nothing, and the drawing stays as it is. |
+| Send | The same rendering. The editor stays open while it renders. Once the request is stored, the card goes home without a Copied notice, and a queue opens its next card. A failed rendering sends nothing, and the drawing stays as it is. |
 | Copy Drawing | The same rendering for each selected card, without opening them |
 
 - Renderings run off the main thread, one at a time, drawing straight at the output size. The
@@ -642,7 +642,7 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
   `-annotated.png` file is written when the rendering finishes. Done's rendering goes ahead of any
   that has not started.
 - A rendering that fails answers `unreadable-image` or `write-failed`. After Done, it also takes the
-  clipboard and the card's copied mark back, and the card says "Not copied" and why. A card that is
+  clipboard and the card's Copied notice back, and the card says "Not copied" and why. A card that is
   not on screen comes up as the lone thumbnail to say it.
 
 ### Cards and flights

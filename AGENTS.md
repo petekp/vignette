@@ -449,7 +449,7 @@ screenshot location for such a launch is written with the same variable:
 
 - Vignette has no toasts. What happened is said on something already on screen. A copy or a stitch
   marks its card (`ThumbnailController.showCopied`), a failed copy (`showNotCopied`) or send
-  (`SendMark`) says why on the card, and a card that is not on screen comes up as the lone
+  (`SendNotice`) says why on the card, and a card that is not on screen comes up as the lone
   thumbnail to say it. A card says one of these at a time, the newest winning, and a send waiting
   for its answer still gets it after a newer notice took the card, so a failure is never lost
   (`CardNotices`, `docs/card-notices-2026-10-02.md`). A paste the editor cannot take beeps. A settings.json that did not parse is
@@ -460,7 +460,7 @@ screenshot location for such a launch is written with the same variable:
   next. It has the rules and every message written to them. A new or changed message follows it
   and is added there.
 - Two vocabularies, and they do not mix. Every string a user reads says draw: the buttons, the menu
-  items, the toggles, the section headings, the marks on cards. Every name a script, a log reader or a
+  items, the toggles, the section headings, the notices on cards. Every name a script, a log reader or a
   compiler reads says annotate: the URL ids (`vignette://annotate`, `copy-annotated`), the log tags
   (`[annotate]`), the settings keys (`quickAnnotate`, `annotateOnCapture`), the `-annotated.png`
   suffix, and every identifier. A label is free to change; those are a contract. The editor window
@@ -509,7 +509,7 @@ screenshot location for such a launch is written with the same variable:
   screen twice. The watcher reports the file a moment later as usual; the card is already there, so
   `insert` ignores it, and with `annotateOnCapture` on that same report flies the new card into the
   annotator. With the stack closed (a `vignette://stitch` from a script) the stitched card comes up
-  as the lone thumbnail with the copied mark. Dismissing the stack mid-converge ends the pieces'
+  as the lone thumbnail with the Copied notice. Dismissing the stack mid-converge ends the pieces'
   flights with it, and the stitched card comes up the same way, so a stitch never finishes in
   silence. `Stitch.compose` lays the pieces out for the model that
   will read the result: it tries every column count and keeps the one that survives a vision
@@ -713,11 +713,11 @@ screenshot location for such a launch is written with the same variable:
   selectionChanged, copyFailed) and runs the effects it returns (prepare, show, park, abandon,
   returnCard, hideAnnotator, join, next, queued, endRun). The moves into and out of the annotator
   are decided by `AnnotatorTransition`, a pure reducer the run holds privately. Done sends
-  `finish`: the card returns and takes the copied mark (`returnCard`'s `copied`), and a lone
+  `finish`: the card returns and takes the Copied notice (`returnCard`'s `copied`), and a lone
   thumbnail, which left the panel when the annotator opened, comes back to the corner for it. Esc
   sends `cancel` and Send sends `sent`, which both reach the transition as `close`: the card returns
-  without the copied mark. A lone thumbnail that comes home with nothing to show, no
-  send or failure mark and no other card in the corner, does not land: it flies into the corner and
+  without the Copied notice. A lone thumbnail that comes home with nothing to show, no
+  send or failure notice and no other card in the corner, does not land: it flies into the corner and
   off the screen's edge (`ThumbnailController.leavesAtOnce`, `flyAway`). Quick draw sends
   `dismiss(byHand: true)`. A `prepare` is never emitted while a
   park is in flight, which is what serializes rapid swaps; a new screenshot during a lone annotation
@@ -749,7 +749,7 @@ screenshot location for such a launch is written with the same variable:
 - Annotating a list is one annotation run with a queue (`AnnotationRun.queue`, `stack.queue` in the
   state report): the first file opens and the rest wait, and finishing one opens the next until the
   list is done. When the transition goes idle after a `returnCard`, the run opens the next file in
-  that same batch (`returnCard(A) next(B) prepare(B)`). So the card flies home with its copied mark
+  that same batch (`returnCard(A) next(B) prepare(B)`). So the card flies home with its Copied notice
   while the next flies out, which is a swap's two flights, and the room beside the stack is made
   once for both. Between two files the dim stays up and the focus stays with Vignette. `endRun`
   comes only when nothing follows: it hides the dim, and hands the focus back when a person's hand
@@ -921,7 +921,7 @@ screenshot location for such a launch is written with the same variable:
   from the moment the drag begins and written as `<name>-annotated.png`; a card without one drops
   its file.
   A rendering that fails clears the clipboard, unless something else was copied since, and the card
-  says "Not copied" and why in place of its copied mark (`ThumbnailController.showNotCopied`,
+  says "Not copied" and why in place of its Copied notice (`ThumbnailController.showNotCopied`,
   `Rendering.Failure.reason`). `[annotate] done <file> <n> bytes, copied` is logged when the file is written. A drawing
   with no marks copies the original file and writes nothing.
 - A mark's colour says who drew it and is not stored: `Mark.color` names a person's colour or the
@@ -1186,11 +1186,11 @@ screenshot location for such a launch is written with the same variable:
   arrives after the editor moved on to another image is dropped as well. A rendering that fails is a
   refusal, never a send of the bare screenshot: only a drawing with no marks sends the picture
   itself, and it goes through PNG whatever the capture's own format is. Send closes the editor
-  without a copied mark, and the queue carries on to the next card: a list of files to annotate is
+  without a Copied notice, and the queue carries on to the next card: a list of files to annotate is
   something the person asked for, and handing one of them to an agent does not withdraw the rest.
   Esc is the one that empties the queue, because that is a person stopping.
 - A send reports on the card it was sent from. Once the request is stored the card
-  carries a `SendMark` (`ThumbnailController.markSending`), keyed by the file's path because a lone
+  carries a `SendNotice` (`ThumbnailController.showSending`), keyed by the file's path because a lone
   thumbnail's card leaves the panel while it is in the editor. It shows the destination's logo and
   project from the moment the card lands, and `delivered` turns it to sent, queued, uncertain or
   failed when the client answers. Anything but sent carries a `reason`: every `SubmissionOutcome`
@@ -1199,7 +1199,7 @@ screenshot location for such a launch is written with the same variable:
   lone thumbnail for anything else. A failure before the request is stored leaves the drawing in
   the editor, so it shows there: the button reads "Not sent" and a popover on it gives the reason,
   both until a click elsewhere or Send again. A reply that was accepted and could not be made a card
-  has no card to report on, so the card it answers takes a `replyFailed` mark, "Reply not shown"
+  has no card to report on, so the card it answers takes a `replyFailed` notice, "Reply not shown"
   (`ScreenshotRequests.Callbacks.replyFailed`). A published reply is its own card and nothing else
   says it arrived. `docs/send-confirmation-2026-09-26.md` has the frames.
 - The agent plugin (`agent-plugin/`) and the skill it carries (`skills/vignette/SKILL.md`) ship in

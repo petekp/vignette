@@ -28,7 +28,7 @@ At 1,643 lines, it is the largest coordinator in the app. Its jobs:
 2. Running the annotation run's effects, across nine closures to `AnnotationController` and six
    calls back from it.
 3. The marks a flight carries (`flightMarks`, `outFlightMarks`, `homeFlightMarks`, `parkedMarks`).
-4. Card notices: Copied, Not copied, and the send marks.
+4. Card notices: Copied, Not copied, and the send notices.
 5. Selection, the drag-select, its auto-scroll, and the stack's keys.
 6. Reading the Dock and laying out the panel.
 7. Making cards, decoding them, reading their drawings, and reshaping them.
@@ -49,13 +49,13 @@ its own store, keyed differently:
 | --- | --- | --- | --- |
 | Copied | `copied: Set<UUID>` plus one shared `copiedLabel` | card id | none |
 | Not copied | `notCopied: [String: String]` | file path | the reason text is unchanged |
-| Send | `sendMarks: [String: SendMark]` | file path | the request id is unchanged |
+| Send | `sendMarks: [String: SendNotice]` | file path | the request id is unchanged |
 
 Each method clears some of the other notices, and some pairs are missing:
 
-- `showCopied` clears Not copied but leaves a send mark in place.
-- `markSending` clears Copied but leaves Not copied in place.
-- `showNotCopied` clears Copied, through `takeBackCopied`, but leaves a send mark in place.
+- `showCopied` clears Not copied but leaves a send notice in place.
+- `showSending` clears Copied but leaves Not copied in place.
+- `showNotCopied` clears Copied, through `takeBackCopied`, but leaves a send notice in place.
 
 `CardView` drew three separate overlays. Each one covers the whole
 card in black at 55% opacity with its words in the middle. So when a pair was missed, the card was
@@ -105,7 +105,7 @@ struct CardNotices {
     enum Notice: Equatable {
         case copied(label: String)
         case notCopied(reason: String)
-        case send(SendMark)
+        case send(SendNotice)
 
         enum Kind: Hashable { case copied, notCopied, send }
         var kind: Kind
@@ -116,7 +116,7 @@ struct CardNotices {
         case copied(label: String)
         case notCopied(reason: String)
         case sending(request: String, client: AgentClient, project: String)
-        case answered(request: String, state: SendMark.State, reason: String?)
+        case answered(request: String, state: SendNotice.State, reason: String?)
         case replyFailed(request: String, client: AgentClient, reason: String)
     }
 
@@ -125,7 +125,7 @@ struct CardNotices {
 
     /// Nil when there is nothing to show: an answer to a request that is not the one waiting, a
     /// failed reply while a later send waits, or a send that worked on a card nobody will see.
-    mutating func post(_ event: Event, on file: String, seen: Bool, markHold: TimeInterval) -> Posted?
+    mutating func post(_ event: Event, on file: String, seen: Bool, noticeHold: TimeInterval) -> Posted?
     /// Takes a notice down if it is still the one `id` posted.
     mutating func expire(_ id: Int, on file: String)
     func notice(on file: String) -> Notice?
@@ -136,13 +136,13 @@ struct CardNotices {
 
 Four members. What happened goes in as an `Event`, and what the card shows comes out as a
 `Notice`. They differ because an answer names only its request: the module fills in the client
-and project from the send that is waiting. `markHold` is `ui.markSeconds + ui.expandDuration`,
+and project from the send that is waiting. `noticeHold` is `ui.markSeconds + ui.expandDuration`,
 read at each call, so a tweak reaches the next notice. Behind the four members sit these rules:
 
 - **The newest wins** what the card shows, so no two overlays can stack and no pair can be missed.
 - **A waiting send keeps its claim** to its answer, whatever the card shows meanwhile.
 - **Tokens guard expiry.** `expire(_:on:)` is checked against the posting that set the timer. That
-  fixes both early-expiry holes in one place, the same way the send mark already works.
+  fixes both early-expiry holes in one place, the same way the send notice already works.
 - **Each kind has its own hold.** A notice that explains something is held three times as long.
   Not copied explains something, and so does every send state but sending and sent. Sending has
   no hold.
@@ -153,7 +153,7 @@ read at each call, so a tweak reaches the next notice. Behind the four members s
 The controller keeps two helpers. `isSeen(_:)` is true when the card is on screen or in the
 annotator, since a card in the annotator comes home wearing whatever was posted meanwhile.
 `post(_:on:)` reads it, posts the notice, and calls `show(shot)` for a card nobody sees. It then
-schedules `expire(_:on:)` after `hold`, and calls `leaveCorner(after: hold)`. Its public methods (`showCopied`, `showNotCopied`, `markSending`,
+schedules `expire(_:on:)` after `hold`, and calls `leaveCorner(after: hold)`. Its public methods (`showCopied`, `showNotCopied`, `showSending`,
 `delivered`, `replyFailed`) keep their signatures, so `AppDelegate` does not change.
 
 Two controller rules stay outside the module:
@@ -208,7 +208,7 @@ Pete decided both on 2026-10-02:
 
 - **A card shows one notice at a time.**
 - **The Copied notice is keyed by file path**, like the other two. A stack reopened within the
-  copied mark's hold, about 2 s, shows the mark again on that file's card, as a send mark does.
+  Copied notice's hold, about 2 s, shows the notice again on that file's card, as a send notice does.
 
 ## Other candidates
 
@@ -226,4 +226,4 @@ Pete decided both on 2026-10-02:
 ## Cleanup in passing
 
 `ThumbnailController.swift:24-26` has a doc comment about the selection strip's labels. It is
-stranded above `SendMark` and describes nothing there. It should go with this change.
+stranded above `SendNotice` and describes nothing there. It should go with this change.

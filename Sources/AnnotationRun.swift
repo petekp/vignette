@@ -15,7 +15,7 @@ struct AnnotationRun: Equatable {
         case shown                   // the flight landed and the annotator became visible
         case parked                  // the editor finished parking
         case cancel                  // Esc, a click outside, Cmd+W: the run ends
-        case sent                    // Send: this image closes without a copied mark, and the run goes on
+        case sent                    // Send: this image closes without a Copied notice, and the run goes on
         case finish                  // Done or Return: the result is on the clipboard, and the run goes on
         case dismiss(byHand: Bool)   // the panel is going away, and the run with it
         case remove([String])        // files trashed or deleted
@@ -52,7 +52,7 @@ struct AnnotationRun: Equatable {
     private var opened = 0
     /// The file the queue opened last, so one that does not open gives its number back.
     private var fromQueue: String?
-    /// The file whose Done failed to copy before its card came home, so the card takes no copied mark.
+    /// The file whose Done failed to copy before its card came home, so the card takes no Copied notice.
     private var uncopied: String?
     /// The run ends by the person's hand, so the focus goes back to their app once the annotator is gone.
     private var restoreFocus = false

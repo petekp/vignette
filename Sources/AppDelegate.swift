@@ -418,7 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // readerScale is what a vision model's resize leaves of the composition; see Stitch.swift.
         Commands.ok("stitch", "\(out.path) from \(composed.pieces) images, \(Int(composed.size.width))x\(Int(composed.size.height)) columns=\(composed.columns) readerScale=\(String(format: "%.2f", composed.readerScale)) \(composed.png.count) bytes, copied")
         // The cards conjoin into the new one when the stack is showing them; otherwise the new card
-        // comes up with the copied mark.
+        // comes up with the Copied notice.
         if !thumbnail.stitched(shots, into: out) { thumbnail.showCopied([Screenshot(url: out)]) }
     }
 
@@ -1166,7 +1166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
             delivered: { [weak self] record, outcome in
                 guard let self, let shot = sentShots.removeValue(forKey: record.id) else { return }
-                let state: SendMark.State
+                let state: SendNotice.State
                 switch outcome {
                 case .accepted: state = .sent
                 case .queued: state = .queued
@@ -1297,11 +1297,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return
         }
         // Stored, so the request survives whatever the client does next. The image goes home
-        // with a send mark rather than a copied one: copying is Done's contract. A queued run
+        // with a send notice rather than a Copied one: copying is Done's contract. A queued run
         // carries on. `sending` stays on, so the button keeps its plane while the bar leaves;
         // the next `prepare` resets it.
         sentShots[record.id] = shot
-        thumbnail.markSending(shot, request: record.id, to: destination)
+        thumbnail.showSending(shot, request: record.id, to: destination)
         thumbnail.annotationSent()
     }
 

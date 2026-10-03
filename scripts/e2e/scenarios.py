@@ -301,9 +301,9 @@ def stitch(app):
         raise Failed(f'stitch: {detail}')
     app.report.image(out)
     app.report.step('stitched', detail=detail)
-    # With no stack showing, the stitched card comes up wearing the copied mark.
-    app.wait_state(lambda s: (c := card_for(s, out)) is not None and c['copied'], 'the stitched card with its copied mark')
-    app.report.step('the stitched card shows the copied mark')
+    # With no stack showing, the stitched card comes up wearing the Copied notice.
+    app.wait_state(lambda s: (c := card_for(s, out)) is not None and c['copied'], 'the stitched card with its Copied notice')
+    app.report.step('the stitched card shows the Copied notice')
     app.command('dismiss')
 
 
@@ -669,7 +669,7 @@ def annotate_queue(app):
             raise Failed(f'the run ended before {name} opened')
         done = card_for(s, paths[index - 1])
         if not (done and done['copied']):
-            raise Failed(f'{os.path.basename(paths[index - 1])} came home without its copied mark: {done}')
+            raise Failed(f'{os.path.basename(paths[index - 1])} came home without its Copied notice: {done}')
         app.report.step(f'Return opened {name}', detail=line.split('] ', 1)[1])
 
     offset = app.log_size()

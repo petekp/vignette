@@ -457,7 +457,7 @@ final class ThumbnailController: NSObject {
         send(.cancel)
     }
 
-    /// Send: the drawing is stored as a request and the card comes home without a copied mark.
+    /// Send: the drawing is stored as a request and the card comes home without a Copied notice.
     /// The run carries on, because a queue is a list the person asked for and sending one of its
     /// cards to an agent does not withdraw the rest; only Esc, which is a person stopping, empties
     /// it. Copying is Done's, so the card comes home unmarked.
@@ -638,7 +638,7 @@ final class ThumbnailController: NSObject {
             self.model.forming.subtract(ids)
             self.model.forming.remove(result.id)
             guard self.stitchGeneration == generation else { return }
-            // The card takes the copied mark, and comes back as the lone thumbnail if the stack has
+            // The card takes the Copied notice, and comes back as the lone thumbnail if the stack has
             // gone meanwhile, so a stitch never finishes in silence.
             self.showCopied([result.shot])
         }
@@ -656,28 +656,28 @@ final class ThumbnailController: NSObject {
                     agent: Agent.of(url), duration: Thumbnailer.duration(of: url))
     }
 
-    /// The copied mark over the cards themselves. With nothing on screen, the first of them comes
-    /// up as the lone thumbnail wearing the mark, as a failed send's card does, and the mark counts
-    /// the rest. `label` is what the mark says, since what was copied is the caller's to name.
+    /// The Copied notice over the cards themselves. With nothing on screen, the first of them comes
+    /// up as the lone thumbnail wearing the notice, as a failed send's card does, and the notice counts
+    /// the rest. `label` is what the notice says, since what was copied is the caller's to name.
     func showCopied(_ shots: [Screenshot], label: String = "Copied") {
         var label = label
         if !shots.contains(where: isSeen), let first = shots.first {
             show(first)
             if shots.count > 1 { label += " \(shots.count)" }
         }
-        // A card still on its way back from the annotator shows the mark when it lands.
+        // A card still on its way back from the annotator shows the notice when it lands.
         for shot in shots where isSeen(shot) { post(.copied(label: label), on: shot) }
     }
 
     /// The request for `shot` is stored and its card is going home: the card shows where it is going
     /// from the moment it lands.
-    func markSending(_ shot: Screenshot, request: String, to destination: AgentDestination) {
+    func showSending(_ shot: Screenshot, request: String, to destination: AgentDestination) {
         post(.sending(request: request, client: destination.client, project: destination.project), on: shot)
     }
 
     /// The client answered for the request `request` about `shot`. A card no longer on screen says
     /// nothing more about a delivery that worked, and comes back as a lone thumbnail about any other.
-    func delivered(_ shot: Screenshot, request: String, _ state: SendMark.State, reason: String?) {
+    func delivered(_ shot: Screenshot, request: String, _ state: SendNotice.State, reason: String?) {
         post(.answered(request: request, state: state, reason: reason), on: shot)
     }
 
@@ -688,8 +688,8 @@ final class ThumbnailController: NSObject {
     }
 
     /// A copy of `shot` that failed: the card says why, and a card still on its way back from the
-    /// annotator does not take the copied mark when it lands. A card not on screen comes up as the
-    /// lone thumbnail; one in the annotator, or on its way home, shows the mark when it lands.
+    /// annotator does not take the Copied notice when it lands. A card not on screen comes up as the
+    /// lone thumbnail; one in the annotator, or on its way home, shows the notice when it lands.
     func showNotCopied(_ shot: Screenshot, reason: String) {
         send(.copyFailed(shot.url.path))
         post(.notCopied(reason: reason), on: shot)
@@ -705,7 +705,7 @@ final class ThumbnailController: NSObject {
     /// takes the notice down after its hold. The notice's hold sets the corner's time.
     private func post(_ event: CardNotices.Event, on shot: Screenshot) {
         let file = shot.url.path, seen = isSeen(shot)
-        guard let posted = model.notices.post(event, on: file, seen: seen, markHold: ui.markSeconds + ui.expandDuration) else { return }
+        guard let posted = model.notices.post(event, on: file, seen: seen, noticeHold: ui.markSeconds + ui.expandDuration) else { return }
         if !seen { show(shot) }
         guard let hold = posted.hold else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.notices.expire(posted.id, on: file) }
@@ -905,7 +905,7 @@ final class ThumbnailController: NSObject {
             if visible { insert(card, entrance: .inPlace) } else { present(cards: [card], stack: false, entrance: .inPlace) }
             _ = model.outCards.insert(card.id)
         }
-        // Shown when the card lands, like every mark on a card still on its way back.
+        // Shown when the card lands, like every notice on a card still on its way back.
         if copied { showCopied([card.shot]) }
         guard visible, model.cards.contains(where: { $0.id == card.id }) else {
             model.outCards.remove(card.id); flights.end(id: card.id); return
@@ -922,13 +922,13 @@ final class ThumbnailController: NSObject {
             // The card view comes back on SwiftUI's next commit; lift the flight image after it.
             DispatchQueue.main.async { self.flights.lift(id: card.id) }
             if !self.run.isActive, self.visible, self.model.isStack { self.takeKeys(focus: card.id) }
-            // A card that lands with a mark left the corner's time to the mark.
+            // A card that lands with a notice left the corner's time to the notice.
             if !self.showsNotice(card) { self.leaveCorner(after: self.ui.thumbnailSeconds) }
         })
     }
 
-    /// A lone thumbnail that comes home with no mark to show, and nothing else in the corner, is
-    /// done: it leaves at once rather than waiting out its time there. `copied` is the mark it is
+    /// A lone thumbnail that comes home with no notice to show, and nothing else in the corner, is
+    /// done: it leaves at once rather than waiting out its time there. `copied` is the notice it is
     /// about to take.
     private func leavesAtOnce(_ card: Card, copied: Bool) -> Bool {
         !model.isStack && !copied && !showsNotice(card) && model.cards.allSatisfy { $0.id == card.id }
@@ -1566,8 +1566,8 @@ final class ThumbnailController: NSObject {
     }
 
     /// A lone thumbnail leaves the corner `seconds` from now. The newest news sets the time, so
-    /// each call replaces the last: a fresh capture's `thumbnailSeconds`, a mark's hold, a landing
-    /// with no mark. A copy therefore shortens a fresh thumbnail's stay, which is the point: the
+    /// each call replaces the last: a fresh capture's `thumbnailSeconds`, a notice's hold, a landing
+    /// with no notice. A copy therefore shortens a fresh thumbnail's stay, which is the point: the
     /// person is done with it. It does not leave while the pointer is on a card, a card is in the
     /// annotator or flying to or from it, or a send waits for its answer, which sets a time of its
     /// own (`hold`). The recent stack stays until it is dismissed.

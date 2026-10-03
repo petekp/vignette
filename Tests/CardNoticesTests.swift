@@ -6,14 +6,14 @@ final class CardNoticesTests: XCTestCase {
 
     @discardableResult
     private func post(_ notices: inout CardNotices, _ event: CardNotices.Event, seen: Bool = true) -> CardNotices.Posted? {
-        notices.post(event, on: file, seen: seen, markHold: hold)
+        notices.post(event, on: file, seen: seen, noticeHold: hold)
     }
 
     private func sending(_ request: String) -> CardNotices.Event {
         .sending(request: request, client: .claude, project: "vignette")
     }
 
-    private func sendState(_ notices: CardNotices) -> SendMark.State? {
+    private func sendState(_ notices: CardNotices) -> SendNotice.State? {
         if case .send(let mark)? = notices.notice(on: file) { return mark.state }
         return nil
     }
@@ -86,7 +86,7 @@ final class CardNoticesTests: XCTestCase {
         XCTAssertNil(post(&notices, .answered(request: "a", state: .sent, reason: nil), seen: false))
         XCTAssertNil(notices.notice(on: file), "the sending mark goes with it")
 
-        for state: SendMark.State in [.queued, .uncertain, .failed] {
+        for state: SendNotice.State in [.queued, .uncertain, .failed] {
             post(&notices, sending("q"))
             XCTAssertNotNil(post(&notices, .answered(request: "q", state: state, reason: "Why."), seen: false), "\(state)")
             XCTAssertEqual(sendState(notices), state)
@@ -102,7 +102,7 @@ final class CardNoticesTests: XCTestCase {
         XCTAssertEqual(post(&notices, .copied(label: "Copied"))?.hold, hold)
         XCTAssertEqual(post(&notices, .notCopied(reason: "Why."))?.hold, hold * 3)
         XCTAssertEqual(post(&notices, .replyFailed(request: "r", client: .claude, reason: "Why."))?.hold, hold * 3)
-        let expected: [SendMark.State: TimeInterval] = [.sent: hold, .queued: hold * 3, .uncertain: hold * 3, .failed: hold * 3]
+        let expected: [SendNotice.State: TimeInterval] = [.sent: hold, .queued: hold * 3, .uncertain: hold * 3, .failed: hold * 3]
         for (state, time) in expected {
             let start = post(&notices, sending("s"))
             XCTAssertNil(start?.hold, "sending")
@@ -113,7 +113,7 @@ final class CardNoticesTests: XCTestCase {
     func testNoticesAreKeptPerFile() {
         var notices = CardNotices()
         post(&notices, .copied(label: "Copied"))
-        XCTAssertNotNil(notices.post(.notCopied(reason: "Why."), on: "/tmp/other.png", seen: true, markHold: hold))
+        XCTAssertNotNil(notices.post(.notCopied(reason: "Why."), on: "/tmp/other.png", seen: true, noticeHold: hold))
         XCTAssertEqual(notices.notice(on: file), .copied(label: "Copied"))
         XCTAssertFalse(notices.awaitsAnswer(on: ["/tmp/other.png"]))
     }

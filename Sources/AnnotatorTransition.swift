@@ -11,7 +11,7 @@ struct AnnotatorTransition: Equatable {
     /// What to do once the editor has parked the current drawing.
     enum Next: Equatable {
         case annotate(String)   // the old card returns and this key flies out (a swap)
-        case close              // Esc or Send: the card returns, to its slot or the corner, with no copied mark
+        case close              // Esc or Send: the card returns, to its slot or the corner, with no Copied notice
         case finish             // the result is on the clipboard: the card returns, to its slot or the corner, marked copied
         case dismiss            // the panel is leaving with it
         case remove             // the file is gone

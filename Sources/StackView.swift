@@ -272,7 +272,7 @@ private struct CardView: View {
                     switch notice {
                     case .copied(let label): CopiedOverlay(corner: ui.cardCornerRadius, label: label)
                     case .notCopied(let reason): CopiedOverlay(corner: ui.cardCornerRadius, label: "Not copied", failure: reason)
-                    case .send(let mark): SendOverlay(mark: mark, corner: ui.cardCornerRadius)
+                    case .send(let send): SendOverlay(notice: send, corner: ui.cardCornerRadius)
                     }
                 }
                 .transition(.opacity)
@@ -557,26 +557,26 @@ private struct CopiedOverlay: View {
     }
 }
 
-/// The copied mark's counterpart for a send: the destination's logo, a badge on it for the
+/// The Copied notice's counterpart for a send: the destination's logo, a badge on it for the
 /// delivery, and where it went. The words go on a card too narrow for them, the project name last.
 /// A delivery usually answers about as the card lands, so the sending state, once on screen, holds
 /// `sendingHold` before it gives way: two steps rather than one state flickering into the next.
 private struct SendOverlay: View {
-    let mark: SendMark
+    let notice: SendNotice
     let corner: CGFloat
     @State private var landed = false
-    @State private var shown: SendMark.State?
+    @State private var shown: SendNotice.State?
     @State private var since = Date()
     private static let sendingHold: TimeInterval = 0.45
 
-    private var state: SendMark.State { shown ?? mark.state }
+    private var state: SendNotice.State { shown ?? notice.state }
 
     private var words: String {
         switch state {
-        case .sending: return "Sending to \(mark.project)"
-        case .sent: return "Sent to \(mark.project)"
-        case .queued: return "Queued for \(mark.project)"
-        case .uncertain: return "Check \(mark.project)"
+        case .sending: return "Sending to \(notice.project)"
+        case .sent: return "Sent to \(notice.project)"
+        case .queued: return "Queued for \(notice.project)"
+        case .uncertain: return "Check \(notice.project)"
         case .failed: return "Not sent"
         case .replyFailed: return "Reply not shown"
         }
@@ -590,7 +590,7 @@ private struct SendOverlay: View {
                 logo
                 // A failure's reason goes first when the card is too short for it, then the words.
                 ViewThatFits(in: .vertical) {
-                    if let reason = mark.reason, state != .sending && state != .sent {
+                    if let reason = notice.reason, state != .sending && state != .sent {
                         VStack(spacing: 3) {
                             headline
                             Text(reason).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
@@ -609,11 +609,11 @@ private struct SendOverlay: View {
             .opacity(landed ? 1 : 0)
         }
         .onAppear {
-            shown = mark.state
+            shown = notice.state
             since = Date()
             withAnimation(Anim.spring(0.4 * motion, bounce: 0.45)) { landed = true }
         }
-        .onChange(of: mark.state) { _, next in
+        .onChange(of: notice.state) { _, next in
             let wait = shown == .sending ? max(0, Self.sendingHold - Date().timeIntervalSince(since)) : 0
             DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
                 withAnimation(Anim.spring(0.35 * motion, bounce: 0.35)) { shown = next }
@@ -626,7 +626,7 @@ private struct SendOverlay: View {
     private var headline: some View {
         ViewThatFits(in: .horizontal) {
             label(words)
-            if state != .failed && state != .replyFailed { label(mark.project) }
+            if state != .failed && state != .replyFailed { label(notice.project) }
             Color.clear.frame(width: 1, height: 1)
         }
     }
@@ -640,7 +640,7 @@ private struct SendOverlay: View {
     private var logo: some View {
         ZStack {
             Circle().fill(.white).frame(width: 30, height: 30)
-            if let image = Agent.logo(for: mark.client.rawValue) {
+            if let image = Agent.logo(for: notice.client.rawValue) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
                     .foregroundStyle(.black.opacity(0.85))
                     .frame(width: 18, height: 18)
