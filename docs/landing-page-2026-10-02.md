@@ -13,9 +13,11 @@ Each creative choice below was Pete's, picked from a few options.
 
 1. **Hero.** One headline that names both ideas, Download (free, macOS 14 or later), and the
    trailer, which shows the whole round trip.
-2. **Act one: your screenshots, a double tap away.** The card in the corner, which replaces
-   macOS's thumbnail; the recent stack on a double tap of right Shift; drawing a box, an arrow and a
-   note; stitching several into one; dragging a card into a terminal.
+2. **Act one: works the way you're used to.** Vignette is macOS's screenshot tool, made
+   better: the same keys, with a card where macOS's thumbnail was. Six tiles follow the demo. The
+   first row is what changes: on the clipboard at once, the recent screenshots, drawing on any of
+   them. The second row is what Vignette adds: Stitch, dragging a card out, and screen recordings as
+   cards.
 3. **Act two: draw it for your agent.** Send to the session you were just in; the agent answers
    with its own drawing, in its own colour, as a card; Reply, and the loop goes on.
 4. **Made to feel like part of your Mac.** The craft, named: the app you're in stays in front,
