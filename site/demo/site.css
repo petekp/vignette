@@ -293,8 +293,6 @@ h2 {
 .also p, .details dd { margin: 6px 0 0; color: var(--ink-2); text-wrap: pretty; }
 @media (max-width: 800px) { .also { grid-template-columns: 1fr; } }
 
-.copy .aside { margin-top: 14px; font-size: 0.94rem; }
-
 .details { margin-top: clamp(112px, 15vw, 200px); }
 .details dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 36px 0 0; }
 @media (max-width: 900px) { .details dl { grid-template-columns: repeat(2, 1fr); } }
