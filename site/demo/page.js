@@ -1,4 +1,4 @@
-import { Stage, wait, tween, motion, el } from "./vignette.js";
+import { Stage, wait, tween, motion, el, copyPNG } from "./vignette.js";
 import { IMAGES, PERSON_MARKS, CLAUDE_MARKS, buildFan } from "./cards.js";
 
 Object.values(IMAGES).forEach((i) => { new Image().src = i.src; });
@@ -16,6 +16,7 @@ const GLYPHS = {
   draw: svg('<rect x="3" y="4.5" width="14" height="11" rx="1.6"/>'),
   replay: svg('<path d="M4.5 10a5.5 5.5 0 1 0 1.7-4"/><path d="M4.2 3.2v3.3h3.3"/>'),
   check: svg('<path class="draw" d="M4.5 10.5l3.5 3.5 7.5-8"/>'),
+  failed: svg('<path d="M5 5l10 10M15 5L5 15"/>'),
   busy: '<i class="busy"></i>',
 };
 const KEYS = {
@@ -24,7 +25,7 @@ const KEYS = {
   cmdRet: [["MetaLeft", "⌘"], ["Enter", "↩"]],
 };
 function hint(button) {
-  let action = null, ringed = null, shown = null, swapTimer = 0;
+  let action = null, ringed = null, shown = null, swapTimer = 0, update = 0;
   button.addEventListener("click", () => action?.());
   // Springs the button from its width now to the width it has with `html` inside, before the
   // words change, so the new words never fade in cut off by a button still growing.
@@ -44,20 +45,25 @@ function hint(button) {
     button.style.width = `${after}px`;
   };
   return (text, act, { keys, glyph = "click", ring } = {}) => {
-    action = act;
+    const current = ++update;
+    clearTimeout(swapTimer);
+    action = null;
+    button.disabled = true;
     const lead = act && keys && !coarse
       ? KEYS[keys].map(([code, label]) => `<kbd data-code="${code}">${label}</kbd>`).join("")
       : `<span class="glyph">${GLYPHS[act ? glyph : glyph === "click" ? "busy" : glyph]}</span>`;
     const html = `<span class="lead" aria-hidden="true">${lead}</span><span>${text}</span>`;
     const apply = () => {
+      if (current !== update) return;
       ringed?.remove();
       const target = act && ring ? ring() : null;
       ringed = target ? target.appendChild(el("i", "halo")) : null;
       ringed?.addEventListener("animationend", (e) => e.target.classList.add("breathe"), { once: true });
       button.innerHTML = html;
+      action = act;
       button.disabled = !act;
       button.classList.toggle("status", !act);
-      requestAnimationFrame(() => button.classList.remove("swap"));
+      requestAnimationFrame(() => { if (current === update) button.classList.remove("swap"); });
     };
     if (shown === text) return apply();
     shown = text;
@@ -67,7 +73,6 @@ function hint(button) {
     button.classList.add("swap");
     if (!act) button.classList.add("status");
     resize(html, !act);
-    clearTimeout(swapTimer);
     swapTimer = setTimeout(apply, 140 * motion());
   };
 }
@@ -139,7 +144,8 @@ const SHOTS = [
   { crop: { x: 30, y: 130, w: 1750, h: 420 }, demo: { box: { x: 1515, y: 105, w: 230, h: 100 }, words: "make this quieter" } },
   { crop: { x: 40, y: 330, w: 960, h: 620 }, demo: { box: { x: 20, y: 22, w: 250, h: 590 }, words: "use real photos" } },
 ];
-let shots = 0;
+let shots = 0, oneActivity = 0;
+const copyActivities = new WeakMap();
 const staysImage = new Image();
 staysImage.src = IMAGES.stays.src;
 
@@ -169,17 +175,25 @@ const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
 idle(() => SHOTS.forEach(crop));
 
 // A capture puts its picture on the clipboard, as Vignette does when macOS saves the file.
-function takeScreenshot() {
+let capturing = false;
+async function takeScreenshot() {
+  if (capturing) return;
+  capturing = true;
+  const activity = ++oneActivity;
   const shot = SHOTS[shots++ % SHOTS.length], c = shot.crop;
   const ready = crop(shot);
-  try {
-    navigator.clipboard.write([new ClipboardItem({ "image/png": ready.then((r) => r.png) })]).catch(() => {});
-  } catch {}
+  const copied = copyPNG(ready.then((r) => r.png));
   const k = STAYS.w / IMAGES.stays.w;
   const rect = { x: STAYS.x + c.x * k, y: STAYS.y + 40 + c.y * k, w: c.w * k, h: c.h * k };
-  hintOne("Copied to your clipboard", null, { glyph: "check" });
+  hintOne("Taking a screenshot", null, { glyph: "capture" });
   const card = ready.then(({ src }) => ({ image: { src, w: c.w, h: c.h }, demo: shot.demo, fresh: true }));
-  return one.capture(rect, card);
+  try {
+    const made = await one.capture(rect, card, copied);
+    if (activity === oneActivity && !one.open) {
+      copyNoticeOne(made.copied, 1400);
+    }
+    return made;
+  } finally { capturing = false; }
 }
 
 const hintOne = hint(document.getElementById("hint-one"));
@@ -199,51 +213,80 @@ function idleOne() {
 idleOne();
 
 // What "show me" draws when the hint is pressed in the annotator: a box and a note, by hand.
+const drawings = new WeakMap();
 async function drawForMe(stage, box, words) {
-  stage.snapshot();
-  const mark = { type: "rect", who: "person", x: box.x, y: box.y, w: 0, h: 0 };
-  stage.marks.push(mark);
-  await tween(0.3, (t) => {
-    const e = 1 - Math.pow(1 - t, 3);
-    mark.w = box.w * e; mark.h = box.h * e;
-    stage.redraw();
-  });
-  stage.noteFor = mark;
-  for (const ch of words) {
-    if (!stage.typing) { stage.startNote(mark, ch); continue; }
-    stage.typing.text += ch;
-    stage.redraw();
-    await wait(0.045);
+  if (!stage.open || !stage.framePic || stage.closing || drawings.has(stage)) return false;
+  const drawing = { card: stage.open, marks: stage.marks, note: null };
+  drawings.set(stage, drawing);
+  const active = () => drawings.get(stage) === drawing && stage.open === drawing.card && stage.marks === drawing.marks
+    && !stage.closing && !!stage.framePic && (!drawing.note || stage.typing === drawing.note);
+  try {
+    stage.endTyping();
+    stage.snapshot();
+    const mark = { type: "rect", who: "person", x: box.x, y: box.y, w: 0, h: 0 };
+    stage.marks.push(mark);
+    await tween(0.3, (t) => {
+      if (!active()) return;
+      const e = 1 - Math.pow(1 - t, 3);
+      mark.w = box.w * e; mark.h = box.h * e;
+      stage.redraw();
+    });
+    if (!active()) return false;
+    stage.noteFor = mark;
+    for (const ch of words) {
+      if (!active()) return false;
+      if (!drawing.note) { stage.startNote(mark, ch); drawing.note = stage.typing; continue; }
+      drawing.note.text += ch;
+      stage.redraw();
+      await wait(0.045);
+    }
+    if (!active()) return false;
+    stage.endTyping();
+    stage.emit("mark");
+    return true;
+  } finally {
+    if (drawings.get(stage) === drawing) drawings.delete(stage);
   }
-  stage.endTyping();
-  stage.emit("mark");
 }
 
 let oneMarked = false;
 const shown = () => one.cards[one.focused] || one.cards.at(-1);
 const stackHint = () => hintOne(coarse ? "Tap a card to draw on it" : "Click a card to draw on it", () => one.annotate(shown()), { ring: () => shown()?.el });
 const copyHint = () => hintOne(coarse ? "Copy it" : "Press Return to copy it", () => one.copy(), { keys: "ret", ring: () => one.toolbar.querySelector('[data-act="copy"]') });
-one.on((event, card) => {
-  if (event === "captured") { clearTimeout(one.idleTimer); one.idleTimer = setTimeout(() => { if (!one.open) idleOne(); }, 1400 * motion()); }
+function editorHintOne() {
+  oneMarked = one.marks.length > 0;
+  if (oneMarked) return copyHint();
+  const card = one.open, frame = one.framePic;
+  hintOne(coarse ? "Draw a box and a note" : "Drag to draw a box, then type a note", async () => {
+    hintOne("Drawing a box and a note", null, { glyph: "draw" });
+    const complete = await drawForMe(one, card.demo.box, card.demo.words);
+    if (!complete && one.open === card && one.framePic === frame && !one.closing && !drawings.has(one)) editorHintOne();
+  }, { glyph: "draw" });
+}
+function copyNoticeOne(ok, after) {
+  hintOne(ok ? "Copied to your clipboard" : "Not copied to your clipboard", null, { glyph: ok ? "check" : "failed" });
+  clearTimeout(one.idleTimer);
+  one.idleTimer = setTimeout(() => { if (!one.open) idleOne(); }, after);
+}
+one.on((event, detail) => {
+  if (["opening", "stack", "dismiss", "lone-gone"].includes(event)) oneActivity++;
+  if (["opening", "closing", "stack", "dismiss", "lone-gone"].includes(event)) clearTimeout(one.idleTimer);
+  if (["opening", "closing", "tool", "editing"].includes(event)) drawings.delete(one);
+  if (event === "opening") hintOne("Opening your drawing", null);
+  if (event === "closing") hintOne("Closing your drawing", null);
+  if (event === "copying") { copyActivities.set(detail, ++oneActivity); hintOne("Copying to your clipboard", null); }
   if (event === "dismiss" || event === "lone-gone") idleOne();
   if (event === "stack") stackHint();
-  if (event === "open") {
-    oneMarked = card.marks.length > 0;
-    if (oneMarked) copyHint();
-    else hintOne(coarse ? "Draw a box and a note" : "Drag to draw a box, then type a note", () => {
-      drawForMe(one, card.demo.box, card.demo.words);
-    }, { glyph: "draw" });
-  }
+  if (event === "open") editorHintOne();
   if (event === "mark" && !oneMarked) {
     oneMarked = true;
     copyHint();
   }
   if (event === "copied") {
-    hintOne("Copied to your clipboard", null, { glyph: "check" });
-    clearTimeout(one.idleTimer);
-    one.idleTimer = setTimeout(() => { if (!one.open) idleOne(); }, 2400);
+    if (copyActivities.get(detail) !== oneActivity || one.open || one.closing) return;
+    copyNoticeOne(detail.ok, 2400);
   }
-  if (event === "closed" && !one.stackOpen && !card.marks.length) idleOne();
+  if (event === "closed") { if (one.stackOpen) stackHint(); else idleOne(); }
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -276,7 +319,7 @@ const two = new Stage(document.getElementById("stage-two"), {
     });
   },
   // Return copies, except on a card that names its session, where it replies; Cmd+Return sends.
-  onFinish(stage) { stage.open?.from ? sendIt() : stage.copy(); },
+  onFinish(stage, event) { stage.open?.from || event?.metaKey || event?.ctrlKey ? sendIt() : stage.copy(); },
 });
 
 const term = two.addWindow(`<div class="chrome"><i></i><i></i><i></i><span>postcard</span></div><div class="out"></div>`, { x: 26, y: 46, w: 440, h: 828 }, "term");
@@ -331,7 +374,7 @@ function setupTwo() {
 }
 
 async function sendIt(message = "") {
-  if (busy || !two.open) return;
+  if (busy || !two.open || two.closing || !two.framePic) return;
   busy = true;
   const card = two.open;
   const reply = !!card.from;
@@ -345,7 +388,7 @@ async function sendIt(message = "") {
   two.look(TERM_VIEW);
   notice?.setState({ kind: "sent", project: "postcard" });
   notice?.leave(1.4);
-  const words = typed ? ` ${typed}` : "";
+  const words = typed ? ` ${typed.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch])}` : "";
   if (!reply) {
     await say([
       ["", 0],
@@ -385,13 +428,19 @@ async function sendIt(message = "") {
   }
 }
 
+function replyHint() {
+  const card = two.open, frame = two.framePic;
+  hintTwo(coarse ? "Pick one and reply" : "Box the one you like, then press Reply", async () => {
+    hintTwo("Drawing a box and a note", null, { glyph: "draw" });
+    if (await drawForMe(two, { x: 1218, y: 300, w: 560, h: 560 }, "this one")) sendIt();
+    else if (two.open === card && two.framePic === frame && !two.closing && !drawings.has(two)) replyHint();
+  }, { glyph: "draw" });
+}
 two.on((event, card) => {
-  if (event === "open" && card.from) {
-    hintTwo(coarse ? "Pick one and reply" : "Box the one you like, then press Reply", async () => {
-      await drawForMe(two, { x: 1218, y: 300, w: 560, h: 560 }, "this one");
-      sendIt();
-    }, { glyph: "draw" });
-  }
+  if (["opening", "closing", "tool", "editing"].includes(event)) drawings.delete(two);
+  if (event === "opening") hintTwo(card.from ? "Opening Claude’s drawing" : "Opening your drawing", null);
+  if (event === "closing" && !busy) hintTwo("Closing your drawing", null);
+  if (event === "open" && card.from) replyHint();
   if (event === "closed" && !busy && round === 1) {
     const claude = two.cards.find((c) => c.from);
     hintTwo(coarse ? "Tap Claude’s card to open it" : "Click Claude’s card to open it", () => two.annotate(claude), { ring: () => claude.el });

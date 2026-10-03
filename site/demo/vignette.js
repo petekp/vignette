@@ -348,6 +348,7 @@ export class Stage {
     this.typing = null;
     this.noteFor = null;
     this.history = [];
+    this.stackTimers = [];
     this.focused = -1;
     this.listeners = new Set();
     this.build();
@@ -473,6 +474,7 @@ export class Stage {
   // ---- the stack ------------------------------------------------------------------------------
 
   setCards(list) {
+    this.clearStackTimers();
     this.cards.forEach((c) => c.el.remove());
     this.cards = list.map((c) => this.makeCard(c));
     this.layout();
@@ -518,6 +520,7 @@ export class Stage {
 
   async showStack() {
     if (this.stackOpen) return;
+    this.clearStackTimers();
     this.stackOpen = true;
     this.reframe();
     this.takeKeys();
@@ -529,12 +532,20 @@ export class Stage {
     this.emit("stack");
     for (let i = n - 1; i >= 0; i--) {
       const c = this.cards[i];
-      setTimeout(() => c.motion.to("x", 0, UI.slideIn, UI.flightBounce), (n - 1 - i) * step * 1000 * motion());
+      this.stackTimers.push(setTimeout(() => {
+        if (this.stackOpen) c.motion.to("x", 0, UI.slideIn, UI.flightBounce);
+      }, (n - 1 - i) * step * 1000 * motion()));
     }
+  }
+
+  clearStackTimers() {
+    this.stackTimers.forEach(clearTimeout);
+    this.stackTimers = [];
   }
 
   dismiss() {
     if (!this.stackOpen || this.open || this.opts.alwaysOpen) return;
+    this.clearStackTimers();
     this.stackOpen = false;
     this.lone = null;
     this.reframe();
@@ -576,10 +587,10 @@ export class Stage {
   }
 
   // A capture, as Cmd+Shift+4 takes one: a selection dragged over the screen, then the screenshot
-  // comes in as a card, already copied. With the stack closed it is the lone thumbnail in the
+  // comes in as a card with its copy result. With the stack closed it is the lone thumbnail in the
   // corner, which leaves after thumbnailSeconds unless the pointer is on it or it is opened.
   // `card` may be a promise, which the drag gives time to settle.
-  async capture(rect, card) {
+  async capture(rect, card, copyResult = Promise.resolve(true)) {
     const sel = this.selection, size = sel.querySelector("i");
     this.look({ x: rect.x - 40, y: rect.y - 40, w: rect.w + 80, h: rect.h + 80 });
     sel.classList.add("on");
@@ -589,7 +600,8 @@ export class Stage {
       place(sel, { x: rect.x, y: rect.y, w, h });
       size.textContent = `${Math.round(w * POINT_SCALE)}  ${Math.round(h * POINT_SCALE)}`;
     });
-    card = await card;
+    const copyAttempt = {};
+    card = { ...await card, copyAttempt };
     await wait(0.18);
     sel.classList.remove("on");
     sel.classList.add("taken");
@@ -608,7 +620,10 @@ export class Stage {
       made.motion.to("x", 0, UI.slideIn, UI.flightBounce);
     }
     made = await made;
-    this.notice(made, { kind: "copied" });
+    made.copied = await copyResult;
+    if (made.copyAttempt === copyAttempt) {
+      this.notice(made, made.copied ? { kind: "copied" } : { kind: "failed", reason: "This browser didn't allow the copy." });
+    }
     while (this.cards.length > (this.opts.keep || 99)) this.cards.shift().el.remove();
     this.layout();
     if (this.lone === made) this.leaveSoon(made);
@@ -861,6 +876,7 @@ export class Stage {
 
   pointerDown(e) {
     if (!this.open || !this.framePic) return;
+    this.emit("editing", this.open);
     e.preventDefault();
     const img = this.open.image;
     const start = this.toImage(this.toStage(e));
@@ -950,10 +966,16 @@ export class Stage {
   setTool(t) {
     this.endTyping();
     this.tool = t;
-    this.renderToolbar();
+    this.toolbar.querySelectorAll("[data-tool]").forEach((b) => {
+      const selected = b.dataset.tool === t;
+      b.classList.toggle("on", selected);
+      b.setAttribute("aria-pressed", selected);
+    });
+    this.emit("tool", t);
   }
 
   editorKey(e) {
+    if (e.key === "Tab") { this.endTyping(); return false; }
     // On the way in, Esc turns the card around, and the editor takes no other key until it lands.
     if (!this.framePic) {
       if (e.key === "Escape") this.cancel();
@@ -968,7 +990,7 @@ export class Stage {
     }
     if (this.typing) {
       if (e.key === "Escape") { this.endTyping(); return true; }
-      if (e.key === "Enter" && cmd) { this.endTyping(); this.finish(); return true; }
+      if (e.key === "Enter" && cmd) { this.endTyping(); this.finish(e); return true; }
       if (e.key === "Enter") { this.endTyping(); return true; }
       if (e.key === "Backspace") { this.typing.text = this.typing.text.slice(0, -1); this.redraw(); return true; }
       if (e.key.length === 1 && !cmd) { this.typing.text += e.key; this.redraw(); return true; }
@@ -981,7 +1003,7 @@ export class Stage {
       return true;
     }
     if (e.key === "Escape") { this.cancel(); return true; }
-    if (e.key === "Enter") { this.finish(); return true; }
+    if (e.key === "Enter") { this.finish(e); return true; }
     if (!cmd) {
       const tool = { v: "select", r: "rectangle", a: "arrow", t: "text" }[e.key.toLowerCase()];
       if (tool) { this.setTool(tool); return true; }
@@ -990,22 +1012,24 @@ export class Stage {
     return e.key !== "Tab";
   }
 
-  finish() { this.opts.onFinish ? this.opts.onFinish(this) : this.copy(); }
+  finish(e) { this.opts.onFinish ? this.opts.onFinish(this, e) : this.copy(); }
 
   // Copy: the rendering on the clipboard, as Done does, then the card home with its notice.
-  copy() {
+  async copy() {
     const card = this.open;
-    if (!card) return;
+    if (!card || this.closing) return;
+    const result = { card };
+    card.copyAttempt = result;
+    this.emit("copying", result);
     this.endTyping();
-    const blob = renderPNG(card.image, this.marks);
-    let ok = true;
-    try {
-      navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]).catch(() => { ok = false; });
-    } catch { ok = false; }
-    this.close({ notice: { kind: "copied" } }).then(() => {
-      if (!ok) this.notice(card, { kind: "failed", reason: "This browser didn't allow the copy." });
-      this.emit("copied", { ok });
-    });
+    const marks = this.marks.map((m) => ({ ...m }));
+    const copied = copyPNG(renderPNG(card.image, marks));
+    const [ok] = await Promise.all([copied, this.close()]);
+    result.ok = ok;
+    if (card.copyAttempt === result) {
+      this.notice(card, ok ? { kind: "copied" } : { kind: "failed", reason: "This browser didn't allow the copy." });
+    }
+    this.emit("copied", result);
   }
 
   // ---- the toolbar ----------------------------------------------------------------------------
@@ -1022,11 +1046,12 @@ export class Stage {
     const offer = this.opts.offer ? this.opts.offer(this) : `<button type="button" class="pill" data-act="copy">Copy <kbd>↩</kbd></button>`;
     this.toolbar.innerHTML = `<div class="bar">${buttons}<span class="divider"></span>${offer}</div>`;
     this.toolbar.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => this.setTool(b.dataset.tool)));
-    this.toolbar.querySelector('[data-act="copy"]')?.addEventListener("click", () => this.finish());
+    this.toolbar.querySelector('[data-act="copy"]')?.addEventListener("click", () => this.copy());
     this.opts.wireOffer?.(this);
   }
 
   reset() {
+    this.clearStackTimers();
     this.flights.innerHTML = "";
     this.hideFrame();
     this.open = null;
@@ -1036,6 +1061,18 @@ export class Stage {
     this.lookAt = null;
     this.dimMotion.jump("o", 0);
     this.stackMotion.jump("scale", 1);
+  }
+}
+
+function copyPNG(blobOrPromise) {
+  const png = Promise.resolve(blobOrPromise);
+  const ready = png.then(() => true, () => false);
+  try {
+    // Safari's clipboard write must start during the press, before waiting for the PNG to render.
+    const written = navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+    return Promise.all([written, ready]).then(([, ok]) => ok, () => false);
+  } catch {
+    return Promise.resolve(false);
   }
 }
 
@@ -1081,6 +1118,7 @@ function stageInView() {
 }
 
 addEventListener("keydown", (e) => {
+  if (e.defaultPrevented || e.target.closest?.("input, textarea, select, [contenteditable]")) return;
   if (e.code === "ShiftRight" && !e.repeat) {
     const now = performance.now() / 1000;
     if (tap.clean && now - tap.lastUp < TAP.gap) {
@@ -1105,7 +1143,7 @@ addEventListener("keydown", (e) => {
   }
   tap.clean = false;
   if (!keyStage || !keyStage.inView) return;
-  if (e.target.closest?.("input, textarea, [contenteditable]")) return;
+  if ((e.key === " " || (e.key === "Enter" && !e.metaKey && !e.ctrlKey)) && e.target.closest?.("button, a[href]")) return;
   if (keyStage.key(e)) e.preventDefault();
 });
 addEventListener("keyup", (e) => {
@@ -1122,4 +1160,4 @@ onPress(window, (e) => {
   keyStage = null;
 });
 
-export { picture, marksSVG, cardSize, coverRect, containRect, Motion, Spring, UI, wait, tween, motion, el, place };
+export { picture, marksSVG, cardSize, coverRect, containRect, Motion, Spring, UI, wait, tween, motion, el, place, copyPNG };
