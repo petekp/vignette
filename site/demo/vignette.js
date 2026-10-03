@@ -35,6 +35,14 @@ const motion = () => (reducedMotion.matches ? 0 : 1);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const wait = (s) => new Promise((r) => setTimeout(r, s * 1000 * motion()));
+// A press that closes something: for a mouse the press itself, as in the app, and for a finger or a
+// pen its click, since a touch that starts a scroll is a press too and must not close anything.
+let pointerType = "mouse";
+addEventListener("pointerdown", (e) => { pointerType = e.pointerType; }, true);
+function onPress(target, f) {
+  target.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") f(e); });
+  target.addEventListener("click", (e) => { if (pointerType !== "mouse") f(e); });
+}
 const escapeXML = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 // ---------------------------------------------------------------------------------------------
@@ -356,6 +364,7 @@ export class Stage {
     this.inView = false;
     new IntersectionObserver(([entry]) => {
       this.inView = entry.intersectionRatio >= 0.25;
+      this.root.classList.toggle("asleep", !entry.isIntersecting);
       if (this.inView || keyStage !== this) return;
       keyStage = null;
       if (this.opts.alwaysOpen) return;
@@ -372,8 +381,8 @@ export class Stage {
     this.column.style.transformOrigin = `${SCREEN.w - UI.screenMargin}px ${SCREEN.h - UI.screenMargin}px`;
 
     this.frame.addEventListener("pointerdown", (e) => this.pointerDown(e));
-    this.dim.addEventListener("pointerdown", () => this.open && this.cancel());
-    this.screen.addEventListener("pointerdown", (e) => {
+    onPress(this.dim, () => this.open && this.cancel());
+    onPress(this.screen, (e) => {
       if (e.target === this.screen || e.target.closest(".windows,.wallpaper,.menubar")) {
         if (this.open) this.cancel(); else if (this.stackOpen) this.dismiss();
       }
@@ -444,7 +453,10 @@ export class Stage {
     e.style.width = `${card.size.w}px`; e.style.height = `${card.size.h}px`;
     card.pic = picture(c.image, card.marks);
     card.pic.place(coverRect(card.size, c.image));
-    e.append(card.pic);
+    // The picture is clipped by a layer inside the card, so a ring can sit outside the card.
+    const clip = el("div", "clip");
+    clip.append(card.pic);
+    e.append(clip);
     if (c.from) e.append(el("div", "from", `<img src="${CLAUDE_SVG}" alt="">From ${c.from}`));
     e.append(el("div", "ring"));
     e.addEventListener("pointerenter", () => { if ((this.stackOpen || this.lone === card) && !this.open) this.focus(this.cards.indexOf(card)); });
@@ -649,8 +661,7 @@ export class Stage {
     if (this.stackOpen || this.opts.alwaysOpen) this.stackMotion.to("scale", this.widthScale(frame), UI.relayout, UI.flightBounce);
     this.emit("opening", card);
     const from = this.cardRect(card);
-    card.el.classList.add("away");
-    const flight = await this.fly(card, this.marks, from, frame, "out");
+    const flight = await this.fly(card, this.marks, from, frame, "out", () => card.el.classList.add("away"));
     this.showFrame(card);
     requestAnimationFrame(() => requestAnimationFrame(() => flight.remove()));
     this.emit("open", card);
@@ -679,17 +690,25 @@ export class Stage {
 
   // A flight: the picture travels between the card's slot and the frame on a bowed path, swelling
   // in the middle (FlightCurve). The picture inside goes from the card's crop to the frame's fit.
-  fly(card, marks, from, to, way) {
+  // The flight, its shadow and its picture are laid out once at the frame's size and moved only by
+  // transforms, so the picture and its marks are drawn once and the GPU scales them. The corners
+  // are set against the scale so they stay round. The shadow is cast at the frame's size: scaled
+  // to the card, its blur and offset shrink as the card's own do, and its opacity does the rest.
+  // `start` runs on the first frame the flight shows, which is when the card hides.
+  async fly(card, marks, from, to, way, start) {
+    const W = to.w, H = to.h, R = UI.annotationCorner;
+    const shadow = el("div", "flight-shadow");
     const f = el("div", `flight ${way}`);
     const pic = picture(card.image, marks);
+    const toPic = containRect(to, card.image), fromPic = coverRect(from, card.image);
+    for (const e of [shadow, f]) place(e, { x: 0, y: 0, w: W, h: H });
+    place(pic, { x: 0, y: 0, w: toPic.w, h: toPic.h });
     f.append(pic);
-    this.flights.append(f);
+    this.flights.append(shadow, f);
     const dx = to.x + to.w / 2 - (from.x + from.w / 2), dy = to.y + to.h / 2 - (from.y + from.h / 2);
     const len = Math.hypot(dx, dy) || 1;
     const bow = Math.min(UI.flightArc * len, UI.flightArcMax) * motion();
     const nx = -dy / len, ny = dx / len, side = nx < 0 ? -1 : 1; // the side belongs to the line
-    const fromPic = coverRect(from, card.image), toPic = containRect(to, card.image);
-    const fromLook = { shadow: 0.85, blur: 8, y: 4 }, toLook = { shadow: 0.5, blur: 40, y: 18 };
     const startAtCard = way === "out";
     const m = new Motion((mm) => {
       const p = mm.get("p");
@@ -697,16 +716,31 @@ export class Stage {
       const swell = 1 + UI.flightDepth * motion() * Math.sin(Math.PI * clamp(p, 0, 1));
       const r = lerpRect(from, to, t);
       const off = bow * Math.sin(Math.PI * clamp(t, 0, 1)) * side;
-      const cx = r.x + r.w / 2 + nx * off, cy = r.y + r.h / 2 + ny * off;
       const w = r.w * swell, h = r.h * swell;
-      place(f, { x: cx - w / 2, y: cy - h / 2, w, h });
+      const x = r.x + r.w / 2 + nx * off - w / 2, y = r.y + r.h / 2 + ny * off - h / 2;
+      const sx = w / W, sy = h / H;
+      const move = `translate3d(${x}px, ${y}px, 0) scale(${sx}, ${sy})`;
+      f.style.transform = move;
+      shadow.style.transform = move;
+      f.style.borderRadius = `${R / sx}px / ${R / sy}px`;
       const pr = lerpRect(fromPic, toPic, t);
-      pic.place({ x: pr.x * (w / r.w), y: pr.y * (h / r.h), w: pr.w * (w / r.w), h: pr.h * (h / r.h) });
-      const look = { s: lerp(fromLook.shadow, toLook.shadow, t), b: lerp(fromLook.blur, toLook.blur, t), y: lerp(fromLook.y, toLook.y, t) };
-      f.style.boxShadow = `0 ${look.y}px ${look.b}px rgba(0,0,0,${look.s})`;
+      pic.style.transform = `translate3d(${(pr.x * swell) / sx}px, ${(pr.y * swell) / sy}px, 0) scale(${(pr.w * swell) / sx / toPic.w}, ${(pr.h * swell) / sy / toPic.h})`;
+      shadow.style.opacity = lerp(1, 0.6, t);
     }).add("p", 0, 0.0008);
+    // A layer keeps the scale it was first rasterized at, so a flight that starts at the card is
+    // drawn once at full size first, almost transparent, while the card still shows.
+    if (startAtCard && motion()) {
+      f.style.transform = `translate3d(${to.x}px, ${to.y}px, 0)`;
+      f.style.opacity = "0.01";
+      shadow.style.opacity = "0";
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      f.style.opacity = "";
+    }
     m.render(m);
-    return m.to("p", 1, UI.expand, UI.flightBounce).then(() => f) ;
+    start?.();
+    await m.to("p", 1, UI.expand, UI.flightBounce);
+    shadow.remove();
+    return f;
   }
 
   async close({ notice } = {}) {
@@ -1018,7 +1052,7 @@ addEventListener("keyup", (e) => {
   tap.armed = false;
   clearTimeout(tap.holdTimer);
 });
-addEventListener("pointerdown", (e) => {
+onPress(window, (e) => {
   if (!keyStage) return;
   if (keyStage.root.contains(e.target) || e.target.closest?.("[data-stage-control]")) return;
   const s = keyStage;

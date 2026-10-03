@@ -11,6 +11,10 @@
   --agent: #364fc7;
   --matte: #1a1a1a;
   --tile: rgb(0 0 0 / 0.04);
+  --control: #ffffff;
+  --control-edge: rgb(0 0 0 / 0.14);
+  --key: #f5f5f7;
+  --key-edge: rgb(0 0 0 / 0.24);
   --rounded: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
   --sans: system-ui, -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -25,10 +29,18 @@
     --solid: #f5f5f7;
     --on-solid: #1e1e1e;
     --tile: rgb(255 255 255 / 0.05);
+    --control: #2c2c2e;
+    --control-edge: rgb(255 255 255 / 0.14);
+    --key: #48484a;
+    --key-edge: rgb(0 0 0 / 0.55);
   }
 }
 :root[data-theme="dark"] {
   --tile: rgb(255 255 255 / 0.05);
+  --control: #2c2c2e;
+  --control-edge: rgb(255 255 255 / 0.14);
+  --key: #48484a;
+  --key-edge: rgb(0 0 0 / 0.55);
   --paper: #1e1e1e;
   --ink: rgb(255 255 255 / 0.85);
   --ink-2: rgb(255 255 255 / 0.55);
@@ -38,6 +50,8 @@
 }
 
 * { box-sizing: border-box; }
+button, a, .stage { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.stage img { -webkit-touch-callout: none; }
 html { -webkit-text-size-adjust: 100%; background: #000; }
 body {
   margin: 0;
@@ -109,7 +123,7 @@ code { font: 0.94em var(--mono); }
 .wordmark img { height: 34px; width: auto; }
 .links { display: flex; gap: 18px; }
 .links a { display: flex; color: var(--ink-2); transition: color 0.15s; }
-.links a:hover { color: var(--ink); }
+@media (hover: hover) { .links a:hover { color: var(--ink); } }
 .links svg { width: 21px; height: 21px; fill: currentColor; }
 
 /* Hero */
@@ -144,7 +158,7 @@ code { font: 0.94em var(--mono); }
   text-decoration: none;
   transition: transform 0.3s var(--spring, ease);
 }
-.download:hover { transform: scale(1.03); }
+@media (hover: hover) { .download:hover { transform: scale(1.03); } }
 .download:active { transform: scale(0.97); }
 /* The icon is black, like the button in light mode, so a faint light rim traces its shape. */
 .download img { width: 34px; height: 34px; filter: drop-shadow(0 0 0.5px rgb(255 255 255 / 0.55)) drop-shadow(0 0 0.5px rgb(255 255 255 / 0.35)); }
@@ -188,10 +202,6 @@ code { font: 0.94em var(--mono); }
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 30'%3E%3Cg stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 28V9' stroke='%23fff' stroke-width='6'/%3E%3Cpath d='M9 2 2.5 12h13z' fill='%23fff' stroke='%23fff' stroke-width='3'/%3E%3Cpath d='M9 28V10' stroke='%23e03131' stroke-width='3'/%3E%3Cpath d='M9 2 2.5 12h13z' fill='%23e03131'/%3E%3C/g%3E%3C/svg%3E") no-repeat center / contain;
   filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.25));
 }
-button.note-tag { cursor: pointer; transition: transform 0.3s var(--spring, ease), opacity 0.12s; }
-button.note-tag:hover { transform: scale(1.03); }
-button.note-tag:active { transform: scale(0.97); }
-.note-tag.swap { opacity: 0; }
 
 /* Acts */
 .act { margin-top: clamp(112px, 15vw, 200px); }
@@ -219,7 +229,92 @@ h2 {
   -webkit-user-select: none;
 }
 @media (max-width: 600px) { .stage { aspect-ratio: 1; } }
-.hint-row { display: flex; justify-content: var(--hint-justify, flex-end); padding: 44px var(--hint-pad, 4%) 0; min-height: 96px; }
+/* A hint under a stage. A step the visitor can take is a button: the keys that take it, drawn as
+   keycaps that go down as the real keys do, or a glyph for the press, then what it does. While the
+   demo is busy the hint is a line of text, with nothing to press. */
+.hint-row { display: flex; justify-content: center; padding: 32px 0 0; min-height: 88px; }
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+  margin: 0;
+  padding: 9px 20px 9px 10px;
+  border: 0;
+  border-radius: 15px;
+  background: var(--control);
+  color: var(--ink);
+  font: 600 1rem/1.25 var(--sans);
+  letter-spacing: -0.01em;
+  text-align: left;
+  box-shadow: 0 0 0 0.5px var(--control-edge), 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 22px -10px rgb(0 0 0 / 0.35);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.3s var(--spring, ease), box-shadow 0.25s, background-color 0.25s, width 0.45s var(--spring, ease);
+}
+.hint > span { transition: opacity 0.14s, transform 0.3s var(--spring, ease); }
+.hint.swap > span { opacity: 0; transform: translateY(4px); }
+.hint.resizing { white-space: nowrap; }
+@media (hover: hover) { .hint:hover { transform: translateY(-1.5px); box-shadow: 0 0 0 0.5px var(--control-edge), 0 2px 4px rgb(0 0 0 / 0.08), 0 14px 28px -12px rgb(0 0 0 / 0.4); } }
+.hint:active { transform: translateY(0.5px) scale(0.985); transition-duration: 0.08s; }
+.hint:focus-visible { outline: 3px solid rgb(0 122 255 / 0.55); outline-offset: 3px; }
+.hint .lead { display: inline-flex; gap: 5px; flex: none; }
+.hint .glyph {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--tile);
+  color: var(--ink);
+}
+.hint .glyph svg { width: 20px; height: 20px; }
+.hint kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px 2px;
+  border-radius: 8px;
+  background: var(--key);
+  color: var(--ink);
+  font: 500 15px/1 var(--sans);
+  box-shadow: inset 0 -2.5px 0 var(--key-edge), 0 0 0 0.5px var(--key-edge), 0 1px 1.5px rgb(0 0 0 / 0.12);
+  transition: transform 0.07s, box-shadow 0.07s;
+}
+.hint kbd.down, .hint:active kbd { transform: translateY(2px); box-shadow: inset 0 -0.5px 0 var(--key-edge), 0 0 0 0.5px var(--key-edge); }
+.hint.status { background: none; box-shadow: none; color: var(--ink-2); font-weight: 500; cursor: default; padding-left: 4px; }
+.hint.status:hover, .hint.status:active { transform: none; }
+.hint.status .glyph { background: none; color: var(--ink-2); width: 22px; }
+.hint .glyph .draw { stroke-dasharray: 17; stroke-dashoffset: 17; animation: draw 0.4s 0.1s cubic-bezier(0.3, 0.7, 0.4, 1) forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.hint .busy { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(1turn); } }
+
+/* What a hint says to click, inside the stage: a ring around it that grows in, then breathes. It
+   animates only transform and opacity, one animation at a time, which Chrome runs on the
+   compositor without redrawing what it rings. Two animations listed at once kept it on the main
+   thread. */
+.halo {
+  position: absolute;
+  inset: calc(-1 * var(--beckon-gap, 9px));
+  border: var(--beckon-width, 5px) solid #fff;
+  border-radius: calc(var(--beckon-r, 16px) + var(--beckon-gap, 9px));
+  box-shadow: 0 0 12px rgb(0 0 0 / 0.25);
+  pointer-events: none;
+  z-index: 5;
+  will-change: transform, opacity;
+  animation: beckon-in 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.halo.breathe { animation: beckon 0.9s ease-in-out infinite alternate; }
+.bar button > .halo { --beckon-r: 8px; --beckon-gap: 5px; --beckon-width: 3px; }
+.bar button > .halo.breathe { animation-name: beckon-button; }
+@keyframes beckon-in { from { transform: scale(1.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+/* No var() in the keyframes: Chrome keeps an animation that uses one on the main thread. */
+@keyframes beckon { from { transform: scale(1); opacity: 1; } to { transform: scale(1.05); opacity: 0.5; } }
+@keyframes beckon-button { from { transform: scale(1); opacity: 1; } to { transform: scale(1.14); opacity: 0.5; } }
+.stage.asleep * { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) { .halo { animation: none; } .hint .busy { animation-duration: 2.4s; } }
 
 .also { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 72px; }
 .also h3, .details dt { margin: 0; font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; }
@@ -249,8 +344,8 @@ h2 {
   width: 100%;
   height: clamp(190px, 34vw, 400px);
 }
-.closer:has(.download:hover) .fan { --spread: 13.5deg; }
-@media (max-width: 600px) { .fan { --spread: 9deg; } .closer:has(.download:hover) .fan { --spread: 11deg; } }
+@media (hover: hover) { .closer:has(.download:hover) .fan { --spread: 13.5deg; } }
+@media (max-width: 600px) { .fan { --spread: 9deg; } }
 .fan-card {
   position: absolute;
   left: 50%;
@@ -451,13 +546,13 @@ h2 {
 .card {
   position: absolute;
   border-radius: 16px;
-  overflow: hidden;
   background: var(--matte);
   box-shadow: 0 4px 8px rgb(0 0 0 / 0.6);
   pointer-events: auto;
   cursor: pointer;
   transition: box-shadow 0.15s;
 }
+.card .clip { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
 .card::after {
   content: "";
   position: absolute;
@@ -510,6 +605,7 @@ h2 {
   justify-content: center;
   gap: 3px;
   padding: 8px;
+  border-radius: inherit;
   background: rgb(0 0 0 / 0.55);
   opacity: 0;
   transition: opacity 0.25s;
@@ -546,7 +642,10 @@ h2 {
 .stage[data-tool="select"] .frame { cursor: default; }
 .stage[data-tool="text"] .frame { cursor: text; }
 .flights { position: absolute; inset: 0; pointer-events: none; }
-.flight { position: absolute; border-radius: 16px; overflow: hidden; background: var(--matte); }
+.flight, .flight-shadow { position: absolute; transform-origin: 0 0; will-change: transform; }
+.flight { overflow: hidden; background: var(--matte); }
+.flight .pic { transform-origin: 0 0; will-change: transform; }
+.flight-shadow { border-radius: 16px; box-shadow: 0 18px 40px rgb(0 0 0 / 0.85); will-change: transform, opacity; }
 
 .toolbar {
   position: absolute;
@@ -574,6 +673,7 @@ h2 {
   font: 600 13px/1 var(--sans);
 }
 .bar button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -587,7 +687,7 @@ h2 {
   cursor: pointer;
   transition: background 0.12s, transform 0.2s var(--spring-bouncy, ease);
 }
-.bar button:hover { background: rgb(255 255 255 / 0.1); }
+@media (hover: hover) { .bar button:hover { background: rgb(255 255 255 / 0.1); } }
 .bar button:active { transform: scale(0.92); }
 .bar .tool { width: 34px; padding: 0; justify-content: center; }
 .bar .tool.on { background: rgb(255 255 255 / 0.2); color: #fff; }
@@ -610,7 +710,7 @@ h2 {
 .bar input::placeholder { color: rgb(255 255 255 / 0.4); }
 .bar input:focus { box-shadow: 0 0 0 2px rgb(10 132 255 / 0.7); }
 .bar .send { background: #0a84ff; color: #fff; }
-.bar .send:hover { background: #2b95ff; }
+@media (hover: hover) { .bar .send:hover { background: #2b95ff; } }
 .bar .send kbd { opacity: 0.7; }
 .bar .send.sending { background: #0a84ff; opacity: 0.8; }
 

@@ -5,24 +5,86 @@ Object.values(IMAGES).forEach((i) => { new Image().src = i.src; });
 
 const coarse = matchMedia("(pointer: coarse)").matches;
 
-// A hint is a note on the page under its stage, and a button that takes the step it describes.
+// A hint under a stage, and the step it names. A step the visitor can take is a button, which
+// takes the step when pressed: `keys` draws the keys that take it, `glyph` the kind of press, and
+// `ring` names what to click in the stage, which a halo rings until the hint changes. A hint with no
+// action is a status line.
+const svg = (d) => `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const GLYPHS = {
+  click: svg('<path d="M7.5 6.5l8 4.6-3.6.9-1.7 3.4z" fill="currentColor"/><path d="M5.2 2.8l.7 1.9M2.6 5.3l1.9.7M8.6 2.4l-.4 1.9"/>'),
+  capture: svg('<path d="M3 6.5V4.2c0-.7.5-1.2 1.2-1.2h2.3M13.5 3h2.3c.7 0 1.2.5 1.2 1.2v2.3M17 13.5v2.3c0 .7-.5 1.2-1.2 1.2h-2.3M6.5 17H4.2c-.7 0-1.2-.5-1.2-1.2v-2.3"/><path d="M10 7v6M7 10h6"/>'),
+  draw: svg('<rect x="3" y="4.5" width="14" height="11" rx="1.6"/>'),
+  replay: svg('<path d="M4.5 10a5.5 5.5 0 1 0 1.7-4"/><path d="M4.2 3.2v3.3h3.3"/>'),
+  check: svg('<path class="draw" d="M4.5 10.5l3.5 3.5 7.5-8"/>'),
+  busy: '<i class="busy"></i>',
+};
+const KEYS = {
+  shift2: [["ShiftRight", "⇧"], ["ShiftRight", "⇧"]],
+  ret: [["Enter", "↩"]],
+  cmdRet: [["MetaLeft", "⌘"], ["Enter", "↩"]],
+};
 function hint(button) {
-  let action = null;
+  let action = null, ringed = null, shown = null, swapTimer = 0;
   button.addEventListener("click", () => action?.());
-  return (text, act, { justify = "flex-end", arrow = "70%" } = {}) => {
+  return (text, act, { keys, glyph = "click", ring } = {}) => {
     action = act;
-    const row = button.parentElement;
+    // The contents fade out, change, and fade back in while the button springs to its new width.
     const apply = () => {
-      button.textContent = text;
-      row.style.setProperty("--hint-justify", justify);
-      button.style.setProperty("--arrow-x", arrow);
-      button.classList.remove("swap");
+      ringed?.remove();
+      const target = act && ring ? ring() : null;
+      ringed = target ? target.appendChild(el("i", "halo")) : null;
+      ringed?.addEventListener("animationend", (e) => e.target.classList.add("breathe"), { once: true });
+      const lead = act && keys && !coarse
+        ? KEYS[keys].map(([code, label]) => `<kbd data-code="${code}">${label}</kbd>`).join("")
+        : `<span class="glyph">${GLYPHS[act ? glyph : glyph === "click" ? "busy" : glyph]}</span>`;
+      const before = button.getBoundingClientRect().width;
+      button.style.width = "";
+      button.innerHTML = `<span class="lead" aria-hidden="true">${lead}</span><span>${text}</span>`;
+      button.disabled = !act;
+      button.classList.toggle("status", !act);
+      const after = button.getBoundingClientRect().width;
+      if (motion() && before && Math.abs(after - before) > 1) {
+        button.classList.add("resizing");
+        button.style.width = `${before}px`;
+        button.getBoundingClientRect();
+        button.style.width = `${after}px`;
+      }
+      requestAnimationFrame(() => button.classList.remove("swap"));
     };
-    if (button.textContent === text) return apply();
+    if (shown === text) return apply();
+    shown = text;
     button.classList.add("swap");
-    setTimeout(apply, 120 * motion());
+    clearTimeout(swapTimer);
+    swapTimer = setTimeout(apply, 140 * motion());
   };
 }
+document.querySelectorAll(".hint").forEach((b) => b.addEventListener("transitionend", (e) => {
+  if (e.target !== b || e.propertyName !== "width") return;
+  b.style.width = "";
+  b.classList.remove("resizing");
+}));
+
+// The keycaps go down with the real keys, the first ⇧ on the first tap and the second on the next.
+const held = new Map();
+addEventListener("keydown", (e) => {
+  if (e.repeat) return;
+  const caps = [...document.querySelectorAll(`.hint kbd[data-code="${e.code === "MetaRight" ? "MetaLeft" : e.code}"]:not(.down)`)];
+  const cap = caps.find((k) => !k.dataset.hit) || caps[0];
+  if (!cap) return;
+  cap.classList.add("down");
+  cap.dataset.hit = "1";
+  held.set(e.code, cap);
+  clearTimeout(cap.hitTimer);
+});
+addEventListener("keyup", (e) => {
+  const cap = held.get(e.code);
+  if (!cap) return;
+  held.delete(e.code);
+  cap.classList.remove("down");
+  const group = cap.parentElement.querySelectorAll("kbd");
+  clearTimeout(group[0].hitTimer);
+  group[0].hitTimer = setTimeout(() => group.forEach((k) => delete k.dataset.hit), 500);
+});
 
 function browser(stage, rect, image, url) {
   const w = stage.addWindow(`<div class="chrome"><i></i><i></i><i></i><span>${url}</span></div><div class="page"></div>`, rect, "browser");
@@ -78,7 +140,7 @@ function takeScreenshot() {
   } catch {}
   const k = STAYS.w / IMAGES.stays.w;
   const rect = { x: STAYS.x + c.x * k, y: STAYS.y + 40 + c.y * k, w: c.w * k, h: c.h * k };
-  hintOne("Copied as you take it", null, { justify: "center", arrow: "50%" });
+  hintOne("Copied as you take it", null, { glyph: "check" });
   return one.capture(rect, { image: { src, w: c.w, h: c.h }, demo: shot.demo, fresh: true });
 }
 
@@ -88,13 +150,13 @@ function idleOne() {
   const newest = one.cards.at(-1);
   if (newest?.fresh && !newest.marks.length) {
     if (shots < 2 && one.stackOpen) return stackHint();
-    if (shots < 2) return hintOne(coarse ? "Tap here to show your screenshots" : "Double-tap right Shift", () => one.showStack());
-    return hintOne(coarse ? "Tap here to draw on it" : "Double-tap and hold right Shift", () => {
+    if (shots < 2) return hintOne(coarse ? "Show your screenshots" : "Double-tap right Shift", () => one.showStack(), { keys: "shift2" });
+    return hintOne(coarse ? "Draw on the newest" : "Double-tap and hold right Shift", () => {
       one.showStack();
       one.annotate(one.cards.at(-1));
-    });
+    }, { keys: "shift2" });
   }
-  hintOne(shots ? "Take another screenshot" : "Take a screenshot", takeScreenshot, { justify: "center", arrow: "50%" });
+  hintOne(shots ? "Take another screenshot" : "Take a screenshot", takeScreenshot, { glyph: "capture" });
 }
 idleOne();
 
@@ -122,24 +184,26 @@ async function drawForMe(stage, box, words) {
 }
 
 let oneMarked = false;
-const stackHint = () => hintOne(coarse ? "Tap a card to draw on it" : "Click a card to draw on it", () => one.annotate(one.cards[one.focused] || one.cards.at(-1)));
+const shown = () => one.cards[one.focused] || one.cards.at(-1);
+const stackHint = () => hintOne(coarse ? "Tap a card to draw on it" : "Click a card to draw on it", () => one.annotate(shown()), { ring: () => shown()?.el });
+const copyHint = () => hintOne(coarse ? "Copy it" : "Press Return to copy it", () => one.copy(), { keys: "ret", ring: () => one.toolbar.querySelector('[data-act="copy"]') });
 one.on((event, card) => {
   if (event === "captured") { clearTimeout(one.idleTimer); one.idleTimer = setTimeout(() => { if (!one.open) idleOne(); }, 1400 * motion()); }
   if (event === "dismiss" || event === "lone-gone") idleOne();
   if (event === "stack") stackHint();
   if (event === "open") {
     oneMarked = card.marks.length > 0;
-    if (oneMarked) hintOne(coarse ? "Tap here to copy it" : "Press Return to copy it", () => one.copy(), { justify: "center", arrow: "50%" });
-    else hintOne(coarse ? "Tap here to draw a box and a note" : "Drag to draw a box, then type a note", () => {
+    if (oneMarked) copyHint();
+    else hintOne(coarse ? "Draw a box and a note" : "Drag to draw a box, then type a note", () => {
       drawForMe(one, card.demo.box, card.demo.words);
-    }, { justify: "center", arrow: "50%" });
+    }, { glyph: "draw" });
   }
   if (event === "mark" && !oneMarked) {
     oneMarked = true;
-    hintOne(coarse ? "Tap here to copy it" : "Press Return to copy it", () => one.copy(), { justify: "center", arrow: "50%" });
+    copyHint();
   }
   if (event === "copied") {
-    hintOne("Copied to your clipboard", idleOne);
+    hintOne("Copied to your clipboard", null, { glyph: "check" });
     clearTimeout(one.idleTimer);
     one.idleTimer = setTimeout(() => { if (!one.open) idleOne(); }, 2400);
   }
@@ -210,7 +274,6 @@ async function say(lines) {
 }
 
 const hintTwo = hint(document.getElementById("hint-two"));
-const CENTER = { justify: "center", arrow: "50%" };
 let round = 0; // 0 before Send, 1 after Claude's card arrived, 2 after Reply
 let busy = false;
 
@@ -227,7 +290,7 @@ function setupTwo() {
   // The visitor has just drawn on the planner: the drawing is the newest card, ready to open.
   const mine = two.cards.at(-1);
   two.focus(two.cards.length - 1);
-  hintTwo(coarse ? "Tap your drawing to open it" : "Click your drawing to open it", () => two.annotate(mine));
+  hintTwo(coarse ? "Tap your drawing to open it" : "Click your drawing to open it", () => two.annotate(mine), { ring: () => mine.el });
 }
 
 async function sendIt(message = "") {
@@ -238,7 +301,7 @@ async function sendIt(message = "") {
   const typed = message || two.toolbar.querySelector("input")?.value || "";
   two.toolbar.querySelector(".send")?.classList.add("sending");
   const closing = two.close({ notice: { kind: "sending", project: "postcard" } });
-  hintTwo(reply ? "Claude builds the one you picked" : "Claude reads your drawing", null, { justify: "flex-start", arrow: "18%" });
+  hintTwo(reply ? "Claude builds the one you picked" : "Claude reads your drawing", null);
   await closing;
   const notice = card.el.querySelector(".notice");
   await wait(0.45);
@@ -266,7 +329,7 @@ async function sendIt(message = "") {
     await wait(0.4);
     const claude = await two.insert({ image: IMAGES.variants, marks: CLAUDE_MARKS, from: "Claude" });
     round = 1; busy = false;
-    hintTwo(coarse ? "Tap Claude’s card to open it" : "Click Claude’s card to open it", () => two.annotate(claude));
+    hintTwo(coarse ? "Tap Claude’s card to open it" : "Click Claude’s card to open it", () => two.annotate(claude), { ring: () => claude.el });
   } else {
     await say([
       ["", 0],
@@ -281,28 +344,40 @@ async function sendIt(message = "") {
     await wait(0.4);
     await say([['<span class="t-claude">●</span> Done. It’s in the browser.', 0.2]]);
     round = 2; busy = false;
-    hintTwo("Play it again", () => setupTwo(), { justify: "flex-start", arrow: "30%" });
+    hintTwo("Play it again", () => setupTwo(), { glyph: "replay" });
   }
 }
 
 two.on((event, card) => {
   if (event === "open" && card.from) {
-    hintTwo(coarse ? "Tap here to pick one and reply" : "Box the one you like, then press Reply", async () => {
+    hintTwo(coarse ? "Pick one and reply" : "Box the one you like, then press Reply", async () => {
       await drawForMe(two, { x: 1218, y: 300, w: 560, h: 560 }, "this one");
       sendIt();
-    }, CENTER);
+    }, { glyph: "draw" });
   }
   if (event === "closed" && !busy && round === 1) {
     const claude = two.cards.find((c) => c.from);
-    hintTwo(coarse ? "Tap Claude’s card to open it" : "Click Claude’s card to open it", () => two.annotate(claude));
+    hintTwo(coarse ? "Tap Claude’s card to open it" : "Click Claude’s card to open it", () => two.annotate(claude), { ring: () => claude.el });
   }
   if (event === "closed" && !busy && round === 0) {
     const mine = two.cards.at(-1);
-    hintTwo(coarse ? "Tap your drawing to open it" : "Click your drawing to open it", () => two.annotate(mine));
+    hintTwo(coarse ? "Tap your drawing to open it" : "Click your drawing to open it", () => two.annotate(mine), { ring: () => mine.el });
   }
-  if (event === "open" && !card.from && round === 0) hintTwo("Press Send", () => sendIt(), CENTER);
+  if (event === "open" && !card.from && round === 0) hintTwo(coarse ? "Send it to Claude" : "Press Send", () => sendIt(), { keys: "cmdRet", ring: () => two.toolbar.querySelector(".send") });
 });
 
 setupTwo();
 
 buildFan(document.getElementById("fan"));
+
+// Safari applies :active to a pressed button only when the page listens for touches.
+addEventListener("touchstart", () => {}, { passive: true });
+
+// The trailer plays only while it is on screen, unless Reduce Motion stopped it.
+const trailer = document.getElementById("trailer");
+if (motion()) {
+  new IntersectionObserver(([entry]) => {
+    if (entry.isIntersecting) trailer.play().catch(() => {});
+    else trailer.pause();
+  }).observe(trailer);
+}

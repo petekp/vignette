@@ -112,8 +112,12 @@ started it, except the trailer.
   10 MB trailer.
 - The images in `site/demo/` are the trailer's Postcard pages, and three staged screenshots (a
   terminal, a chat with Maya and a design frame) rendered from HTML at 2x.
-- Each hint under a stage is a red note and a button. Pressing it takes the step it names, so the
-  demos work on a touch screen and without a keyboard.
+- Each hint under a stage is a button that takes the step it names, so the demos work on a touch
+  screen and without a keyboard. It shows the keys for that step as keycaps, which go down as the
+  real keys do, or a glyph for a click. When the step is a click on something in the stage, such as
+  a card or Send, that thing has a breathing white ring until the step is taken. While the demo is
+  busy, the hint is a line of text with a check or a spinner, and nothing to press. Red notes are
+  only marks, as in the app.
 - Copy in act one puts the real rendering on the visitor's clipboard.
 
 ## Still to decide
