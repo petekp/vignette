@@ -66,13 +66,13 @@ gutter between them, so the two curves are concentric, and never below 28 px.
 
 ## Content in the demos
 
-Act one's stack holds a varied, staged history: Postcard pages, a terminal with a failing test, a
+Act one's stack holds a varied, staged history: Postcard pages, a terminal, a
 design frame and a chat with Maya. Act two continues the trailer's Postcard story: the highlight
-day boxed with "make this pop, options?", and Claude's answer marked A, B and C.
+day boxed with "make this pop, options?", and Claude's answer: three versions of the day, each with a note on what sets it apart.
 
 ## Headline
 
-"A picture is worth a thousand-word prompt."
+"Show, don't prompt."
 
 ## Design tokens
 

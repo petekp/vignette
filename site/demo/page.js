@@ -126,7 +126,7 @@ browser(one, STAYS, IMAGES.stays, "postcard.app/stays");
 const ONE_CARDS = [
   { image: IMAGES.chat, demo: { box: { x: 22, y: 390, w: 478, h: 116 }, words: "this road" } },
   { image: IMAGES.frame, demo: { box: { x: 812, y: 168, w: 456, h: 462 }, words: "use this spacing" } },
-  { image: IMAGES.terminal, demo: { box: { x: 70, y: 560, w: 1150, h: 170 }, words: "fix this test" } },
+  { image: IMAGES.terminal, demo: { box: { x: 96, y: 628, w: 630, h: 50 }, words: "number the days like this" } },
   { image: IMAGES.packing, demo: { box: { x: 1200, y: 330, w: 575, h: 440 }, words: "add sunscreen" } },
   { image: IMAGES.itin, demo: { box: { x: 1196, y: 452, w: 579, h: 580 }, words: "make this pop" } },
 ];
@@ -361,7 +361,7 @@ async function sendIt(message = "") {
     site.show(IMAGES.itinR1);
     await wait(1.1);
     two.look(TERM_VIEW);
-    await say([['<span class="t-dim">  ⎿ Sent you a screenshot, marked A, B and C</span>', 0.6]]);
+    await say([['<span class="t-dim">  ⎿ Sent you a screenshot of all three</span>', 0.6]]);
     two.look(null);
     await wait(0.4);
     const claude = await two.insert({ image: IMAGES.variants, marks: CLAUDE_MARKS, from: "Claude" });

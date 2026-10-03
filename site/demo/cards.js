@@ -22,19 +22,23 @@ export const PERSON_MARKS = [
   { type: "arrow", who: "person", x1: 1322, y1: 332, x2: 852, y2: 668 },
   { type: "note", who: "person", x: 1222, y: 252, text: "number the days" },
 ];
+// Claude's answer: a note on what sets each version apart, an arrow to it, and a question.
 export const CLAUDE_MARKS = [
-  { type: "note", who: "agent", x: 300, y: 200, text: "A" },
-  { type: "note", who: "agent", x: 878, y: 200, text: "B" },
-  { type: "note", who: "agent", x: 1456, y: 200, text: "C" },
-  { type: "note", who: "agent", x: 820, y: 890, text: "Which one?" },
+  { type: "note", who: "agent", x: 230, y: 160, text: "warm tint" },
+  { type: "arrow", who: "agent", x1: 315, y1: 222, x2: 300, y2: 302 },
+  { type: "note", who: "agent", x: 790, y: 160, text: "Highlight tag" },
+  { type: "arrow", who: "agent", x1: 860, y1: 222, x2: 800, y2: 268 },
+  { type: "note", who: "agent", x: 1100, y: 160, text: "photo fills the card" },
+  { type: "arrow", who: "agent", x1: 1300, y1: 222, x2: 1400, y2: 345 },
+  { type: "note", who: "agent", x: 722, y: 884, text: "Which one do you like?" },
 ];
 
 // The closer's fan: five cards from the demos, drawn with the same marks, behind the app icon.
 // Each card is a region screenshot: `view` is the part of the image it shows, so its marks read.
 const FAN = [
-  { image: IMAGES.terminal, view: { x: 30, y: 300, w: 1300, h: 812 }, marks: [{ type: "rect", who: "person", x: 70, y: 560, w: 1150, h: 170 }, { type: "note", who: "person", x: 70, y: 742, text: "fix this test" }] },
+  { image: IMAGES.stays, view: { x: 0, y: 110, w: 1100, h: 688 }, marks: [{ type: "rect", who: "person", x: 40, y: 192, w: 588, h: 86 }, { type: "note", who: "person", x: 40, y: 292, text: "make this\nquieter" }] },
   { image: IMAGES.chat, view: { x: 0, y: 250, w: 900, h: 562 }, marks: [{ type: "rect", who: "person", x: 22, y: 390, w: 478, h: 116 }, { type: "note", who: "person", x: 22, y: 522, text: "this road" }] },
-  { image: IMAGES.variants, view: { x: 260, y: 60, w: 960, h: 600 }, marks: CLAUDE_MARKS, from: "Claude" },
+  { image: IMAGES.variants, view: { x: 520, y: 60, w: 1260, h: 788 }, marks: CLAUDE_MARKS, from: "Claude" },
   { image: IMAGES.itin, view: { x: 860, y: 300, w: 940, h: 588 }, marks: [{ type: "rect", who: "person", x: 1196, y: 452, w: 579, h: 580 }, { type: "note", who: "person", x: 1480, y: 380, text: "make this pop" }] },
   { image: IMAGES.frame, view: { x: 520, y: 130, w: 880, h: 550 }, marks: [{ type: "rect", who: "person", x: 812, y: 168, w: 456, h: 462 }, { type: "note", who: "person", x: 1160, y: 586, text: "more space" }] },
 ];
