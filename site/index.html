@@ -47,13 +47,12 @@
     <span>Free and open source, for macOS 14 or later</span>
   </p>
   <figure class="trailer">
-    <video id="trailer" width="1600" height="1000" autoplay muted loop playsinline poster="trailer-poster.jpg"
+    <video id="trailer" width="1600" height="1000" controls autoplay muted loop playsinline poster="trailer-poster.jpg"
       aria-label="On a trip planner's itinerary, someone draws an arrow from a map stop to a day, with the note &quot;number the days&quot;, and a box around another day, with &quot;make this pop, options?&quot;. Send takes the drawing to Claude Code. Claude numbers the days and sends back a screenshot of three versions of that day, labelled A, B and C. A box picks C, an arrow brings in the flag from B, and Reply sends that drawing back. Claude builds C with the flag.">
       <source src="trailer-small.mp4" type="video/mp4" media="(max-width: 600px)">
       <source src="trailer.webm" type="video/webm">
       <source src="trailer.mp4" type="video/mp4">
     </video>
-    <figcaption class="note-tag up">Recorded in the real app</figcaption>
   </figure>
 </section>
 
@@ -70,33 +69,26 @@
 
   <div class="also">
     <div class="tile">
-      <h3>On your clipboard at once</h3>
-      <p>macOS’s thumbnail holds the file for about 5 seconds. Vignette copies each screenshot as soon
-      as it’s saved, ready to paste.</p>
-    </div>
-    <div class="tile">
       <h3>Your recent screenshots</h3>
       <p>Double-tap right Shift and the last ones you took slide in as cards at the edge of your
       screen, newest at the bottom. You can copy, draw on or delete any of them, or select several to
       copy or delete them together.</p>
     </div>
     <div class="tile">
-      <h3>Draw on any of them</h3>
-      <p>Click a card to draw a box, an arrow or a note on it. Press Return to copy it with your
-      drawing.</p>
+      <h3>Quicker drawing</h3>
+      <p>Click a card to draw on it. Draw a box or an arrow and start typing, and your note appears
+      beside it. Arrows follow your hand, so they can curve around what’s in the way. A stroke that’s
+      nearly straight comes out straight.</p>
     </div>
     <div class="tile">
       <h3>Stitch several into one</h3>
       <p>Select a few cards and press Stitch. It joins them into one image and numbers each piece. Claude shrinks large images before it reads them, so Stitch picks the layout that keeps the most detail.</p>
     </div>
     <div class="tile">
-      <h3>Drag a card out</h3>
-      <p>Drag a card into Claude Code, a chat or Finder. If you drew on the card, the image you drop has your drawing on it.</p>
-    </div>
-    <div class="tile">
-      <h3>Screen recordings too</h3>
-      <p>Recordings from Cmd+Shift+5 come in as cards, with their length on them. Click one to open
-      it.</p>
+      <h3>Drag ’n drop</h3>
+      <p>Drag a card from your recent screenshots into Claude Code, a chat or Finder, without opening
+      your screenshots folder. Select several cards to drag them together. If you drew on a card, the
+      image you drop has your drawing on it.</p>
     </div>
   </div>
 </section>
@@ -155,7 +147,6 @@
     const trailer = document.getElementById("trailer");
     trailer.removeAttribute("autoplay");
     trailer.pause();
-    trailer.controls = true;
   }
 </script>
 <script type="module" src="demo/page.js"></script>

@@ -163,7 +163,7 @@ code { font: 0.94em var(--mono); }
 /* The icon is black, like the button in light mode, so a faint light rim traces its shape. */
 .download img { width: 34px; height: 34px; filter: drop-shadow(0 0 0.5px rgb(255 255 255 / 0.55)) drop-shadow(0 0 0.5px rgb(255 255 255 / 0.35)); }
 
-.trailer { margin: clamp(48px, 7vw, 80px) 0 0; display: flex; flex-direction: column; align-items: flex-end; }
+.trailer { margin: clamp(48px, 7vw, 80px) 0 0; }
 .trailer video {
   display: block;
   width: 100%;
@@ -171,36 +171,6 @@ code { font: 0.94em var(--mono); }
   border-radius: 14px;
   background: #000;
   box-shadow: 0 0 0 1px var(--hair), 0 30px 60px -30px rgb(0 0 0 / 0.45);
-}
-.trailer figcaption { margin: 40px 6% 0 0; }
-
-/* A note, as the app draws one: a tag in the mark's colour with a white edge and two soft shadows,
-   the words in SF Pro Rounded. An arrow above points at what it is about. */
-.note-tag {
-  position: relative;
-  display: inline-block;
-  max-width: min(22em, 100%);
-  margin: 0;
-  padding: 0.42em 0.8em 0.47em;
-  border: 0;
-  border-radius: 1.1em;
-  background: var(--person);
-  color: #fff;
-  font: 600 1.0625rem/1.32 var(--rounded);
-  text-align: left;
-  box-shadow: 0 0 0 1.5px #fff, 0 0.18em 0.59em rgb(0 0 0 / 0.14), 0 0.03em 0.06em rgb(0 0 0 / 0.22);
-}
-.note-tag.agent { background: var(--agent); font-family: var(--mono); }
-.note-tag.up::before {
-  content: "";
-  position: absolute;
-  bottom: calc(100% + 5px);
-  left: var(--arrow-x, 50%);
-  width: 18px;
-  height: 30px;
-  margin-left: -9px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 30'%3E%3Cg stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 28V9' stroke='%23fff' stroke-width='6'/%3E%3Cpath d='M9 2 2.5 12h13z' fill='%23fff' stroke='%23fff' stroke-width='3'/%3E%3Cpath d='M9 28V10' stroke='%23e03131' stroke-width='3'/%3E%3Cpath d='M9 2 2.5 12h13z' fill='%23e03131'/%3E%3C/g%3E%3C/svg%3E") no-repeat center / contain;
-  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.25));
 }
 
 /* Acts */
@@ -318,7 +288,7 @@ h2 {
 .stage.asleep * { animation-play-state: paused !important; }
 @media (prefers-reduced-motion: reduce) { .halo { animation: none; } .hint .busy { animation-duration: 2.4s; } }
 
-.also { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 72px; }
+.also { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 72px; }
 .also h3, .details dt { margin: 0; font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; }
 .also p, .details dd { margin: 6px 0 0; color: var(--ink-2); text-wrap: pretty; }
 @media (max-width: 800px) { .also { grid-template-columns: 1fr; } }

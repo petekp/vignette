@@ -410,11 +410,18 @@ buildFan(document.getElementById("fan"));
 // Safari applies :active to a pressed button only when the page listens for touches.
 addEventListener("touchstart", () => {}, { passive: true });
 
-// The trailer plays only while it is on screen, unless Reduce Motion stopped it.
+// The trailer plays only while it is on screen, unless Reduce Motion stopped it. Coming back on
+// screen resumes it only when leaving paused it, so a visitor's own pause holds.
 const trailer = document.getElementById("trailer");
 if (motion()) {
+  let pausedOffscreen = false;
   new IntersectionObserver(([entry]) => {
-    if (entry.isIntersecting) trailer.play().catch(() => {});
-    else trailer.pause();
+    if (entry.isIntersecting) {
+      if (pausedOffscreen) trailer.play().catch(() => {});
+      pausedOffscreen = false;
+    } else if (!trailer.paused) {
+      pausedOffscreen = true;
+      trailer.pause();
+    }
   }).observe(trailer);
 }
