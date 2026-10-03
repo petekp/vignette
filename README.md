@@ -126,12 +126,15 @@ Cmd+Shift+4  ──►  <your screenshots folder>/Screenshot ….png
                   AnnotationController ── window hosting EditorView, the drawing editor
                         │ Copy: the drawing, rendered off the main thread
                         ▼
-                  Clipboard + "<name>-annotated.png" next to the original
+                  Clipboard + "<name>-<result-id>-annotated.png" next to the original
 ```
 
 Send takes the same rendering to an agent session instead (`ScreenshotRequests`,
 `AgentConnection`). `Sources/` is the whole app, in Swift. The drawing editor is native AppKit, and
 [docs/editor.md](docs/editor.md) says how it behaves.
+
+Each copied or dragged rendering has its own file. Vignette keeps it until you delete it, so a
+path pasted into a terminal still points to that rendering after another copy or an app restart.
 
 ## Guides
 

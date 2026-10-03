@@ -13,7 +13,7 @@ final class ScreenshotRequestsTests: XCTestCase {
     /// The requests whose reply could not be made a card.
     private var replyFailures: [String] = []
     /// Set to hold the answer: the completion lands here instead of being called, which is what a
-    /// real `addMarks` does while it makes its colour sample off the main thread.
+    /// real installation does before its completion reaches the request owner.
     private var heldAdd: ((Drawings.Failure?) -> Void)?
     /// The attempt id `stageReply` last wrote, for a test that needs to read back its receipt.
     private var firstAttemptID = ""
@@ -25,7 +25,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         requests = ScreenshotRequests(root: root)
         requests.callbacks = ScreenshotRequests.Callbacks(
-            addMarks: { [unowned self] _, marks, _, done in
+            installDrawing: { [unowned self] _, marks, _, done in
                 self.added.append(marks)
                 guard self.heldAdd == nil else { self.heldAdd = done; return }
                 done(self.addFails ? Drawings.Failure(code: .writeFailed, description: "disk full") : nil)
@@ -41,6 +41,12 @@ final class ScreenshotRequestsTests: XCTestCase {
 
     // MARK: Helpers
 
+    private func inventory(in folder: URL) throws -> ScreenshotWatcher.Inventory {
+        let observedAt = ProcessInfo.processInfo.systemUptime
+        let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+        return ScreenshotWatcher.Inventory(folder: folder, names: Set(files.map(\.lastPathComponent)), dates: [:], observedAt: observedAt)
+    }
+
     private func png(_ side: Int = 4) -> Data {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4,
                                    hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -53,8 +59,9 @@ final class ScreenshotRequestsTests: XCTestCase {
 
     /// A stored request with no connection behind it, so nothing is submitted anywhere.
     private func makeRequest() throws -> ScreenshotRequests.Record {
-        try requests.send(png: png(), source: folder.appendingPathComponent("Screenshot.png"),
-                          to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
+        requests.reconcile(try inventory(in: folder))
+        return try requests.send(png: png(), source: folder.appendingPathComponent("Screenshot.png"),
+                                 to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
     }
 
     private func ticket(for record: ScreenshotRequests.Record) throws -> ReplyProtocol.Ticket {
@@ -91,7 +98,69 @@ final class ScreenshotRequestsTests: XCTestCase {
         return try XCTUnwrap(replies.first { $0["request"] as? String == record.id }?["id"] as? String)
     }
 
+    private func stored(_ record: ScreenshotRequests.Record) throws -> ScreenshotRequests.Record {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let file = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent(ScreenshotRequests.recordFileName)
+        return try decoder.decode(ScreenshotRequests.Record.self, from: Data(contentsOf: file))
+    }
+
+    private func commitClearedRecord(_ record: ScreenshotRequests.Record) throws {
+        var cleared = try stored(record)
+        cleared.status = .cleared
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let file = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent(ScreenshotRequests.recordFileName)
+        try encoder.encode(cleared).write(to: file, options: .atomic)
+    }
+
     // MARK: Sending stores before anything else happens
+
+    func testRecoveryPublishesOneCompleteDrawingAfterInstallationWasInterrupted() throws {
+        let store = DrawingStore(directory: root.deletingLastPathComponent().appendingPathComponent("drawings"))
+        let drawings = Drawings(store: store)
+        requests.callbacks.installDrawing = { [unowned self] shot, marks, agent, done in
+            do {
+                try drawings.installReply(marks, from: agent, at: shot.url, style: .standard, newPointScale: 2)
+                self.heldAdd = done
+            } catch {
+                done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
+            }
+        }
+        let record = try makeRequest()
+        requests.receiveReply(envelope: try stageReply(record,
+            marks: #"[{"type":"rectangle","x":0.1,"y":0.1,"w":0.2,"h":0.2},{"type":"text","x":0.2,"y":0.3,"text":"The reply"}]"#,
+            image: png(256)))
+        XCTAssertTrue(presented.isEmpty)
+        let id = try replyID(in: record)
+        let output = folder.appendingPathComponent(ReplyProtocol.replyFileName(id))
+        let pixels = try XCTUnwrap(PixelSize(imageAt: output))
+        let before = try XCTUnwrap(store.readComplete(key: output.path, pixels: pixels, style: .standard))
+        let bytes = try Data(contentsOf: store.url(for: output.path))
+        requests = ScreenshotRequests(root: root)
+        let reopened = Drawings(store: store)
+        var changedUI = UITweaks()
+        changedUI.agentTextSize *= 2
+        let changedStyle = changedUI.textStyle
+        requests.callbacks = ScreenshotRequests.Callbacks(
+            installDrawing: { shot, marks, agent, done in
+                do {
+                    try reopened.installReply(marks, from: agent, at: shot.url, style: changedStyle, newPointScale: 1)
+                    done(nil)
+                } catch { done(Drawings.Failure(code: .writeFailed, description: "\(error)")) }
+            },
+            present: { [unowned self] shot in self.presented.append(shot.url) },
+            watchFolder: { [unowned self] in self.folder })
+        requests.load()
+        requests.reconcile(try inventory(in: folder))
+        XCTAssertEqual(presented, [output])
+        XCTAssertTrue(requests.isVisible(output))
+        let after = try XCTUnwrap(store.readComplete(key: output.path, pixels: pixels, style: .standard))
+        XCTAssertEqual(after.pointScale, before.pointScale)
+        XCTAssertEqual(after.marks.map(\.geometry), before.marks.map(\.geometry))
+        XCTAssertEqual(after.marks.count, 2)
+        XCTAssertEqual(try Data(contentsOf: store.url(for: output.path)), bytes)
+    }
 
     func testASentDrawingIsStoredWithItsTicketBeforeAnythingIsSubmitted() throws {
         let record = try makeRequest()
@@ -291,15 +360,171 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(requests.stateJSON["pendingImports"] as? [String], [id])
 
         heldAdd = nil
+        folder = root.deletingLastPathComponent().appendingPathComponent("new-folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let reopened = ScreenshotRequests(root: root)
         reopened.callbacks = requests.callbacks
         reopened.load()
-        XCTAssertEqual(presented, [file], "the records' load is what starts the import")
+        XCTAssertTrue(presented.isEmpty, "record loading does not access a screenshots folder before readiness")
+        reopened.reconcile(try inventory(in: folder))
+        XCTAssertEqual(presented, [file])
         XCTAssertEqual((reopened.stateJSON["pendingImports"] as? [String])?.count, 0)
         XCTAssertTrue(reopened.isVisible(file))
     }
 
     // MARK: Clearing
+
+    func testEveryLateSubmissionOutcomeLeavesClearTerminal() async throws {
+        let outcomes: [SubmissionOutcome] = [
+            .accepted(detail: "accepted"), .queued(detail: "queued", reason: "queued"),
+            .uncertain(detail: "uncertain", reason: "uncertain"),
+            .notSubmitted(code: .sendFailed, detail: "refused", reason: "refused"),
+            .destinationChanged(detail: "changed", reason: "changed"),
+        ]
+        for outcome in outcomes {
+            let connection = HeldSubmission(outcome)
+            requests.connections = [.claude: connection]
+            let answered = expectation(description: "delayed submission answers")
+            requests.callbacks.delivered = { _, delivered in
+                XCTAssertEqual(delivered.detail, outcome.detail)
+                answered.fulfill()
+            }
+            let record = try makeRequest()
+            XCTAssertEqual(connection.entered.wait(timeout: .now() + 3), .success)
+            requests.run(clear: record.id)
+            let cleared = try stored(record)
+            XCTAssertEqual(cleared.status, .cleared)
+            connection.resume.signal()
+            await fulfillment(of: [answered], timeout: 3)
+            XCTAssertEqual(try stored(record).status, .cleared)
+            XCTAssertEqual(try stored(record).detail, cleared.detail)
+            let reopened = ScreenshotRequests(root: root)
+            reopened.callbacks = requests.callbacks
+            reopened.load()
+            let attempt = UUID().uuidString.lowercased()
+            reopened.receiveReply(envelope: try stageReply(record, attemptID: attempt))
+            XCTAssertEqual(receipt(record, attempt)?.errorCode, "request-closed")
+        }
+    }
+
+    func testClearWriteFailureKeepsStateAndOwnedFiles() throws {
+        heldAdd = { _ in }
+        let record = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(record))
+        let output = folder.appendingPathComponent(ReplyProtocol.replyFileName(try replyID(in: record)))
+        let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
+        let before = try stored(record)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        requests.run(clear: record.id)
+        XCTAssertEqual(try stored(record).status, before.status)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("image.png").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("submissions").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output.path))
+        let attempt = UUID().uuidString.lowercased()
+        requests.receiveReply(envelope: try stageReply(record, attemptID: attempt))
+        XCTAssertEqual(receipt(record, attempt)?.acceptance, .accepted)
+    }
+
+    func testClearRemovesAFailedImportsOwnedOutputAtItsRecordedLocation() throws {
+        addFails = true
+        let record = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(record))
+        let id = try replyID(in: record)
+        let output = folder.appendingPathComponent(ReplyProtocol.replyFileName(id))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output.path))
+        let outputFolder = try XCTUnwrap(folder)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: outputFolder.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: outputFolder.path) }
+        folder = root.deletingLastPathComponent().appendingPathComponent("new-current-folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        requests.run(clear: record.id)
+        XCTAssertEqual(try stored(record).status, .cleared)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output.path), "a refused deletion remains pending")
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["stage"] as? String, "cancelled")
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: outputFolder.path)
+        requests.reconcile(try inventory(in: folder))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+
+        let file = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
+            .appendingPathComponent("replies").appendingPathComponent(id + ".json")
+        let bytes = try Data(contentsOf: file)
+        let inode = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber)
+        for _ in 0..<3 {
+            requests.reconcile(try inventory(in: folder))
+            XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber, inode,
+                           "a screenshot scan must not replace an unchanged completed cancellation")
+        }
+        let reopened = ScreenshotRequests(root: root)
+        reopened.callbacks = requests.callbacks
+        reopened.load()
+        reopened.reconcile(try inventory(in: folder))
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber, inode)
+        XCTAssertEqual(try Data(contentsOf: file), bytes)
+    }
+
+    func testLoadReplaysClearCleanupAndCannotPublishAnUncancelledReply() throws {
+        heldAdd = { _ in }
+        let record = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(record))
+        let id = try replyID(in: record)
+        let output = folder.appendingPathComponent(ReplyProtocol.replyFileName(id))
+        let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
+        let repliesDirectory = directory.appendingPathComponent("replies")
+        let file = repliesDirectory.appendingPathComponent(id + ".json")
+        let before = try Data(contentsOf: file)
+        try commitClearedRecord(record)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: repliesDirectory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: repliesDirectory.path) }
+        let reopened = ScreenshotRequests(root: root)
+        reopened.callbacks = requests.callbacks
+        reopened.load()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output.path), "screenshot cleanup waits for startup readiness")
+        XCTAssertEqual(reopened.stateJSON["pendingImports"] as? [String], [])
+        reopened.reconcile(try inventory(in: folder))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+        XCTAssertTrue(presented.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: file), before, "the blocked write left the reserved record on disk")
+        XCTAssertEqual((reopened.stateJSON["replies"] as? [[String: Any]])?.first?["stage"] as? String, "cancelled")
+        let interrupted = ScreenshotRequests(root: root)
+        interrupted.callbacks = requests.callbacks
+        interrupted.load()
+        interrupted.reconcile(try inventory(in: folder))
+        XCTAssertEqual(try Data(contentsOf: file), before)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: repliesDirectory.path)
+        interrupted.reconcile(try inventory(in: folder))
+        let cancelled = try JSONDecoder().decode(ScreenshotRequests.Reply.self, from: Data(contentsOf: file))
+        XCTAssertEqual(cancelled.stage, .cancelled)
+        XCTAssertEqual(cancelled.needsOutputCleanup, false)
+        XCTAssertEqual(cancelled.errorCode, "request-cleared")
+        let inode = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber)
+        let again = ScreenshotRequests(root: root)
+        again.callbacks = requests.callbacks
+        again.load()
+        again.reconcile(try inventory(in: folder))
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber, inode)
+        again.reconcile(try inventory(in: folder), now: Date().addingTimeInterval(ScreenshotRequests.clearedKept + 60))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+        XCTAssertTrue(presented.isEmpty)
+    }
+
+    func testAdmissionFailureDoesNotAccumulatePreparedRequestsOrClearOldPayloads() throws {
+        var records: [ScreenshotRequests.Record] = []
+        for _ in 0..<ScreenshotRequests.maxLiveRequests { records.append(try makeRequest()) }
+        let oldest = try XCTUnwrap(records.first)
+        let directory = ReplyProtocol.requestDirectory(root: root, requestID: oldest.id)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        for _ in 0..<3 { XCTAssertThrowsError(try makeRequest()) }
+        XCTAssertEqual((requests.stateJSON["requests"] as? [[String: Any]])?.count, ScreenshotRequests.maxLiveRequests)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).count,
+                       ScreenshotRequests.maxLiveRequests)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("image.png").path))
+        XCTAssertNotEqual(try stored(oldest).status, .cleared)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        _ = try makeRequest()
+        XCTAssertEqual(try stored(oldest).status, .cleared)
+    }
 
     func testClearingStopsNewRepliesAndCancelsUnpublishedImports() throws {
         heldAdd = { _ in }             // the import stays unpublished
@@ -335,10 +560,141 @@ final class ScreenshotRequestsTests: XCTestCase {
         let record = try makeRequest()
         try requests.receiveReply(envelope: stageReply(record))
         let file = folder.appendingPathComponent(ReplyProtocol.replyFileName(try replyID(in: record)))
+        let other = root.deletingLastPathComponent().appendingPathComponent("other-folder")
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        let copy = other.appendingPathComponent(file.lastPathComponent)
+        try FileManager.default.copyItem(at: file, to: copy)
+        XCTAssertFalse(requests.isVisible(copy))
+        XCTAssertNil(requests.origin(of: copy))
+        requests.fileRemoved(copy)
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["deleted"] as? Bool, false)
         try FileManager.default.removeItem(at: file)
         requests.fileRemoved(file)
         XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["deleted"] as? Bool, true)
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "the recovery copy never puts it back")
+    }
+
+    func testAnUnavailableReplyFolderDoesNotLosePublicationOnLoadOrPrune() throws {
+        let record = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(record))
+        let reply = folder.appendingPathComponent(ReplyProtocol.replyFileName(try replyID(in: record)))
+        requests.run(clear: record.id)
+        let away = folder.appendingPathExtension("unavailable")
+        try FileManager.default.moveItem(at: folder, to: away)
+        defer { try? FileManager.default.moveItem(at: away, to: folder) }
+
+        let reopened = ScreenshotRequests(root: root)
+        reopened.callbacks = requests.callbacks
+        reopened.load()
+        reopened.prune(now: Date().addingTimeInterval(ScreenshotRequests.clearedKept + 60))
+        XCTAssertTrue(reopened.isVisible(reply))
+        XCTAssertEqual(reopened.origin(of: reply)?.id, record.destinationID)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ReplyProtocol.requestDirectory(root: root, requestID: record.id).path))
+    }
+
+    func testChangingFoldersDoesNotPruneAPublishedReplyInTheOriginalFolder() throws {
+        let record = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(record))
+        let reply = folder.appendingPathComponent(ReplyProtocol.replyFileName(try replyID(in: record)))
+        requests.run(clear: record.id)
+        folder = root.deletingLastPathComponent().appendingPathComponent("other-shots")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        requests.reconcile(ScreenshotWatcher.Inventory(folder: folder, names: [], dates: [:],
+                                                         observedAt: ProcessInfo.processInfo.systemUptime),
+                           now: Date().addingTimeInterval(ScreenshotRequests.clearedKept + 60))
+        requests.prune(now: Date().addingTimeInterval(ScreenshotRequests.clearedKept + 60))
+        XCTAssertTrue(requests.isVisible(reply))
+        XCTAssertEqual(requests.origin(of: reply)?.id, record.destinationID)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reply.path))
+    }
+
+    func testAQueuedInventoryCannotRemoveANewerPublishedReply() throws {
+        let inventory = ScreenshotWatcher.Inventory(folder: folder, names: [], dates: [:],
+                                                     observedAt: ProcessInfo.processInfo.systemUptime)
+        let record = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(record))
+        let reply = folder.appendingPathComponent(ReplyProtocol.replyFileName(try replyID(in: record)))
+        requests.run(clear: record.id)
+        requests.reconcile(inventory, now: Date().addingTimeInterval(ScreenshotRequests.clearedKept + 60))
+        XCTAssertTrue(requests.isVisible(reply))
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["deleted"] as? Bool, false)
+    }
+
+    func testAnAcceptedReplyWaitsForStartupInventory() throws {
+        let waiting = ScreenshotRequests(root: root)
+        waiting.callbacks = requests.callbacks
+        let record = try waiting.send(png: png(), source: folder.appendingPathComponent("Screenshot.png"),
+                                      to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
+        try waiting.receiveReply(envelope: stageReply(record))
+        let rows = try XCTUnwrap(waiting.stateJSON["replies"] as? [[String: Any]])
+        let id = try XCTUnwrap(rows.first?["id"] as? String)
+        let file = folder.appendingPathComponent(ReplyProtocol.replyFileName(id))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        XCTAssertTrue(presented.isEmpty)
+        XCTAssertEqual(rows.first?["stage"] as? String, "accepted")
+        waiting.reconcile(try inventory(in: folder))
+        XCTAssertEqual(presented, [file])
+        XCTAssertTrue(waiting.isVisible(file))
+    }
+
+    func testAReservedReplyWithoutLocationFailsAfterStartupReadiness() throws {
+        heldAdd = { _ in }
+        let record = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(record, image: png()))
+        let id = try replyID(in: record)
+        let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
+        let recordFile = directory.appendingPathComponent("replies").appendingPathComponent(id + ".json")
+        var stored = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: recordFile)) as? [String: Any])
+        stored["destination"] = nil
+        try JSONSerialization.data(withJSONObject: stored).write(to: recordFile, options: .atomic)
+        let output = folder.appendingPathComponent(ReplyProtocol.replyFileName(id))
+        try FileManager.default.removeItem(at: output)
+        heldAdd = nil
+        let reopened = ScreenshotRequests(root: root)
+        reopened.callbacks = requests.callbacks
+        reopened.load()
+        reopened.reconcile(try inventory(in: folder))
+        let rows = try XCTUnwrap(reopened.stateJSON["replies"] as? [[String: Any]])
+        XCTAssertEqual(rows.first?["stage"] as? String, "failed")
+        XCTAssertEqual(rows.first?["error"] as? String, "destination-unknown")
+        XCTAssertEqual(reopened.stateJSON["pendingImports"] as? [String], [])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("payloads/\(id).png").path))
+    }
+
+    func testConfirmedAbsenceAtThePublishedLocationAllowsRetentionCleanup() throws {
+        let record = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(record))
+        let reply = folder.appendingPathComponent(ReplyProtocol.replyFileName(try replyID(in: record)))
+        requests.run(clear: record.id)
+        try FileManager.default.removeItem(at: reply)
+        requests.reconcile(ScreenshotWatcher.Inventory(folder: folder, names: [], dates: [:],
+                                                         observedAt: ProcessInfo.processInfo.systemUptime),
+                           now: Date().addingTimeInterval(ScreenshotRequests.clearedKept + 60))
+        XCTAssertFalse(requests.isVisible(reply))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: ReplyProtocol.requestDirectory(root: root, requestID: record.id).path))
+    }
+
+    func testLocationlessPublishedRecordsAreRetainedWithoutGuessing() throws {
+        let record = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(record))
+        let id = try replyID(in: record)
+        let reply = folder.appendingPathComponent(ReplyProtocol.replyFileName(id))
+        requests.run(clear: record.id)
+        let file = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
+            .appendingPathComponent("replies").appendingPathComponent(id + ".json")
+        var stored = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        stored["destination"] = nil
+        try JSONSerialization.data(withJSONObject: stored).write(to: file, options: .atomic)
+        try FileManager.default.removeItem(at: reply)
+        let reopened = ScreenshotRequests(root: root)
+        reopened.callbacks = requests.callbacks
+        reopened.load()
+        reopened.reconcile(ScreenshotWatcher.Inventory(folder: folder, names: [], dates: [:],
+                                                         observedAt: ProcessInfo.processInfo.systemUptime),
+                           now: Date().addingTimeInterval(ScreenshotRequests.clearedKept + 60))
+        XCTAssertTrue(reopened.isVisible(reply))
+        XCTAssertEqual(reopened.origin(of: reply)?.id, record.destinationID)
     }
 
     // MARK: What the review found
@@ -438,5 +794,20 @@ final class ScreenshotRequestsTests: XCTestCase {
         requests.receiveReply(envelope: envelope)
         XCTAssertNil(receipt(record, attemptID), "nothing is accepted and no receipt is written")
         XCTAssertEqual(presented, [])
+    }
+}
+
+private final class HeldSubmission: AgentConnection, @unchecked Sendable {
+    let client = AgentClient.claude
+    let entered = DispatchSemaphore(value: 0)
+    let resume = DispatchSemaphore(value: 0)
+    private let outcome: SubmissionOutcome
+
+    init(_ outcome: SubmissionOutcome) { self.outcome = outcome }
+    func destinations() -> [AgentDestination] { [] }
+    func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
+        entered.signal()
+        _ = resume.wait(timeout: .now() + 5)
+        return outcome
     }
 }

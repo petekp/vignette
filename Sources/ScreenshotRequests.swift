@@ -17,7 +17,7 @@ final class ScreenshotRequests {
         /// Adds marks to a screenshot's drawing and stores it, without showing anything, then answers
         /// nil, or why not. Publication waits for the answer, so a card never appears without its marks.
         /// The name is the agent's, which its notes' badges show.
-        var addMarks: (Screenshot, [AgentMark], _ agent: String?, @escaping (Drawings.Failure?) -> Void) -> Void = { _, _, _, done in
+        var installDrawing: (Screenshot, [AgentMark], _ agent: String?, @escaping (Drawings.Failure?) -> Void) -> Void = { _, _, _, done in
             done(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings"))
         }
         /// Shows a published reply's card. Managed replies never reach the watcher's capture path.
@@ -52,10 +52,14 @@ final class ScreenshotRequests {
     let root: URL
     private var requests: [String: Record] = [:]
     private var replies: [String: Reply] = [:]
-    /// Accepted replies not yet published, imported one at a time. In arrival order within a launch;
-    /// a relaunch rebuilds it from the stored records, whose order is the store's.
+    /// Accepted replies not yet published, imported serially in arrival order within a launch.
+    /// A relaunch rebuilds the order from the store.
     private var pendingImports: [String] = []
     private var importing = false
+    private var publishedAt: [String: TimeInterval] = [:]
+    private var publicationReady = false
+    /// Cancellation takes effect in memory even when its record cannot yet be written.
+    private var pendingCleanupWrites: Set<String> = []
 
     init(root: URL) {
         self.root = root
@@ -106,6 +110,8 @@ final class ScreenshotRequests {
         let hasImage: Bool
         let marks: [AgentMark]
         var stage: Stage
+        var destination: URL?
+        var needsOutputCleanup: Bool?
         /// The person deleted the published file. Publication still happened and is not undone.
         var deleted = false
         var errorCode: String?
@@ -125,6 +131,12 @@ final class ScreenshotRequests {
 
         /// The reserved watch-folder name. Derived, so a record and its file cannot drift apart.
         var fileName: String { ReplyProtocol.replyFileName(id) }
+
+        var outputURL: URL? {
+            guard let destination, destination.isFileURL, destination.path.hasPrefix("/"),
+                  destination.lastPathComponent == fileName else { return nil }
+            return destination.standardizedFileURL
+        }
 
         var publication: ReplyProtocol.Receipt.Publication {
             if deleted { return .removed }
@@ -162,13 +174,7 @@ final class ScreenshotRequests {
                 } else { unreadable += 1 }
             }
         }
-        // A file that is gone is a removal the person made while the app was not running.
-        for (id, reply) in replies where reply.stage == .published && !reply.deleted {
-            if !fm.fileExists(atPath: callbacks.watchFolder().appendingPathComponent(reply.fileName).path) {
-                replies[id]?.deleted = true
-                try? write(replies[id]!)
-            }
-        }
+        for record in requests.values where record.status == .cleared { cleanup(record.id) }
         prune()
         Log.write("[requests] loaded \(loadedRequests) requests \(loadedReplies) replies pending=\(pendingImports.count)\(unreadable > 0 ? " unreadable=\(unreadable)" : "") dir=\(root.path)")
         importNext()
@@ -182,7 +188,8 @@ final class ScreenshotRequests {
     /// with no published record, which is also what an unreadable store leaves behind.
     func isVisible(_ url: URL) -> Bool {
         guard let id = ReplyProtocol.replyID(fromFileName: url.lastPathComponent) else { return true }
-        return replies[id]?.stage == .published
+        guard let reply = replies[id], reply.stage == .published else { return false }
+        return reply.destination == nil || reply.outputURL == url.standardizedFileURL
     }
 
     /// Whether a new file in the watch folder is an ordinary capture. A managed reply never is: it
@@ -195,17 +202,31 @@ final class ScreenshotRequests {
     /// The person deleted a published reply. Publication happened; the recovery copy is not used
     /// to put the file back.
     func fileRemoved(_ url: URL) {
-        guard let id = ReplyProtocol.replyID(fromFileName: url.lastPathComponent), var reply = replies[id], !reply.deleted else { return }
+        guard let id = ReplyProtocol.replyID(fromFileName: url.lastPathComponent), var reply = replies[id],
+              reply.stage == .published, reply.outputURL == url.standardizedFileURL, !reply.deleted else { return }
         reply.deleted = true
         replies[id] = reply
         try? write(reply)
         Log.write("[reply] removed \(reply.fileName)")
     }
 
+    func reconcile(_ inventory: ScreenshotWatcher.Inventory, now: Date = Date()) {
+        publicationReady = true
+        for record in requests.values where record.status == .cleared { cleanup(record.id, inventory: inventory) }
+        for (id, reply) in replies where reply.stage == .published && !reply.deleted {
+            guard publishedAt[id, default: 0] <= inventory.observedAt, let url = reply.outputURL,
+                  inventory.confirmsAbsence(of: url) else { continue }
+            fileRemoved(url)
+        }
+        prune(now: now, inventory: inventory)
+        importNext()
+    }
+
     /// The destination a reply's card came from, so Reply goes back to the same conversation.
     func origin(of url: URL) -> AgentDestination? {
         guard let id = ReplyProtocol.replyID(fromFileName: url.lastPathComponent),
-              let reply = replies[id], let request = requests[reply.requestID] else { return nil }
+              let reply = replies[id], reply.destination == nil || reply.outputURL == url.standardizedFileURL,
+              let request = requests[reply.requestID] else { return nil }
         return AgentDestination(id: request.destinationID, name: request.destinationName, address: request.address)
     }
 
@@ -283,16 +304,21 @@ final class ScreenshotRequests {
 
     // MARK: Sending
 
-    /// A send refused before anything was stored, with what the person reads about it.
+    /// A send refused before the client was invoked, with what the person reads about it.
     struct Refusal: Error { let reason: String }
 
     /// Stores the drawing and the request, then hands it to the client. The store happens first and
     /// on the main thread: once this answers, the request exists whatever the client does next, and
     /// the annotator may close. The submission follows off the main thread and reports through
-    /// `[send]` and `callbacks.delivered`. Throws a `Refusal` when nothing could be stored.
+    /// `[send]` and `callbacks.delivered`. Throws a `Refusal` when no live request was admitted.
     @discardableResult
     func send(png: Data, source: URL, to destination: AgentDestination, message: String? = nil,
               instructions: String = SettingsData.defaultSendInstructions) throws -> Record {
+        let open = requests.values.filter { $0.status != .cleared }.sorted { $0.created < $1.created }
+        guard open.count <= Self.maxLiveRequests else {
+            Log.write("[send] error \(CommandError.writeFailed.rawValue) too many open requests: \(open.count)")
+            throw Refusal(reason: SubmissionOutcome.internalReason)
+        }
         let id = ReplyProtocol.newID()
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: id)
         let record = Record(id: id, created: Date(), destinationID: destination.id,
@@ -311,7 +337,30 @@ final class ScreenshotRequests {
             throw Refusal(reason: "Vignette couldn't save the request. \(error.localizedDescription)")
         }
         requests[id] = record
-        clearOldest()
+        if open.count == Self.maxLiveRequests, let oldest = open.first {
+            do {
+                _ = try clear(oldest.id)
+                Log.write("[requests] cleared \(oldest.id) \(oldest.destinationName): the oldest of \(Self.maxLiveRequests) open")
+            } catch {
+                do {
+                    try FileManager.default.removeItem(at: directory)
+                    requests[id] = nil
+                } catch {
+                    var cancelled = record
+                    cancelled.status = .cleared
+                    cancelled.detail = "not submitted: request admission failed"
+                    do {
+                        try write(cancelled)
+                        requests[id] = cancelled
+                        cleanup(id)
+                    } catch {
+                        Log.write("[send] error \(CommandError.writeFailed.rawValue) unsubmitted request \(id) could not be discarded: \(error.localizedDescription)")
+                    }
+                }
+                Log.write("[send] error \(CommandError.writeFailed.rawValue) could not clear \(oldest.id): \(error.localizedDescription)")
+                throw Refusal(reason: SubmissionOutcome.internalReason)
+            }
+        }
         prune()
         Log.write("[send] prepared \(id) to \(destination.name) (\(destination.address.description)) \(png.count) bytes")
         submit(record, message: message, instructions: instructions)
@@ -336,14 +385,17 @@ final class ScreenshotRequests {
 
     private func finishSubmission(_ id: String, _ outcome: SubmissionOutcome) {
         guard var record = requests[id] else { return }
-        switch outcome {
-        case .accepted, .queued: record.status = .submitted
-        case .uncertain: record.status = .uncertain
-        case .notSubmitted, .destinationChanged: record.status = .failed
+        if record.status != .cleared {
+            switch outcome {
+            case .accepted, .queued: record.status = .submitted
+            case .uncertain: record.status = .uncertain
+            case .notSubmitted, .destinationChanged: record.status = .failed
+            }
+            record.detail = outcome.isAccepted ? "" : outcome.detail
+            requests[id] = record
+            do { try write(record) }
+            catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not store submission \(id): \(error.localizedDescription)") }
         }
-        record.detail = outcome.isAccepted ? "" : outcome.detail
-        requests[id] = record
-        try? write(record)
         switch outcome {
         case .accepted(let detail):
             Log.write("[send] ok \(id) \(record.destinationName) \(detail)")
@@ -481,9 +533,9 @@ final class ScreenshotRequests {
 
     /// Publishes the next pending reply, one at a time.
     private func importNext() {
-        guard !importing, let id = pendingImports.first, let reply = replies[id] else { return }
+        guard publicationReady, !importing, let id = pendingImports.first, let reply = replies[id] else { return }
         guard let request = requests[reply.requestID], request.takesReplies else {
-            pendingImports.removeFirst()
+            pendingImports.removeAll { $0 == id }
             fail(id, stage: .cancelled, code: "request-cleared")
             importNext()
             return
@@ -500,18 +552,21 @@ final class ScreenshotRequests {
     /// One reply, from owned bytes to a card. The reserved name is excluded from everything until
     /// the last step, so a stop anywhere in here leaves no ordinary file and no half-drawn card.
     private func publish(_ reply: Reply, done: @escaping () -> Void) {
-        let folder = callbacks.watchFolder()
-        let destination = folder.appendingPathComponent(reply.fileName)
         var reply = reply
 
         // 1. Reserve the name. Persisting the record is what installs the exclusion, because
         //    `isVisible` reads the record; there is no second ledger to keep in step.
         if reply.stage == .accepted {
+            reply.destination = callbacks.watchFolder().appendingPathComponent(reply.fileName).standardizedFileURL
             reply.stage = .reserved
             replies[reply.id] = reply
             guard (try? write(reply)) != nil else { fail(reply.id, stage: .failed, code: "reserve-failed"); return done() }
             Log.write("[reply] reserved \(reply.fileName)")
         }
+        guard let destination = reply.outputURL else {
+            fail(reply.id, stage: .failed, code: "destination-unknown"); return done()
+        }
+        let folder = destination.deletingLastPathComponent()
 
         // 2. The owned PNG, copied atomically. An existing file here is this reply's own from an
         //    interrupted run, since the name carries its id; nothing else may use this name.
@@ -530,10 +585,10 @@ final class ScreenshotRequests {
         // 3. The marks, in a drawing the person edits like their own. An image-only reply needs none.
         guard !reply.marks.isEmpty else { return commit(reply, at: destination, done: done) }
         let agent = requests[reply.requestID]?.address.client.rawValue
-        callbacks.addMarks(Screenshot(url: destination), reply.marks, agent) { [weak self] failure in
+        callbacks.installDrawing(Screenshot(url: destination), reply.marks, agent) { [weak self] failure in
             guard let self else { return }
-            // A clear during the colour sample took the file back, so the marks had nothing to join:
-            // the import ends cancelled, as the clear said, rather than failed.
+            // Clearing can remove the reserved file while installation is pending. The request
+            // remains cancelled even when that installation later reports a failure.
             guard stillReserved(reply, at: destination) else { return done() }
             if let failure {
                 // The codes stay the ones receipts have always carried for these two failures.
@@ -555,6 +610,7 @@ final class ScreenshotRequests {
         reply.errorCode = nil
         guard (try? write(reply)) != nil else { fail(reply.id, stage: .failed, code: "publish-failed"); return done() }
         replies[reply.id] = reply
+        publishedAt[reply.id] = ProcessInfo.processInfo.systemUptime
         if let client = requests[reply.requestID]?.address.client { Agent.record(client.rawValue, on: url) }
         Log.write("[reply] published \(reply.fileName) marks=\(reply.marks.count)")
         callbacks.present(Screenshot(url: url))
@@ -562,11 +618,11 @@ final class ScreenshotRequests {
     }
 
     /// Whether the import may go on. The record may have moved since it started: its marks are
-    /// added after a colour sample made off the main thread, and a clear cancels the import in that
+    /// installed on a later actor turn, and a clear cancels the import in that
     /// time. The stage on disk decides, not the copy this import has been carrying, and the reserved
     /// file goes with the cancellation.
     private func stillReserved(_ reply: Reply, at url: URL) -> Bool {
-        guard replies[reply.id]?.stage == .reserved else {
+        guard requests[reply.requestID]?.takesReplies == true, replies[reply.id]?.stage == .reserved else {
             try? FileManager.default.removeItem(at: url)
             Log.write("[reply] dropped \(reply.fileName); the request was cleared")
             return false
@@ -606,63 +662,103 @@ final class ScreenshotRequests {
             return
         }
         let targets = clear == "all" ? Array(requests.keys) : [clear]
-        let cleared = targets.filter { self.clear($0) }.count
+        var cleared = 0
+        var failures: [String] = []
+        for id in targets {
+            do { if try self.clear(id) { cleared += 1 } }
+            catch { failures.append("\(id): \(error.localizedDescription)") }
+        }
+        if !failures.isEmpty {
+            Commands.error("requests", .writeFailed, "cleared \(cleared); \(failures.joined(separator: "; "))")
+            return
+        }
         guard cleared > 0 else { Commands.error("requests", .missingFile, "no request \(clear)"); return }
         Commands.ok("requests", "cleared \(cleared)")
     }
 
-    /// The oldest open requests, past `maxLiveRequests`, are cleared. Run after a request is stored,
-    /// so a send that fails to store clears nothing.
-    private func clearOldest() {
-        let open = requests.values.filter { $0.status != .cleared }.sorted { $0.created < $1.created }
-        for record in open.prefix(max(0, open.count - Self.maxLiveRequests)) {
-            clear(record.id)
-            Log.write("[requests] cleared \(record.id) \(record.destinationName): the oldest of \(Self.maxLiveRequests) open")
-        }
-    }
-
     /// Deletes the folders of requests cleared more than `clearedKept` ago, dated by `request.json`,
-    /// which clearing rewrites. A request with a published reply still in the watch folder stays:
-    /// its reply record is what `isVisible` shows that card by.
-    func prune(now: Date = Date()) {
+    /// which clearing rewrites. Published replies need current proof of absence at their recorded location.
+    func prune(now: Date = Date(), inventory: ScreenshotWatcher.Inventory? = nil) {
         let fm = FileManager.default
-        let folder = callbacks.watchFolder()
         for record in requests.values where record.status == .cleared {
             let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
             let file = directory.appendingPathComponent(Self.recordFileName)
             guard let cleared = (try? fm.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
                   now.timeIntervalSince(cleared) > Self.clearedKept else { continue }
             let own = replies.values.filter { $0.requestID == record.id }
-            guard !own.contains(where: { $0.stage == .published && fm.fileExists(atPath: folder.appendingPathComponent($0.fileName).path) })
+            guard !own.contains(where: { $0.needsOutputCleanup == true }) else { continue }
+            guard !own.contains(where: { reply in
+                guard reply.stage == .published else { return false }
+                guard let inventory, let url = reply.outputURL,
+                      publishedAt[reply.id, default: 0] <= inventory.observedAt else { return true }
+                return !inventory.confirmsAbsence(of: url)
+            })
             else { continue }
             guard (try? fm.removeItem(at: directory)) != nil else { continue }
             requests[record.id] = nil
-            for reply in own { replies[reply.id] = nil }
+            for reply in own {
+                replies[reply.id] = nil
+                publishedAt[reply.id] = nil
+                pendingCleanupWrites.remove(reply.id)
+            }
             Log.write("[requests] removed \(record.id), cleared \(Int(now.timeIntervalSince(cleared) / 86400)) days ago")
         }
     }
 
-    /// Stops one request taking replies. Answers false when there is no such request.
+    /// Terminal state commits before any owned payload is removed.
     @discardableResult
-    private func clear(_ id: String) -> Bool {
+    private func clear(_ id: String) throws -> Bool {
         guard var record = requests[id] else { return false }
-        record.status = .cleared
-        requests[id] = record
-        try? write(record)
-        for reply in replies.values where reply.requestID == id && reply.stage != .published {
-            pendingImports.removeAll { $0 == reply.id }
-            // A reserved name was copied into the watch folder but never shown. It is Vignette's
-            // until publication, so clearing takes it back rather than leaving a hidden file.
-            if reply.stage == .reserved {
-                try? FileManager.default.removeItem(at: callbacks.watchFolder().appendingPathComponent(reply.fileName))
-            }
-            fail(reply.id, stage: .cancelled, code: "request-cleared")
+        if record.status != .cleared {
+            record.status = .cleared
+            try write(record)
+            requests[id] = record
         }
-        // Only this task's own files. The sent PNG goes; an agent that still holds the path
-        // sees it disappear, which is what clearing means.
-        try? FileManager.default.removeItem(at: ReplyProtocol.requestDirectory(root: root, requestID: id).appendingPathComponent("image.png"))
-        try? FileManager.default.removeItem(at: ReplyProtocol.requestDirectory(root: root, requestID: id).appendingPathComponent("submissions"))
+        cleanup(id)
         return true
+    }
+
+    private func cleanup(_ id: String, inventory: ScreenshotWatcher.Inventory? = nil) {
+        guard requests[id]?.status == .cleared else { return }
+        for reply in replies.values where reply.requestID == id && reply.stage != .published {
+            if reply.stage == .cancelled, reply.errorCode == "request-cleared", reply.needsOutputCleanup == false,
+               !pendingCleanupWrites.contains(reply.id) { continue }
+            pendingImports.removeAll { $0 == reply.id }
+            var cancelled = reply
+            if cancelled.needsOutputCleanup == nil {
+                cancelled.needsOutputCleanup = reply.stage != .accepted || reply.destination != nil
+            }
+            cancelled.stage = .cancelled
+            cancelled.errorCode = "request-cleared"
+            replies[reply.id] = cancelled
+            if publicationReady, cancelled.needsOutputCleanup == true, let url = cancelled.outputURL {
+                do {
+                    try FileManager.default.removeItem(at: url)
+                    cancelled.needsOutputCleanup = false
+                } catch {
+                    if inventory?.confirmsAbsence(of: url) == true { cancelled.needsOutputCleanup = false }
+                    else { Log.write("[requests] error cleanup \(id): \(error.localizedDescription)") }
+                }
+            }
+            replies[reply.id] = cancelled
+            if cancelled.stage != reply.stage || cancelled.errorCode != reply.errorCode
+                || cancelled.needsOutputCleanup != reply.needsOutputCleanup {
+                pendingCleanupWrites.insert(reply.id)
+            }
+            guard pendingCleanupWrites.contains(reply.id) else { continue }
+            do {
+                try write(cancelled)
+                pendingCleanupWrites.remove(reply.id)
+            }
+            catch { Log.write("[requests] error cleanup-state \(id): \(error.localizedDescription)") }
+        }
+        let directory = ReplyProtocol.requestDirectory(root: root, requestID: id)
+        for name in ["image.png", "submissions"] {
+            let url = directory.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            do { try FileManager.default.removeItem(at: url) }
+            catch { Log.write("[requests] error cleanup \(id): \(error.localizedDescription)") }
+        }
     }
 
     // MARK: The state report

@@ -67,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let agentPlugins = AgentPlugins()
     /// The screenshot each request sent this launch was made from, until its client answers.
     private var sentShots: [String: Screenshot] = [:]
+    private var watcherGeneration = 0
+    private var screenshotWrittenAt: TimeInterval = 0
+    private var deferredRemovals: Set<URL> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         replaceOlderInstances()
@@ -426,8 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     private lazy var drawings = Drawings(store: DrawingStore(directory: Identity.applicationSupportURL.appendingPathComponent("drawings")))
 
-    /// Clears out what the web editor left, removes the drawings whose screenshot is gone, and gives
-    /// the stack the drawings, so every card draws its own and a write reaches its card at once.
+    /// Connects stored drawings before request recovery or the watcher can update cards.
     private func startDrawings() {
         Drawings.removeWebEditorData([
             Identity.applicationSupportURL.appendingPathComponent("drafts"),
@@ -438,7 +440,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.drawings = drawings
         drawings.open = annotator.editor
         drawings.onChange = { [weak self] key, drawing in self?.thumbnail.setDrawing(drawing, for: key) }
-        drawings.sweep(watchFolder: watchFolder) { FileManager.default.fileExists(atPath: $0) }
     }
 
     /// Agents' marks joining a screenshot's drawing: the one open in the editor, or the stored one.
@@ -459,12 +460,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
     }
 
-    /// Where a screenshot's rendering is written: `<name>-annotated.png` beside it.
-    private func annotatedURL(for shot: Screenshot) -> URL {
-        let base = shot.url.deletingPathExtension().lastPathComponent
-        return shot.url.deletingLastPathComponent().appendingPathComponent("\(base)\(Config.annotatedSuffix).png")
-    }
-
     func open(_ shots: [Screenshot]) {
         guard !shots.isEmpty else { Commands.error("open", .missingFile, "nothing selected"); return }
         for shot in shots { NSWorkspace.shared.open(shot.url) }
@@ -472,19 +467,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     func moveToTrash(_ shots: [Screenshot]) {
-        var trashed: [String] = []
+        var trashed: [Screenshot] = []
         var failed: [String] = []
         for shot in shots {
             do {
                 try FileManager.default.trashItem(at: shot.url, resultingItemURL: nil)
-                trashed.append(shot.url.lastPathComponent)
+                trashed.append(shot)
             } catch {
                 failed.append("\(shot.url.lastPathComponent): \(error.localizedDescription)")
             }
         }
-        thumbnail.remove(shots)
-        drawings.remove(shots.map(\.url))
-        if failed.isEmpty { Commands.ok("trash", trashed.joined(separator: ", ")) }
+        if !trashed.isEmpty {
+            thumbnail.remove(trashed)
+            drawings.remove(trashed.map(\.url))
+            for shot in trashed { requests.fileRemoved(shot.url) }
+        }
+        if failed.isEmpty { Commands.ok("trash", trashed.map(\.url.lastPathComponent).joined(separator: ", ")) }
         else { Commands.error("trash", .writeFailed, "\(failed.joined(separator: "; ")); trashed \(trashed.count) of \(shots.count)") }
     }
 
@@ -496,7 +494,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let renderings = shots.map { shot -> (shot: Screenshot, rendering: PendingRendering?) in
             let drawing = drawings.current(of: shot.url, style: style)
             guard let drawing, !drawing.marks.isEmpty else { return (shot, nil) }
-            return (shot, RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: annotatedURL(for: shot),
+            return (shot, RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .file,
                                                        style: style, markStyle: ui.markStyle))
         }
         if let last = renderings.compactMap(\.rendering).last {
@@ -521,7 +519,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         Clipboard.copyFiles(urls)
         let drawn = renderings.filter { $0.rendering != nil }.count
-        Commands.ok("copy-annotated", "\(urls.map(\.lastPathComponent).joined(separator: ", ")); \(drawn) with annotations")
+        Commands.ok("copy-annotated", "files=\(Self.renderingPaths(urls)); \(drawn) with annotations")
         thumbnail.showCopied(renderings.map(\.shot))
     }
 
@@ -550,11 +548,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[annotate] \(verb) \(name) nothing drawn, original copied")
             return
         }
-        let file = annotatedURL(for: shot)
         let ui = settings.data.ui
-        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: ui.textStyle, markStyle: ui.markStyle,
+        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .file, style: ui.textStyle, markStyle: ui.markStyle,
                                                      order: .first)
-        Clipboard.copyRendering(rendering, file: file)
+        Clipboard.copyRendering(rendering)
         rendering.whenDone { [weak self] output in
             guard let self else { return }
             if let failure = output.failure {
@@ -562,7 +559,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 // The clipboard took its promise back; the card must not say otherwise.
                 thumbnail.showNotCopied(shot, reason: failure.reason)
             } else if let file = output.file, let png = output.png {
-                Log.write("[annotate] \(verb) \(file.lastPathComponent) \(png.count) bytes, copied")
+                Log.write("[annotate] \(verb) files=\(Self.renderingPaths([file])) \(png.count) bytes, copied")
             }
         }
     }
@@ -583,19 +580,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 return shot.url as NSURL
             }
             drawn += 1
-            let file = annotatedURL(for: shot)
-            let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: file, style: ui.textStyle, markStyle: ui.markStyle)
+            let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .file, style: ui.textStyle, markStyle: ui.markStyle)
             rendering.whenDone { output in
                 if let failure = output.failure {
                     Log.write("[drag] error \(failure.code.rawValue) \(name): \(failure); the drop gets no image for it")
                 } else if let file = output.file, let png = output.png {
-                    Log.write("[drag] rendered \(file.lastPathComponent) \(png.count) bytes")
+                    Log.write("[drag] rendered files=\(Self.renderingPaths([file])) \(png.count) bytes")
                 }
             }
-            return Clipboard.renderingItem(rendering, file: file)
+            return Clipboard.renderingItem(rendering)
         }
         Log.write("[drag] cards=\(cards.count) drawings=\(drawn)")
         return items
+    }
+
+    private static func renderingPaths(_ urls: [URL]) -> String {
+        let data = try? JSONEncoder().encode(urls.map(\.path))
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
     }
 
     // MARK: URL commands: vignette://<command>[?file=/path&file=/other]. See Commands.swift.
@@ -1108,6 +1109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Commands.error("add", .writeFailed, "\(destination.path): \(error.localizedDescription)"); return
             }
         }
+        screenshotWrittenAt = ProcessInfo.processInfo.systemUptime
         if let agent = request.agent { Agent.record(agent, on: destination) }
         if let session = Agent.cleanSession(request.session) {
             Agent.record(session: session, on: destination)
@@ -1156,13 +1158,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         requests.connections = [.claude: ClaudeCodeConnection(),
                                 .codex: CodexConnection()]
         requests.callbacks = ScreenshotRequests.Callbacks(
-            addMarks: { [weak self] shot, marks, agent, done in
+            installDrawing: { [weak self] shot, marks, agent, done in
                 guard let self else { return done(Drawings.Failure(code: .writeFailed, description: "the app is gone")) }
-                addMarks(marks, from: agent, to: shot.url) { result in
-                    if case .failure(let failure) = result { done(failure) } else { done(nil) }
+                Task {
+                    do {
+                        try self.drawings.installReply(marks, from: agent, at: shot.url, style: self.settings.data.ui.textStyle,
+                                                  newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)
+                        done(nil)
+                    } catch let failure as Drawings.Failure {
+                        done(failure)
+                    } catch {
+                        done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
+                    }
                 }
             },
-            present: { [weak self] shot in self?.thumbnail.show(shot) },
+            present: { [weak self] shot in
+                self?.screenshotWrittenAt = ProcessInfo.processInfo.systemUptime
+                self?.thumbnail.show(shot)
+            },
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
             delivered: { [weak self] record, outcome in
                 guard let self, let shot = sentShots.removeValue(forKey: record.id) else { return }
@@ -1205,11 +1218,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// reply to a request, or a push that named its session. Reading the sessions runs
     /// subprocesses, so it answers later; the bar offers Send once it has a session to send to.
     private func refreshDestinations(for shot: Screenshot) {
+        guard let session = annotator.session else { return }
         annotator.beginDestinations(replyTo: requests.origin(of: shot.url) ?? Agent.origin(of: shot.url))
         let asked = CACurrentMediaTime()
         let app = FocusReturn.shared.previousApp
         guard let client = AgentApp.client(of: app), let pid = app?.processIdentifier else {
-            return listDestinations(for: shot, asked: asked, cameFrom: nil)
+            return listDestinations(for: shot, session: session, asked: asked, cameFrom: nil)
         }
         // The thread the agent's app shows is read before anything is listed: Claude Code's list
         // comes first and would settle the target on the session in herdr's focus, which you were not in.
@@ -1217,22 +1231,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         DispatchQueue.global(qos: .userInitiated).async {
             let shown = AgentApp.shownThread(pid: pid, launched: launched)
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.annotator.currentKey == shot.url.path else { return }
+                guard let self, self.annotator.session == session else { return }
                 Log.write("[send] came from the \(client.label) app, showing \(shown ?? "no thread") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms")
-                self.listDestinations(for: shot, asked: asked, cameFrom: (client, shown))
+                self.listDestinations(for: shot, session: session, asked: asked, cameFrom: (client, shown))
             }
         }
     }
 
-    private func listDestinations(for shot: Screenshot, asked: CFTimeInterval, cameFrom: (client: AgentClient, shown: String?)?) {
+    private func listDestinations(for shot: Screenshot, session: Int, asked: CFTimeInterval, cameFrom: (client: AgentClient, shown: String?)?) {
         let shown = cameFrom.flatMap { from in from.shown.map { (from.client, $0) } }
         requests.destinations(shown: shown) { [weak self] found, complete, fresh in
             guard let self else { return }
             Log.write("[send] sessions \(found.count)\(complete ? " complete" : "")\(fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
-            // Listing the sessions runs subprocesses that can take seconds, so two images' answers
-            // can arrive out of order. An answer for an image the editor has left would label the
-            // one that replaced it, and a reply would go to a session it was never about.
-            guard self.annotator.currentKey == shot.url.path else { return }
+            // A file can reopen while its earlier destination listing is still running.
+            guard self.annotator.session == session else { return }
             guard let cameFrom else { return self.annotator.destinationsAnswered(found, complete: complete) }
             let marked = AgentDestination.cameFrom(cameFrom.client, shown: cameFrom.shown, in: found, fresh: fresh)
             // Nothing marked from a kept list means the shown thread may be newer than it, so the
@@ -1251,19 +1263,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard !annotator.sending, let session = annotator.session else { return }
         let name = shot.url.lastPathComponent
         annotator.sending = true
-        // Nothing drawn is a send of the screenshot itself, which is what the person is looking at.
-        // Through PNG whatever the capture format is: a reply copies these bytes to a `.png`
-        // name, and an agent opening a file whose name and content disagree may not cope.
-        guard !drawing.marks.isEmpty else {
-            guard let bytes = Thumbnailer.png(from: shot.url) else {
-                Commands.error("send", .unreadableImage, shot.url.path)
-                annotator.sendFailed(Self.unreadable(name))
-                return
-            }
-            return submit(bytes, of: shot, to: destination, message: message)
-        }
         let ui = settings.data.ui
-        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, writingTo: nil, style: ui.textStyle, markStyle: ui.markStyle)
+        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .bytes, style: ui.textStyle, markStyle: ui.markStyle)
         rendering.whenDone { [weak self] output in
             guard let self else { return }
             // A rendering that answers after the session that pressed Send has ended belongs to no
@@ -1344,10 +1345,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func startWatching() {
+        watcherGeneration += 1
+        let generation = watcherGeneration
         Log.write("[watcher] watching \(watchFolder.path)")
         watcher = ScreenshotWatcher(folder: watchFolder, onNew: { [weak self] url in
+            guard let self, self.watcherGeneration == generation else { return }
             Log.write("[watcher] new \(url.lastPathComponent)")
-            guard let self else { return }
             let shot = Screenshot(url: url)
             let name = url.lastPathComponent
             if self.pendingAdds[name] != nil {
@@ -1365,11 +1368,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Log.write("[watcher] copied \(url.lastPathComponent)")
             }
             self.present(shot, annotate: self.settings.data.annotateOnCapture)
-        }, onRemoved: { [weak self] urls in
-            Log.write("[watcher] removed \(urls.map(\.lastPathComponent).joined(separator: ", "))")
-            self?.thumbnail.remove(urls.map(Screenshot.init))
-            self?.drawings.remove(urls)
-            for url in urls { self?.requests.fileRemoved(url) }
+        }, onRemoved: { [weak self] urls, inventory in
+            guard let self, self.watcherGeneration == generation else { return }
+            guard self.screenshotWrittenAt <= inventory.observedAt else {
+                self.deferredRemovals.formUnion(urls)
+                return
+            }
+            let removed = urls.filter { inventory.confirmsAbsence(of: $0) }
+            if removed.count != urls.count {
+                // The watcher already advanced its inventory. Keep suppressed removals until a
+                // later listing observes their presence or confirms their absence.
+                self.deferredRemovals.formUnion(Set(urls).subtracting(removed))
+                self.watcher?.rescan(reason: "after an unconfirmed removal")
+            }
+            guard !removed.isEmpty else { return }
+            Log.write("[watcher] removed \(removed.map(\.lastPathComponent).joined(separator: ", "))")
+            self.thumbnail.remove(removed.map(Screenshot.init))
+            self.drawings.remove(removed, observedAt: inventory.observedAt)
+            for url in removed { self.requests.fileRemoved(url) }
+        }, onInventory: { [weak self] inventory in
+            guard let self, self.watcherGeneration == generation else { return }
+            guard self.screenshotWrittenAt <= inventory.observedAt else {
+                self.watcher?.rescan(reason: "after an app write")
+                return
+            }
+            self.drawings.sweep(inventory)
+            self.requests.reconcile(inventory)
+            let deferred = self.deferredRemovals.filter { inventory.confirmsAbsence(of: $0) }
+            if !deferred.isEmpty { self.thumbnail.remove(deferred.map(Screenshot.init)) }
+            self.deferredRemovals = self.deferredRemovals.filter {
+                $0.deletingLastPathComponent().standardizedFileURL != inventory.folder.standardizedFileURL
+                    || (!inventory.names.contains($0.lastPathComponent) && !deferred.contains($0))
+            }
         })
         warmThumbnails()
         if wakeObserver == nil {

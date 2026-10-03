@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import ImageIO
 import XCTest
 
@@ -58,7 +59,7 @@ final class MarkRenderingTests: XCTestCase {
     func testAnImageWithAnOrientationFlagRendersAsDisplayedWithTheMarksWhereTheDrawingPutThem() throws {
         let sRGB = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
         // Stored 60 by 40 in four colours, turned a quarter clockwise for display: 40 by 60.
-        let url = try writeTestImage(width: 60, height: 40, space: sRGB, orientation: 6, in: dir) { x, y in
+        let url = try writeTestImage(width: 60, height: 40, space: sRGB, orientation: 6, dpi: 144, in: dir) { x, y in
             x < 30 ? (y < 20 ? (255, 0, 0) : (0, 0, 255)) : (y < 20 ? (0, 255, 0) : (255, 255, 255))
         }
         let frame = CGRect(x: 6, y: 6, width: 12, height: 12)
@@ -85,6 +86,17 @@ final class MarkRenderingTests: XCTestCase {
         XCTAssertThrowsError(try Rendering.png(of: madeOnTheFilesOwnSize, imageAt: url, style: .standard, markStyle: .standard)) {
             XCTAssertEqual(($0 as? Rendering.Failure)?.code, .unreadableImage)
         }
+
+        let empty = Drawing(key: url.path, pixels: drawing.pixels, pointScale: 1, marks: [])
+        let pending = RenderingQueue().render(empty, imageAt: url, output: .bytes, style: .standard, markStyle: .standard)
+        let output = try XCTUnwrap(pending.wait(timeout: 10))
+        XCTAssertNil(pending.file)
+        XCTAssertNil(output.file)
+        XCTAssertNil(output.failure)
+        let png = try XCTUnwrap(output.png)
+        XCTAssertEqual(try pixels(of: decode(png)), displayed, "an unmarked send carries the displayed pixels")
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(try XCTUnwrap(CGImageSourceCreateWithData(png as CFData, nil)), 0, nil) as? [CFString: Any])
+        XCTAssertEqual(properties[kCGImagePropertyDPIWidth] as? Double, 144)
     }
 
     func testAFileThatIsNotAnImageFailsAsUnreadable() throws {
@@ -128,37 +140,36 @@ final class MarkRenderingTests: XCTestCase {
                               marks: [Mark(geometry: .rectangle(CGRect(x: 30, y: 20, width: 40, height: 30)))])
         let file = dir.appendingPathComponent("Screenshot-annotated.png")
 
-        let later = PendingRendering()
-        Clipboard.copyRendering(later, file: file, to: pasteboard)
+        let later = PendingRendering(file: file)
+        Clipboard.copyRendering(later, to: pasteboard)
         XCTAssertEqual(pasteboard.string(forType: .string), file.path, "the path is there at once")
         let png = try Rendering.png(of: drawing, imageAt: url, style: .standard, markStyle: .standard)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { later.finish(png: png, file: file, failure: nil) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { later.finish(png: png, failure: nil) }
         let asked = Date()
         XCTAssertEqual(pasteboard.data(forType: .png), png)
         XCTAssertGreaterThan(Date().timeIntervalSince(asked), 0.2, "the paste waited for the rendering")
         XCTAssertNotNil(pasteboard.data(forType: .tiff).flatMap(NSImage.init(data:)))
         XCTAssertEqual(pasteboard.string(forType: .fileURL), file.absoluteString)
 
-        // The queue writes the file it was given, with the bytes the clipboard holds.
-        let rendered = RenderingQueue.shared.render(drawing, imageAt: url, writingTo: file, style: .standard, markStyle: .standard)
+        let rendered = RenderingQueue.shared.render(drawing, imageAt: url, output: .file, style: .standard, markStyle: .standard)
         let output = try XCTUnwrap(rendered.wait(timeout: 10))
         XCTAssertNil(output.failure)
-        XCTAssertEqual(output.file, file)
-        XCTAssertEqual(try Data(contentsOf: file), output.png)
+        XCTAssertEqual(output.file, rendered.file)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(output.file)), output.png)
 
         // A rendering that fails takes its promise back, and never a copy made after it.
         func answered(_ rendering: PendingRendering) {
-            rendering.finish(png: nil, file: nil, failure: .unreadableImage("the file is gone"))
+            rendering.finish(png: nil, failure: .unreadableImage("the file is gone"))
             let drained = expectation(description: "the main queue ran the rendering's answer")
             DispatchQueue.main.async { drained.fulfill() }
             wait(for: [drained], timeout: 1)
         }
-        let failed = PendingRendering()
-        Clipboard.copyRendering(failed, file: file, to: pasteboard)
+        let failed = PendingRendering(file: file)
+        Clipboard.copyRendering(failed, to: pasteboard)
         answered(failed)
         XCTAssertNil(pasteboard.string(forType: .string), "no path to a file that never appears")
-        let overtaken = PendingRendering()
-        Clipboard.copyRendering(overtaken, file: file, to: pasteboard)
+        let overtaken = PendingRendering(file: file)
+        Clipboard.copyRendering(overtaken, to: pasteboard)
         pasteboard.clearContents()
         pasteboard.setString("copied since", forType: .string)
         answered(overtaken)
@@ -166,10 +177,129 @@ final class MarkRenderingTests: XCTestCase {
 
         // A drop has no clipboard to take back, so the item itself gives nothing for a rendering
         // that failed, even one that made its PNG and could not write the file.
-        let unwritten = PendingRendering()
+        let unwritten = PendingRendering(file: file)
         pasteboard.clearContents()
-        pasteboard.writeObjects([Clipboard.renderingItem(unwritten, file: file)])
-        unwritten.finish(png: png, file: nil, failure: .writeFailed("could not write the file"))
+        pasteboard.writeObjects([Clipboard.renderingItem(unwritten)])
+        unwritten.finish(png: png, failure: .writeFailed("could not write the file"))
+        XCTAssertNil(pasteboard.data(forType: .png))
+        XCTAssertNil(pasteboard.data(forType: .tiff))
+        XCTAssertNil(pasteboard.string(forType: .fileURL))
+    }
+
+    @MainActor
+    func testRenderingsOfOneScreenshotKeepDistinctFilesForDelayedConsumers() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("com.petepetrash.vignette.tests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        let original = try writeTestImage(width: 120, height: 80, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)), in: dir) { _, _ in (255, 255, 255) }
+        let source = dir.appendingPathComponent(String(repeating: "é", count: 124) + ".png")
+        try FileManager.default.moveItem(at: original, to: source)
+        let pixels = PixelSize(width: 120, height: 80)
+        let firstDrawing = Drawing(key: source.path, pixels: pixels, pointScale: 1,
+                                   marks: [Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 30, height: 25)))])
+        let secondDrawing = Drawing(key: source.path, pixels: pixels, pointScale: 1,
+                                    marks: [Mark(geometry: .rectangle(CGRect(x: 70, y: 40, width: 30, height: 25)))])
+        let queue = RenderingQueue()
+        let first = queue.render(firstDrawing, imageAt: source, output: .file, style: .standard, markStyle: .standard)
+        let second = queue.render(secondDrawing, imageAt: source, output: .file, style: .standard, markStyle: .standard, order: .first)
+        let firstFile = try XCTUnwrap(first.file), secondFile = try XCTUnwrap(second.file)
+        XCTAssertNotEqual(firstFile, secondFile)
+        for file in [firstFile, secondFile] {
+            XCTAssertEqual(file.deletingLastPathComponent().path, dir.path)
+            XCTAssertLessThanOrEqual(file.lastPathComponent.utf8.count, Int(pathconf(dir.path, _PC_NAME_MAX)))
+        }
+        Clipboard.copyRendering(second, to: pasteboard)
+        let firstOutput = try XCTUnwrap(first.wait(timeout: 10)), secondOutput = try XCTUnwrap(second.wait(timeout: 10))
+        XCTAssertNil(firstOutput.failure)
+        XCTAssertNil(secondOutput.failure)
+        XCTAssertEqual(pasteboard.data(forType: .png), secondOutput.png)
+        XCTAssertEqual(pasteboard.string(forType: .fileURL), secondFile.absoluteString)
+        XCTAssertNotEqual(firstOutput.png, secondOutput.png)
+
+        pasteboard.clearContents()
+        pasteboard.setString("another copy", forType: .string)
+        try FileManager.default.removeItem(at: source)
+        XCTAssertEqual(try Data(contentsOf: firstFile), firstOutput.png)
+        XCTAssertEqual(try Data(contentsOf: secondFile), secondOutput.png)
+
+        let later = try writeTestImage(width: 120, height: 80, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)), in: dir) { _, _ in (0, 0, 0) }
+        let empty = Drawing(key: later.path, pixels: pixels, pointScale: 1, marks: [])
+        let restarted = RenderingQueue().render(empty, imageAt: later, output: .file, style: .standard, markStyle: .standard)
+        XCTAssertNil(try XCTUnwrap(restarted.wait(timeout: 10)).failure)
+        XCTAssertEqual(try Data(contentsOf: firstFile), firstOutput.png)
+        XCTAssertEqual(try Data(contentsOf: secondFile), secondOutput.png)
+
+        func pathBytes(_ url: URL) throws -> Int {
+            try XCTUnwrap(url.withUnsafeFileSystemRepresentation { path in path.map { strlen($0) } })
+        }
+        let folderRoot = dir.appendingPathComponent("folder with spaces é")
+        try FileManager.default.createDirectory(at: folderRoot, withIntermediateDirectories: true)
+        let folderAlias = dir.appendingPathComponent("linked")
+        try FileManager.default.createSymbolicLink(at: folderAlias, withDestinationURL: folderRoot)
+        func folder(withPathBytes target: Int) throws -> URL {
+            var folder = folderAlias
+            while try pathBytes(folder) < target - 1 {
+                let count = min(100, target - (try pathBytes(folder)) - 1)
+                folder.appendPathComponent(String(repeating: "d", count: count))
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
+            return folder
+        }
+
+        let pathLimit = Int(pathconf(dir.path, _PC_PATH_MAX))
+        let deepFolder = try folder(withPathBytes: pathLimit - 90)
+        let deepSource = deepFolder.appendingPathComponent(String(repeating: "a", count: 40) + ".png")
+        try FileManager.default.copyItem(at: later, to: deepSource)
+        let deepDrawing = Drawing(key: deepSource.path, pixels: pixels, pointScale: 1, marks: [])
+        let shortened = queue.render(deepDrawing, imageAt: deepSource, output: .file, style: .standard, markStyle: .standard)
+        let shortenedOutput = try XCTUnwrap(shortened.wait(timeout: 10))
+        XCTAssertNil(shortenedOutput.failure)
+        let shortenedFile = try XCTUnwrap(shortenedOutput.file)
+        XCTAssertEqual(shortenedFile.deletingLastPathComponent().path, deepFolder.path)
+        XCTAssertLessThan(try pathBytes(shortenedFile), pathLimit)
+        let physicalFile = try XCTUnwrap(realpath(shortenedFile.path, nil))
+        defer { free(physicalFile) }
+        XCTAssertLessThan(strlen(physicalFile), pathLimit)
+        XCTAssertTrue(shortenedFile.lastPathComponent.hasSuffix("-annotated.png"))
+        let resultID = shortenedFile.lastPathComponent.dropLast("-annotated.png".count).suffix(36)
+        XCTAssertNotNil(UUID(uuidString: String(resultID)))
+        XCTAssertEqual(try Data(contentsOf: shortenedFile), shortenedOutput.png)
+
+        let fullFolder = try folder(withPathBytes: pathLimit - 40)
+        let fullSource = fullFolder.appendingPathComponent("a.png")
+        try FileManager.default.copyItem(at: later, to: fullSource)
+        let fullDrawing = Drawing(key: fullSource.path, pixels: pixels, pointScale: 1, marks: [])
+        let refused = queue.render(fullDrawing, imageAt: fullSource, output: .file, style: .standard, markStyle: .standard)
+        let refusal = try XCTUnwrap(refused.wait(timeout: 10))
+        XCTAssertEqual(refusal.failure?.code, .writeFailed)
+        XCTAssertNil(refused.file)
+        XCTAssertNil(refusal.png)
+        XCTAssertNil(refusal.file)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fullFolder.path), ["a.png"])
+
+        let bytes = queue.render(fullDrawing, imageAt: fullSource, output: .bytes, style: .standard, markStyle: .standard)
+        let bytesOutput = try XCTUnwrap(bytes.wait(timeout: 10))
+        XCTAssertNil(bytesOutput.failure)
+        XCTAssertNil(bytesOutput.file)
+        let image = try decode(XCTUnwrap(bytesOutput.png))
+        XCTAssertEqual([image.width, image.height], [120, 80])
+    }
+
+    @MainActor
+    func testAFileWriteFailureProvidesNoPromisedImageOrFile() throws {
+        guard geteuid() != 0 else { throw XCTSkip("root can write a read-only directory") }
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("com.petepetrash.vignette.tests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        let source = try writeTestImage(width: 120, height: 80, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)), in: dir) { _, _ in (255, 255, 255) }
+        let drawing = Drawing(key: source.path, pixels: PixelSize(width: 120, height: 80), pointScale: 1, marks: [])
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path) }
+        let rendering = RenderingQueue().render(drawing, imageAt: source, output: .file, style: .standard, markStyle: .standard)
+        pasteboard.writeObjects([Clipboard.renderingItem(rendering)])
+        let output = try XCTUnwrap(rendering.wait(timeout: 10))
+        XCTAssertEqual(output.failure?.code, .writeFailed)
+        XCTAssertNotNil(output.png)
+        XCTAssertNil(output.file)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(rendering.file).path))
         XCTAssertNil(pasteboard.data(forType: .png))
         XCTAssertNil(pasteboard.data(forType: .tiff))
         XCTAssertNil(pasteboard.string(forType: .fileURL))

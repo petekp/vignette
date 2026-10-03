@@ -29,9 +29,9 @@ enum Clipboard {
     /// Done's clipboard, before its rendering exists: `renderingItem`. A rendering that fails takes
     /// the whole clipboard back, unless something else was copied since: its path names a file that
     /// never appears.
-    static func copyRendering(_ rendering: PendingRendering, file: URL, to pasteboard: NSPasteboard = .general) {
+    static func copyRendering(_ rendering: PendingRendering, to pasteboard: NSPasteboard = .general) {
         pasteboard.clearContents()
-        pasteboard.writeObjects([renderingItem(rendering, file: file)])
+        pasteboard.writeObjects([renderingItem(rendering)])
         let written = pasteboard.changeCount
         rendering.whenDone { output in
             guard output.failure != nil, pasteboard.changeCount == written else { return }
@@ -44,9 +44,9 @@ enum Clipboard {
     /// file. The path goes on as text at once; the PNG, the TIFF and the file's URL are promised, so a
     /// paste or a drop that comes before the rendering finishes waits for it, and one after a
     /// rendering that failed gets none of the three.
-    static func renderingItem(_ rendering: PendingRendering, file: URL) -> NSPasteboardItem {
+    static func renderingItem(_ rendering: PendingRendering) -> NSPasteboardItem {
         let item = NSPasteboardItem()
-        item.setString(pathsText([file]), forType: .string)
+        if let file = rendering.file { item.setString(pathsText([file]), forType: .string) }
         item.setDataProvider(RenderingProvider(rendering: rendering), forTypes: [.png, .tiff, .fileURL])
         return item
     }

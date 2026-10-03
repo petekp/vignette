@@ -22,6 +22,17 @@ final class ScreenshotWatcherTests: XCTestCase {
         return url
     }
 
+    private func waitFor(_ availability: ScreenshotWatcher.Availability, in watcher: ScreenshotWatcher) {
+        let reached = expectation(description: "folder becomes \(availability)")
+        let deadline = Date().addingTimeInterval(3)
+        func check() {
+            if watcher.availability == availability { reached.fulfill(); return }
+            if Date() < deadline { DispatchQueue.main.asyncAfter(deadline: .now() + 0.01, execute: check) }
+        }
+        check()
+        wait(for: [reached], timeout: 4)
+    }
+
     func testRecentCountsEveryCandidate() throws {
         _ = try png("Screenshot a.png"); _ = try png("Screenshot b.png"); _ = try png("Screenshot c.png")
         try Data("x".utf8).write(to: dir.appendingPathComponent("notes.txt"))
@@ -86,7 +97,7 @@ final class ScreenshotWatcherTests: XCTestCase {
         var reportedNew: URL?
         var reportedRemoved: [URL] = []
         let watcher = ScreenshotWatcher(folder: dir, onNew: { url in reportedNew = url; newSeen.fulfill() },
-                                        onRemoved: { urls in reportedRemoved = urls; removedSeen.fulfill() })
+                                        onRemoved: { urls, _ in reportedRemoved = urls; removedSeen.fulfill() })
         XCTAssertEqual(watcher.newest(), existing, "the index is ready as soon as the watcher exists")
         let added = try png("added.png")
         wait(for: [newSeen], timeout: 5)
@@ -104,7 +115,7 @@ final class ScreenshotWatcherTests: XCTestCase {
         let newSeen = expectation(description: "both files reported once the folder is watched")
         newSeen.expectedFulfillmentCount = 2
         var reported: Set<URL> = []
-        let watcher = ScreenshotWatcher(folder: later, onNew: { reported.insert($0); newSeen.fulfill() }, onRemoved: { _ in })
+        let watcher = ScreenshotWatcher(folder: later, onNew: { reported.insert($0); newSeen.fulfill() }, onRemoved: { _, _ in })
         XCTAssertNil(watcher.newest())
         try FileManager.default.createDirectory(at: later, withIntermediateDirectories: true)
         // A volume mounting brings files older than the watcher, which are not new captures.
@@ -116,6 +127,129 @@ final class ScreenshotWatcherTests: XCTestCase {
         let second = try png("later/second.png")
         wait(for: [newSeen], timeout: 5)
         XCTAssertEqual(reported, [first, second])
+        withExtendedLifetime(watcher) {}
+    }
+
+    func testAnIndexedFolderThatDisappearsKeepsItsFiles() throws {
+        let existing = try png("existing.png")
+        let removed = expectation(description: "unavailable input is not a removal")
+        removed.isInverted = true
+        let watcher = ScreenshotWatcher(folder: dir, onNew: { _ in }, onRemoved: { _, _ in removed.fulfill() })
+        let away = dir.appendingPathExtension("unavailable")
+        try FileManager.default.moveItem(at: dir, to: away)
+        defer { try? FileManager.default.moveItem(at: away, to: dir) }
+        watcher.rescan(reason: "test missing folder")
+        waitFor(.missing, in: watcher)
+        wait(for: [removed], timeout: 0.5)
+        XCTAssertEqual(watcher.newest(), existing)
+        XCTAssertEqual(watcher.recent(limit: 10).files, 1)
+        withExtendedLifetime(watcher) {}
+    }
+
+    func testAReplacementDirectoryReceivesLaterArrivals() throws {
+        _ = try png("existing.png")
+        let replacementSeen = expectation(description: "replacement directory listed")
+        let laterSeen = expectation(description: "later arrival on replacement directory")
+        var listed = false
+        let watcher = ScreenshotWatcher(folder: dir, onNew: { url in
+            if url.lastPathComponent == "later.png" { laterSeen.fulfill() }
+        }, onRemoved: { _, _ in }, onInventory: { inventory in
+            if inventory.names.contains("replacement.png"), !listed {
+                listed = true
+                replacementSeen.fulfill()
+            }
+        })
+        let away = dir.appendingPathExtension("replaced")
+        try FileManager.default.moveItem(at: dir, to: away)
+        defer { try? FileManager.default.removeItem(at: away) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        _ = try png("replacement.png")
+        watcher.rescan(reason: "test replacement")
+        wait(for: [replacementSeen], timeout: 5)
+        let later = try png("later.png")
+        wait(for: [laterSeen], timeout: 5)
+        XCTAssertEqual(watcher.newest(), later)
+        withExtendedLifetime(watcher) {}
+    }
+
+    func testAQueuedInventoryIsNotDeliveredAfterItsDirectoryDisappears() throws {
+        let delivered = expectation(description: "obsolete directory inventory is not delivered")
+        delivered.isInverted = true
+        let watcher = ScreenshotWatcher(folder: dir, onNew: { _ in }, onRemoved: { _, _ in },
+                                        onInventory: { _ in delivered.fulfill() })
+        let away = dir.appendingPathExtension("queued-away")
+        try FileManager.default.moveItem(at: dir, to: away)
+        defer { try? FileManager.default.moveItem(at: away, to: dir) }
+        waitFor(.missing, in: watcher)
+        wait(for: [delivered], timeout: 0.3)
+        withExtendedLifetime(watcher) {}
+    }
+
+    func testAnUndeliveredArrivalSurvivesFolderUnavailability() throws {
+        for missing in [false, true] {
+            let name = missing ? "missing" : "refused"
+            let folder = dir.appendingPathComponent(name)
+            let away = folder.appendingPathExtension("away")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            _ = try png("\(name)/existing.png")
+            let arrivalSeen = expectation(description: "the undelivered capture survives \(name)")
+            arrivalSeen.assertForOverFulfill = true
+            var interrupted = false
+            var arrivals: [URL] = []
+            let watcher = ScreenshotWatcher(folder: folder, onNew: { url in
+                arrivals.append(url)
+                arrivalSeen.fulfill()
+            }, onRemoved: { _, _ in }, onInventory: { inventory in
+                guard inventory.names.contains("added.png"), !interrupted else { return }
+                interrupted = true
+                // Hold main delivery while stable-file admission queues its result.
+                Thread.sleep(forTimeInterval: 0.3)
+                do {
+                    if missing { try FileManager.default.moveItem(at: folder, to: away) }
+                    else { try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: folder.path) }
+                } catch { XCTFail("could not interrupt scratch-folder access: \(error)") }
+            })
+            defer {
+                if missing { try? FileManager.default.moveItem(at: away, to: folder) }
+                else { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
+            }
+            let added = try png("\(name)/added.png")
+            waitFor(missing ? .missing : .refused, in: watcher)
+            XCTAssertTrue(arrivals.isEmpty)
+            if missing { try FileManager.default.moveItem(at: away, to: folder) }
+            else { try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
+            watcher.rescan(reason: "test arrival recovery")
+            wait(for: [arrivalSeen], timeout: 5)
+            XCTAssertEqual(arrivals, [added])
+            withExtendedLifetime(watcher) {}
+        }
+    }
+
+    func testUnknownDatesKeepPresenceAndDoNotClaimMountedCaptures() {
+        let date = Date()
+        let inventory = ScreenshotWatcher.Inventory(folder: dir, names: ["known.png", "unknown.png", "notes.txt"],
+                                                     dates: [:], observedAt: 0)
+        let candidates = inventory.candidates(retaining: ["known.png": date])
+        XCTAssertEqual(Set(candidates.keys), ["known.png", "unknown.png"])
+        XCTAssertEqual(candidates["known.png"], date)
+        XCTAssertEqual(ScreenshotWatcher.recent(from: candidates, in: dir, limit: 10).files, 2)
+        XCTAssertFalse(inventory.confirmsAbsence(of: dir.appendingPathComponent("unknown.png")))
+        XCTAssertTrue(inventory.captures(since: date.addingTimeInterval(-1)).isEmpty)
+    }
+
+    func testTheFirstSuccessfulListingAfterRefusalIsSilent() throws {
+        _ = try png("existing.png")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path) }
+        let newSeen = expectation(description: "existing files are not new captures")
+        newSeen.isInverted = true
+        let watcher = ScreenshotWatcher(folder: dir, onNew: { _ in newSeen.fulfill() }, onRemoved: { _, _ in })
+        waitFor(.refused, in: watcher)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        watcher.rescan(reason: "test permission grant")
+        waitFor(.available, in: watcher)
+        wait(for: [newSeen], timeout: 0.3)
+        XCTAssertEqual(watcher.recent(limit: 10).files, 1)
         withExtendedLifetime(watcher) {}
     }
 }

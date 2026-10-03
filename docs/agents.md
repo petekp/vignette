@@ -2,10 +2,14 @@
 
 The agent features are secondary and experimental. They come as a plugin for Claude Code and Codex
 that ships inside the app. The plugin carries a skill that teaches the agent the `vignette://`
-contract: push an image with `add`, draw on it with `marks=`, read `<name>-annotated.png` back, and
+contract: push an image with `add`, draw on it with `marks=`, read its returned rendering path, and
 answer a drawing with one of its own. For Claude Code, the plugin also delivers what Send sends. The
 skill's text is at `skills/vignette/SKILL.md` in the repo, and the marks format is in
 [commands.md](commands.md).
+
+Done writes `<name>-<result-id>-annotated.png` beside the screenshot and logs its absolute path in
+the JSON `files=` array. `copy-annotated` returns the same field. Read that path; a long source
+name may be shortened. Each completed result stays until the person deletes it.
 
 ## Installing
 

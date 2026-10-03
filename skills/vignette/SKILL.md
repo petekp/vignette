@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "7"
+  version: "8"
 ---
 
 # Vignette
@@ -117,10 +117,14 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --marks
 
 ## Read back what they drew
 
-The user draws and presses Return. Vignette writes `<name>-annotated.png` beside the copy in the
-watch folder when the rendering finishes, a moment later, and then logs
-`[annotate] done <name>-annotated.png <bytes> bytes, copied`. Read that file once the line is
-there. If the user drew nothing, no file is written and the line is
+The user draws and presses Return. Vignette writes a new `<name>-<result-id>-annotated.png` beside
+the copy when the rendering finishes, then logs
+`[annotate] done files=["<absolute path>"] <bytes> bytes, copied`. Decode the JSON array after
+`files=` and read its path. Each result has its own file, kept until the user deletes it. A long
+source name is shortened, so use the returned path. `copy-annotated` returns the same `files=`
+field with the paths in selection order.
+
+If the user drew nothing, no file is written and the line is
 `[annotate] done <name> nothing drawn, original copied`. The folder is `screenshotsFolder` in
 `~/.config/vignette/settings.json`.
 

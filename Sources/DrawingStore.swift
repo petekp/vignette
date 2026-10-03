@@ -17,10 +17,12 @@ struct DrawingStore: Sendable {
     /// Why a drawing was not written.
     enum Refusal: Error, CustomStringConvertible {
         case newerVersion(Int)
+        case incomplete(String)
 
         var description: String {
             switch self {
             case .newerVersion(let version): return "the file is version \(version), newer than this build's \(Drawing.version)"
+            case .incomplete(let reason): return "the complete drawing could not be read: \(reason)"
             }
         }
     }
@@ -78,6 +80,53 @@ struct DrawingStore: Sendable {
         }
         guard !marks.isEmpty else { return nil }
         return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, marks: marks)
+    }
+
+    /// A reply checkpoint must preserve every stored mark and its geometry. Ordinary reads may
+    /// recover individual marks; using that partial result would publish an incomplete reply.
+    func readComplete(key: String, pixels: PixelSize, style: TextStyle) throws -> Drawing? {
+        do {
+            let file = url(for: key)
+            let stored: Stored
+            switch contents(of: file) {
+            case .missing:
+                guard !FileManager.default.fileExists(atPath: file.appendingPathExtension("invalid").path) else {
+                    throw Refusal.incomplete("the launch scan set its invalid file aside")
+                }
+                return nil
+            case .unreadable(let reason), .invalid(let reason): throw Refusal.incomplete(reason)
+            case .newer(let version): throw Refusal.newerVersion(version)
+            case .stored(let contents): stored = contents
+            }
+            guard stored.key == key, stored.pixels == pixels, !stored.marks.isEmpty else {
+                throw Refusal.incomplete("the key, image size, or marks do not match")
+            }
+            let marks: [Mark]
+            do {
+                marks = try stored.marks.map {
+                    let mark = try Mark(validating: $0)
+                    switch mark.geometry {
+                    case .text(let text):
+                        // Typography can change after installation. Check the anchor without
+                        // reflowing the stored note under the current style.
+                        guard text.origin.x >= 0, text.origin.x < CGFloat(pixels.width),
+                              text.origin.y >= 0, text.origin.y < CGFloat(pixels.height) else {
+                            throw Refusal.incomplete("a note's anchor is outside the image")
+                        }
+                    default:
+                        guard mark.placed(in: pixels, pointScale: stored.pointScale, style: style)?.geometry == mark.geometry else {
+                            throw Refusal.incomplete("a shape is outside the image")
+                        }
+                    }
+                    return mark
+                }
+            }
+            catch { throw Refusal.incomplete("\(error)") }
+            return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, marks: marks)
+        } catch {
+            log("[drawing] error incomplete \((key as NSString).lastPathComponent): \(error)")
+            throw error
+        }
     }
 
     /// Writes `drawing` atomically, or removes its file when it has no marks. Throws, after its one

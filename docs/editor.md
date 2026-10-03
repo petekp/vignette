@@ -514,7 +514,7 @@ Per Decision 10, Cmd+C copies what is selected, and the whole drawing when nothi
 
 | Action | Result |
 |---|---|
-| Cmd+C with nothing selected | The drawing as a PNG, the same as Done's, and the `-annotated.png` beside the screenshot. The editor stays open. With no marks, the original file. |
+| Cmd+C with nothing selected | The drawing as a PNG, the same as Done's, and a new rendering file beside the screenshot. The editor stays open. With no marks, the original file. |
 | Cmd+C with marks selected | The marks. Any texts among them also go on the clipboard as plain text, so pasting into another app gives their words. |
 | Cmd+X with marks selected | Copies them as Cmd+C does, then deletes them. One undo step. |
 | Cmd+X with nothing selected | Nothing |
@@ -636,11 +636,14 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
 
 - Renderings run off the main thread, one at a time, drawing straight at the output size. The
   largest capture on this Mac is 3102 by 6780 px, about 85 MB as a bitmap.
-- Done puts the `-annotated.png` file's path on the clipboard at once as text, promises the PNG, a
+- Done puts its rendering file's path on the clipboard at once as text, promises the PNG, a
   TIFF and the file, and sends the card home. The rendering fills the promise, and a paste that
   comes before it finishes waits for it, for up to 5 seconds. The
-  `-annotated.png` file is written when the rendering finishes. Done's rendering goes ahead of any
+  `<name>-<result-id>-annotated.png` file is written when the rendering finishes. Done's rendering goes ahead of any
   that has not started.
+- Each result has a distinct file beside its screenshot, kept until the person deletes it. Copying
+  again, deleting the source, or restarting Vignette leaves the completed result unchanged. The
+  completion log gives its absolute path in a JSON `files=` array; long source names are shortened.
 - A rendering that fails answers `unreadable-image` or `write-failed`. After Done, it also takes the
   clipboard and the card's Copied notice back, and the card says "Not copied" and why. A card that is
   not on screen comes up as the lone thumbnail to say it.

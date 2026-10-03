@@ -904,10 +904,14 @@ screenshot location for such a launch is written with the same variable:
   `[drawing] error invalid <name>: <reason>; opened without it` and leaves the file where it is.
   Reads run beside the main thread's writes, so a read that moved the file could move a good one a
   write had just put in its place. A newer build's file, another screenshot's, or one made on an
-  image of another size is read as no drawing and left where it is. A launch sweeps the drawings
-  whose screenshot is gone. It skips the sweep when the watch folder itself is missing, and logs
-  `[drawings] <n> dir=… not swept: the watch folder … is missing`: a volume not mounted yet would
-  read as every screenshot gone, and a swept drawing is deleted, not set aside. The launch also
+  image of another size is read as no drawing and left where it is. Cleanup waits for a successful
+  `ScreenshotWatcher.Inventory` for that drawing's folder. It uses enumerated presence and the
+  observation time; unavailable folders retain their inventory and drawings. A positive file lookup
+  also preserves a file created since the observation or reached through a case alias. The removal
+  callback applies the same check to cards, drawings, and reply records. Suppressed removals stay
+  pending until a listing enumerates their presence or confirms their absence. Writes newer
+  than the observation wait for another scan. Trash removes drawings only for files it successfully
+  trashed. `docs/system-design-work-2026-10-02.md` records the verification. The launch also
   removes what the web editor left, its drafts and WebKit's data, where they are still there
   (`Drawings.removeWebEditorData`, one `[app] removed web editor data <path>` line each); drafts are
   not carried over.
@@ -918,12 +922,19 @@ screenshot location for such a launch is written with the same variable:
   the PNG, the TIFF and the file URL; a paste that comes first waits for the rendering on the main
   thread for up to 5 s, then gets nothing and logs `[clipboard] error`. The card goes home at once.
   A dragged card with a drawing carries the same item (`Clipboard.renderingItem`), rendered in turn
-  from the moment the drag begins and written as `<name>-annotated.png`; a card without one drops
+  from the moment the drag begins and written as `<name>-<result-id>-annotated.png`; a card without one drops
   its file.
   A rendering that fails clears the clipboard, unless something else was copied since, and the card
   says "Not copied" and why in place of its Copied notice (`ThumbnailController.showNotCopied`,
-  `Rendering.Failure.reason`). `[annotate] done <file> <n> bytes, copied` is logged when the file is written. A drawing
-  with no marks copies the original file and writes nothing.
+  `Rendering.Failure.reason`). `[annotate] done files=["<absolute path>"] <n> bytes, copied` is
+  logged when the file is written. `copy-annotated` and drag completion report the same JSON
+  `files=` array. `RenderingQueue` allocates each result path and `PendingRendering` owns it;
+  clipboard callers supply only the pending result. Completed files stay until the person deletes
+  them. The source-name prefix respects filename and full-path limits, including the physical
+  path behind directory symlinks, while keeping the full result id and `-annotated.png` suffix
+  (`docs/adr/0018-rendered-files-are-immutable-results.md`). A drawing with no marks copies the
+  original file and writes nothing. Send renders even an empty drawing through the queue, to preserve displayed orientation
+  and DPI, and writes no file beside the source.
 - A mark's colour says who drew it and is not stored: `Mark.color` names a person's colour or the
   agent colour (`MarkColor`, from `agent`), and `MarkStyle.color` gives the settings' red or indigo.
   Contrast comes from a 1.5 pt white edge (`MarkStyle.edgeWidth`) around every mark, notes included,
@@ -1083,15 +1094,28 @@ screenshot location for such a launch is written with the same variable:
   wrote it. Only that exact name shape is managed; a screenshot merely starting with "Agent" is an
   ordinary capture. Naming one is refused the same way listing it is: a `file=` on a reserved reply
   answers `missing-file`, and `add` refuses a source with that name outright, since the copy would
-  have no record and so could never be shown. Clearing a request takes its reserved file back and
-  cancels an import whose marks are still joining its drawing; publication re-reads the record
-  rather than trusting the copy its import has been carrying. A managed reply is never a capture even after publication, so a late watcher
-  event cannot copy it to the clipboard or open the editor, and its card is inserted once, by its
-  own import. Startup loads the records before the watcher starts or anything warms the stack.
-  At `maxLiveRequests` open requests a send clears the oldest (`[requests] cleared <id> …: the
-  oldest of 50 open`) rather than refusing, since a refusal stopped Send working for good. A
-  cleared request's folder is deleted a week later (`clearedKept`, dated by its `request.json`),
-  unless one of its replies is still a card, since that reply's record is what shows it.
+  have no record and so could never be shown. Reservation persists the actual destination URL
+  before copying. Visibility and origin use that location; a later screenshots-folder change does
+  not move an existing reply. Startup loads the records before the watcher starts, then waits for
+  successful current-folder inventory before recovery. Deletion needs confirmed absence in the
+  reply's own folder. Locationless published records are retained conservatively.
+  `Drawings.installReply` writes one complete drawing before publication. Recovery reuses a valid
+  checkpoint's geometry and point scale. Strict reads refuse missing marks, invalid fields, wrong
+  image size, or shapes outside the image. Text anchors are checked without reflowing their stored
+  geometry under current typography. Additive pushes still use `Drawings.add`.
+  Clearing commits the terminal request record before removing payloads and unpublished outputs.
+  A failed commit retains the state and files. Late transport outcomes report delivery without
+  reopening the request. Cleanup uses recorded locations and replays after restart; unresolved
+  output cleanup prevents retention pruning. Completed cancellation records remain untouched on
+  later scans; failed record writes remain pending until persistence succeeds. Published files
+  remain the person's.
+  A managed reply is never a capture after publication, so late watcher events cannot copy or
+  open it. Its own import inserts the card once. At `maxLiveRequests` a send stores its new
+  candidate before clearing the oldest of 50 open requests. Failed retirement discards the
+  unsubmitted candidate. A pre-existing over-limit store requires explicit clearing before Send.
+  Cleared request folders are removed after a week only when no published reply or unfinished
+  output cleanup still needs their records. `docs/request-safety-plan-2026-10-02.md` records the
+  contracts and verification.
 - A destination is an agent session, never the terminal displaying it. Codex is addressed by its
   thread UUID and nothing else: `codex queue --thread` resolves the UUID in the thread store or
   fails, which is `AddressGuard.runtimeEnforced`, and stores the message in Codex's queue. An engine
@@ -1183,7 +1207,8 @@ screenshot location for such a launch is written with the same variable:
   (`[send] dropped <name>; the editor moved on`). `sending` stays on from the press until the bar
   has left, so the button keeps its paper plane through the exit, and `prepare` resets it, so the
   next image's toolbar never shows a send that is not its own. A list of agent sessions that
-  arrives after the editor moved on to another image is dropped as well. A rendering that fails is a
+  arrives after its opening ended is dropped as well, including a close and reopen of the same
+  image. Both discovery continuations compare `annotator.session`. A rendering that fails is a
   refusal, never a send of the bare screenshot: only a drawing with no marks sends the picture
   itself, and it goes through PNG whatever the capture's own format is. Send closes the editor
   without a Copied notice, and the queue carries on to the next card: a list of files to annotate is

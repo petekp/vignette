@@ -35,6 +35,14 @@ open -g vignette://tweaks                     # live UI tweaks panel (needs "deb
 open -g vignette://intro-lab                  # the Intro Lab, for the intro into the menu bar icon (needs "debug": true)
 ```
 
+`copy-annotated` answers with `files=["<absolute path>", ...]`, followed by how many had drawings.
+The JSON array keeps selection order. A card without a drawing returns its original path. Each
+rendering is a new `<name>-<result-id>-annotated.png` beside its source, kept until the person
+deletes it. Decode the returned paths; a long source name may be shortened.
+
+Done and Copy Drawing in the editor log the same `files=` field after the rendering finishes.
+The PNG, TIFF and file URL on the clipboard all refer to that result.
+
 ## Marks
 
 An agent can push annotations with the image. `marks=` takes the path to a JSON file, or the JSON

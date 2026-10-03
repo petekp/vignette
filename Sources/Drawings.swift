@@ -27,6 +27,7 @@ final class Drawings {
     weak var open: OpenDrawing?
     /// Counts the writes and removals of each key, so a `load` that began before one is dropped.
     private var revisions: [String: Int] = [:]
+    private var changedAt: [String: TimeInterval] = [:]
     /// Where `load` reads, several at once, so the cards of a stack are read together.
     nonisolated static let loads = DispatchQueue(label: "vignette.drawing-loads", qos: .userInitiated, attributes: .concurrent)
 
@@ -99,8 +100,8 @@ final class Drawings {
     }
 
     /// The screenshots went: moved to the Trash by the app, or removed from the folder.
-    func remove(_ urls: [URL]) {
-        let had = urls.filter { keys.contains($0.path) }
+    func remove(_ urls: [URL], observedAt: TimeInterval = .infinity) {
+        let had = urls.filter { keys.contains($0.path) && changedAt[$0.path, default: 0] <= observedAt }
         guard !had.isEmpty else { return }
         let removed = had.filter { (try? store.remove(key: $0.path)) != nil }
         for url in removed { keys.remove(url.path) }
@@ -109,15 +110,10 @@ final class Drawings {
         for url in removed { changed(url.path, nil) }
     }
 
-    /// Removes the drawings whose screenshot is gone. Once, at launch, and not at all while the watch
-    /// folder itself is missing: a volume that has not mounted yet would read as every screenshot
-    /// gone, and a swept drawing is deleted, not set aside.
-    func sweep(watchFolder: URL, keeping exists: (String) -> Bool) {
-        guard FileManager.default.fileExists(atPath: watchFolder.path) else {
-            Log.write("[drawings] \(keys.count) dir=\(store.directory.path) not swept: the watch folder \(watchFolder.path) is missing")
-            return
-        }
-        for key in keys.sorted() where !exists(key) {
+    /// Only a successful listing of the screenshot's own folder can authorize deletion.
+    func sweep(_ inventory: ScreenshotWatcher.Inventory) {
+        for key in keys.sorted() where changedAt[key, default: 0] <= inventory.observedAt
+            && inventory.confirmsAbsence(of: URL(fileURLWithPath: key)) {
             guard (try? store.remove(key: key)) != nil else { continue }
             keys.remove(key)
             Log.write("[drawing] swept \((key as NSString).lastPathComponent)")
@@ -128,6 +124,7 @@ final class Drawings {
 
     private func changed(_ key: String, _ drawing: Drawing?) {
         revisions[key, default: 0] += 1
+        changedAt[key] = ProcessInfo.processInfo.systemUptime
         onChange?(key, drawing)
     }
 
@@ -137,6 +134,36 @@ final class Drawings {
     struct Failure: Error, CustomStringConvertible {
         let code: CommandError
         let description: String
+    }
+
+    /// A reserved reply has one complete materialization. Recovery reuses it before publication,
+    /// rather than joining the raw marks again under a different screen scale or text style.
+    func installReply(_ agentMarks: [AgentMark], from agent: String?, at url: URL,
+                      style: TextStyle, newPointScale: CGFloat) throws {
+        guard let pixels = PixelSize(imageAt: url) else {
+            throw Failure(code: .unreadableImage, description: "\(url.lastPathComponent) is not an image this Mac can read")
+        }
+        do {
+            if let stored = try store.readComplete(key: url.path, pixels: pixels, style: style) {
+                guard stored.marks.count == agentMarks.count else {
+                    throw DrawingStore.Refusal.incomplete("the checkpoint does not contain every reply mark")
+                }
+                keys.insert(url.path)
+                changed(url.path, stored)
+                return
+            }
+        } catch {
+            throw Failure(code: .writeFailed, description: "\(url.lastPathComponent): \(error)")
+        }
+        let pointScale = min(max(newPointScale, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
+        let made = marks(agentMarks, from: agent, in: pixels, pointScale: pointScale, style: style, name: url.lastPathComponent)
+        guard made.count == agentMarks.count, !made.isEmpty else {
+            throw Failure(code: .writeFailed, description: "the complete drawing for \(url.lastPathComponent) could not be constructed")
+        }
+        let drawing = Drawing(key: url.path, pixels: pixels, pointScale: pointScale, marks: made)
+        guard write(drawing, reason: "built") else {
+            throw Failure(code: .writeFailed, description: "the drawing for \(url.lastPathComponent) could not be written")
+        }
     }
 
     /// Adds an agent's marks to the drawing of the screenshot at `url`, and answers how many joined.

@@ -20,6 +20,16 @@ def needs_input(scenario):
     return scenario
 
 
+def rendering_path(detail):
+    try:
+        paths, _ = json.JSONDecoder().raw_decode(detail.split('files=', 1)[1])
+    except (IndexError, ValueError) as error:
+        raise Failed(f'no rendering path in {detail}') from error
+    if not isinstance(paths, list) or len(paths) != 1 or not isinstance(paths[0], str) or not os.path.isabs(paths[0]):
+        raise Failed(f'expected one absolute rendering path in {detail}')
+    return paths[0]
+
+
 # ---- Shared steps ------------------------------------------------------------------------------
 
 
@@ -173,7 +183,7 @@ def agent_push(app):
     detail = app.command('copy-annotated', app.file_query(copy), timeout=30)
     if '1 with annotations' not in detail:
         raise Failed(f'copy-annotated: {detail}')
-    rendering = copy[:-4] + '-annotated.png'
+    rendering = rendering_path(detail)
     if not os.path.exists(rendering):
         raise Failed(f'no {os.path.basename(rendering)}')
     app.report.image(rendering)
@@ -428,7 +438,7 @@ def draw_and_done(app):
     offset = app.log_size()
     app.keys('annotator', 'key', KEY_RETURN)
     line = app.wait_log('[annotate] done', offset, timeout=15)
-    rendering = path[:-4] + '-annotated.png'
+    rendering = rendering_path(line)
     if not os.path.exists(rendering):
         raise Failed(f'no rendering after Return: {line}')
     app.report.image(rendering)

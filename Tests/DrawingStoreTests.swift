@@ -269,6 +269,52 @@ final class DrawingsTests: XCTestCase {
         XCTAssertEqual(drawings.keys, [shot.path, fresh.path])
     }
 
+    func testReplyRecoveryReusesTheCompleteStoredGeometryAndScale() throws {
+        let shot = try redShot()
+        let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
+        let reply = pushed + [AgentMark(type: .text, x: 0.2, y: 0.2, text: "A complete reply")]
+        try drawings.installReply(reply, from: "claude", at: shot, style: .standard, newPointScale: 2)
+        let checkpoint = try XCTUnwrap(drawings.store.readComplete(key: shot.path, pixels: pixels, style: .standard))
+        let bytes = try Data(contentsOf: drawings.store.url(for: shot.path))
+        let restarted = Drawings(store: drawings.store)
+        var changedUI = UITweaks()
+        changedUI.agentTextSize *= 2
+        try restarted.installReply(reply, from: "claude", at: shot, style: changedUI.textStyle, newPointScale: 1)
+        let recovered = try XCTUnwrap(restarted.store.readComplete(key: shot.path, pixels: pixels, style: .standard))
+        XCTAssertEqual(recovered.pointScale, checkpoint.pointScale)
+        XCTAssertEqual(recovered.marks.map(\.geometry), checkpoint.marks.map(\.geometry))
+        XCTAssertEqual(recovered.marks.count, reply.count)
+        XCTAssertEqual(try Data(contentsOf: drawings.store.url(for: shot.path)), bytes)
+    }
+
+    func testReplyRecoveryRefusesPartialOrCorruptCheckpoints() throws {
+        let shot = try redShot()
+        try drawings.installReply(pushed, from: "claude", at: shot, style: .standard, newPointScale: 2)
+        let file = drawings.store.url(for: shot.path)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        var marks = try XCTUnwrap(json["marks"] as? [[String: Any]])
+        json["marks"] = [marks[0]]
+        try JSONSerialization.data(withJSONObject: json).write(to: file)
+        XCTAssertThrowsError(try drawings.installReply(pushed, from: "claude", at: shot, style: .standard, newPointScale: 1))
+        var outside = marks
+        outside[1]["x"] = 1000
+        json["marks"] = outside
+        try JSONSerialization.data(withJSONObject: json).write(to: file)
+        XCTAssertThrowsError(try drawings.installReply(pushed, from: "claude", at: shot, style: .standard, newPointScale: 1))
+        marks[1]["x"] = "invalid"
+        json["marks"] = marks
+        let partial = try JSONSerialization.data(withJSONObject: json)
+        try partial.write(to: file)
+        let restarted = Drawings(store: drawings.store)
+        XCTAssertThrowsError(try restarted.installReply(pushed, from: "claude", at: shot, style: .standard, newPointScale: 1))
+        XCTAssertEqual(try Data(contentsOf: file), partial)
+        try Data("not JSON".utf8).write(to: file)
+        let afterScan = Drawings(store: drawings.store)
+        XCTAssertThrowsError(try afterScan.installReply(pushed, from: "claude", at: shot, style: .standard, newPointScale: 1))
+        XCTAssertEqual(try Data(contentsOf: file.appendingPathExtension("invalid")), Data("not JSON".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
     func testAPushToTheOpenDrawingWritesWhatTheJoinAnswersOnce() throws {
         let shot = try redShot()
         let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
@@ -340,29 +386,50 @@ final class DrawingsTests: XCTestCase {
         XCTAssertNil(changed[1], "a removal says there is no drawing")
     }
 
-    /// A watch folder on a volume that has not mounted yet reads as every screenshot gone, and a
-    /// swept drawing is deleted. The sweep waits for a launch that can see the folder.
-    func testTheSweepKeepsEveryDrawingWhileTheWatchFolderIsMissing() throws {
+    func testSweepUsesPresenceOnlyInTheSuccessfullyListedFolder() throws {
         let folder = dir.appendingPathComponent("Screenshots")
         let kept = folder.appendingPathComponent("kept.png").path, gone = folder.appendingPathComponent("gone.png").path
+        let elsewhere = dir.appendingPathComponent("Unavailable/other.png").path
         let marks = [Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))]
-        for key in [kept, gone] {
+        for key in [kept, gone, elsewhere] {
             try drawings.store.write(Drawing(key: key, pixels: PixelSize(width: 300, height: 200), pointScale: 1, marks: marks))
         }
-        let exists = { (path: String) in FileManager.default.fileExists(atPath: path) }
-
-        var launch = Drawings(store: drawings.store)
-        launch.sweep(watchFolder: folder, keeping: exists)
-        XCTAssertEqual(launch.keys, [kept, gone])
-        XCTAssertEqual(Drawings(store: drawings.store).keys, [kept, gone], "nothing was removed from disk")
-
-        // The folder is there at the next launch: only the screenshot that is really gone loses its drawing.
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         XCTAssertTrue(FileManager.default.createFile(atPath: kept, contents: Data()))
-        launch = Drawings(store: drawings.store)
-        launch.sweep(watchFolder: folder, keeping: exists)
-        XCTAssertEqual(launch.keys, [kept])
-        XCTAssertEqual(Drawings(store: drawings.store).keys, [kept])
+        let launch = Drawings(store: drawings.store)
+        launch.sweep(ScreenshotWatcher.Inventory(folder: folder, names: ["kept.png"], dates: [:],
+                                                 observedAt: ProcessInfo.processInfo.systemUptime))
+        XCTAssertEqual(launch.keys, [kept, elsewhere])
+        XCTAssertEqual(Drawings(store: drawings.store).keys, [kept, elsewhere])
+    }
+
+    func testAQueuedInventoryCannotSweepANewerDrawingWrite() throws {
+        let shot = try redShot()
+        let inventory = ScreenshotWatcher.Inventory(folder: shot.deletingLastPathComponent(), names: [], dates: [:],
+                                                     observedAt: ProcessInfo.processInfo.systemUptime)
+        let drawing = Drawing(key: shot.path, pixels: PixelSize(width: 300, height: 200), pointScale: 1,
+                              marks: [Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))])
+        XCTAssertTrue(drawings.write(drawing, reason: "saved"))
+        drawings.sweep(inventory)
+        XCTAssertEqual(drawings.current(of: shot, style: .standard)?.marks.map(\.geometry), drawing.marks.map(\.geometry))
+        XCTAssertEqual(Drawings(store: drawings.store).keys, [shot.path])
+    }
+
+    func testSweepKeepsAnExistingFileReachedThroughACaseAlias() throws {
+        let actual = dir.appendingPathComponent("Mixed-Case.PNG")
+        try FileManager.default.moveItem(at: redShot(), to: actual)
+        let alias = dir.appendingPathComponent("mixed-case.png")
+        guard FileManager.default.fileExists(atPath: alias.path) else {
+            throw XCTSkip("This filesystem treats filename case as distinct.")
+        }
+        let mark = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
+        let drawing = Drawing(key: alias.path, pixels: PixelSize(width: 300, height: 200), pointScale: 1, marks: [mark])
+        XCTAssertTrue(drawings.write(drawing, reason: "saved"))
+        let inventory = ScreenshotWatcher.Inventory(folder: dir, names: [actual.lastPathComponent], dates: [:],
+                                                     observedAt: ProcessInfo.processInfo.systemUptime)
+        drawings.sweep(inventory)
+        XCTAssertEqual(Drawings(store: drawings.store).keys, [alias.path])
+        XCTAssertEqual(drawings.current(of: alias, style: .standard)?.marks.map(\.geometry), [mark.geometry])
     }
 
     func testALaunchRemovesWhatTheWebEditorLeft() throws {
