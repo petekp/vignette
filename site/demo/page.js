@@ -140,7 +140,7 @@ function takeScreenshot() {
   } catch {}
   const k = STAYS.w / IMAGES.stays.w;
   const rect = { x: STAYS.x + c.x * k, y: STAYS.y + 40 + c.y * k, w: c.w * k, h: c.h * k };
-  hintOne("Copied as you take it", null, { glyph: "check" });
+  hintOne("Copied to your clipboard", null, { glyph: "check" });
   return one.capture(rect, { image: { src, w: c.w, h: c.h }, demo: shot.demo, fresh: true });
 }
 
@@ -151,7 +151,7 @@ function idleOne() {
   if (newest?.fresh && !newest.marks.length) {
     if (shots < 2 && one.stackOpen) return stackHint();
     if (shots < 2) return hintOne(coarse ? "Show your screenshots" : "Double-tap right Shift", () => one.showStack(), { keys: "shift2" });
-    return hintOne(coarse ? "Draw on the newest" : "Double-tap and hold right Shift", () => {
+    return hintOne(coarse ? "Draw on the newest one" : "Double-tap and hold right Shift", () => {
       one.showStack();
       one.annotate(one.cards.at(-1));
     }, { keys: "shift2" });
@@ -315,8 +315,8 @@ async function sendIt(message = "") {
       [`<span class="t-from">Drawing from Vignette</span>${words}`, 0.6],
       ['<span class="t-dim">  ⎿ Read image.png</span>', 0.8],
       ['<span class="t-claude">●</span> I numbered the days to match the map,', 0.1],
-      ["  and made three versions of the highlight", 0.1],
-      ["  day for you to pick from.", 0.6],
+      ["  and made three versions of the day you", 0.1],
+      ["  boxed, for you to pick from.", 0.6],
       ['<span class="t-dim">  ⎿ Edit itinerary.html</span>', 0.5],
     ]);
     two.look(SITE_VIEW);
@@ -333,7 +333,7 @@ async function sendIt(message = "") {
   } else {
     await say([
       ["", 0],
-      [`<span class="t-from">Reply from Vignette</span>${words}`, 0.6],
+      [`<span class="t-from">Drawing from Vignette</span>${words}`, 0.6],
       ['<span class="t-dim">  ⎿ Read image.png</span>', 0.8],
       ['<span class="t-claude">●</span> Building the version you picked.', 0.6],
       ['<span class="t-dim">  ⎿ Edit itinerary.html</span>', 0.5],
@@ -363,7 +363,7 @@ two.on((event, card) => {
     const mine = two.cards.at(-1);
     hintTwo(coarse ? "Tap your drawing to open it" : "Click your drawing to open it", () => two.annotate(mine), { ring: () => mine.el });
   }
-  if (event === "open" && !card.from && round === 0) hintTwo(coarse ? "Send it to Claude" : "Press Send", () => sendIt(), { keys: "cmdRet", ring: () => two.toolbar.querySelector(".send") });
+  if (event === "open" && !card.from && round === 0) hintTwo("Send it to Claude", () => sendIt(), { keys: "cmdRet", ring: () => two.toolbar.querySelector(".send") });
 });
 
 setupTwo();

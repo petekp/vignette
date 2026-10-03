@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Vignette</title>
-<meta name="description" content="A free, open source screenshot tool for Mac. Your recent screenshots at the edge of your screen, ready to draw on and send to Claude Code or Codex. Your agent can answer with a drawing of its own.">
+<meta name="description" content="Vignette keeps your recent screenshots at the edge of your Mac’s screen, ready to draw on and send to Claude Code or Codex. Your agent can answer with a drawing of its own. Free and open source.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Vignette">
-<meta property="og:description" content="A free, open source screenshot tool for Mac. Your recent screenshots at the edge of your screen, ready to draw on and send to Claude Code or Codex. Your agent can answer with a drawing of its own.">
+<meta property="og:description" content="Vignette keeps your recent screenshots at the edge of your Mac’s screen, ready to draw on and send to Claude Code or Codex. Your agent can answer with a drawing of its own. Free and open source.">
 <meta property="og:image" content="https://vignette.pete.design/og.png">
 <meta property="og:image:width" content="2400">
 <meta property="og:image:height" content="1260">
@@ -48,7 +48,7 @@
   </p>
   <figure class="trailer">
     <video id="trailer" width="1600" height="1000" autoplay muted loop playsinline poster="trailer-poster.jpg"
-      aria-label="A trip planner's itinerary gets an arrow from a map stop to a day, with the note &quot;number the days&quot;, and a box around another day, with &quot;make this pop, options?&quot;. Send takes the drawing to Claude Code, which numbers the days and sends back three versions of that day, labelled A, B and C. A box picks C, an arrow brings in the flag from B, Reply sends the drawing back, and Claude builds that version.">
+      aria-label="On a trip planner's itinerary, someone draws an arrow from a map stop to a day, with the note &quot;number the days&quot;, and a box around another day, with &quot;make this pop, options?&quot;. Send takes the drawing to Claude Code. Claude numbers the days and sends back a screenshot of three versions of that day, labelled A, B and C. A box picks C, an arrow brings in the flag from B, and Reply sends that drawing back. Claude builds C with the flag.">
       <source src="trailer-small.mp4" type="video/mp4" media="(max-width: 600px)">
       <source src="trailer.webm" type="video/webm">
       <source src="trailer.mp4" type="video/mp4">
@@ -61,7 +61,7 @@
   <div class="copy">
     <h2 id="act-one">Your screenshots, a double tap away</h2>
     <p>Take screenshots with Cmd+Shift+4, as you do now. Double-tap right Shift and the recent ones
-    slide in at the edge of your screen. The app you’re in stays in front.</p>
+    slide in at the edge of your screen.</p>
   </div>
   <div class="stage" id="stage-one" aria-label="A Mac screen with a trip planner in Chrome. Take a screenshot, double-tap right Shift to show your recent screenshots, click one to draw on it, and press Return to copy it."></div>
   <div class="hint-row" data-stage-control aria-live="polite">
@@ -71,18 +71,16 @@
   <div class="also">
     <div class="tile">
       <h3>Copied as you take it</h3>
-      <p>Every screenshot goes to your clipboard as soon as macOS saves it. Vignette’s card takes the
+      <p>Each screenshot goes to your clipboard as soon as macOS saves it. Vignette’s card takes the
       place of macOS’s thumbnail in the corner. Click the card to draw on it.</p>
     </div>
     <div class="tile">
       <h3>Stitch several into one</h3>
-      <p>Select a few cards and Stitch joins them into one image, with each piece numbered. Claude
-      shrinks large images before reading them, so Stitch picks the layout that stays readable.</p>
+      <p>Select a few cards and press Stitch. It joins them into one image and numbers each piece. Claude shrinks large images before it reads them, so Stitch picks the layout that keeps the most detail.</p>
     </div>
     <div class="tile">
-      <h3>Drag into a terminal</h3>
-      <p>Drag a card into Claude Code, a chat or Finder. A card you drew on drops with your drawing on
-      it.</p>
+      <h3>Drag a card out</h3>
+      <p>Drag a card into Claude Code, a chat or Finder. If you drew on the card, the image you drop has your drawing on it.</p>
     </div>
   </div>
 </section>
@@ -90,13 +88,10 @@
 <section class="act two wrap" id="agents" aria-labelledby="act-two">
   <div class="copy">
     <h2 id="act-two">Draw it for your agent</h2>
-    <p>Send gives your drawing to the Claude Code or Codex session you were just in, with a message
-    if you type one. Your agent can answer with a screenshot of its own, marked in its own colour.
-    Reply sends your answer straight back.</p>
-    <p class="aside">The agent features are experimental. They work through a plugin for Claude Code
-    and Codex, which Vignette offers to install when it first opens.</p>
+    <p>Send gives your drawing to the Claude Code or Codex session you were just in, with a message if you type one. Your agent can answer with a screenshot it drew on. Its marks have their own colour, so you can tell them from yours. Reply sends your answer back to that session.</p>
+    <p class="aside">Send and Reply are experimental. They work through a plugin for Claude Code and Codex, which Vignette offers to install when you first open it.</p>
   </div>
-  <div class="stage" id="stage-two" aria-label="A Mac screen with Claude Code on the left and a trip planner beside it. Your drawing of the planner is the newest screenshot at the edge of the screen, ready to open and send to Claude."></div>
+  <div class="stage" id="stage-two" aria-label="A Mac screen with Claude Code on the left and a trip planner on the right. Your drawing of the planner is the newest screenshot at the edge of the screen, ready to open and send to Claude."></div>
   <div class="hint-row" data-stage-control aria-live="polite">
     <button type="button" class="hint" id="hint-two">Click your drawing to open it</button>
   </div>
@@ -106,10 +101,10 @@
   <h2 id="details">Made to feel like part of your Mac</h2>
   <dl>
     <div class="tile"><dt>Your app stays in front</dt><dd>The stack opens without taking focus from the app you’re in. Close it and you’re right where you were.</dd></div>
-    <div class="tile"><dt>Nothing jumps</dt><dd>Cards fly into the editor and back on a spring. Interrupt one and it turns around in mid-air.</dd></div>
+    <div class="tile"><dt>Motion you can interrupt</dt><dd>Cards fly into the editor and back on a spring. Interrupt one and it turns around in mid-air.</dd></div>
     <div class="tile"><dt>Marks that stand out</dt><dd>A thin white edge keeps every mark visible on any screenshot, dark or light.</dd></div>
-    <div class="tile"><dt>Change it later</dt><dd>Vignette keeps your drawing apart from the screenshot. Open it again later and you can still move, change or delete any mark.</dd></div>
-    <div class="tile"><dt>Several in a row</dt><dd>Open several cards at once. Copy or send one, and the next one opens.</dd></div>
+    <div class="tile"><dt>Change it later</dt><dd>Vignette keeps your drawing separate from the screenshot, so you can open it again and move, change or delete any mark.</dd></div>
+    <div class="tile"><dt>Several in a row</dt><dd>Select several cards and press Return. Copy or send one, and the next one opens.</dd></div>
     <div class="tile"><dt>Your agent can use it too</dt><dd>Every action is a <code>vignette://</code> URL, so your agent can show you screenshots and ask you to draw on them.</dd></div>
   </dl>
 </section>
