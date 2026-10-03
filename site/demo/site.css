@@ -250,9 +250,9 @@ h2 {
   box-shadow: 0 0 0 0.5px var(--control-edge), 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 22px -10px rgb(0 0 0 / 0.35);
   cursor: pointer;
   overflow: hidden;
-  transition: transform 0.3s var(--spring, ease), box-shadow 0.25s, background-color 0.25s, width 0.45s var(--spring, ease);
+  transition: transform 0.3s var(--spring, ease), box-shadow 0.18s, background-color 0.18s, width 0.35s var(--spring, ease);
 }
-.hint > span { transition: opacity 0.14s, transform 0.3s var(--spring, ease); }
+.hint > span { transition: opacity 0.14s, transform 0.3s var(--spring, ease); text-wrap-style: balance; }
 .hint.swap > span { opacity: 0; transform: translateY(4px); }
 .hint.resizing { white-space: nowrap; }
 @media (hover: hover) { .hint:hover { transform: translateY(-1.5px); box-shadow: 0 0 0 0.5px var(--control-edge), 0 2px 4px rgb(0 0 0 / 0.08), 0 14px 28px -12px rgb(0 0 0 / 0.4); } }
@@ -286,6 +286,8 @@ h2 {
 .hint.status { background: none; box-shadow: none; color: var(--ink-2); font-weight: 500; cursor: default; padding-left: 4px; }
 .hint.status:hover, .hint.status:active { transform: none; }
 .hint.status .glyph { background: none; color: var(--ink-2); width: 22px; }
+/* Laid out and never seen, so the browser has found fonts for the symbols before a demo shows them. */
+.warm { position: absolute; visibility: hidden; pointer-events: none; }
 .hint .glyph .draw { stroke-dasharray: 17; stroke-dashoffset: 17; animation: draw 0.4s 0.1s cubic-bezier(0.3, 0.7, 0.4, 1) forwards; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
 .hint .busy { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
@@ -647,17 +649,19 @@ h2 {
 .flight .pic { transform-origin: 0 0; will-change: transform; }
 .flight-shadow { border-radius: 16px; box-shadow: 0 18px 40px rgb(0 0 0 / 0.85); will-change: transform, opacity; }
 
+/* Hidden, the toolbar is out of the tab order too, once its fade has ended. */
 .toolbar {
   position: absolute;
   display: flex;
   justify-content: center;
   align-items: flex-start;
   opacity: 0;
+  visibility: hidden;
   transform: translateY(-8px) scale(0.97);
-  transition: opacity 0.18s, transform 0.35s var(--spring, ease);
+  transition: opacity 0.18s, transform 0.35s var(--spring, ease), visibility 0s 0.18s;
   pointer-events: none;
 }
-.toolbar.up { opacity: 1; transform: none; pointer-events: auto; }
+.toolbar.up { opacity: 1; visibility: visible; transform: none; pointer-events: auto; transition-delay: 0s; }
 .bar {
   display: inline-flex;
   align-items: center;

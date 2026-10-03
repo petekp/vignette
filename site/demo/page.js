@@ -1,4 +1,4 @@
-import { Stage, wait, motion, el } from "./vignette.js";
+import { Stage, wait, tween, motion, el } from "./vignette.js";
 import { IMAGES, PERSON_MARKS, CLAUDE_MARKS, buildFan } from "./cards.js";
 
 Object.values(IMAGES).forEach((i) => { new Image().src = i.src; });
@@ -26,38 +26,54 @@ const KEYS = {
 function hint(button) {
   let action = null, ringed = null, shown = null, swapTimer = 0;
   button.addEventListener("click", () => action?.());
+  // Springs the button from its width now to the width it has with `html` inside, before the
+  // words change, so the new words never fade in cut off by a button still growing.
+  const resize = (html, status) => {
+    const probe = button.cloneNode(false);
+    probe.removeAttribute("id");
+    probe.className = `hint${status ? " status" : ""}`;
+    probe.style.cssText = "position: absolute; visibility: hidden; width: auto; white-space: nowrap";
+    probe.innerHTML = html;
+    button.after(probe);
+    const before = button.getBoundingClientRect().width, after = probe.getBoundingClientRect().width;
+    probe.remove();
+    if (!motion() || Math.abs(after - before) <= 1) return;
+    button.classList.add("resizing");
+    button.style.width = `${before}px`;
+    button.getBoundingClientRect();
+    button.style.width = `${after}px`;
+  };
   return (text, act, { keys, glyph = "click", ring } = {}) => {
     action = act;
-    // The contents fade out, change, and fade back in while the button springs to its new width.
+    const lead = act && keys && !coarse
+      ? KEYS[keys].map(([code, label]) => `<kbd data-code="${code}">${label}</kbd>`).join("")
+      : `<span class="glyph">${GLYPHS[act ? glyph : glyph === "click" ? "busy" : glyph]}</span>`;
+    const html = `<span class="lead" aria-hidden="true">${lead}</span><span>${text}</span>`;
     const apply = () => {
       ringed?.remove();
       const target = act && ring ? ring() : null;
       ringed = target ? target.appendChild(el("i", "halo")) : null;
       ringed?.addEventListener("animationend", (e) => e.target.classList.add("breathe"), { once: true });
-      const lead = act && keys && !coarse
-        ? KEYS[keys].map(([code, label]) => `<kbd data-code="${code}">${label}</kbd>`).join("")
-        : `<span class="glyph">${GLYPHS[act ? glyph : glyph === "click" ? "busy" : glyph]}</span>`;
-      const before = button.getBoundingClientRect().width;
-      button.style.width = "";
-      button.innerHTML = `<span class="lead" aria-hidden="true">${lead}</span><span>${text}</span>`;
+      button.innerHTML = html;
       button.disabled = !act;
       button.classList.toggle("status", !act);
-      const after = button.getBoundingClientRect().width;
-      if (motion() && before && Math.abs(after - before) > 1) {
-        button.classList.add("resizing");
-        button.style.width = `${before}px`;
-        button.getBoundingClientRect();
-        button.style.width = `${after}px`;
-      }
       requestAnimationFrame(() => button.classList.remove("swap"));
     };
     if (shown === text) return apply();
     shown = text;
+    // The words fade out while the button springs to its new width, then the new words fade in. A
+    // button that becomes a line of text fades its background with its words; a line of text that
+    // becomes a button gets its background with the new words. Either way it never stands empty.
     button.classList.add("swap");
+    if (!act) button.classList.add("status");
+    resize(html, !act);
     clearTimeout(swapTimer);
     swapTimer = setTimeout(apply, 140 * motion());
   };
 }
+// Every keycap a hint will show is laid out, hidden, from the start: the first layout of ⌘ or ↩
+// looks for a font that has it, which took 10 to 13 ms in the frame that showed it.
+document.querySelectorAll(".hint-row").forEach((row) => row.append(el("span", "hint warm", "<kbd>⇧⌘↩</kbd>")));
 document.querySelectorAll(".hint").forEach((b) => b.addEventListener("transitionend", (e) => {
   if (e.target !== b || e.propertyName !== "width") return;
   b.style.width = "";
@@ -127,21 +143,43 @@ let shots = 0;
 const staysImage = new Image();
 staysImage.src = IMAGES.stays.src;
 
+// Each capture's picture, cut from the page and encoded once, while the page is idle: encoding it
+// on the press held the main thread for 80 ms on a Mac and 120 ms on a phone. `png` is the file the
+// clipboard gets and `src` the card's picture.
+const crops = new Map();
+function crop(shot) {
+  if (!crops.has(shot)) {
+    crops.set(shot, staysImage.decode().then(() => {
+      const c = shot.crop;
+      const canvas = document.createElement("canvas");
+      canvas.width = c.w; canvas.height = c.h;
+      canvas.getContext("2d").drawImage(staysImage, c.x, c.y, c.w, c.h, 0, 0, c.w, c.h);
+      return new Promise((r) => canvas.toBlob(r, "image/png"));
+    }).then(async (png) => {
+      const src = URL.createObjectURL(png);
+      const img = new Image();
+      img.src = src;
+      await img.decode().catch(() => {});
+      return { png, src };
+    }));
+  }
+  return crops.get(shot);
+}
+const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
+idle(() => SHOTS.forEach(crop));
+
 // A capture puts its picture on the clipboard, as Vignette does when macOS saves the file.
 function takeScreenshot() {
   const shot = SHOTS[shots++ % SHOTS.length], c = shot.crop;
-  const canvas = document.createElement("canvas");
-  canvas.width = c.w; canvas.height = c.h;
-  canvas.getContext("2d").drawImage(staysImage, c.x, c.y, c.w, c.h, 0, 0, c.w, c.h);
-  const src = canvas.toDataURL("image/jpeg", 0.9);
+  const ready = crop(shot);
   try {
-    const png = new Promise((r) => canvas.toBlob(r, "image/png"));
-    navigator.clipboard.write([new ClipboardItem({ "image/png": png })]).catch(() => {});
+    navigator.clipboard.write([new ClipboardItem({ "image/png": ready.then((r) => r.png) })]).catch(() => {});
   } catch {}
   const k = STAYS.w / IMAGES.stays.w;
   const rect = { x: STAYS.x + c.x * k, y: STAYS.y + 40 + c.y * k, w: c.w * k, h: c.h * k };
   hintOne("Copied to your clipboard", null, { glyph: "check" });
-  return one.capture(rect, { image: { src, w: c.w, h: c.h }, demo: shot.demo, fresh: true });
+  const card = ready.then(({ src }) => ({ image: { src, w: c.w, h: c.h }, demo: shot.demo, fresh: true }));
+  return one.capture(rect, card);
 }
 
 const hintOne = hint(document.getElementById("hint-one"));
@@ -165,13 +203,11 @@ async function drawForMe(stage, box, words) {
   stage.snapshot();
   const mark = { type: "rect", who: "person", x: box.x, y: box.y, w: 0, h: 0 };
   stage.marks.push(mark);
-  const steps = motion() ? 18 : 1;
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps, e = 1 - Math.pow(1 - t, 3);
+  await tween(0.3, (t) => {
+    const e = 1 - Math.pow(1 - t, 3);
     mark.w = box.w * e; mark.h = box.h * e;
     stage.redraw();
-    await new Promise((r) => requestAnimationFrame(r));
-  }
+  });
   stage.noteFor = mark;
   for (const ch of words) {
     if (!stage.typing) { stage.startNote(mark, ch); continue; }
@@ -262,6 +298,7 @@ function termReset() {
   out.innerHTML = "";
   TERM_START.forEach(([h, cls]) => out.append(el("div", `line ${cls}`, h || " ")));
   out.append(el("div", "line prompt", '<span class="t-you">&gt;</span> <span class="cursor"></span>'));
+  out.append(el("span", "warm", "⎿")); // laid out early, as the keycaps are
 }
 async function say(lines) {
   const prompt = out.querySelector(".prompt");

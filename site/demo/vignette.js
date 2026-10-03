@@ -35,6 +35,22 @@ const motion = () => (reducedMotion.matches ? 0 : 1);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const wait = (s) => new Promise((r) => setTimeout(r, s * 1000 * motion()));
+// Calls `f` once a frame with the fraction of `seconds` gone, 0 to 1. It goes by the clock, so a
+// display at 120 Hz takes as long as one at 60.
+function tween(seconds, f) {
+  const d = seconds * 1000 * motion();
+  if (!d) { f(1); return Promise.resolve(); }
+  return new Promise((resolve) => {
+    let start = 0;
+    const step = (now) => {
+      start ||= now;
+      const t = clamp((now - start) / d, 0, 1);
+      f(t);
+      t < 1 ? requestAnimationFrame(step) : resolve();
+    };
+    requestAnimationFrame(step);
+  });
+}
 // A press that closes something: for a mouse the press itself, as in the app, and for a finger or a
 // pen its click, since a touch that starts a scroll is a press too and must not close anything.
 let pointerType = "mouse";
@@ -101,7 +117,9 @@ class Motion {
   add(name, value, eps) { this.springs[name] = new Spring(value, eps); return this; }
   get(name) { return this.springs[name].x; }
   to(name, target, duration, bounce = 0) {
-    this.springs[name].to(target, duration, bounce);
+    const s = this.springs[name];
+    if (!s.moving && s.x === target) return Promise.resolve();
+    s.to(target, duration, bounce);
     this.springs[name].moving ? wake(this) : this.render(this);
     return this.springs[name].arrived();
   }
@@ -303,7 +321,10 @@ function picture(image, marks) {
   svg.setAttribute("viewBox", `0 0 ${image.w} ${image.h}`);
   svg.setAttribute("class", "marks");
   root.append(img, svg);
-  root.update = (ms = marks, typing = null) => { svg.innerHTML = marksSVG(ms, image, typing); };
+  // Decoded now, so the first frame that shows the picture does not wait for its decode. A card
+  // offscreen is not drawn until it slides in, and its decode then held frames of the slide-in.
+  root.ready = img.decode().catch(() => {});
+  root.update =(ms = marks, typing = null) => { svg.innerHTML = marksSVG(ms, image, typing); };
   root.place = (r) => place(root, r);
   root.update(marks);
   return root;
@@ -356,8 +377,15 @@ export class Stage {
     // On a narrow screen the stage is square and frames the part of the Mac screen that matters
     // now, as a camera would: the stack while it is open, the frame while a card is in the
     // annotator, or what the page points it at. The camera's rect springs between them.
+    // The stage's size is kept from the observer, because reading it inside an animation frame,
+    // after the frame's other writes, forced a layout on every frame.
     this.camera = new Motion(() => this.fit()).add("x", 0, 0.05).add("y", 0, 0.05).add("w", SCREEN.w, 0.05).add("h", SCREEN.h, 0.05);
-    new ResizeObserver(() => this.fit()).observe(this.root);
+    this.size = { w: this.root.clientWidth, h: this.root.clientHeight };
+    new ResizeObserver(([entry]) => {
+      this.size = { w: entry.contentRect.width, h: entry.contentRect.height };
+      this.fit();
+    }).observe(this.root);
+    narrowScreen.addEventListener("change", () => this.reframe(true));
     this.reframe(true);
     // A stage scrolled out of view gives the keys back to the page, as the stack closes when its
     // panel loses the keys, so the arrows and Space scroll the page again.
@@ -380,6 +408,9 @@ export class Stage {
     this.dimMotion = new Motion((m) => { this.dim.style.opacity = m.get("o"); this.dim.style.visibility = m.get("o") > 0.001 ? "visible" : "hidden"; }).add("o", 0, 0.002);
     this.column.style.transformOrigin = `${SCREEN.w - UI.screenMargin}px ${SCREEN.h - UI.screenMargin}px`;
 
+    // The toolbar is laid out, hidden, from the start: the first time the browser lays out ⌘ and ↩
+    // it looks for a font that has them, which took 13 ms in the frame the editor opened.
+    this.renderToolbar();
     this.frame.addEventListener("pointerdown", (e) => this.pointerDown(e));
     onPress(this.dim, () => this.open && this.cancel());
     onPress(this.screen, (e) => {
@@ -390,7 +421,7 @@ export class Stage {
   }
 
   fit() {
-    const rw = this.root.clientWidth, rh = this.root.clientHeight;
+    const rw = this.size.w, rh = this.size.h;
     let s = rw / SCREEN.w, tx = 0, ty = 0;
     if (narrowScreen.matches && rw > 0) {
       const c = { x: this.camera.get("x"), y: this.camera.get("y"), w: this.camera.get("w"), h: this.camera.get("h") };
@@ -420,6 +451,8 @@ export class Stage {
   // Aim the camera at what matters now; `look` points it somewhere else until it is cleared.
   reframe(jump = false) {
     const c = this.cameraRect();
+    // Only a narrow stage frames part of the screen, so a wide one has nothing to animate.
+    if (!narrowScreen.matches) jump = true;
     for (const k of ["x", "y", "w", "h"]) jump ? this.camera.jump(k, c[k]) : this.camera.to(k, c[k], 0.6, 0);
   }
 
@@ -545,18 +578,18 @@ export class Stage {
   // A capture, as Cmd+Shift+4 takes one: a selection dragged over the screen, then the screenshot
   // comes in as a card, already copied. With the stack closed it is the lone thumbnail in the
   // corner, which leaves after thumbnailSeconds unless the pointer is on it or it is opened.
+  // `card` may be a promise, which the drag gives time to settle.
   async capture(rect, card) {
     const sel = this.selection, size = sel.querySelector("i");
     this.look({ x: rect.x - 40, y: rect.y - 40, w: rect.w + 80, h: rect.h + 80 });
     sel.classList.add("on");
-    const steps = motion() ? 34 : 1;
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps, e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    await tween(0.56, (t) => {
+      const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
       const w = rect.w * e, h = rect.h * e;
       place(sel, { x: rect.x, y: rect.y, w, h });
       size.textContent = `${Math.round(w * POINT_SCALE)}  ${Math.round(h * POINT_SCALE)}`;
-      await new Promise((r) => requestAnimationFrame(r));
-    }
+    });
+    card = await card;
     await wait(0.18);
     sel.classList.remove("on");
     sel.classList.add("taken");
@@ -662,8 +695,10 @@ export class Stage {
     this.emit("opening", card);
     const from = this.cardRect(card);
     const flight = await this.fly(card, this.marks, from, frame, "out", () => card.el.classList.add("away"));
+    if (!flight) return;
     this.showFrame(card);
-    requestAnimationFrame(() => requestAnimationFrame(() => flight.remove()));
+    // The flight covers the frame until the frame's own picture is decoded and drawn.
+    this.framePic.ready.then(() => requestAnimationFrame(() => requestAnimationFrame(() => flight.remove())));
     this.emit("open", card);
   }
 
@@ -727,44 +762,65 @@ export class Stage {
       pic.style.transform = `translate3d(${(pr.x * swell) / sx}px, ${(pr.y * swell) / sy}px, 0) scale(${(pr.w * swell) / sx / toPic.w}, ${(pr.h * swell) / sy / toPic.h})`;
       shadow.style.opacity = lerp(1, 0.6, t);
     }).add("p", 0, 0.0008);
+    // The flight in progress, which close() turns around (`turned`) while it is on its way out.
+    const flight = { m, way, turned: false };
+    this.flight = flight;
     // A layer keeps the scale it was first rasterized at, so a flight that starts at the card is
     // drawn once at full size first, almost transparent, while the card still shows.
     if (startAtCard && motion()) {
       f.style.transform = `translate3d(${to.x}px, ${to.y}px, 0)`;
       f.style.opacity = "0.01";
       shadow.style.opacity = "0";
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      await Promise.all([pic.ready, new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))]);
       f.style.opacity = "";
     }
-    m.render(m);
-    start?.();
-    await m.to("p", 1, UI.expand, UI.flightBounce);
+    if (!flight.turned) {
+      m.render(m);
+      start?.();
+      await m.to("p", 1, UI.expand, UI.flightBounce);
+    }
+    if (this.flight === flight) this.flight = null;
     shadow.remove();
+    // A flight turned around ends back where it started, and answers null.
+    if (flight.turned) { f.remove(); return null; }
     return f;
   }
 
   async close({ notice } = {}) {
     const card = this.open;
-    if (!card) return;
+    if (!card || this.closing) return;
+    this.closing = true;
     this.endTyping();
     card.marks = this.marks.map((m) => ({ ...m }));
     card.pic.update(card.marks);
     const from = this.frameRect;
+    // A card still on its way into the editor turns around in mid-air, keeping its speed, and lands
+    // back in its slot, as the app's flights do. Nobody has seen the editor yet, so nothing else
+    // flies.
+    const turning = this.flight?.way === "out" ? this.flight : null;
     this.framed = false;
     this.reframe();
     this.hideFrame();
+    if (!turning) this.flights.querySelectorAll(".flight.out").forEach((e) => e.remove());
     this.dimMotion.to("o", 0, UI.dimFade);
     if (this.stackOpen || this.opts.alwaysOpen) this.stackMotion.to("scale", 1, UI.relayout, UI.flightBounce);
     this.emit("closing", card);
-    // The flight home aims at the slot as the stack will draw it at rest.
-    const s0 = this.stackMotion.get("scale");
-    this.stackMotion.springs.scale.x = 1;
-    const to = this.cardRect(card);
-    this.stackMotion.springs.scale.x = s0;
-    const flight = await this.fly(card, card.marks, to, from, "home");
-    card.el.classList.remove("away");
-    flight.remove();
+    if (turning) {
+      turning.turned = true;
+      await turning.m.to("p", 0, UI.expand, UI.flightBounce);
+      card.el.classList.remove("away");
+    } else {
+      // The flight home aims at the slot as the stack will draw it at rest.
+      const s0 = this.stackMotion.get("scale");
+      this.stackMotion.springs.scale.x = 1;
+      const to = this.cardRect(card);
+      this.stackMotion.springs.scale.x = s0;
+      const flight = await this.fly(card, card.marks, to, from, "home");
+      card.el.classList.remove("away");
+      flight.remove();
+    }
     this.open = null;
+    this.closing = false;
     if (notice) this.notice(card, notice);
     this.focus(this.cards.indexOf(card));
     if (this.lone === card && !this.stackOpen) this.leaveSoon(card);
@@ -898,7 +954,11 @@ export class Stage {
   }
 
   editorKey(e) {
-    if (!this.framePic) return e.key !== "Tab";
+    // On the way in, Esc turns the card around, and the editor takes no other key until it lands.
+    if (!this.framePic) {
+      if (e.key === "Escape") this.cancel();
+      return e.key !== "Tab";
+    }
     const cmd = e.metaKey || e.ctrlKey;
     if (cmd && e.key.toLowerCase() === "z") {
       this.endTyping();
@@ -970,6 +1030,8 @@ export class Stage {
     this.flights.innerHTML = "";
     this.hideFrame();
     this.open = null;
+    this.flight = null;
+    this.closing = false;
     this.framed = false;
     this.lookAt = null;
     this.dimMotion.jump("o", 0);
@@ -1060,4 +1122,4 @@ onPress(window, (e) => {
   keyStage = null;
 });
 
-export { picture, marksSVG, cardSize, coverRect, containRect, Motion, Spring, UI, wait, motion, el, place };
+export { picture, marksSVG, cardSize, coverRect, containRect, Motion, Spring, UI, wait, tween, motion, el, place };
