@@ -2,7 +2,9 @@
 
 Vignette is meant to be modified. This file is the onboarding for a person or an agent: the
 rules, the contracts, and where the numbers behind them live. The dated notes in `docs/` hold
-the measurements and the reasoning; a rule here points at its note.
+the measurements and the reasoning; a rule here points at its note. `docs/adr/` records the
+decisions that are hard to reverse, one file each, with what was weighed. Add one when a change
+makes such a decision, and mark the old one superseded when a change reverses it.
 
 ## Layout
 
@@ -1067,10 +1069,10 @@ screenshot location for such a launch is written with the same variable:
 
 - `docs/codex-issues.md` tracks the known problems with Codex and the Codex app, with a progress log.
   Read it before changing anything that talks to Codex, and add to it what you find or fix.
-- `docs/glossary.md` is the vocabulary for the agent loop: agent client, agent session, terminal
-  host, destination, delivery route, screenshot request, screenshot reply, reply ticket. It says
-  what each one means and what not to call it. The distinctions it keeps are load-bearing, above
-  all that a session is a conversation and a pane is a place.
+- `docs/glossary.md` is Vignette's vocabulary: screenshots and the corner, drawing, and the agent
+  loop. It says what each word means and what not to call it. Use its words in code, docs and
+  labels. The distinction it guards most is that an agent session is a conversation and a pane is
+  a place.
 - Sending a drawing to an agent session and taking its drawing back is one object,
   `ScreenshotRequests`, and one small boundary, `AgentConnection`. Two things are durable and
   different: **acceptance** means Vignette owns every byte of a reply, and is what the receipt a
