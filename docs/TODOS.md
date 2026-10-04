@@ -69,6 +69,16 @@ Pete wants sound effects, with settings to turn them on and off. Open: which mom
 or one per sound; system sounds or Vignette's own; and whether they follow macOS's "Play user
 interface sound effects" setting.
 
+### A more fluid session menu (raised 2026-10-03)
+
+Pete wants the toolbar's session menu, "Send to", to open with motion. Today it appears in one
+frame, which jars against the target button's own springs. The menu is AppKit's `NSMenu`
+(`AnnotatorToolbar.showTargetMenu`), because SwiftUI's `Menu` cannot be opened from a key, and
+`NSMenu` draws itself with no way to animate its opening. A menu that grows out of the target would
+be Vignette's own panel. It would then have to do what `NSMenu` does now: arrow keys, Return, Esc,
+type-to-select, closing on a click outside, and VoiceOver. Open: whether that is worth giving up the
+system menu, and how it opens: growing from the target, sliding down from it, or fading in.
+
 ## Fixes
 
 ### Apple's original values after a crash and a deleted settings.json (raised 2026-09-30)

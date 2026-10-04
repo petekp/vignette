@@ -67,6 +67,9 @@ installs global event monitors.
 
 ## Releasing
 
+`docs/releasing.md` has the checks before a release, the steps to publish it, and how to write
+its release notes. This section covers the script.
+
 `scripts/release.sh <version>` builds a Release archive, exports it Developer ID signed, packages a
 disk image with an Applications alias, notarizes it, and staples the ticket. Finder lays out the
 disk image: a small window with the app on the left, Applications on the right, and a looping red

@@ -60,6 +60,8 @@ makes such a decision, and mark the old one superseded when a change reverses it
   --test` also runs the unit tests in `Tests/` (the `VignetteTests` target compiles `Sources/`
   itself; it never launches the app). A build into another `-derivedDataPath` leaves `build/`,
   and an instance running from it, untouched.
+- `docs/releasing.md` says what a release must pass, how to cut and publish it, and how to write
+  its release notes.
 - `media/trailer/trailer.py all` records the trailer from the current source: it builds a stage copy
   of the app with its own bundle id, sets up a desktop with the game in Chrome and the trailer's own
   Claude Code in Ghostty, with the stage copy's plugin, drives every beat while it records the
