@@ -22,6 +22,7 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   "sendInstructions": "If a drawing would answer better than words, you can send one back.",
   "annotateOnCapture": false,
   "copyOnCapture": true,
+  "liveInk": false,
   "debug": false,
   "agentSkill": "unasked",
   "setup": "unasked",
@@ -66,7 +67,12 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
 - **`copyOnCapture`** puts every new screenshot on the clipboard as it lands: the image, plus its
   file URL and path for apps that take those. It is on by default. An image that arrives through
   `add` skips this and Instant Draw, since a push from an agent is not a capture.
-- **`debug`** unlocks `tweaks`, `install-skill?root=`, and `file=` outside the watch folder.
+- **`liveInk`** is Live ink in Settings → General and in the menu bar menu. While it is on, hold
+  Control and Option and draw over any app: a loop becomes an ellipse and any other stroke an arrow.
+  Click a mark with the keys held to erase it, or use Clear Live Ink in the menu. It needs
+  Accessibility, like the double tap. Off by default.
+- **`debug`** unlocks `tweaks`, `install-skill?root=`, `live-ink-stroke`, and `file=` outside the
+  watch folder.
 - **`agentSkill`** records only whether the app has offered the skill for coding agents:
   `unasked` until the offer, then `off`. The setup window's last page makes the offer. Whether the
   skill is installed is read from disk, and the Agents tab's switches install or remove it per
@@ -85,8 +91,8 @@ durations and curves, backdrop blur and tint, the annotator window's limits, and
 editor's sizes. It also holds the
 behaviour those numbers drive: how far a card bows and swells on its way to the annotator, how
 narrow the stack goes to make room for it and how far it stays from it, how deep the drag-select's
-edge band is and how fast it scrolls there, and how near an edge of the image a zoom holds that
-edge.
+edge band is and how fast it scrolls there, how near an edge of the image a zoom holds that
+edge, and the glow live ink shows along the screen's edges while Control and Option are held.
 
 The defaults are the tuned UI, so a fresh install looks the same. A key the app does not know is
 ignored, and a key you leave out takes its default, so a line you no longer want is safe to delete.

@@ -1,8 +1,21 @@
 import AppKit
 import CoreText
 
-// The geometry the renderer and the editor share: an arrow's body and a text's
-// lines, in px. Pure functions of a mark, so any of them can run off the main thread.
+// The geometry the renderer, the editor and live ink share: an arrow's body and a text's lines,
+// in px, and a freehand stroke's arrow, in the units it was drawn in. Pure functions, so any of them
+// can run off the main thread.
+
+extension Mark {
+    /// The rect a shape's geometry covers, its stroke left out. Nil for a text, whose box comes from
+    /// its layout.
+    var shapeExtent: CGRect? {
+        switch geometry {
+        case .rectangle(let frame), .ellipse(let frame): frame
+        case .arrow(let arrow): arrow.exactBody.bounds
+        case .text: nil
+        }
+    }
+}
 
 extension Mark.Arrow {
     /// A bend under this many pt is drawn straight.
@@ -47,6 +60,76 @@ extension Mark.Arrow {
             if fits(copysign(middle, wanted)) { low = middle } else { high = middle }
         }
         return copysign(low, wanted)
+    }
+
+    /// The arrow a freehand stroke draws, from its first point to its last. Straight when no point of
+    /// the smoothed stroke strays from the line between the ends by more than `straightWithin` or
+    /// `straightShare` of that line, whichever is more; otherwise it passes through the points
+    /// `FreehandStroke.simplified` keeps at `tolerance`, which grows until they fit `maxVia`.
+    /// `spacing`, `tolerance` and `straightWithin` are in the stroke's own units. Nil when the ends meet.
+    static func freehand(along stroke: [CGPoint], spacing: CGFloat, tolerance: CGFloat,
+                         straightWithin: CGFloat, straightShare: CGFloat) -> Mark.Arrow? {
+        guard let start = stroke.first, let end = stroke.last, start != end else { return nil }
+        let smooth = FreehandStroke.smoothed(stroke, spacing: spacing)
+        let straight = max(straightWithin, hypot(end.x - start.x, end.y - start.y) * straightShare)
+        if smooth.allSatisfy({ ArrowBody.distance(from: $0, toSegment: start, end) <= straight }) {
+            return Mark.Arrow(start: start, end: end)
+        }
+        var tolerance = tolerance
+        var knots = FreehandStroke.simplified(smooth, tolerance: tolerance)
+        while knots.count - 2 > maxVia {
+            tolerance *= 2
+            knots = FreehandStroke.simplified(smooth, tolerance: tolerance)
+        }
+        return Mark.Arrow(start: start, end: end, via: Array(knots.dropFirst().dropLast()))
+    }
+}
+
+/// A hand-drawn stroke's points, cleaned up: what the editor's and live ink's freehand marks are
+/// made from.
+enum FreehandStroke {
+    /// The stroke with points closer than `spacing` to the last one kept dropped, then averaged with
+    /// their neighbours twice, one part each to two of their own, so the pointer's jitter goes and
+    /// the ends stay where they are.
+    static func smoothed(_ stroke: [CGPoint], spacing: CGFloat) -> [CGPoint] {
+        guard let first = stroke.first, let last = stroke.last else { return [] }
+        var points = [first]
+        for point in stroke.dropFirst().dropLast() where hypot(point.x - points[points.count - 1].x, point.y - points[points.count - 1].y) >= spacing {
+            points.append(point)
+        }
+        points.append(last)
+        guard points.count > 2 else { return points }
+        for _ in 0..<2 {
+            points = points.indices.map { index in
+                guard index > 0, index < points.count - 1 else { return points[index] }
+                let a = points[index - 1], b = points[index], c = points[index + 1]
+                return CGPoint(x: (a.x + 2 * b.x + c.x) / 4, y: (a.y + 2 * b.y + c.y) / 4)
+            }
+        }
+        return points
+    }
+
+    /// The points of `points` Ramer, Douglas and Peucker keep at `tolerance`: the ends, and every point
+    /// the line between its kept neighbours would otherwise miss by more than that.
+    static func simplified(_ points: [CGPoint], tolerance: CGFloat) -> [CGPoint] {
+        guard points.count > 2 else { return points }
+        var keep = [Bool](repeating: false, count: points.count)
+        keep[0] = true
+        keep[points.count - 1] = true
+        var spans = [(0, points.count - 1)]
+        while let (low, high) = spans.popLast() {
+            guard high - low > 1 else { continue }
+            var furthest = (index: low, distance: CGFloat(0))
+            for index in low + 1..<high {
+                let distance = ArrowBody.distance(from: points[index], toSegment: points[low], points[high])
+                if distance > furthest.distance { furthest = (index, distance) }
+            }
+            guard furthest.distance > tolerance else { continue }
+            keep[furthest.index] = true
+            spans.append((low, furthest.index))
+            spans.append((furthest.index, high))
+        }
+        return points.indices.filter { keep[$0] }.map { points[$0] }
     }
 }
 

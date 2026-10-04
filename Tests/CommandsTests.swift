@@ -31,6 +31,17 @@ final class CommandsTests: XCTestCase {
         XCTAssertNil(Commands.parse(URL(string: "vignette://state")!).tag)
     }
 
+    func testLiveInkStrokeParsesItsPoints() {
+        let request = Commands.parse(URL(string: "vignette://live-ink-stroke?points=10,20;30.5,-4")!)
+        XCTAssertEqual(request.points.flatMap(Commands.points), [CGPoint(x: 10, y: 20), CGPoint(x: 30.5, y: -4)])
+        XCTAssertNil(Commands.points(""))
+        XCTAssertNil(Commands.points("10,20;30"), "a pair needs two numbers")
+        XCTAssertNil(Commands.points("10,20,30"))
+        XCTAssertNil(Commands.points("10,20,"))
+        XCTAssertNil(Commands.points("10,x"))
+        XCTAssertNil(Commands.points("nan,1"), "a point must be finite")
+    }
+
     func testAddParsesTheAnnotateFlag() {
         XCTAssertTrue(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&annotate")!).annotate)
         XCTAssertTrue(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&annotate=1")!).annotate)

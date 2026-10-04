@@ -39,11 +39,8 @@ struct EditorGeometry {
     /// The rect a mark covers: a frame, an arrow's body with its arc, or a text's box. The same rect
     /// `Mark.placed` keeps inside the image.
     func extent(of mark: Mark) -> CGRect {
-        switch mark.geometry {
-        case .rectangle(let frame), .ellipse(let frame): return frame
-        case .arrow(let arrow): return arrow.exactBody.bounds
-        case .text(let text): return layout(text, of: mark).box
-        }
+        guard case .text(let text) = mark.geometry else { return mark.shapeExtent ?? .null }
+        return layout(text, of: mark).box
     }
 
     func extent(of marks: [Mark]) -> CGRect? {
@@ -131,20 +128,25 @@ struct EditorGeometry {
     /// How `point` meets `mark`: on its stroke, inside a text's box, or inside a rectangle or an
     /// ellipse, which counts only when `insideCounts`.
     func hit(_ mark: Mark, at point: CGPoint, insideCounts: Bool) -> Hit? {
+        if case .text(let text) = mark.geometry { return layout(text, of: mark).box.encloses(point) ? .box : nil }
+        if let distance = Self.strokeDistance(from: point, to: mark, pointScale: pointScale), distance <= hitBand {
+            return .stroke(distance)
+        }
+        guard insideCounts else { return nil }
         switch mark.geometry {
-        case .text(let text):
-            return layout(text, of: mark).box.encloses(point) ? .box : nil
-        case .rectangle(let frame):
-            let distance = Self.distance(from: point, toOutlineOf: frame)
-            if distance <= hitBand { return .stroke(distance) }
-            return insideCounts && frame.encloses(point) ? .inside : nil
-        case .ellipse(let frame):
-            let distance = Self.polylineDistance(from: point, along: Self.ellipsePoints(in: frame))
-            if distance <= hitBand { return .stroke(distance) }
-            return insideCounts && Self.ellipse(frame, contains: point) ? .inside : nil
-        case .arrow(let arrow):
-            let distance = arrow.body(pointScale: pointScale).distance(to: point)
-            return distance <= hitBand ? .stroke(distance) : nil
+        case .rectangle(let frame): return frame.encloses(point) ? .inside : nil
+        case .ellipse(let frame): return Self.ellipse(frame, contains: point) ? .inside : nil
+        case .arrow, .text: return nil
+        }
+    }
+
+    /// How far `point` is from a shape's stroke, measured from its centre line. Nil for a text.
+    static func strokeDistance(from point: CGPoint, to mark: Mark, pointScale: CGFloat) -> CGFloat? {
+        switch mark.geometry {
+        case .text: nil
+        case .rectangle(let frame): distance(from: point, toOutlineOf: frame)
+        case .ellipse(let frame): polylineDistance(from: point, along: ellipsePoints(in: frame))
+        case .arrow(let arrow): arrow.body(pointScale: pointScale).distance(to: point)
         }
     }
 
@@ -392,68 +394,11 @@ struct EditorGeometry {
         return inside(CGPoint(x: start.x + direction.dx * max(length, 0), y: start.y + direction.dy * max(length, 0)))
     }
 
-    /// The arrow a freehand stroke draws, from its first point to its last. Straight when no point of
-    /// the smoothed stroke strays from the line between the ends by more than `EditorCore.straightStroke`
-    /// screen pt or `EditorCore.straightShare` of that line, whichever is more; otherwise it passes
-    /// through the points `simplified` keeps. Nil when the ends meet.
+    /// The arrow a freehand stroke draws, from its first point to its last, at the editor's
+    /// tolerances in screen pt (`Mark.Arrow.freehand`). Nil when the ends meet.
     func freehandArrow(along stroke: [CGPoint]) -> Mark.Arrow? {
-        guard let start = stroke.first, let end = stroke.last, start != end else { return nil }
-        let smooth = Self.smoothed(stroke, spacing: screen(EditorCore.strokeSpacing))
-        let straight = max(screen(EditorCore.straightStroke), hypot(end.x - start.x, end.y - start.y) * EditorCore.straightShare)
-        if smooth.allSatisfy({ ArrowBody.distance(from: $0, toSegment: start, end) <= straight }) {
-            return Mark.Arrow(start: start, end: end)
-        }
-        var tolerance = screen(EditorCore.strokeTolerance)
-        var knots = Self.simplified(smooth, tolerance: tolerance)
-        while knots.count - 2 > Mark.Arrow.maxVia {
-            tolerance *= 2
-            knots = Self.simplified(smooth, tolerance: tolerance)
-        }
-        return Mark.Arrow(start: start, end: end, via: Array(knots.dropFirst().dropLast()))
-    }
-
-    /// The stroke with points closer than `spacing` to the last one kept dropped, then averaged with
-    /// their neighbours twice, one part each to two of their own, so the pointer's jitter goes and
-    /// the ends stay where they are.
-    static func smoothed(_ stroke: [CGPoint], spacing: CGFloat) -> [CGPoint] {
-        guard let first = stroke.first, let last = stroke.last else { return [] }
-        var points = [first]
-        for point in stroke.dropFirst().dropLast() where hypot(point.x - points[points.count - 1].x, point.y - points[points.count - 1].y) >= spacing {
-            points.append(point)
-        }
-        points.append(last)
-        guard points.count > 2 else { return points }
-        for _ in 0..<2 {
-            points = points.indices.map { index in
-                guard index > 0, index < points.count - 1 else { return points[index] }
-                let a = points[index - 1], b = points[index], c = points[index + 1]
-                return CGPoint(x: (a.x + 2 * b.x + c.x) / 4, y: (a.y + 2 * b.y + c.y) / 4)
-            }
-        }
-        return points
-    }
-
-    /// The points of `points` Ramer, Douglas and Peucker keep at `tolerance`: the ends, and every point
-    /// the line between its kept neighbours would otherwise miss by more than that.
-    static func simplified(_ points: [CGPoint], tolerance: CGFloat) -> [CGPoint] {
-        guard points.count > 2 else { return points }
-        var keep = [Bool](repeating: false, count: points.count)
-        keep[0] = true
-        keep[points.count - 1] = true
-        var spans = [(0, points.count - 1)]
-        while let (low, high) = spans.popLast() {
-            guard high - low > 1 else { continue }
-            var furthest = (index: low, distance: CGFloat(0))
-            for index in low + 1..<high {
-                let distance = ArrowBody.distance(from: points[index], toSegment: points[low], points[high])
-                if distance > furthest.distance { furthest = (index, distance) }
-            }
-            guard furthest.distance > tolerance else { continue }
-            keep[furthest.index] = true
-            spans.append((low, furthest.index))
-            spans.append((furthest.index, high))
-        }
-        return points.indices.filter { keep[$0] }.map { points[$0] }
+        Mark.Arrow.freehand(along: stroke, spacing: screen(EditorCore.strokeSpacing), tolerance: screen(EditorCore.strokeTolerance),
+                            straightWithin: screen(EditorCore.straightStroke), straightShare: EditorCore.straightShare)
     }
 
     /// `frame` resized by dragging `handle` by `delta`. The opposite side stays, or the centre with

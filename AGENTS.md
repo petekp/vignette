@@ -28,8 +28,8 @@ makes such a decision, and mark the old one superseded when a change reverses it
   `MarkStyle`, and the fonts, weights, sizes, padding, width cap and the badge's place as
   `TextStyle` (`docs/mark-style-settings-2026-09-29.md`). A change
   reaches every place that draws marks at once: the open editor (`AnnotationController.applyTweaks`),
-  the cards and flights (`ThumbnailController.applyTweaks`), and the next stitch, drag image and
-  rendering, which read the settings when they draw. What a user would tune belongs in `UITweaks`
+  the cards and flights (`ThumbnailController.applyTweaks`), live ink (`LiveInk.applyTweaks`), and
+  the next stitch, drag image and rendering, which read the settings when they draw. What a user would tune belongs in `UITweaks`
   with a `Bound` and a slider; when in doubt, put it there. Editing the file is a supported way to
   change settings; the app reloads it within a second. It is the user's real config: never test
   against it. `VIGNETTE_SETTINGS=<path>` in the environment
@@ -73,6 +73,9 @@ makes such a decision, and mark the old one superseded when a change reverses it
   `docs/closed-agent-loop-implementation-2026-09-20.md`. `agent-plugin/` is the plugin Claude Code
   and Codex install, which carries the skill and, for Claude Code, delivers what Send sends, and
   `Sources/AgentPlugin.swift` installs it (`docs/claude-code-without-herdr-2026-09-27.md`).
+- `Sources/LiveInk.swift`, `LiveInkOverlay.swift`, `ModifierChord.swift` and `InkStroke.swift` are
+  live ink, drawing on the live screen (the "Live ink" rules below). `KeyMonitors.swift` installs the
+  key monitors live ink and the double tap share, once the app is trusted for Accessibility.
 - `Sources/Identity.swift` reads the bundle id, name, and URL scheme from the bundle and derives
   the log name, the status item's autosave name, the Application Support folder, and the Carbon
   hotkey signature from them, so a fork renames things in project.yml only. A second launch of
@@ -134,7 +137,7 @@ The steps below have the details.
    before that worktree is rebuilt; a rebuild rewrites the bundle under the running process.
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
-   folder, and `tweaks` and `install-skill?root=` are refused, unless settings.json has
+   folder, and `tweaks`, `install-skill?root=` and `live-ink-stroke` are refused, unless settings.json has
    `"debug": true`. A `file=` inside the folder is taken by the folder's own spelling
    (`Commands.inWatchFolder`), so `/tmp/x.png` and `/private/tmp/x.png` reach one drawing.
    `add` is the exception, and it takes two paths the folder rule does not cover.
@@ -196,8 +199,9 @@ The steps below have the details.
    and the zoom's own keys, which the zoom bullet below names), `editor` (`open`, `tool`, `marks`
    with each mark's `type`, `frame` and `agent`, `selection` as indexes into `marks`, `typing`,
    `undo`, `redo`; never a text's words), `drawings` (keys), `requests`, `memory` (rss and thumbnail
-   cache in bytes), `backdrop`, and `dim`. Frames are `[x, y, w, h]` in global top-left points,
-   except a mark's, which is in the image's pixels.
+   cache in bytes), `backdrop`, `dim`, and `liveInk` (the "Live ink" rules below). Frames are
+   `[x, y, w, h]` in global top-left points, except a drawing's mark's, which is in the image's
+   pixels.
    `[app] ready pid=… build=… watching=…` marks the end of launch: after it every command
    answers. `build` is `git describe` of the checkout, written into the bundle by a build phase
    (project.yml), so a build from Xcode carries it too.
@@ -309,7 +313,8 @@ screenshot location for such a launch is written with the same variable:
   again, from Finder or Spotlight, opens Settings (`applicationShouldHandleReopen`), or brings setup
   forward while it is up; with the icon hidden it is the way back. A `vignette://` URL is not a
   reopen (checked 2026-09-25), so a script's commands never open the window. The menu names its
-  two switches as the Screenshots tab does, under an "After a Screenshot" section header.
+  two screenshot switches as the Screenshots tab does, under an "After a Screenshot" section
+  header, and its Live Ink switch as the General tab does.
 - Files named `*-annotated.png` are outputs and are ignored by the watcher. `Stitch *.png`
   outputs are not ignored on purpose: they arrive like a capture, which is what carries a stitch into
   the annotator when `annotateOnCapture` is on. The watcher takes png, jpg, jpeg, and heic images
@@ -890,7 +895,7 @@ screenshot location for such a launch is written with the same variable:
   every line's baseline from `TextLayout` through its layout manager's delegate, so typing and the
   drawn text meet within half a point. The badge's logo comes from `AgentLogos`, which rasterizes
   `Resources/agents/<name>.svg` once so any thread can draw it.
-- `MarkLayers` is the one on-screen drawer for marks: the editor (`EditorPicture`), a card
+- `MarkLayers` is the one on-screen drawer for a drawing's marks: the editor (`EditorPicture`), a card
   (`MarksView`) and a flight, so a mark looks the same in each and nothing steps when a flight hands
   over to the editor. A text is a bitmap the renderer draws off the main thread, on
   `MarkLayers.textQueue` for the editor and flights and `cardQueue` for cards, so a stack of long
@@ -1010,6 +1015,40 @@ screenshot location for such a launch is written with the same variable:
   `annotator.zoom` and `annotator.canvasZoom` its two halves per direction, `annotator.zoomAnchor`
   the point the window grows away from, `annotator.zoomCenter` the middle of the visible part, and
   `annotator.room` the rect the frame may grow within.
+
+### Live ink
+
+- Live ink is drawing straight on the screen, over any app, while Control and Option are held. It
+  is an option (`liveInk`), and `LiveInk` owns it: one `LiveInkOverlay` per screen, the chord, and
+  the marks. This is step 1 of `docs/live-ink-integration-2026-10-04.md`: nothing is sent yet, and a
+  mark stays at its place on the screen, on every Space, until it is erased or Vignette quits.
+- An overlay is on screen only while there are marks or the chord is held, so an idle live ink puts
+  no full-screen window over every app. At rest it sits at level 1, above normal windows and below
+  the dim (2) and Vignette's floating windows, so the stack and the annotator cover the marks, and
+  so do menus, the Dock and other apps' floating windows. It passes every press then
+  (`ignoresMouseEvents`). While the chord is held it is inking: it rises to `.screenSaver` with the
+  flag off and takes every press, over clear pixels too, as the click rule above says.
+- Inking never covers the stack or the annotator. The chord does nothing while
+  `ThumbnailController.holdsScreen`, and either coming up while it is held ends the inking
+  (`onTakesScreen`). A chord let go mid-stroke keeps the overlays raised until the button is up,
+  read from the button's state as well as the release.
+- The chord is `HeldChord`, a pure value with tests: exactly ⌃⌥, ended by any key or another
+  modifier, and not begun again until its modifiers are let go, so a window manager's ⌃⌥-arrow
+  never inks, and neither does letting go of ⌘ out of ⌘⌃⌥. A key another app takes as a shortcut
+  reaches no event monitor (measured with a Carbon hotkey), so `ModifierChord` reads keys from the
+  HID state, every 50 ms while the chord is held. It has no hold threshold; the glow waits
+  `ui.liveInkGlowDelay` instead, or shows at the first press. An overlay never becomes key. Erasing
+  is a tap on a mark with the chord held, not a key: Vignette sees a key but cannot keep it from the
+  frontmost app, where ⌃⌥⌫ deletes a word.
+- Marks are `Mark`s in global top-left points at a `pointScale` of 1, drawn by `ShapeMarkLayer` as
+  the editor draws them, and so is the stroke being drawn, on every screen it crosses. `InkStroke`
+  reads a stroke: a loop is the ellipse round it, and any other stroke the editor's freehand arrow
+  (`Mark.Arrow.freehand`, at the editor's tolerances). A stroke under `ui.shortestArrow` is a tap,
+  and a tap erases the mark it would select in the editor (`EditorGeometry.strokeDistance`).
+- `vignette://live-ink-clear` erases every mark, and `live-ink-stroke?points=x,y;x,y` (debug) takes
+  a stroke as if by hand, whether the stack is up or not, so a script can test without posting
+  input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`,
+  the overlays with their frames and whether each is on screen, and the marks with their frames.
 
 ### Memory
 

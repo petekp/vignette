@@ -76,6 +76,19 @@ to turn it on.
 | --- | --- | --- |
 | Claude Code may open sent drawings (`ClaudeReadRule`), in the Agents tab | Let Claude Code open drawings without asking | Otherwise Claude Code stops to ask you in its terminal each time you send one. This adds a permission to Claude Code's settings for these drawings only. |
 | Under setup's agents while Claude Code is on (`ClaudeReadRule.setupNote`) | | Claude Code will open the drawings you send without asking you first. You can change this in Settings. |
+| Live ink (`liveInk`), in the General tab | Live ink | Holding Control and Option lets you draw over any app. A click on a mark while you hold them erases it. |
+
+### Live ink
+
+The menu bar menu names the switch as the General tab does.
+
+| Where | Words |
+| --- | --- |
+| The menu's switch, with a badge | Live Ink, badge "Hold ⌃⌥" |
+| The menu, while live ink is on, greyed out with no marks | Clear Live Ink |
+| The General tab, under the switch while Accessibility is missing and the double tap is not asking for it (`liveInkAccessibilityReason`) | Needs Accessibility permission. Lets Vignette notice Control and Option held down in any app. |
+| The menu's first item while Accessibility is missing | Allow Accessibility for Live Ink…, or for the Shortcut and Live Ink… when the double tap needs it too |
+| The menu bar intro's popover, while Accessibility is missing | Live ink needs Accessibility. Click the icon to allow it. (The shortcut and live ink need Accessibility, when both do.) |
 
 ### A copy, on its card ("Not copied")
 

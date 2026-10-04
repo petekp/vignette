@@ -220,6 +220,14 @@ struct DebugPanelView: View {
                 Section("Stitch") {
                     Tweak("Long side", \.stitchLongSide, 512...8192, step: 128, unit: "px")
                 }
+                Section("Live ink") {
+                    Tweak("Glow width", \.liveInkGlowWidth, 0...40, unit: "pt")
+                    Tweak("Glow opacity", \.liveInkGlowOpacity, 0...1, step: 0.05)
+                    Tweak("Glow delay", \.liveInkGlowDelay, 0...1, step: 0.05, unit: "s")
+                    Tweak("Glow fade", \.liveInkGlowFade, 0...1, step: 0.05, unit: "s")
+                    Text("The glow along the screen's edges while Control and Option are held. It waits for the delay, or for a press, so the chord on its way to a shortcut does not flash it.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .formStyle(.grouped)
             Divider()

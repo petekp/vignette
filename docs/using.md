@@ -154,6 +154,28 @@ annotator: capture, tap-tap-hold, draw. The menu bar shows the same two commands
 Screenshots and Draw on Newest Screenshot, with the shortcut beside them. [Settings](settings.md)
 covers changing it.
 
+## Live ink
+
+Live ink lets you draw straight on your screen, over any app, without taking a screenshot. Turn it
+on in Settings → General, or with Live Ink in the menu bar menu.
+
+Hold Control and Option and draw. The screen's edges glow while you hold the keys. A loop becomes
+an ellipse round what you circled, and any other stroke becomes an arrow, in your red. To erase a
+mark, click it with the keys held. Clear Live Ink in the menu erases them all, and so does turning
+live ink off.
+
+Your marks stay at their place on the screen. They don't follow the window under them, they show
+on every Space, and they're gone when Vignette quits. Menus, the Dock and floating windows cover
+them until you hold the keys again.
+
+While you hold the keys, a click draws instead of reaching the app under it. Let go and every click
+works as usual. A shortcut that starts with Control and Option, such as a window manager's, still
+works: pressing its key ends the drawing. Live ink doesn't draw while the stack or the annotator is
+open.
+
+Like the double tap, live ink needs Accessibility. Until it has it, the menu bar menu starts with
+Allow Accessibility for Live Ink….
+
 ## Screen recordings
 
 A recording from Cmd+Shift+5 gets a card too, showing its first frame with its length in the

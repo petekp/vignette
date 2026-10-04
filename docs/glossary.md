@@ -69,8 +69,15 @@ _Avoid_: Canvas
 All the marks on one screenshot. It is kept apart from the screenshot, which is never changed.
 _Avoid_: Annotation, layer, overlay
 
+**Live ink**:
+Drawing straight on the screen, over any app, while Control and Option are held: the chord. While
+it is held the screen is inking, and each stroke becomes a mark or, as a tap, erases one. Its marks
+belong to no screenshot and are no drawing; they stay where they were drawn until they are erased.
+_Avoid_: Live annotation, screen drawing
+
 **Mark**:
-One shape or note in a drawing, drawn by a person or an agent. Its colour says which.
+One shape or note in a drawing, or on the screen with live ink, drawn by a person or an agent. Its
+colour says which.
 _Avoid_: Annotation, shape when a note is included
 
 **Note**:

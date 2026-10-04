@@ -19,6 +19,10 @@ enum CommandError: String, CaseIterable {
     /// An agent's reply was not taken. The detail names which ReplyProtocol.Refusal it was, and
     /// the receipt the helper reads carries the same word.
     case replyRefused = "reply-refused"
+    /// Live ink is turned off in settings.json (`liveInk`).
+    case liveInkOff = "live-ink-off"
+    /// `points=` is missing, or is not `x,y` pairs of finite numbers joined by `;`.
+    case invalidPoints = "invalid-points"
 }
 
 /// A `vignette://<name>?file=…&file=…` URL, decoded once.
@@ -42,6 +46,8 @@ struct CommandRequest: Equatable {
     let root: URL?
     /// `clear=` from the query: which screenshot request `requests` closes, or `all`.
     let clear: String?
+    /// `points=` from the query, as given: a stroke for `live-ink-stroke`. See `Commands.points`.
+    var points: String? = nil
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -67,6 +73,8 @@ enum Commands {
         Fixed(name: "reply", summary: "an agent's reply to a screenshot request: \(Identity.urlScheme)://reply?file=<attempt envelope>; the bundled reply helper writes that envelope and waits for the receipt Vignette writes back"),
         Fixed(name: "requests", summary: "list the open screenshot requests; &clear=<id or all> stops one taking replies, cancels its unpublished imports, and removes the files Vignette owns"),
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Vignette first recorded"),
+        Fixed(name: "live-ink-clear", summary: "erase every live ink mark from the screen"),
+        Fixed(name: "live-ink-stroke", summary: "draw a live ink stroke as if by hand: &points=x,y;x,y;… in global top-left points, the [state] convention; a loop draws an ellipse, another stroke an arrow, a tap erases the mark under it", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "intro-lab", summary: "open the Intro Lab, for tuning how setup's window goes into the menu bar icon", needsDebug: true),
     ]
@@ -85,7 +93,22 @@ enum Commands {
                               session: items.first { $0.name == "session" }?.value,
                               marks: items.first { $0.name == "marks" }?.value,
                               root: items.first { $0.name == "root" }?.value.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) },
-                              clear: items.first { $0.name == "clear" }?.value)
+                              clear: items.first { $0.name == "clear" }?.value,
+                              points: items.first { $0.name == "points" }?.value)
+    }
+
+    /// `points=` as a stroke: `x,y` pairs joined by `;`. Nil when it holds none, or any pair is not
+    /// two finite numbers.
+    static func points(_ text: String) -> [CGPoint]? {
+        let pairs = text.split(separator: ";", omittingEmptySubsequences: true)
+        guard !pairs.isEmpty else { return nil }
+        var points: [CGPoint] = []
+        for pair in pairs {
+            let parts = pair.split(separator: ",", omittingEmptySubsequences: false).map { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard parts.count == 2, let x = parts[0], let y = parts[1], x.isFinite, y.isFinite else { return nil }
+            points.append(CGPoint(x: x, y: y))
+        }
+        return points
     }
 
     /// Where `add` copies `source` inside `folder`: its own name, or the name with a counter when

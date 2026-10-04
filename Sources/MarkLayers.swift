@@ -33,7 +33,7 @@ final class MarkLayers {
     /// What is shown, as of the last `show`.
     private(set) var drawing: Drawing?
     private let queue: DispatchQueue
-    private var shapes: [Mark.ID: ShapeMark] = [:]
+    private var shapes: [Mark.ID: ShapeMarkLayer] = [:]
     private var texts: [Mark.ID: Text] = [:]
     private var contentsScale: CGFloat = 2
     private var shown: Shown?
@@ -49,74 +49,6 @@ final class MarkLayers {
     private struct Shown {
         let layout: (Mark.Text, Mark) -> TextLayout
         let plan: Plan
-    }
-
-    /// A rectangle's, an ellipse's or an arrow's layers, as the renderer draws it (`Mark.draw`): its
-    /// white edge once for each shadow the edge casts, and over them the stroke and the arrowhead's
-    /// fill. Each edge is a stroke and a head in one container, so the two cast one shadow together.
-    private final class ShapeMark {
-        let root = CALayer()
-        private let edges: [(container: CALayer, stroke: CAShapeLayer, fill: CAShapeLayer)]
-        private let stroke = CAShapeLayer()
-        private let fill = CAShapeLayer()
-        var mark: Mark?
-        var markStyle: MarkStyle?
-
-        init(scale: CGFloat) {
-            edges = NoteTag.shadows.map { _ in (CALayer(), CAShapeLayer(), CAShapeLayer()) }
-            root.anchorPoint = .zero
-            for edge in edges {
-                edge.container.anchorPoint = .zero
-                edge.container.addSublayer(edge.stroke)
-                edge.container.addSublayer(edge.fill)
-                root.addSublayer(edge.container)
-            }
-            root.addSublayer(stroke)
-            root.addSublayer(fill)
-            for shape in shapeLayers {
-                shape.anchorPoint = .zero
-                shape.lineCap = .round
-                shape.lineJoin = .round
-            }
-            setScale(scale)
-        }
-
-        private var shapeLayers: [CAShapeLayer] { edges.flatMap { [$0.stroke, $0.fill] } + [stroke, fill] }
-
-        func setScale(_ scale: CGFloat) {
-            for shape in shapeLayers { shape.contentsScale = scale }
-            for edge in edges { edge.container.contentsScale = scale }
-        }
-
-        func show(_ mark: Mark, _ shape: MarkShape, pointScale: CGFloat, markStyle: MarkStyle) {
-            let edge = markStyle.edgeWidth * pointScale
-            let size = Mark.shadowSize * pointScale
-            let edgeColor = markStyle.edgeColor.cgColor, color = markStyle.color(mark.color)
-            for (layers, shadow) in zip(edges, NoteTag.shadows) {
-                layers.stroke.path = shape.stroked
-                layers.stroke.lineWidth = shape.lineWidth + 2 * edge
-                layers.stroke.strokeColor = edgeColor
-                layers.stroke.fillColor = nil
-                layers.fill.path = shape.filled
-                layers.fill.lineWidth = 2 * edge
-                layers.fill.strokeColor = edgeColor
-                layers.fill.fillColor = edgeColor
-                // Core Animation's radius is about half the blur Core Graphics takes for the same shadow.
-                layers.container.shadowColor = CGColor(gray: 0, alpha: 1)
-                layers.container.shadowOpacity = Float(min(1, shadow.alpha * markStyle.shadowOpacity))
-                layers.container.shadowOffset = CGSize(width: 0, height: shadow.y * size)
-                layers.container.shadowRadius = shadow.blur * size / 2
-            }
-            stroke.path = shape.stroked
-            stroke.lineWidth = shape.lineWidth
-            stroke.strokeColor = color
-            stroke.fillColor = nil
-            fill.path = shape.filled
-            fill.fillColor = color
-            fill.strokeColor = nil
-            self.mark = mark
-            self.markStyle = markStyle
-        }
     }
 
     /// What a text bitmap is drawn for: the mark, the part of the image it may cover, in px, its
@@ -301,7 +233,7 @@ final class MarkLayers {
                 layers.append(record.whole)
                 layers.append(record.detail)
             } else {
-                let record = shapes[mark.id] ?? ShapeMark(scale: contentsScale)
+                let record = shapes[mark.id] ?? ShapeMarkLayer(scale: contentsScale)
                 if record.mark != mark || record.markStyle != markStyle, let shape = mark.shape(pointScale: drawing.pointScale, markStyle: markStyle) {
                     record.show(mark, shape, pointScale: drawing.pointScale, markStyle: markStyle)
                 }
@@ -585,5 +517,80 @@ final class MarkLayers {
         bitmap(region: region, scale: scale) { ctx in
             mark.draw(in: ctx, pointScale: pointScale, imageWidth: imageWidth, style: style.text, markStyle: style.paint)
         }
+    }
+}
+
+/// A rectangle's, an ellipse's or an arrow's layers, as the renderer draws it (`Mark.draw`): its
+/// white edge once for each shadow the edge casts, and over them the stroke and the arrowhead's
+/// fill. Each edge is a stroke and a head in one container, so the two cast one shadow together.
+@MainActor
+final class ShapeMarkLayer {
+    let root = CALayer()
+    private let edges: [(container: CALayer, stroke: CAShapeLayer, fill: CAShapeLayer)]
+    private let stroke = CAShapeLayer()
+    private let fill = CAShapeLayer()
+    private(set) var mark: Mark?
+    private(set) var markStyle: MarkStyle?
+
+    init(scale: CGFloat) {
+        edges = NoteTag.shadows.map { _ in (CALayer(), CAShapeLayer(), CAShapeLayer()) }
+        root.anchorPoint = .zero
+        for edge in edges {
+            edge.container.anchorPoint = .zero
+            edge.container.addSublayer(edge.stroke)
+            edge.container.addSublayer(edge.fill)
+            root.addSublayer(edge.container)
+        }
+        root.addSublayer(stroke)
+        root.addSublayer(fill)
+        for shape in shapeLayers {
+            shape.anchorPoint = .zero
+            shape.lineCap = .round
+            shape.lineJoin = .round
+        }
+        setScale(scale)
+    }
+
+    private var shapeLayers: [CAShapeLayer] { edges.flatMap { [$0.stroke, $0.fill] } + [stroke, fill] }
+
+    func setScale(_ scale: CGFloat) {
+        for shape in shapeLayers { shape.contentsScale = scale }
+        for edge in edges { edge.container.contentsScale = scale }
+    }
+
+    func show(_ mark: Mark, _ shape: MarkShape, pointScale: CGFloat, markStyle: MarkStyle) {
+        show(shape, color: mark.color, pointScale: pointScale, markStyle: markStyle)
+        self.mark = mark
+    }
+
+    /// A shape that is not a mark yet, such as a live ink stroke being drawn, drawn as a mark is.
+    func show(_ shape: MarkShape, color markColor: MarkColor, pointScale: CGFloat, markStyle: MarkStyle) {
+        let edge = markStyle.edgeWidth * pointScale
+        let size = Mark.shadowSize * pointScale
+        let edgeColor = markStyle.edgeColor.cgColor, color = markStyle.color(markColor)
+        for (layers, shadow) in zip(edges, NoteTag.shadows) {
+            layers.stroke.path = shape.stroked
+            layers.stroke.lineWidth = shape.lineWidth + 2 * edge
+            layers.stroke.strokeColor = edgeColor
+            layers.stroke.fillColor = nil
+            layers.fill.path = shape.filled
+            layers.fill.lineWidth = 2 * edge
+            layers.fill.strokeColor = edgeColor
+            layers.fill.fillColor = edgeColor
+            // Core Animation's radius is about half the blur Core Graphics takes for the same shadow.
+            layers.container.shadowColor = CGColor(gray: 0, alpha: 1)
+            layers.container.shadowOpacity = Float(min(1, shadow.alpha * markStyle.shadowOpacity))
+            layers.container.shadowOffset = CGSize(width: 0, height: shadow.y * size)
+            layers.container.shadowRadius = shadow.blur * size / 2
+        }
+        stroke.path = shape.stroked
+        stroke.lineWidth = shape.lineWidth
+        stroke.strokeColor = color
+        stroke.fillColor = nil
+        fill.path = shape.filled
+        fill.fillColor = color
+        fill.strokeColor = nil
+        mark = nil
+        self.markStyle = markStyle
     }
 }

@@ -193,6 +193,7 @@ struct SettingsView: View {
     static let agentsLine = "Adds a plugin that lets you send drawings to your coding agents, and lets them show you images and reply with drawings."
     /// macOS's Accessibility alert gives no reason, so the row gives it, and the way around it.
     static let accessibilityReason = "Lets Vignette notice the double tap in any app. A key combination doesn't need it."
+    static let liveInkAccessibilityReason = "Lets Vignette notice Control and Option held down in any app."
 
     let tab: SettingsTab
     let callbacks: SettingsWindowController.Callbacks
@@ -268,6 +269,17 @@ struct SettingsView: View {
         } footer: {
             // Under the title, the wide pop-up would leave the caption half the row's width.
             footer(ShortcutSetting.caption(doubleTap: settings.data.usesDoubleTap))
+        }
+        Section {
+            Toggle(isOn: binding(\.liveInk)) {
+                Text("Live ink")
+                Text("Holding Control and Option lets you draw over any app. A click on a mark while you hold them erases it.")
+            }
+            // The double tap's row above asks for the same permission.
+            if settings.data.liveInk, !settings.data.usesDoubleTap, !trusted {
+                PermissionRow(symbol: "lock.fill", title: "Needs Accessibility permission",
+                              reason: SettingsView.liveInkAccessibilityReason, status: .refused) { Accessibility.request() }
+            }
         }
         Section("Recent screenshots") {
             LabeledContent("How many to show") {

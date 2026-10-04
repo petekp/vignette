@@ -376,6 +376,11 @@ final class ThumbnailController: NSObject {
 
     var stackShowing: Bool { visible && model.isStack }
 
+    /// The stack or the annotator is up, and the screen is theirs: live ink does not draw over them.
+    var holdsScreen: Bool { stackShowing || run.isActive }
+    /// The stack or the annotator is coming up, so `holdsScreen` turns true: live ink stops drawing.
+    var onTakesScreen: (() -> Void)?
+
     /// The card with the keyboard focus ring, while the stack is up.
     var focusedShot: Screenshot? { model.cards.first { $0.id == model.focused }?.shot }
 
@@ -844,6 +849,7 @@ final class ThumbnailController: NSObject {
         switch effect {
         case .prepare(let key):
             guard let card = model.cards.first(where: { $0.shot.url.path == key }) else { return }
+            onTakesScreen?()
             sessionCard = card
             loadedKeys.remove(key)
             takingEvents = nil
@@ -1165,6 +1171,7 @@ final class ThumbnailController: NSObject {
     /// A selection begun in the corner turns the corner into the stack, with the cards it holds:
     /// it takes the keys and the backdrop, a click outside closes it, and it no longer times out.
     private func becomeStack() {
+        onTakesScreen?()
         leaveTimer?.invalidate()
         model.isStack = true
         outsideClick.start { [weak self] in self?.dismiss() }
@@ -1441,6 +1448,7 @@ final class ThumbnailController: NSObject {
     enum Entrance { case slide, stayOffscreen, inPlace }
 
     private func present(cards: [Card], stack: Bool, entrance: Entrance = .slide) {
+        if stack { onTakesScreen?() }
         if !visible {
             // A capture opening in the editor shows on the screen it was taken on, where its flight starts.
             pinnedScreen = captureOrigin.flatMap { origin in

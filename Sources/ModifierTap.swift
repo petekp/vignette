@@ -14,13 +14,12 @@ final class ModifierTap {
     private let action: () -> Void
     private let hold: (() -> Void)?
     private let holdSeconds: TimeInterval
-    private var monitors: [Any] = []
+    private var monitors: KeyMonitors?
     private var count = 0
     private var last: TimeInterval = 0
     /// The timestamp of the last flags change counted. While Vignette is active, the global and the
     /// local monitor can both report the same event, and counted twice a double tap fired twice.
     private var lastEvent: TimeInterval = -1
-    private var retry: Timer?
     private var holdTimer: Timer?
 
     /// Key codes: 56 left shift, 60 right shift, 55 left cmd, 54 right cmd, 58 left opt,
@@ -34,27 +33,13 @@ final class ModifierTap {
         self.action = action
         self.hold = hold
         flag = Self.flag(forKeyCode: keyCode)
-        // Never prompts. The double tap is the default shortcut, so this runs during every launch,
-        // and macOS's Accessibility dialog arriving unasked seconds into a first launch is the one
-        // people dismiss. The setup window raises it, as the answer to a choice just made.
-        if ModifierTap.trusted(prompt: false) { install() } else {
-            Log.write("[hotkey] modifier tap needs Accessibility permission; waiting for it")
-            // Timer.scheduledTimer runs its block on the run loop it is scheduled on: the main one, here.
-            retry = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, ModifierTap.trusted(prompt: false) else { return }
-                    self.retry?.invalidate()
-                    self.install()
-                    Log.write("[hotkey] Accessibility granted; modifier tap active")
-                }
-            }
-        }
+        // The double tap is the default shortcut, so this runs during every launch, and never
+        // prompts: the setup window raises macOS's dialog, as the answer to a choice just made.
+        monitors = KeyMonitors(tag: "hotkey", name: "modifier tap") { [weak self] in self?.install() ?? [] }
     }
 
     isolated deinit {
-        retry?.invalidate()
         holdTimer?.invalidate()
-        monitors.forEach { NSEvent.removeMonitor($0) }
     }
 
     /// The modifier a modifier key's code sets, either side of the keyboard.
@@ -71,15 +56,15 @@ final class ModifierTap {
         AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): prompt] as CFDictionary)
     }
 
-    private func install() {
+    private func install() -> [Any?] {
         let flags: (NSEvent) -> Void = { [weak self] e in self?.flagsChanged(e) }
         let reset: (NSEvent) -> Void = { [weak self] _ in self?.count = 0; self?.holdTimer?.invalidate() }
-        monitors = [
+        return [
             NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: flags),
             NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { flags($0); return $0 },
             NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown], handler: reset),
             NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { reset($0); return $0 },
-        ].compactMap { $0 }
+        ]
     }
 
     private func flagsChanged(_ event: NSEvent) {

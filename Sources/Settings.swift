@@ -49,7 +49,8 @@ struct SettingsData: Codable, Equatable {
     var sendInstructions = SettingsData.defaultSendInstructions  // the words after the image in the line Send puts in a session
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
-    var debug = false                        // unlocks tweaks, install-skill root=, and file= outside the watch folder
+    var liveInk = false                      // holding Control and Option draws on the screen itself; needs Accessibility
+    var debug = false                        // unlocks tweaks, install-skill root=, live-ink-stroke, and file= outside the watch folder
     var agentSkill = AgentSkill.unasked.rawValue  // whether the skill was offered: unasked, then off
     var setup = SetupState.unasked.rawValue  // whether the setup window has run: unasked, then done
     var ui = UITweaks()                      // visual and timing knobs; the debug panel edits these live
@@ -253,6 +254,11 @@ struct UITweaks: Codable, Equatable {
     var arrowheadWidth = 4.0
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
+    // Live ink's glow along the screen's edges, which says the screen is taking ink
+    var liveInkGlowWidth = 10.0      // points
+    var liveInkGlowOpacity = 0.5
+    var liveInkGlowDelay = 0.25      // how long the chord is held before the glow shows, unless a press shows it sooner
+    var liveInkGlowFade = 0.2
 
     /// One entry of `bounds`. A plain struct, not a tuple, so the array can be `Sendable`.
     /// `@unchecked`: `WritableKeyPath` isn't marked `Sendable` in the standard library, but key
@@ -276,6 +282,7 @@ struct UITweaks: Codable, Equatable {
         u.relayoutDuration *= scale; u.shiftUpDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
         u.introDuration *= scale
         u.noteSettleDuration *= scale
+        u.liveInkGlowFade *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
         u.flightArc *= scale; u.flightDepth *= scale
@@ -338,6 +345,8 @@ struct UITweaks: Codable, Equatable {
         // The floor is the slider's, because below it a stitch is not a smaller picture but a
         // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
+        Bound("liveInkGlowWidth", \.liveInkGlowWidth, 0...1000), Bound("liveInkGlowOpacity", \.liveInkGlowOpacity, 0...1),
+        Bound("liveInkGlowDelay", \.liveInkGlowDelay, 0...60), Bound("liveInkGlowFade", \.liveInkGlowFade, 0...60),
     ]
 }
 

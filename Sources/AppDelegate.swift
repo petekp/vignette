@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var modifierTap: ModifierTap?
     private let thumbnail = ThumbnailController()
     private let annotator = AnnotationController()
+    private lazy var liveInk = LiveInk(mayInk: { [weak self] in !(self?.thumbnail.holdsScreen ?? true) })
     private let settingsWindow = SettingsWindowController()
     private let setupWindow = SetupWindowController()
     private lazy var debugPanel = DebugPanelController(previews: .init(
@@ -110,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide { hidden() } }
         thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }
         thumbnail.onAnnotatorPress = { [weak self] event, key in self?.annotator.take(event, for: key) }
+        thumbnail.onTakesScreen = { [weak self] in self?.liveInk.standAside() }
         annotator.onTakesEvents = { [weak self] key in self?.thumbnail.annotatorTakesEvents(key) }
         annotator.onFinished = { [weak self] shot, drawing in self?.finishAnnotation(shot, drawing) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
@@ -141,6 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             startWatching()
         }
         registerHotKey()
+        liveInk.setOn(settings.data.liveInk)
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
         // Setup comes first and has the launch to itself: two windows competing for a first-time
         // user is worse than the plugin offer waiting until the next launch.
@@ -211,7 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func settingsChanged(_ old: SettingsData, _ new: SettingsData) {
-        if new.ui != old.ui { thumbnail.applyTweaks(); annotator.applyTweaks(); warmThumbnails() }
+        if new.ui != old.ui { thumbnail.applyTweaks(); annotator.applyTweaks(); liveInk.applyTweaks(); warmThumbnails() }
         if new.recentCount != old.recentCount { warmThumbnails() }
         if new.screenshotsFolder != old.screenshotsFolder {
             // A folder macOS doesn't protect needs no asking, so a move to one while setup waits
@@ -225,6 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
+        if new.liveInk != old.liveInk { liveInk.setOn(new.liveInk) }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
         if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
     }
@@ -635,6 +639,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             requests.receiveReply(envelope: file)
         case "requests": requests.run(clear: request.clear)
         case "restore-apple-defaults": restoreAppleDefaults()
+        case "live-ink-clear":
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\": true in settings.json"); return }
+            Commands.ok(cmd, "cleared \(liveInk.clear())")
+        case "live-ink-stroke":
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\": true in settings.json"); return }
+            guard let points = request.points.flatMap(Commands.points) else {
+                Commands.error(cmd, .invalidPoints, "give &points=x,y;x,y in global top-left points"); return
+            }
+            Commands.ok(cmd, "\(liveInk.take(points).description) marks=\(liveInk.marks.count)")
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
         case "intro-lab": introLab.show(); Commands.ok("intro-lab")
         case "dismiss": thumbnail.dismiss(); Commands.ok("dismiss")
@@ -707,6 +720,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         report.sections["editor"] = annotator.editor.core.inspection
         report.sections["drawings"] = drawings.keys.sorted()
         report.sections["requests"] = requests.stateJSON
+        report.sections["liveInk"] = liveInk.stateJSON
         report.sections["memory"] = ["rss": residentBytes(), "thumbnails": Thumbnailer.cacheBytes]
         Log.write("[state] \(report.rendered())")
     }
@@ -795,8 +809,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 let item = NSMenuItem(title: "Save Screenshots to a Folder", action: #selector(saveCapturesAsFiles), keyEquivalent: "")
                 if #available(macOS 14.4, *) { item.subtitle = "macOS sends them to \(target)." }
                 return item
-            case .accessibility:
-                return NSMenuItem(title: "Allow Accessibility for the Shortcut…", action: #selector(requestAccessibility), keyEquivalent: "")
+            case let .accessibility(shortcut, liveInk):
+                let what = shortcut && liveInk ? "the Shortcut and Live Ink" : shortcut ? "the Shortcut" : "Live Ink"
+                return NSMenuItem(title: "Allow Accessibility for \(what)…", action: #selector(requestAccessibility), keyEquivalent: "")
             }
         }
     }
@@ -806,14 +821,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case folderAccess
         /// macOS saves captures somewhere other than a folder, named for a person ("the Clipboard").
         case saveTarget(String)
-        case accessibility
+        /// Accessibility, for the double tap, live ink, or both.
+        case accessibility(shortcut: Bool, liveInk: Bool)
     }
 
     private func missing() -> [Blocker] {
         var missing: [Blocker] = []
         if watcher?.isDenied == true { missing.append(.folderAccess) }
         if settings.appleTarget != "file" { missing.append(.saveTarget(AppleScreencapture.targetName(settings.appleTarget))) }
-        if settings.data.usesDoubleTap, !ModifierTap.trusted(prompt: false) { missing.append(.accessibility) }
+        let shortcut = settings.data.usesDoubleTap, liveInk = settings.data.liveInk
+        if shortcut || liveInk, !ModifierTap.trusted(prompt: false) { missing.append(.accessibility(shortcut: shortcut, liveInk: liveInk)) }
         return missing
     }
 
@@ -826,14 +843,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 switch blocker {
                 case .folderAccess: "Allow access to your screenshots"
                 case .saveTarget: "Save screenshots to a folder"
-                case .accessibility: "Allow Accessibility for the shortcut"
+                case let .accessibility(shortcut, liveInk):
+                    "Allow Accessibility for \(shortcut && liveInk ? "the shortcut and live ink" : shortcut ? "the shortcut" : "live ink")"
                 }
             })
         }
         switch only {
         case .folderAccess: return .text("\(Identity.name) can't open your screenshots folder. Click the icon to allow it.")
         case let .saveTarget(target): return .text("macOS sends your screenshots to \(target). Click the icon to save them to a folder.")
-        case .accessibility: return .text("The shortcut needs Accessibility. Click the icon to allow it.")
+        case let .accessibility(shortcut, liveInk):
+            let what = shortcut && liveInk ? "The shortcut and live ink need" : shortcut ? "The shortcut needs" : "Live ink needs"
+            return .text("\(what) Accessibility. Click the icon to allow it.")
         }
     }
 
@@ -871,6 +891,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let drawItem = NSMenuItem(title: "Draw on Newest Screenshot", action: #selector(annotateLast), keyEquivalent: "")
         if let shortcut { drawItem.badge = NSMenuItemBadge(string: shortcut.holdLabel) }
         menu.addItem(drawItem)
+
+        menu.addItem(.separator())
+        let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
+        liveInkItem.state = settings.data.liveInk ? .on : .off
+        liveInkItem.badge = NSMenuItemBadge(string: "Hold ⌃⌥")
+        menu.addItem(liveInkItem)
+        if settings.data.liveInk {
+            menu.addItem(NSMenuItem(title: "Clear Live Ink", action: #selector(clearLiveInk), keyEquivalent: ""))
+        }
 
         // The same two switches, under the same heading, as the Settings window's Screenshots tab.
         menu.addItem(.separator())
@@ -1060,6 +1089,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         settings.update { $0.copyOnCapture.toggle() }
         Log.write("[settings] copyOnCapture=\(settings.data.copyOnCapture)")
     }
+
+    @objc private func toggleLiveInk() {
+        settings.update { $0.liveInk.toggle() }
+        Log.write("[settings] liveInk=\(settings.data.liveInk)")
+    }
+
+    @objc private func clearLiveInk() { liveInk.clear() }
 
     @objc private func toggleAnnotateOnCapture() {
         settings.update { $0.annotateOnCapture.toggle() }
@@ -1432,11 +1468,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 extension AppDelegate: NSMenuDelegate, NSMenuItemValidation {
     func menuNeedsUpdate(_ menu: NSMenu) { rebuildMenu(menu) }
 
-    /// Both of these act on a screenshot, and with an empty folder they did nothing and said so
-    /// only in the log. Greyed out is what a Mac user already reads as nothing to act on.
+    /// Showing and drawing act on a screenshot, and with an empty folder they did nothing and said
+    /// so only in the log. Greyed out is what a Mac user already reads as nothing to act on, and the
+    /// same goes for clearing live ink with no marks on the screen.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case #selector(toggleRecent), #selector(annotateLast): return hasScreenshots
+        case #selector(clearLiveInk): return !liveInk.marks.isEmpty
         case #selector(checkForUpdates): return updater?.canCheck ?? false
         default: return true
         }
