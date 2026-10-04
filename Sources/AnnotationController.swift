@@ -583,6 +583,7 @@ final class AnnotationController {
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.barFrame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
             "toolbarFocus": toolbar.model.focus?.name as Any,
+            "toolbarKey": toolbar.panel.isKeyWindow,
             "tool": toolbar.model.tool?.rawValue as Any,
             "offer": (current == nil ? nil : offerJSON) as Any,
         ]

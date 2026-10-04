@@ -1,6 +1,6 @@
 # An end-to-end test suite (2026-09-29)
 
-Status: built. All nine scenarios pass, the two that post input in a round with Pete on 2026-09-30.
+Status: built, 22 scenarios. All 22 passed on 2026-10-03, with `--input`.
 "Where things stand" is at the end.
 
 Pete wants a suite of end-to-end tests to run before this release and every later one, so that
@@ -101,7 +101,7 @@ data folder. The trailer can then drop its source patches.
 - **Frames:** a recording of a flight, checked for a blank or doubled frame. `frames.sh` extracts
   and tracks; the check itself is still to write.
 
-Some checks need state the app does not report: the setup page, a toast, a card's send mark, and
+Some checks need state the app does not report: the setup page, a send notice on a card, and
 whether a note's lines are balanced. Each gets a field in `[state]` when its scenario is built.
 
 ## Later: a clean Mac
@@ -135,7 +135,7 @@ the update from 0.1.2 to 0.1.3 in `docs/updater-2026-09-27.md`, and fresh instal
 5. **A real Claude Code session.** Recommendation: not in the gate. Once the skill names the test
    copy, a scenario with a real session can run before a release, signed in and costing tokens.
 
-## Where things stand (2026-09-29)
+## Where things stand (2026-10-03)
 
 Pete approved the plan, the release gate, running on this Mac, the test hooks, and granted
 `Vignette E2E` Accessibility.
@@ -156,23 +156,32 @@ Pete approved the plan, the release gate, running on this Mac, the test hooks, a
   `e2e.py restore`.
 - **`scripts/fake-herdr` is removed.** Nothing ran it.
 
-**Scenarios:**
+**Scenarios** (`e2e.py list` prints them; "input" ones run only with `--input`):
 
-| Scenario | Input | Result |
+| Scenario | Input | What it checks |
 |---|---|---|
-| `launch` | no | pass |
-| `agent_push` | no | pass |
-| `annotate_open` | no | pass: the bar offers Copy alone, so no Codex thread was listed |
-| `send_target` | no | pass: the bar offers Send to the fake session |
-| `send_target_codex` | no | pass: the bar offers Send to the fake codex's thread, listed by `codex app-server` |
-| `stitch` | no | pass |
-| `relaunch` | no | pass |
-| `settings_repair` | no | pass |
-| `draw_and_done` | yes | pass |
-| `send_and_reply` | yes | pass: the helper refuses a ticket copied elsewhere; a guessed secret is `ScreenshotRequestsTests`' case |
-| `send_and_reply_codex` | yes | pass: the same send and reply, through one `codex queue` call to the fake codex |
-| `send_codex_thread_gone` | yes | pass: a send to a thread deleted after the bar offered it fails as a thread that is gone |
-| `send_codex_queued` | yes | pass: a send to a thread no engine has loaded is reported as queued |
+| `launch` | no | the fence's log lines, no login item, `help` lists every command, bad files answer errors |
+| `first_launch` | no | setup shows and turns Apple's thumbnail off; quitting puts it back and asks again next launch |
+| `upgrade` | no | a 0.1.1 settings file keeps only what differs from 0.1.1's defaults |
+| `agent_push` | no | a push's marks in the agent's colour, a named colour ignored, Copy Drawing's rendering; a second Copy Drawing writes a new file and leaves the first as it was |
+| `annotate_open` | no | the editor has the agent's marks, the bar offers Copy alone, a push joins the open drawing |
+| `send_target` | no | the bar offers Send to a fake Claude Code session |
+| `send_target_codex` | no | the bar offers Send to a fake codex's thread, listed by `codex app-server` |
+| `copy_types` | no | Copy puts a JPEG's and a PNG's own bytes on the pasteboard under their own types |
+| `stitch` | no | Stitch writes one image, and its card comes up with the Copied notice |
+| `instant_draw` | no | with Instant Draw on, a capture is copied and opens straight in the editor; closed with nothing to show, it leaves the corner at once |
+| `relaunch` | no | drawings and settings survive a relaunch |
+| `settings_repair` | no | bad values are clamped and logged; a file that does not parse is set aside |
+| `draw_and_done` | yes | a drawn box in the person's colour; Return's PNG bytes and file URL match its rendering |
+| `annotate_queue` | yes | Return goes through three images with the dim up; a cancel ends a run with images waiting |
+| `zoom_keys` | yes | Cmd+Minus at the fit moves nothing, Cmd+Plus grows the frame, Cmd+0 brings it back |
+| `send_and_reply` | yes | one request line in the fake session's inbox; a reply through the helper is a card; a ticket copied elsewhere is refused |
+| `send_message` | yes | M puts the keys in the message field, and Return there sends with the message ahead of Vignette's line |
+| `send_and_reply_codex` | yes | the same send and reply, through one `codex queue` call to the fake codex |
+| `send_codex_thread_gone` | yes | a send to a thread deleted after the bar offered it fails as a thread that is gone |
+| `send_codex_queued` | yes | a send to a thread no engine has loaded is reported as queued |
+| `agent_marks_editable` | yes | a click selects an agent's mark and a drag moves it |
+| `corner_select` | yes | a click on a corner card's circle makes the corner the stack, with the strip out |
 
 **Found while building it:**
 
@@ -184,7 +193,6 @@ Pete approved the plan, the release gate, running on this Mac, the test hooks, a
 - **A reply's secret is checked against `ticket.json` on disk**, so rewriting that file rewrites the
   reference. That is not a hole, since whoever can write the file can read the real secret, but it
   is why the end-to-end check cannot test a wrong secret through the helper.
-- **`add` answers `unreadable-image` for a missing file**, because it checks the image before the
-  file. The skill lists `missing-file` among `add`'s errors. `annotate` does the same on purpose.
 
-**Next:** cut 0.1.2 with the smoke gate passing, then grow the suite in the order above.
+**Next:** grow the suite in the order above. The newer features without a scenario are Delete on a
+lone thumbnail, the send notice on a card, and the setup's close into the menu bar icon.

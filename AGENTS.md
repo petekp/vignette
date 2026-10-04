@@ -833,9 +833,10 @@ screenshot location for such a launch is written with the same variable:
   `EditorView.enterCanvas`). While a control has the focus the editor keeps the keys and hands Tab
   and Space to the bar (`EditorView.takesKey`), except in the message field, where the bar's panel
   has them and takes Tab first (`ToolbarPanel.sendEvent`). `[state] annotator.toolbarFocus` names
-  the focused control. The bar draws its own tooltips (`TipSpot`, `TipLabel`): AppKit shows a
-  window's tooltips only while it is key or was the last one clicked, so `.help` on the bar showed
-  nothing until the bar was clicked, and `allowsToolTipsWhenApplicationIsInactive` did not change
+  the focused control, and `annotator.toolbarKey` says whether the bar's panel has the keys. The
+  bar draws its own tooltips (`TipSpot`, `TipLabel`): AppKit shows a window's tooltips only while
+  it is key or was the last one clicked, so `.help` on the bar showed nothing until the bar was
+  clicked, and `allowsToolTipsWhenApplicationIsInactive` did not change
   that. The target's menu is an `NSMenu` (`showTargetMenu`), since SwiftUI's `Menu`
   cannot be opened from a key. Space opens it a turn later: opened inside the editor's keyDown it
   took no keys, and a press on its item closed the editor as a press outside. `docs/annotator-toolbar-2026-09-19.md` has the numbers.

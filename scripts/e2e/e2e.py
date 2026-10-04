@@ -329,10 +329,12 @@ class App:
     # -- Input, gated on the state
 
     def require_key(self, s, where):
-        """Stops unless `where` ('annotator' or 'stack') of this copy is up and key, read in the
-        same step, so a key or a click never reaches another app."""
+        """Stops unless `where` ('annotator', 'toolbar' or 'stack') of this copy is up and key, read
+        in the same step, so a key or a click never reaches another app."""
         if where == 'annotator':
             ok = s['annotator']['windowVisible'] and s['annotator']['key']
+        elif where == 'toolbar':
+            ok = s['annotator']['windowVisible'] and s['annotator']['toolbarKey']
         else:
             ok = s['stack'].get('visible') and s['stack'].get('key')
         if not ok:

@@ -11,7 +11,7 @@ import urllib.parse
 
 from e2e import AGENT, PERSON, PROBE, Failed, color_near, pixels
 
-KEY_R, KEY_RETURN = 15, 36
+KEY_R, KEY_M, KEY_RETURN = 15, 46, 36
 KEY_EQUALS, KEY_MINUS, KEY_ZERO = 24, 27, 29
 
 
@@ -196,6 +196,27 @@ def agent_push(app):
     if 'public.file-url' not in types:
         raise Failed(f'the pasteboard does not hold the rendering: {types}')
     app.report.step('Copy Drawing put the rendering on the pasteboard')
+    # A rendering is an immutable result (docs/adr/0018): copying the drawing again after it changed
+    # writes a second file and leaves the first, which another app may still be reading, as it was.
+    with open(rendering, 'rb') as f:
+        first = f.read()
+    marks_path = os.path.join(app.folder, 'more-marks.json')
+    with open(marks_path, 'w') as f:
+        json.dump([{'type': 'ellipse', 'x': 0.6, 'y': 0.2, 'w': 0.2, 'h': 0.2}], f)
+    detail = app.command('add', app.file_query(copy) + '&agent=claude&marks=' + urllib.parse.quote(marks_path, safe=''))
+    if 'marks=1' not in detail:
+        raise Failed(f'add did not join 1 mark to the drawing: {detail}')
+    second = rendering_path(app.command('copy-annotated', app.file_query(copy), timeout=30))
+    if second == rendering or not os.path.exists(second):
+        raise Failed(f'the second Copy Drawing wrote {second}, not a new file beside {rendering}')
+    with open(rendering, 'rb') as f:
+        if f.read() != first:
+            raise Failed(f'the second Copy Drawing changed {os.path.basename(rendering)}')
+    with open(second, 'rb') as f:
+        if f.read() == first:
+            raise Failed('the second rendering is the first one again, without the joined mark')
+    app.report.step('a second Copy Drawing writes a new file and leaves the first as it was',
+                    detail=os.path.basename(second))
     app.command('dismiss')
 
 
@@ -315,6 +336,42 @@ def stitch(app):
     app.wait_state(lambda s: (c := card_for(s, out)) is not None and c['copied'], 'the stitched card with its Copied notice')
     app.report.step('the stitched card shows the Copied notice')
     app.command('dismiss')
+
+
+def instant_draw(app):
+    """With Instant Draw on, a new capture goes to the clipboard and opens straight in the editor.
+    Closed without a drawing or a notice, it leaves the corner at once rather than landing there.
+
+    That is the lone thumbnail's fly-away (`ThumbnailController.leavesAtOnce`)."""
+    app.write_settings(annotateOnCapture=True)
+    start(app)
+    offset = app.log_size()
+    path = app.image('Screenshot instant.png', folder=app.watch)
+    name = os.path.basename(path)
+    app.wait_log('[watcher] copied', offset, also=name)
+    pasted = os.path.join(app.folder, 'captured.png')
+    subprocess.run([PROBE, 'pasteboard', 'data', 'public.png', pasted], check=True)
+    with open(pasted, 'rb') as a, open(path, 'rb') as b:
+        if a.read() != b.read():
+            raise Failed(f'the pasteboard does not hold {name} after it landed')
+    app.report.step('the capture went to the clipboard as it landed')
+    s = wait_editor(app, offset)
+    if os.path.realpath(s['annotator']['current'] or '') != os.path.realpath(path):
+        raise Failed(f"the editor opened {s['annotator']['current']}, not {name}")
+    if (card := card_for(s, path)) is not None and not card['out']:
+        raise Failed(f'{name} waits in the corner while it is in the editor: {card}')
+    app.report.step('the capture opened straight in the editor')
+    app.command('cancel')
+    # A card that landed would be back in the stack at once and stay for thumbnailSeconds.
+    end = time.monotonic() + 2
+    while time.monotonic() < end:
+        s = app.state()
+        if (card := card_for(s, path)) is not None:
+            raise Failed(f'{name} came back to the corner after the editor closed with nothing to show: {card}')
+        time.sleep(0.1)
+    if s['stack']['visible'] or s['annotator']['windowVisible']:
+        raise Failed(f"after cancel: stack visible={s['stack']['visible']}, editor visible={s['annotator']['windowVisible']}")
+    app.report.step('closed with nothing to show, it left the corner at once')
 
 
 def relaunch(app):
@@ -571,6 +628,40 @@ def send_codex_queued(app):
     capture_sent_card(app, path, 'queued-card')
 
 
+@needs_input
+def send_message(app):
+    """M in the editor puts the keys in the message field beside Send, and Return there sends the
+    image with the typed message ahead of Vignette's own line."""
+    session, inbox = app.fake_session('e2e-project')
+    start(app)
+    path = app.image('Screenshot message.png', folder=app.watch)
+    time.sleep(1)
+    app.touch_alive(inbox)
+    click_to_open(app, path)
+    app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == session, 'Send to the fake session')
+    app.keys('annotator', 'key', KEY_M)
+    app.wait_state(lambda s: s['annotator']['toolbarFocus'] == 'message' and s['annotator']['toolbarKey'],
+                   'the message field taking the keys', timeout=3)
+    app.report.step('M put the keys in the message field')
+    message = 'check the footer'
+    app.keys('toolbar', 'type', message, 40)
+    app.touch_alive(inbox)
+    offset = app.log_size()
+    app.keys('toolbar', 'key', KEY_RETURN)
+    app.wait_log('[send] ok', offset, timeout=20)
+    end = time.monotonic() + 10
+    while not app.lines_in(inbox) and time.monotonic() < end:
+        time.sleep(0.1)
+    lines = app.lines_in(inbox)
+    if len(lines) != 1:
+        raise Failed(f'the inbox has {lines}')
+    line = open(os.path.join(inbox, lines[0])).read()
+    if not line.startswith(f'{message} [From Vignette: '):
+        raise Failed(f'the request line does not lead with the message: {line[:160]}')
+    app.report.step('Return in the field sent the image with the message', detail=line.strip()[:120])
+    app.wait_state(lambda s: not s['annotator']['windowVisible'], 'the editor closing after the send')
+
+
 def capture_sent_card(app, path, name):
     """The card that was sent, with its mark, into the report: the lone thumbnail comes back to say
     what happened, and its mark is up once it has landed."""
@@ -755,6 +846,6 @@ def agent_marks_editable(app):
     close_editor(app)
 
 
-ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, send_target_codex, copy_types, stitch, relaunch,
-       settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_and_reply_codex, send_codex_thread_gone,
-       send_codex_queued, agent_marks_editable, corner_select]
+ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, send_target_codex, copy_types, stitch,
+       instant_draw, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_message,
+       send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select]
