@@ -315,10 +315,10 @@ struct SettingsView: View {
         Section {
             Toggle("Copy to the clipboard", isOn: binding(\.copyOnCapture))
             Toggle(isOn: binding(\.annotateOnCapture)) {
-                Text("Open it to draw")
+                Text("Instant draw")
                 Text("Instead of showing a thumbnail.")
             }
-            // Visible with "Open it to draw" on too: a thumbnail that comes back from the editor
+            // Visible with "Instant draw" on too: a thumbnail that comes back from the editor
             // without a copy, after Send for example, stays this long.
             LabeledContent("Show the thumbnail for") {
                 HStack {

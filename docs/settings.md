@@ -61,11 +61,11 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   with no control in the window. `From Vignette: "<path>".` before it is fixed: the skill loads on
   "From Vignette:", and the path is the drawing. It is kept to one line, since the plugin delivers
   each line as its own message, so line breaks and tabs become spaces. An empty one leaves the line at the path.
-- **`annotateOnCapture`** is Open it to draw, and Open to Draw in the menu bar: it opens every new
-  screenshot in the annotator right away, instead of showing a thumbnail.
+- **`annotateOnCapture`** is "Instant draw" in Settings and "Instant Draw" in the menu bar: it
+  opens every new screenshot in the annotator right away, instead of showing a thumbnail.
 - **`copyOnCapture`** puts every new screenshot on the clipboard as it lands: the image, plus its
   file URL and path for apps that take those. It is on by default. An image that arrives through
-  `add` skips this and Open to Draw, since a push from an agent is not a capture.
+  `add` skips this and Instant Draw, since a push from an agent is not a capture.
 - **`debug`** unlocks `tweaks`, `install-skill?root=`, and `file=` outside the watch folder.
 - **`agentSkill`** records only whether the app has offered the skill for coding agents:
   `unasked` until the offer, then `off`. The setup window's last page makes the offer. Whether the

@@ -874,7 +874,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let copyItem = NSMenuItem(title: "Copy to Clipboard", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
         copyItem.state = settings.data.copyOnCapture ? .on : .off
         menu.addItem(copyItem)
-        let captureItem = NSMenuItem(title: "Open to Draw", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
+        let captureItem = NSMenuItem(title: "Instant Draw", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
         captureItem.state = settings.data.annotateOnCapture ? .on : .off
         menu.addItem(captureItem)
 
