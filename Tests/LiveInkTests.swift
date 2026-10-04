@@ -110,14 +110,17 @@ final class LiveInkTests: XCTestCase {
 
     // MARK: Erasing
 
-    func testATapErasesTheTopmostMarkWhoseStrokeItIsOn() {
+    func testATapErasesTheTopmostMarkItIsNearOrElseTheSmallestEllipseRoundIt() {
         let style = UITweaks().markStyle
+        let big = Mark(geometry: .ellipse(CGRect(x: 0, y: 0, width: 600, height: 400)))
         let low = Mark(geometry: .ellipse(CGRect(x: 100, y: 100, width: 200, height: 100)))
         let high = Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 100, y: 150), end: CGPoint(x: 400, y: 150))))
-        let marks = [low, high]
-        XCTAssertEqual(LiveInk.topmostMark(at: CGPoint(x: 100, y: 150), in: marks, markStyle: style, hitMargin: 4), 1)
-        XCTAssertEqual(LiveInk.topmostMark(at: CGPoint(x: 200, y: 101), in: marks, markStyle: style, hitMargin: 4), 0)
-        XCTAssertNil(LiveInk.topmostMark(at: CGPoint(x: 200, y: 125), in: marks, markStyle: style, hitMargin: 4), "inside the ellipse, off its line")
-        XCTAssertNil(LiveInk.topmostMark(at: CGPoint(x: 500, y: 500), in: marks, markStyle: style, hitMargin: 4))
+        let marks = [big, low, high]
+        XCTAssertEqual(LiveInk.markToErase(at: CGPoint(x: 100, y: 150), in: marks, markStyle: style), 2)
+        XCTAssertEqual(LiveInk.markToErase(at: CGPoint(x: 350, y: 160), in: marks, markStyle: style), 2, "a little off the arrow")
+        XCTAssertEqual(LiveInk.markToErase(at: CGPoint(x: 200, y: 105), in: marks, markStyle: style), 1)
+        XCTAssertEqual(LiveInk.markToErase(at: CGPoint(x: 200, y: 125), in: marks, markStyle: style), 1, "inside two ellipses: the smaller")
+        XCTAssertEqual(LiveInk.markToErase(at: CGPoint(x: 500, y: 300), in: marks, markStyle: style), 0)
+        XCTAssertNil(LiveInk.markToErase(at: CGPoint(x: 900, y: 900), in: marks, markStyle: style))
     }
 }

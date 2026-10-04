@@ -97,8 +97,11 @@ Pete confirmed 2, 3, 4 and 6 on 2026-10-04.
   `ShapeMarkLayer`, the editor's shape layer made top-level, and so is the stroke being drawn.
   Anchors come with step 3.
 - **Strokes are read the editor's way.** A loop is the spike's test, but any other stroke is the
-  editor's freehand arrow (`Mark.Arrow.freehand`), and a tap erases what the editor's hit test
-  would select (`EditorGeometry.strokeDistance`), so a mark looks and answers the same in both.
+  editor's freehand arrow (`Mark.Arrow.freehand`), so a mark looks the same in both.
+- **A tap erases generously.** It takes the mark whose stroke it is near, measured as the editor
+  measures (`EditorGeometry.strokeDistance`) but 12 pt past the edge rather than the editor's 4, or
+  else the smallest ellipse it is inside. Nothing shows which mark a tap would erase, and in Pete's
+  first try, two taps meant for marks erased nothing at the editor's reach.
 
 ## How it fits, piece by piece
 

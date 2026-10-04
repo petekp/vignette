@@ -85,7 +85,7 @@ final class LiveInk {
             marks.append(Mark(geometry: .arrow(arrow)))
             outcome = .drew(.arrow)
         case .tap(let point):
-            if let index = Self.topmostMark(at: point, in: marks, markStyle: ui.markStyle, hitMargin: ui.hitMargin) {
+            if let index = Self.markToErase(at: point, in: marks, markStyle: ui.markStyle) {
                 outcome = .erased(marks.remove(at: index).kind)
             } else {
                 outcome = .missed
@@ -122,13 +122,23 @@ final class LiveInk {
         if glowing { showGlow(true) }
     }
 
-    /// The index of the topmost mark whose stroke `point` is on, by the editor's measure: within half
-    /// the stroke and `hitMargin` of its centre line.
-    nonisolated static func topmostMark(at point: CGPoint, in marks: [Mark], markStyle: MarkStyle, hitMargin: CGFloat) -> Int? {
-        marks.lastIndex { mark in
+    /// How far past a stroke's edge a tap still erases it. Wider than the editor's hit margin: nothing
+    /// shows which mark a tap would erase, and while inking a tap does nothing else.
+    nonisolated static let eraseReach: CGFloat = 12
+
+    /// The index of the mark a tap at `point` erases: the topmost whose stroke it is near, or else the
+    /// smallest ellipse it is inside, since a circled thing is where a hand goes to take the circle off.
+    nonisolated static func markToErase(at point: CGPoint, in marks: [Mark], markStyle: MarkStyle) -> Int? {
+        let near = marks.lastIndex { mark in
             guard let distance = EditorGeometry.strokeDistance(from: point, to: mark, pointScale: 1) else { return false }
-            return distance <= markStyle.strokeWidth / 2 + hitMargin
+            return distance <= markStyle.strokeWidth / 2 + eraseReach
         }
+        if let near { return near }
+        let around = marks.indices.compactMap { index -> (index: Int, area: CGFloat)? in
+            guard case .ellipse(let frame) = marks[index].geometry, EditorGeometry.ellipse(frame, contains: point) else { return nil }
+            return (index, frame.width * frame.height)
+        }
+        return around.min { $0.area < $1.area }?.index
     }
 
     var stateJSON: [String: Any] {

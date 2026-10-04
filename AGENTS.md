@@ -1044,7 +1044,9 @@ screenshot location for such a launch is written with the same variable:
   the editor draws them, and so is the stroke being drawn, on every screen it crosses. `InkStroke`
   reads a stroke: a loop is the ellipse round it, and any other stroke the editor's freehand arrow
   (`Mark.Arrow.freehand`, at the editor's tolerances). A stroke under `ui.shortestArrow` is a tap,
-  and a tap erases the mark it would select in the editor (`EditorGeometry.strokeDistance`).
+  which erases the topmost mark whose stroke it is within `LiveInk.eraseReach` of, measured as the
+  editor measures (`EditorGeometry.strokeDistance`), or else the smallest ellipse it is inside. The
+  reach is wider than the editor's, since nothing shows which mark a tap would erase.
 - `vignette://live-ink-clear` erases every mark, and `live-ink-stroke?points=x,y;x,y` (debug) takes
   a stroke as if by hand, whether the stack is up or not, so a script can test without posting
   input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`,
