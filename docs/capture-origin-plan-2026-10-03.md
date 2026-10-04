@@ -75,8 +75,9 @@ measurements this plan rests on.
 
 ## Open
 
-- **A real ⌘⇧4 by Pete.** The end-to-end suite, `capture_origin` included, passed with `--input`
-  on 2026-10-03.
+Pete's real ⌘⇧4 captures looked right on 2026-10-03, and the end-to-end suite, `capture_origin`
+included, passed with `--input` that day.
+
 - **A one-frame doubled shadow at the landing**, seen once in Pete's recording of this build. It
   did not reproduce in 28 recorded takes on 2026-10-03: Release and Debug, all cores busy, a Send
   target in the toolbar, and flights from the corner and from a full-screen capture.
