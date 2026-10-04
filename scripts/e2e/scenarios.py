@@ -752,6 +752,47 @@ def corner_select(app):
 
 
 @needs_input
+def capture_origin(app):
+    """With Instant Draw on, a selection taken with macOS's capture overlay flies into the editor
+    from the rect it was taken from. ⌘⇧ starts the poll that sees the drag, since the overlay
+    keeps the drag itself from every other app."""
+    app.write_settings(annotateOnCapture=True)
+    start(app)
+    name = 'Screenshot origin.png'
+    x1, y1, x2, y2 = 200, 150, 720, 410
+    offset = app.log_size()
+    app.input('chord', 55, 56)
+    capture = subprocess.Popen(['screencapture', '-i', '-x', os.path.join(app.watch, name)])
+    try:
+        # Nothing outside says when the overlay is up: it is in no window list and leaves the
+        # system cursor as it was. A drag it misses selects text in the front app, and the file
+        # never comes.
+        time.sleep(0.8)
+        if capture.poll() is not None:
+            raise Failed('screencapture -i ended before the drag')
+        app.input('glidedrag', x1, y1, x2, y2, 0.5)
+        capture.wait(timeout=10)
+    finally:
+        if capture.poll() is None:
+            capture.kill()
+    # The point under the release is inside the capture, so it is one point wider and taller.
+    expected = f'[{x1}, {y1}, {x2 - x1 + 1}, {y2 - y1 + 1}]'
+    found = app.wait_log('[origin] selection', offset, also=name)
+    if expected not in found:
+        raise Failed(f'the capture was found at {found.split(name)[-1].strip()}, not {expected}')
+    app.report.step('the poll found the selection', detail=expected)
+    line = app.wait_log('[annotate] from capture', offset, also=name)
+    if expected not in line:
+        raise Failed(f'the flight started at {line}, not {expected}')
+    app.wait_log('[annotate] takes events', offset)
+    s = app.state()
+    if not (s['annotator'].get('current') or '').endswith(name):
+        raise Failed(f"the editor has {s['annotator'].get('current')}, not {name}")
+    app.report.step('the editor opened from the captured rect')
+    close_editor(app)
+
+
+@needs_input
 def annotate_queue(app):
     """Return advances through three images with the dim still up and each completed card copied.
     Cancellation ends a second run while two images are waiting."""
@@ -848,4 +889,4 @@ def agent_marks_editable(app):
 
 ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, send_target_codex, copy_types, stitch,
        instant_draw, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_message,
-       send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select]
+       send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select, capture_origin]

@@ -238,6 +238,8 @@ final class ThumbnailController: NSObject {
     /// The screen a presentation started on. `NSScreen.main` follows the active display, which is
     /// what the user is looking at; pinning it keeps every frame of one presentation on one screen.
     private var pinnedScreen: NSScreen?
+    /// Where on screen the file in `annotate`'s request was captured, until its `prepare` uses it.
+    private var captureOrigin: (path: String, rect: NSRect)?
     private var screen: NSScreen {
         if let pinned = pinnedScreen, NSScreen.screens.contains(pinned) { return pinned }
         return NSScreen.main ?? NSScreen.screens[0]
@@ -427,11 +429,30 @@ final class ThumbnailController: NSObject {
 
     /// Opens the annotator on the first of `shots` and queues the rest: finishing one opens the
     /// next, until the list is done. The selection is untouched by the whole run, so the same cards
-    /// can be copied or stitched after the last one.
-    func annotate(_ shots: [Screenshot]) {
+    /// can be copied or stitched after the last one. `origin` is where on screen a new capture was
+    /// taken; its flight starts there instead of at its card.
+    func annotate(_ shots: [Screenshot], from origin: NSRect? = nil) {
         guard let first = shots.first else { return }
+        // A flight from the capture starts over the very pixels it shows, so it waits for the
+        // picture: the card's own is not decoded yet, and a flight with none shows nothing until it
+        // arrives, then appears part way along. Until it starts, the screen shows the same pixels.
+        if let origin, let screen = NSScreen.screens.first(where: { $0.frame.contains(CGPoint(x: origin.midX, y: origin.midY)) }) {
+            let maxPixel = Thumbnailer.screenPixels(on: screen), space = screen.colorSpace?.cgColorSpace
+            if Thumbnailer.cached(at: first.url, maxPixel: maxPixel, space: space) == nil {
+                Thumbnailer.load(at: first.url, maxPixel: maxPixel, space: space) { [weak self] _ in
+                    self?.startAnnotating(shots, from: origin)
+                }
+                return
+            }
+        }
+        startAnnotating(shots, from: origin)
+    }
+
+    private func startAnnotating(_ shots: [Screenshot], from origin: NSRect?) {
+        guard let first = shots.first else { return }
+        captureOrigin = origin.map { (first.url.path, $0) }
         // A file that cannot be read never reaches the run, so an image already open stays open.
-        guard openableCard(for: first) != nil else { return }
+        guard openableCard(for: first) != nil else { captureOrigin = nil; return }
         send(.annotate(shots.map(\.url.path)))
     }
 
@@ -841,6 +862,18 @@ final class ThumbnailController: NSObject {
             releaseKeys()
             var from = slot ?? cardFrame(of: card)
             if model.offscreen.contains(card.id) { from.origin.x += layout.offscreenDistance(cardWidth: from.width) }
+            // A capture starts where it was taken, looking like the screen there. The flight is
+            // drawn on one screen, so a capture on another one starts at its card. A window's
+            // shadow may run past the screen's edge, where the flight is cut off as the shadow was.
+            var lookFrom = TransitionLayer.Look.card(ui)
+            if let origin = captureOrigin, origin.path == key {
+                captureOrigin = nil
+                if screen.frame.contains(CGPoint(x: origin.rect.midX, y: origin.rect.midY)) {
+                    from = origin.rect
+                    lookFrom = .screen
+                    Log.write("[annotate] from capture \(StateReport.topLeft(from, primaryHeight: StateReport.primaryHeight)) \(card.shot.url.lastPathComponent)")
+                }
+            }
             // Two moments. The window comes up at `covered`, where the flight is past the frame and
             // covers it, so it can take the keys and the pointer while the eye already reads the
             // card as still. The shadow and the picture change hands at `arrived`, on the exact
@@ -848,7 +881,7 @@ final class ThumbnailController: NSObject {
             // the spring still had a few points to go would step against the picture the flight is
             // showing.
             flights.fly(id: card.id, image: flightImage(for: card), marks: outFlightMarks(for: card, to: target), from: from, to: target,
-                        lookFrom: .card(ui), lookTo: .annotator(ui), on: screen, covered: { [weak self] in
+                        lookFrom: lookFrom, lookTo: .annotator(ui), on: screen, covered: { [weak self] in
                 guard let self, self.run.phase == .flyingOut(key) else { return }
                 self.send(.shown)
             }, arrived: { [weak self] in
@@ -1409,7 +1442,11 @@ final class ThumbnailController: NSObject {
 
     private func present(cards: [Card], stack: Bool, entrance: Entrance = .slide) {
         if !visible {
-            pinnedScreen = NSScreen.main ?? NSScreen.screens[0]
+            // A capture opening in the editor shows on the screen it was taken on, where its flight starts.
+            pinnedScreen = captureOrigin.flatMap { origin in
+                NSScreen.screens.first { $0.frame.contains(CGPoint(x: origin.rect.midX, y: origin.rect.midY)) }
+            }
+                ?? NSScreen.main ?? NSScreen.screens[0]
             FocusReturn.shared.sessionStarting()
         }
         leaveTimer?.invalidate()

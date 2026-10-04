@@ -286,6 +286,22 @@ screenshot location for such a launch is written with the same variable:
   `annotate` instead of `show`.
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
+- With `annotateOnCapture` on, a capture flies into the editor from the rect it was taken from
+  (`CaptureOrigin.swift`). macOS records no position in the file, and its capture overlay keeps
+  its drag from every other app's event monitors. The button's state still reads, so ⌘ and ⇧ held
+  together, seen by a `flagsChanged` monitor, start a 30 Hz poll of `NSEvent.pressedMouseButtons`
+  and the pointer for 15 s. None of this needs a permission. `CaptureRect.locate` is the pure part.
+  It tries a drag released within 3 s whose size is near the file's, then the topmost window under
+  the pointer, bare or with either of Apple's two window shadows, then the display. A selection is
+  the release corner and the file's size, since the poll sees the press up to a tick late. The
+  capture includes the point under the release. A capture that matches none of them flies from its
+  card. The presentation is pinned to the screen holding the rect's centre, and the flight starts in
+  `Look.screen`, which has no corners, shadow, ring or matte, so its first frame matches the pixels
+  beneath. `ThumbnailController.annotate(_:from:)` waits for the screen-size decode before the run
+  starts: a new capture has no picture cached, and a flight with none is invisible in that look, so
+  it travelled unseen and appeared part way along. `[origin]` lines say what was found, and `[annotate] from capture` says the flight used
+  it. `docs/capture-origin-spike-2026-10-03.md` has the measurements, and the `capture_origin`
+  scenario drives it with `screencapture -i`.
 - The status item has an autosave name and a seeded preferred position. Without it, a crowded
   menu bar on a notch Mac puts the new icon under the notch and it never appears. Opening Vignette
   again, from Finder or Spotlight, opens Settings (`applicationShouldHandleReopen`), or brings setup

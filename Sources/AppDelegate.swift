@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let menuBarIntro = MenuBarIntro()
     private var updater: Updater?
     private var watcher: ScreenshotWatcher?
+    private var captureOrigin: CaptureOrigin?
     /// True on a first launch whose folder macOS protects, until setup asks for it.
     private var watcherWaitsForSetup = false
     /// Why the last plugin install failed, by agent directory, for the Agents tab.
@@ -73,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         replaceOlderInstances()
+        captureOrigin = CaptureOrigin()
         // `kill` and `killall` send SIGTERM, which would end the process without
         // `applicationWillTerminate`: no settings flush, and Apple's thumbnail left off.
         signal(SIGTERM, SIG_IGN)
@@ -377,13 +379,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.showCopied(shots, label: "Copied Path")
     }
 
-    func annotate(_ shots: [Screenshot]) {
+    func annotate(_ shots: [Screenshot]) { annotate(shots, from: nil) }
+
+    private func annotate(_ shots: [Screenshot], from origin: NSRect?) {
         guard let shot = shots.first else { Commands.error("annotate", .missingFile, "nothing selected"); return }
         if let recording = shots.first(where: { $0.kind == .recording }) {
             Commands.error("annotate", .unsupportedType, "\(recording.url.lastPathComponent) is a recording"); return
         }
         Commands.ok("annotate", shots.count > 1 ? "\(shot.url.lastPathComponent) 1 of \(shots.count)" : shot.url.lastPathComponent)
-        thumbnail.annotate(shots)
+        thumbnail.annotate(shots, from: origin)
     }
 
     /// The newest screenshot in the watch folder goes into the annotator, on screen or not. A newer
@@ -1307,7 +1311,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func present(_ shot: Screenshot, annotate: Bool) {
-        if annotate, shot.kind == .image { self.annotate([shot]) } else { thumbnail.show(shot) }
+        guard annotate, shot.kind == .image else { return thumbnail.show(shot) }
+        // A capture flies into the editor from where it was taken, when Vignette saw where.
+        var origin: NSRect?
+        if case .read(let header) = Thumbnailer.lookUp(shot.url), let pixels = header.pixels {
+            origin = captureOrigin?.rect(of: shot.url.lastPathComponent, pixels: pixels)
+        }
+        self.annotate([shot], from: origin)
     }
 
     @objc private func toggleRecent() { _ = pressRecent() }

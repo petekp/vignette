@@ -24,6 +24,9 @@ final class TransitionLayer {
         var shadowOpacity: Double
         var shadowRadius: CGFloat
         var shadowY: CGFloat        // down the screen, the way SwiftUI counts it
+        /// How much of the card's border ring and of the matte behind transparent pixels show, 0 to 1.
+        var ring: Double = 1
+        var matte: Double = 1
 
         static func card(_ ui: UITweaks) -> Look {
             Look(corner: ui.cardCornerRadius, shadowOpacity: ui.cardShadowOpacity,
@@ -33,6 +36,9 @@ final class TransitionLayer {
         static func annotator(_ ui: UITweaks) -> Look {
             Look(corner: ui.annotationCornerRadius, shadowOpacity: 0.45, shadowRadius: 24, shadowY: 10)
         }
+        /// A capture where it was taken: the screen's own pixels, with no corners, shadow, ring or
+        /// matte, so the flight's first frame shows nothing the screen did not.
+        static let screen = Look(corner: 0, shadowOpacity: 0, shadowRadius: 0, shadowY: 0, ring: 0, matte: 0)
     }
 
     struct Flight: Identifiable {
@@ -448,7 +454,7 @@ private struct FlightsView: View {
                     .interpolation(.high)
                     .scaledToFill()
                     .frame(width: f.frame.width, height: f.frame.height)
-                    .background(Color(nsColor: Config.matte))
+                    .background(Color(nsColor: Config.matte).opacity(f.look.matte))
                     .clipShape(RoundedRectangle(cornerRadius: f.look.corner, style: .continuous))
                     // The shadow of whichever end the flight is nearest, so nothing pops when the
                     // card or the annotator window takes over. Cast by the clipped image, before
@@ -457,7 +463,7 @@ private struct FlightsView: View {
                     .shadow(color: .black.opacity(f.look.shadowOpacity), radius: f.look.shadowRadius, y: f.look.shadowY)
                     .marks(f.marks, picture: f.image.size, corner: f.look.corner)
                     // The card's ring travels with the image, and the annotator window carries it on.
-                    .overlay(RoundedRectangle(cornerRadius: f.look.corner, style: .continuous).stroke(.white.opacity(ui.cardBorderOpacity), lineWidth: ui.cardBorderWidth))
+                    .overlay(RoundedRectangle(cornerRadius: f.look.corner, style: .continuous).stroke(.white.opacity(ui.cardBorderOpacity * f.look.ring), lineWidth: ui.cardBorderWidth))
                     // Before the bow, so the spot is where the picture is on screen, swell and all.
                     .overlay(FlightSpot(id: f.id, picture: f.image.size))
                     .modifier(Bow(center: CGPoint(x: f.frame.midX, y: f.frame.midY), path: f.path, previous: f.previousPath, blend: f.blend))

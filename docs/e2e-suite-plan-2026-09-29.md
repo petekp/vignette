@@ -1,6 +1,6 @@
 # An end-to-end test suite (2026-09-29)
 
-Status: built, 22 scenarios. All 22 passed on 2026-10-03, with `--input`.
+Status: built, 23 scenarios. All 23 passed on 2026-10-03, with `--input`.
 "Where things stand" is at the end.
 
 Pete wants a suite of end-to-end tests to run before this release and every later one, so that
@@ -182,6 +182,7 @@ Pete approved the plan, the release gate, running on this Mac, the test hooks, a
 | `send_codex_queued` | yes | a send to a thread no engine has loaded is reported as queued |
 | `agent_marks_editable` | yes | a click selects an agent's mark and a drag moves it |
 | `corner_select` | yes | a click on a corner card's circle makes the corner the stack, with the strip out |
+| `capture_origin` | yes | with Instant Draw on, a selection taken with `screencapture -i` flies into the editor from the rect it was taken from |
 
 **Found while building it:**
 

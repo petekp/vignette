@@ -17,6 +17,7 @@ struct InputTool {
       hotkey <spec>                              press a settings.json hotkey: cmd+shift+6, double-rshift
       tap <modifier keycode> [count]             tap a modifier key (60 is right shift), twice by default
       holdtap <modifier keycode> [seconds]       tap a modifier key once, then hold a second press (0.7 s)
+      chord <modifier keycode>…                  press modifier keys together, then let go: 55 56 is ⌘⇧
       move X Y                                   move the mouse
       click X Y                                  click the left button
       drag X1 Y1 X2 Y2 [seconds]                 drag with the left button, held at the end that long
@@ -52,6 +53,10 @@ struct InputTool {
             guard let code = rest.first.flatMap({ UInt16($0) }) else { fail(usage) }
             tap(code, count: 1)
             tap(code, count: 1, hold: rest.dropFirst().first.flatMap { Double($0) } ?? 0.7)
+        case "chord":
+            let codes = rest.compactMap { UInt16($0) }
+            guard !codes.isEmpty, codes.count == rest.count else { fail(usage) }
+            chord(codes)
         case "move":
             let p = points(rest, 2); move(p[0].0, p[0].1)
         case "click":
@@ -92,16 +97,34 @@ struct InputTool {
         }
     }
 
-    /// A modifier key pressed and released; the down event carries the modifier's flag like a real press.
-    static func tap(_ code: UInt16, count: Int, hold: Double = 0.05) {
-        let flag: CGEventFlags
+    static func modifierFlag(_ code: UInt16) -> CGEventFlags {
         switch code {
-        case 56, 60: flag = .maskShift
-        case 54, 55: flag = .maskCommand
-        case 58, 61: flag = .maskAlternate
-        case 59, 62: flag = .maskControl
+        case 56, 60: return .maskShift
+        case 54, 55: return .maskCommand
+        case 58, 61: return .maskAlternate
+        case 59, 62: return .maskControl
         default: fail("input: \(code) is not a modifier key code")
         }
+    }
+
+    /// Modifier keys pressed one after another and held together, then released in reverse. Each
+    /// event is a flags change carrying every modifier still down, as a person's chord is.
+    static func chord(_ codes: [UInt16]) {
+        var flags: CGEventFlags = []
+        func post(_ code: UInt16, down: Bool) {
+            let e = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
+            e?.type = .flagsChanged
+            e?.flags = flags
+            InputTool.post(e); pause(0.05)
+        }
+        for code in codes { flags.insert(modifierFlag(code)); post(code, down: true) }
+        pause(0.1)
+        for code in codes.reversed() { flags.remove(modifierFlag(code)); post(code, down: false) }
+    }
+
+    /// A modifier key pressed and released; the down event carries the modifier's flag like a real press.
+    static func tap(_ code: UInt16, count: Int, hold: Double = 0.05) {
+        let flag = modifierFlag(code)
         for _ in 0..<count {
             let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true)
             down?.flags = flag

@@ -25,7 +25,9 @@ enum Thumbnailer: @unchecked Sendable {
     nonisolated(unsafe) private static var headers: [String: (modified: Date, header: Header)] = [:]
     /// A file's size in points and, for a recording, its length. `exact` is false for a shape taken
     /// from iCloud's thumbnail of a file that is not downloaded: right in proportion only.
-    struct Header { let size: NSSize; let duration: TimeInterval?; var exact = true }
+    /// `pixels` is an image's own size, which a file with no DPI gives as its size in points too;
+    /// nil for a recording and for a shape taken from iCloud's thumbnail.
+    struct Header { let size: NSSize; let duration: TimeInterval?; var exact = true; var pixels: NSSize? = nil }
     /// Decoded pixels the cache may hold, as RGBA bytes. About 30 cards at Retina card size plus a few
     /// screen-size flight decodes fit; beyond that the oldest go.
     nonisolated(unsafe) private static var budget = 96 << 20
@@ -96,7 +98,7 @@ enum Thumbnailer: @unchecked Sendable {
     /// Reads the header from the file, whatever is kept, and keeps it.
     private static func read(_ url: URL) -> Header? {
         let modified = modified(url)
-        let read = Screenshot(url: url).kind == .recording ? readRecording(url) : readPointSize(of: url).map { Header(size: $0, duration: nil) }
+        let read = Screenshot(url: url).kind == .recording ? readRecording(url) : readImageHeader(of: url)
         guard let header = read else { return nil }
         if let modified { lock.lock(); headers[url.path] = (modified, header); lock.unlock() }
         return header
@@ -124,14 +126,15 @@ enum Thumbnailer: @unchecked Sendable {
         return header
     }
 
-    private static func readPointSize(of url: URL) -> NSSize? {
+    private static func readImageHeader(of url: URL) -> Header? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let w = props[kCGImagePropertyPixelWidth] as? Double, let h = props[kCGImagePropertyPixelHeight] as? Double,
               w > 0, h > 0 else { return nil }
         let dpiX = props[kCGImagePropertyDPIWidth] as? Double ?? 72
         let dpiY = props[kCGImagePropertyDPIHeight] as? Double ?? 72
-        return NSSize(width: w * 72 / (dpiX > 0 ? dpiX : 72), height: h * 72 / (dpiY > 0 ? dpiY : 72))
+        return Header(size: NSSize(width: w * 72 / (dpiX > 0 ? dpiX : 72), height: h * 72 / (dpiY > 0 ? dpiY : 72)),
+                      duration: nil, pixels: NSSize(width: w, height: h))
     }
 
     /// A cached decode of at least `maxPixel` on the longest side in `space`, if the file has not changed.
