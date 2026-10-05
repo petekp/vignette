@@ -1,62 +1,64 @@
-# Live ink in Vignette: integration plan (spike, 2026-10-04)
+# Live ink in Vignette: integration plan (2026-10-04)
 
-Status: step 1 is built (overlay, chord, ink, clear). Steps 2 to 4 are a plan. The prototype is
-`spikes/live-ink/` on the `spike/live-ink` branch, and its results are in
-`docs/live-ink-spike-2026-10-04.md`. "Step 1 as built" below records where the build departed
-from this plan.
+Status: step 1 is built (overlay, chord, ink, clear). Steps 2 to 4 are a plan. Two spikes stand
+behind it: `docs/live-ink-spike-2026-10-04.md`, the prototype on the `spike/live-ink` branch, and
+`docs/live-ink-step2-spike-2026-10-04.md`, which measured who should answer and then tried step 2
+end to end. "Step 1 as built" records where the build departed from the first plan.
 
-Live ink is drawing straight on the live screen, over any app, and sending that to an agent
-session, which draws its answer back on the same screen. This note says how it fits into Vignette
-as an option, what it reuses, what is new, and the order to build it in. It was planned from
-reading the code; step 1 has since been built.
+Live ink is drawing straight on the live screen, over any app, asking about what you drew, and
+seeing the answer drawn back on the same screen within a few seconds. This note says how it fits
+into Vignette as an option, what it reuses, what is new, and the order to build it in.
 
 ## The answer in short
 
-Live ink fits Vignette with one new owner and three extensions:
+- **New:** a `LiveInk` controller owning the screen overlay, the hold-to-draw chord and the ink
+  (built in step 1). Step 2 adds the note panel, the packet, and a responder: one `claude`
+  process Vignette keeps running to answer live ink.
+- **Reused as is:** the mark geometry and rendering, the colours and note style, `AgentTools` to
+  find `claude`, and Send with its sessions, for an ask that belongs to a working session.
+- **Not changed in step 2:** the reply protocol, the request store and the plugin.
 
-- **New:** a `LiveInk` controller owning the screen overlay, the hold-to-draw chord, the person's
-  ink, the context packet, and the anchors that keep marks on their targets.
-- **Extended:** Send takes a second kind of request, the reply protocol learns marks that name a
-  target, and the mark layers learn to draw a mark on.
-- **Reused as is:** the session discovery and delivery, the request store, the reply helper's
-  security, the mark geometry and rendering, the colours and note style.
-
-It can ship in steps. Step 2 below sends live ink to an agent with no protocol change: the
-agent's reply comes back as an ordinary card. Only step 3, the reply drawn on the live screen,
-changes the reply protocol.
+Live ink goes to the responder by default, not to the session Pete is working in. Measured over 7
+days of his transcripts, a session was mid-turn 66 to 80% of the time, and ink arriving mid-turn
+would wait a median of 6 to 10 minutes. A responder kept running answered in 1.5 to 2 seconds. At
+that speed the screen has not moved, so the answer can be drawn on it straight away, and marks
+that follow a scroll can come later.
 
 ## Decisions
 
-Pete confirmed 2, 3, 4 and 6 on 2026-10-04.
+Pete confirmed 2, 3, 4, 6 and 7 on 2026-10-04.
 
 1. **An option, off by default.** A "Live ink" section in the General tab of Settings holds the
-   switch and the permission rows: Accessibility from step 1, Screen Recording from step 2. Reason:
-   it needs a permission Vignette does not ask for today, and the shortcut is a global chord that
-   some people already use for other things.
+   switch and the permission rows. Reason: it needs a permission Vignette does not ask for today,
+   it runs a model on the person's Claude account, and the shortcut is a global chord that some
+   people already use for other things.
 2. **The chord is Control and Option held together, for now.** The spike used it and Pete drew with
    it on his Mac. Something easier to discover will replace it later. It must be exactly ⌃⌥: any
    other key pressed during the hold ends it, because Rectangle and other window managers use ⌃⌥
    with arrows. Step 1 found no conflict with Vignette's own shortcuts (see "Step 1 as built").
 3. **Draw on the live screen, not a frozen copy.** An earlier note
    (`docs/live-screen-2026-09-18.md`) proposed freezing the screen when the chord goes down, so
-   menus and hover states survive the drawing. Live drawing is chosen here for three reasons: the
-   point of live ink is that marks stay on the live interface; a freeze costs a full-screen capture
-   before the first stroke can show; and catching a moment that does not hold still is what
-   screenshot mode already does well. A press on the overlay probably closes an open menu, as any
-   press outside a menu does; that is not measured yet. If it does, a menu stays a screenshot's job.
-4. **Screen Recording is required.** Without pixels, the agent gets only Accessibility text,
-   which is thin in apps that draw their own content. The switch asks for the permission when it
-   is turned on, which keeps the rule that only a button press raises a permission dialog. macOS
-   usually needs Vignette to relaunch before the grant works, and the row says so. Setup does not
-   ask: setup's job is the shortcut.
+   menus and hover states survive the drawing. Live drawing is chosen for three reasons: the point
+   of live ink is that marks stay on the live interface; a freeze costs a full-screen capture before
+   the first stroke can show; and catching a moment that does not hold still is what screenshot
+   mode already does well.
+4. **Screen Recording is required.** The packet's picture is a capture, and without pixels the
+   responder has only the window's name. The switch asks for the permission when it is turned on,
+   which keeps the rule that only a button press raises a permission dialog. macOS usually needs
+   Vignette to relaunch before the grant works, and the row says so. Setup does not ask: setup's
+   job is the shortcut.
 5. **Live ink stands aside for Vignette's own windows.** While the stack or the annotator is up,
    the chord does nothing. Reason: the overlay must sit at `.screenSaver` level to draw over other
    apps' menus and dialogs, which puts it above the stack (level 25), the annotator (21) and its
    toolbar (26).
-6. **A reply draws live when its targets are still on screen, and becomes a card otherwise.** A card
-   for every exchange would fill the stack with questions that were answered in place. A card when
-   the targets are gone means a slow answer is never lost: Claude Code reads a request only between
-   turns, and a Codex thread that nobody has open keeps it queued, so a late reply will be common.
+6. **A session's reply is a card.** Ink sent to a working session comes back as today's replies
+   do, as a card in the stack, since it usually arrives minutes later. Drawing a session's reply on
+   the live screen needs anchors and a new reply protocol, and is not planned until sessions answer
+   faster.
+7. **The responder answers by default.** The note panel's target starts on the responder, and lists
+   the working sessions after it, for an ask that needs a session's project, such as "fix this".
+   Reason: the measurements above. The cost is that the responder knows only what it is sent: not
+   the session's conversation, its project, or its files.
 
 ## Step 1 as built
 
@@ -113,144 +115,165 @@ Pete confirmed 2, 3, 4 and 6 on 2026-10-04.
   else the smallest ellipse it is inside. Nothing shows which mark a tap would erase, and in Pete's
   first try, two taps meant for marks erased nothing at the editor's reach.
 
+
 ## How it fits, piece by piece
 
 ### Overlay and input
 
-- **`LiveInkOverlay`**, one non-activating `NSPanel` per screen, joining all Spaces, at the levels
-  "Step 1 as built" gives.
-- **The overlay never becomes key.** The spike made it key to catch ⌃⌥⌫ and to type the note,
-  then had to hand the keys back with a trick. In Vignette the note is its own small
-  non-activating panel, `LiveNotePanel`. It takes the keys while it is up, and ordering it out
-  hands them back, as the stack panel's do.
-- **`ModifierChord`**, beside `ModifierTap`: global and local `flagsChanged` monitors, the HID
-  state for keys, and no permission prompt. Both install their monitors through `KeyMonitors`,
-  which waits for Accessibility. Its rules are the pure `HeldChord`.
+- **`LiveInkOverlay`**, one non-activating `NSPanel` per screen per Space, at the levels "Step 1 as
+  built" gives.
+- **The overlay never becomes key.** The note is its own small non-activating panel,
+  `LiveNotePanel`. It takes the keys while it is up, and ordering it out hands them back, as the
+  stack panel's do.
+- **`ModifierChord`**, beside `ModifierTap`: `flagsChanged` monitors and the HID state for keys.
+  Whether it needs Accessibility at all is unmeasured; the plan keeps the wait for it until a test
+  copy that was never granted it shows otherwise.
 
-### The person's ink and the note
+### The ink and the note
 
 - A stroke is read as a loop, an arrow or a tap by `InkStroke`, as step 1 built it.
-- Letting go opens the note panel beside the ink. It shows the destination the way the annotator
-  toolbar does, using `AgentDestination.defaultTarget` and its menu. Return sends, Esc drops that
-  ink, and the typed note stays on the ink in the person's note style.
-- While waiting, the sent ink carries the destination's logo and a progress mark. This follows the
-  no-toasts rule: the news is said on the ink, which is already on screen. A failure says why in
-  the same place, using the `SubmissionOutcome` reasons that `SendNotice` uses.
-
-### Marks and anchors
-
-- **A live mark is a `Mark` plus an anchor.** `LiveMark { anchor: LiveAnchor; mark: Mark }`, the
-  mark in points relative to the anchor's corner, with `pointScale` 1. Adding a case to
-  `Mark.Geometry` instead would touch 17 switches, and live marks are never stored as a `Drawing`.
-- **`LiveAnchor`** is an element (an `AXUIElement` and an offset), a range of text in a text view,
-  or a window. It carries the window id for clipping.
-- **`AnchorTracker`** polls the anchors 30 times a second, since nothing announces a scroll. The
-  clip is a pure function of frames: the mark's window, its scroll area, and the windows in front
-  at every level, skipping clear windows and full-screen windows above normal level (the Dock on
-  macOS 15 reports one). It is tested like `AnnotatorZoom`.
-- **Each anchor's marks move as one layer**, by its position each tick inside a disabled-actions
-  transaction, with a mask for the clip. Shapes are `ShapeMarkLayer`s, as in step 1. Notes need
-  `MarkLayers`' text bitmaps, and `MarkLayers` today shows a drawing on an image, so step 3 decides
-  whether it learns to show marks on no image. Moving the container keeps
-  every shape path and text bitmap as it is, so a tick costs a transform. Three adjustments:
-  - Live texts always set `wrap`, since a text without it wraps at the image's width.
-  - An agent's text gets an explicit size: `AgentMarks` sizes it as a fraction of the image width,
-    which means nothing on a screen.
-  - `Mark.placed(in:)` is skipped, since it clamps marks into an image.
-- **The draw-on** goes into `ShapeMarkLayer`: `strokeEnd` grows on the edge and stroke layers, the head
-  and the note spring in after it, and the motion scale applies. Its length is a `UITweaks` value
-  with a `Bound` and a slider.
+- Letting go of the chord after drawing opens the note panel beside the newest ink. Its target
+  starts on the responder and lists the sessions after it, from `AgentDestination`'s menu. Return
+  sends, Esc closes the panel and keeps the ink. A Return with nothing typed sends the ink alone.
+- **One ask covers the ink drawn since the last one.** Ink stays on screen until it is erased or
+  cleared, so the packet marks which strokes are new.
+- While waiting, the ink shows that it was sent, on the ink itself: the no-toasts rule. A failure
+  says why in the same place.
 
 ### The packet
 
-- **`LivePacket`** builds what the spike built: Accessibility for each mark (role, title, value,
-  identifier, path to the window, the URL or document), a ScreenCaptureKit capture of the crop and
-  the window that leaves Vignette's own windows out, the ink drawn into the crop, and Vision's text
-  afterwards. The crop is sized by `Stitch.readerScale`.
-- **It is a request with an extra file.** `ScreenshotRequests.send` takes an optional context and
-  writes `context.json` beside `image.png`, atomically, before the line goes out. Nothing parses
-  the line, so the transport needs no change.
-- **Claude Code needs a second read rule.** `ClaudeReadRule` allows only `requests/*/image.png`,
-  so reading `context.json` would stop the session on a permission prompt. It becomes a list of
-  rules, and turning Claude Code on adds both.
-- **The request line** starts "From Vignette:" as before, names `context.json`, and carries the
-  person's note. Its instruction text is its own, not `sendInstructions`, which is the person's
-  setting for screenshot sends.
-- **The request record gains an optional `kind`**, absent meaning a screenshot. An optional field
-  decodes in older builds and newer ones alike, and a required one would make every stored request
-  unreadable. `delivered` and `replyFailed` look up a screenshot today, so a live kind routes them
-  to the ink instead.
-- **Live requests get their own cap.** `maxLiveRequests` (50) is one pool, and a send past it
-  clears the oldest. Frequent live sends would push out an editor request that is still waiting.
-  Live requests are capped at 10 among themselves.
-- **Cleanup removes `context.json`** with `image.png`, since it holds window titles, URLs and the
-  text on screen.
+`LivePacket` is built in the moment the ask is sent, in about 250 ms:
 
-### The reply
+- **The picture:** a ScreenCaptureKit capture of the whole window under the new ink, leaving
+  Vignette's own windows out, at the screen's scale (about 60 ms). A crop round the ink cut off
+  what the ink was about, such as the row labels beside a circled total. A window too large for
+  the reader's resize also sends a crop round the ink at full detail. Sized by
+  `Stitch.readerScale`.
+- **The text:** Vision's accurate recognition of the capture *before* the ink is drawn in, since
+  ink across a line garbles it. Each line gets an id (`t1`, `t2`) and its box as fractions of the
+  picture. Fast recognition garbles code, so accurate it is, warmed up when live ink turns on: its
+  first call takes 300 to 480 ms, and later ones 100 to 170 ms for a window.
+- **The ink**, drawn into the picture after recognition, and its shapes as fractions of the
+  picture, with the new strokes marked.
+- **Where:** the app's name, the window's title, and the page's URL or the document's path when
+  Accessibility gives one.
+- **The note.**
 
-- **Step 2 needs no reply change.** An agent that answers a live request with today's fraction
-  marks gets a card: the crop with both drawings. That is the fallback in decision 6, available
-  before anything draws live.
-- **Step 3 raises `ReplyProtocol.version` to 2.** The bundle gains `say` and `steps`, and a mark
-  may name a target instead of a position: `loop` with `around`, `arrow` with `to` and `from`,
-  `point` with `at`, `note` with `near`. The helper checks each id against the request's
-  `context.json` through `ticket.requestDirectory`, so a bad id fails before anything is sent.
-  Raising the version makes tickets from before the update unanswerable, which is acceptable for
-  requests that live for minutes.
-- **The app resolves targets when it accepts the reply** and stores the result as today's fraction
-  marks, keeping the target ids beside them. The stored `Reply` then still decodes in an older
-  build, which needs `x` and `y`.
-- **The branch is in `importNext`**, after the reply is accepted and before `publish`. When the
-  request is live and its targets resolve on screen, `LiveInk` draws the reply and the record gets
-  a new stage, shown live. Otherwise it falls through to `publish` and becomes a card, with `say`
-  as a note on it.
-- **The skill** gets a section for live requests: what `context.json` holds, the targeted marks,
-  `say` and `steps`. Its `metadata.version` goes up, and so do both plugin manifests.
+Accessibility elements, which the first spike gathered, are not in step 2's packet. In Pete's apps
+they are thin (Ghostty gives no element under a point, Dia only after `AXManualAccessibility`, the
+Codex app nothing), and Vision reads the same text from any app.
+
+### The responder
+
+- **`LiveResponder` owns one `claude` process**, found by `AgentTools`, started when live ink is
+  turned on (about 3 s) and kept running:
+
+  ```
+  claude -p --model sonnet --input-format stream-json --output-format stream-json --verbose
+    --include-partial-messages --json-schema <the answer's schema>
+    --safe-mode --tools "" --system-prompt <its own> --no-session-persistence
+  ```
+
+  Each ask is one user message: the picture inline as an image, and the packet as JSON text. The
+  answer is the `result` line's `structured_output`, which the schema keeps valid. Sonnet answered
+  in 1.7 to 3.3 s, and Haiku was slower, not faster.
+- **It runs apart from the person's setup.** Started plainly, the process loaded Pete's hooks,
+  plugins and MCP servers, registered itself as a Claude Code session in Vignette's inbox, and had
+  about 150 tools, Slack and Notion among them. `--safe-mode` keeps the person's sign-in and drops
+  every customisation; `--bare` cannot be used, since it reads only an API key. The working folder
+  is an empty one under Application Support.
+- **It has no tools.** It answers from what it is sent and cannot read files or run commands. A
+  page can carry text written to steer a model. In the spike such text did not steer the answer,
+  and the answer said the page had tried; with no tools, a steered answer is the most it can do.
+- **Follow-ups share its conversation.** While the marks are on screen, a second ask about the same
+  window sends no new picture and costs about $0.01. Clearing the ink starts a new conversation,
+  with a fresh process started ahead of time so the next ask is not slowed.
+- **Runs on the person's Claude account,** about $0.02 for an ask about a new screen. The Settings
+  row says so, with the model (Sonnet).
+- **No `claude`, or not signed in:** the target lists the sessions alone, and the row says why.
+
+### The answer on the screen
+
+- **The responder replies with JSON:** `say`, a short answer, and up to four marks. A mark names a
+  text line (`loop` around `t3`, `arrow` to `t5` from a side, `point` under `t2`), and may narrow it
+  to words within the line (`"words": "surface.markz"`), or gives fractions of the picture. A
+  whole line was too coarse: the typo in a 90-character line got a loop round all of it. Vignette
+  finds the words' box with Vision's `VNRecognizedText.boundingBox(for:)`, and falls back to the
+  line when it cannot.
+- **`say` starts drawing as it streams,** about a second before the marks arrive, 1.3 to 2.3 s
+  after the ask.
+- **Vignette draws it at once, in screen points**, from the picture's place on screen. The marks are
+  plain `Mark`s in the agent's colour, on the same surfaces as the person's ink, so a tap erases
+  them and Clear clears them.
+- **`say` is a note beside the person's ink**, so it reads as the reply to what they drew. Notes
+  need `MarkLayers`' text bitmaps, which today draw on an image, so `MarkLayers` learns to draw
+  marks on no image.
+- **The draw-on:** the agent's strokes grow from their start, the head and the note spring in
+  after, and the motion scale applies. The first spike found this is what makes it feel alive.
+- **The answer's marks keep clear.** In the spike, the agent's loop sat inside the person's loop,
+  and a label covered the number beside it. Marks and labels are placed by the first spike's note
+  placement, which scores each spot by what it would cover, the person's ink included. A long line
+  gets an underline rather than a loop.
+- **An id that names no line drops that mark.**
+
+### Sending to a session
+
+- The note panel's other targets are today's Send. The picture with the ink is the image, and the
+  note, the app, the window and the URL go in the message. The reply is a card (decision 6).
+- **No new request kind, read rule or skill section.** The packet's text goes in the line, so
+  nothing new is read from the request folder.
 
 ### Settings, menu, commands and state
 
-- **Settings keys:** `liveInk` (off). Missing keys take the defaults, so no migration.
-- **Menu:** a "Live Ink" switch and "Clear Live Ink" near "Draw on Newest Screenshot". The menu's
-  `missing()` gains a blocker for Screen Recording while the switch is on.
-- **Commands:** `live-ink-clear`, and a debug-only `live-ink-stroke?points=`
-  that injects a stroke as if drawn, so a scenario can test without posting input. New error codes
-  go into `CommandError` first.
-- **State:** a `liveInk` section in `[state]` (on, drawing, note open, marks with their anchors
-  and frames, packets waiting), and `screenRecording` beside `accessibility` in `app`.
+- **Settings keys:** `liveInk` (off). The model is fixed for now. Missing keys take the defaults,
+  so no migration.
+- **Menu:** the "Live Ink" switch and "Clear Live Ink". The menu's `missing()` gains a blocker for
+  Screen Recording while the switch is on.
+- **Commands:** `live-ink-clear`, and the debug-only `live-ink-stroke?points=`. Step 2 adds a
+  debug-only `live-ink-ask?message=`, which asks about the ink on screen as Return would.
+- **State:** the `liveInk` section in `[state]` gains the responder (starting, ready, asking,
+  failed), the ask under way, and the agent's marks. `app` gains `screenRecording` beside
+  `accessibility`.
 
 ## Build order
 
 Each step is usable on its own and verified before the next.
 
-1. **Overlay, chord, ink and clear.** No sending. Settles the click rule, `OutsideClick`, the
-   level, the chord conflicts, and focus. Verified by driving the app with the debug stroke command
-   and by hand.
-2. **The packet and Send.** Screen Recording, `LivePacket`, the request kind, `context.json`, the
-   read rule, the request line and the skill's first live section. Replies come back as cards.
-3. **Replies on the live screen.** Protocol version 2, targeted marks, anchors, the clip, the
-   draw-on, `say`, and guided steps.
-4. **The edges.** Multiple displays, Spaces and full-screen apps, Chrome and Electron
-   (`AXManualAccessibility`), the waiting state, and an e2e scenario that holds the chord across a
-   drag (`input.sh` needs a chord that stays down for that).
+1. **Overlay, chord, ink and clear.** Built.
+2. **Ask and answer on the screen.** Screen Recording, the note panel, `LivePacket`,
+   `LiveResponder`, the answer drawn on with its note, the waiting and failure states on the ink,
+   and Send to a session as the second target.
+3. **Marks that stay on what they point at.** Anchors to elements and text ranges, the follow tick
+   and the clip from the first spike, so marks follow a scroll or a moved window. Accessibility
+   elements join the packet as targets. Guided steps.
+4. **The edges.** Multiple displays, full-screen apps, Chromium browsers (`AXManualAccessibility`),
+   Codex as a responder (`codex exec` took 16 to 23 s cold; a thread kept warm through
+   `codex app-server` is unmeasured), and an e2e scenario that holds the chord across a drag (`input.sh` needs a
+   chord that stays down for that).
 
 ## Tests
 
-- **Unit, permanent:** the chord detector's sequences, stroke classification, the clip function,
-  anchor offsets, targeted mark validation, target resolution, and an older record or reply
-  decoding after the change. These are the parts where a later edit could break behaviour without
-  any visible symptom in a quick try.
-- **e2e:** a scenario per step that uses the debug stroke command and a fake session, then checks
-  `[state]` and the request files. The test copy needs Screen Recording granted once by hand, as
-  it needs Accessibility now.
+- **Unit, permanent:** the chord detector's sequences, stroke classification, the packet's text
+  ids, the answer's validation, words resolved to a box or falling back to the line, the marks'
+  placement clear of the ink, and an answer's marks placed in screen points.
+  These are the parts where a later edit could break behaviour without any visible symptom in a
+  quick try.
+- **e2e:** a scenario that injects a stroke, asks with `live-ink-ask`, and checks `[state]` for the
+  agent's marks. The responder is a fake that `VIGNETTE_CLAUDE` names, as `VIGNETTE_CODEX` names a
+  fake codex (`AgentTools.forSessions`): a test launch never runs the person's own `claude`. The
+  test copy needs Screen Recording granted once by hand.
 
 ## Risks
 
 - **The monthly prompt.** On macOS 15, Screen Recording comes with a reminder about once a month
   that asks whether Vignette may "bypass the system private window picker". People who see it may
   turn the permission off.
-- **Late replies.** Claude Code reads between turns, so a busy session answers minutes later.
-  Most live replies may end up as cards until sessions answer faster.
-- **Apps with little Accessibility.** Canvases, games and some Electron apps give a window and
-  nothing inside it, so their marks pin to the window and do not follow a scroll.
-- **A decision hard to reverse.** Asking for Screen Recording, and protocol version 2, each
-  deserve an ADR in `docs/adr/` when they are made.
+- **Cost and quota.** Every ask runs on the person's Claude plan: about $0.02 for a new screen and
+  $0.01 for a follow-up, at Sonnet's prices.
+- **The CLI is an interface Vignette does not own.** The flags above are `claude` 2.1.289's.
+  A later version that changes them breaks the responder, so it checks the `init` line (no tools,
+  no MCP servers) before its first ask, and the Settings row says when it cannot start.
+- **The responder knows only the screen.** An ask about the person's own code is better sent to a
+  session, and the panel has to make that choice easy.
+- **A decision hard to reverse.** Asking for Screen Recording, and running a model for the person,
+  each deserve an ADR in `docs/adr/` when they are made.
