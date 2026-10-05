@@ -79,8 +79,12 @@ Pete confirmed 2, 3, 4 and 6 on 2026-10-04.
 - **Erasing is a tap on a mark, not ⌃⌥⌫.** An NSEvent monitor sees a key but cannot keep it from the
   frontmost app, where ⌃⌥⌫ deletes a word. A tap with the chord held erases the topmost mark whose
   stroke it lands on, and "Clear Live Ink" in the menu and `live-ink-clear` erase all.
-- **The overlay is up only while it is needed,** while there are marks or the chord is held, so an
-  idle live ink puts no full-screen window over every app.
+- **Marks stay on their Space.** An overlay joins no other Space, so there is one per screen per
+  Space that has marks, and one for the active Space while the chord is held. Each is up only while
+  it is needed, so an idle live ink puts no full-screen window over every app.
+- **Captures leave the overlay out** (`sharingType = .none`). Pete found that ⌘⇧4's window picker
+  took the resting overlay for a window; with the overlay unshared, `screencapture` left a mark out
+  of its picture. Step 2 draws the ink into its own capture, so it loses nothing.
 - **The overlay rests at level 1.** Above normal windows and below the dim and Vignette's floating
   windows, so the stack and the annotator cover the marks rather than the other way round. Menus,
   the Dock and other apps' floating windows cover them too, which is accepted for step 1: the marks

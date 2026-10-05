@@ -1,9 +1,11 @@
 import AppKit
 import QuartzCore
 
-/// One screen's surface for live ink: a borderless, non-activating panel over the whole screen that
-/// shows the marks, and while the chord is held takes every press there to draw them. It is on
-/// screen only while it has something to show or the chord is held (`setNeeded`).
+/// One screen's surface for live ink on one Space: a borderless, non-activating panel over the whole
+/// screen that shows the marks, and while the chord is held takes every press there to draw them. It
+/// does not join other Spaces, so macOS keeps it, and its marks, on the Space it was put up on. It
+/// is shared with no capture, so a screenshot shows the screen without it and ⌘⇧4's window picker
+/// passes over it.
 ///
 /// At rest it sits at `restingLevel`, just above ordinary windows and below the dim and Vignette's
 /// floating windows, so the stack and the annotator cover the marks; so do menus, the Dock and other
@@ -14,25 +16,26 @@ final class LiveInkOverlay: NSPanel {
     /// Level 1: above normal windows (0), below the dim (2) and Vignette's floating windows.
     static let restingLevel = NSWindow.Level(rawValue: 1)
 
-    /// The screen's top-left corner in global top-left points, the coordinates marks are in.
-    let origin: CGPoint
+    /// The screen it covers.
+    let display: CGDirectDisplayID
     /// The stroke so far, in global top-left points, as it grows.
     var onStrokeMoved: (([CGPoint]) -> Void)?
     /// A finished stroke, in global top-left points.
     var onStroke: (([CGPoint]) -> Void)?
 
     private let canvas: Canvas
-    private var hiding: DispatchWorkItem?
 
-    init(screen: NSScreen) {
-        origin = CGPoint(x: screen.frame.minX, y: StateReport.primaryHeight - screen.frame.maxY)
-        canvas = Canvas(frame: CGRect(origin: .zero, size: screen.frame.size), origin: origin, scale: screen.backingScaleFactor)
+    /// Comes up at once, on the Space that is active now.
+    init(screen: NSScreen, display: CGDirectDisplayID) {
+        self.display = display
+        canvas = Canvas(frame: CGRect(origin: .zero, size: screen.frame.size), scale: screen.backingScaleFactor)
         super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
         level = Self.restingLevel
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        collectionBehavior = [.fullScreenAuxiliary, .stationary, .ignoresCycle]
+        sharingType = .none
         ignoresMouseEvents = true
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
@@ -40,7 +43,14 @@ final class LiveInkOverlay: NSPanel {
         contentView = canvas
         canvas.onStroke = { [weak self] points in self?.onStroke?(points) }
         canvas.onStrokeMoved = { [weak self] points in self?.onStrokeMoved?(points) }
+        fit(to: screen)
+        orderFrontRegardless()
+    }
+
+    /// Covers `screen` again after the screens changed, keeping its Space and its marks.
+    func fit(to screen: NSScreen) {
         setFrame(screen.frame, display: false)
+        canvas.fit(origin: CGPoint(x: screen.frame.minX, y: StateReport.primaryHeight - screen.frame.maxY))
     }
 
     override var canBecomeKey: Bool { false }
@@ -49,19 +59,11 @@ final class LiveInkOverlay: NSPanel {
     /// A press is down here and its stroke is not finished.
     var isTracking: Bool { canvas.isTracking }
 
-    /// Puts the overlay on screen, or takes it off once `fade` has passed, so a glow fading out
-    /// finishes first.
-    func setNeeded(_ needed: Bool, fade: TimeInterval) {
-        hiding?.cancel()
-        hiding = nil
-        if needed {
-            if !isVisible { orderFrontRegardless() }
-            return
-        }
-        guard isVisible else { return }
-        let hide = DispatchWorkItem { [weak self] in self?.orderOut(nil) }
-        hiding = hide
-        DispatchQueue.main.asyncAfter(deadline: .now() + fade, execute: hide)
+    /// Closes the overlay once `fade` has passed, so a glow fading out finishes first. Ordering it
+    /// out instead would lose its Space: ordered in again, it comes up on the active one.
+    func close(after fade: TimeInterval) {
+        guard fade > 0 else { close(); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + fade) { [weak self] in self?.close() }
     }
 
     /// Whether this screen takes presses to draw. Once `ignoresMouseEvents` has been set, the window
@@ -95,7 +97,8 @@ final class LiveInkOverlay: NSPanel {
         var onStroke: (([CGPoint]) -> Void)?
         var onStrokeMoved: (([CGPoint]) -> Void)?
         let glow: EdgeGlow
-        private let origin: CGPoint
+        /// The screen's top-left corner in global top-left points, the coordinates marks are in.
+        private var origin: CGPoint = .zero
         private let host = CALayer()
         /// The marks, in global points: moved by the screen's origin so each lands on this screen.
         private let marksLayer = CALayer()
@@ -106,8 +109,7 @@ final class LiveInkOverlay: NSPanel {
         private let scale: CGFloat
         private(set) var isTracking = false
 
-        init(frame: CGRect, origin: CGPoint, scale: CGFloat) {
-            self.origin = origin
+        init(frame: CGRect, scale: CGFloat) {
             self.scale = scale
             glow = EdgeGlow(scale: scale)
             pen = ShapeMarkLayer(scale: scale)
@@ -117,11 +119,20 @@ final class LiveInkOverlay: NSPanel {
             host.contentsScale = scale
             for layer in [marksLayer, pen.root] {
                 layer.anchorPoint = .zero
-                layer.setAffineTransform(CGAffineTransform(translationX: -origin.x, y: -origin.y))
                 host.addSublayer(layer)
             }
             host.addSublayer(glow)
+        }
+
+        func fit(origin: CGPoint) {
+            self.origin = origin
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for layer in [marksLayer, pen.root] {
+                layer.setAffineTransform(CGAffineTransform(translationX: -origin.x, y: -origin.y))
+            }
             glow.frame = bounds
+            CATransaction.commit()
         }
 
         required init?(coder: NSCoder) { fatalError("not used") }

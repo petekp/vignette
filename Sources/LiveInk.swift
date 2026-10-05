@@ -2,18 +2,19 @@ import AppKit
 
 /// Live ink: drawing straight on the screen, over any app, while Control and Option are held
 /// (docs/live-ink-integration-2026-10-04.md). A loop becomes an ellipse and any other stroke an
-/// arrow, in the person's colour, and a tap on a mark erases it. The marks stay where they were drawn
-/// until they are erased or cleared, live ink is turned off, or Vignette quits. Nothing is sent to an
-/// agent yet.
+/// arrow, in the person's colour, and a tap on a mark erases it. The marks stay where they were drawn,
+/// on the Space they were drawn on, until they are erased or cleared, live ink is turned off, or
+/// Vignette quits. Nothing is sent to an agent yet.
 @MainActor
 final class LiveInk {
-    /// In global top-left points, the coordinates `[state]` uses, at 1 px per pt. The newest is last.
-    private(set) var marks: [Mark] = []
-    /// The chord is held and the overlays take presses.
+    /// The chord is held and the active Space's surfaces take presses.
     private(set) var isInking = false
-    private var overlays: [LiveInkOverlay] = []
+    /// One per screen per Space that has marks, and the active Space's while inking.
+    private var surfaces: [Surface] = []
+    /// The surfaces taking presses: the active Space's when the chord went down.
+    private var inking: [Surface] = []
     private var chord: ModifierChord?
-    private var screenObserver: Any?
+    private var observers: [(NotificationCenter, Any)] = []
     private var glowTimer: Timer?
     private var glowing = false
     /// Runs while a stroke outlives the chord, until the button is up: inking ends then.
@@ -22,7 +23,24 @@ final class LiveInk {
     /// the raised overlays would cover and take presses from.
     private let mayInk: () -> Bool
 
+    /// One screen on one Space: the overlay there and the marks on it, in global top-left points at
+    /// 1 px per pt, the newest last. A mark that crosses onto another screen of the same Space is on
+    /// that screen's surface too, under the same id.
+    @MainActor
+    private final class Surface {
+        let overlay: LiveInkOverlay
+        var marks: [Mark] = []
+
+        init(_ overlay: LiveInkOverlay) { self.overlay = overlay }
+    }
+
     var isOn: Bool { chord != nil }
+
+    /// Every mark, on every Space, once each.
+    var marks: [Mark] {
+        var seen = Set<Mark.ID>()
+        return surfaces.flatMap(\.marks).filter { seen.insert($0.id).inserted }
+    }
 
     init(mayInk: @escaping () -> Bool) {
         self.mayInk = mayInk
@@ -34,19 +52,23 @@ final class LiveInk {
             chord = ModifierChord([.control, .option], tag: "live-ink", name: "the chord") { [weak self] change in
                 self?.chordChanged(change)
             }
-            screenObserver = NotificationCenter.default.addObserver(
-                forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.makeOverlays() }
-            }
-            makeOverlays()
+            let workspace = NSWorkspace.shared.notificationCenter
+            observers = [
+                (NotificationCenter.default, NotificationCenter.default.addObserver(
+                    forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.screensChanged() }
+                }),
+                (workspace, workspace.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.spaceChanged() }
+                }),
+            ]
         } else {
             if isInking { stopInking() }
             chord = nil
-            if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
-            screenObserver = nil
-            marks = []
-            overlays.forEach { $0.close() }
-            overlays = []
+            for (center, observer) in observers { center.removeObserver(observer) }
+            observers = []
+            surfaces.forEach { $0.overlay.close() }
+            surfaces = []
         }
         Log.write("[live-ink] \(on ? "on" : "off")")
     }
@@ -70,31 +92,14 @@ final class LiveInk {
         }
     }
 
-    /// Reads `points`, in global top-left points, as a stroke the person drew, and does what it says:
-    /// adds its mark, or erases the mark a tap lands on. The debug command's strokes come here too,
-    /// whether the stack or the annotator is up or not.
+    /// Reads `points`, in global top-left points, as a stroke drawn on the active Space, as the debug
+    /// command does, whether the stack or the annotator is up or not.
     @discardableResult
     func take(_ points: [CGPoint]) -> Outcome {
-        let ui = Settings.shared.data.ui
-        let outcome: Outcome
-        switch InkStroke(points, shortestArrow: ui.shortestArrow) {
-        case .ellipse(let frame):
-            marks.append(Mark(geometry: .ellipse(frame)))
-            outcome = .drew(.ellipse)
-        case .arrow(let arrow):
-            marks.append(Mark(geometry: .arrow(arrow)))
-            outcome = .drew(.arrow)
-        case .tap(let point):
-            if let index = Self.markToErase(at: point, in: marks, markStyle: ui.markStyle) {
-                outcome = .erased(marks.remove(at: index).kind)
-            } else {
-                outcome = .missed
-            }
-        case .nothing:
-            outcome = .nothing
-        }
-        Log.write("[live-ink] \(outcome.description) marks=\(marks.count)")
-        showMarks()
+        let active = activeSurfaces()
+        let start = points.first.flatMap { point in active.first { Self.frame(of: $0.overlay).contains(point) } }
+        let outcome = take(points, on: start ?? active.first, among: active)
+        closeEmpty(fade: 0)
         return outcome
     }
 
@@ -102,8 +107,9 @@ final class LiveInk {
     @discardableResult
     func clear() -> Int {
         let count = marks.count
-        marks = []
+        for surface in surfaces { surface.marks = [] }
         showMarks()
+        closeEmpty(fade: 0)
         Log.write("[live-ink] cleared \(count)")
         return count
     }
@@ -146,14 +152,56 @@ final class LiveInk {
             "on": isOn,
             "inking": isInking,
             "chord": chord?.isHeld ?? false,
-            "overlays": overlays.map { overlay -> [String: Any] in
-                ["frame": StateReport.topLeft(overlay.frame, primaryHeight: StateReport.primaryHeight), "visible": overlay.isVisible]
+            "surfaces": surfaces.map { surface -> [String: Any] in
+                [
+                    "frame": StateReport.topLeft(surface.overlay.frame, primaryHeight: StateReport.primaryHeight),
+                    "activeSpace": surface.overlay.isOnActiveSpace,
+                    "marks": surface.marks.count,
+                ]
             },
             "marks": marks.map { mark -> [String: Any] in
                 let frame = mark.shapeExtent.map { [$0.minX, $0.minY, $0.width, $0.height].map { Int($0.rounded()) } } ?? []
                 return ["type": mark.kind.rawValue, "frame": frame]
             },
         ]
+    }
+
+    // MARK: Strokes
+
+    /// Adds the stroke's mark to `surface` and to every other one of `among` it reaches, or erases
+    /// the mark a tap on `surface` lands on, from every surface that has it.
+    private func take(_ points: [CGPoint], on surface: Surface?, among: [Surface]) -> Outcome {
+        guard let surface else { return .nothing }
+        let ui = Settings.shared.data.ui
+        let outcome: Outcome
+        switch InkStroke(points, shortestArrow: ui.shortestArrow) {
+        case .ellipse(let frame):
+            add(Mark(geometry: .ellipse(frame)), on: surface, among: among)
+            outcome = .drew(.ellipse)
+        case .arrow(let arrow):
+            add(Mark(geometry: .arrow(arrow)), on: surface, among: among)
+            outcome = .drew(.arrow)
+        case .tap(let point):
+            if let index = Self.markToErase(at: point, in: surface.marks, markStyle: ui.markStyle) {
+                let erased = surface.marks[index]
+                for other in surfaces { other.marks.removeAll { $0.id == erased.id } }
+                outcome = .erased(erased.kind)
+            } else {
+                outcome = .missed
+            }
+        case .nothing:
+            outcome = .nothing
+        }
+        Log.write("[live-ink] \(outcome.description) marks=\(marks.count)")
+        showMarks()
+        return outcome
+    }
+
+    private func add(_ mark: Mark, on surface: Surface, among: [Surface]) {
+        let extent = mark.shapeExtent ?? .null
+        for other in among where other === surface || Self.frame(of: other.overlay).intersects(extent) {
+            other.marks.append(mark)
+        }
     }
 
     // MARK: Inking
@@ -168,7 +216,7 @@ final class LiveInk {
             startInking()
         case .ended:
             guard isInking else { return }
-            if overlays.contains(where: \.isTracking) { watchRelease() } else { stopInking() }
+            if inking.contains(where: \.overlay.isTracking) { watchRelease() } else { stopInking() }
         }
     }
 
@@ -177,8 +225,8 @@ final class LiveInk {
         // Pressed again before the button came up: the stroke now ends without ending the inking.
         releaseWatch?.invalidate()
         releaseWatch = nil
-        overlays.forEach { $0.setInking(true) }
-        showOverlays()
+        inking = activeSurfaces()
+        inking.forEach { $0.overlay.setInking(true) }
         // The glow waits, so holding the chord on the way to a key, as in a window manager's
         // Control-Option-arrow, does not flash it. A press shows it at once.
         glowTimer?.invalidate()
@@ -193,27 +241,27 @@ final class LiveInk {
         releaseWatch?.invalidate()
         releaseWatch = nil
         glowTimer?.invalidate()
-        overlays.forEach { $0.setInking(false) }
         showGlow(false)
-        showOverlays()
+        inking.forEach { $0.overlay.setInking(false) }
+        inking = []
+        closeEmpty(fade: Settings.shared.motionUI.liveInkGlowFade)
         Log.write("[live-ink] stopped")
     }
 
     private func strokeMoved(_ points: [CGPoint]) {
         if !points.isEmpty, !glowing { showGlow(true) }
         let markStyle = Settings.shared.data.ui.markStyle
-        overlays.forEach { $0.showPen(points, markStyle: markStyle) }
+        inking.forEach { $0.overlay.showPen(points, markStyle: markStyle) }
     }
 
-    private func strokeEnded(_ points: [CGPoint]) {
-        take(points)
+    private func strokeEnded(_ points: [CGPoint], on overlay: LiveInkOverlay) {
+        take(points, on: inking.first { $0.overlay === overlay }, among: inking)
         if releaseWatch != nil { stopInking() }
     }
 
     /// The chord was let go during a stroke. The stroke keeps going to its release, and inking ends
     /// with it. A release that never reaches the overlay is read from the button's own state, as the
-    /// flight layer's `watchRelease` does, and the stroke ends with the points it has. A stroke whose
-    /// overlay was made again under it, when the screens changed, is lost.
+    /// flight layer's `watchRelease` does, and the stroke ends with the points it has.
     private func watchRelease() {
         releaseWatch?.invalidate()
         releaseWatch = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
@@ -221,7 +269,7 @@ final class LiveInk {
                 guard let self, NSEvent.pressedMouseButtons & 1 == 0 else { return }
                 self.releaseWatch?.invalidate()
                 self.releaseWatch = nil
-                self.overlays.forEach { $0.endStroke() }
+                self.inking.forEach { $0.overlay.endStroke() }
                 self.stopInking()
             }
         }
@@ -233,36 +281,67 @@ final class LiveInk {
         glowing = on
         let ui = Settings.shared.motionUI
         let color = ui.markStyle.color(.person)
-        overlays.forEach { $0.showGlow(on, ui: ui, color: color) }
+        inking.forEach { $0.overlay.showGlow(on, ui: ui, color: color) }
     }
 
-    // MARK: Overlays
+    // MARK: Surfaces
 
-    /// One overlay per screen, made again whenever the screens change.
-    private func makeOverlays() {
-        overlays.forEach { $0.close() }
-        overlays = NSScreen.screens.map { screen in
-            let overlay = LiveInkOverlay(screen: screen)
+    /// The active Space's surface on every screen, made for the screens that have none there yet.
+    private func activeSurfaces() -> [Surface] {
+        NSScreen.screens.compactMap { screen in
+            guard let display = Self.display(of: screen) else { return nil }
+            if let surface = surfaces.first(where: { $0.overlay.display == display && $0.overlay.isOnActiveSpace }) { return surface }
+            let overlay = LiveInkOverlay(screen: screen, display: display)
+            let surface = Surface(overlay)
             overlay.onStrokeMoved = { [weak self] points in self?.strokeMoved(points) }
-            overlay.onStroke = { [weak self] points in self?.strokeEnded(points) }
-            overlay.setInking(isInking)
-            return overlay
+            overlay.onStroke = { [weak self, weak overlay] points in
+                guard let overlay else { return }
+                self?.strokeEnded(points, on: overlay)
+            }
+            surfaces.append(surface)
+            return surface
         }
-        showMarks()
-        if glowing { showGlow(true) }
+    }
+
+    /// A surface with no marks closes, unless it is taking ink, so an idle live ink puts no
+    /// full-screen window over every app.
+    private func closeEmpty(fade: TimeInterval) {
+        let empty = surfaces.filter { surface in surface.marks.isEmpty && !inking.contains { $0 === surface } }
+        empty.forEach { $0.overlay.close(after: fade) }
+        surfaces.removeAll { surface in empty.contains { $0 === surface } }
     }
 
     private func showMarks() {
         let markStyle = Settings.shared.data.ui.markStyle
-        overlays.forEach { $0.show(marks, markStyle: markStyle) }
-        showOverlays()
+        for surface in surfaces { surface.overlay.show(surface.marks, markStyle: markStyle) }
     }
 
-    /// The overlays are on screen while there are marks or the chord is held, and off it otherwise,
-    /// so an idle live ink puts no full-screen window over every app.
-    private func showOverlays() {
-        let needed = isInking || !marks.isEmpty
-        let fade = Settings.shared.motionUI.liveInkGlowFade
-        overlays.forEach { $0.setNeeded(needed, fade: fade) }
+    /// Inking stops, since its surfaces are on the Space just left.
+    private func spaceChanged() {
+        guard isInking else { return }
+        Log.write("[live-ink] stopped: the Space changed")
+        stopInking()
+    }
+
+    /// Each surface covers its screen again; one whose screen is gone closes with its marks.
+    private func screensChanged() {
+        if isInking { stopInking() }
+        let screens = Dictionary(NSScreen.screens.compactMap { screen in Self.display(of: screen).map { ($0, screen) } },
+                                 uniquingKeysWith: { first, _ in first })
+        for surface in surfaces {
+            if let screen = screens[surface.overlay.display] { surface.overlay.fit(to: screen) } else { surface.marks = [] }
+        }
+        closeEmpty(fade: 0)
+        showMarks()
+    }
+
+    private static func display(of screen: NSScreen) -> CGDirectDisplayID? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    }
+
+    /// The overlay's frame in global top-left points, the marks' coordinates.
+    private static func frame(of overlay: LiveInkOverlay) -> CGRect {
+        let frame = overlay.frame
+        return CGRect(x: frame.minX, y: StateReport.primaryHeight - frame.maxY, width: frame.width, height: frame.height)
     }
 }

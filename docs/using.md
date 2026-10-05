@@ -164,8 +164,8 @@ an ellipse round what you circled, and any other stroke becomes an arrow, in you
 mark, click on it or inside its circle with the keys held. Clear Live Ink in the menu erases them all, and so does turning
 live ink off.
 
-Your marks stay at their place on the screen. They don't follow the window under them, they show
-on every Space, and they're gone when Vignette quits. Menus, the Dock and floating windows cover
+Your marks stay at their place on the screen, on the Space you drew them on. They don't follow the
+window under them, screenshots leave them out, and they're gone when Vignette quits. Menus, the Dock and floating windows cover
 them until you hold the keys again.
 
 While you hold the keys, a click draws instead of reaching the app under it. Let go and every click

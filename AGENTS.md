@@ -1019,11 +1019,16 @@ screenshot location for such a launch is written with the same variable:
 ### Live ink
 
 - Live ink is drawing straight on the screen, over any app, while Control and Option are held. It
-  is an option (`liveInk`), and `LiveInk` owns it: one `LiveInkOverlay` per screen, the chord, and
-  the marks. This is step 1 of `docs/live-ink-integration-2026-10-04.md`: nothing is sent yet, and a
-  mark stays at its place on the screen, on every Space, until it is erased or Vignette quits.
-- An overlay is on screen only while there are marks or the chord is held, so an idle live ink puts
-  no full-screen window over every app. At rest it sits at level 1, above normal windows and below
+  is an option (`liveInk`), and `LiveInk` owns it: the chord, and a surface per screen per Space,
+  each a `LiveInkOverlay` and the marks on it. This is step 1 of
+  `docs/live-ink-integration-2026-10-04.md`: nothing is sent yet, and a mark stays at its place on
+  the screen, on the Space it was drawn on, until it is erased or Vignette quits.
+- An overlay joins no other Space, so macOS keeps it where it was put up; it is closed, never
+  ordered out, since ordered in again it would come up on the active Space. A surface exists while
+  it has marks, and the active Space's while the chord is held, so an idle live ink puts no
+  full-screen window over every app. An overlay is shared with no capture (`sharingType = .none`):
+  without that, ⌘⇧4's window picker took it for a window (Pete's test), and with it a screenshot
+  leaves the marks out. At rest it sits at level 1, above normal windows and below
   the dim (2) and Vignette's floating windows, so the stack and the annotator cover the marks, and
   so do menus, the Dock and other apps' floating windows. It passes every press then
   (`ignoresMouseEvents`). While the chord is held it is inking: it rises to `.screenSaver` with the
@@ -1050,7 +1055,8 @@ screenshot location for such a launch is written with the same variable:
 - `vignette://live-ink-clear` erases every mark, and `live-ink-stroke?points=x,y;x,y` (debug) takes
   a stroke as if by hand, whether the stack is up or not, so a script can test without posting
   input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`,
-  the overlays with their frames and whether each is on screen, and the marks with their frames.
+  the surfaces with their frames, whether each is on the active Space and how many marks it has, and
+  every mark once with its frame.
 
 ### Memory
 
