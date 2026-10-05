@@ -275,9 +275,22 @@ Each step is usable on its own and verified before the next.
 
 1. **Overlay, chord, ink and clear.** Built.
 2. **Ask and answer on the screen.** Built.
-3. **Marks that stay on what they point at.** Anchors to elements and text ranges, the follow tick
-   and the clip from the first spike, so marks follow a scroll or a moved window. Accessibility
-   elements join the packet as targets. Guided steps.
+3. **Marks that stay on what they point at.** Each annotated window gets an overlay window ordered
+   just above it, so windows in front cover its marks. One display tick reads the windows' frames,
+   keeps each overlay in place, and places the marks.
+
+   Each mark has an anchor, tried in this order:
+   1. a text range;
+   2. a web text marker;
+   3. a terminal line;
+   4. an element's frame;
+   5. visual registration, last.
+
+   A mark whose anchor is lost hides until the anchor returns. Accessibility elements join the
+   packet as targets. Guided steps.
+
+   `docs/live-ink-anchoring-spike-2026-10-04.md` has the measurements. It also lists what is not
+   yet known: web pages, Spaces, and real trackpad scrolling.
 4. **The edges.** Multiple displays, full-screen apps, Chromium browsers (`AXManualAccessibility`),
    Codex as a responder (`codex exec` took 16 to 23 s cold; a thread kept warm through
    `codex app-server` is unmeasured), and an e2e scenario that holds the chord across a drag (`input.sh` needs a
