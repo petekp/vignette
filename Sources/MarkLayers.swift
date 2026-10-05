@@ -234,9 +234,7 @@ final class MarkLayers {
                 layers.append(record.detail)
             } else {
                 let record = shapes[mark.id] ?? ShapeMarkLayer(scale: contentsScale)
-                if record.mark != mark || record.markStyle != markStyle, let shape = mark.shape(pointScale: drawing.pointScale, markStyle: markStyle) {
-                    record.show(mark, shape, pointScale: drawing.pointScale, markStyle: markStyle)
-                }
+                record.show(mark, pointScale: drawing.pointScale, markStyle: markStyle)
                 shapes[mark.id] = record
                 layers.append(record.root)
             }
@@ -529,8 +527,9 @@ final class ShapeMarkLayer {
     private let edges: [(container: CALayer, stroke: CAShapeLayer, fill: CAShapeLayer)]
     private let stroke = CAShapeLayer()
     private let fill = CAShapeLayer()
-    private(set) var mark: Mark?
-    private(set) var markStyle: MarkStyle?
+    /// The mark drawn, or nil for a shape that is not one.
+    private var mark: Mark?
+    private var markStyle: MarkStyle?
 
     init(scale: CGFloat) {
         edges = NoteTag.shadows.map { _ in (CALayer(), CAShapeLayer(), CAShapeLayer()) }
@@ -558,7 +557,10 @@ final class ShapeMarkLayer {
         for edge in edges { edge.container.contentsScale = scale }
     }
 
-    func show(_ mark: Mark, _ shape: MarkShape, pointScale: CGFloat, markStyle: MarkStyle) {
+    /// Draws `mark`, unless it is drawn already as it is, in this style.
+    func show(_ mark: Mark, pointScale: CGFloat, markStyle: MarkStyle) {
+        guard mark != self.mark || markStyle != self.markStyle,
+              let shape = mark.shape(pointScale: pointScale, markStyle: markStyle) else { return }
         show(shape, color: mark.color, pointScale: pointScale, markStyle: markStyle)
         self.mark = mark
     }

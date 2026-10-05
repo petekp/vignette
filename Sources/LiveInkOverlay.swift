@@ -19,9 +19,15 @@ final class LiveInkOverlay: NSPanel {
     /// The screen it covers.
     let display: CGDirectDisplayID
     /// The stroke so far, in global top-left points, as it grows.
-    var onStrokeMoved: (([CGPoint]) -> Void)?
+    var onStrokeMoved: (([CGPoint]) -> Void)? {
+        get { canvas.onStrokeMoved }
+        set { canvas.onStrokeMoved = newValue }
+    }
     /// A finished stroke, in global top-left points.
-    var onStroke: (([CGPoint]) -> Void)?
+    var onStroke: (([CGPoint]) -> Void)? {
+        get { canvas.onStroke }
+        set { canvas.onStroke = newValue }
+    }
 
     private let canvas: Canvas
 
@@ -41,8 +47,6 @@ final class LiveInkOverlay: NSPanel {
         hidesOnDeactivate = false
         animationBehavior = .none
         contentView = canvas
-        canvas.onStroke = { [weak self] points in self?.onStroke?(points) }
-        canvas.onStrokeMoved = { [weak self] points in self?.onStrokeMoved?(points) }
         fit(to: screen)
         orderFrontRegardless()
     }
@@ -52,6 +56,9 @@ final class LiveInkOverlay: NSPanel {
         setFrame(screen.frame, display: false)
         canvas.fit(origin: CGPoint(x: screen.frame.minX, y: StateReport.primaryHeight - screen.frame.maxY))
     }
+
+    /// The screen it covers, in global top-left points, the marks' coordinates.
+    var globalFrame: CGRect { CGRect(origin: canvas.origin, size: frame.size) }
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
@@ -98,7 +105,7 @@ final class LiveInkOverlay: NSPanel {
         var onStrokeMoved: (([CGPoint]) -> Void)?
         let glow: EdgeGlow
         /// The screen's top-left corner in global top-left points, the coordinates marks are in.
-        private var origin: CGPoint = .zero
+        private(set) var origin: CGPoint = .zero
         private let host = CALayer()
         /// The marks, in global points: moved by the screen's origin so each lands on this screen.
         private let marksLayer = CALayer()
@@ -107,7 +114,8 @@ final class LiveInkOverlay: NSPanel {
         private var shapes: [Mark.ID: ShapeMarkLayer] = [:]
         private var stroke: [CGPoint] = []
         private let scale: CGFloat
-        private(set) var isTracking = false
+
+        var isTracking: Bool { !stroke.isEmpty }
 
         init(frame: CGRect, scale: CGFloat) {
             self.scale = scale
@@ -154,9 +162,7 @@ final class LiveInkOverlay: NSPanel {
             }
             for mark in marks {
                 let record = shapes[mark.id] ?? ShapeMarkLayer(scale: scale)
-                if record.mark != mark || record.markStyle != markStyle, let shape = mark.shape(pointScale: 1, markStyle: markStyle) {
-                    record.show(mark, shape, pointScale: 1, markStyle: markStyle)
-                }
+                record.show(mark, pointScale: 1, markStyle: markStyle)
                 if shapes[mark.id] == nil { marksLayer.addSublayer(record.root) }
                 shapes[mark.id] = record
             }
@@ -176,7 +182,6 @@ final class LiveInkOverlay: NSPanel {
         }
 
         override func mouseDown(with event: NSEvent) {
-            isTracking = true
             stroke = [location(of: event)]
             onStrokeMoved?(stroke)
         }
@@ -202,7 +207,6 @@ final class LiveInkOverlay: NSPanel {
 
         func cancelStroke() {
             guard isTracking else { return }
-            isTracking = false
             stroke = []
             onStrokeMoved?([])
         }
@@ -240,6 +244,8 @@ final class EdgeGlow: CALayer {
         CATransaction.setDisableActions(true)
         let width = ui.liveInkGlowWidth
         band.path = CGPath(rect: bounds, transform: nil)
+        // Without a shadow path, Core Animation finds the shadow's shape from the band's pixels, offscreen.
+        band.shadowPath = band.path?.copy(strokingWithWidth: width, lineCap: .butt, lineJoin: .miter, miterLimit: 10)
         band.lineWidth = width
         band.strokeColor = color
         band.shadowColor = color

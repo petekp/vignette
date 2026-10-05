@@ -80,7 +80,7 @@ final class LiveInk {
     }
 
     /// What a stroke did, as `[live-ink]` lines and `live-ink-stroke` answer it.
-    enum Outcome: Equatable {
+    enum Outcome {
         case drew(MarkKind)
         case erased(MarkKind)
         /// A tap on no mark.
@@ -103,7 +103,7 @@ final class LiveInk {
     @discardableResult
     func take(_ points: [CGPoint]) -> Outcome {
         let active = activeSurfaces()
-        let start = points.first.flatMap { point in active.first { Self.frame(of: $0.overlay).contains(point) } }
+        let start = points.first.flatMap { point in active.first { $0.overlay.globalFrame.contains(point) } }
         let outcome = take(points, on: start ?? active.first, among: active)
         closeEmpty(fade: 0)
         return outcome
@@ -225,16 +225,17 @@ final class LiveInk {
 
     /// Adds the stroke's mark to `surface` and to every other one of `among` it reaches, or erases
     /// the mark a tap on `surface` lands on, from every surface that has it.
+    @discardableResult
     private func take(_ points: [CGPoint], on surface: Surface?, among: [Surface]) -> Outcome {
         guard let surface else { return .nothing }
         let ui = Settings.shared.data.ui
         let outcome: Outcome
         switch InkStroke(points, shortestArrow: ui.shortestArrow) {
         case .ellipse(let frame):
-            add(Mark(geometry: .ellipse(frame)), on: surface, among: among)
+            add(Mark(geometry: .ellipse(frame)), on: surface, among: among, markStyle: ui.markStyle)
             outcome = .drew(.ellipse)
         case .arrow(let arrow):
-            add(Mark(geometry: .arrow(arrow)), on: surface, among: among)
+            add(Mark(geometry: .arrow(arrow)), on: surface, among: among, markStyle: ui.markStyle)
             outcome = .drew(.arrow)
         case .tap(let point):
             if let index = Self.markToErase(at: point, in: surface.marks, markStyle: ui.markStyle) {
@@ -252,9 +253,14 @@ final class LiveInk {
         return outcome
     }
 
-    private func add(_ mark: Mark, on surface: Surface, among: [Surface]) {
-        let extent = mark.shapeExtent ?? .null
-        for other in among where other === surface || Self.frame(of: other.overlay).intersects(extent) {
+    /// Adds `mark` to `surface`, and to each other one of `among` whose screen it draws on: its stroke,
+    /// its arrowhead, its edge and its shadows, which reach less than `Mark.shadowSize` past the edge.
+    private func add(_ mark: Mark, on surface: Surface, among: [Surface], markStyle: MarkStyle) {
+        let shape = mark.shape(pointScale: 1, markStyle: markStyle)
+        let ink = [shape?.stroked, shape?.filled].compactMap { $0?.boundingBoxOfPath }.reduce(CGRect.null) { $0.union($1) }
+        let reach = (shape?.lineWidth ?? 0) / 2 + markStyle.edgeWidth + Mark.shadowSize
+        let drawn = ink.insetBy(dx: -reach, dy: -reach)
+        for other in among where other === surface || other.overlay.globalFrame.intersects(drawn) {
             other.marks.append(mark)
         }
     }
@@ -295,7 +301,6 @@ final class LiveInk {
         isInking = false
         releaseWatch?.invalidate()
         releaseWatch = nil
-        glowTimer?.invalidate()
         showGlow(false)
         inking.forEach { $0.overlay.setInking(false) }
         inking = []
@@ -309,8 +314,8 @@ final class LiveInk {
         inking.forEach { $0.overlay.showPen(points, markStyle: markStyle) }
     }
 
-    private func strokeEnded(_ points: [CGPoint], on overlay: LiveInkOverlay) {
-        take(points, on: inking.first { $0.overlay === overlay }, among: inking)
+    private func strokeEnded(_ points: [CGPoint], on surface: Surface) {
+        take(points, on: surface, among: inking)
         if releaseWatch != nil { stopInking() }
     }
 
@@ -350,9 +355,9 @@ final class LiveInk {
             overlay.alphaValue = pickerUp ? 0 : 1
             let surface = Surface(overlay)
             overlay.onStrokeMoved = { [weak self] points in self?.strokeMoved(points) }
-            overlay.onStroke = { [weak self, weak overlay] points in
-                guard let overlay else { return }
-                self?.strokeEnded(points, on: overlay)
+            overlay.onStroke = { [weak self, weak surface] points in
+                guard let surface else { return }
+                self?.strokeEnded(points, on: surface)
             }
             surfaces.append(surface)
             return surface
@@ -393,11 +398,5 @@ final class LiveInk {
 
     private static func display(of screen: NSScreen) -> CGDirectDisplayID? {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
-    }
-
-    /// The overlay's frame in global top-left points, the marks' coordinates.
-    private static func frame(of overlay: LiveInkOverlay) -> CGRect {
-        let frame = overlay.frame
-        return CGRect(x: frame.minX, y: StateReport.primaryHeight - frame.maxY, width: frame.width, height: frame.height)
     }
 }

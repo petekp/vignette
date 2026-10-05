@@ -17,9 +17,6 @@ final class ModifierTap {
     private var monitors: KeyMonitors?
     private var count = 0
     private var last: TimeInterval = 0
-    /// The timestamp of the last flags change counted. While Vignette is active, the global and the
-    /// local monitor can both report the same event, and counted twice a double tap fired twice.
-    private var lastEvent: TimeInterval = -1
     private var holdTimer: Timer?
 
     /// Key codes: 56 left shift, 60 right shift, 55 left cmd, 54 right cmd, 58 left opt,
@@ -57,19 +54,14 @@ final class ModifierTap {
     }
 
     private func install() -> [Any?] {
-        let flags: (NSEvent) -> Void = { [weak self] e in self?.flagsChanged(e) }
         let reset: (NSEvent) -> Void = { [weak self] _ in self?.count = 0; self?.holdTimer?.invalidate() }
-        return [
-            NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: flags),
-            NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { flags($0); return $0 },
+        return KeyMonitors.flagsChanged { [weak self] in self?.flagsChanged($0) } + [
             NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown], handler: reset),
             NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { reset($0); return $0 },
         ]
     }
 
     private func flagsChanged(_ event: NSEvent) {
-        guard event.timestamp != lastEvent else { return }
-        lastEvent = event.timestamp
         guard event.keyCode == keyCode else { count = 0; return }
         let mods = event.modifierFlags.intersection([.shift, .command, .option, .control])
         if !mods.contains(flag) { holdTimer?.invalidate(); return }   // released before the hold

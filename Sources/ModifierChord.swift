@@ -5,8 +5,8 @@ import AppKit
 /// modifier joining, ends it as the start of a keyboard shortcut, such as a window manager's
 /// Control-Option-arrow, and it begins again only once its modifiers are let go. A larger chord held
 /// first, such as ⌘⌃⌥, counts as one: letting go of ⌘ does not begin it.
-struct HeldChord: Equatable {
-    let flags: NSEvent.ModifierFlags
+struct HeldChord {
+    private let flags: NSEvent.ModifierFlags
     private(set) var isHeld = false
     private var waitingForRelease = false
 
@@ -58,7 +58,6 @@ final class ModifierChord {
     private var keyWatch: Timer?
     /// The event that began the chord, in seconds since the Mac started.
     private var beganAt: TimeInterval = 0
-    private var lastEvent: TimeInterval = 0
     private let changed: (HeldChord.Change) -> Void
 
     var isHeld: Bool { chord.isHeld }
@@ -75,18 +74,10 @@ final class ModifierChord {
     }
 
     private func install() -> [Any?] {
-        let flags: (NSEvent) -> Void = { [weak self] event in self?.flagsChanged(event) }
-        return [
-            NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: flags),
-            NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { flags($0); return $0 },
-        ]
+        KeyMonitors.flagsChanged { [weak self] in self?.flagsChanged($0) }
     }
 
-    /// The global and the local monitor can both report one event while Vignette is active, and the
-    /// second can arrive after a later event: only an event newer than the last is read.
     private func flagsChanged(_ event: NSEvent) {
-        guard event.timestamp > lastEvent else { return }
-        lastEvent = event.timestamp
         guard let change = chord.flagsChanged(event.modifierFlags) else { return }
         if change == .began { beganAt = event.timestamp }
         apply(change)
