@@ -177,6 +177,25 @@ open.
 Like the double tap, live ink needs Accessibility. Until it has it, the menu bar menu starts with
 Allow Accessibility for Live Ink….
 
+### Asking about your ink
+
+When you let go of the keys after drawing, a note opens beside your ink. Type a question, or
+nothing, and press Return: Claude looks at the window under your ink and answers on the screen. Its
+reply appears beside your ink as it's written, and its own marks draw themselves on, in its colour,
+pointing at what it means. Esc, or a click anywhere else, closes the note and keeps your ink.
+
+Ask again with no new ink and it's a follow-up about the same thing. A new question replaces the
+last answer, and Clear Live Ink starts over. Erase an answer's mark or note as you erase your own.
+
+The note's target starts on Claude. Click it, or press the Down arrow, to send your ink to one of
+your coding agent sessions instead: the picture goes as Send sends a drawing, and the session's
+reply comes back as a card. A note on your ink says whether it went.
+
+Claude answers through Claude Code, which must be installed and signed in, on your own Claude
+account, without your settings, plugins or tools. It sees only the window under your ink. Asking
+needs Screen Recording: turning live ink on asks for it, and until it's allowed the menu bar menu
+starts with Allow Screen Recording for Live Ink….
+
 ## Screen recordings
 
 A recording from Cmd+Shift+5 gets a card too, showing its first frame with its length in the

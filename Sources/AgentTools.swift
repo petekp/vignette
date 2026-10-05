@@ -32,8 +32,8 @@ enum AgentTools {
         return lock.withLock { fromShell[name] }.flatMap { exists($0) ? $0 : nil }
     }
 
-    /// A tool that reaches the person's agent sessions: codex, which lists and queues to their
-    /// threads, and herdr, which reads their panes. In a test launch (`VIGNETTE_SETTINGS` set) it is
+    /// A tool that reaches the person's agent sessions or account: codex, which lists and queues to
+    /// their threads, herdr, which reads their panes, and claude, which answers live ink. In a test launch (`VIGNETTE_SETTINGS` set) it is
     /// only the one the environment names in `variable`, and none without it, since any other found
     /// on this Mac is the person's own.
     static func forSessions(_ variable: String, environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -70,7 +70,7 @@ enum AgentTools {
         guard !lock.withLock({ let was = started; started = true; return was }) else { return }
         if Settings.isOverridden {
             let env = ProcessInfo.processInfo.environment
-            Log.write("[tools] test launch: codex=\(env["VIGNETTE_CODEX"] ?? "none") herdr=\(env["VIGNETTE_HERDR"] ?? "none"), from VIGNETTE_CODEX and VIGNETTE_HERDR")
+            Log.write("[tools] test launch: codex=\(env["VIGNETTE_CODEX"] ?? "none") herdr=\(env["VIGNETTE_HERDR"] ?? "none") claude=\(env["VIGNETTE_CLAUDE"] ?? "none"), from VIGNETTE_CODEX, VIGNETTE_HERDR and VIGNETTE_CLAUDE")
         }
         DispatchQueue.global(qos: .utility).async {
             let (found, path) = shellPaths(names)

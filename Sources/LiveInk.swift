@@ -4,7 +4,9 @@ import AppKit
 /// (docs/live-ink-integration-2026-10-04.md). A loop becomes an ellipse and any other stroke an
 /// arrow, in the person's colour, and a tap on a mark erases it. The marks stay where they were drawn,
 /// on the Space they were drawn on, until they are erased or cleared, live ink is turned off, or
-/// Vignette quits. Nothing is sent to an agent yet.
+/// Vignette quits. Letting go of the chord after drawing opens a note beside the new ink, and Return
+/// there asks `LiveResponder` about it; the answer is drawn on the screen as marks in the agent's
+/// colour, which erase and clear as the person's do.
 @MainActor
 final class LiveInk {
     /// The chord is held and the active Space's surfaces take presses.
@@ -27,6 +29,42 @@ final class LiveInk {
     /// Asked when the chord goes down: false while the stack or the annotator holds the screen, which
     /// the raised overlays would cover and take presses from.
     private let mayInk: () -> Bool
+
+    private let responder = LiveResponder()
+    /// The working sessions Send can reach, newest first; it may answer twice, with a kept list and
+    /// then a fresh one.
+    var listSessions: ((@escaping ([AgentDestination]) -> Void) -> Void)?
+    /// Sends a picture and a message to a session through today's Send: the request's id, or why it
+    /// was refused.
+    var sendToSession: ((Data, AgentDestination, String) -> Result<String, ScreenshotRequests.Refusal>)?
+    /// The request ids of sends from live ink still waiting for their client's answer.
+    private var sending: [String: AgentDestination] = [:]
+    /// The person's marks some ask has been about. The rest are new, and the next ask is about them.
+    private var asked = Set<Mark.ID>()
+    /// A mark was drawn since the chord went down, so letting it go opens the note.
+    private var drewWhileInking = false
+    private var note: LiveNotePanel?
+    /// The ask under way, or the last one.
+    private var asking: AskState?
+    /// The marks of the last answer, and of a failure's note: a new ask takes them off the screen.
+    private var answerMarks = Set<Mark.ID>()
+    /// The picture the responder's conversation has, so a follow-up about the same window, showing
+    /// the same text, sends none.
+    private var lastPicture: (conversation: Int, windowID: CGWindowID?, text: String)?
+    /// Marks that draw themselves on at the next `showMarks`.
+    private var drawingOn = Set<Mark.ID>()
+
+    /// What `[state]` says about the ask under way, or the last one.
+    private struct AskState {
+        enum Phase: String { case looking, asking, answered, failed }
+        var phase: Phase
+        /// The person's marks it is about, which pulse while it is under way.
+        var about: Set<Mark.ID>
+        var reason: String?
+        var picture = false
+        /// The reply as it streams in, and once it is whole.
+        var say: Mark?
+    }
 
     /// One screen on one Space: the overlay there and the marks on it, in global top-left points at
     /// 1 px per pt, the newest last. A mark that crosses onto another screen of the same Space is on
@@ -54,6 +92,7 @@ final class LiveInk {
     func setOn(_ on: Bool) {
         guard on != isOn else { return }
         if on {
+            LivePacket.warmUp()
             chord = ModifierChord([.control, .option], tag: "live-ink", name: "the chord") { [weak self] change in
                 self?.chordChanged(change)
             }
@@ -70,6 +109,7 @@ final class LiveInk {
         } else {
             if isInking { stopInking() }
             stopWatchingForWindowPicker()
+            endConversation()
             chord = nil
             for (center, observer) in observers { center.removeObserver(observer) }
             observers = []
@@ -114,6 +154,7 @@ final class LiveInk {
     func clear() -> Int {
         let count = marks.count
         for surface in surfaces { surface.marks = [] }
+        endConversation()
         showMarks()
         closeEmpty(fade: 0)
         Log.write("[live-ink] cleared \(count)")
@@ -123,6 +164,7 @@ final class LiveInk {
     /// The stack or the annotator is coming up under the raised overlays: inking stops, the stroke
     /// under way is dropped, and the chord must be pressed again to ink.
     func standAside() {
+        closeNote()
         guard isInking else { return }
         Log.write("[live-ink] standing aside: the stack or the annotator is up")
         stopInking()
@@ -187,10 +229,13 @@ final class LiveInk {
     /// shows which mark a tap would erase, and while inking a tap does nothing else.
     nonisolated static let eraseReach: CGFloat = 12
 
-    /// The index of the mark a tap at `point` erases: the topmost whose stroke it is near, or else the
-    /// smallest ellipse it is inside, since a circled thing is where a hand goes to take the circle off.
-    nonisolated static func markToErase(at point: CGPoint, in marks: [Mark], markStyle: MarkStyle) -> Int? {
+    /// The index of the mark a tap at `point` erases: the topmost note it is on, or whose stroke it is
+    /// near, or else the smallest ellipse it is inside, since a circled thing is where a hand goes to
+    /// take the circle off. `noteBox` gives a note's tag.
+    nonisolated static func markToErase(at point: CGPoint, in marks: [Mark], markStyle: MarkStyle,
+                                        noteBox: (Mark) -> CGRect? = { _ in nil }) -> Int? {
         let near = marks.lastIndex { mark in
+            if let box = noteBox(mark) { return box.contains(point) }
             guard let distance = EditorGeometry.strokeDistance(from: point, to: mark, pointScale: 1) else { return false }
             return distance <= markStyle.strokeWidth / 2 + eraseReach
         }
@@ -215,9 +260,19 @@ final class LiveInk {
                 ]
             },
             "marks": marks.map { mark -> [String: Any] in
-                let frame = mark.shapeExtent.map { [$0.minX, $0.minY, $0.width, $0.height].map { Int($0.rounded()) } } ?? []
-                return ["type": mark.kind.rawValue, "frame": frame]
+                let extent = mark.shapeExtent ?? LiveAnswerLayout.noteBox(mark, sizes: answerSizes)
+                let frame = extent.map { [$0.minX, $0.minY, $0.width, $0.height].map { Int($0.rounded()) } } ?? []
+                return ["type": mark.kind.rawValue, "frame": frame, "agent": mark.agent]
             },
+            "new": newInk.count,
+            "note": note.map { panel -> Any in StateReport.topLeft(panel.frame, primaryHeight: StateReport.primaryHeight) } ?? NSNull(),
+            "responder": responder.stateJSON,
+            "ask": asking.map { ask -> Any in
+                var json: [String: Any] = ["phase": ask.phase.rawValue, "about": ask.about.count, "picture": ask.picture]
+                if let reason = ask.reason { json["reason"] = reason }
+                if let say = ask.say, case .text(let text) = say.geometry { json["sayLength"] = text.text.count }
+                return json
+            } ?? NSNull(),
         ]
     }
 
@@ -234,11 +289,15 @@ final class LiveInk {
         case .ellipse(let frame):
             add(Mark(geometry: .ellipse(frame)), on: surface, among: among, markStyle: ui.markStyle)
             outcome = .drew(.ellipse)
+            drewWhileInking = true
         case .arrow(let arrow):
             add(Mark(geometry: .arrow(arrow)), on: surface, among: among, markStyle: ui.markStyle)
             outcome = .drew(.arrow)
+            drewWhileInking = true
         case .tap(let point):
-            if let index = Self.markToErase(at: point, in: surface.marks, markStyle: ui.markStyle) {
+            let sizes = answerSizes
+            if let index = Self.markToErase(at: point, in: surface.marks, markStyle: ui.markStyle,
+                                            noteBox: { LiveAnswerLayout.noteBox($0, sizes: sizes) }) {
                 let erased = surface.marks[index]
                 for other in surfaces { other.marks.removeAll { $0.id == erased.id } }
                 outcome = .erased(erased.kind)
@@ -265,6 +324,259 @@ final class LiveInk {
         }
     }
 
+    // MARK: Asking
+
+    /// The person's own marks, oldest first: a failure's note is in their colour, but Vignette's.
+    private var ink: [Mark] { marks.filter { !$0.agent && !answerMarks.contains($0.id) } }
+
+    /// The person's marks no ask has been about yet, oldest first.
+    private var newInk: [Mark] { ink.filter { !asked.contains($0.id) } }
+
+    var responderState: LiveResponder.State { responder.state }
+
+    private var answerSizes: LiveAnswerLayout.Sizes {
+        let ui = Settings.shared.data.ui
+        return LiveAnswerLayout.Sizes(textSize: ui.liveInkTextSize, textWidth: ui.liveInkTextWidth, style: ui.textStyle)
+    }
+
+    private func openNote() {
+        let ink = newInk.compactMap(\.shapeExtent)
+        guard let newest = ink.last else { return }
+        closeNote()
+        let ui = Settings.shared.data.ui
+        let panel = LiveNotePanel(beside: newest, style: ui.textStyle, color: ui.markStyle.color(.person), edge: ui.markStyle.edgeColor.cgColor)
+        panel.onAsk = { [weak self] words, target in
+            self?.note = nil
+            switch target {
+            case .responder: self?.ask(words)
+            case .session(let destination): self?.ask(words, sendingTo: destination)
+            }
+        }
+        listSessions? { [weak panel] list in panel?.setSessions(list) }
+        panel.onClose = { [weak self] in
+            self?.note = nil
+            Log.write("[live-ink] note closed")
+        }
+        note = panel
+        Log.write("[live-ink] note open")
+    }
+
+    private func closeNote() {
+        note?.dismiss()
+        note = nil
+    }
+
+    /// Asks the responder about the new ink, with `words` as its note, or about the ink asked about
+    /// last when there is none new, as a follow-up. With `session`, sends the picture and the words to
+    /// that working session instead, whose reply comes back as a card. Answers whether an ask
+    /// started, and why not.
+    @discardableResult
+    func ask(_ words: String, sendingTo session: AgentDestination? = nil) -> Result<Void, LiveResponder.Failure> {
+        closeNote()
+        let person = ink
+        let fresh = newInk
+        let about = fresh.isEmpty ? person.filter { asked.contains($0.id) } : fresh
+        guard let point = about.last?.shapeExtent.map({ CGPoint(x: $0.midX, y: $0.midY) }) else {
+            return .failure(LiveResponder.Failure(reason: "There's no ink to ask about.", detail: "no ink"))
+        }
+        if case .looking = asking?.phase { return .failure(LiveResponder.Failure(reason: "An ask is under way.", detail: "busy")) }
+        if case .asking = asking?.phase { return .failure(LiveResponder.Failure(reason: "An ask is under way.", detail: "busy")) }
+        removeAnswer()
+        let ids = Set(about.map(\.id))
+        asked.formUnion(ids)
+        asking = AskState(phase: .looking, about: ids)
+        showMarks()
+        let started = Date()
+        let ui = Settings.shared.data.ui
+        Log.write("[live-ink] asking new=\(fresh.count) words=\(words.count)")
+        Task { @MainActor [weak self] in
+            do {
+                let packet = try await LivePacket.build(at: point, ink: person, style: ui.textStyle, markStyle: ui.markStyle)
+                if let session {
+                    self?.share(packet, words: words, with: session)
+                } else {
+                    self?.send(packet, words: words, about: about, new: Set(fresh.map(\.id)), started: started)
+                }
+            } catch let failure as LivePacket.Failure {
+                Log.write("[live-ink] error packet \(failure.detail)")
+                self?.failed(LiveResponder.Failure(reason: failure.reason, detail: failure.detail))
+            } catch {
+                self?.failed(LiveResponder.Failure(reason: "Vignette couldn't see the screen.", detail: "\(error)"))
+            }
+        }
+        return .success(())
+    }
+
+    private func send(_ packet: LivePacket, words: String, about: [Mark], new: Set<Mark.ID>, started: Date) {
+        guard asking?.phase == .looking else { return }
+        asking?.phase = .asking
+        let person = ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
+        Log.write("[live-ink] packet ms=\(Int(Date().timeIntervalSince(started) * 1000)) app=\(packet.app ?? "none") lines=\(packet.lines.count) bytes=\(packet.picture.count)\(packet.detail == nil ? "" : " detail")")
+        let asked = about.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
+        responder.ask(LiveResponder.Ask(
+            content: { [weak self] conversation in
+                let same = self?.lastPicture.map { $0.conversation == conversation && $0.windowID == packet.windowID && $0.text == packet.textSignature } ?? false
+                self?.lastPicture = (conversation, packet.windowID, packet.textSignature)
+                self?.asking?.picture = !same
+                var content: [[String: Any]] = []
+                if !same {
+                    content.append(Self.image(packet.picture))
+                    if let detail = packet.detail { content.append(Self.image(detail.png)) }
+                }
+                content.append(["type": "text", "text": packet.message(note: words, ink: person, new: new, freshPicture: !same)])
+                return content
+            },
+            onSay: { [weak self] say in self?.showSay(say, near: asked, packet: packet) },
+            onAnswer: { [weak self] result in
+                switch result {
+                case .success(let answer): self?.answered(answer, packet: packet, near: asked)
+                case .failure(let failure): self?.failed(failure)
+                }
+            }))
+    }
+
+    /// Hands the picture to a working session through today's Send, with the words and where the ink
+    /// is in the message (decision 6), and says on the ink that it went.
+    private func share(_ packet: LivePacket, words: String, with session: AgentDestination) {
+        guard asking?.phase == .looking, let sendToSession else { return }
+        var place = [packet.app, packet.title.map { "\"\($0)\"" }, packet.location].compactMap { $0 }.joined(separator: ", ")
+        if place.isEmpty { place = "the screen" }
+        let message = (words.isEmpty ? "" : words + "\n\n") + "Drawn with Vignette's live ink on \(place)."
+        switch sendToSession(packet.picture, session, message) {
+        case .success(let request):
+            sending[request] = session
+            asking?.phase = .answered
+            Log.write("[live-ink] sent to a session request=\(request)")
+            say("Sending to \(session.project)")
+        case .failure(let refusal):
+            failed(LiveResponder.Failure(reason: "Not sent. " + refusal.reason, detail: "send refused"))
+        }
+    }
+
+    /// A send's client answered: the note on the ink says how it went.
+    func delivered(request: String, _ state: SendNotice.State, reason: String?) {
+        guard let session = sending.removeValue(forKey: request) else { return }
+        switch state {
+        case .sent: say("Sent to \(session.project). Its reply comes back as a card.")
+        case .queued: say("Queued for \(session.project). " + (reason ?? ""))
+        case .uncertain: say("Check \(session.project). " + (reason ?? ""))
+        default: say("Not sent. " + (reason ?? ""))
+        }
+    }
+
+    /// Vignette's own note beside the ink asked about, in the person's colour, replacing the last.
+    private func say(_ words: String) {
+        guard let about = asking?.about else { return }
+        removeAnswer()
+        let near = marks.filter { about.contains($0.id) }.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
+        guard !near.isNull else { showMarks(); return }
+        let screen = activeSurfaces().map(\.overlay.globalFrame).first { $0.intersects(near) } ?? near
+        let scene = LiveAnswerLayout.Scene(room: screen.insetBy(dx: 8, dy: 8), ink: ink, text: [])
+        var note = LiveAnswerLayout.note(words.trimmingCharacters(in: .whitespaces), near: near, scene: scene,
+                                         obstacles: scene.ink.compactMap(\.shapeExtent), sizes: answerSizes)
+        note.agent = false
+        note.agentName = nil
+        answerMarks.insert(note.id)
+        drawingOn.insert(note.id)
+        put([note])
+    }
+
+    private static func image(_ png: Data) -> [String: Any] {
+        ["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": png.base64EncodedString()]]
+    }
+
+    private func scene(for packet: LivePacket) -> LiveAnswerLayout.Scene {
+        let screen = activeSurfaces().map(\.overlay.globalFrame).first { $0.intersects(packet.frame) } ?? packet.frame
+        let room = packet.frame.intersection(screen).insetBy(dx: 8, dy: 8)
+        return LiveAnswerLayout.Scene(room: room.isNull ? packet.frame : room, ink: ink,
+                                      text: packet.lines.map { packet.global($0.box) })
+    }
+
+    /// The reply so far, as a note beside the ink. It keeps the spot it first took, so it grows in
+    /// place rather than jumping as words arrive.
+    private func showSay(_ say: String, near asked: CGRect, packet: LivePacket) {
+        guard asking?.phase == .asking else { return }
+        let scene = scene(for: packet)
+        let note: Mark
+        if let shown = asking?.say {
+            note = LiveAnswerLayout.grown(shown, to: say, near: asked, scene: scene, sizes: answerSizes)
+        } else {
+            note = LiveAnswerLayout.note(say, near: asked, scene: scene, obstacles: LiveAnswerLayout.obstacles(in: scene), sizes: answerSizes)
+            drawingOn.insert(note.id)
+        }
+        asking?.say = note
+        answerMarks.insert(note.id)
+        put([note])
+    }
+
+    private func answered(_ answer: LiveAnswer, packet: LivePacket, near asked: CGRect) {
+        guard asking != nil else { return }
+        let targets = answer.marks.map { target(of: $0, in: packet) }
+        let placed = LiveAnswerLayout.marks(for: answer, targets: targets, asked: asked, scene: scene(for: packet), sizes: answerSizes,
+                                            streamed: asking?.say)
+        // A reply that streamed in is on the screen already, so only the rest draw themselves on.
+        drawingOn.formUnion(placed.map(\.id).filter { $0 != asking?.say?.id })
+        asking?.phase = .answered
+        asking?.say = placed.first
+        answerMarks.formUnion(placed.map(\.id))
+        Log.write("[live-ink] drew answer marks=\(placed.count - 1) dropped=\(targets.filter { $0 == nil }.count)")
+        put(placed)
+    }
+
+    /// Where an answer's mark points, in global top-left points: a line, the words within it that the
+    /// mark names, or its box. Words Vision gives no box for fall back to the line.
+    private func target(of mark: AnswerMark, in packet: LivePacket) -> CGRect? {
+        if let id = mark.line, let line = packet.lines.first(where: { $0.id == id }) {
+            if let words = mark.words, let range = line.recognized.string.range(of: words, options: [.caseInsensitive]),
+               let box = try? line.recognized.boundingBox(for: range)?.boundingBox {
+                return packet.global(CGRect(x: box.minX, y: 1 - box.maxY, width: box.width, height: box.height))
+            }
+            return packet.global(line.box)
+        }
+        return mark.box.map(packet.global)
+    }
+
+    /// The note says why beside the ink, in the person's colour, since Vignette says it, not the agent.
+    private func failed(_ failure: LiveResponder.Failure) {
+        guard asking != nil else { return }
+        Log.write("[live-ink] error ask \(failure.detail)")
+        asking?.phase = .failed
+        asking?.reason = failure.reason
+        say(failure.reason)
+    }
+
+    /// Adds `placed` to the active Space's surfaces, replacing marks of the same id.
+    private func put(_ placed: [Mark]) {
+        let active = activeSurfaces()
+        let markStyle = Settings.shared.data.ui.markStyle
+        for mark in placed {
+            for surface in surfaces { surface.marks.removeAll { $0.id == mark.id } }
+            let centre = mark.shapeExtent ?? LiveAnswerLayout.noteBox(mark, sizes: answerSizes) ?? .zero
+            let home = active.first { $0.overlay.globalFrame.contains(CGPoint(x: centre.midX, y: centre.midY)) } ?? active.first
+            if let home { add(mark, on: home, among: active, markStyle: markStyle) }
+        }
+        showMarks()
+        closeEmpty(fade: 0)
+    }
+
+    /// Takes the last answer's marks, or the last failure's note, off the screen.
+    private func removeAnswer() {
+        guard !answerMarks.isEmpty else { return }
+        for surface in surfaces { surface.marks.removeAll { answerMarks.contains($0.id) } }
+        answerMarks = []
+    }
+
+    /// Ends the responder's conversation and forgets what was asked, as clearing the screen does.
+    private func endConversation() {
+        closeNote()
+        responder.stop()
+        asked = []
+        answerMarks = []
+        sending = [:]
+        lastPicture = nil
+        asking = nil
+    }
+
     // MARK: Inking
 
     private func chordChanged(_ change: HeldChord.Change) {
@@ -274,15 +586,18 @@ final class LiveInk {
                 Log.write("[live-ink] not inking: the stack or the annotator is up")
                 return
             }
+            closeNote()
+            responder.prepare()
             startInking()
         case .ended:
             guard isInking else { return }
-            if inking.contains(where: \.overlay.isTracking) { watchRelease() } else { stopInking() }
+            if inking.contains(where: \.overlay.isTracking) { watchRelease() } else { finishInking() }
         }
     }
 
     private func startInking() {
         isInking = true
+        drewWhileInking = false
         // Pressed again before the button came up: the stroke now ends without ending the inking.
         releaseWatch?.invalidate()
         releaseWatch = nil
@@ -316,7 +631,14 @@ final class LiveInk {
 
     private func strokeEnded(_ points: [CGPoint], on surface: Surface) {
         take(points, on: surface, among: inking)
-        if releaseWatch != nil { stopInking() }
+        if releaseWatch != nil { finishInking() }
+    }
+
+    /// The chord was let go: inking stops, and ink drawn while it was held gets the note.
+    private func finishInking() {
+        stopInking()
+        if drewWhileInking, !newInk.isEmpty { openNote() }
+        drewWhileInking = false
     }
 
     /// The chord was let go during a stroke. The stroke keeps going to its release, and inking ends
@@ -330,7 +652,7 @@ final class LiveInk {
                 self.releaseWatch?.invalidate()
                 self.releaseWatch = nil
                 self.inking.forEach { $0.overlay.endStroke() }
-                self.stopInking()
+                self.finishInking()
             }
         }
     }
@@ -373,8 +695,12 @@ final class LiveInk {
     }
 
     private func showMarks() {
-        let markStyle = Settings.shared.data.ui.markStyle
-        for surface in surfaces { surface.overlay.show(surface.marks, markStyle: markStyle) }
+        let ui = Settings.shared.data.ui
+        let pulsing = asking.map { $0.phase == .looking || $0.phase == .asking ? $0.about : [] } ?? []
+        for surface in surfaces {
+            surface.overlay.show(surface.marks, markStyle: ui.markStyle, textStyle: ui.textStyle, drawingOn: drawingOn, pulsing: pulsing)
+        }
+        drawingOn = []
     }
 
     /// Inking stops, since its surfaces are on the Space just left.

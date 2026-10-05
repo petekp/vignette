@@ -69,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let agentPlugins = AgentPlugins()
     /// The screenshot each request sent this launch was made from, until its client answers.
     private var sentShots: [String: Screenshot] = [:]
+    /// Requests sent from live ink's note, whose client's answer goes to the ink rather than a card.
+    private var liveInkRequests: Set<String> = []
     private var watcherGeneration = 0
     private var screenshotWrittenAt: TimeInterval = 0
     private var deferredRemovals: Set<URL> = []
@@ -113,6 +115,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }
         thumbnail.onAnnotatorPress = { [weak self] event, key in self?.annotator.take(event, for: key) }
         thumbnail.onTakesScreen = { [weak self] in self?.liveInk.standAside() }
+        liveInk.listSessions = { [weak self] answer in
+            self?.requests.destinations { found, _, _ in answer(found) }
+        }
+        liveInk.sendToSession = { [weak self] png, destination, message in
+            guard let self else { return .failure(ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason)) }
+            do {
+                // The record names a screenshot by its file; a live ink picture has none in the folder.
+                let record = try requests.send(png: png, source: URL(fileURLWithPath: "Live ink.png"), to: destination,
+                                               message: message, instructions: settings.data.sendInstructions)
+                liveInkRequests.insert(record.id)
+                return .success(record.id)
+            } catch let refusal as ScreenshotRequests.Refusal {
+                return .failure(refusal)
+            } catch {
+                return .failure(ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason))
+            }
+        }
         annotator.onTakesEvents = { [weak self] key in self?.thumbnail.annotatorTakesEvents(key) }
         annotator.onFinished = { [weak self] shot, drawing in self?.finishAnnotation(shot, drawing) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
@@ -649,6 +668,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Commands.error(cmd, .invalidPoints, "give &points=x,y;x,y in global top-left points"); return
             }
             Commands.ok(cmd, "\(liveInk.take(points).description) marks=\(liveInk.marks.count)")
+        case "live-ink-ask":
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\": true in settings.json"); return }
+            let words = request.message ?? ""
+            guard let id = request.session else {
+                switch liveInk.ask(words) {
+                case .success: Commands.ok(cmd, "asking")
+                case .failure(let failure): Commands.error(cmd, .liveInkNotAsked, failure.reason)
+                }
+                return
+            }
+            // The session a person would pick in the note's target, from the list Send has.
+            var answered = false
+            requests.destinations { [weak self] found, complete, _ in
+                guard let self, !answered else { return }
+                if let session = found.first(where: { $0.id == id }) {
+                    answered = true
+                    switch liveInk.ask(words, sendingTo: session) {
+                    case .success: Commands.ok(cmd, "sending to \(session.project)")
+                    case .failure(let failure): Commands.error(cmd, .liveInkNotAsked, failure.reason)
+                    }
+                } else if complete {
+                    answered = true
+                    Commands.error(cmd, .noAgent, "no session \(id) in the list Send has")
+                }
+            }
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
         case "intro-lab": introLab.show(); Commands.ok("intro-lab")
         case "dismiss": thumbnail.dismiss(); Commands.ok("dismiss")
@@ -709,6 +753,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         report.sections["app"] = [
             "pid": Int(ProcessInfo.processInfo.processIdentifier), "build": BuildInfo.current.build, "version": BuildInfo.current.version,
             "isActive": NSApp.isActive, "accessibility": ModifierTap.trusted(prompt: false),
+            "screenRecording": CGPreflightScreenCaptureAccess(),
             "watchFolder": watchFolder.path, "settingsFile": Settings.fileURL.path, "readOnly": settings.readOnly,
             "bundle": Bundle.main.bundlePath,
             "appleThumbnail": settings.data.appleThumbnail, "recentCount": settings.data.recentCount, "hotkey": settings.data.recentHotkey, "debug": settings.data.debug,
@@ -813,6 +858,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             case let .accessibility(shortcut, liveInk):
                 let what = shortcut && liveInk ? "the Shortcut and Live Ink" : shortcut ? "the Shortcut" : "Live Ink"
                 return NSMenuItem(title: "Allow Accessibility for \(what)…", action: #selector(requestAccessibility), keyEquivalent: "")
+            case .screenRecording:
+                return NSMenuItem(title: "Allow Screen Recording for Live Ink…", action: #selector(openScreenRecording), keyEquivalent: "")
             }
         }
     }
@@ -824,6 +871,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case saveTarget(String)
         /// Accessibility, for the double tap, live ink, or both.
         case accessibility(shortcut: Bool, liveInk: Bool)
+        /// Screen Recording, which live ink's asks need to see the window under the ink.
+        case screenRecording
     }
 
     private func missing() -> [Blocker] {
@@ -832,6 +881,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if settings.appleTarget != "file" { missing.append(.saveTarget(AppleScreencapture.targetName(settings.appleTarget))) }
         let shortcut = settings.data.usesDoubleTap, liveInk = settings.data.liveInk
         if shortcut || liveInk, !ModifierTap.trusted(prompt: false) { missing.append(.accessibility(shortcut: shortcut, liveInk: liveInk)) }
+        if liveInk, !ScreenRecording.granted { missing.append(.screenRecording) }
         return missing
     }
 
@@ -846,6 +896,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 case .saveTarget: "Save screenshots to a folder"
                 case let .accessibility(shortcut, liveInk):
                     "Allow Accessibility for \(shortcut && liveInk ? "the shortcut and live ink" : shortcut ? "the shortcut" : "live ink")"
+                case .screenRecording: "Allow Screen Recording for live ink"
                 }
             })
         }
@@ -855,6 +906,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case let .accessibility(shortcut, liveInk):
             let what = shortcut && liveInk ? "The shortcut and live ink need" : shortcut ? "The shortcut needs" : "Live ink needs"
             return .text("\(what) Accessibility. Click the icon to allow it.")
+        case .screenRecording: return .text("Live ink needs Screen Recording. Click the icon to allow it.")
         }
     }
 
@@ -948,6 +1000,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     @objc private func requestAccessibility() {
         Accessibility.request()
+    }
+
+    @objc private func openScreenRecording() {
+        ScreenRecording.openSystemSettings()
     }
 
     @objc private func checkForUpdates() {
@@ -1093,6 +1149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     @objc private func toggleLiveInk() {
         settings.update { $0.liveInk.toggle() }
+        if settings.data.liveInk { ScreenRecording.request() }
         Log.write("[settings] liveInk=\(settings.data.liveInk)")
     }
 
@@ -1219,7 +1276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             },
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
             delivered: { [weak self] record, outcome in
-                guard let self, let shot = sentShots.removeValue(forKey: record.id) else { return }
+                guard let self else { return }
                 let state: SendNotice.State
                 switch outcome {
                 case .accepted: state = .sent
@@ -1227,6 +1284,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 case .uncertain: state = .uncertain
                 case .notSubmitted, .destinationChanged: state = .failed
                 }
+                if liveInkRequests.remove(record.id) != nil { return liveInk.delivered(request: record.id, state, reason: outcome.reason) }
+                guard let shot = sentShots.removeValue(forKey: record.id) else { return }
                 thumbnail.delivered(shot, request: record.id, state, reason: outcome.reason)
             },
             replyFailed: { [weak self] record, reason in

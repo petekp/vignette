@@ -15,6 +15,9 @@ import QuartzCore
 final class LiveInkOverlay: NSPanel {
     /// Level 1: above normal windows (0), below the dim (2) and Vignette's floating windows.
     static let restingLevel = NSWindow.Level(rawValue: 1)
+    /// A test launch with `VIGNETTE_SHARE_LIVE_INK` in its environment lets captures see the marks,
+    /// so a test can look at what it drew.
+    static let sharedWithCaptures = Settings.isOverridden && ProcessInfo.processInfo.environment["VIGNETTE_SHARE_LIVE_INK"] != nil
 
     /// The screen it covers.
     let display: CGDirectDisplayID
@@ -41,7 +44,7 @@ final class LiveInkOverlay: NSPanel {
         hasShadow = false
         level = Self.restingLevel
         collectionBehavior = [.fullScreenAuxiliary, .stationary, .ignoresCycle]
-        sharingType = .none
+        sharingType = Self.sharedWithCaptures ? .readOnly : .none
         ignoresMouseEvents = true
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
@@ -84,8 +87,9 @@ final class LiveInkOverlay: NSPanel {
     /// Finishes the stroke under way with the points it has, as its release would.
     func endStroke() { canvas.endStroke() }
 
-    func show(_ marks: [Mark], markStyle: MarkStyle) {
-        canvas.show(marks, markStyle: markStyle)
+    /// `drawingOn` names the marks that draw themselves on as they appear, in the order of `marks`.
+    func show(_ marks: [Mark], markStyle: MarkStyle, textStyle: TextStyle, drawingOn: Set<Mark.ID> = [], pulsing: Set<Mark.ID> = []) {
+        canvas.show(marks, markStyle: markStyle, textStyle: textStyle, drawingOn: drawingOn, pulsing: pulsing)
     }
 
     /// The stroke being drawn on any screen, in global top-left points, so one that crosses onto
@@ -112,6 +116,7 @@ final class LiveInkOverlay: NSPanel {
         /// The stroke being drawn, above the marks, moved as they are.
         private let pen: ShapeMarkLayer
         private var shapes: [Mark.ID: ShapeMarkLayer] = [:]
+        private var notes: [Mark.ID: NoteLayer] = [:]
         private var stroke: [CGPoint] = []
         private let scale: CGFloat
 
@@ -152,7 +157,7 @@ final class LiveInkOverlay: NSPanel {
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
         /// Not `MarkLayers`, which shows a drawing on an image; these marks are on no image.
-        func show(_ marks: [Mark], markStyle: MarkStyle) {
+        func show(_ marks: [Mark], markStyle: MarkStyle, textStyle: TextStyle, drawingOn: Set<Mark.ID>, pulsing: Set<Mark.ID>) {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             let ids = Set(marks.map(\.id))
@@ -160,13 +165,46 @@ final class LiveInkOverlay: NSPanel {
                 record.root.removeFromSuperlayer()
                 shapes[id] = nil
             }
+            for (id, note) in notes where !ids.contains(id) {
+                note.removeFromSuperlayer()
+                notes[id] = nil
+            }
+            var delay: CFTimeInterval = 0
+            let motion = Settings.shared.motionUI
             for mark in marks {
-                let record = shapes[mark.id] ?? ShapeMarkLayer(scale: scale)
-                record.show(mark, pointScale: 1, markStyle: markStyle)
-                if shapes[mark.id] == nil { marksLayer.addSublayer(record.root) }
-                shapes[mark.id] = record
+                let layer: CALayer
+                if case .text = mark.geometry {
+                    let note = notes[mark.id] ?? NoteLayer(scale: scale)
+                    note.show(mark, textStyle: textStyle, markStyle: markStyle)
+                    if notes[mark.id] == nil { marksLayer.addSublayer(note); notes[mark.id] = note }
+                    if drawingOn.contains(mark.id) { note.springIn(after: delay, duration: motion.liveInkDrawOn); delay += motion.liveInkDrawOn * 0.3 }
+                    layer = note
+                } else {
+                    let record = shapes[mark.id] ?? ShapeMarkLayer(scale: scale)
+                    record.show(mark, pointScale: 1, markStyle: markStyle)
+                    if shapes[mark.id] == nil { marksLayer.addSublayer(record.root); shapes[mark.id] = record }
+                    if drawingOn.contains(mark.id) { record.drawOn(after: delay, duration: motion.liveInkDrawOn); delay += motion.liveInkDrawOn * 0.6 }
+                    layer = record.root
+                }
+                pulse(layer, pulsing.contains(mark.id))
             }
             CATransaction.commit()
+        }
+
+        /// Ink waiting for its answer is lighter, and breathes, so it reads as sent.
+        private func pulse(_ layer: CALayer, _ on: Bool) {
+            let key = "waiting"
+            layer.opacity = on ? 0.7 : 1
+            guard on else { layer.removeAnimation(forKey: key); return }
+            guard layer.animation(forKey: key) == nil, Settings.shared.motionScale > 0 else { return }
+            let breathe = CABasicAnimation(keyPath: "opacity")
+            breathe.fromValue = 1
+            breathe.toValue = 0.45
+            breathe.duration = 0.7
+            breathe.autoreverses = true
+            breathe.repeatCount = .infinity
+            breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            layer.add(breathe, forKey: key)
         }
 
         func showPen(_ points: [CGPoint], markStyle: MarkStyle) {
@@ -216,6 +254,63 @@ final class LiveInkOverlay: NSPanel {
             let local = convert(event.locationInWindow, from: nil)
             return CGPoint(x: local.x + origin.x, y: local.y + origin.y)
         }
+    }
+}
+
+/// A note on the live screen: its tag, badge and words drawn by the renderer into one bitmap at the
+/// screen's scale, as `Mark.draw` draws a note on a screenshot. A few short notes, so on the main thread.
+@MainActor
+final class NoteLayer: CALayer {
+    private var shown: (mark: Mark, textStyle: TextStyle, markStyle: MarkStyle)?
+
+    init(scale: CGFloat) {
+        super.init()
+        contentsScale = scale
+    }
+
+    override init(layer: Any) { super.init(layer: layer) }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func show(_ mark: Mark, textStyle: TextStyle, markStyle: MarkStyle) {
+        guard case .text(let text) = mark.geometry else { return }
+        if let shown, shown.mark == mark, shown.textStyle == textStyle, shown.markStyle == markStyle { return }
+        shown = (mark, textStyle, markStyle)
+        // The notes wrap at their own width, so no image edge bounds them.
+        let layout = TextLayout(text, imageWidth: .greatestFiniteMagnitude, pointScale: 1, style: textStyle.forMark(mark))
+        let region = MarkLayers.aligned(MarkLayers.padded(text, box: layout.box, pointScale: 1, markStyle: markStyle), scale: contentsScale)
+        let width = Int((region.width * contentsScale).rounded()), height = Int((region.height * contentsScale).rounded())
+        guard width > 0, height > 0, let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                                             space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                                             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return }
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: contentsScale, y: -contentsScale)
+        context.translateBy(x: -region.minX, y: -region.minY)
+        mark.draw(in: context, pointScale: 1, imageWidth: .greatestFiniteMagnitude, style: textStyle, markStyle: markStyle)
+        frame = region
+        contents = context.makeImage()
+    }
+
+    /// Springs in from its centre after `delay`.
+    func springIn(after delay: CFTimeInterval, duration: CFTimeInterval) {
+        guard duration > 0 else { return }
+        let begin = CACurrentMediaTime() + delay
+        let pop = CASpringAnimation(keyPath: "transform.scale")
+        pop.fromValue = 0.6
+        pop.toValue = 1
+        pop.damping = 14
+        pop.stiffness = 240
+        pop.beginTime = begin
+        pop.duration = pop.settlingDuration
+        pop.fillMode = .backwards
+        let appear = CABasicAnimation(keyPath: "opacity")
+        appear.fromValue = 0
+        appear.toValue = opacity
+        appear.beginTime = begin
+        appear.duration = duration * 0.3
+        appear.fillMode = .backwards
+        add(pop, forKey: "pop")
+        add(appear, forKey: "appear")
     }
 }
 

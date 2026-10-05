@@ -1,9 +1,10 @@
 # Live ink in Vignette: integration plan (2026-10-04)
 
-Status: step 1 is built (overlay, chord, ink, clear). Steps 2 to 4 are a plan. Two spikes stand
-behind it: `docs/live-ink-spike-2026-10-04.md`, the prototype on the `spike/live-ink` branch, and
+Status: steps 1 and 2 are built: the overlay, chord, ink and clear, then the ask and the answer
+drawn on the screen. Steps 3 and 4 are a plan. Two spikes stand behind it:
+`docs/live-ink-spike-2026-10-04.md`, the prototype on the `spike/live-ink` branch, and
 `docs/live-ink-step2-spike-2026-10-04.md`, which measured who should answer and then tried step 2
-end to end. "Step 1 as built" records where the build departed from the first plan.
+end to end. "Step 1 as built" and "Step 2 as built" record where the build departed from the plan.
 
 Live ink is drawing straight on the live screen, over any app, asking about what you drew, and
 seeing the answer drawn back on the same screen within a few seconds. This note says how it fits
@@ -12,11 +13,11 @@ into Vignette as an option, what it reuses, what is new, and the order to build 
 ## The answer in short
 
 - **New:** a `LiveInk` controller owning the screen overlay, the hold-to-draw chord and the ink
-  (built in step 1). Step 2 adds the note panel, the packet, and a responder: one `claude`
-  process Vignette keeps running to answer live ink.
+  (step 1). Step 2 added the note panel, the packet, and a responder: one `claude` process
+  Vignette keeps running to answer live ink.
 - **Reused as is:** the mark geometry and rendering, the colours and note style, `AgentTools` to
   find `claude`, and Send with its sessions, for an ask that belongs to a working session.
-- **Not changed in step 2:** the reply protocol, the request store and the plugin.
+- **Not changed by step 2:** the reply protocol, the request store and the plugin.
 
 Live ink goes to the responder by default, not to the session Pete is working in. Measured over 7
 days of his transcripts, a session was mid-turn 66 to 80% of the time, and ink arriving mid-turn
@@ -116,6 +117,41 @@ Pete confirmed 2, 3, 4, 6 and 7 on 2026-10-04.
   first try, two taps meant for marks erased nothing at the editor's reach.
 
 
+## Step 2 as built
+
+Tried on 2026-10-04 against a window of made-up content (a checkout whose total is $3.61 too high),
+with Pete's own `claude` and with `scripts/e2e/fake_claude.py`.
+
+- **Timing.** The packet took 240 to 380 ms. The responder started in 2.4 s and its warm-up ask
+  took 1.5 to 1.7 s. A new screen was answered in 2.0 s, and a follow-up with a longer reply in
+  4.1 s. Both answers were right: the second worked out that the tax is exactly 8% of the subtotal.
+- **The responder starts at the first inking, not when live ink is turned on,** and stops after 10
+  minutes with nothing asked. The person is drawing while it starts. An idle `claude` process costs
+  memory all day for someone who rarely asks.
+- **A warm-up ask on every start.** The CLI prints its `init` line, which lists its tools, only once
+  a message arrives, and its `initialize` control request lists no tools. So a short first ask
+  ($0.001 to $0.008) checks the process before any screen content is sent, and caches the system
+  prompt. Under `--safe-mode`, `init` still names the person's plugins, but none ran: no inbox
+  appeared, and the tools were `StructuredOutput` alone.
+- **The window under the ink is the topmost below the Dock's level.** The Dock has a window over the
+  whole screen at its level, and it was taken for the window under the ink.
+- **A new ask takes the last answer off the screen,** so the screen shows the current exchange: all of
+  the person's ink and the newest answer.
+- **The reply streams in as a note** that wraps at `ui.liveInkTextWidth` and grows away from the ink.
+  It first wrapped at the width of its first word.
+- **A long line gets a box rather than an underline:** a mark has no line kind, and a box reads as
+  well. A circle Claude asks for on a thing the person circled is drawn as an arrow, and an arrow's
+  label goes at its tail.
+- **Notes on the overlay are a bitmap `Mark.draw` makes** (`NoteLayer`), on the main thread. Teaching
+  `MarkLayers` to draw without an image was more than a few short notes need.
+- **Vignette's words on the ink are the person's colour.** Sending, sent, and why an ask failed are a
+  note in the person's colour, without a badge, since Vignette says them, not Claude.
+- **Screen Recording.** Turning the switch on raises macOS's alert; after that a row under the switch
+  and the menu's first item open its pane. The first capture on macOS 15 also raised macOS's
+  "bypass the system private window picker" alert.
+- **Tests.** `scripts/e2e/fake_claude.py` speaks the CLI's stream. The e2e scenario is still to come;
+  the note panel needs a chord held across a drag, which `input.sh` cannot post.
+
 ## How it fits, piece by piece
 
 ### Overlay and input
@@ -165,8 +201,8 @@ Codex app nothing), and Vision reads the same text from any app.
 
 ### The responder
 
-- **`LiveResponder` owns one `claude` process**, found by `AgentTools`, started when live ink is
-  turned on (about 3 s) and kept running:
+- **`LiveResponder` owns one `claude` process**, found by `AgentTools`, started at the first inking
+  (about 2.5 s) and kept running:
 
   ```
   claude -p --model sonnet --input-format stream-json --output-format stream-json --verbose
@@ -205,15 +241,13 @@ Codex app nothing), and Vision reads the same text from any app.
 - **Vignette draws it at once, in screen points**, from the picture's place on screen. The marks are
   plain `Mark`s in the agent's colour, on the same surfaces as the person's ink, so a tap erases
   them and Clear clears them.
-- **`say` is a note beside the person's ink**, so it reads as the reply to what they drew. Notes
-  need `MarkLayers`' text bitmaps, which today draw on an image, so `MarkLayers` learns to draw
-  marks on no image.
+- **`say` is a note beside the person's ink**, so it reads as the reply to what they drew.
 - **The draw-on:** the agent's strokes grow from their start, the head and the note spring in
   after, and the motion scale applies. The first spike found this is what makes it feel alive.
 - **The answer's marks keep clear.** In the spike, the agent's loop sat inside the person's loop,
   and a label covered the number beside it. Marks and labels are placed by the first spike's note
   placement, which scores each spot by what it would cover, the person's ink included. A long line
-  gets an underline rather than a loop.
+  gets a box rather than a loop.
 - **An id that names no line drops that mark.**
 
 ### Sending to a session
@@ -240,9 +274,7 @@ Codex app nothing), and Vision reads the same text from any app.
 Each step is usable on its own and verified before the next.
 
 1. **Overlay, chord, ink and clear.** Built.
-2. **Ask and answer on the screen.** Screen Recording, the note panel, `LivePacket`,
-   `LiveResponder`, the answer drawn on with its note, the waiting and failure states on the ink,
-   and Send to a session as the second target.
+2. **Ask and answer on the screen.** Built.
 3. **Marks that stay on what they point at.** Anchors to elements and text ranges, the follow tick
    and the clip from the first spike, so marks follow a scroll or a moved window. Accessibility
    elements join the packet as targets. Guided steps.
@@ -270,10 +302,12 @@ Each step is usable on its own and verified before the next.
   turn the permission off.
 - **Cost and quota.** Every ask runs on the person's Claude plan: about $0.02 for a new screen and
   $0.01 for a follow-up, at Sonnet's prices.
-- **The CLI is an interface Vignette does not own.** The flags above are `claude` 2.1.289's.
-  A later version that changes them breaks the responder, so it checks the `init` line (no tools,
-  no MCP servers) before its first ask, and the Settings row says when it cannot start.
+- **The CLI is an interface Vignette does not own.** The flags above are `claude` 2.1.289's, and so
+  is the stream it writes. A later version that changes them breaks the responder, so its warm-up
+  checks the `init` line (no tools, no MCP servers) before any screen content is sent, and a failure
+  is said on the ink.
 - **The responder knows only the screen.** An ask about the person's own code is better sent to a
   session, and the panel has to make that choice easy.
-- **A decision hard to reverse.** Asking for Screen Recording, and running a model for the person,
-  each deserve an ADR in `docs/adr/` when they are made.
+- **Decisions hard to reverse.** Asking for Screen Recording and running a model for the person are
+  `docs/adr/0019-live-ink-asks-for-screen-recording.md` and
+  `docs/adr/0020-live-ink-is-answered-by-a-dedicated-responder.md`.

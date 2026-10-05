@@ -89,6 +89,33 @@ The menu bar menu names the switch as the General tab does.
 | The General tab, under the switch while Accessibility is missing and the double tap is not asking for it (`liveInkAccessibilityReason`) | Needs Accessibility permission. Lets Vignette notice Control and Option held down in any app. |
 | The menu's first item while Accessibility is missing | Allow Accessibility for Live Ink…, or for the Shortcut and Live Ink… when the double tap needs it too |
 | The menu bar intro's popover, while Accessibility is missing | Live ink needs Accessibility. Click the icon to allow it. (The shortcut and live ink need Accessibility, when both do.) |
+| The General tab, under the switch while Screen Recording is missing (`liveInkScreenRecordingReason`) | Needs Screen Recording permission. Lets Vignette see the window under your ink when you ask about it. macOS may ask you to reopen Vignette after you allow it. |
+| The menu's first item while Screen Recording is missing | Allow Screen Recording for Live Ink… |
+| The menu bar intro's popover, while Screen Recording is missing | Live ink needs Screen Recording. Click the icon to allow it. |
+| The note's placeholder (`LiveNotePanel.placeholder`) | Ask about this |
+| The note's target, and its tooltip | to Claude ▾, "Claude answers on the screen." / to *project* ▾, "The session's reply comes back as a card." |
+| The target's menu | Claude, on the screen; then a "Send to a session" heading and the sessions, each by project with its name under it |
+
+#### On the ink, in the person's colour
+
+Vignette's own words about an ask, beside the ink it was about.
+
+| When | Words |
+| --- | --- |
+| Sending to a session | Sending to *project* |
+| The session took it | Sent to *project*. Its reply comes back as a card. |
+| Queued, or not confirmed in time | Queued for *project*. / Check *project*. Then the reason, as on a card. |
+| The session did not take it | Not sent. Then the reason, as on a card. |
+| No Screen Recording | Live ink needs Screen Recording permission to see the screen. |
+| The capture failed | Vignette couldn't see the screen. / Vignette couldn't capture the window. |
+| No `claude` found | Vignette couldn't find Claude Code. |
+| Claude Code is signed out | Claude Code isn't signed in. You can sign in by running claude in Terminal. |
+| The usage limit | Claude's usage limit is reached for now. |
+| No answer in 45 s | Claude took too long to answer. You can ask again. |
+| The process ended | Claude stopped before it answered. You can ask again. |
+| The answer did not parse | Vignette couldn't draw Claude's answer. You can ask again. |
+| Anything else | Claude couldn't answer. You can ask again. |
+| The CLI started with tools | Live ink stopped Claude, which started with tools. |
 
 ### A copy, on its card ("Not copied")
 

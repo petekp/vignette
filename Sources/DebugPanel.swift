@@ -227,6 +227,9 @@ struct DebugPanelView: View {
                     Tweak("Glow fade", \.liveInkGlowFade, 0...1, step: 0.05, unit: "s")
                     Text("The glow along the screen's edges while Control and Option are held. It waits for the delay, or for a press, so the chord on its way to a shortcut does not flash it.")
                         .font(.caption).foregroundStyle(.secondary)
+                    Tweak("Answer draw-on", \.liveInkDrawOn, 0...2, step: 0.05, unit: "s")
+                    Tweak("Answer text size", \.liveInkTextSize, 8...32, unit: "pt")
+                    Tweak("Answer text width", \.liveInkTextWidth, 120...800, step: 10, unit: "pt")
                 }
             }
             .formStyle(.grouped)

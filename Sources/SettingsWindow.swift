@@ -194,6 +194,7 @@ struct SettingsView: View {
     /// macOS's Accessibility alert gives no reason, so the row gives it, and the way around it.
     static let accessibilityReason = "Lets Vignette notice the double tap in any app. A key combination doesn't need it."
     static let liveInkAccessibilityReason = "Lets Vignette notice Control and Option held down in any app."
+    static let liveInkScreenRecordingReason = "Lets Vignette see the window under your ink when you ask about it. macOS may ask you to reopen Vignette after you allow it."
 
     let tab: SettingsTab
     let callbacks: SettingsWindowController.Callbacks
@@ -212,6 +213,7 @@ struct SettingsView: View {
     @State private var claudeReads = false
     @State private var claudeReadsFailure: String?
     @State private var trusted = ModifierTap.trusted(prompt: false)
+    @State private var screenRecording = ScreenRecording.granted
     @State private var folderDenied = false
     /// Neither the Accessibility grant nor macOS's folder permission announces a change, so the
     /// rows that show them look again while the window is up.
@@ -237,6 +239,7 @@ struct SettingsView: View {
 
     private func look() {
         trusted = ModifierTap.trusted(prompt: false)
+        screenRecording = ScreenRecording.granted
         folderDenied = callbacks.folderDenied()
     }
 
@@ -271,7 +274,10 @@ struct SettingsView: View {
             footer(ShortcutSetting.caption(doubleTap: settings.data.usesDoubleTap))
         }
         Section {
-            Toggle(isOn: binding(\.liveInk)) {
+            Toggle(isOn: Binding(get: { settings.data.liveInk }, set: { on in
+                settings.update { $0.liveInk = on }
+                if on { ScreenRecording.request() }
+            })) {
                 Text("Live ink")
                 Text("Holding Control and Option lets you draw over any app. A click on a mark while you hold them erases it.")
             }
@@ -279,6 +285,10 @@ struct SettingsView: View {
             if settings.data.liveInk, !settings.data.usesDoubleTap, !trusted {
                 PermissionRow(symbol: "lock.fill", title: "Needs Accessibility permission",
                               reason: SettingsView.liveInkAccessibilityReason, status: .refused) { Accessibility.request() }
+            }
+            if settings.data.liveInk, !screenRecording {
+                PermissionRow(symbol: "lock.fill", title: "Needs Screen Recording permission",
+                              reason: SettingsView.liveInkScreenRecordingReason, status: .refused) { ScreenRecording.openSystemSettings() }
             }
         }
         Section("Recent screenshots") {
@@ -823,6 +833,25 @@ struct ShortcutSetting: View {
                         settings.update { $0.recentHotkey = value }
                     }
                 })
+    }
+}
+
+/// Screen Recording, which live ink's asks need to capture the window under the ink. Nothing else in
+/// Vignette needs it: setup's picture of its own window is ScreenCaptureKit's capture of the app's
+/// own windows, which needs no permission.
+enum ScreenRecording {
+    static var granted: Bool { CGPreflightScreenCaptureAccess() }
+
+    /// Raises macOS's own alert, which it shows once for an app; after that this does nothing, and the
+    /// row under the switch opens the pane. Only a switch the person turned on calls this.
+    static func request() {
+        guard !granted else { return }
+        Log.write("[live-ink] asking for Screen Recording")
+        _ = CGRequestScreenCaptureAccess()
+    }
+
+    static func openSystemSettings() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
     }
 }
 

@@ -74,7 +74,10 @@ makes such a decision, and mark the old one superseded when a change reverses it
   and Codex install, which carries the skill and, for Claude Code, delivers what Send sends, and
   `Sources/AgentPlugin.swift` installs it (`docs/claude-code-without-herdr-2026-09-27.md`).
 - `Sources/LiveInk.swift`, `LiveInkOverlay.swift`, `ModifierChord.swift` and `InkStroke.swift` are
-  live ink, drawing on the live screen (the "Live ink" rules below). `KeyMonitors.swift` installs the
+  live ink, drawing on the live screen (the "Live ink" rules below). `LiveNotePanel.swift` is the note
+  an ask is typed in, `LivePacket.swift` what an ask sends, `LiveResponder.swift` the `claude`
+  process that answers, and `LiveAnswer.swift` and `LiveAnswerLayout.swift` the answer and where its
+  marks go. `KeyMonitors.swift` installs the
   key monitors live ink and the double tap share, once the app is trusted for Accessibility.
 - `Sources/Identity.swift` reads the bundle id, name, and URL scheme from the bundle and derives
   the log name, the status item's autosave name, the Application Support folder, and the Carbon
@@ -1020,9 +1023,10 @@ screenshot location for such a launch is written with the same variable:
 
 - Live ink is drawing straight on the screen, over any app, while Control and Option are held. It
   is an option (`liveInk`), and `LiveInk` owns it: the chord, and a surface per screen per Space,
-  each a `LiveInkOverlay` and the marks on it. This is step 1 of
-  `docs/live-ink-integration-2026-10-04.md`: nothing is sent yet, and a mark stays at its place on
-  the screen, on the Space it was drawn on, until it is erased or Vignette quits.
+  each a `LiveInkOverlay` and the marks on it. Steps 1 and 2 of
+  `docs/live-ink-integration-2026-10-04.md` are built: a mark stays at its place on the screen, on
+  the Space it was drawn on, until it is erased or Vignette quits, and an ask about it is answered on
+  the screen. Marks do not follow a scroll yet.
 - An overlay joins no other Space, so macOS keeps it where it was put up; it is closed, never
   ordered out, since ordered in again it would come up on the active Space. A surface exists while
   it has marks, and the active Space's while the chord is held, so an idle live ink puts no
@@ -1061,6 +1065,50 @@ screenshot location for such a launch is written with the same variable:
   input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`,
   the surfaces with their frames, whether each is on the active Space and how many marks it has, and
   every mark once with its frame.
+- Letting go of the chord after drawing opens `LiveNotePanel` beside the new ink, a non-activating
+  panel that takes the keys as the stack's does. Return asks about the ink drawn since the last ask,
+  or, with none, about the ink asked about last. Its target starts on the responder and lists the
+  sessions Send lists after it.
+- An ask is answered by `LiveResponder`: one `claude -p` process in stream-json mode, run with
+  `--safe-mode --tools ""`, its own system prompt, and `--json-schema` for the answer
+  (`LiveAnswer.schema`). Started plainly, the process registered itself as a session in Vignette's
+  inbox and could read files, so those flags are the isolation, and the process stops before any
+  screen content is sent unless its `init` line lists no tool but `StructuredOutput` and no MCP
+  server. It starts at the first inking and sends a short warm-up ask ($0.001 to $0.008) that checks
+  that line and caches the prompt. It stops after 10 minutes with nothing asked, and when the ink is
+  cleared or live ink is turned off, and starts a new conversation after 12 asks. In a test launch it runs only the `claude` that
+  `VIGNETTE_CLAUDE` names, since any other runs on the person's account;
+  `scripts/e2e/fake_claude.py` stands in for it.
+- `LivePacket` is the ask's content, built in about 300 ms: a ScreenCaptureKit capture of the
+  topmost window under the ink below the Dock's level (the Dock has a window over the whole screen at
+  its level), Vision's accurate text lines read before the ink is drawn in, with ids, the person's
+  ink drawn into the picture and listed as boxes, and the app, title and the Accessibility document
+  or web area URL. Ink across a line garbled what Vision read of it, and the fast level garbled code
+  (`docs/live-ink-step2-spike-2026-10-04.md`). A follow-up to the same window showing the same text,
+  in the same conversation, sends no picture. Capturing needs Screen Recording, which the switch asks
+  for when turned on (`ScreenRecording.request`, macOS's own alert, once); a row under the switch and
+  the menu's first item open its pane. On macOS 15 the first capture also raised macOS's "bypass the
+  system private window picker" alert.
+- The answer streams in: `say` is drawn as a note beside the ink as its words arrive
+  (`LiveAnswer.partialSay`), wrapping at `ui.liveInkTextWidth` and growing away from the ink, and the
+  marks draw themselves on when the answer is whole (`ShapeMarkLayer.drawOn`). `LiveAnswerLayout`
+  places them in global points, clear of the person's ink, the window's text and each other: a
+  circle round a long line is a box, a circle on a loop of the person's is an arrow, and a label
+  goes beside its mark, at an arrow's tail. They are agent `Mark`s on the same surfaces, so a tap
+  erases them (a note's tag counts) and Clear clears them, and the next ask takes them off. Notes on
+  the overlay are `NoteLayer`s, a bitmap `Mark.draw` makes on the main thread, not `MarkLayers`,
+  which draws a drawing on an image.
+- Vignette's own words about an ask (sending, sent, failed, why) are a note beside the ink in the
+  person's colour without a badge, not an agent mark, and are not ink: the next ask is not about them.
+- A session picked in the note's target gets the picture through `ScreenshotRequests.send`, as Send
+  sends a drawing, with the words and where the ink is in the line; the reply comes back as a card.
+  The client's answer goes to the ink (`LiveInk.delivered`) rather than a card.
+- `live-ink-ask?message=` (debug) asks as Return does, and `&session=<id>` sends to that session.
+  `[state] liveInk` adds `new` (ink not yet asked about), `note`, `responder` and `ask` (phase,
+  whether it sent a picture, the reply's length), and each mark's `agent`; `app.screenRecording`
+  says whether captures are allowed. A test launch with `VIGNETTE_SHARE_LIVE_INK` set lets captures
+  see the overlays, so a script can look at what was drawn; the overlay rests under floating
+  windows, so a test window that floats keeps the ask on it and must be lowered to be looked at.
 
 ### Memory
 

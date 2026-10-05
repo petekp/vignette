@@ -75,6 +75,16 @@ it is held the screen is inking, and each stroke becomes a mark or, as a tap, er
 belong to no screenshot and are no drawing; they stay where they were drawn until they are erased.
 _Avoid_: Live annotation, screen drawing
 
+**Responder**:
+The `claude` process Vignette keeps running to answer live ink: the person's own Claude Code, with
+none of their settings and no tools, which sees only what an ask sends. It is not an agent session:
+nothing lists it, and it cannot be sent a drawing.
+_Avoid_: Live agent, assistant
+
+**Ask**:
+One question about live ink, from the note beside it: the picture of the window under the ink, its
+text, the ink, and the words typed. A follow-up is an ask with no new ink.
+
 **Mark**:
 One shape or note in a drawing, or on the screen with live ink, drawn by a person or an agent. Its
 colour says which.

@@ -33,6 +33,7 @@ open -g vignette://requests                   # list the open screenshot request
 open -g vignette://restore-apple-defaults     # put Apple's screencapture defaults back
 open -g vignette://live-ink-clear             # erase every live ink mark
 open -g "vignette://live-ink-stroke?points=100,100;300,120"  # draw a live ink stroke as if by hand (needs "debug": true)
+open -g "vignette://live-ink-ask?message=is%20this%20right"  # ask Claude about the live ink, as Return in its note does (needs "debug": true)
 open -g vignette://tweaks                     # live UI tweaks panel (needs "debug": true)
 open -g vignette://intro-lab                  # the Intro Lab, for the intro into the menu bar icon (needs "debug": true)
 ```
@@ -79,7 +80,7 @@ Every command answers with one line in `~/Library/Logs/Vignette.log`:
 menu bar opens it. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`, `unreadable-image`,
 `debug-disabled`, `no-apple-original`, `write-failed`, `unsupported-type`, `invalid-marks`,
-`no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`. The log has one event per line,
+`no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
 ## Input events

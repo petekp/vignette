@@ -69,10 +69,13 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   `add` skips this and Instant Draw, since a push from an agent is not a capture.
 - **`liveInk`** is Live ink in Settings → General and in the menu bar menu. While it is on, hold
   Control and Option and draw over any app: a loop becomes an ellipse and any other stroke an arrow.
-  Click a mark with the keys held to erase it, or use Clear Live Ink in the menu. It needs
-  Accessibility, like the double tap. Off by default.
-- **`debug`** unlocks `tweaks`, `install-skill?root=`, `live-ink-stroke`, and `file=` outside the
-  watch folder.
+  Click a mark with the keys held to erase it, or use Clear Live Ink in the menu. Letting go opens a
+  note where you can ask Claude about what you drew, and the answer is drawn on the screen. It needs
+  Accessibility, like the double tap, and Screen Recording to ask. Asking runs Claude Code on your
+  own Claude account, with Sonnet: about $0.02 for a new screen and $0.01 for a follow-up. Off by
+  default.
+- **`debug`** unlocks `tweaks`, `install-skill?root=`, `live-ink-stroke`, `live-ink-ask`, and `file=`
+  outside the watch folder.
 - **`agentSkill`** records only whether the app has offered the skill for coding agents:
   `unasked` until the offer, then `off`. The setup window's last page makes the offer. Whether the
   skill is installed is read from disk, and the Agents tab's switches install or remove it per
@@ -92,7 +95,9 @@ editor's sizes. It also holds the
 behaviour those numbers drive: how far a card bows and swells on its way to the annotator, how
 narrow the stack goes to make room for it and how far it stays from it, how deep the drag-select's
 edge band is and how fast it scrolls there, how near an edge of the image a zoom holds that
-edge, and the glow live ink shows along the screen's edges while Control and Option are held.
+edge, the glow live ink shows along the screen's edges while Control and Option are held, and how an
+answer to live ink is drawn: how long its marks take to draw on, and the size and widest wrap of its
+notes.
 
 The defaults are the tuned UI, so a fresh install looks the same. A key the app does not know is
 ignored, and a key you leave out takes its default, so a line you no longer want is safe to delete.

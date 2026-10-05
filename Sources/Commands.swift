@@ -23,6 +23,8 @@ enum CommandError: String, CaseIterable {
     case liveInkOff = "live-ink-off"
     /// `points=` is missing, or is not `x,y` pairs of finite numbers joined by `;`.
     case invalidPoints = "invalid-points"
+    /// `live-ink-ask` found no ink to ask about, or an ask under way. The detail says which.
+    case liveInkNotAsked = "live-ink-not-asked"
 }
 
 /// A `vignette://<name>?file=…&file=…` URL, decoded once.
@@ -48,6 +50,8 @@ struct CommandRequest: Equatable {
     let clear: String?
     /// `points=` from the query, as given: a stroke for `live-ink-stroke`. See `Commands.points`.
     var points: String? = nil
+    /// `message=` from the query: what `live-ink-ask` asks, as the note's words.
+    var message: String? = nil
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -74,6 +78,7 @@ enum Commands {
         Fixed(name: "requests", summary: "list the open screenshot requests; &clear=<id or all> stops one taking replies, cancels its unpublished imports, and removes the files Vignette owns"),
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Vignette first recorded"),
         Fixed(name: "live-ink-clear", summary: "erase every live ink mark from the screen"),
+        Fixed(name: "live-ink-ask", summary: "ask about the live ink on the screen, as Return in its note does: &message=<the note's words>; with no new ink it asks again about the ink asked about last. The answer is drawn on the screen and logged as [live-ink] lines. &session=<id> sends the picture to that agent session instead, as picking it in the note's target does", needsDebug: true),
         Fixed(name: "live-ink-stroke", summary: "draw a live ink stroke as if by hand: &points=x,y;x,y;… in global top-left points, the [state] convention; a loop draws an ellipse, another stroke an arrow, a tap erases the mark under it", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "intro-lab", summary: "open the Intro Lab, for tuning how setup's window goes into the menu bar icon", needsDebug: true),
@@ -94,7 +99,8 @@ enum Commands {
                               marks: items.first { $0.name == "marks" }?.value,
                               root: items.first { $0.name == "root" }?.value.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) },
                               clear: items.first { $0.name == "clear" }?.value,
-                              points: items.first { $0.name == "points" }?.value)
+                              points: items.first { $0.name == "points" }?.value,
+                              message: items.first { $0.name == "message" }?.value)
     }
 
     /// `points=` as a stroke: `x,y` pairs joined by `;`. Nil when it holds none, or any pair is not

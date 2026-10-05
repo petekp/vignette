@@ -565,6 +565,32 @@ final class ShapeMarkLayer {
         self.mark = mark
     }
 
+    /// Draws itself on after `delay`, as a hand draws: the stroke grows from its start over
+    /// `duration`, and the arrowhead appears as the stroke reaches it.
+    func drawOn(after delay: CFTimeInterval, duration: CFTimeInterval) {
+        guard duration > 0 else { return }
+        let begin = CACurrentMediaTime() + delay
+        for layer in edges.map(\.stroke) + [stroke] {
+            let grow = CABasicAnimation(keyPath: "strokeEnd")
+            grow.fromValue = 0
+            grow.toValue = 1
+            grow.beginTime = begin
+            grow.duration = duration
+            grow.timingFunction = CAMediaTimingFunction(controlPoints: 0.3, 0, 0.2, 1)
+            grow.fillMode = .backwards
+            layer.add(grow, forKey: "drawOn")
+        }
+        for layer in edges.map(\.fill) + [fill] {
+            let appear = CABasicAnimation(keyPath: "opacity")
+            appear.fromValue = 0
+            appear.toValue = 1
+            appear.beginTime = begin + duration * 0.85
+            appear.duration = duration * 0.25
+            appear.fillMode = .backwards
+            layer.add(appear, forKey: "drawOn")
+        }
+    }
+
     /// A shape that is not a mark yet, such as a live ink stroke being drawn, drawn as a mark is.
     func show(_ shape: MarkShape, color markColor: MarkColor, pointScale: CGFloat, markStyle: MarkStyle) {
         let edge = markStyle.edgeWidth * pointScale
