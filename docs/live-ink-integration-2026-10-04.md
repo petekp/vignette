@@ -82,9 +82,15 @@ Pete confirmed 2, 3, 4 and 6 on 2026-10-04.
 - **Marks stay on their Space.** An overlay joins no other Space, so there is one per screen per
   Space that has marks, and one for the active Space while the chord is held. Each is up only while
   it is needed, so an idle live ink puts no full-screen window over every app.
-- **Captures leave the overlay out** (`sharingType = .none`). Pete found that ⌘⇧4's window picker
-  took the resting overlay for a window; with the overlay unshared, `screencapture` left a mark out
-  of its picture. Step 2 draws the ink into its own capture, so it loses nothing.
+- **Captures leave the overlay out** (`sharingType = .none`), so a screenshot shows the screen
+  without the marks. Step 2 draws the ink into its own capture, so it loses nothing.
+- **The overlays clear while a capture runs.** macOS's window picker (Space during ⌘⇧4) took the
+  overlay whenever the pointer was over a mark, and unshared it could not capture it ("Unable to
+  capture window image"). Measured with a probe window on macOS 15: the picker takes a window by
+  its pixels at any level, passes over one at alpha 0, and reads the windows when Space is pressed,
+  before its own window appears. So after ⌘⇧, while there are marks, live ink sets its overlays to
+  alpha 0 while a `screencapture` process runs or `screencaptureui` has a window, and the picker
+  then took the app window under a mark.
 - **The overlay rests at level 1.** Above normal windows and below the dim and Vignette's floating
   windows, so the stack and the annotator cover the marks rather than the other way round. Menus,
   the Dock and other apps' floating windows cover them too, which is accepted for step 1: the marks

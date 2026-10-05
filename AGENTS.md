@@ -1026,9 +1026,13 @@ screenshot location for such a launch is written with the same variable:
 - An overlay joins no other Space, so macOS keeps it where it was put up; it is closed, never
   ordered out, since ordered in again it would come up on the active Space. A surface exists while
   it has marks, and the active Space's while the chord is held, so an idle live ink puts no
-  full-screen window over every app. An overlay is shared with no capture (`sharingType = .none`):
-  without that, ⌘⇧4's window picker took it for a window (Pete's test), and with it a screenshot
-  leaves the marks out. At rest it sits at level 1, above normal windows and below
+  full-screen window over every app. An overlay is shared with no capture (`sharingType = .none`), so
+  a screenshot leaves the marks out. macOS's window picker (Space during ⌘⇧4, or ⌘⇧5's window
+  capture) still takes the window whose pixels are under the pointer, at any level, and reads the
+  windows when Space is pressed; over a mark it took the overlay and could not capture it. So after
+  ⌘⇧ (`CaptureOrigin.onCaptureKeys`), while there are marks, live ink clears its overlays (alpha 0,
+  which the picker passes over) for as long as a `screencapture` process runs or `screencaptureui`
+  has a window up (`LiveInk.watchForWindowPicker`). At rest it sits at level 1, above normal windows and below
   the dim (2) and Vignette's floating windows, so the stack and the annotator cover the marks, and
   so do menus, the Dock and other apps' floating windows. It passes every press then
   (`ignoresMouseEvents`). While the chord is held it is inking: it rises to `.screenSaver` with the

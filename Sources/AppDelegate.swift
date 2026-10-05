@@ -76,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     func applicationDidFinishLaunching(_ notification: Notification) {
         replaceOlderInstances()
         captureOrigin = CaptureOrigin()
+        captureOrigin?.onCaptureKeys = { [weak self] in self?.liveInk.watchForWindowPicker() }
         // `kill` and `killall` send SIGTERM, which would end the process without
         // `applicationWillTerminate`: no settings flush, and Apple's thumbnail left off.
         signal(SIGTERM, SIG_IGN)

@@ -19,6 +19,11 @@ final class LiveInk {
     private var glowing = false
     /// Runs while a stroke outlives the chord, until the button is up: inking ends then.
     private var releaseWatch: Timer?
+    /// Runs after ⌘⇧ while there are marks, looking for macOS's window picker.
+    private var pickerWatch: Timer?
+    private var pickerWatchUntil = Date.distantPast
+    /// macOS's window picker is up, and the overlays are clear for it.
+    private var pickerUp = false
     /// Asked when the chord goes down: false while the stack or the annotator holds the screen, which
     /// the raised overlays would cover and take presses from.
     private let mayInk: () -> Bool
@@ -64,6 +69,7 @@ final class LiveInk {
             ]
         } else {
             if isInking { stopInking() }
+            stopWatchingForWindowPicker()
             chord = nil
             for (center, observer) in observers { center.removeObserver(observer) }
             observers = []
@@ -120,6 +126,55 @@ final class LiveInk {
         guard isInking else { return }
         Log.write("[live-ink] standing aside: the stack or the annotator is up")
         stopInking()
+    }
+
+    /// ⌘⇧ went down, so a capture may be starting. macOS's window picker, Space during ⌘⇧4 or ⌘⇧5's
+    /// window capture, takes the window whose pixels are under the pointer, so over a mark it took the
+    /// overlay, which captures leave out ("Unable to capture window image"). It passes over a window
+    /// whose alpha is 0, and it reads the windows when Space is pressed (measured on macOS 15), before
+    /// its own window is up. So while there are marks this looks 10 times a second, for
+    /// `CaptureOrigin.pollSeconds` and as long as a capture lasts, for a `screencapture` process,
+    /// which ⌘⇧4 runs, or a window of `screencaptureui`, which ⌘⇧5 puts up, and clears the
+    /// overlays while there is one. The marks are out of the capture either way.
+    func watchForWindowPicker() {
+        guard !surfaces.isEmpty else { return }
+        pickerWatchUntil = Date().addingTimeInterval(CaptureOrigin.pollSeconds)
+        guard pickerWatch == nil else { return }
+        checkWindowPicker()
+        pickerWatch = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkWindowPicker() }
+        }
+    }
+
+    private func checkWindowPicker() {
+        let up = Self.isCapturing()
+        if up != pickerUp {
+            pickerUp = up
+            surfaces.forEach { $0.overlay.alphaValue = up ? 0 : 1 }
+            Log.write("[live-ink] \(up ? "clear for" : "back after") a capture")
+        }
+        if !up, Date() > pickerWatchUntil { stopWatchingForWindowPicker() }
+    }
+
+    /// A `screencapture` process is running, or `screencaptureui` has a window on screen. The second
+    /// can outlive its capture, so its process alone does not count.
+    private static func isCapturing() -> Bool {
+        var pids = [pid_t](repeating: 0, count: 4096)
+        let count = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
+        var name = [CChar](repeating: 0, count: 64)
+        let capturing = pids.prefix(max(0, count)).contains { pid in
+            proc_name(pid, &name, UInt32(name.count)) > 0 && String(cString: name) == "screencapture"
+        }
+        if capturing { return true }
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        return windows.contains { ($0[kCGWindowOwnerName as String] as? String) == "screencaptureui" }
+    }
+
+    private func stopWatchingForWindowPicker() {
+        pickerWatch?.invalidate()
+        pickerWatch = nil
+        if pickerUp { surfaces.forEach { $0.overlay.alphaValue = 1 } }
+        pickerUp = false
     }
 
     /// The marks and the glow drawn again in the current settings.
@@ -292,6 +347,7 @@ final class LiveInk {
             guard let display = Self.display(of: screen) else { return nil }
             if let surface = surfaces.first(where: { $0.overlay.display == display && $0.overlay.isOnActiveSpace }) { return surface }
             let overlay = LiveInkOverlay(screen: screen, display: display)
+            overlay.alphaValue = pickerUp ? 0 : 1
             let surface = Surface(overlay)
             overlay.onStrokeMoved = { [weak self] points in self?.strokeMoved(points) }
             overlay.onStroke = { [weak self, weak overlay] points in

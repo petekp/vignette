@@ -165,7 +165,8 @@ mark, click on it or inside its circle with the keys held. Clear Live Ink in the
 live ink off.
 
 Your marks stay at their place on the screen, on the Space you drew them on. They don't follow the
-window under them, screenshots leave them out, and they're gone when Vignette quits. Menus, the Dock and floating windows cover
+window under them, and they're gone when Vignette quits. Screenshots leave them out, and they step
+out of sight while you take one, so Cmd+Shift+4 and Space pick the window under a mark. Menus, the Dock and floating windows cover
 them until you hold the keys again.
 
 While you hold the keys, a click draws instead of reaching the app under it. Let go and every click

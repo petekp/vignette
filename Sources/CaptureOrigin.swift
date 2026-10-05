@@ -84,7 +84,9 @@ final class CaptureOrigin {
     private var press: CGPoint?
     private var drag: CaptureRect.Drag?
     /// Long enough to choose ⌘⇧3, 4 or 5, take a selection, and press Space for a window.
-    private static let pollSeconds: TimeInterval = 15
+    static let pollSeconds: TimeInterval = 15
+    /// ⌘⇧ went down together: a capture may be starting.
+    var onCaptureKeys: (() -> Void)?
 
     init() {
         if let monitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: { [weak self] event in
@@ -99,6 +101,7 @@ final class CaptureOrigin {
     private func flagsChanged(_ event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard flags.contains(.command), flags.contains(.shift) else { return }
+        onCaptureKeys?()
         pollUntil = Date().addingTimeInterval(Self.pollSeconds)
         guard poll == nil else { return }
         wasDown = NSEvent.pressedMouseButtons & 1 != 0
