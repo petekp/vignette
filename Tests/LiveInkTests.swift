@@ -252,8 +252,66 @@ final class LiveInkTests: XCTestCase {
         let circle = marks[1].shapeExtent ?? .null
         let label = marks.last.flatMap { LiveAnswerLayout.noteBox($0, sizes: sizes) } ?? .null
         XCTAssertLessThanOrEqual(hypot(max(0, circle.minX - label.maxX, label.minX - circle.maxX),
-                                       max(0, circle.minY - label.maxY, label.minY - circle.maxY)), LiveAnswerLayout.labelReach,
-                                 "the label sits beside the circle, over the text there, not off where there is room")
+                                       max(0, circle.minY - label.maxY, label.minY - circle.maxY)), 6.5,
+                                 "the label touches the circle, over the text there, not off where there is room")
+    }
+
+    func testArrowsComeFromOneSideWithTheirLabelsInAColumnAtTheirTails() {
+        let answer = LiveAnswer(say: "Two more things break at this width.",
+                                marks: [AnswerMark(kind: .arrow, line: "t1", label: "Share cut off"),
+                                        AnswerMark(kind: .arrow, line: "t2", label: "Map cropped")])
+        let share = CGRect(x: 700, y: 200, width: 60, height: 24), map = CGRect(x: 600, y: 500, width: 90, height: 24)
+        let scene = LiveAnswerLayout.Scene(room: room, ink: [], text: [])
+        let marks = LiveAnswerLayout.marks(for: answer, targets: [share, map], asked: CGRect(x: 100, y: 800, width: 40, height: 20),
+                                           scene: scene, sizes: sizes)
+        XCTAssertEqual(marks.map(\.kind), [.text, .arrow, .text, .arrow, .text])
+        let arrows = marks.compactMap { mark -> Mark.Arrow? in if case .arrow(let arrow) = mark.geometry { arrow } else { nil } }
+        XCTAssertEqual(arrows[0].start.x > arrows[0].end.x, arrows[1].start.x > arrows[1].end.x, "both from one side")
+        XCTAssertEqual(arrows[0].start.x, arrows[1].start.x, accuracy: 0.5, "tails in a column")
+        for (arrow, label) in zip(arrows, [marks[2], marks[4]]) {
+            let box = LiveAnswerLayout.noteBox(label, sizes: sizes) ?? .null
+            let gap = hypot(max(0, box.minX - arrow.start.x, arrow.start.x - box.maxX), max(0, box.minY - arrow.start.y, arrow.start.y - box.maxY))
+            XCTAssertLessThanOrEqual(gap, 6 * 2.squareRoot() + 0.5, "the label touches its arrow's tail, or its corner does")
+        }
+    }
+
+    func testTheReplyKeepsOffThePersonsLoopUnderTheirNote() {
+        let loop = CGRect(x: 400, y: 300, width: 300, height: 200)
+        let question = CGRect(x: 400, y: 260, width: 180, height: 30)
+        let scene = LiveAnswerLayout.Scene(room: room, ink: [Mark(geometry: .ellipse(loop))], text: [], notes: [question])
+        let reply = LiveAnswerLayout.reply("Two more things break at this width.", question: question, near: loop, scene: scene,
+                                           obstacles: LiveAnswerLayout.obstacles(in: scene), sizes: sizes)
+        let box = LiveAnswerLayout.noteBox(reply, sizes: sizes) ?? .null
+        XCTAssertFalse(box.intersects(loop), "under the note is the loop")
+        XCTAssertEqual(box.maxY, question.minY - LiveAnswerLayout.threadGap, accuracy: 0.5, "so it goes right above the note")
+    }
+
+    func testAnActionNamesTheMarksItActsOnByIndex() throws {
+        let answer = try LiveAnswer(json: ["say": "Two more things.", "marks": [["kind": "circle", "words": "Share"], ["kind": "arrow", "words": "20 km"]],
+                                           "actions": ["Fix both", ["title": "Header only", "marks": [0, 0, 9]], ["title": "Map only", "marks": [Int]()]]])
+        XCTAssertEqual(answer.actions, [LiveAnswer.Action("Fix both"), LiveAnswer.Action("Header only", marks: [0]), LiveAnswer.Action("Map only")],
+                       "no repeats, no index past the marks, and none is every mark")
+        let again = try JSONDecoder().decode(LiveAnswer.self, from: JSONEncoder().encode(answer))
+        XCTAssertEqual(again.actions, answer.actions)
+    }
+
+    func testEachFindingKnowsTheMarksDrawnForIt() {
+        let answer = LiveAnswer(say: "Two more things.", marks: [AnswerMark(kind: .arrow, line: "t1", label: "Share cut off"),
+                                                                 AnswerMark(kind: .arrow, line: "t2", label: "Map cropped")])
+        let placed = LiveAnswerLayout.placed(for: answer, targets: [nil, CGRect(x: 600, y: 500, width: 90, height: 24)],
+                                             asked: CGRect(x: 100, y: 800, width: 40, height: 20),
+                                             scene: LiveAnswerLayout.Scene(room: room, ink: [], text: []), sizes: sizes)
+        XCTAssertEqual(placed.findings.count, 2)
+        XCTAssertEqual(placed.findings[0], [], "the one not found drew nothing")
+        XCTAssertEqual(placed.findings[1], placed.marks.dropFirst().map(\.id), "the arrow and its label")
+    }
+
+    func testAHookAtTheHeadDoesNotTurnTheWayAnArrowLeavesItsTail() {
+        // Straight to the right for 200 pt, then a hook back up and left at the head.
+        let via = stride(from: 10, through: 200, by: 10).map { CGPoint(x: 100 + CGFloat($0), y: 300) } + [CGPoint(x: 290, y: 260)]
+        let away = LiveAnswerLayout.leaving(Mark.Arrow(start: CGPoint(x: 100, y: 300), end: CGPoint(x: 240, y: 240), via: via))
+        XCTAssertEqual(away.dx, -1, accuracy: 0.01)
+        XCTAssertEqual(away.dy, 0, accuracy: 0.01)
     }
 
     // MARK: Marks that stay on their window

@@ -116,7 +116,9 @@ final class LiveInk {
         /// The session it was sent to, which an action's click goes back to; nil for the responder.
         var session: Shared?
         /// The answer's actions, shown as buttons under its reply.
-        var actions: [String] = []
+        var actions: [LiveAnswer.Action] = []
+        /// For each of the answer's marks, the marks drawn for it, which an action names by index.
+        var findings: [[Mark.ID]] = []
     }
 
     /// One screen on one Space: the overlay there and the marks on it, in global top-left points at
@@ -812,12 +814,24 @@ final class LiveInk {
         if let actionsPanel { return actionsPanel.place(at: corner) }
         let panel = LiveAnswerActions(actions, at: corner, color: Settings.shared.data.ui.markStyle.color(.agent))
         panel.onPick = { [weak self] action in self?.act(action) }
+        panel.onPoint = { [weak self] action in self?.point(at: action) }
         actionsPanel = panel
     }
 
     private func hideActions() {
+        if actionsPanel != nil { point(at: nil) }
         actionsPanel?.hide()
         actionsPanel = nil
+    }
+
+    /// The pointer is on an action, or nil when it left them: the marks it acts on stand out and the
+    /// rest of the answer's findings fade, so "Header only" shows which. One that acts on every mark
+    /// changes nothing.
+    private func point(at action: LiveAnswer.Action?) {
+        let findings = asking?.findings ?? []
+        let all = Set(findings.joined())
+        let lit = action?.marks.map { Set($0.flatMap { $0 < findings.count ? findings[$0] : [] }) } ?? all
+        windows.light(lit, among: all)
     }
 
     /// The person clicked one of the answer's actions: its words go back to the session as their
@@ -1042,9 +1056,9 @@ final class LiveInk {
                           agent: String = LiveAnswerLayout.agentName) {
         guard asking != nil else { return }
         let targets = answer.marks.map { target(of: $0, in: packet) }
-        let placed = LiveAnswerLayout.marks(for: answer, targets: targets, asked: asked, question: question, scene: scene(for: packet),
-                                            sizes: answerSizes,
-                                            streamed: asking?.say, below: answer.actions.isEmpty ? 0 : LiveAnswerActions.room).map { mark in
+        let layout = LiveAnswerLayout.placed(for: answer, targets: targets, asked: asked, question: question, scene: scene(for: packet),
+                                             sizes: answerSizes, streamed: asking?.say, below: answer.actions.isEmpty ? 0 : LiveAnswerActions.room)
+        let placed = layout.marks.map { mark in
             var mark = mark
             if mark.agent { mark.agentName = agent }
             return mark
@@ -1054,6 +1068,7 @@ final class LiveInk {
         asking?.phase = .answered
         asking?.say = placed.first
         asking?.actions = answer.actions
+        asking?.findings = layout.findings
         answerMarks.formUnion(placed.map(\.id))
         Log.write("[live-ink] drew answer marks=\(placed.count - 1) dropped=\(targets.filter { $0 == nil }.count)\(answer.steps ? " steps" : "")")
         let groups = Self.steps(in: Array(placed.dropFirst()))
@@ -1181,10 +1196,11 @@ final class LiveInk {
     }
 
     /// Adds an answer's marks, or Vignette's own note, replacing marks of the same id. They go on the
-    /// window the ask was about, or the window the ink asked about is on, beside that ink: when its
-    /// content moved since the ask, they move with it and follow it, and otherwise each mark is
-    /// anchored to what it points at, and a note to the ink. With no window they go on the active
-    /// Space's surfaces.
+    /// window the ask was about, or the window the ink asked about is on. There they all follow that
+    /// ink, moved by however far its content moved since the ask, so the answer moves as one piece:
+    /// marks anchored to what each points at glided at different moments when a page reloaded, and a
+    /// label landed on the reply. Without that ink, each mark is anchored to what it points at, and a
+    /// label follows its mark. With no window they go on the active Space's surfaces.
     private func put(_ placed: [Mark], window windowID: CGWindowID?) {
         let leader = asking?.leader.flatMap { id in windows.window(of: id).map { (id: id, window: $0) } }
         let target = (windowID ?? leader?.window).flatMap(windows.target(id:))
@@ -1194,7 +1210,6 @@ final class LiveInk {
         if let leader, leader.window == target?.id, let then = asking?.leaderShift, let now = windows.shift(of: leader.id) {
             moved = CGVector(dx: now.dx - then.dx, dy: now.dy - then.dy)
         }
-        let still = leader.map { windows.isShown($0.id) && moved == .zero } ?? true
         // The mark a label names comes just before it.
         var labelled: Mark.ID?
         for mark in placed {
@@ -1202,10 +1217,10 @@ final class LiveInk {
             if let target {
                 let mark = LiveWindows.translated(mark, by: moved)
                 let anchor: LiveWindows.Anchor
-                if mark.isLabel, still, let labelled {
-                    anchor = .follows(labelled)
-                } else if let leader, leader.window == target.id, !still || mark.kind == .text {
+                if let leader, leader.window == target.id {
                     anchor = .follows(leader.id)
+                } else if mark.isLabel, let labelled {
+                    anchor = .follows(labelled)
                 } else {
                     anchor = .at(LiveWindows.anchorPoint(of: mark))
                 }

@@ -104,6 +104,8 @@ final class LiveWindows {
         var lastScroll: CFTimeInterval = 0
         /// When its anchor stopped being readable while it glides, as a page does while it reloads.
         var unreadSince: CFTimeInterval?
+        /// Drawn faint, because it has stayed unread for `dimAfter` while it glides.
+        var dimmed = false
         var lastChange: CFTimeInterval = 0
         /// The trackpad's scroll since it hid, and whether its anchor has moved since then.
         var scrolledSinceHide = CGVector.zero
@@ -150,6 +152,14 @@ final class LiveWindows {
             case .follows: "follows"
             case .window: "window"
             }
+        }
+
+        var isFollower: Bool {
+            if case .follows = self { true } else { false }
+        }
+
+        func follows(_ leader: Mark.ID) -> Bool {
+            if case .follows(let id, _) = self { id == leader } else { false }
         }
     }
 
@@ -455,6 +465,40 @@ final class LiveWindows {
             }
         }
         if window.pins.contains(where: { $0.phase == .shown && $0.unreadSince != nil && $0.patch != nil }) { relocate(window) }
+        // A follower dims with the mark it follows, not by its own reading.
+        for index in window.pins.indices where window.pins[index].phase == .shown && !window.pins[index].anchor.isFollower {
+            let lost = window.pins[index].unreadSince.map { now - $0 > Self.dimAfter } ?? false
+            if lost != window.pins[index].dimmed { dim(index, in: window, lost) }
+        }
+    }
+
+    /// A gliding mark not found for this long is drawn faint until it is, so a mark the page changed
+    /// under does not stand at full strength on something else for the rest of the turn.
+    private static let dimAfter: CFTimeInterval = 3
+    private static let dimmedOpacity: Float = 0.4
+
+    /// Draws the marks of `all` that are not `lit` faint, as an answer's action points at its own
+    /// findings, and the rest at their own strength.
+    func light(_ lit: Set<Mark.ID>, among all: Set<Mark.ID>) {
+        for window in windows.values {
+            for pin in window.pins where all.contains(pin.mark.id) && pin.phase == .shown {
+                let strength: Float = lit.contains(pin.mark.id) ? (pin.dimmed ? Self.dimmedOpacity : 1) : Self.unlitOpacity
+                window.overlay.marks.fade(pin.mark.id, to: strength, duration: 0.18 * Settings.shared.motionScale)
+            }
+        }
+    }
+
+    private static let unlitOpacity: Float = 0.2
+
+    /// Draws a mark, and the marks that follow it, faint or back at full strength.
+    private func dim(_ index: Int, in window: Tracked, _ dimmed: Bool) {
+        let id = window.pins[index].mark.id
+        Log.write("[live-ink] \(dimmed ? "dim" : "undim") window=\(window.id)")
+        for follower in window.pins.indices where follower == index || window.pins[follower].anchor.follows(id) {
+            guard window.pins[follower].phase == .shown else { continue }
+            window.pins[follower].dimmed = dimmed
+            window.overlay.marks.fade(window.pins[follower].mark.id, to: dimmed ? Self.dimmedOpacity : 1, duration: 0.4 * Settings.shared.motionScale)
+        }
     }
 
     private static func same(_ a: CGVector?, _ b: CGVector?) -> Bool {
@@ -473,6 +517,7 @@ final class LiveWindows {
         let now = CACurrentMediaTime()
         if window.pins[index].phase == .shown { Log.write("[live-ink] hide window=\(window.id) because=\(reason)") }
         window.pins[index].phase = .moving
+        window.pins[index].dimmed = false
         window.pins[index].hiddenAt = now
         window.pins[index].ride = .zero
         window.pins[index].scrolledSinceHide = .zero
@@ -585,6 +630,7 @@ final class LiveWindows {
         window.pins[index].shift = shift
         window.pins[index].ride = .zero
         window.pins[index].phase = .shown
+        window.pins[index].dimmed = false
         window.pins[index].shownAt = CACurrentMediaTime()
         window.pins[index].windowSize = window.frame.size
         window.overlay.marks.move(window.pins[index].mark.id, by: shift)

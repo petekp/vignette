@@ -46,7 +46,8 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
     private var revealed = false
     /// Sent: the words stay, the keys are let go, and only `settle` or its time limit closes it.
     private var sent = false
-    /// It sits left of the ink, so it grows to the left, keeping its right edge where it touches it.
+    /// It sits left of the ink, so it grows to the left, keeping its right edge where it touches it,
+    /// with the pill and the chip against the panel's right edge.
     private var growsLeft = false
     /// The tag once sent, which `tagFrame` answers while the pill narrows to it.
     private var sentTag: CGRect?
@@ -176,7 +177,7 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
 
     /// The pill with its edge, in global top-left points.
     var pillFrame: CGRect {
-        CGRect(x: frame.minX, y: StateReport.primaryHeight - frame.maxY, width: pill.frame.width, height: height)
+        CGRect(x: frame.minX + pill.frame.minX, y: StateReport.primaryHeight - frame.maxY, width: pill.frame.width, height: height)
     }
 
     /// The pill's height, and the panel's, which holds the chip under it.
@@ -198,7 +199,8 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
         var rect = frame
         if let spot {
             self.growsLeft = growsLeft
-            let x = growsLeft ? spot.maxX - pill.frame.width : spot.minX
+            layoutContent()
+            let x = growsLeft ? spot.maxX - frame.width : spot.minX
             rect.origin = CGPoint(x: x, y: StateReport.primaryHeight - spot.minY - frame.height)
         }
         let motion = Settings.shared.motionScale
@@ -249,7 +251,7 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
         var rect = frame
         rect.size.width = fittedWidth
         if growsLeft {
-            rect.origin.x = frame.minX + pill.frame.width - pillWidth
+            rect.origin.x = frame.maxX - rect.width
         } else if rect.maxX > (screen?.visibleFrame.maxX ?? .greatestFiniteMagnitude) - 8 {
             rect.origin.x -= rect.width - frame.width
         }
@@ -257,12 +259,14 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
         layoutContent()
     }
 
-    /// The pill along the panel's top, `width` wide, and the chip under it. The words stand where the
-    /// drawn note sets them: `inset` from the left, on the layout's baseline.
+    /// The pill along the panel's top, `width` wide, and the chip under it, both against the edge
+    /// nearest the ink. The words stand where the drawn note sets them: `inset` from the pill's left,
+    /// on the layout's baseline.
     private func layoutContent(pillWidth width: CGFloat? = nil) {
         let width = width ?? pillWidth
-        pill.frame = CGRect(x: 0, y: panelHeight - height, width: width, height: height)
-        chip.setFrameOrigin(CGPoint(x: Self.chipIndent, y: 0))
+        let panelWidth = frame.width
+        pill.frame = CGRect(x: growsLeft ? panelWidth - width : 0, y: panelHeight - height, width: width, height: height)
+        chip.setFrameOrigin(CGPoint(x: growsLeft ? panelWidth - Self.chipIndent - chip.frame.width : Self.chipIndent, y: 0))
         let fieldHeight = field.intrinsicContentSize.height
         let baseline = edge + (layout.lines.first?.baseline ?? 0) - layout.box.minY
         let top = baseline - field.firstBaselineOffsetFromTop
@@ -361,15 +365,15 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
         makeFirstResponder(nil)
         let width = min(wordsWidth(words) + inset * 2, pill.frame.width)
         // Left of the ink, it narrows from the left, so its edge stays at the ink.
-        let shift = growsLeft ? pill.frame.width - width : 0
-        sentTag = pillFrame.offsetBy(dx: shift, dy: 0).insetBy(dx: edge, dy: edge)
-        sentTag?.size.width = width - edge * 2
+        var narrowed = pill.frame
+        if growsLeft { narrowed.origin.x = narrowed.maxX - width }
+        narrowed.size.width = width
+        sentTag = CGRect(x: frame.minX + narrowed.minX, y: pillFrame.minY, width: width, height: height).insetBy(dx: edge, dy: edge)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.22 * Settings.shared.motionScale
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             chip.animator().alphaValue = 0
-            pill.animator().frame.size.width = width
-            if shift != 0 { animator().setFrameOrigin(CGPoint(x: frame.minX + shift, y: frame.minY)) }
+            pill.animator().frame = narrowed
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.settle(into: nil) }
     }
@@ -386,8 +390,8 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             guard let tag else { return }
             let target = appKit(tag.insetBy(dx: -edge, dy: -edge))
-            animator().setFrameOrigin(CGPoint(x: target.minX, y: target.maxY - frame.height))
-            pill.animator().frame.size.width = target.width
+            animator().setFrameOrigin(CGPoint(x: frame.minX, y: target.maxY - frame.height))
+            pill.animator().frame = CGRect(x: target.minX - frame.minX, y: pill.frame.minY, width: target.width, height: pill.frame.height)
         } completionHandler: {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.16 * motion

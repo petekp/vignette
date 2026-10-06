@@ -1112,16 +1112,22 @@ screenshot location for such a launch is written with the same variable:
   system private window picker" alert.
 - The answer streams in: `say` is drawn as a note under the person's note as its words arrive
   (`LiveAnswer.partialSay`), left-aligned with it, so the question, the reply and its actions read
-  as one thread. It goes right above the note when the room ends under it, and beside the ink when
-  there is no note. It wraps at `ui.liveInkTextWidth`, and the marks draw themselves on when the
+  as one thread. It goes right above the note when the room or the person's ink ends it there, and
+  beside the ink when there is no note. It wraps at `ui.liveInkTextWidth`, and the marks draw themselves on when the
   answer is whole (`ShapeMarkLayer.drawOn`). `LiveAnswerLayout` places them in global points inside
   the page (a browser's web area, from Accessibility, else the window), clear of the person's ink,
   the window's text and each other, and no note covers what the answer points at: a circle round a
-  long line is a box, a circle on a loop of the person's is an arrow, and a label goes beside its
-  mark, at an arrow's tail, with the arrow's side chosen for where its label fits. Labels are
-  `Mark.isLabel`, drawn without the agent's badge, so only the reply names the agent. The reply
-  follows the ink it was about, as the person's note does, so the thread moves as one; a pointing
-  mark is anchored to its own content, and a label follows the mark it names. They are agent `Mark`s on the same surfaces, so a tap
+  long line is a box, and a circle on a loop of the person's is an arrow. A label touches its mark
+  where a hand writes one (`LiveAnswerLayout.handSpots`, which places the person's note too): at an
+  arrow's tail, on the side away from its head, or against a circle's edge, with the arrow's side
+  chosen for where its label fits. Later arrows come from the first one's side, with their tails
+  level with its tail, so the labels stand in a column. Labels are `Mark.isLabel`, drawn without
+  the agent's badge, so only the reply names the agent. Every mark of the answer follows the ink it
+  was about, as the person's note does, so the answer moves as one piece: arrows anchored to their
+  own words glided at different moments when a page reloaded, and a label landed on the reply. A
+  gliding mark not found for 3 s is drawn faint until it is (`LiveWindows.dimAfter`). An action
+  may name the marks it acts on (`LiveAnswer.Action`, `{"title", "marks"}`, by index), and pointing
+  at its button fades the answer's other findings (`LiveWindows.light`). They are agent `Mark`s on the same surfaces, so a tap
   erases them (a note's tag counts) and Clear clears them, and the next ask takes them off. Notes on
   the overlay are `NoteLayer`s, a bitmap `Mark.draw` makes on the main thread, not `MarkLayers`,
   which draws a drawing on an image.

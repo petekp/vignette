@@ -41,6 +41,32 @@ log.
     hand would write it: against an arrow's tail, on the side the arrow came from, or beside a
     loop's edge. It may cover a few words of the window there. Left of the ink, it grows to the
     left, so its right edge stays at the tail as the words come.
+11. **The reply keeps off the person's loop.** Its spot under the note was checked against what
+    the answer points at and other notes, not the person's ink, so with the note above a loop the
+    reply could land on the loop. It now counts the ink too, and tries the note's right edge as well
+    as its left before going above the note.
+12. **The answer moves as one piece.** Claude's arrows were anchored to their own words and the
+    reply to the person's ink, so after a reload a label glided onto the reply before the reply
+    moved. Every mark of the answer now follows the person's ink. The cost: a mark in another
+    scroll area than the ink, such as a sidebar, moves with the ink's area rather than its own.
+13. **The chip sits by the ink.** A note left of its ink keeps the pill and the chip against its
+    right edge, next to the ink.
+14. **A hook does not flip the note.** Which way an arrow leaves its tail is measured over its first
+    24 pt, so a stroke that curls at the head no longer puts the note on the wrong side.
+15. **A mark that is never found fades.** A gliding mark not found for 3 s is drawn faint until it
+    is found, so it does not stand at full strength on the wrong thing for the rest of the turn.
+16. **Claude's labels touch their arrows, in a column.** A label goes where a hand writes one, the
+    same spots as the person's note: touching an arrow's tail on the far side, or a circle's edge.
+    Later arrows come from the first one's side, with their tails level, so the labels line up.
+17. **An action shows the findings it covers.** An action may name its marks by index
+    (`{"title": "Header only", "marks": [0]}`). Pointing at its button fades the other findings.
+    The reply protocol is now version 4, the skill version 13, the plugin 6.3.4. The responder's
+    own schema still sends plain words, which act on every mark.
+18. **A take stops early when it cannot finish.** `devtake.py` checks that Claude Code's API
+    resolves and that nothing covers the stage before recording. It raises the stage before each
+    beat, stops a beat as soon as the stage's Claude Code logs an API error, and runs that beat
+    again once.
+19. **The demo notes lost an outdated tip** about keeping the pointer still: the note follows the ink.
 
 ## Verification
 

@@ -259,7 +259,7 @@ def set_stage(stage):
         json.dump({'app': stage.app, 'pid': stage.pid, 'settings': p['settings'], 'bounds': stage.bounds,
                    'frames': frames, 'chrome_desktop': stage.chrome_desktop, 'chrome_mobile': stage.chrome_mobile,
                    'ghostty': stage.ghostty, 'desktop': stage.desktop.pid, 'inbox': stage.inbox,
-                   'session': stage.session_id, 'work': p['work'], 'url': stage.page_url,
+                   'session': stage.session_id, 'claude': p['claude'], 'work': p['work'], 'url': stage.page_url,
                    'accessibility': s['app'].get('accessibility'), 'paused': stage.paused, 'held_by': os.getpid()}, f, indent=2)
     print(f"  Vignette Demo pid={stage.pid} accessibility={s['app'].get('accessibility')}", flush=True)
 

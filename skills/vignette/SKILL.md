@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "12"
+  version: "13"
 ---
 
 # Vignette
@@ -136,9 +136,9 @@ each mark circles or points at the words it names:
 ```sh
 cat > /tmp/answer.json <<'JSON'
 {"say": "Two more things break at this width.",
- "marks": [{"kind": "circle", "words": "Packing", "label": "runs off the edge"},
-           {"kind": "arrow", "words": "20 km", "label": "map cropped"}],
- "actions": ["Fix both", "Header only"]}
+ "marks": [{"kind": "circle", "words": "Share", "label": "Share cut off"},
+           {"kind": "arrow", "words": "20 km", "label": "Map cropped"}],
+ "actions": ["Fix both", {"title": "Header only", "marks": [0]}]}
 JSON
 sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --answer /tmp/answer.json
 ```
@@ -159,7 +159,9 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --answe
   image you were sent.
 - `actions` are up to three buttons under your words, one to three words each, for what they will
   most likely want next. Match them to the marks: "Fix both" and "Header only" for two findings.
-  The first is the one you recommend. A click sends the button's words back to you as their reply,
+  The first is the one you recommend. An action that acts on some of the marks, not all, is
+  `{"title": …, "marks": [indexes into marks, from 0]}`: pointing at its button shows those marks
+  and fades the others. A click sends the button's words back to you as their reply,
   with a fresh picture of the window. Offer them when you found something to do and have not done
   it yet, and leave them out otherwise.
 - `--answer` comes alone, without `--marks` or `--image`. The exit codes are the same, and

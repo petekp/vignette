@@ -13,8 +13,11 @@ why. The movie and the beats' times go to `out/dev/takes/`.
 import json
 import math
 import os
+import calendar
+import glob
 import random
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -23,6 +26,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from take import Hand, TakeFailed   # noqa: E402
+
+
+class ClaudeFailed(TakeFailed):
+    """The stage's Claude Code stopped on an error of its own, such as an API it could not reach."""
 
 OUT = os.path.join(HERE, 'out', 'dev')
 RECORD = os.path.join(HERE, 'out', 'bin', 'record')
@@ -92,6 +99,24 @@ class DevTake:
                 return found
             time.sleep(every)
         raise TakeFailed(f'{what} did not happen within {timeout} s')
+
+    def api_error(self, since):
+        """The newest API error the stage's Claude Code wrote in its session's transcript after
+        `since`, a time.time(), as its text; None when there is none."""
+        found = None
+        for path in glob.glob(os.path.join(self.stage['claude'], 'projects', '*', self.stage['session'] + '.jsonl')):
+            if os.path.getmtime(path) < since:
+                continue
+            with open(path, errors='replace') as f:
+                for line in f:
+                    if '"isApiErrorMessage":true' not in line:
+                        continue
+                    entry = json.loads(line)
+                    stamp = calendar.timegm(time.strptime(entry.get('timestamp', '')[:19], '%Y-%m-%dT%H:%M:%S'))
+                    if stamp >= since:
+                        content = entry.get('message', {}).get('content') or [{}]
+                        found = (content[0].get('text') or 'an API error').strip()
+        return found
 
     def turn(self):
         with open(os.path.join(self.stage['inbox'], 'turn')) as f:
@@ -215,10 +240,20 @@ class DevTake:
     def answered(self, offset, timeout=240, expect_answer=False):
         """Waits for Claude to start and for its turn to end, which ends the shimmer, or for an
         answer drawn on the window, which `expect_answer` requires."""
-        self.wait(lambda: self.turn() == 'busy', 60, 'Claude starting', every=0.3)
+        sent = time.time() - 5
+
+        def failing(test):
+            def check():
+                error = self.api_error(sent)
+                if error:
+                    raise ClaudeFailed(f"the stage's Claude Code stopped: {error}")
+                return test()
+            return check
+        self.wait(failing(lambda: self.turn() == 'busy'), 60, 'Claude starting', every=0.3)
         self.beat('claude working')
-        line = self.wait(lambda: next((l for l in self.log_since(offset).splitlines()
-                                       if any(k in l for k in ("session's turn ended", '[reply] shown', '[reply] published', '[reply] error'))), None),
+        line = self.wait(failing(lambda: next((l for l in self.log_since(offset).splitlines()
+                                               if any(k in l for k in ("session's turn ended", '[reply] shown', '[reply] published',
+                                                                       '[reply] error'))), None)),
                          timeout, "Claude's turn ending", every=0.5)
         if '[reply] published' in line or '[reply] error' in line:
             raise TakeFailed(f'the answer was not drawn on the window: {line}')
@@ -299,6 +334,30 @@ class DevTake:
 
     BEATS = ['number_days', 'stack_on_mobile', 'review_mobile']
 
+    def preflight(self):
+        """Stops before recording when the take could not finish: Claude Code cannot reach its API,
+        or another app's window covers part of the stage."""
+        try:
+            socket.getaddrinfo('api.anthropic.com', 443)
+        except OSError as error:
+            raise TakeFailed(f"Claude Code's API cannot be reached: {error}")
+        frames = self.stage['frames']
+        for window, pid in (('terminal', self.ghostty), ('desktop', self.desktop), ('mobile', self.mobile)):
+            x, y, w, h = frames[window]
+            for fx in (0.15, 0.5, 0.85):
+                for fy in (0.15, 0.5, 0.85):
+                    try:
+                        self.require(x + w * fx, y + h * fy, pid)
+                    except TakeFailed as error:
+                        # The mobile window sits over the desktop one, so the desktop's points under it are the mobile's.
+                        if not (window == 'desktop' and f'pid {self.mobile},' in str(error)):
+                            raise TakeFailed(f'the {window} window is covered: {error}')
+
+    def raise_stage(self):
+        """The stage's windows above any other app's; the mobile window last, over the desktop one."""
+        for pid in (self.ghostty, self.desktop, self.mobile):
+            self.front(pid)
+
     def perform(self, only=None, record=True):
         os.makedirs(TAKES, exist_ok=True)
         name = time.strftime('take-%Y%m%d-%H%M%S')
@@ -306,13 +365,9 @@ class DevTake:
         self.url('live-ink-clear')
         if self.turn() != 'idle':
             raise TakeFailed("Claude Code is busy; wait for its turn to end")
-        # The stage's windows go above any other app's; the mobile window last, over the desktop one.
-        for pid in (self.ghostty, self.desktop, self.mobile):
-            self.front(pid)
+        self.raise_stage()
+        self.preflight()
         frames = self.stage['frames']
-        for window, pid in (('terminal', self.ghostty), ('desktop', self.desktop), ('mobile', self.mobile)):
-            x, y, w, h = frames[window]
-            self.require(x + w * 0.3, y + h * 0.5, pid)
         self.glide(frames['desktop'][0] + 300, frames['desktop'][1] + frames['desktop'][3] - 60, 0.8)
         recorder = None
         if record:
@@ -324,7 +379,18 @@ class DevTake:
         try:
             self.pause(1.5)
             for beat in self.BEATS:
-                if not only or beat in only:
+                if only and beat not in only:
+                    continue
+                # A window that came forward during the last beat goes back under the stage.
+                self.raise_stage()
+                try:
+                    getattr(self, beat)()
+                except ClaudeFailed as error:
+                    # Claude Code's own failure, not the take's: the beat starts over once, and the cut skips it.
+                    self.beat(f'retry {beat}: {error}')
+                    self.wait(lambda: self.turn() == 'idle', 60, 'Claude Code idle')
+                    self.url('live-ink-clear')
+                    self.pause(5)
                     getattr(self, beat)()
             self.beat('end')
             self.pause(1.5)

@@ -3,10 +3,12 @@ import AppKit
 /// The buttons under a session's answer, one for each action it offered, such as "Fix both": the
 /// first filled in the agent's colour, the rest outlined in it. A click sends the button's words
 /// back to the session (`LiveInk.act`). A panel of its own, so a click on it never reaches the
-/// window under the answer, and one that never takes the keys.
+/// window under the answer, and one that never takes the keys. Pointing at a button reports its
+/// action (`onPoint`), and leaving the buttons reports nil.
 @MainActor
 final class LiveAnswerActions: NSPanel {
     var onPick: ((String) -> Void)?
+    var onPoint: ((LiveAnswer.Action?) -> Void)?
 
     private var hiding = false
 
@@ -20,7 +22,7 @@ final class LiveAnswerActions: NSPanel {
     static let room: CGFloat = height + 8
 
     /// Opens with its first button's top-left corner at `corner`, in global top-left points.
-    init(_ actions: [String], at corner: CGPoint, color: CGColor) {
+    init(_ actions: [LiveAnswer.Action], at corner: CGPoint, color: CGColor) {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
@@ -36,10 +38,11 @@ final class LiveAnswerActions: NSPanel {
         let row = NSView()
         row.wantsLayer = true
         for (index, action) in actions.enumerated() {
-            let width = ceil((action as NSString).size(withAttributes: [.font: font]).width) + Self.pad * 2
+            let width = ceil((action.title as NSString).size(withAttributes: [.font: font]).width) + Self.pad * 2
             let button = ActionButton(frame: CGRect(x: x, y: Self.margin, width: width, height: Self.height),
-                                      title: action, font: font, color: color, filled: index == 0)
-            button.onClick = { [weak self] in self?.onPick?(action) }
+                                      title: action.title, font: font, color: color, filled: index == 0)
+            button.onClick = { [weak self] in self?.onPick?(action.title) }
+            button.onHover = { [weak self] inside in self?.onPoint?(inside ? action : nil) }
             row.addSubview(button)
             x += width + Self.gap
         }
@@ -109,6 +112,7 @@ final class LiveAnswerActions: NSPanel {
     /// A pill that takes a press without activating the app, and counts a release inside it as the click.
     private final class ActionButton: NSView {
         var onClick: (() -> Void)?
+        var onHover: ((Bool) -> Void)?
         let title: String
         private let pill = CALayer()
 
@@ -140,6 +144,16 @@ final class LiveAnswerActions: NSPanel {
         required init?(coder: NSCoder) { fatalError("not used") }
 
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+        // The app is never active while the answer shows, so the area tracks whatever app is.
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
+        }
+
+        override func mouseEntered(with event: NSEvent) { onHover?(true) }
+        override func mouseExited(with event: NSEvent) { onHover?(false) }
 
         override func mouseDown(with event: NSEvent) { pill.opacity = 0.75 }
 

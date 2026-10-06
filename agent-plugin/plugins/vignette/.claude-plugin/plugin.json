@@ -1,7 +1,7 @@
 {
   "name": "vignette",
   "displayName": "Vignette",
-  "version": "6.3.3",
+  "version": "6.3.4",
   "description": "Send drawings from Vignette to this session, and draw back",
   "author": { "name": "Pete Petrash", "url": "https://github.com/petekp" },
   "homepage": "https://github.com/petekp/vignette",

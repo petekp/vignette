@@ -33,7 +33,6 @@ on a copy of the settings file, with its own screenshot folder, and `down` puts 
   takes about 1.5 s on top of the answer.
 - Use a trackpad for the scroll beat. A trackpad scroll fades the marks as the content starts
   moving.
-- Keep the pointer still for a moment after letting go of ⌃⌥, so the note opens where you expect.
 
 ## The beats
 

@@ -12,7 +12,19 @@ struct LiveAnswer: Equatable {
     var steps = false
     /// What the person may answer with a click, as buttons under the reply, such as "Fix both".
     /// A click sends the button's words back as their reply.
-    var actions: [String] = []
+    var actions: [Action] = []
+
+    /// A button under the reply. Pointing at it brings out the marks it acts on and fades the rest.
+    struct Action: Equatable {
+        var title: String
+        /// The marks it acts on, as indexes into `marks`; nil for all of them.
+        var marks: [Int]?
+
+        init(_ title: String, marks: [Int]? = nil) {
+            self.title = title
+            self.marks = marks
+        }
+    }
 
     static let maxMarks = 4
     /// The longest reply and label drawn, in characters. A longer one is cut at a word.
@@ -73,21 +85,30 @@ struct LiveAnswer: Equatable {
         actions = Self.actions(object["actions"])
     }
 
-    init(say: String, marks: [AnswerMark] = [], steps: Bool = false, actions: [String] = []) {
+    init(say: String, marks: [AnswerMark] = [], steps: Bool = false, actions: [Action] = []) {
         self.say = say
         self.marks = marks
         self.steps = steps
         self.actions = actions
     }
 
-    /// The actions worth a button: words on one line, cut to `maxAction` characters, no repeats.
-    static func actions(_ value: Any?) -> [String] {
+    /// The actions worth a button, from the words alone or `{"title", "marks"}`: words on one line,
+    /// cut to `maxAction` characters, no repeats, and only the indexes of marks there can be.
+    static func actions(_ value: Any?) -> [Action] {
+        actions(((value as? [Any]) ?? []).compactMap { item -> Action? in
+            if let title = item as? String { return Action(title) }
+            guard let object = item as? [String: Any], let title = object["title"] as? String else { return nil }
+            return Action(title, marks: (object["marks"] as? [Any])?.compactMap { $0 as? Int })
+        })
+    }
+
+    static func actions(_ actions: [Action]) -> [Action] {
         var seen = Set<String>()
-        return ((value as? [Any]) ?? []).compactMap { item -> String? in
-            guard let text = item as? String else { return nil }
-            let line = text.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        return actions.compactMap { action -> Action? in
+            let line = action.title.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty, seen.insert(line.lowercased()).inserted else { return nil }
-            return cut(line, to: maxAction)
+            let marks = Set(action.marks ?? []).filter { (0..<maxMarks).contains($0) }.sorted()
+            return Action(cut(line, to: maxAction), marks: marks.isEmpty ? nil : marks)
         }.prefix(maxActions).map { $0 }
     }
 
@@ -199,7 +220,7 @@ extension LiveAnswer: Codable {
         try self.init(json: ["say": try container.decode(String.self, forKey: .say)])
         self.marks = Array(marks.prefix(Self.maxMarks))
         steps = try container.decodeIfPresent(Bool.self, forKey: .steps) ?? false
-        actions = Self.actions(try container.decodeIfPresent([String].self, forKey: .actions))
+        actions = Self.actions(try container.decodeIfPresent([Action].self, forKey: .actions) ?? [])
     }
 
     func encode(to encoder: Encoder) throws {
@@ -208,6 +229,31 @@ extension LiveAnswer: Codable {
         try container.encode(marks, forKey: .marks)
         if steps { try container.encode(steps, forKey: .steps) }
         if !actions.isEmpty { try container.encode(actions, forKey: .actions) }
+    }
+}
+
+/// An action is its words alone when it acts on every mark, as before actions named their marks.
+extension LiveAnswer.Action: Codable {
+    private enum Keys: String, CodingKey { case title, marks }
+
+    init(from decoder: Decoder) throws {
+        if let title = try? decoder.singleValueContainer().decode(String.self) {
+            self.init(title)
+            return
+        }
+        let container = try decoder.container(keyedBy: Keys.self)
+        self.init(try container.decode(String.self, forKey: .title), marks: try container.decodeIfPresent([Int].self, forKey: .marks))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        guard let marks else {
+            var container = encoder.singleValueContainer()
+            try container.encode(title)
+            return
+        }
+        var container = encoder.container(keyedBy: Keys.self)
+        try container.encode(title, forKey: .title)
+        try container.encode(marks, forKey: .marks)
     }
 }
 

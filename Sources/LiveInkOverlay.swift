@@ -435,8 +435,13 @@ final class LiveMarksLayer: CALayer {
 
     /// Fades a mark in or out over `duration`, from wherever a fade under way has got to.
     func fade(_ id: Mark.ID, shown: Bool, duration: CFTimeInterval) {
+        fade(id, to: shown ? 1 : 0, duration: duration)
+    }
+
+    /// Fades a mark to `target`, its opacity, over `duration` from wherever a fade under way has got to.
+    func fade(_ id: Mark.ID, to target: Float, duration: CFTimeInterval) {
         guard let holder = drawn[id]?.holder else { return }
-        let target: Float = shown ? 1 : 0
+        let shown = target > (holder.presentation()?.opacity ?? holder.opacity)
         let from = holder.presentation()?.opacity ?? holder.opacity
         CATransaction.begin()
         CATransaction.setDisableActions(true)

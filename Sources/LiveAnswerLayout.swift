@@ -39,67 +39,89 @@ enum LiveAnswerLayout {
     /// in, which keeps its place and its id. `below` is room kept under the reply's note, for its actions.
     static func marks(for answer: LiveAnswer, targets: [CGRect?], asked: CGRect, question: CGRect? = nil, scene: Scene, sizes: Sizes,
                       streamed: Mark? = nil, below: CGFloat = 0) -> [Mark] {
-        // No note of the answer covers what the answer points at.
+        placed(for: answer, targets: targets, asked: asked, question: question, scene: scene, sizes: sizes, streamed: streamed, below: below).marks
+    }
+
+    /// `marks(for:)`, and for each of the answer's marks the ids of the mark drawn for it and its
+    /// label, none for one that was dropped, which the answer's actions name by index.
+    static func placed(for answer: LiveAnswer, targets: [CGRect?], asked: CGRect, question: CGRect? = nil, scene: Scene, sizes: Sizes,
+                       streamed: Mark? = nil, below: CGFloat = 0) -> (marks: [Mark], findings: [[Mark.ID]]) {
+        // No note of the answer covers what the answer points at. `marks` is what nothing may cover:
+        // the person's marks and notes, the targets, and what the answer has drawn so far.
         let pointed = targets.compactMap { $0?.insetBy(dx: -4, dy: -4) }
-        var obstacles = obstacles(in: scene) + pointed
+        let text = scene.text.map { $0.insetBy(dx: -2, dy: -2) }
+        var marks = personsMarks(in: scene) + pointed
         var placed: [Mark] = []
         let say = streamed.map { grown($0, to: answer.say, near: question ?? asked, scene: scene, sizes: sizes) }
-            ?? reply(answer.say, question: question, near: asked, scene: scene, obstacles: obstacles, pointed: pointed, sizes: sizes,
+            ?? reply(answer.say, question: question, near: asked, scene: scene, obstacles: marks + text, pointed: pointed, sizes: sizes,
                      below: below)
         placed.append(say)
         if let box = noteBox(say, sizes: sizes) {
-            obstacles.append(CGRect(x: box.minX, y: box.minY, width: box.width, height: box.height + below).insetBy(dx: -spacing, dy: -spacing))
+            marks.append(CGRect(x: box.minX, y: box.minY, width: box.width, height: box.height + below).insetBy(dx: -spacing, dy: -spacing))
         }
+        // The first arrow's tail, which later arrows from the same side start level with, so their
+        // labels stand in one column, as a person annotating a page lines them up.
+        var column: (x: CGFloat, fromRight: Bool)?
+        var findings: [[Mark.ID]] = []
         for (answerMark, target) in zip(answer.marks, targets) {
+            findings.append([])
             guard let target else { continue }
             // A mark and its label are placed together: of the ways to point, the one whose label
             // covers least, so a label is not pushed onto another note by where its arrow went.
             var best: (mark: Mark, label: Mark?, cost: CGFloat)?
-            for mark in pointers(answerMark.kind, at: target, scene: scene, obstacles: obstacles) {
+            for mark in pointers(answerMark.kind, at: target, scene: scene, obstacles: marks + text, column: column?.x) {
                 guard let extent = mark.shapeExtent else { continue }
-                var total = cost(extent, room: scene.room, obstacles: obstacles)
+                var total = cost(extent, room: scene.room, obstacles: marks + text)
+                if case .arrow(let arrow) = mark.geometry, let column {
+                    total += (arrow.start.x > arrow.end.x) == column.fromRight ? abs(arrow.start.x - column.x) * 4 : otherSide
+                }
                 var tag: Mark?
+                // A label touches its own mark, so only the others count against it.
                 if let label = answerMark.label {
-                    let others = obstacles + [extent.insetBy(dx: -spacing, dy: -spacing)]
-                    tag = self.label(label, of: mark, scene: scene, obstacles: others, sizes: sizes)
-                    total += tag.flatMap { noteBox($0, sizes: sizes) }.map { cost($0, room: scene.room, obstacles: others) } ?? missingLabel
+                    let spot = self.label(label, of: mark, room: scene.room, marks: marks, text: text, sizes: sizes)
+                    tag = spot?.mark
+                    total += spot?.cost ?? missingLabel
                 }
                 if total < best?.cost ?? .infinity { best = (mark, tag, total) }
             }
             guard let best, let extent = best.mark.shapeExtent else { continue }
             placed.append(best.mark)
-            obstacles.append(extent.insetBy(dx: -spacing, dy: -spacing))
+            findings[findings.count - 1] = [best.mark.id] + (best.label.map { [$0.id] } ?? [])
+            marks.append(extent.insetBy(dx: -spacing, dy: -spacing))
+            if column == nil, case .arrow(let arrow) = best.mark.geometry { column = (arrow.start.x, arrow.start.x > arrow.end.x) }
             if let tag = best.label, let box = noteBox(tag, sizes: sizes) {
                 placed.append(tag)
-                obstacles.append(box.insetBy(dx: -spacing, dy: -spacing))
+                marks.append(box.insetBy(dx: -spacing, dy: -spacing))
             }
         }
-        return placed
+        return (placed, findings)
     }
+
+    /// What an arrow from the other side than the answer's first costs, in square points: about a
+    /// label covering a line of text, so the arrows come from one side unless that covers more.
+    static let otherSide: CGFloat = 3_000
 
     /// What leaving a label out costs when choosing where its mark goes, in square points: more than
     /// a label covering a few lines of text.
     static let missingLabel: CGFloat = 20_000
 
-    /// `text` as the label of `mark`: beside it, and beside an arrow's tail, away from what it points
-    /// at. A label away from its mark reads as another mark's, so it goes beside it, over the window's
-    /// text if it must, and is nil only when the room has no spot beside it.
-    private static func label(_ text: String, of mark: Mark, scene: Scene, obstacles: [CGRect], sizes: Sizes) -> Mark? {
-        guard var near = mark.shapeExtent else { return nil }
-        if case .arrow(let arrow) = mark.geometry { near = CGRect(origin: arrow.start, size: .zero).insetBy(dx: -4, dy: -4) }
-        let tag = note(text, near: near, scene: scene, obstacles: obstacles, sizes: sizes, besideOnly: true, isLabel: true)
-        guard let box = noteBox(tag, sizes: sizes), distance(box, near) <= labelReach else { return nil }
-        return tag
+    /// `text` as the label of `mark`, where a hand writes one (`handSpots`): touching an arrow's tail,
+    /// away from what it points at, or against a circle's edge. A label away from its mark reads as
+    /// another mark's, so it covers the window's text there if it must. Nil when every spot leaves the
+    /// room or covers a quarter of itself in `marks`. Answers the label and what its spot costs.
+    private static func label(_ text: String, of mark: Mark, room: CGRect, marks: [CGRect], text lines: [CGRect],
+                              sizes: Sizes) -> (mark: Mark, cost: CGFloat)? {
+        var tag = Mark(geometry: .text(Mark.Text(origin: .zero, text: text, wrap: sizes.textWidth, size: sizes.textSize)),
+                       agent: true, agentName: agentName)
+        tag.isLabel = true
+        guard let box = noteBox(tag, sizes: sizes) else { return nil }
+        let spot = best(handSpots(box.size, for: mark), size: box.size, room: room, marks: marks, text: lines)
+        guard cost(spot.rect, room: room, obstacles: marks) < box.width * box.height / 4 else { return nil }
+        return (moved(tag, box: box, to: spot.rect.origin, sizes: sizes), spot.cost)
     }
 
-    /// How far a label may be from its mark, in pt.
-    static let labelReach: CGFloat = 24
     /// The least gap between an answer's marks, in pt.
     static let spacing: CGFloat = 12
-
-    private static func distance(_ a: CGRect, _ b: CGRect) -> CGFloat {
-        hypot(max(0, b.minX - a.maxX, a.minX - b.maxX), max(0, b.minY - a.maxY, a.minY - b.maxY))
-    }
 
     // MARK: Pointing
 
@@ -118,7 +140,8 @@ enum LiveAnswerLayout {
     }
 
     /// The ways to point at `target`, best first: a circle, or each arrow, least covering first.
-    static func pointers(_ kind: AnswerMark.Kind, at target: CGRect, scene: Scene, obstacles: [CGRect]) -> [Mark] {
+    /// `column` adds arrows from either side whose tails stand at that x.
+    static func pointers(_ kind: AnswerMark.Kind, at target: CGRect, scene: Scene, obstacles: [CGRect], column: CGFloat? = nil) -> [Mark] {
         if kind == .circle {
             let round = inside(circle(around: target), scene.room)
             let frame: CGRect = switch round {
@@ -129,7 +152,7 @@ enum LiveAnswerLayout {
                 return [Mark(geometry: round, agent: true, agentName: agentName)]
             }
         }
-        return arrows(to: target, room: scene.room, obstacles: obstacles).map {
+        return arrows(to: target, room: scene.room, obstacles: obstacles, column: column).map {
             Mark(geometry: .arrow($0), agent: true, agentName: agentName)
         }
     }
@@ -167,17 +190,26 @@ enum LiveAnswerLayout {
         arrows(to: target, room: room, obstacles: obstacles)[0]
     }
 
-    /// The arrows ending `arrowGap` from `target`, one from each side, least covering first.
-    static func arrows(to target: CGRect, room: CGRect, obstacles: [CGRect]) -> [Mark.Arrow] {
+    /// The arrows ending `arrowGap` from `target`, one from each side, least covering first. With a
+    /// `column`, also the arrows from the right and the left whose tails stand at that x, when it
+    /// leaves them a usable length.
+    static func arrows(to target: CGRect, room: CGRect, obstacles: [CGRect], column: CGFloat? = nil) -> [Mark.Arrow] {
         let length = arrowLength, gap = arrowGap
         // Each starts below and out to one side, as a hand draws an arrow, except the ones from
         // above and below.
-        let candidates: [(start: CGPoint, end: CGPoint)] = [
+        var candidates: [(start: CGPoint, end: CGPoint)] = [
             (CGPoint(x: target.maxX + gap + length * 0.8, y: target.midY + length * 0.6), CGPoint(x: target.maxX + gap, y: target.midY)),
             (CGPoint(x: target.minX - gap - length * 0.8, y: target.midY + length * 0.6), CGPoint(x: target.minX - gap, y: target.midY)),
             (CGPoint(x: target.midX + length * 0.3, y: target.maxY + gap + length * 0.95), CGPoint(x: target.midX, y: target.maxY + gap)),
             (CGPoint(x: target.midX + length * 0.3, y: target.minY - gap - length * 0.95), CGPoint(x: target.midX, y: target.minY - gap)),
         ]
+        if let column {
+            for end in [CGPoint(x: target.maxX + gap, y: target.midY), CGPoint(x: target.minX - gap, y: target.midY)] {
+                let reach = abs(column - end.x)
+                guard (column > end.x) == (end.x > target.midX), reach >= length * 0.5, reach <= length * 3 else { continue }
+                candidates.append((CGPoint(x: column, y: end.y + length * 0.6), end))
+            }
+        }
         return candidates.map { Mark.Arrow(start: $0.start, end: $0.end) }
             .sorted { cost(span($0.start, $0.end), room: room, obstacles: obstacles) < cost(span($1.start, $1.end), room: room, obstacles: obstacles) }
     }
@@ -190,31 +222,41 @@ enum LiveAnswerLayout {
 
     /// What a note keeps clear of: the person's ink and notes, and the window's text.
     static func obstacles(in scene: Scene) -> [CGRect] {
-        scene.ink.compactMap(\.shapeExtent).map { $0.insetBy(dx: -6, dy: -6) } + scene.notes.map { $0.insetBy(dx: -spacing, dy: -spacing) }
-            + scene.text.map { $0.insetBy(dx: -2, dy: -2) }
+        personsMarks(in: scene) + scene.text.map { $0.insetBy(dx: -2, dy: -2) }
     }
 
-    /// Where the person's note about `mark` goes, as a hand puts one: touching an arrow's tail on the
-    /// side away from its head, or against a loop's or a box's edge, or just inside the top of a loop
-    /// with no room round it. `size` is the note's tag, at the width it may grow to, and `under` the
-    /// room kept below it. It may cover the window's text beside the ink, but never goes elsewhere: a
-    /// note away from its ink reads as being about something else. Answers the tag's rect and whether
-    /// it grows to the left, keeping its right edge at the ink.
+    /// The person's ink and notes, with room round them.
+    private static func personsMarks(in scene: Scene) -> [CGRect] {
+        scene.ink.compactMap(\.shapeExtent).map { $0.insetBy(dx: -6, dy: -6) } + scene.notes.map { $0.insetBy(dx: -spacing, dy: -spacing) }
+    }
+
+    /// Where the person's note about `mark` goes, as a hand puts one (`handSpots`). `size` is the
+    /// note's tag, at the width it may grow to, and `under` the room kept below it. It may cover the
+    /// window's text beside the ink, but never goes elsewhere: a note away from its ink reads as being
+    /// about something else. Answers the tag's rect and whether it grows to the left, keeping its
+    /// right edge at the ink.
     static func noteSpot(_ size: CGSize, under: CGFloat = 0, for mark: Mark, scene: Scene) -> (rect: CGRect, growsLeft: Bool) {
-        let gap: CGFloat = 6
-        var spots: [(origin: CGPoint, growsLeft: Bool)] = []
+        let marks = scene.ink.filter { $0.id != mark.id }.compactMap(\.shapeExtent).map { $0.insetBy(dx: -4, dy: -4) } + scene.notes
+        let spot = best(handSpots(size, under: under, for: mark), size: size, under: under, room: scene.room, marks: marks, text: scene.text)
+        return (spot.rect, spot.growsLeft)
+    }
+
+    /// Where a hand writes about `mark`, most natural first: touching an arrow's tail on the side
+    /// away from its head, or against a loop's or a box's edge, or just inside the top of a loop. Each
+    /// is a top-left corner for a box of `size` with `under` kept below it, and whether the box grows
+    /// to the left, keeping its right edge at the mark.
+    static func handSpots(_ size: CGSize, under: CGFloat = 0, for mark: Mark) -> [(origin: CGPoint, growsLeft: Bool)] {
+        let gap: CGFloat = 6, w = size.width, h = size.height
         if case .arrow(let arrow) = mark.geometry {
-            // The way the arrow leaves its tail, from a point a little along it.
-            let along = arrow.via.isEmpty ? arrow.end : arrow.via[min(arrow.via.count - 1, max(0, arrow.via.count / 4))]
-            let length = max(hypot(along.x - arrow.start.x, along.y - arrow.start.y), 1)
-            let away = CGVector(dx: (arrow.start.x - along.x) / length, dy: (arrow.start.y - along.y) / length)
-            let t = arrow.start, w = size.width, h = size.height
-            // Each spot touches the tail, with the direction from the tail to the note's middle.
+            let away = leaving(arrow)
+            let t = arrow.start
+            // Each spot touches the tail, with the direction from the tail to the note's middle. Only
+            // the spots straight above it keep `under` clear, since their chip would cross the tail.
             let candidates: [(CGPoint, Bool, CGVector)] = [
                 (CGPoint(x: t.x + gap, y: t.y - h / 2), false, CGVector(dx: 1, dy: 0)),
                 (CGPoint(x: t.x - gap - w, y: t.y - h / 2), true, CGVector(dx: -1, dy: 0)),
-                (CGPoint(x: t.x - 24, y: t.y - gap - h), false, CGVector(dx: 0.3, dy: -1)),
-                (CGPoint(x: t.x + 24 - w, y: t.y - gap - h), true, CGVector(dx: -0.3, dy: -1)),
+                (CGPoint(x: t.x - 24, y: t.y - gap - h - under), false, CGVector(dx: 0.3, dy: -1)),
+                (CGPoint(x: t.x + 24 - w, y: t.y - gap - h - under), true, CGVector(dx: -0.3, dy: -1)),
                 (CGPoint(x: t.x - 24, y: t.y + gap), false, CGVector(dx: 0.3, dy: 1)),
                 (CGPoint(x: t.x + 24 - w, y: t.y + gap), true, CGVector(dx: -0.3, dy: 1)),
                 (CGPoint(x: t.x + gap, y: t.y - gap - h), false, CGVector(dx: 1, dy: -1)),
@@ -223,33 +265,50 @@ enum LiveAnswerLayout {
                 (CGPoint(x: t.x - gap - w, y: t.y + gap), true, CGVector(dx: -1, dy: 1)),
             ]
             func facing(_ v: CGVector) -> CGFloat { (v.dx * away.dx + v.dy * away.dy) / hypot(v.dx, v.dy) }
-            spots = candidates.sorted { facing($0.2) > facing($1.2) }.map { ($0.0, $0.1) }
-        } else if let extent = mark.shapeExtent {
-            let w = size.width, h = size.height
-            spots = [
-                (CGPoint(x: extent.maxX + gap, y: extent.midY - h / 2), false),
-                (CGPoint(x: extent.minX, y: extent.minY - gap - h - under), false),
-                (CGPoint(x: extent.minX - gap - w, y: extent.midY - h / 2), true),
-                (CGPoint(x: extent.minX, y: extent.maxY + gap), false),
-                (CGPoint(x: extent.maxX - w, y: extent.minY - gap - h - under), true),
-                (CGPoint(x: extent.maxX - w, y: extent.maxY + gap), true),
-                // Inside the top of a loop that fills the room, under the loop's top.
-                (CGPoint(x: extent.midX - w / 2, y: extent.minY + gap * 2), false),
-            ]
+            return candidates.sorted { facing($0.2) > facing($1.2) }.map { ($0.0, $0.1) }
         }
-        guard !spots.isEmpty else { return (CGRect(origin: .zero, size: size), false) }
-        // The ink and the person's other notes count fully; the window's text a little, since a
-        // note covering a word beside its ink reads better than one away from it. Each step down
-        // the order costs about a short word.
-        let marks = scene.ink.filter { $0.id != mark.id }.compactMap(\.shapeExtent).map { $0.insetBy(dx: -4, dy: -4) } + scene.notes
-        var best = spots[0], bestCost = CGFloat.infinity
+        guard let extent = mark.shapeExtent else { return [] }
+        return [
+            (CGPoint(x: extent.maxX + gap, y: extent.midY - h / 2), false),
+            (CGPoint(x: extent.minX, y: extent.minY - gap - h - under), false),
+            (CGPoint(x: extent.minX - gap - w, y: extent.midY - h / 2), true),
+            (CGPoint(x: extent.minX, y: extent.maxY + gap), false),
+            (CGPoint(x: extent.maxX - w, y: extent.minY - gap - h - under), true),
+            (CGPoint(x: extent.maxX - w, y: extent.maxY + gap), true),
+            // Inside the top of a loop that fills the room, under the loop's top.
+            (CGPoint(x: extent.midX - w / 2, y: extent.minY + gap * 2), false),
+        ]
+    }
+
+    /// The way an arrow leaves its tail, as a unit vector from the stroke back to the tail: measured
+    /// over the stroke's first `tailReach` pt, so a hook near the head does not turn it.
+    static func leaving(_ arrow: Mark.Arrow) -> CGVector {
+        let path = [arrow.start] + (arrow.via.isEmpty && arrow.bend != 0 ? [arrow.bendPoint] : arrow.via) + [arrow.end]
+        var along = arrow.end, travelled: CGFloat = 0
+        for (a, b) in zip(path, path.dropFirst()) {
+            travelled += hypot(b.x - a.x, b.y - a.y)
+            if travelled >= tailReach { along = b; break }
+        }
+        let length = max(hypot(along.x - arrow.start.x, along.y - arrow.start.y), 1)
+        return CGVector(dx: (arrow.start.x - along.x) / length, dy: (arrow.start.y - along.y) / length)
+    }
+
+    /// How much of a stroke from its tail says which way it leaves, in pt.
+    static let tailReach: CGFloat = 24
+
+    /// Of `spots`, the one covering least: `marks` count fully, and the window's `text` a little,
+    /// since a note covering a word beside its ink reads better than one away from it. Each step down
+    /// the order costs about a short word.
+    private static func best(_ spots: [(origin: CGPoint, growsLeft: Bool)], size: CGSize, under: CGFloat = 0, room: CGRect,
+                             marks: [CGRect], text: [CGRect]) -> (rect: CGRect, growsLeft: Bool, cost: CGFloat) {
+        var best = (rect: CGRect(origin: spots.first?.origin ?? .zero, size: size), growsLeft: spots.first?.growsLeft ?? false,
+                    cost: CGFloat.infinity)
         for (rank, spot) in spots.enumerated() {
             let rect = CGRect(origin: spot.origin, size: CGSize(width: size.width, height: size.height + under))
-            let covered = cost(rect, room: scene.room, obstacles: marks) * 4 + cost(rect, room: scene.room, obstacles: scene.text) * 0.25
-                + CGFloat(rank) * 300
-            if covered < bestCost { best = spot; bestCost = covered }
+            let covered = cost(rect, room: room, obstacles: marks) * 4 + cost(rect, room: room, obstacles: text) * 0.25 + CGFloat(rank) * 300
+            if covered < best.cost { best = (CGRect(origin: spot.origin, size: size), spot.growsLeft, covered) }
         }
-        return (CGRect(origin: best.origin, size: size), best.growsLeft)
+        return best
     }
 
     /// The gap between the person's note and the reply under it, in pt: close, so the two read as a
@@ -259,21 +318,25 @@ enum LiveAnswerLayout {
     /// The answer's reply, hung under `question`, the person's note that asked, and left-aligned with
     /// it, so the question, the reply and the actions under it read as one thread, or right above it
     /// when the room ends under it. It may cover the window's text there, as the question does.
-    /// Without a question, or where both spots would leave the room or cover what the answer points
-    /// at or another note, it goes beside `near`, the ink, clear of `obstacles`. `below` is room kept
-    /// under it.
+    /// Without a question, or where every spot would leave the room or cover what the answer points
+    /// at, the person's ink or another note, it goes beside `near`, the ink, clear of `obstacles`.
+    /// `below` is room kept under it.
     static func reply(_ text: String, question: CGRect?, near: CGRect, scene: Scene, obstacles: [CGRect], pointed: [CGRect] = [],
                       sizes: Sizes, below: CGFloat = 0) -> Mark {
         let mark = Mark(geometry: .text(Mark.Text(origin: .zero, text: text, wrap: sizes.textWidth, size: sizes.textSize)),
                         agent: true, agentName: agentName)
         if let question, let box = noteBox(mark, sizes: sizes) {
             let size = CGSize(width: box.width, height: box.height + below)
-            let x = max(scene.room.minX, min(question.minX, scene.room.maxX - size.width))
+            func clamped(_ x: CGFloat) -> CGFloat { max(scene.room.minX, min(x, scene.room.maxX - size.width)) }
             let others = scene.notes.filter { !$0.insetBy(dx: -1, dy: -1).contains(question) }
-            // Under the question, or right above it when the room ends under it.
+            let ink = scene.ink.compactMap(\.shapeExtent).map { $0.insetBy(dx: -4, dy: -4) }
+            // Under the question, or right above it when the room or the person's ink ends it there;
+            // aligned with its left edge, or its right when it sits left of its ink.
             for y in [question.maxY + threadGap, question.minY - threadGap - size.height] {
-                let spot = CGRect(origin: CGPoint(x: x, y: y), size: size)
-                if cost(spot, room: scene.room, obstacles: pointed + others) < 1 { return moved(mark, box: box, to: spot.origin, sizes: sizes) }
+                for x in [clamped(question.minX), clamped(question.maxX - size.width)] {
+                    let spot = CGRect(origin: CGPoint(x: x, y: y), size: size)
+                    if cost(spot, room: scene.room, obstacles: pointed + others + ink) < 1 { return moved(mark, box: box, to: spot.origin, sizes: sizes) }
+                }
             }
         }
         return note(text, near: near, scene: scene, obstacles: obstacles, sizes: sizes, below: below)
@@ -314,17 +377,13 @@ enum LiveAnswerLayout {
 
     /// A note of `text` in the agent's style, placed beside `near`, with `below` points of room
     /// kept under it.
-    /// `besideOnly` keeps it to the spots right beside `near`, covering what it must there, as a
-    /// label does: one placed anywhere else reads as another mark's. `isLabel` makes it a label, and
-    /// `byPerson` the person's note, measured in their font.
+    /// `byPerson` makes it the person's note, measured in their font.
     static func note(_ text: String, near: CGRect, scene: Scene, obstacles: [CGRect], sizes: Sizes, below: CGFloat = 0,
-                     besideOnly: Bool = false, isLabel: Bool = false, byPerson: Bool = false) -> Mark {
-        var mark = Mark(geometry: .text(Mark.Text(origin: .zero, text: text, wrap: sizes.textWidth, size: sizes.textSize)),
+                     byPerson: Bool = false) -> Mark {
+        let mark = Mark(geometry: .text(Mark.Text(origin: .zero, text: text, wrap: sizes.textWidth, size: sizes.textSize)),
                         agent: !byPerson, agentName: agentName)
-        mark.isLabel = isLabel
         let box = noteBox(mark, sizes: sizes) ?? CGRect(x: 0, y: 0, width: sizes.textWidth, height: sizes.textSize * 2)
-        let spot = place(CGSize(width: box.width, height: box.height + below), near: near, room: scene.room, obstacles: obstacles,
-                         besideOnly: besideOnly)
+        let spot = place(CGSize(width: box.width, height: box.height + below), near: near, room: scene.room, obstacles: obstacles)
         return moved(mark, box: box, to: spot.origin, sizes: sizes)
     }
 
@@ -351,7 +410,7 @@ enum LiveAnswerLayout {
     /// it can. The spots beside it are tried first, then the rest of the room, nearest first; the
     /// first that covers nothing wins, and failing one, the one covering least, with its distance
     /// as a small cost. Ported from the first spike's tag placement.
-    static func place(_ size: CGSize, near: CGRect, room: CGRect, obstacles: [CGRect], besideOnly: Bool = false) -> CGRect {
+    private static func place(_ size: CGSize, near: CGRect, room: CGRect, obstacles: [CGRect]) -> CGRect {
         let gap: CGFloat = 10
         var spots = [
             CGPoint(x: near.maxX + gap, y: near.midY - size.height / 2),
@@ -369,7 +428,7 @@ enum LiveAnswerLayout {
             return hypot(dx, dy)
         }
         var far: [CGPoint] = []
-        if !besideOnly, room.width >= size.width, room.height >= size.height {
+        if room.width >= size.width, room.height >= size.height {
             for x in stride(from: room.minX, through: room.maxX - size.width, by: 12) {
                 for y in stride(from: room.minY, through: room.maxY - size.height, by: 12) { far.append(CGPoint(x: x, y: y)) }
             }
