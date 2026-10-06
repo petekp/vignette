@@ -32,6 +32,8 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
     var onAsk: ((String, Target) -> Void)?
     /// Esc, or the keys went elsewhere.
     var onClose: (() -> Void)?
+    /// The person typed in the note, which takes over from what they say.
+    var onTyped: (() -> Void)?
     private(set) var target: Target
     /// The target picked last, which a session list resolves until the person picks by hand.
     private let remembered: Target
@@ -59,6 +61,7 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
     private var menuOpen = false
 
     static let placeholder = "Ask about this"
+    static let listeningPlaceholder = "Listening…"
     /// The widest the pill grows, in points.
     private static let maxWidth: CGFloat = 520
     /// The gap between the pill and the chip under it, and how far the chip sits in from the pill's
@@ -354,7 +357,35 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
 
     // MARK: Keys
 
-    func controlTextDidChange(_ notification: Notification) { refit() }
+    func controlTextDidChange(_ notification: Notification) {
+        refit()
+        onTyped?()
+    }
+
+    /// Shows what the person is saying, until they type: a word typed is theirs to keep.
+    func hear(_ words: String) {
+        guard !sent, !closing else { return }
+        field.stringValue = words
+        // The caret follows the words, so typing after them adds to the end.
+        (field.currentEditor() as? NSTextView)?.setSelectedRange(NSRange(location: (words as NSString).length, length: 0))
+        refit()
+    }
+
+    /// Says in the empty note that it is listening, or that it is waiting for typing.
+    func setListening(_ listening: Bool) {
+        let words = listening ? Self.listeningPlaceholder : Self.placeholder
+        field.placeholderAttributedString = NSAttributedString(string: words,
+            attributes: [.font: font, .foregroundColor: NSColor.white.withAlphaComponent(0.72)])
+    }
+
+    /// Asks as Return does.
+    func send() {
+        guard !sent, !closing else { return }
+        let words = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = target
+        if words.isEmpty { dismiss() } else { showSent(words) }
+        onAsk?(words, target)
+    }
 
     /// Sent to a session: the chip fades and the pill narrows to the words, which stay put. It waits
     /// for `settle`, or closes itself after a few seconds.
@@ -406,10 +437,7 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
         case #selector(NSResponder.insertNewline(_:)):
-            let words = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            let target = target
-            if words.isEmpty { dismiss() } else { showSent(words) }
-            onAsk?(words, target)
+            send()
             return true
         case #selector(NSResponder.cancelOperation(_:)):
             dismiss()

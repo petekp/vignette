@@ -33,6 +33,13 @@ enum SetupState: String {
     case done
 }
 
+/// When live ink stops listening: as the chord is let go, or at a pause after it. An experiment;
+/// one of the two stays (`docs/live-ink-speech-input-2026-10-06.md`).
+enum ListenUntil: String {
+    case release
+    case pause
+}
+
 /// Everything a user changes per machine. Lives in ~/.config/vignette/settings.json.
 /// Missing keys fall back to defaults, so a partial file is fine.
 struct SettingsData: Codable, Equatable {
@@ -50,6 +57,9 @@ struct SettingsData: Codable, Equatable {
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
     var liveInk = false                      // holding Control and Option draws on the screen itself; needs Accessibility
+    var liveInkSpeech = false                // talking while drawing fills the note; needs the microphone and speech recognition
+    var liveInkListenUntil = ListenUntil.pause.rawValue  // experiment: listening ends as the chord is let go, or at a pause after
+    var liveInkSendWhenQuiet = true          // experiment: the ask goes once the person stops talking, or waits for Return
     var debug = false                        // unlocks tweaks, install-skill root=, live-ink-stroke, and file= outside the watch folder
     var agentSkill = AgentSkill.unasked.rawValue  // whether the skill was offered: unasked, then off
     var setup = SetupState.unasked.rawValue  // whether the setup window has run: unasked, then done
@@ -61,6 +71,9 @@ struct SettingsData: Codable, Equatable {
     /// `agentSkill` as the states it holds. An unknown word reads as `unasked`, which
     /// `validated()` then writes back.
     var agentSkillChoice: AgentSkill { AgentSkill(rawValue: agentSkill) ?? .unasked }
+
+    /// `liveInkListenUntil` as the choices it holds. An unknown word reads as `pause`.
+    var listenUntil: ListenUntil { ListenUntil(rawValue: liveInkListenUntil) ?? .pause }
 
     /// `setup` as the states it holds. An unknown word reads as `unasked`.
     var setupChoice: SetupState { SetupState(rawValue: setup) ?? .unasked }
@@ -102,6 +115,9 @@ struct SettingsData: Codable, Equatable {
         // The line Send puts in a session is one line, since the plugin's monitor makes each line one message.
         let instructions = String(d.sendInstructions.asOneLine.prefix(MarkFields.maxTextLength))
         if instructions != d.sendInstructions { notes.append("sendInstructions made one line of \(instructions.count) characters"); d.sendInstructions = instructions }
+        if ListenUntil(rawValue: d.liveInkListenUntil) == nil {
+            notes.append("liveInkListenUntil \"\(d.liveInkListenUntil)\" -> \"\(ListenUntil.pause.rawValue)\""); d.liveInkListenUntil = ListenUntil.pause.rawValue
+        }
         if SetupState(rawValue: d.setup) == nil {
             notes.append("setup \"\(d.setup)\" -> \"\(SetupState.unasked.rawValue)\""); d.setup = SetupState.unasked.rawValue
         }
@@ -265,6 +281,9 @@ struct UITweaks: Codable, Equatable {
     var liveInkShowFade = 0.22       // a mark fading back in once the content is still
     var liveInkTextSize = 15.0       // an answer's note, in points of the screen
     var liveInkTextWidth = 320.0     // the widest an answer's note wraps at, in points
+    // Live ink's speech input
+    var liveInkSpeechPause = 1.2     // how long a quiet spell after the chord is let go ends listening
+    var liveInkSpeechQuiet = 0.4     // the input's level under which it counts as quiet, 0 for -60 dB to 1 for 0 dB
 
     /// One entry of `bounds`. A plain struct, not a tuple, so the array can be `Sendable`.
     /// `@unchecked`: `WritableKeyPath` isn't marked `Sendable` in the standard library, but key
@@ -357,6 +376,7 @@ struct UITweaks: Codable, Equatable {
         Bound("liveInkDrawOn", \.liveInkDrawOn, 0...60),
         Bound("liveInkHideFade", \.liveInkHideFade, 0...10), Bound("liveInkShowFade", \.liveInkShowFade, 0...10), Bound("liveInkTextSize", \.liveInkTextSize, 4...200),
         Bound("liveInkTextWidth", \.liveInkTextWidth, 40...2000),
+        Bound("liveInkSpeechPause", \.liveInkSpeechPause, 0.1...30), Bound("liveInkSpeechQuiet", \.liveInkSpeechQuiet, 0...1),
     ]
 }
 

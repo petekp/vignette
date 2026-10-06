@@ -15,6 +15,7 @@ The names in brackets are `// MARK:` sections.
 | What a stroke becomes, and erasing | `InkStroke.swift`, `LiveInk.swift` (Strokes) |
 | The note: opening, placing, sending, waiting on a session | `LiveInk.swift` (Asking), `LiveNotePanel.swift` |
 | What an ask sends | `LivePacket.swift` |
+| Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
 | Claude on the screen, the `claude` process | `LiveResponder.swift` |
 | The answer: reading it, drawing it, steps, the quote | `LiveAnswer.swift`, `LiveInk.swift` (Answering) |
 | Where the person's note, the reply, labels and pointing marks go | `LiveAnswerLayout.swift` (Pointing, Notes) |
@@ -91,6 +92,20 @@ The names in brackets are `// MARK:` sections.
   its ink reads as being about something else. Left of the ink it grows to the left. Placing it needs
   the window's frame and text, which `LivePacket.Glance` gives in about 20 ms after the capture:
   Vision's fast level, for where the lines are, not what they say.
+- With `liveInkSpeech` on, live ink listens while the person draws
+  (`docs/live-ink-speech-input-2026-10-06.md`). Listening starts when the glow shows, so the chord on
+  its way to a shortcut never turns the microphone on, and a press of the chord while it listens goes
+  on with the same listening, so "this" and "that" drawn in two strokes are one note. The note opens
+  on release with what was said so far and fills as the person talks. A key typed in it ends
+  listening and keeps the words; Esc, an ask, standing aside and clearing drop them. `ListeningEnd`
+  decides the end: `liveInkListenUntil` is `release` (0.3 s after the chord is let go) or `pause`
+  (the input under `ui.liveInkSpeechQuiet` for `ui.liveInkSpeechPause` after release), and never
+  past 60 s. With `liveInkSendWhenQuiet`, the final words are sent as Return sends them. Speech is
+  turned into words on the Mac only: `Transcriber` is the interface every engine conforms to,
+  `SpeechEngine.make` picks one, and `AppleTranscriber` refuses to run without an on-device model
+  rather than send audio to Apple. The Settings switch asks for the microphone and speech
+  recognition; nothing else does. `[speech]` lines log listening, and `[state] liveInk.listening`
+  says whether it is.
 - An ask sent to a session goes through Send, as one line that names the app, the window and its
   URL. The person's words stay beside their ink as their own note, and both shimmer until the
   session's turn ends (`LiveInk.watchWorking`, from the `turn` file the plugin's hooks write in its

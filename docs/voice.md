@@ -77,6 +77,9 @@ to turn it on.
 | Claude Code may open sent drawings (`ClaudeReadRule`), in the Agents tab | Let Claude Code open drawings without asking | Otherwise Claude Code stops to ask you in its terminal each time you send one. This adds a permission to Claude Code's settings for these drawings only. |
 | Under setup's agents while Claude Code is on (`ClaudeReadRule.setupNote`) | | Claude Code will open the drawings you send without asking you first. You can change this in Settings. |
 | Live ink (`liveInk`), in the General tab | Live ink | Holding Control and Option lets you draw over any app. A click on a mark while you hold them erases it. |
+| Speaking while drawing (`liveInkSpeech`), under Live ink | Speak while you draw | What you say goes into the note beside your ink. Your voice stays on this Mac. |
+| When listening ends (`liveInkListenUntil`), an experiment | Stop listening | When you let go of Control and Option / When you pause |
+| When the ask goes (`liveInkSendWhenQuiet`), an experiment | Ask when you stop talking | |
 
 ### Live ink
 
@@ -93,6 +96,10 @@ The menu bar menu names the switch as the General tab does.
 | The menu's first item while Screen Recording is missing | Allow Screen Recording for Live Ink… |
 | The menu bar intro's popover, while Screen Recording is missing | Live ink needs Screen Recording. Click the icon to allow it. |
 | The note's placeholder (`LiveNotePanel.placeholder`) | Ask about this |
+| The note's placeholder while it listens (`LiveNotePanel.listeningPlaceholder`) | Listening… |
+| The General tab, under the speech switch while a permission is missing (`liveInkSpeechReason`) | Needs microphone and speech recognition permission. Lets Vignette hear what you say while you draw. The words are made on this Mac. |
+| macOS's microphone prompt (`NSMicrophoneUsageDescription`) | Vignette hears what you say while you draw, and turns it into words on this Mac. |
+| macOS's speech recognition prompt (`NSSpeechRecognitionUsageDescription`) | Vignette turns what you say while you draw into words, on this Mac. |
 | The note's target, and its tooltip | to Claude ▾, "Claude answers on the screen." / to *project* ▾, "The session's reply comes back as a card." |
 | The target's menu | Claude, on the screen; then a "Send to a session" heading and the sessions, each by project with its name under it |
 

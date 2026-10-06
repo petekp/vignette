@@ -194,6 +194,7 @@ struct SettingsView: View {
     /// macOS's Accessibility alert gives no reason, so the row gives it, and the way around it.
     static let accessibilityReason = "Lets Vignette notice the double tap in any app. A key combination doesn't need it."
     static let liveInkAccessibilityReason = "Lets Vignette notice Control and Option held down in any app."
+    static let liveInkSpeechReason = "Lets Vignette hear what you say while you draw. The words are made on this Mac."
     static let liveInkScreenRecordingReason = "Lets Vignette see the window under your ink when you ask about it. macOS may ask you to reopen Vignette after you allow it."
 
     let tab: SettingsTab
@@ -214,6 +215,7 @@ struct SettingsView: View {
     @State private var claudeReadsFailure: String?
     @State private var trusted = ModifierTap.trusted(prompt: false)
     @State private var screenRecording = ScreenRecording.granted
+    @State private var speechAllowed = SpeechPermission.granted
     @State private var folderDenied = false
     /// Neither the Accessibility grant nor macOS's folder permission announces a change, so the
     /// rows that show them look again while the window is up.
@@ -240,6 +242,7 @@ struct SettingsView: View {
     private func look() {
         trusted = ModifierTap.trusted(prompt: false)
         screenRecording = ScreenRecording.granted
+        speechAllowed = SpeechPermission.granted
         folderDenied = callbacks.folderDenied()
     }
 
@@ -289,6 +292,30 @@ struct SettingsView: View {
             if settings.data.liveInk, !screenRecording {
                 PermissionRow(symbol: "lock.fill", title: "Needs Screen Recording permission",
                               reason: SettingsView.liveInkScreenRecordingReason, status: .refused) { ScreenRecording.openSystemSettings() }
+            }
+            if settings.data.liveInk {
+                Toggle(isOn: Binding(get: { settings.data.liveInkSpeech }, set: { on in
+                    settings.update { $0.liveInkSpeech = on }
+                    if on, !SpeechPermission.granted, SpeechPermission.unanswered { SpeechPermission.request { speechAllowed = $0 } }
+                })) {
+                    Text("Speak while you draw")
+                    Text("What you say goes into the note beside your ink. Your voice stays on this Mac.")
+                }
+                if settings.data.liveInkSpeech, !speechAllowed {
+                    PermissionRow(symbol: "lock.fill", title: "Needs microphone and speech recognition permission",
+                                  reason: SettingsView.liveInkSpeechReason, status: .refused) {
+                        if SpeechPermission.unanswered { SpeechPermission.request { speechAllowed = $0 } } else { SpeechPermission.openSystemSettings() }
+                    }
+                }
+                if settings.data.liveInkSpeech {
+                    Picker("Stop listening", selection: Binding(get: { settings.data.listenUntil }, set: { until in
+                        settings.update { $0.liveInkListenUntil = until.rawValue }
+                    })) {
+                        Text("When you let go of Control and Option").tag(ListenUntil.release)
+                        Text("When you pause").tag(ListenUntil.pause)
+                    }
+                    Toggle("Ask when you stop talking", isOn: binding(\.liveInkSendWhenQuiet))
+                }
             }
         }
         Section("Recent screenshots") {

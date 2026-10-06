@@ -3,6 +3,7 @@ Vignette.xcodeproj/
 .DS_Store
 scripts/signing.env
 Info.plist
+Vignette.entitlements
 __pycache__/
 # Takes, the stage copy and the encoded trailer (media/trailer/trailer.py).
 media/trailer/out/

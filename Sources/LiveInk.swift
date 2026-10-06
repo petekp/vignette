@@ -63,6 +63,11 @@ final class LiveInk {
     /// A mark was drawn since the chord went down, so letting it go opens the note.
     private var drewWhileInking = false
     private var note: LiveNotePanel?
+    /// Listening to the person while they draw, with speech on. It can span several presses of the
+    /// chord, so "this" and "that" drawn in two strokes are one note.
+    private var listening: LiveListening?
+    /// The person typed in the note, so what they say no longer replaces its words.
+    private var typedOver = false
     /// The note sent to a session, still on screen until the drawn note takes its place.
     private var handing: LiveNotePanel?
     /// The note's target picked last, which the next note starts on.
@@ -235,6 +240,7 @@ final class LiveInk {
     /// under way is dropped, and the chord must be pressed again to ink.
     func standAside() {
         closeNote()
+        stopListening()
         guard isInking else { return }
         Log.write("[live-ink] standing aside: the stack or the annotator is up")
         stopInking()
@@ -326,6 +332,7 @@ final class LiveInk {
             "on": isOn,
             "inking": isInking,
             "chord": chord?.isHeld ?? false,
+            "listening": listening != nil,
             "surfaces": surfaces.map { surface -> [String: Any] in
                 [
                     "frame": StateReport.topLeft(surface.overlay.frame, primaryHeight: StateReport.primaryHeight),
@@ -519,6 +526,7 @@ final class LiveInk {
         let panel = LiveNotePanel(beside: newest, textSize: answerSizes.textSize, style: ui.textStyle, markStyle: ui.markStyle, target: lastTarget)
         panel.onAsk = { [weak self, weak panel] words, target in
             guard let self else { return }
+            self.stopListening()
             self.note = nil
             self.lastTarget = target
             self.handing = panel
@@ -529,7 +537,13 @@ final class LiveInk {
         listSessions? { [weak panel] list in panel?.setSessions(list) }
         panel.onClose = { [weak self] in
             self?.note = nil
+            self?.stopListening()
             Log.write("[live-ink] note closed")
+        }
+        panel.onTyped = { [weak self] in self?.typedInNote() }
+        if let listening {
+            panel.setListening(true)
+            if !typedOver, !listening.words.isEmpty { panel.hear(listening.text) }
         }
         note = panel
         Log.write("[live-ink] note open")
@@ -1269,6 +1283,7 @@ final class LiveInk {
     /// Ends the responder's conversation and forgets what was asked, as clearing the screen does.
     private func endConversation() {
         closeNote()
+        stopListening()
         letGoOfNote(into: nil)
         responder.stop()
         asked = []
@@ -1292,6 +1307,7 @@ final class LiveInk {
                 return
             }
             closeNote()
+            listening?.pressedAgain()
             responder.prepare()
             startInking()
         case .ended:
@@ -1351,8 +1367,10 @@ final class LiveInk {
     /// The chord was let go: inking stops, and ink drawn while it was held gets the note.
     private func finishInking() {
         stopInking()
-        if drewWhileInking, !newInk.isEmpty { openNote() }
+        if drewWhileInking || listening != nil, !newInk.isEmpty { openNote() }
         drewWhileInking = false
+        // What is said goes into the note; with no note there is nowhere for it to go.
+        if note != nil { listening?.released() } else { stopListening() }
     }
 
     /// The chord was let go during a stroke. The stroke keeps going to its release, and inking ends
@@ -1373,11 +1391,77 @@ final class LiveInk {
 
     private func showGlow(_ on: Bool) {
         glowTimer?.invalidate()
+        if on { listen() }
         if !on && !glowing { return }
         glowing = on
         let ui = Settings.shared.motionUI
         let color = ui.markStyle.color(.person)
         inking.forEach { $0.overlay.showGlow(on, ui: ui, color: color) }
+    }
+
+    // MARK: Listening
+
+    /// Starts listening, with speech on, as the glow shows: the chord on its way to a shortcut shows no
+    /// glow, so it never turns the microphone on either.
+    private func listen() {
+        guard listening == nil else { return }
+        let settings = Settings.shared.data
+        guard settings.liveInkSpeech else { return }
+        guard SpeechPermission.granted else {
+            Log.write("[speech] not listening: the microphone or speech recognition is not allowed")
+            return
+        }
+        guard let transcriber = SpeechEngine.make() else {
+            Log.write("[speech] error no recognizer for \(Locale.current.identifier)")
+            return
+        }
+        let listening = LiveListening(transcriber: transcriber, until: settings.listenUntil,
+                                      pause: settings.ui.liveInkSpeechPause, quiet: Float(settings.ui.liveInkSpeechQuiet))
+        listening.onWords = { [weak self] words in self?.heard(words) }
+        listening.onFinished = { [weak self, weak listening] words in
+            guard let self, let listening, self.listening === listening else { return }
+            self.doneListening(words)
+        }
+        do {
+            try listening.start()
+            self.listening = listening
+            typedOver = false
+        } catch let failure as TranscriberFailure {
+            Log.write("[speech] error \(failure.detail)")
+        } catch {
+            Log.write("[speech] error \(error)")
+        }
+    }
+
+    private func heard(_ words: [SpokenWord]) {
+        guard !typedOver else { return }
+        note?.hear(LiveListening.text(of: words))
+    }
+
+    /// Listening ended by itself: the final words replace the partial ones, and the ask goes when the
+    /// person stopped talking, if that is how it sends.
+    private func doneListening(_ words: [SpokenWord]) {
+        listening = nil
+        guard let note else { return }
+        note.setListening(false)
+        let text = LiveListening.text(of: words)
+        guard !typedOver, !text.isEmpty else { return }
+        note.hear(text)
+        if Settings.shared.data.liveInkSendWhenQuiet { note.send() }
+    }
+
+    /// A key typed in the note takes over from speech: listening ends, and the words stay the
+    /// person's to edit.
+    private func typedInNote() {
+        guard let listening, !typedOver else { return }
+        typedOver = true
+        listening.finish()
+    }
+
+    /// Stops listening and drops what was heard.
+    private func stopListening() {
+        listening?.cancel()
+        listening = nil
     }
 
     // MARK: Surfaces

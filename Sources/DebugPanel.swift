@@ -234,6 +234,10 @@ struct DebugPanelView: View {
                     Tweak("Show fade", \.liveInkShowFade, 0...1, step: 0.01, unit: "s")
                     Text("Marks on a window fade out while its content scrolls or the window is resized, and fade back in once it is still.")
                         .font(.caption).foregroundStyle(.secondary)
+                    Tweak("Speech pause", \.liveInkSpeechPause, 0.3...4, step: 0.1, unit: "s")
+                    Tweak("Speech quiet level", \.liveInkSpeechQuiet, 0...1, step: 0.05)
+                    Text("Listening until a pause ends once the input stays under the quiet level for the pause, after Control and Option are let go. The level runs from -60 dB at 0 to 0 dB at 1.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)
