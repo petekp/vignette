@@ -59,6 +59,9 @@ struct Mark: Equatable, Identifiable {
     /// Which agent made it, as `add?agent=` or a reply's client names it (`Agent.clean`): what the
     /// badge on its note says. Nil for a person's mark, and for an agent's from before the name was kept.
     var agentName: String?
+    /// An agent's note that names another of its marks, as a live answer's labels do. It is drawn
+    /// without the badge, since the answer's reply names the agent once. Never written to a file.
+    var isLabel = false
 
     init(id: UUID = UUID(), geometry: Geometry, agent: Bool = false, agentName: String? = nil) {
         self.id = id

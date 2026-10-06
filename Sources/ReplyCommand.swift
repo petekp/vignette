@@ -26,6 +26,7 @@ enum ReplyCommand {
 
     static let usage = """
     usage: reply --ticket <ticket.json> --marks <marks.json> [--image <your image>]
+           reply --ticket <ticket.json> --answer <answer.json>
            reply --ticket <ticket.json> --retry <bundle folder>
 
     Answers a Vignette screenshot request with a drawing of your own. Vignette sends a message
@@ -43,6 +44,15 @@ enum ReplyCommand {
     At most \(AgentMark.maxCount) marks. They are drawn in the agent's colour, so the person can tell them from
     their own. Without --image the marks go on the picture you were sent. With it they go on yours, sent as a PNG of at most \(ReplyProtocol.maxImageBytes / 1_048_576) MB, and
     the marks may be an empty array. A JPEG or any other image macOS reads is converted.
+
+    A request drawn with live ink says so, and is answered on the window itself with --answer:
+    your words appear beside the person's ink, and each mark circles or points at the words it
+    names, found on the window as it looks when your reply arrives, so name words that are on
+    screen after your change. At most \(LiveAnswer.maxMarks) marks, each label one to four words.
+
+        {"say": "Moved the dates under the title and made them smaller.",
+         "marks": [{"kind": "circle", "words": "October 12 to 18", "label": "moved"},
+                   {"kind": "arrow", "words": "A week in Tuscany"}]}
 
     Prints one JSON line and exits 0 accepted, 1 not sent, 2 refused, or 3 unconfirmed. Not sent
     means an argument, a file or a mark is wrong, and "error" says which. Unconfirmed means
@@ -79,17 +89,22 @@ enum ReplyCommand {
         if let retry = options.retry {
             // A retry is the same bytes again, which is what makes it safe to send twice. Marks given
             // with it would be dropped without a word, so they are refused instead.
-            guard options.marks == nil, options.image == nil else {
-                throw Failure("--retry sends the prepared reply unchanged; drop --marks and --image")
+            guard options.marks == nil, options.image == nil, options.answer == nil else {
+                throw Failure("--retry sends the prepared reply unchanged; drop --marks, --image and --answer")
             }
             do {
                 prepared = try reread(URL(fileURLWithPath: retry))
             } catch is Failure where isCleared(ticket) {
                 throw Failure("the user cleared this request, which removed the reply prepared for it; it takes no replies now")
             }
+        } else if let answer = options.answer {
+            guard options.marks == nil, options.image == nil else {
+                throw Failure("--answer comes alone; drop --marks and --image")
+            }
+            prepared = try prepare(ticket: ticket, marks: [], image: nil, answer: try loadAnswer(answer))
         } else {
             guard options.marks != nil || options.image != nil else {
-                throw Failure("nothing to send: give --marks, --image, or both")
+                throw Failure("nothing to send: give --marks, --image, or both, or --answer")
             }
             let marks = try options.marks.map { try loadMarks($0, allowingEmpty: options.image != nil) } ?? []
             let image = try options.image.map { try loadImage(URL(fileURLWithPath: $0)) }
@@ -160,6 +175,17 @@ enum ReplyCommand {
         do { return try AgentMark.parse(path, allowingEmpty: allowingEmpty) } catch { throw Failure("the marks at \(path): \(error)") }
     }
 
+    /// The answer at `path`, checked by the validator the app runs when the reply arrives.
+    static func loadAnswer(_ path: String) throws -> LiveAnswer {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size <= AgentMark.maxBytes, let data = try? Data(contentsOf: url) else {
+            throw Failure("cannot read an answer at \(url.path)")
+        }
+        guard let object = try? DrawingJSON.object(from: data) else { throw Failure("the answer at \(path) is not JSON") }
+        do { return try LiveAnswer(json: object) } catch { throw Failure("the answer at \(path): \(error)") }
+    }
+
     /// The agent's picture as the PNG the app accepts (`ReplyProtocol.isPNG`): a PNG as it is, and
     /// any other image ImageIO reads converted, so a JPEG or a HEIC works as well.
     static func loadImage(_ url: URL) throws -> Data {
@@ -180,7 +206,7 @@ enum ReplyCommand {
     /// Freezes one reply: a new reply id, the marks, and a staged copy of any image, written once.
     /// A retry sends this again rather than reading the agent's files a second time, so a reply
     /// cannot change under a resend and cannot become a second card.
-    static func prepare(ticket: ReplyProtocol.Ticket, marks: [AgentMark], image: Data?) throws -> Prepared {
+    static func prepare(ticket: ReplyProtocol.Ticket, marks: [AgentMark], image: Data?, answer: LiveAnswer? = nil) throws -> Prepared {
         let root = root(of: ticket)
         let replyID = ReplyProtocol.newID()
         let directory = ReplyProtocol.submissionDirectory(root: root, requestID: ticket.requestID, replyID: replyID)
@@ -192,7 +218,7 @@ enum ReplyCommand {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
             let bundle = try encoder.encode(BundleFile(protocolVersion: ReplyProtocol.version, requestId: ticket.requestID,
-                                                       replyId: replyID, hasImage: image != nil, marks: marks))
+                                                       replyId: replyID, hasImage: image != nil, marks: marks, answer: answer))
             try bundle.write(to: ReplyProtocol.bundleURL(root: root, requestID: ticket.requestID, replyID: replyID))
             return Prepared(directory: directory, replyID: replyID,
                             digest: ReplyProtocol.payloadDigest(bundle: bundle, image: image))
@@ -299,6 +325,7 @@ enum ReplyCommand {
         let replyId: String
         let hasImage: Bool
         let marks: [AgentMark]
+        let answer: LiveAnswer?
     }
 
     /// The arguments. `scripts/reply` finds `--ticket` the same way, so change both together.
@@ -306,6 +333,7 @@ enum ReplyCommand {
         var ticket: String?
         var marks: String?
         var image: String?
+        var answer: String?
         var retry: String?
         var help = false
 
@@ -315,7 +343,7 @@ enum ReplyCommand {
                 if argument == "-h" || argument == "--help" { help = true; continue }
                 let parts = argument.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
                 let name = parts[0]
-                guard ["--ticket", "--marks", "--image", "--retry"].contains(name) else {
+                guard ["--ticket", "--marks", "--image", "--answer", "--retry"].contains(name) else {
                     throw Failure("unknown argument \(argument); see --help")
                 }
                 guard let value = parts.count > 1 ? parts[1] : rest.popFirst() else { throw Failure("\(name) needs a value") }
@@ -323,6 +351,7 @@ enum ReplyCommand {
                 case "--ticket": ticket = value
                 case "--marks": marks = value
                 case "--image": image = value
+                case "--answer": answer = value
                 default: retry = value
                 }
             }

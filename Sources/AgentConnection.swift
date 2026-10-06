@@ -210,11 +210,14 @@ protocol AgentConnection: Sendable {
     /// the ones it lists, such as a Codex thread used weeks ago that the Codex app shows.
     func destinations(including id: String) -> [AgentDestination]
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome
+    /// Whether the session is in the middle of a turn, or nil when the route cannot tell.
+    func isWorking(_ destination: AgentDestination) -> Bool?
 }
 
 extension AgentConnection {
     var keepsList: Bool { false }
     func destinations(including id: String) -> [AgentDestination] { destinations() }
+    func isWorking(_ destination: AgentDestination) -> Bool? { nil }
 }
 
 // MARK: Running a command
@@ -333,6 +336,19 @@ struct ClaudeCodeConnection: AgentConnection {
     /// The inboxes a request can be written to: the process is running and its monitor is. An
     /// inbox whose process has gone is removed, since the monitor may have been stopped before it
     /// could remove it itself.
+    /// From the `turn` file the plugin's hooks write in the session's inbox: `busy` from a prompt
+    /// to the end of the turn, `idle` after it.
+    func isWorking(_ destination: AgentDestination) -> Bool? {
+        guard case .claudeSession(let session) = destination.address,
+              let inbox = liveInboxes().first(where: { $0.session == session }),
+              let turn = try? String(contentsOf: inbox.folder.appendingPathComponent("turn"), encoding: .utf8) else { return nil }
+        switch turn.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "busy": return true
+        case "idle": return false
+        default: return nil
+        }
+    }
+
     func liveInboxes() -> [Inbox] {
         Self.inboxes(in: inboxes).filter { inbox in
             guard isRunning(inbox.pid) else {

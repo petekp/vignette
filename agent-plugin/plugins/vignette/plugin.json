@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "vignette",
-  "version": "6.2.0",
+  "version": "6.3.3",
   "description": "Send drawings from Vignette to this session, and draw back",
   "author": { "name": "Pete Petrash", "url": "https://github.com/petekp" },
   "homepage": "https://github.com/petekp/vignette",

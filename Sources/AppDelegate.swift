@@ -69,8 +69,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let agentPlugins = AgentPlugins()
     /// The screenshot each request sent this launch was made from, until its client answers.
     private var sentShots: [String: Screenshot] = [:]
-    /// Requests sent from live ink's note, whose client's answer goes to the ink rather than a card.
-    private var liveInkRequests: Set<String> = []
     private var watcherGeneration = 0
     private var screenshotWrittenAt: TimeInterval = 0
     private var deferredRemovals: Set<URL> = []
@@ -118,13 +116,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         liveInk.listSessions = { [weak self] answer in
             self?.requests.destinations { found, _, _ in answer(found) }
         }
+        liveInk.isWorking = { [weak self] destination in self?.requests.isWorking(destination) }
         liveInk.sendToSession = { [weak self] png, destination, message in
             guard let self else { return .failure(ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason)) }
             do {
                 // The record names a screenshot by its file; a live ink picture has none in the folder.
                 let record = try requests.send(png: png, source: URL(fileURLWithPath: "Live ink.png"), to: destination,
                                                message: message, instructions: settings.data.sendInstructions)
-                liveInkRequests.insert(record.id)
                 return .success(record.id)
             } catch let refusal as ScreenshotRequests.Refusal {
                 return .failure(refusal)
@@ -1274,6 +1272,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 self?.screenshotWrittenAt = ProcessInfo.processInfo.systemUptime
                 self?.thumbnail.show(shot)
             },
+            presentLive: { [weak self] record, answer, done in
+                guard let self else { return done(false) }
+                liveInk.showAnswer(request: record.id, answer, agent: record.address.client.rawValue, done: done)
+            },
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
             delivered: { [weak self] record, outcome in
                 guard let self else { return }
@@ -1284,13 +1286,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 case .uncertain: state = .uncertain
                 case .notSubmitted, .destinationChanged: state = .failed
                 }
-                if liveInkRequests.remove(record.id) != nil { return liveInk.delivered(request: record.id, state, reason: outcome.reason) }
+                if liveInk.sent(request: record.id) { return liveInk.delivered(request: record.id, state, reason: outcome.reason) }
                 guard let shot = sentShots.removeValue(forKey: record.id) else { return }
                 thumbnail.delivered(shot, request: record.id, state, reason: outcome.reason)
             },
             replyFailed: { [weak self] record, reason in
                 // The record keeps the sent screenshot's name; a send is made from the watch folder.
                 guard let self else { return }
+                if liveInk.sent(request: record.id) { return liveInk.replyFailed(request: record.id, reason: reason) }
                 let shot = Screenshot(url: watchFolder.appendingPathComponent(record.source))
                 guard FileManager.default.fileExists(atPath: shot.url.path) else { return }
                 thumbnail.replyFailed(shot, request: record.id, client: record.address.client, reason: reason)

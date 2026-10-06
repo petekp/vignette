@@ -8,11 +8,18 @@ struct LiveAnswer: Equatable {
     /// The reply, drawn as a note beside the person's ink. Never empty.
     var say: String
     var marks: [AnswerMark]
+    /// The marks are steps to take in order: each shows once the one before it has been clicked.
+    var steps = false
+    /// What the person may answer with a click, as buttons under the reply, such as "Fix both".
+    /// A click sends the button's words back as their reply.
+    var actions: [String] = []
 
     static let maxMarks = 4
     /// The longest reply and label drawn, in characters. A longer one is cut at a word.
     static let maxSay = 400
     static let maxLabel = 40
+    static let maxActions = 3
+    static let maxAction = 24
 
     /// The answer's JSON Schema, for `claude --json-schema`.
     static var schema: [String: Any] { [
@@ -40,6 +47,11 @@ struct LiveAnswer: Equatable {
                     ],
                 ],
             ],
+            "steps": ["type": "boolean", "description": "True when the marks are steps to take in order, each shown once the one before is clicked."],
+            "actions": [
+                "type": "array", "maxItems": maxActions, "items": ["type": "string"],
+                "description": "Up to three next steps the person can click, one to three words each, such as \"Fix both\". A click sends the words back as their reply.",
+            ],
         ],
     ] }
 
@@ -57,11 +69,26 @@ struct LiveAnswer: Equatable {
         self.say = Self.cut(say, to: Self.maxSay)
         let items = object["marks"] as? [Any] ?? []
         marks = items.prefix(Self.maxMarks).compactMap(AnswerMark.init(json:))
+        steps = object["steps"] as? Bool ?? false
+        actions = Self.actions(object["actions"])
     }
 
-    init(say: String, marks: [AnswerMark] = []) {
+    init(say: String, marks: [AnswerMark] = [], steps: Bool = false, actions: [String] = []) {
         self.say = say
         self.marks = marks
+        self.steps = steps
+        self.actions = actions
+    }
+
+    /// The actions worth a button: words on one line, cut to `maxAction` characters, no repeats.
+    static func actions(_ value: Any?) -> [String] {
+        var seen = Set<String>()
+        return ((value as? [Any]) ?? []).compactMap { item -> String? in
+            guard let text = item as? String else { return nil }
+            let line = text.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty, seen.insert(line.lowercased()).inserted else { return nil }
+            return cut(line, to: maxAction)
+        }.prefix(maxActions).map { $0 }
     }
 
     /// `text` no longer than `limit` characters, cut after the last whole word, with an ellipsis.
@@ -114,7 +141,8 @@ struct LiveAnswer: Equatable {
 }
 
 /// One mark of an answer: what it points at, named by a text line of the packet, words within that
-/// line, or a box in fractions of the picture.
+/// line, or a box in fractions of the picture. A session's answer has no line ids, so its words are
+/// looked for in every line.
 struct AnswerMark: Equatable {
     enum Kind: String, CaseIterable {
         /// Drawn round what it points at.
@@ -139,7 +167,7 @@ struct AnswerMark: Equatable {
         self.label = label
     }
 
-    /// Nil for an unknown kind, or for a mark with neither a line nor a box inside the picture.
+    /// Nil for an unknown kind, or for a mark with no line, no words and no box inside the picture.
     init?(json: Any) {
         guard let object = json as? [String: Any],
               let kind = (object["kind"] as? String).flatMap(Kind.init(rawValue:)) else { return nil }
@@ -156,7 +184,56 @@ struct AnswerMark: Equatable {
                 box = rect.isNull || rect.width <= 0 || rect.height <= 0 ? nil : rect
             }
         }
-        guard line != nil || box != nil else { return nil }
+        guard line != nil || words != nil || box != nil else { return nil }
+    }
+}
+
+/// An answer travels in a reply's bundle and record as the JSON `schema` describes, and is read
+/// back through `init(json:)`, so there is one validator for the responder's answers and a session's.
+extension LiveAnswer: Codable {
+    private enum Keys: String, CodingKey { case say, marks, steps, actions }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: Keys.self)
+        let marks = try container.decodeIfPresent([AnswerMark].self, forKey: .marks) ?? []
+        try self.init(json: ["say": try container.decode(String.self, forKey: .say)])
+        self.marks = Array(marks.prefix(Self.maxMarks))
+        steps = try container.decodeIfPresent(Bool.self, forKey: .steps) ?? false
+        actions = Self.actions(try container.decodeIfPresent([String].self, forKey: .actions))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: Keys.self)
+        try container.encode(say, forKey: .say)
+        try container.encode(marks, forKey: .marks)
+        if steps { try container.encode(steps, forKey: .steps) }
+        if !actions.isEmpty { try container.encode(actions, forKey: .actions) }
+    }
+}
+
+extension AnswerMark: Codable {
+    private enum Keys: String, CodingKey { case kind, line, words, box, label }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: Keys.self)
+        var object: [String: Any] = ["kind": try container.decode(String.self, forKey: .kind)]
+        object["line"] = try container.decodeIfPresent(String.self, forKey: .line)
+        object["words"] = try container.decodeIfPresent(String.self, forKey: .words)
+        object["box"] = try container.decodeIfPresent([Double].self, forKey: .box)
+        object["label"] = try container.decodeIfPresent(String.self, forKey: .label)
+        guard let mark = AnswerMark(json: object) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "a mark points at nothing"))
+        }
+        self = mark
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: Keys.self)
+        try container.encode(kind.rawValue, forKey: .kind)
+        try container.encodeIfPresent(line, forKey: .line)
+        try container.encodeIfPresent(words, forKey: .words)
+        try container.encodeIfPresent(box.map { [$0.minX, $0.minY, $0.width, $0.height] }, forKey: .box)
+        try container.encodeIfPresent(label, forKey: .label)
     }
 }
 

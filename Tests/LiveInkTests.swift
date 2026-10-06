@@ -141,6 +141,8 @@ final class LiveInkTests: XCTestCase {
             AnswerMark(kind: .circle, line: "t3", words: "$197.85", label: "Should be $194.24"),
             AnswerMark(kind: .arrow, box: CGRect(x: 0.5, y: 0.75, width: 0.5, height: 0.25)),
         ], "a box is cut to the picture; a mark with no target or an unknown kind is dropped")
+        XCTAssertFalse(answer.steps)
+        XCTAssertTrue(try LiveAnswer(json: ["say": "Two clicks.", "marks": [], "steps": true]).steps)
         XCTAssertThrowsError(try LiveAnswer(json: ["say": " ", "marks": []]))
         XCTAssertThrowsError(try LiveAnswer(json: ["marks": []]))
     }
@@ -169,6 +171,15 @@ final class LiveInkTests: XCTestCase {
         let box = try? XCTUnwrap(LiveAnswerLayout.noteBox(note, sizes: sizes))
         XCTAssertEqual(box?.minX ?? 0, ink.maxX + 10, accuracy: 0.5, "right of the ink")
         XCTAssertEqual(box?.midY ?? 0, ink.midY, accuracy: 1)
+    }
+
+    func testThePersonsNoteTouchesAnArrowsTailOnTheSideAwayFromItsHead() {
+        let arrow = Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 900, y: 500), end: CGPoint(x: 1100, y: 600))))
+        let scene = LiveAnswerLayout.Scene(room: room, ink: [arrow], text: [])
+        let spot = LiveAnswerLayout.noteSpot(CGSize(width: 320, height: 30), under: 25, for: arrow, scene: scene)
+        XCTAssertTrue(spot.growsLeft, "it keeps its right edge at the tail")
+        XCTAssertEqual(spot.rect.maxX, 894, accuracy: 0.5)
+        XCTAssertEqual(spot.rect.maxY, 494, accuracy: 0.5, "up and to the left, the way the arrow came from")
     }
 
     func testANoteMovesOffTextAndStaysInTheRoom() {
@@ -225,5 +236,96 @@ final class LiveInkTests: XCTestCase {
         let streamed = marks[0]
         let again = LiveAnswerLayout.marks(for: answer, targets: [nil, total], asked: total, scene: scene, sizes: sizes, streamed: streamed)
         XCTAssertEqual(again.first?.id, streamed.id, "the reply that streamed in keeps its note")
+    }
+
+    func testALabelStaysBesideItsMarkWhenTextIsAllRound() {
+        let answer = LiveAnswer(say: "No.", marks: [AnswerMark(kind: .circle, line: "t1", label: "Should be $194.40")])
+        let total = CGRect(x: 536, y: 452, width: 104, height: 30)
+        // Lines of text all round the total, and none further off.
+        let text = stride(from: 300, to: 620, by: 34).flatMap { y in
+            [CGRect(x: 300, y: CGFloat(y), width: 230, height: 30), CGRect(x: 646, y: CGFloat(y), width: 230, height: 30)]
+        } + [CGRect(x: 536, y: 418, width: 104, height: 30), CGRect(x: 536, y: 486, width: 104, height: 30)]
+        let scene = LiveAnswerLayout.Scene(room: room, ink: [], text: text + [total])
+        let marks = LiveAnswerLayout.marks(for: answer, targets: [total], asked: CGRect(x: 1300, y: 800, width: 40, height: 20),
+                                           scene: scene, sizes: sizes)
+        XCTAssertEqual(marks.map(\.kind), [.text, .ellipse, .text], "the circle keeps its label")
+        let circle = marks[1].shapeExtent ?? .null
+        let label = marks.last.flatMap { LiveAnswerLayout.noteBox($0, sizes: sizes) } ?? .null
+        XCTAssertLessThanOrEqual(hypot(max(0, circle.minX - label.maxX, label.minX - circle.maxX),
+                                       max(0, circle.minY - label.maxY, label.minY - circle.maxY)), LiveAnswerLayout.labelReach,
+                                 "the label sits beside the circle, over the text there, not off where there is room")
+    }
+
+    // MARK: Marks that stay on their window
+
+    func testAPatchFindsItsContentWhereTheScrollTookIt() throws {
+        let page = Self.page(seed: 3)
+        let patch = try XCTUnwrap(LivePatch(try Self.window(page, top: 200), around: CGPoint(x: 200, y: 150)))
+        let shift = try XCTUnwrap(patch.shift(in: try Self.window(page, top: 260), expected: CGVector(dx: 0, dy: -50)))
+        XCTAssertEqual(shift, CGVector(dx: 0, dy: -60), "scrolling down 60 pt moves the content up 60 pt")
+    }
+
+    func testAPatchScrolledOutOfTheWindowIsNotFound() throws {
+        let page = Self.page(seed: 3)
+        let patch = try XCTUnwrap(LivePatch(try Self.window(page, top: 200), around: CGPoint(x: 200, y: 150)))
+        XCTAssertNil(patch.shift(in: try Self.window(page, top: 600), expected: CGVector(dx: 0, dy: -400)))
+    }
+
+    func testAPatchCutOffAtTheWindowsEdgeIsStillFound() throws {
+        let page = Self.page(seed: 7)
+        let patch = try XCTUnwrap(LivePatch(try Self.window(page, top: 200), around: CGPoint(x: 200, y: 150)))
+        // The mark's point comes to rest 10 pt above the window's bottom edge, with the patch's bottom cut off.
+        let shift = try XCTUnwrap(patch.shift(in: try Self.window(page, top: 60), expected: CGVector(dx: 0, dy: 130)))
+        XCTAssertEqual(shift, CGVector(dx: 0, dy: 140))
+    }
+
+    func testOfMatchesThatLookAlikeTheOneTheScrollBroughtThereWins() throws {
+        let page = Self.page(seed: 5, repeating: 100)
+        let patch = try XCTUnwrap(LivePatch(try Self.window(page, top: 200), around: CGPoint(x: 200, y: 150)))
+        let after = try Self.window(page, top: 300)
+        XCTAssertEqual(patch.shift(in: after, expected: CGVector(dx: 0, dy: -96)), CGVector(dx: 0, dy: -100))
+        XCTAssertEqual(patch.shift(in: after, expected: CGVector(dx: 0, dy: 4)), CGVector(dx: 0, dy: 0))
+    }
+
+    func testAPlainStretchOfPageGivesNoPatch() throws {
+        let blank = [UInt8](repeating: 30, count: 400 * 900)
+        XCTAssertNil(LivePatch(try Self.window(blank, top: 200), around: CGPoint(x: 200, y: 150)))
+    }
+
+    func testAnElementCutOffAtTheTopOfItsScrollAreaKeepsItsHeight() {
+        let pinned = CGRect(x: 10, y: 120, width: 200, height: 20)
+        let clip = CGRect(x: 0, y: 87, width: 500, height: 400)
+        let whole = LiveAnchor.Reading(rect: CGRect(x: 10, y: 100, width: 200, height: 20), clip: clip)
+        XCTAssertEqual(whole.shift(from: pinned), CGVector(dx: 0, dy: -20))
+        // Chromium reports the part still in view: its top held at the edge, its height shrinking.
+        let cut = LiveAnchor.Reading(rect: CGRect(x: 10, y: 87, width: 200, height: 8), clip: clip)
+        XCTAssertEqual(cut.shift(from: pinned), CGVector(dx: 0, dy: -45))
+        XCTAssertNil(LiveAnchor.Reading(rect: CGRect(x: 10, y: 87, width: 200, height: 0), clip: clip).shift(from: pinned))
+    }
+
+    /// A page 400 pt wide and 900 tall of blocks of grey, as text gives at a glance, the same every
+    /// `repeating` rows when given.
+    private static func page(seed: UInt64, repeating: Int? = nil) -> [UInt8] {
+        var state = seed
+        func next() -> UInt8 {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            return UInt8(truncatingIfNeeded: state >> 56)
+        }
+        let blocks = (0..<(50 * 113)).map { _ in next() }
+        return (0..<(400 * 900)).map { index in
+            let x = index % 400, y = index / 400
+            let row = repeating.map { y % $0 } ?? y
+            return blocks[(row / 8) * 50 + x / 8]
+        }
+    }
+
+    /// The window over `page` whose top edge is at `top`: 400 by 300 pt at 1 px per pt.
+    private static func window(_ page: [UInt8], top: Int) throws -> WindowImage {
+        let rows = Array(page[(top * 400)..<((top + 300) * 400)])
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(rows) as CFData))
+        let image = try XCTUnwrap(CGImage(width: 400, height: 300, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: 400,
+                                          space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                                          provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        return try XCTUnwrap(WindowImage(image))
     }
 }

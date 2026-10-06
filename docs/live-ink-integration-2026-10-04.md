@@ -52,10 +52,9 @@ Pete confirmed 2, 3, 4, 6 and 7 on 2026-10-04.
    the chord does nothing. Reason: the overlay must sit at `.screenSaver` level to draw over other
    apps' menus and dialogs, which puts it above the stack (level 25), the annotator (21) and its
    toolbar (26).
-6. **A session's reply is a card.** Ink sent to a working session comes back as today's replies
-   do, as a card in the stack, since it usually arrives minutes later. Drawing a session's reply on
-   the live screen needs anchors and a new reply protocol, and is not planned until sessions answer
-   faster.
+6. **A session's answer is drawn on the window.** Ink sent to a working session is answered on the
+   window the ink is on, beside the ink, as the responder's answers are, even when it arrives minutes
+   later (ADR 0021). An answer that cannot be drawn there becomes a card.
 7. **The responder answers by default.** The note panel's target starts on the responder, and lists
    the working sessions after it, for an ask that needs a session's project, such as "fix this".
    Reason: the measurements above. The cost is that the responder knows only what it is sent: not
@@ -108,13 +107,16 @@ Pete confirmed 2, 3, 4, 6 and 7 on 2026-10-04.
   `ThumbnailController` uses the same call.
 - **Marks are plain `Mark`s** in global top-left points at a `pointScale` of 1, drawn by
   `ShapeMarkLayer`, the editor's shape layer made top-level, and so is the stroke being drawn.
-  Anchors come with step 3.
+  Step 3 moved the marks on a window into that window's coordinates.
 - **Strokes are read the editor's way.** A loop is the spike's test, but any other stroke is the
   editor's freehand arrow (`Mark.Arrow.freehand`), so a mark looks the same in both.
 - **A tap erases generously.** It takes the mark whose stroke it is near, measured as the editor
   measures (`EditorGeometry.strokeDistance`) but 12 pt past the edge rather than the editor's 4, or
-  else the smallest ellipse it is inside. Nothing shows which mark a tap would erase, and in Pete's
-  first try, two taps meant for marks erased nothing at the editor's reach.
+  else the smallest ellipse it is inside. In Pete's first try, two taps meant for marks erased
+  nothing at the editor's reach. So while the chord is held, the mark under the pointer shows what
+  a tap would do: one a tap would erase fades back to a third, and an answer's loop or arrow a tap
+  would pick takes the person's colour. The preview leaves with a press that moves, and a mark
+  just picked shows no preview until the pointer has left it.
 
 
 ## Step 2 as built
@@ -151,6 +153,34 @@ with Pete's own `claude` and with `scripts/e2e/fake_claude.py`.
   "bypass the system private window picker" alert.
 - **Tests.** `scripts/e2e/fake_claude.py` speaks the CLI's stream. The e2e scenario is still to come;
   the note panel needs a chord held across a drag, which `input.sh` cannot post.
+
+## Step 3 as built
+
+Marks drawn on a window belong to it: they follow its moves, hide while its content scrolls or it
+resizes, come back on their content, and go with the window. `docs/live-ink-step3-2026-10-05.md`
+has the design and the measurements. Marks over no window stay on the screen's surface.
+
+## Answers that ask back, show their work and guide (2026-10-05)
+
+From the workflows research (`docs/live-ink-workflows-2026-10-05.md`). Tried on a synthetic page in
+an isolated Chrome with the real responder.
+
+- **Asking back.** When the ink could mean more than one thing, the responder circles each
+  candidate, up to three, and asks which. A tap on one of its loops or arrows makes that mark the
+  person's and opens the note, so Return asks about it. Tried with a loop round two buttons: the
+  answer pointed at both and asked which; a tap on Cancel and an empty ask explained Cancel.
+- **Showing its work.** When an answer rests on other things in the window, such as the numbers it
+  added up, it marks them too. Asked whether a total was right, it circled the subtotal and the
+  discount it used.
+- **Not repeating the ink.** It never marks what the person's ink already points at. Before that
+  rule, a follow-up drew a second arrow at the button the person had picked.
+- **Steps.** An answer with `steps` true is a sequence of clicks. Only the first mark and its label
+  show; a click inside it reaches the app, and 0.35 s later that step fades and the next draws on.
+  The last click takes the last step off, and the reply stays. Asked how to switch a page to dark
+  mode, the responder gave two steps, the theme menu and then Save changes. Steps come from one
+  picture, so a target that appears only after a click, such as a menu item, cannot be a step yet.
+- **Labels stay with their marks.** A label with no room within 24 pt of its mark is left out,
+  since one placed further away read as another mark's.
 
 ## How it fits, piece by piece
 
@@ -239,8 +269,11 @@ Codex app nothing), and Vision reads the same text from any app.
 - **`say` starts drawing as it streams,** about a second before the marks arrive, 1.3 to 2.3 s
   after the ask.
 - **Vignette draws it at once, in screen points**, from the picture's place on screen. The marks are
-  plain `Mark`s in the agent's colour, on the same surfaces as the person's ink, so a tap erases
-  them and Clear clears them.
+  plain `Mark`s in the agent's colour, on the same surfaces as the person's ink, and Clear clears
+  them. A tap erases the reply's note. A tap on one of its loops or arrows makes that mark the
+  person's, drawn again in their colour, and opens the note beside it, so Return asks about what it
+  points at. This is how the agent asks back: when the ink could mean more than one thing, it
+  circles the candidates and asks which, and the tap is the answer.
 - **`say` is a note beside the person's ink**, so it reads as the reply to what they drew.
 - **The draw-on:** the agent's strokes grow from their start, the head and the note spring in
   after, and the motion scale applies. The first spike found this is what makes it feel alive.
@@ -253,9 +286,9 @@ Codex app nothing), and Vision reads the same text from any app.
 ### Sending to a session
 
 - The note panel's other targets are today's Send. The picture with the ink is the image, and the
-  note, the app, the window and the URL go in the message. The reply is a card (decision 6).
-- **No new request kind, read rule or skill section.** The packet's text goes in the line, so
-  nothing new is read from the request folder.
+  note, the app, the window and the URL go in the message, on one line.
+- The session answers with `scripts/reply --answer` (decision 6, ADR 0021). Its marks name words,
+  since it has no line ids, and Vignette looks for them in a fresh capture of the window.
 
 ### Settings, menu, commands and state
 

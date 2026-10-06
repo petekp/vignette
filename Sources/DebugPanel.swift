@@ -230,6 +230,10 @@ struct DebugPanelView: View {
                     Tweak("Answer draw-on", \.liveInkDrawOn, 0...2, step: 0.05, unit: "s")
                     Tweak("Answer text size", \.liveInkTextSize, 8...32, unit: "pt")
                     Tweak("Answer text width", \.liveInkTextWidth, 120...800, step: 10, unit: "pt")
+                    Tweak("Hide fade", \.liveInkHideFade, 0...1, step: 0.01, unit: "s")
+                    Tweak("Show fade", \.liveInkShowFade, 0...1, step: 0.01, unit: "s")
+                    Text("Marks on a window fade out while its content scrolls or the window is resized, and fade back in once it is still.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)

@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "8"
+  version: "12"
 ---
 
 # Vignette
@@ -114,6 +114,57 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --marks
 - Only that ticket authorizes a reply, and only to that one request. A request the
   user has cleared refuses new replies (`request-closed`).
 - Answer in words in your own session as usual. The reply carries only the drawing.
+
+### When the drawing was made with live ink
+
+Live ink is drawn on the user's screen itself, over a running app, not on a screenshot. Its message
+says where the ink is:
+
+```text
+Move these under the title, smaller. Drawn with Vignette's live ink on Google Chrome, "Postcard", http://localhost:5173/. [From Vignette: "<folder>/image.png". …]
+```
+
+The image is the whole window with their ink drawn in. The user is looking at that window, and
+their ink shimmers there until your turn ends, so they see a change you make to it. Do not answer
+on the window to confirm a change. Answer in your session as usual.
+
+Answer on the window, with `--answer`, only when pointing at something there helps them: what they
+asked about is somewhere on the screen, a change landed where they would not look, or you need them
+to choose between things they can see. Your words hang under their note, as the reply to it, and
+each mark circles or points at the words it names:
+
+```sh
+cat > /tmp/answer.json <<'JSON'
+{"say": "Two more things break at this width.",
+ "marks": [{"kind": "circle", "words": "Packing", "label": "runs off the edge"},
+           {"kind": "arrow", "words": "20 km", "label": "map cropped"}],
+ "actions": ["Fix both", "Header only"]}
+JSON
+sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --answer /tmp/answer.json
+```
+
+- Make one finding per mark, and give each a `label` that names it in their terms: "Share cut
+  off", "Map cropped". The labels carry the details.
+- `say` is one short sentence, two at most, that ties the marks together, as in "Two more things
+  break at this width." Do not repeat the labels in it. Without marks, it is what you did or what
+  they should know.
+- List the marks in reading order, top to bottom.
+- Vignette finds each mark's `words` in a fresh capture of the window when your reply arrives, so
+  name text that is on screen after your change. Copy it exactly, from one line, and pick words
+  that show in full and appear once on the screen. For something cut off at the window's edge,
+  name the nearest whole words. A mark whose words are not found is left out.
+- `kind` is `circle` for one thing and `arrow` for a place or an edge. A `label` is one to four
+  words, and a label with no room beside its mark is left out. At most four marks.
+- For something with no text, give `box` instead of `words`: `[x, y, w, h]` as fractions of the
+  image you were sent.
+- `actions` are up to three buttons under your words, one to three words each, for what they will
+  most likely want next. Match them to the marks: "Fix both" and "Header only" for two findings.
+  The first is the one you recommend. A click sends the button's words back to you as their reply,
+  with a fresh picture of the window. Offer them when you found something to do and have not done
+  it yet, and leave them out otherwise.
+- `--answer` comes alone, without `--marks` or `--image`. The exit codes are the same, and
+  accepted means it is drawn within a second. There is nothing to check after it.
+- If the ink is gone by the time your answer arrives, Vignette shows it as a card instead.
 
 ## Read back what they drew
 

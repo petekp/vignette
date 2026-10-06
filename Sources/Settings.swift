@@ -261,6 +261,8 @@ struct UITweaks: Codable, Equatable {
     var liveInkGlowFade = 0.2
     // Live ink's answers
     var liveInkDrawOn = 0.5          // how long an answer's mark takes to draw itself on
+    var liveInkHideFade = 0.12       // a mark fading out as the content under it starts to move
+    var liveInkShowFade = 0.22       // a mark fading back in once the content is still
     var liveInkTextSize = 15.0       // an answer's note, in points of the screen
     var liveInkTextWidth = 320.0     // the widest an answer's note wraps at, in points
 
@@ -287,6 +289,7 @@ struct UITweaks: Codable, Equatable {
         u.introDuration *= scale
         u.noteSettleDuration *= scale
         u.liveInkGlowFade *= scale; u.liveInkDrawOn *= scale
+        u.liveInkHideFade *= scale; u.liveInkShowFade *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
         u.flightArc *= scale; u.flightDepth *= scale
@@ -351,7 +354,8 @@ struct UITweaks: Codable, Equatable {
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
         Bound("liveInkGlowWidth", \.liveInkGlowWidth, 0...1000), Bound("liveInkGlowOpacity", \.liveInkGlowOpacity, 0...1),
         Bound("liveInkGlowDelay", \.liveInkGlowDelay, 0...60), Bound("liveInkGlowFade", \.liveInkGlowFade, 0...60),
-        Bound("liveInkDrawOn", \.liveInkDrawOn, 0...60), Bound("liveInkTextSize", \.liveInkTextSize, 4...200),
+        Bound("liveInkDrawOn", \.liveInkDrawOn, 0...60),
+        Bound("liveInkHideFade", \.liveInkHideFade, 0...10), Bound("liveInkShowFade", \.liveInkShowFade, 0...10), Bound("liveInkTextSize", \.liveInkTextSize, 4...200),
         Bound("liveInkTextWidth", \.liveInkTextWidth, 40...2000),
     ]
 }

@@ -28,6 +28,9 @@ struct LivePacket: @unchecked Sendable {
     let title: String?
     /// The page's URL or the document's path, when Accessibility gives one.
     let location: String?
+    /// The web page's area in a browser's window, in global top-left points, when Accessibility gives
+    /// it: the window less its tabs, toolbar and title bar.
+    let page: CGRect?
     let lines: [Line]
     /// The capture with the ink drawn in, sized for the reader.
     let picture: Data
@@ -36,6 +39,14 @@ struct LivePacket: @unchecked Sendable {
     let detail: (png: Data, box: CGRect)?
     /// Says whether the window's text is what it was in an earlier packet.
     var textSignature: String { lines.map(\.text).joined(separator: "\n") }
+
+    /// Where a window's text is, found before its text is read, in global top-left points: what a
+    /// note keeps clear of. Vision finds the boxes in a tenth of the time it takes to read them well.
+    struct Glance: Sendable {
+        let frame: CGRect
+        let page: CGRect?
+        let text: [CGRect]
+    }
 
     struct Failure: Error, CustomStringConvertible {
         let reason: String
@@ -47,10 +58,15 @@ struct LivePacket: @unchecked Sendable {
     static let maxLines = 300
     static let maxLineLength = 200
 
-    /// The window under `point`, in global top-left points, captured and read. `ink` is every mark
-    /// of the person's to draw into the picture, in global top-left points at 1 px per pt.
+    /// The window under `point`, in global top-left points, captured and read, or the window `id`
+    /// names while it is on screen, whatever covers it. `ink` is every mark of the person's to draw
+    /// into the picture, in global top-left points at 1 px per pt.
+    /// `glanced` is called off the main thread with the window's `Glance` as soon as it is known,
+    /// before the packet is.
     @MainActor
-    static func build(at point: CGPoint, ink: [Mark], style: TextStyle, markStyle: MarkStyle) async throws -> LivePacket {
+    static func build(at point: CGPoint, window id: CGWindowID? = nil, ink: [Mark], style: TextStyle,
+                      markStyle: MarkStyle, glanced: (@Sendable (Glance) -> Void)? = nil) async throws -> LivePacket {
+        let started = Date()
         guard CGPreflightScreenCaptureAccess() else {
             throw Failure(reason: "Live ink needs Screen Recording permission to see the screen.", detail: "screen-recording")
         }
@@ -60,7 +76,8 @@ struct LivePacket: @unchecked Sendable {
         } catch {
             throw Failure(reason: "Vignette couldn't see the screen.", detail: "shareable content: \(error.localizedDescription)")
         }
-        let target = window(under: point)
+        let named = id.flatMap { id in content.windows.contains { $0.windowID == id } ? (id: id, frame: CGRect.null) : nil }
+        let target = named ?? window(under: point)
         let filter: SCContentFilter
         let frame: CGRect
         var app: String?, title: String?, pid: pid_t?
@@ -93,17 +110,44 @@ struct LivePacket: @unchecked Sendable {
         } catch {
             throw Failure(reason: "Vignette couldn't capture the window.", detail: "capture: \(error.localizedDescription)")
         }
-        return try await Task.detached(priority: .userInitiated) {
-            // Each Accessibility call may wait out its 0.1 s timeout, and a web page takes many.
-            let location = pid.flatMap { Self.location(pid: $0, frame: frame) }
-            return try assemble(capture, frame: frame, windowID: target?.id, app: app, title: title, location: location,
-                         ink: ink, style: style, markStyle: markStyle)
+        let captured = Date()
+        // Each Accessibility call may wait out its 0.1 s timeout, and a web page takes many, so the
+        // page is looked for while the text is read.
+        let found = Task.detached(priority: .userInitiated) { () -> (page: Page?, at: Date) in
+            (pid.flatMap { Self.page(pid: $0, frame: frame) }, Date())
+        }
+        // The glance first: run beside the full read, it took 360 to 450 ms rather than 15 to 25.
+        let assembled = try await Task.detached(priority: .userInitiated) {
+            if let glanced {
+                let text = textBoxes(capture).map {
+                    CGRect(x: frame.minX + $0.minX * frame.width, y: frame.minY + $0.minY * frame.height,
+                           width: $0.width * frame.width, height: $0.height * frame.height)
+                }
+                let read = Date()
+                let page = await found.value.page?.area
+                Log.write("[live-ink] glanced ms capture=\(Int(captured.timeIntervalSince(started) * 1000)) text=\(Int(read.timeIntervalSince(started) * 1000)) page=\(Int(Date().timeIntervalSince(started) * 1000)) lines=\(text.count)")
+                glanced(Glance(frame: frame, page: page, text: text))
+            }
+            return try assemble(capture, frame: frame, ink: ink, style: style, markStyle: markStyle)
         }.value
+        let page = await found.value
+        let ms = { (date: Date) in Int(date.timeIntervalSince(started) * 1000) }
+        Log.write("[live-ink] looked ms capture=\(ms(captured)) page=\(ms(page.at)) read=\(ms(assembled.at))")
+        return LivePacket(frame: frame, windowID: target?.id, app: app, title: title, location: page.page?.location, page: page.page?.area,
+                          lines: assembled.lines, picture: assembled.picture, detail: assembled.detail)
+    }
+
+    /// What `assemble` makes, and when it was done. Unchecked for the packet's reason: its lines'
+    /// readings are read only on the main thread once the packet is built.
+    private struct Assembled: @unchecked Sendable {
+        let lines: [Line]
+        let picture: Data
+        let detail: (png: Data, box: CGRect)?
+        let at: Date
     }
 
     /// Off the main thread: reads the text, draws the ink in, and sizes the picture for the reader.
-    private static func assemble(_ capture: CGImage, frame: CGRect, windowID: CGWindowID?, app: String?, title: String?,
-                                 location: String?, ink: [Mark], style: TextStyle, markStyle: MarkStyle) throws -> LivePacket {
+    private static func assemble(_ capture: CGImage, frame: CGRect, ink: [Mark], style: TextStyle, markStyle: MarkStyle) throws -> Assembled {
         let lines = read(capture)
         let pixels = CGSize(width: capture.width, height: capture.height)
         guard let inked = draw(ink, on: capture, frame: frame, style: style, markStyle: markStyle) else {
@@ -122,8 +166,7 @@ struct LivePacket: @unchecked Sendable {
            let png = png(crop, scale: Stitch.readerScale(CGSize(width: crop.width, height: crop.height))) {
             detail = (png, box)
         }
-        return LivePacket(frame: frame, windowID: windowID, app: app, title: title, location: location,
-                          lines: lines, picture: picture, detail: detail)
+        return Assembled(lines: lines, picture: picture, detail: detail, at: Date())
     }
 
     /// The text JSON of an ask: `freshPicture` false for a follow-up that sends no picture, whose text
@@ -224,15 +267,37 @@ struct LivePacket: @unchecked Sendable {
         }
     }
 
-    /// Vision on a small blank image, so the accurate model is loaded before the first ask: its
-    /// first call took 300 to 480 ms, and later ones 100 to 170 ms for a window.
+    /// Where the image's lines of text are, in fractions from its top-left. Vision's fast level
+    /// without language correction: on a window of the demo it found 53 of the 55 lines the accurate
+    /// level read, in 19 ms rather than 218, where text rectangle detection found 23.
+    static func textBoxes(_ image: CGImage) -> [CGRect] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .fast
+        request.usesLanguageCorrection = false
+        try? VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? []).map { CGRect(x: $0.boundingBox.minX, y: 1 - $0.boundingBox.maxY, width: $0.boundingBox.width,
+                                                    height: $0.boundingBox.height) }
+    }
+
+    /// Vision on a small blank image, so both levels' models are loaded before the first ink: the
+    /// accurate level's first call took 300 to 480 ms, and later ones 100 to 170 ms for a window, and
+    /// the fast level's first glance took 250 to 300 ms against 20 ms after.
     static func warmUp() {
         Task.detached(priority: .utility) {
-            guard let context = CGContext(data: nil, width: 64, height: 32, bitsPerComponent: 8, bytesPerRow: 0,
+            guard let context = CGContext(data: nil, width: 240, height: 48, bitsPerComponent: 8, bytesPerRow: 0,
                                           space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return }
             context.setFillColor(CGColor(gray: 1, alpha: 1))
-            context.fill(CGRect(x: 0, y: 0, width: 64, height: 32))
-            if let image = context.makeImage() { _ = read(image) }
+            context.fill(CGRect(x: 0, y: 0, width: 240, height: 48))
+            // A word to find: on a blank image Vision skips the recognizer, which stays unloaded.
+            let words = NSAttributedString(string: "Ask about this", attributes: [
+                .font: CTFontCreateUIFontForLanguage(.system, 22, nil)!, .foregroundColor: CGColor(gray: 0, alpha: 1),
+            ])
+            context.textPosition = CGPoint(x: 12, y: 16)
+            CTLineDraw(CTLineCreateWithAttributedString(words), context)
+            if let image = context.makeImage() {
+                _ = read(image)
+                _ = textBoxes(image)
+            }
         }
     }
 
@@ -284,7 +349,14 @@ struct LivePacket: @unchecked Sendable {
 
     /// The window's document or page, from Accessibility: its `AXDocument`, or the `AXURL` of a web
     /// area within a few levels of it. Nil when the app gives neither, or without the permission.
-    private static func location(pid: pid_t, frame: CGRect) -> String? {
+    /// Where a window's content comes from, and a browser's page area.
+    struct Page {
+        var location: String?
+        var area: CGRect?
+    }
+
+    /// The window at `frame`'s document or page, from Accessibility.
+    private static func page(pid: pid_t, frame: CGRect) -> Page? {
         guard AXIsProcessTrusted() else { return nil }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.1)
@@ -297,19 +369,28 @@ struct LivePacket: @unchecked Sendable {
             return abs(origin.x - frame.minX) < 2 && abs(origin.y - frame.minY) < 2 && abs(extent.width - frame.width) < 2
         }
         guard let window else { return nil }
-        if let document = attribute(window, kAXDocumentAttribute) as? String, !document.isEmpty { return document }
+        let document = (attribute(window, kAXDocumentAttribute) as? String).flatMap { $0.isEmpty ? nil : $0 }
         var queue: [(AXUIElement, Int)] = [(window, 0)], visited = 0
         while !queue.isEmpty, visited < 200 {
             let (element, depth) = queue.removeFirst()
             visited += 1
             if attribute(element, kAXRoleAttribute) as? String == "AXWebArea" {
-                if let url = attribute(element, kAXURLAttribute) as? URL { return url.absoluteString }
-                continue
+                let url = (attribute(element, kAXURLAttribute) as? URL)?.absoluteString
+                return Page(location: url ?? document, area: area(of: element)?.intersection(frame))
             }
             guard depth < 8, let children = attribute(element, kAXChildrenAttribute) as? [AXUIElement] else { continue }
             queue += children.map { ($0, depth + 1) }
         }
-        return nil
+        return document.map { Page(location: $0) }
+    }
+
+    /// An element's frame, in global top-left points.
+    private static func area(of element: AXUIElement) -> CGRect? {
+        guard let position = attribute(element, kAXPositionAttribute), let size = attribute(element, kAXSizeAttribute) else { return nil }
+        var origin = CGPoint.zero, extent = CGSize.zero
+        AXValueGetValue(position as! AXValue, .cgPoint, &origin)
+        AXValueGetValue(size as! AXValue, .cgSize, &extent)
+        return extent.width > 0 && extent.height > 0 ? CGRect(origin: origin, size: extent) : nil
     }
 
     private static func attribute(_ element: AXUIElement, _ name: String) -> AnyObject? {

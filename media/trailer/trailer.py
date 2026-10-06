@@ -84,17 +84,6 @@ def replace_once(text, old, new, where):
     return text.replace(old, new)
 
 
-def replace_array(text, owner, name, new, where):
-    """Replaces the `static let <name> = [...]` inside `struct <owner>`."""
-    start = text.find(f'struct {owner}')
-    if start < 0:
-        sys.exit(f'build: no struct {owner} in {where}; the stage patch needs updating')
-    match = re.compile(rf'static let {name} = \[.*?\]\n', re.S).search(text, start)
-    if not match:
-        sys.exit(f'build: no {name} in {owner}; the stage patch needs updating')
-    return text[:match.start()] + f'static let {name}: [String] = {new}\n' + text[match.end():]
-
-
 def build():
     src = PATHS['app_src']
     os.makedirs(src, exist_ok=True)
@@ -118,15 +107,8 @@ def build():
         f.write(project)
 
     # Send lists the Claude Code sessions running the stage copy's own plugin, which only the
-    # trailer's Claude Code has. There is no Codex, and no herdr, whose focus would name one of your
-    # panes, so a take lists none of your sessions and sends nothing to one.
-    path = os.path.join(src, 'Sources', 'AgentConnection.swift')
-    with open(path) as f:
-        text = f.read()
-    text = replace_array(text, 'ClaudeCodeConnection', 'herdrPaths', '[]', 'AgentConnection.swift')
-    text = replace_array(text, 'CodexConnection', 'binaryPaths', '[]', 'AgentConnection.swift')
-    with open(path, 'w') as f:
-        f.write(text)
+    # trailer's Claude Code has. A take launches the copy with VIGNETTE_SETTINGS, so it runs no
+    # codex and no herdr (`AgentTools.forSessions`), whose focus would name one of your panes.
     # The skill in the plugin names the real app's URL scheme and log; the stage copy's must name
     # its own, or the trailer's Claude Code would drive your Vignette.
     path = os.path.join(src, 'skills', 'vignette', 'SKILL.md')

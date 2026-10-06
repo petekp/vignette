@@ -15,7 +15,7 @@ import ImageIO
 enum ReplyProtocol {
     /// Goes up with any change to the envelope, the bundle, the digest, or the receipt. A helper
     /// built for another version is refused rather than half-understood.
-    static let version = 1
+    static let version = 3
 
     /// The most a bundle or an attempt file may be. Marks are a few kilobytes; anything near this
     /// is a mistake, and both files are read on the main thread.
@@ -111,7 +111,8 @@ enum ReplyProtocol {
 
     /// A frozen reply: the drawing the agent means to send back, with a new reply id, written
     /// once. A retry submits this same bundle again rather than reading the agent's files a second
-    /// time. It carries no words: an agent answers in its own session, where the person is looking.
+    /// time. A drawing carries no words: an agent answers in its own session, where the person is
+    /// looking. An answer to live ink is the exception, since the person is looking at the window.
     struct Bundle: Equatable {
         let requestID: String
         let replyID: String
@@ -119,6 +120,9 @@ enum ReplyProtocol {
         /// False means the marks go on the request's own fixed image.
         let hasImage: Bool
         let marks: [AgentMark]
+        /// Words and marks drawn on the window live ink was drawn on, its marks found by the words
+        /// they name as the window looks when the reply arrives. Comes without marks or an image.
+        var answer: LiveAnswer? = nil
     }
 
     /// One dispatch of a bundle. Carries the authorization and the digest; never the payload.
@@ -240,6 +244,14 @@ enum ReplyProtocol {
             do { marks = try AgentMark.parse(text) }
             catch { throw Problem(.badPayload, "\(error)") }
         }
+        var answer: LiveAnswer?
+        if let object = object["answer"] {
+            do { answer = try LiveAnswer(json: object) }
+            catch { throw Problem(.badPayload, "the answer: \(error)") }
+            guard !hasImage, marks.isEmpty else {
+                throw Problem(.badPayload, "an answer comes without marks or an image")
+            }
+        }
         var image: Data?
         if hasImage {
             let imageURL = bundleImageURL(root: root, requestID: attempt.requestID, replyID: attempt.replyID)
@@ -247,10 +259,10 @@ enum ReplyProtocol {
             guard isPNG(bytes) else { throw Problem(.badPayload, "the reply image is not a PNG this app can read") }
             image = bytes
         }
-        guard hasImage || !marks.isEmpty else {
-            throw Problem(.badPayload, "the reply carries neither an image nor marks")
+        guard hasImage || !marks.isEmpty || answer != nil else {
+            throw Problem(.badPayload, "the reply carries no image, marks or answer")
         }
-        let bundle = Bundle(requestID: attempt.requestID, replyID: attempt.replyID, hasImage: hasImage, marks: marks)
+        let bundle = Bundle(requestID: attempt.requestID, replyID: attempt.replyID, hasImage: hasImage, marks: marks, answer: answer)
         return (bundle, image, payloadDigest(bundle: data, image: image))
     }
 

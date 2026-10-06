@@ -22,6 +22,9 @@ final class ScreenshotRequests {
         }
         /// Shows a published reply's card. Managed replies never reach the watcher's capture path.
         var present: (Screenshot) -> Void = { _ in }
+        /// Draws an answer on the window the request's live ink was drawn on, then answers whether it
+        /// did. One that could not be drawn there is made a card instead.
+        var presentLive: (Record, LiveAnswer, @escaping (Bool) -> Void) -> Void = { _, _, done in done(false) }
         var watchFolder: () -> URL = { FileManager.default.temporaryDirectory }
         /// What the client answered for a request, which the card that was sent shows.
         var delivered: (Record, SubmissionOutcome) -> Void = { _, _ in }
@@ -109,6 +112,8 @@ final class ScreenshotRequests {
         /// True when the reply supplied its own PNG; false means it draws on the request's image.
         let hasImage: Bool
         let marks: [AgentMark]
+        /// An answer to live ink, which comes without marks or an image (`ReplyProtocol.Bundle`).
+        var answer: LiveAnswer? = nil
         var stage: Stage
         var destination: URL?
         var needsOutputCleanup: Bool?
@@ -123,10 +128,28 @@ final class ScreenshotRequests {
             case reserved
             /// The card exists and is ordinary. The one publication point.
             case published
+            /// An answer drawn on the window its request's live ink was on. There is no file.
+            case shown
             /// The import stopped; the payload is kept and the name stays excluded.
             case failed
             /// The request was cleared before this reply was published.
             case cancelled
+        }
+
+        /// What a card of this reply draws: its marks, or, for an answer that could not be drawn on its
+        /// window, the answer's words in a corner and a ring round each mark's box. A mark that names
+        /// only words is left out, since nothing finds words in the request's picture.
+        var cardMarks: [AgentMark] {
+            guard let answer else { return marks }
+            var marks = [AgentMark(type: .text, x: 0.03, y: 0.03, w: 0.5, text: answer.say)]
+            for mark in answer.marks {
+                guard let box = mark.box else { continue }
+                marks.append(AgentMark(type: .ellipse, x: box.minX, y: box.minY, w: box.width, h: box.height))
+                if let label = mark.label {
+                    marks.append(AgentMark(type: .text, x: box.minX, y: min(box.maxY + 0.01, 0.95), text: label))
+                }
+            }
+            return marks
         }
 
         /// The reserved watch-folder name. Derived, so a record and its file cannot drift apart.
@@ -142,7 +165,7 @@ final class ScreenshotRequests {
             if deleted { return .removed }
             switch stage {
             case .accepted, .reserved: return .pending
-            case .published: return .ready
+            case .published, .shown: return .ready
             case .failed: return .failed
             case .cancelled: return .cancelled
             }
@@ -300,6 +323,12 @@ final class ScreenshotRequests {
                 }
             }
         }
+    }
+
+    /// Whether the session is in the middle of a turn, or nil when its route cannot tell. Reads one
+    /// small file in its inbox.
+    func isWorking(_ destination: AgentDestination) -> Bool? {
+        connections[destination.address.client]?.isWorking(destination)
     }
 
     // MARK: Sending
@@ -479,7 +508,7 @@ final class ScreenshotRequests {
         // committed before anything is acknowledged, so an accepted reply survives the helper
         // deleting all of its files.
         let reply = Reply(id: bundle.replyID, requestID: request.id, digest: digest,
-                          hasImage: bundle.hasImage, marks: bundle.marks, stage: .accepted)
+                          hasImage: bundle.hasImage, marks: bundle.marks, answer: bundle.answer, stage: .accepted)
         do {
             if let image {
                 let url = payloadImageURL(reply)
@@ -495,7 +524,7 @@ final class ScreenshotRequests {
         replies[reply.id] = reply
         pendingImports.append(reply.id)
         writeReceipt(attempt, acceptance: .accepted, publication: .pending, errorCode: nil)
-        Commands.ok("reply", "\(reply.id) accepted for \(request.id) marks=\(reply.marks.count)\(reply.hasImage ? " image" : "")")
+        Commands.ok("reply", "\(reply.id) accepted for \(request.id) marks=\(reply.marks.count)\(reply.hasImage ? " image" : "")\(reply.answer == nil ? "" : " answer")")
         importNext()
     }
 
@@ -552,6 +581,23 @@ final class ScreenshotRequests {
     /// One reply, from owned bytes to a card. The reserved name is excluded from everything until
     /// the last step, so a stop anywhere in here leaves no ordinary file and no half-drawn card.
     private func publish(_ reply: Reply, done: @escaping () -> Void) {
+        if let answer = reply.answer, reply.stage == .accepted, let request = requests[reply.requestID] {
+            return callbacks.presentLive(request, answer) { [weak self] shown in
+                guard let self else { return done() }
+                guard shown else { return self.publishCard(reply, done: done) }
+                guard requests[reply.requestID]?.takesReplies == true, var shownReply = replies[reply.id],
+                      shownReply.stage == .accepted else { return done() }
+                shownReply.stage = .shown
+                replies[reply.id] = shownReply
+                if (try? write(shownReply)) == nil { Log.write("[reply] error write-failed \(reply.id) shown") }
+                Log.write("[reply] shown \(reply.id) on the window marks=\(answer.marks.count)")
+                done()
+            }
+        }
+        publishCard(reply, done: done)
+    }
+
+    private func publishCard(_ reply: Reply, done: @escaping () -> Void) {
         var reply = reply
 
         // 1. Reserve the name. Persisting the record is what installs the exclusion, because
@@ -583,9 +629,9 @@ final class ScreenshotRequests {
         catch { fail(reply.id, stage: .failed, code: "copy-failed"); return done() }
 
         // 3. The marks, in a drawing the person edits like their own. An image-only reply needs none.
-        guard !reply.marks.isEmpty else { return commit(reply, at: destination, done: done) }
+        guard !reply.cardMarks.isEmpty else { return commit(reply, at: destination, done: done) }
         let agent = requests[reply.requestID]?.address.client.rawValue
-        callbacks.installDrawing(Screenshot(url: destination), reply.marks, agent) { [weak self] failure in
+        callbacks.installDrawing(Screenshot(url: destination), reply.cardMarks, agent) { [weak self] failure in
             guard let self else { return }
             // Clearing can remove the reserved file while installation is pending. The request
             // remains cancelled even when that installation later reports a failure.
@@ -612,7 +658,7 @@ final class ScreenshotRequests {
         replies[reply.id] = reply
         publishedAt[reply.id] = ProcessInfo.processInfo.systemUptime
         if let client = requests[reply.requestID]?.address.client { Agent.record(client.rawValue, on: url) }
-        Log.write("[reply] published \(reply.fileName) marks=\(reply.marks.count)")
+        Log.write("[reply] published \(reply.fileName) marks=\(reply.cardMarks.count)")
         callbacks.present(Screenshot(url: url))
         done()
     }

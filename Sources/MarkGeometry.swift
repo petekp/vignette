@@ -385,8 +385,11 @@ struct TextStyle: Hashable, @unchecked Sendable {
     /// An agent's note's size, as a fraction of the image's width, so the same sentence covers the
     /// same part of a small crop as of a full capture.
     let agentSize: CGFloat
-    /// What an agent's note's badge says (`NoteBadge.label(for:)`); nil for a person's note.
+    /// What an agent's note's badge says (`NoteBadge.label(for:)`); nil for a person's note and for
+    /// an agent's label (`Mark.isLabel`).
     private(set) var badge: String?
+    /// Set in the agent's font rather than the person's.
+    private(set) var agentWords = false
     /// Whether the lines are balanced (`TextLayout`). Off only for the note being typed, whose lines
     /// must not move under the caret.
     var balanced = true
@@ -440,13 +443,17 @@ struct TextStyle: Hashable, @unchecked Sendable {
     /// read as the agent's at a glance, and a person's in the person's. Every place that lays out or
     /// draws a text asks this, so the editor, the cards, the flights and the rendering agree.
     func forMark(_ mark: Mark) -> TextStyle {
-        mark.agent ? forAgent(named: mark.agentName) : person
+        guard mark.agent else { return person }
+        var style = forAgent(named: mark.agentName)
+        if mark.isLabel { style.badge = nil }
+        return style
     }
 
     /// The style of a note by the agent named `name`.
     func forAgent(named name: String?) -> TextStyle {
         var style = self
         style.badge = NoteBadge.label(for: name)
+        style.agentWords = true
         return style
     }
 
@@ -454,11 +461,12 @@ struct TextStyle: Hashable, @unchecked Sendable {
     var person: TextStyle {
         var style = self
         style.badge = nil
+        style.agentWords = false
         return style
     }
 
     /// The face at `size`.
-    func font(size: CGFloat) -> CTFont { CTFontCreateWithFontDescriptor(badge == nil ? personFace : agentFace, size, nil) }
+    func font(size: CGFloat) -> CTFont { CTFontCreateWithFontDescriptor(agentWords ? agentFace : personFace, size, nil) }
 
     /// The badge's face at `size`.
     func badgeFont(size: CGFloat) -> CTFont { CTFontCreateWithFontDescriptor(badgeFace, size, nil) }
@@ -466,7 +474,7 @@ struct TextStyle: Hashable, @unchecked Sendable {
     /// The values the faces are made from, which say everything about the style.
     private var values: [AnyHashable] {
         [personFont, agentFont, personWeight.rawValue, agentWeight.rawValue, lineHeight, padTop, padBottom, padSide, widthCap,
-         badgeInset, badgeOverlap, agentSize, badge, balanced]
+         badgeInset, badgeOverlap, agentSize, badge, agentWords, balanced]
     }
 
     static func == (a: TextStyle, b: TextStyle) -> Bool { a.values == b.values }

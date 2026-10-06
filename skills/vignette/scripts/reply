@@ -10,6 +10,7 @@
 usage() {
   cat <<'USAGE'
 usage: reply --ticket <ticket.json> --marks <marks.json> [--image <your image>]
+       reply --ticket <ticket.json> --answer <answer.json>
        reply --ticket <ticket.json> --retry <bundle folder>
 
 The ticket is the ticket.json beside the image Vignette sent you. Given one, --help also
@@ -35,7 +36,7 @@ for argument in "$@"; do
   case $argument in
     -h|--help) help=1 ;;
     --ticket=*) ticket=${argument#--ticket=} ;;
-    --ticket|--marks|--image|--retry) wanted=$argument ;;
+    --ticket|--marks|--image|--answer|--retry) wanted=$argument ;;
   esac
 done
 

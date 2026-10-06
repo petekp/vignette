@@ -22,10 +22,10 @@ final class ReplyProtocolTests: XCTestCase {
         let replyID = replyID ?? self.replyID
         let directory = ReplyProtocol.submissionDirectory(root: root, requestID: requestID, replyID: replyID)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let bundle = Data(#"{"protocolVersion":1,"hasImage":false,"marks":\#(marks),"replyId":"\#(replyID)","requestId":"\#(requestID)"}"#.utf8)
+        let bundle = Data(#"{"protocolVersion":\#(ReplyProtocol.version),"hasImage":false,"marks":\#(marks),"replyId":"\#(replyID)","requestId":"\#(requestID)"}"#.utf8)
         try bundle.write(to: directory.appendingPathComponent("bundle.json"))
         let url = ReplyProtocol.attemptURL(root: root, requestID: requestID, replyID: replyID, attemptID: attemptID)
-        let attempt = #"{"protocolVersion":1,"requestId":"\#(requestID)","replyId":"\#(replyID)","attemptId":"\#(attemptID)","payloadDigest":"\#(ReplyProtocol.payloadDigest(bundle: bundle, image: nil))","secret":"\#(secret)"}"#
+        let attempt = #"{"protocolVersion":\#(ReplyProtocol.version),"requestId":"\#(requestID)","replyId":"\#(replyID)","attemptId":"\#(attemptID)","payloadDigest":"\#(ReplyProtocol.payloadDigest(bundle: bundle, image: nil))","secret":"\#(secret)"}"#
         try Data(attempt.utf8).write(to: url)
         return url
     }
@@ -98,7 +98,7 @@ final class ReplyProtocolTests: XCTestCase {
     func testAHelperFromAnotherProtocolIsRefused() throws {
         let url = try stage()
         var text = try String(contentsOf: url, encoding: .utf8)
-        text = text.replacingOccurrences(of: "\"protocolVersion\":1", with: "\"protocolVersion\":99")
+        text = text.replacingOccurrences(of: "\"protocolVersion\":\(ReplyProtocol.version)", with: "\"protocolVersion\":99")
         try Data(text.utf8).write(to: url)
         XCTAssertThrowsError(try ReplyProtocol.readAttempt(at: url, root: root)) { error in
             XCTAssertEqual((error as? ReplyProtocol.Problem)?.code, .protocolMismatch)

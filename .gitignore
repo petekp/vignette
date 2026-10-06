@@ -6,5 +6,7 @@ Info.plist
 __pycache__/
 # Takes, the stage copy and the encoded trailer (media/trailer/trailer.py).
 media/trailer/out/
+# The live ink demo's stage (media/live-ink-demo/demo.py).
+media/live-ink-demo/out/
 # The end-to-end test copy and its runs (scripts/e2e).
 scripts/e2e/out/

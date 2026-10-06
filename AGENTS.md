@@ -1066,9 +1066,30 @@ screenshot location for such a launch is written with the same variable:
   the surfaces with their frames, whether each is on the active Space and how many marks it has, and
   every mark once with its frame.
 - Letting go of the chord after drawing opens `LiveNotePanel` beside the new ink, a non-activating
-  panel that takes the keys as the stack's does. Return asks about the ink drawn since the last ask,
-  or, with none, about the ink asked about last. Its target starts on the responder and lists the
-  sessions Send lists after it.
+  panel that takes the keys as the stack's does. It is drawn as the note it becomes, and its target
+  is a chip under it. Return asks about the ink drawn since the last ask, or, with none, about the
+  ink asked about last. Its target starts on the one picked last, else the responder, and lists the
+  sessions Send lists after it. The words stay beside the ink as the person's own note, whichever
+  target answers: the chip fades and the panel hands over to the drawn note without the words
+  moving (`settle`). The note opens against its ink, where a hand writes one
+  (`LiveAnswerLayout.noteSpot`): touching an arrow's tail on the side away from its head, or beside a
+  loop's edge. It may cover the window's text there, and never moves elsewhere, since a note away from
+  its ink reads as being about something else. Left of the ink it grows to the left. Placing it needs
+  the window's frame and text, which `LivePacket.Glance` gives in about 20 ms after the capture:
+  Vision's fast level, for where the lines are, not what they say.
+- An ask sent to a session goes through Send, as one line that names the app, the window and its
+  URL. The person's words stay beside their ink as their own note, and both shimmer until the
+  session's turn ends (`LiveInk.watchWorking`, from the `turn` file the plugin's hooks write in its
+  inbox; a route that cannot tell stops after 3 minutes). A send that went says nothing more. The
+  session sees its own change land, so the skill asks it to answer on the window only when pointing
+  helps. It does that with `scripts/reply --answer`: words, and up to four marks that each
+  name words on the window (`LiveAnswer`, in the reply's bundle). `LiveInk.showAnswer` captures the
+  window the ink is on afresh (`LivePacket.build(window:)`), finds each mark's words in its text,
+  since the session has usually changed what it shows, and draws the answer beside the ink as the
+  responder's are drawn. The reply's stage is then `shown`, with no file. An answer that cannot be
+  drawn there, because the ink was cleared, a newer ask is under way or the app relaunched, becomes
+  a card with the words in its corner (`Reply.cardMarks`). `docs/adr/0021-a-sessions-answer-to-live-ink-is-drawn-on-the-window.md`
+  has the reasons.
 - An ask is answered by `LiveResponder`: one `claude -p` process in stream-json mode, run with
   `--safe-mode --tools ""`, its own system prompt, and `--json-schema` for the answer
   (`LiveAnswer.schema`). Started plainly, the process registered itself as a session in Vignette's
@@ -1089,20 +1110,26 @@ screenshot location for such a launch is written with the same variable:
   for when turned on (`ScreenRecording.request`, macOS's own alert, once); a row under the switch and
   the menu's first item open its pane. On macOS 15 the first capture also raised macOS's "bypass the
   system private window picker" alert.
-- The answer streams in: `say` is drawn as a note beside the ink as its words arrive
-  (`LiveAnswer.partialSay`), wrapping at `ui.liveInkTextWidth` and growing away from the ink, and the
-  marks draw themselves on when the answer is whole (`ShapeMarkLayer.drawOn`). `LiveAnswerLayout`
-  places them in global points, clear of the person's ink, the window's text and each other: a
-  circle round a long line is a box, a circle on a loop of the person's is an arrow, and a label
-  goes beside its mark, at an arrow's tail. They are agent `Mark`s on the same surfaces, so a tap
+- The answer streams in: `say` is drawn as a note under the person's note as its words arrive
+  (`LiveAnswer.partialSay`), left-aligned with it, so the question, the reply and its actions read
+  as one thread. It goes right above the note when the room ends under it, and beside the ink when
+  there is no note. It wraps at `ui.liveInkTextWidth`, and the marks draw themselves on when the
+  answer is whole (`ShapeMarkLayer.drawOn`). `LiveAnswerLayout` places them in global points inside
+  the page (a browser's web area, from Accessibility, else the window), clear of the person's ink,
+  the window's text and each other, and no note covers what the answer points at: a circle round a
+  long line is a box, a circle on a loop of the person's is an arrow, and a label goes beside its
+  mark, at an arrow's tail, with the arrow's side chosen for where its label fits. Labels are
+  `Mark.isLabel`, drawn without the agent's badge, so only the reply names the agent. The reply
+  follows the ink it was about, as the person's note does, so the thread moves as one; a pointing
+  mark is anchored to its own content, and a label follows the mark it names. They are agent `Mark`s on the same surfaces, so a tap
   erases them (a note's tag counts) and Clear clears them, and the next ask takes them off. Notes on
   the overlay are `NoteLayer`s, a bitmap `Mark.draw` makes on the main thread, not `MarkLayers`,
   which draws a drawing on an image.
 - Vignette's own words about an ask (sending, sent, failed, why) are a note beside the ink in the
   person's colour without a badge, not an agent mark, and are not ink: the next ask is not about them.
 - A session picked in the note's target gets the picture through `ScreenshotRequests.send`, as Send
-  sends a drawing, with the words and where the ink is in the line; the reply comes back as a card.
-  The client's answer goes to the ink (`LiveInk.delivered`) rather than a card.
+  sends a drawing, with the words and where the ink is in the line. The client's answer goes to the
+  ink (`LiveInk.delivered`) rather than a card.
 - `live-ink-ask?message=` (debug) asks as Return does, and `&session=<id>` sends to that session.
   `[state] liveInk` adds `new` (ink not yet asked about), `note`, `responder` and `ask` (phase,
   whether it sent a picture, the reply's length), and each mark's `agent`; `app.screenRecording`

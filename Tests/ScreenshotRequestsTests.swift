@@ -74,17 +74,17 @@ final class ScreenshotRequestsTests: XCTestCase {
     private func stageReply(_ record: ScreenshotRequests.Record, replyID: String = UUID().uuidString.lowercased(),
                             attemptID: String = UUID().uuidString.lowercased(), secret: String? = nil,
                             marks: String = #"[{"type":"ellipse","x":0.1,"y":0.1,"w":0.2,"h":0.2}]"#,
-                            image: Data? = nil) throws -> URL {
+                            image: Data? = nil, answer: String? = nil) throws -> URL {
         let directory = ReplyProtocol.submissionDirectory(root: root, requestID: record.id, replyID: replyID)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let bundle = Data(#"{"protocolVersion":1,"hasImage":\#(image != nil),"marks":\#(marks),"replyId":"\#(replyID)","requestId":"\#(record.id)"}"#.utf8)
+        let bundle = Data(#"{"protocolVersion":\#(ReplyProtocol.version),"hasImage":\#(image != nil),"marks":\#(answer == nil ? marks : "[]"),\#(answer.map { #""answer":\#($0),"# } ?? "")"replyId":"\#(replyID)","requestId":"\#(record.id)"}"#.utf8)
         try bundle.write(to: directory.appendingPathComponent("bundle.json"))
         if let image { try image.write(to: directory.appendingPathComponent("image.png")) }
         let digest = ReplyProtocol.payloadDigest(bundle: bundle, image: image)
         let url = ReplyProtocol.attemptURL(root: root, requestID: record.id, replyID: replyID, attemptID: attemptID)
         firstAttemptID = attemptID
         let secret = try secret ?? ticket(for: record).secret
-        try Data(#"{"protocolVersion":1,"requestId":"\#(record.id)","replyId":"\#(replyID)","attemptId":"\#(attemptID)","payloadDigest":"\#(digest)","secret":"\#(secret)"}"#.utf8).write(to: url)
+        try Data(#"{"protocolVersion":\#(ReplyProtocol.version),"requestId":"\#(record.id)","replyId":"\#(replyID)","attemptId":"\#(attemptID)","payloadDigest":"\#(digest)","secret":"\#(secret)"}"#.utf8).write(to: url)
         return url
     }
 
@@ -201,6 +201,38 @@ final class ScreenshotRequestsTests: XCTestCase {
 
     // MARK: Acceptance
 
+    /// An answer to live ink is drawn on the window and makes no file; one the window cannot take,
+    /// because the ink was cleared or the app relaunched, still reaches the person as a card.
+    func testAnAnswerIsDrawnOnTheWindowOrElseBecomesACard() throws {
+        var shown: [LiveAnswer] = []
+        var drawsLive = true
+        requests.callbacks.presentLive = { _, answer, done in
+            shown.append(answer)
+            done(drawsLive)
+        }
+        let answer = #"{"say":"Moved the dates under the title.","marks":[{"kind":"circle","words":"October 12","label":"moved"},{"kind":"arrow","box":[0.1,0.2,0.3,0.1]}]}"#
+
+        let live = try makeRequest()
+        let attemptID = UUID().uuidString.lowercased()
+        try requests.receiveReply(envelope: stageReply(live, attemptID: attemptID, answer: answer))
+        XCTAssertEqual(shown.first?.say, "Moved the dates under the title.")
+        XCTAssertEqual(shown.first?.marks.first?.words, "October 12")
+        XCTAssertEqual(receipt(live, attemptID)?.acceptance, .accepted)
+        let replies = (requests.stateJSON["replies"] as? [[String: Any]]) ?? []
+        XCTAssertEqual(replies.first { $0["request"] as? String == live.id }?["stage"] as? String, "shown")
+        XCTAssertTrue(presented.isEmpty)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+
+        drawsLive = false
+        let card = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(card, answer: answer))
+        XCTAssertEqual(presented.count, 1)
+        let marks = try XCTUnwrap(added.last)
+        XCTAssertEqual(marks.first?.text, "Moved the dates under the title.")
+        // The words-only mark has nothing to find on the request's picture; the boxed one is ringed.
+        XCTAssertEqual(marks.map(\.type), [.text, .ellipse])
+    }
+
     func testAValidReplyIsAcceptedAndAcknowledged() throws {
         let record = try makeRequest()
         let attemptID = UUID().uuidString.lowercased()
@@ -306,7 +338,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         let directory = ReplyProtocol.submissionDirectory(root: root, requestID: missing, replyID: "dddddddd-0000-4000-8000-000000000001")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = ReplyProtocol.attemptURL(root: root, requestID: missing, replyID: "dddddddd-0000-4000-8000-000000000001", attemptID: "eeeeeeee-0000-4000-8000-000000000001")
-        try Data(#"{"protocolVersion":1,"requestId":"\#(missing)","replyId":"dddddddd-0000-4000-8000-000000000001","attemptId":"eeeeeeee-0000-4000-8000-000000000001","payloadDigest":"sha256:\#(String(repeating: "0", count: 64))","secret":"x"}"#.utf8).write(to: url)
+        try Data(#"{"protocolVersion":\#(ReplyProtocol.version),"requestId":"\#(missing)","replyId":"dddddddd-0000-4000-8000-000000000001","attemptId":"eeeeeeee-0000-4000-8000-000000000001","payloadDigest":"sha256:\#(String(repeating: "0", count: 64))","secret":"x"}"#.utf8).write(to: url)
         requests.receiveReply(envelope: url)
         XCTAssertFalse(FileManager.default.fileExists(atPath: ReplyProtocol.receiptURL(root: root, requestID: missing, attemptID: "eeeeeeee-0000-4000-8000-000000000001").path))
     }
@@ -758,7 +790,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let secret = try ticket(for: second).secret
         let envelope = ReplyProtocol.attemptURL(root: root, requestID: second.id, replyID: shared, attemptID: attemptID)
-        try Data(#"{"protocolVersion":1,"requestId":"\#(second.id)","replyId":"\#(shared)","attemptId":"\#(attemptID)","payloadDigest":"\#(accepted.payloadDigest)","secret":"\#(secret)"}"#.utf8).write(to: envelope)
+        try Data(#"{"protocolVersion":\#(ReplyProtocol.version),"requestId":"\#(second.id)","replyId":"\#(shared)","attemptId":"\#(attemptID)","payloadDigest":"\#(accepted.payloadDigest)","secret":"\#(secret)"}"#.utf8).write(to: envelope)
         requests.receiveReply(envelope: envelope)
 
         XCTAssertEqual(receipt(second, attemptID)?.acceptance, .rejected, "it is not this request's reply to acknowledge")
