@@ -12,6 +12,7 @@ lets screen recordings see the ink. Build it first with `../trailer/trailer.py b
 `up` writes what a take needs to `out/dev/stage.json`: the pids, the frames and the app. Everything
 it makes is under `out/dev/`, and `~/Code/postcard` is the copy Claude works in, removed after.
 """
+import hashlib
 import json
 import os
 import shutil
@@ -260,8 +261,22 @@ def set_stage(stage):
                    'frames': frames, 'chrome_desktop': stage.chrome_desktop, 'chrome_mobile': stage.chrome_mobile,
                    'ghostty': stage.ghostty, 'desktop': stage.desktop.pid, 'inbox': stage.inbox,
                    'session': stage.session_id, 'claude': p['claude'], 'work': p['work'], 'url': stage.page_url,
+                   'postcard': digests(p['work']),
                    'accessibility': s['app'].get('accessibility'), 'paused': stage.paused, 'held_by': os.getpid()}, f, indent=2)
     print(f"  Vignette Demo pid={stage.pid} accessibility={s['app'].get('accessibility')}", flush=True)
+
+
+def digests(folder):
+    """Each file of Postcard as the stage set it, by its path in `folder`, so a take can tell that
+    Claude changed it since."""
+    found = {}
+    for root, dirs, files in os.walk(folder):
+        dirs[:] = [d for d in dirs if not d.startswith('.')]
+        for name in files:
+            path = os.path.join(root, name)
+            with open(path, 'rb') as f:
+                found[os.path.relpath(path, folder)] = hashlib.sha1(f.read()).hexdigest()
+    return found
 
 
 def take_down(stage):

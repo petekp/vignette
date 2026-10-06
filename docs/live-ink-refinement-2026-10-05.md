@@ -72,6 +72,23 @@ log.
 21. **Ink counts as strokes.** Notes and labels avoided the whole bounding box of the person's ink,
     so with a loop round the whole page the reply went to the window's bottom and both labels were
     dropped. The ink now counts as its strokes; what a loop encloses counts as lightly as text.
+22. **A take reports marks that move.** Five times a mark moved where it should not, and Pete saw
+    it before any check did. A take now reads live ink's state twice a second and records a finding
+    for a mark that moves on its window, a note that moves while open or opens more than 30 pt from
+    its ink, and a label Claude asked for that had no room. `[state] liveInk` gives each mark's
+    `id` for this, `state?section=liveInk` reports that section alone, so the readings do not
+    rotate the log, and `[live-ink] drew answer` logs `labels=<drawn>/<asked>`. The first take with
+    it (`take-20261005-185039`) reported the missing label and no moved marks.
+23. **A take checks the stage before recording.** It stops when the stage's Claude Code is signed
+    out or busy, a stage window lost its size, or, for a whole take, Postcard's files changed since
+    `dev.py up`.
+24. **Live ink's rules moved to `docs/live-ink.md`.** `AGENTS.md` is read on every turn, so it keeps
+    one pointer. The doc adds a map of which file owns which part, and how to check a change.
+    `LiveInk.swift` stays one file: 64 of its 107 private members are shared between its parts, so
+    splitting it would open them to the whole module. Its note placement moved under Asking, and
+    the answer has its own section.
+25. **CI runs the unit tests.** `.github/workflows/test.yml` runs `scripts/build.sh --test` on a
+    macOS 26 runner for every push and pull request, ad-hoc signed.
 
 ## Verification
 

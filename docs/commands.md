@@ -26,6 +26,7 @@ open -g vignette://recent                     # toggle the recent stack (same as
 open -g vignette://dismiss                    # close the thumbnail or the stack
 open -g vignette://cancel                     # close the annotator without copying, as Esc would
 open -g "vignette://state?tag=t1"             # one [state] {json} line in the log, tag echoed
+open -g "vignette://state?tag=t1&section=liveInk"   # only app and that section
 open -g vignette://help                       # list every command in the log
 open -g vignette://settings                   # open the Settings window
 open -g vignette://install-skill              # install the Vignette plugin for Claude Code and Codex
@@ -80,7 +81,7 @@ Every command answers with one line in `~/Library/Logs/Vignette.log`:
 menu bar opens it. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`, `unreadable-image`,
 `debug-disabled`, `no-apple-original`, `write-failed`, `unsupported-type`, `invalid-marks`,
-`no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`. The log has one event per line,
+`no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
 ## Input events

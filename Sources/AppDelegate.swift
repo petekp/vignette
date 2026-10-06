@@ -649,7 +649,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case "last": openLast()
         case "add": addImage(request)
         case "recent": toggleRecent()
-        case "state": dumpState(tag: request.tag)
+        case "state": dumpState(tag: request.tag, section: request.section)
         case "settings": settingsWindow.show(); Commands.ok("settings", "window opened")
         case "install-skill": installSkill(request)
         case "reply":
@@ -744,7 +744,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     /// One `[state] {json}` line, written at once.
-    private func dumpState(tag: String?) {
+    private func dumpState(tag: String?, section: String?) {
         var report = StateReport()
         report.sections = thumbnail.stateJSON
         report.sections["tag"] = tag as Any
@@ -766,6 +766,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         report.sections["requests"] = requests.stateJSON
         report.sections["liveInk"] = liveInk.stateJSON
         report.sections["memory"] = ["rss": residentBytes(), "thumbnails": Thumbnailer.cacheBytes]
+        if let section {
+            guard let picked = report.sections[section], !["tag", "app"].contains(section) else {
+                Commands.error("state", .unknownSection, "\"\(section)\"; the sections are \(report.sections.keys.sorted().joined(separator: " "))")
+                return
+            }
+            report.sections = ["tag": tag as Any, "app": report.sections["app"] as Any, section: picked]
+        }
         Log.write("[state] \(report.rendered())")
     }
 

@@ -9,17 +9,24 @@ takes 20 to 90 s a change, so a take lasts several minutes, and nobody may use t
 Every press checks first that the window under it is the stage's, and every key goes to Vignette
 Demo's own process. A take that cannot go on lets go of everything, stops the recording and says
 why. The movie and the beats' times go to `out/dev/takes/`.
+
+While the beats run, a watch reads live ink's `[state]` twice a second and records a finding for
+each mark that moved on its window, a note that moved while open or opened away from the ink, and a
+label Claude asked for that had no room. Findings do not stop a take; they are printed at its end
+and kept in the beats file.
 """
 import json
 import math
 import os
 import calendar
 import glob
+import hashlib
 import random
 import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +43,11 @@ RECORD = os.path.join(HERE, 'out', 'bin', 'record')
 TAKES = os.path.join(OUT, 'takes')
 STATE = os.path.join(OUT, 'stage.json')
 DOWN, RETURN = 125, 36
+# How far a mark may shift on its window between two readings before it counts as moved, in points.
+# The state report rounds frames to whole points.
+MOVED = 3
+# How far the note may open from the nearest ink, in points. It is placed 6 pt from it.
+NOTE_REACH = 30
 
 
 class DevTake:
@@ -49,6 +61,7 @@ class DevTake:
         self.hand = Hand()
         self.started = None
         self.beats = []
+        self.findings = []
 
     # MARK: Looking
 
@@ -73,10 +86,10 @@ class DevTake:
         os.kill(self.vignette, 0)
         subprocess.run(['open', '-g', '-a', self.app['path'], f"{self.app['scheme']}://{command}"], check=True)
 
-    def state(self):
+    def state(self, section=None):
         tag = f'dev{random.randrange(10**9)}'
         offset = self.log_size()
-        self.url(f'state?tag={tag}')
+        self.url(f'state?tag={tag}' + (f'&section={section}' if section else ''))
         end = time.monotonic() + 5
         while time.monotonic() < end:
             for line in self.log_since(offset).splitlines():
@@ -89,7 +102,8 @@ class DevTake:
         raise TakeFailed('Vignette Demo did not answer')
 
     def live(self):
-        return self.state()['liveInk']
+        # The whole report runs to tens of KB; at the watch's rate it rotated the log twice in one take.
+        return self.state('liveInk')['liveInk']
 
     def wait(self, test, timeout, what, every=0.2):
         end = time.monotonic() + timeout
@@ -149,6 +163,55 @@ class DevTake:
         subprocess.run(['osascript', '-e', f'tell application "System Events" to set frontmost of '
                         f'(first process whose unix id is {pid}) to true'], check=True, capture_output=True)
         time.sleep(0.4)
+
+    def finding(self, what):
+        beat = next((b['beat'] for b in reversed(self.beats) if b['beat'][0].isdigit()), 'start')
+        self.findings.append(f'{beat}: {what}')
+        print(f'[check] {beat}: {what}', flush=True)
+
+    def watch_marks(self, stop):
+        """Reads live ink twice a second until `stop`, and records a finding for each mark whose
+        place on its window changed, for the note moving while it is open, and for a note that
+        opens away from the ink. A mark is compared with where it last showed, so one that hides
+        and comes back elsewhere counts too."""
+        last = {}
+        note = None
+        while not stop.wait(0.5):
+            try:
+                live = self.live()
+            except TakeFailed:
+                continue
+            windows = {w['id']: w['frame'] for w in live['windows']}
+            for mark in live['marks']:
+                if not mark['shown'] or len(mark['frame']) != 4:
+                    continue
+                origin = windows.get(mark['window'], [0, 0])
+                spot = (mark['frame'][0] - origin[0], mark['frame'][1] - origin[1])
+                before = last.get(mark['id'])
+                last[mark['id']] = spot
+                if before and math.dist(before, spot) > MOVED:
+                    who = 'Claude\'s' if mark['agent'] else 'the person\'s'
+                    self.finding(f"{who} {mark['type']} moved {spot[0] - before[0]:+.0f},{spot[1] - before[1]:+.0f} on its window")
+            frame = live['note']
+            if frame and not note:
+                ink = [m['frame'] for m in live['marks'] if not m['agent'] and m['shown'] and len(m['frame']) == 4]
+                gap = min((gap_between(frame, box) for box in ink), default=None)
+                if gap is not None and gap > NOTE_REACH:
+                    self.finding(f'the note opened {gap:.0f} pt from the ink')
+            elif frame and note:
+                # The note grows as words come, down and away from the ink, so one side stays put.
+                left, right, top = abs(frame[0] - note[0]), abs(frame[0] + frame[2] - note[0] - note[2]), abs(frame[1] - note[1])
+                if top > MOVED or min(left, right) > MOVED:
+                    self.finding(f'the open note moved {frame[0] - note[0]:+.0f},{frame[1] - note[1]:+.0f}')
+            note = frame
+
+    def check_labels(self, offset):
+        """A finding when the answer drawn after `offset` has fewer labels than Claude asked for."""
+        for line in self.log_since(offset).splitlines():
+            if '[live-ink] drew answer' in line and ' labels=' in line:
+                drawn, asked = map(int, line.split(' labels=')[1].split()[0].split('/'))
+                if drawn < asked:
+                    self.finding(f'{asked - drawn} of {asked} labels had no room')
 
     def beat(self, name):
         self.beats.append({'beat': name, 't': round(time.monotonic() - self.started, 2) if self.started else 0})
@@ -262,6 +325,7 @@ class DevTake:
             raise TakeFailed(f'the answer was not drawn on the window: {line}')
         if expect_answer and '[reply] shown' not in line:
             raise TakeFailed('Claude answered in the terminal, not on the window')
+        self.check_labels(offset)
         self.beat('answer shown' if '[reply] shown' in line else 'turn ended')
         self.pause(4.0)
 
@@ -340,14 +404,30 @@ class DevTake:
 
     BEATS = ['number_days', 'stack_on_mobile', 'review_mobile']
 
-    def preflight(self):
-        """Stops before recording when the take could not finish: Claude Code cannot reach its API,
-        or another app's window covers part of the stage."""
+    def preflight(self, only):
+        """Stops before recording when the take could not finish: Claude Code is signed out, busy or
+        cannot reach its API, a stage window lost its size or is covered, or, for a whole take,
+        Postcard is no longer as the stage set it."""
         try:
             socket.getaddrinfo('api.anthropic.com', 443)
         except OSError as error:
             raise TakeFailed(f"Claude Code's API cannot be reached: {error}")
+        status = subprocess.run(['claude', 'auth', 'status'], capture_output=True, text=True,
+                                env=dict(os.environ, CLAUDE_CONFIG_DIR=self.stage['claude']))
+        if not json.loads(status.stdout or '{}').get('loggedIn'):
+            raise TakeFailed("the stage's Claude Code is signed out; type /login in it")
+        if self.turn() != 'idle':
+            raise TakeFailed("Claude Code is busy; wait for its turn to end")
+        if not only:
+            changed = [path for path, digest in self.stage['postcard'].items() if file_digest(self.stage['work'], path) != digest]
+            if changed:
+                raise TakeFailed(f"Postcard changed since the stage went up ({', '.join(changed)}); "
+                                 'take the stage down and up again')
         frames = self.stage['frames']
+        for window, pid in (('terminal', self.ghostty), ('desktop', self.desktop), ('mobile', self.mobile)):
+            w, h = self.window(pid)[2:]
+            if abs(w - frames[window][2]) > 6 or abs(h - frames[window][3]) > 6:
+                raise TakeFailed(f'the {window} window is {w:.0f}x{h:.0f}, not {frames[window][2]}x{frames[window][3]}')
         for window, pid in (('terminal', self.ghostty), ('desktop', self.desktop), ('mobile', self.mobile)):
             x, y, w, h = frames[window]
             for fx in (0.15, 0.5, 0.85):
@@ -369,10 +449,8 @@ class DevTake:
         name = time.strftime('take-%Y%m%d-%H%M%S')
         movie = os.path.join(TAKES, name + '.mov')
         self.url('live-ink-clear')
-        if self.turn() != 'idle':
-            raise TakeFailed("Claude Code is busy; wait for its turn to end")
         self.raise_stage()
-        self.preflight()
+        self.preflight(only)
         frames = self.stage['frames']
         self.glide(frames['desktop'][0] + 300, frames['desktop'][1] + frames['desktop'][3] - 60, 0.8)
         recorder = None
@@ -382,6 +460,9 @@ class DevTake:
             recorder.stdout.readline()
         self.started = time.monotonic()
         failed = None
+        stop = threading.Event()
+        watch = threading.Thread(target=self.watch_marks, args=(stop,), daemon=True)
+        watch.start()
         try:
             self.pause(1.5)
             for beat in self.BEATS:
@@ -403,14 +484,33 @@ class DevTake:
         except TakeFailed as error:
             failed = error
         finally:
+            stop.set()
+            watch.join(timeout=10)
             self.hand.close()
             if recorder:
                 recorder.send_signal(signal.SIGINT)
                 recorder.wait(timeout=30)
-            json.dump({'beats': self.beats, 'failed': str(failed) if failed else None, 'movie': movie if record else None},
+            json.dump({'beats': self.beats, 'failed': str(failed) if failed else None, 'findings': self.findings,
+                       'movie': movie if record else None},
                       open(os.path.join(TAKES, name + '.beats.json'), 'w'), indent=2)
-        print(f'[take] {"stopped: " + str(failed) if failed else "done"}' + (f'; {movie}' if record else ''))
+        print(f'[take] {"stopped: " + str(failed) if failed else "done"}; {len(self.findings)} findings'
+              + (f'; {movie}' if record else ''))
         return failed
+
+
+def gap_between(a, b):
+    """The distance between two [x, y, w, h] rects; 0 when they touch or overlap."""
+    dx = max(b[0] - (a[0] + a[2]), a[0] - (b[0] + b[2]), 0)
+    dy = max(b[1] - (a[1] + a[3]), a[1] - (b[1] + b[3]), 0)
+    return math.hypot(dx, dy)
+
+
+def file_digest(folder, path):
+    try:
+        with open(os.path.join(folder, path), 'rb') as f:
+            return hashlib.sha1(f.read()).hexdigest()
+    except FileNotFoundError:
+        return None
 
 
 if __name__ == '__main__':

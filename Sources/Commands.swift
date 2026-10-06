@@ -25,6 +25,8 @@ enum CommandError: String, CaseIterable {
     case invalidPoints = "invalid-points"
     /// `live-ink-ask` found no ink to ask about, or an ask under way. The detail says which.
     case liveInkNotAsked = "live-ink-not-asked"
+    /// `section=` names no section of the `[state]` report.
+    case unknownSection = "unknown-section"
 }
 
 /// A `vignette://<name>?file=…&file=…` URL, decoded once.
@@ -52,6 +54,8 @@ struct CommandRequest: Equatable {
     var points: String? = nil
     /// `message=` from the query: what `live-ink-ask` asks, as the note's words.
     var message: String? = nil
+    /// `section=` from the query: the one section `state` reports beside `app`.
+    var section: String? = nil
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -66,7 +70,7 @@ enum Commands {
     /// Commands that are not actions on screenshots. Actions come from `Config.actions`.
     static let fixed: [Fixed] = [
         Fixed(name: "help", summary: "list every command and action in the log"),
-        Fixed(name: "state", summary: "dump app state to the log"),
+        Fixed(name: "state", summary: "dump app state to the log; &section=<name> reports only that section and app"),
         Fixed(name: "last", summary: "show the thumbnail for the newest screenshot"),
         Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &session=<id> names the Claude Code session it came from, which Reply on the card goes back to; &marks=<json file> draws on it, as marks the user can edit; ignores copyOnCapture and annotateOnCapture"),
         Fixed(name: "recent", summary: "toggle the recent stack"),
@@ -100,7 +104,8 @@ enum Commands {
                               root: items.first { $0.name == "root" }?.value.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) },
                               clear: items.first { $0.name == "clear" }?.value,
                               points: items.first { $0.name == "points" }?.value,
-                              message: items.first { $0.name == "message" }?.value)
+                              message: items.first { $0.name == "message" }?.value,
+                              section: items.first { $0.name == "section" }?.value)
     }
 
     /// `points=` as a stroke: `x,y` pairs joined by `;`. Nil when it holds none, or any pair is not

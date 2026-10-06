@@ -336,7 +336,7 @@ final class LiveInk {
             "marks": marks.map { mark -> [String: Any] in
                 let extent = mark.shapeExtent ?? LiveAnswerLayout.noteBox(mark, sizes: answerSizes)
                 let frame = extent.map { [$0.minX, $0.minY, $0.width, $0.height].map { Int($0.rounded()) } } ?? []
-                return ["type": mark.kind.rawValue, "frame": frame, "agent": mark.agent,
+                return ["id": mark.id.uuidString, "type": mark.kind.rawValue, "frame": frame, "agent": mark.agent,
                         "shown": shownMarks.contains { $0.id == mark.id }, "window": windows.window(of: mark.id).map { Int($0) } ?? NSNull()]
             },
             "windows": windows.stateJSON,
@@ -753,7 +753,62 @@ final class LiveInk {
         finish(ids, .dismissed)
     }
 
-    // MARK: Dismissing
+    /// How long a new note waits out of sight for the window's text before it shows where it opened.
+    private static let revealLimit: TimeInterval = 0.8
+
+    /// Starts capturing the window under the ink as a stroke ends, while the chord is still held,
+    /// so the note can open clear of the window's text without waiting for a capture of its own. The
+    /// note waits only for the glance at where the text is, which comes long before the packet.
+    private func prefetch(at point: CGPoint) {
+        let person = ink
+        let ui = Settings.shared.data.ui
+        let (glances, glanced) = AsyncStream<LivePacket.Glance>.makeStream()
+        let packet = Task { @MainActor in
+            defer { glanced.finish() }
+            return try await LivePacket.build(at: point, ink: person, style: ui.textStyle, markStyle: ui.markStyle,
+                                              glanced: { glanced.yield($0) })
+        }
+        let glance = Task { @MainActor () -> LivePacket.Glance? in
+            for await glance in glances { return glance }
+            return nil
+        }
+        prepared = (Set(person.map(\.id)), packet, glance)
+    }
+
+    /// Shows the note against its ink, where a hand would write it, which needs the window's frame
+    /// and text from a glance at the window: the one started as the stroke ended, which also serves
+    /// the ask when the ink is the same, or a new one. Without an answer in `revealLimit`, the note
+    /// shows where it opened.
+    private func prepare(beside newest: Mark, panel: LiveNotePanel) {
+        let person = ink
+        let extent = newest.shapeExtent ?? .zero
+        if prepared?.ink != Set(person.map(\.id)) { prefetch(at: CGPoint(x: extent.midX, y: extent.midY)) }
+        if let glance = prepared?.glance { place(panel, beside: newest, from: glance) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealLimit) { [weak panel] in panel?.reveal(at: nil) }
+    }
+
+    private func place(_ panel: LiveNotePanel, beside newest: Mark, from glance: Task<LivePacket.Glance?, Never>) {
+        Task { @MainActor [weak self, weak panel] in
+            guard let glance = await glance.value, let self, let panel, self.note === panel else {
+                panel?.reveal(at: nil)
+                return
+            }
+            let scene = self.scene(frame: glance.frame, page: glance.page, text: glance.text)
+            let pill = panel.pillFrame
+            // Room for the words still to come, so typing does not grow it over the ink; the chip under it.
+            let size = CGSize(width: max(pill.width, LiveNotePanel.roomyWidth), height: pill.height)
+            let spot = LiveAnswerLayout.noteSpot(size, under: panel.globalFrame.height - pill.height, for: newest, scene: scene)
+            panel.reveal(at: spot.rect, growsLeft: spot.growsLeft)
+        }
+    }
+
+    private func stopWorking() {
+        workingWatch?.invalidate()
+        workingWatch = nil
+        working = nil
+    }
+
+    // MARK: Dismissing and actions
 
     /// The answer's note, where it is now, in global top-left points.
     private var shownSay: CGRect? {
@@ -876,60 +931,7 @@ final class LiveInk {
         }
     }
 
-    /// How long a new note waits out of sight for the window's text before it shows where it opened.
-    private static let revealLimit: TimeInterval = 0.8
-
-    /// Starts capturing the window under the ink as a stroke ends, while the chord is still held,
-    /// so the note can open clear of the window's text without waiting for a capture of its own. The
-    /// note waits only for the glance at where the text is, which comes long before the packet.
-    private func prefetch(at point: CGPoint) {
-        let person = ink
-        let ui = Settings.shared.data.ui
-        let (glances, glanced) = AsyncStream<LivePacket.Glance>.makeStream()
-        let packet = Task { @MainActor in
-            defer { glanced.finish() }
-            return try await LivePacket.build(at: point, ink: person, style: ui.textStyle, markStyle: ui.markStyle,
-                                              glanced: { glanced.yield($0) })
-        }
-        let glance = Task { @MainActor () -> LivePacket.Glance? in
-            for await glance in glances { return glance }
-            return nil
-        }
-        prepared = (Set(person.map(\.id)), packet, glance)
-    }
-
-    /// Shows the note against its ink, where a hand would write it, which needs the window's frame
-    /// and text from a glance at the window: the one started as the stroke ended, which also serves
-    /// the ask when the ink is the same, or a new one. Without an answer in `revealLimit`, the note
-    /// shows where it opened.
-    private func prepare(beside newest: Mark, panel: LiveNotePanel) {
-        let person = ink
-        let extent = newest.shapeExtent ?? .zero
-        if prepared?.ink != Set(person.map(\.id)) { prefetch(at: CGPoint(x: extent.midX, y: extent.midY)) }
-        if let glance = prepared?.glance { place(panel, beside: newest, from: glance) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealLimit) { [weak panel] in panel?.reveal(at: nil) }
-    }
-
-    private func place(_ panel: LiveNotePanel, beside newest: Mark, from glance: Task<LivePacket.Glance?, Never>) {
-        Task { @MainActor [weak self, weak panel] in
-            guard let glance = await glance.value, let self, let panel, self.note === panel else {
-                panel?.reveal(at: nil)
-                return
-            }
-            let scene = self.scene(frame: glance.frame, page: glance.page, text: glance.text)
-            let pill = panel.pillFrame
-            // Room for the words still to come, so typing does not grow it over the ink; the chip under it.
-            let size = CGSize(width: max(pill.width, LiveNotePanel.roomyWidth), height: pill.height)
-            let spot = LiveAnswerLayout.noteSpot(size, under: panel.globalFrame.height - pill.height, for: newest, scene: scene)
-            panel.reveal(at: spot.rect, growsLeft: spot.growsLeft)
-        }
-    }
-
-    private func stopWorking() {
-        workingWatch?.invalidate()
-        workingWatch = nil
-        working = nil
-    }
+    // MARK: Answering
 
     /// Whether the request is one live ink sent, which its answer and its failures come back to.
     func sent(request: String) -> Bool { sending[request] != nil }
@@ -1086,7 +1088,9 @@ final class LiveInk {
         asking?.actions = answer.actions
         asking?.findings = layout.findings
         answerMarks.formUnion(placed.map(\.id))
-        Log.write("[live-ink] drew answer marks=\(placed.count - 1) dropped=\(targets.filter { $0 == nil }.count)\(answer.steps ? " steps" : "")")
+        let labels = zip(answer.marks, targets).filter { $0.0.label != nil && $0.1 != nil }.count
+        Log.write("[live-ink] drew answer marks=\(placed.count - 1) dropped=\(targets.filter { $0 == nil }.count) "
+                  + "labels=\(layout.findings.filter { $0.count > 1 }.count)/\(labels)\(answer.steps ? " steps" : "")")
         let groups = Self.steps(in: Array(placed.dropFirst()))
         defer { replace(question: question) }
         guard answer.steps, groups.count > 1 else {
