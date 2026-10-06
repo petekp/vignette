@@ -564,8 +564,8 @@ final class LiveInk {
         removeAnswer()
         let ids = Set(about.map(\.id))
         asked.formUnion(ids)
-        // The ink leads, not the person's note: every mark of the answer follows it directly, so a
-        // glide moves the question, the reply and the labels together.
+        // The ink leads, not the person's note: the notes follow it directly, so moving its content
+        // moves the question and the reply together.
         let leader = about.last { $0.kind != .text }?.id ?? about.last?.id
         asking = AskState(phase: .looking, about: ids, leader: leader, leaderShift: leader.flatMap(windows.shift(of:)))
         showMarks()
@@ -603,8 +603,8 @@ final class LiveInk {
         // The words stay beside the ink as the person's note, which the reply hangs under.
         let note = promptNote(words, about: Set(about.map(\.id)), packet: packet, at: spot)
         if let note { asking?.about.insert(note.id) }
-        let question = note.flatMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) }
-        letGoOfNote(into: question)
+        letGoOfNote(into: note.flatMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) })
+        let question = note
         if note != nil { showMarks() }
         let person = ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
         Log.write("[live-ink] packet ms=\(Int(Date().timeIntervalSince(started) * 1000)) app=\(packet.app ?? "none") lines=\(packet.lines.count) bytes=\(packet.picture.count)\(packet.detail == nil ? "" : " detail")")
@@ -974,8 +974,8 @@ final class LiveInk {
         }
         closeNote()
         removeAnswer()
-        // The ink leads, not the person's note: every mark of the answer follows it directly, so a
-        // glide moves the question, the reply and the labels together.
+        // The ink leads, not the person's note: the notes follow it directly, so moving its content
+        // moves the question and the reply together.
         let leader = about.last { $0.kind != .text }?.id ?? about.last?.id
         asking = AskState(phase: .asking, about: shared.about, leader: leader, leaderShift: leader.flatMap(windows.shift(of:)), session: shared)
         let ui = Settings.shared.data.ui
@@ -1029,35 +1029,51 @@ final class LiveInk {
         return LiveAnswerLayout.Scene(room: room.isNull ? frame : room, ink: ink, text: text, notes: notes)
     }
 
-    /// The tag of the note the person asked with, among the marks `about`, in global top-left points.
-    private func question(in about: Set<Mark.ID>) -> CGRect? {
-        marks.last { about.contains($0.id) && !$0.agent && $0.kind == .text }.flatMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) }
+    /// The note the person asked with, among the marks `about`.
+    private func question(in about: Set<Mark.ID>) -> Mark? {
+        marks.last { about.contains($0.id) && !$0.agent && $0.kind == .text }
     }
 
-    /// The reply so far, as a note under the question, or beside the ink. It keeps the spot it first
-    /// took, so it grows in place rather than jumping as words arrive.
-    private func showSay(_ say: String, near asked: CGRect, question: CGRect?, packet: LivePacket) {
+    private func words(of note: Mark?) -> String? {
+        if case .text(let text) = note?.geometry { text.text } else { nil }
+    }
+
+    /// The person's note goes as the reply that quotes it comes, in its place.
+    private func replace(question: Mark?) {
+        guard let question, marks.contains(where: { $0.id == question.id }) else { return }
+        Log.write("[live-ink] question replaced by its reply")
+        remove([question.id])
+        showMarks()
+    }
+
+    /// The reply so far, as a note in the question's place, quoting it, or beside the ink. It keeps
+    /// the spot it first took, so it grows in place rather than jumping as words arrive.
+    private func showSay(_ say: String, near asked: CGRect, question: Mark?, packet: LivePacket) {
         guard asking?.phase == .asking else { return }
         let scene = scene(for: packet)
+        let tag = question.flatMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) }
         let note: Mark
         if let shown = asking?.say {
-            note = LiveAnswerLayout.grown(shown, to: say, near: question ?? asked, scene: scene, sizes: answerSizes)
+            note = LiveAnswerLayout.grown(shown, to: say, near: tag ?? asked, scene: scene, sizes: answerSizes)
         } else {
-            note = LiveAnswerLayout.reply(say, question: question, near: asked, scene: scene,
+            note = LiveAnswerLayout.reply(say, question: tag, quote: words(of: question), near: asked, scene: scene,
                                           obstacles: LiveAnswerLayout.obstacles(in: scene), sizes: answerSizes)
             drawingOn.insert(note.id)
         }
         asking?.say = note
         answerMarks.insert(note.id)
         put([note], window: packet.windowID)
+        replace(question: question)
     }
 
-    private func answered(_ answer: LiveAnswer, packet: LivePacket, near asked: CGRect, question: CGRect?,
+    private func answered(_ answer: LiveAnswer, packet: LivePacket, near asked: CGRect, question: Mark?,
                           agent: String = LiveAnswerLayout.agentName) {
         guard asking != nil else { return }
         let targets = answer.marks.map { target(of: $0, in: packet) }
-        let layout = LiveAnswerLayout.placed(for: answer, targets: targets, asked: asked, question: question, scene: scene(for: packet),
-                                             sizes: answerSizes, streamed: asking?.say, below: answer.actions.isEmpty ? 0 : LiveAnswerActions.room)
+        let layout = LiveAnswerLayout.placed(for: answer, targets: targets, asked: asked,
+                                             question: question.flatMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) },
+                                             quote: words(of: question), scene: scene(for: packet), sizes: answerSizes, streamed: asking?.say,
+                                             below: answer.actions.isEmpty ? 0 : LiveAnswerActions.room)
         let placed = layout.marks.map { mark in
             var mark = mark
             if mark.agent { mark.agentName = agent }
@@ -1072,6 +1088,7 @@ final class LiveInk {
         answerMarks.formUnion(placed.map(\.id))
         Log.write("[live-ink] drew answer marks=\(placed.count - 1) dropped=\(targets.filter { $0 == nil }.count)\(answer.steps ? " steps" : "")")
         let groups = Self.steps(in: Array(placed.dropFirst()))
+        defer { replace(question: question) }
         guard answer.steps, groups.count > 1 else {
             put(placed, window: packet.windowID)
             return
@@ -1196,11 +1213,11 @@ final class LiveInk {
     }
 
     /// Adds an answer's marks, or Vignette's own note, replacing marks of the same id. They go on the
-    /// window the ask was about, or the window the ink asked about is on. There they all follow that
-    /// ink, moved by however far its content moved since the ask, so the answer moves as one piece:
-    /// marks anchored to what each points at glided at different moments when a page reloaded, and a
-    /// label landed on the reply. Without that ink, each mark is anchored to what it points at, and a
-    /// label follows its mark. With no window they go on the active Space's surfaces.
+    /// window the ask was about, or the window the ink asked about is on, beside that ink: when its
+    /// content moved since the ask, they move with it and follow it, and otherwise each mark is
+    /// anchored to what it points at, a label follows the mark it names, and a note follows the ink.
+    /// A mark that followed the ink drifted off its target when the session's edit moved the content
+    /// under the ink. With no window they go on the active Space's surfaces.
     private func put(_ placed: [Mark], window windowID: CGWindowID?) {
         let leader = asking?.leader.flatMap { id in windows.window(of: id).map { (id: id, window: $0) } }
         let target = (windowID ?? leader?.window).flatMap(windows.target(id:))
@@ -1210,6 +1227,7 @@ final class LiveInk {
         if let leader, leader.window == target?.id, let then = asking?.leaderShift, let now = windows.shift(of: leader.id) {
             moved = CGVector(dx: now.dx - then.dx, dy: now.dy - then.dy)
         }
+        let still = leader.map { windows.isShown($0.id) && moved == .zero } ?? true
         // The mark a label names comes just before it.
         var labelled: Mark.ID?
         for mark in placed {
@@ -1217,10 +1235,10 @@ final class LiveInk {
             if let target {
                 let mark = LiveWindows.translated(mark, by: moved)
                 let anchor: LiveWindows.Anchor
-                if let leader, leader.window == target.id {
-                    anchor = .follows(leader.id)
-                } else if mark.isLabel, let labelled {
+                if mark.isLabel, still, let labelled {
                     anchor = .follows(labelled)
+                } else if let leader, leader.window == target.id, !still || mark.kind == .text {
+                    anchor = .follows(leader.id)
                 } else {
                     anchor = .at(LiveWindows.anchorPoint(of: mark))
                 }

@@ -99,13 +99,6 @@ final class LiveAnchor: @unchecked Sendable {
         }
     }
 
-    /// This anchor read as if it had been pinned `shift` earlier: one found after its mark's content
-    /// had already moved by `shift`, so its readings count from where the mark was first pinned.
-    func rebased(by shift: CGVector) -> LiveAnchor {
-        LiveAnchor(kind: kind, window: window, scrollArea: scrollArea, pinned: pinned.offsetBy(dx: -shift.dx, dy: -shift.dy),
-                   focus: focus.map { CGPoint(x: $0.x - shift.dx, y: $0.y - shift.dy) })
-    }
-
     // MARK: Finding
 
     /// The anchor for the content at `point`, in global top-left points, in the window `windowID` of

@@ -104,7 +104,10 @@ class DevTake:
         """The newest API error the stage's Claude Code wrote in its session's transcript after
         `since`, a time.time(), as its text; None when there is none."""
         found = None
-        for path in glob.glob(os.path.join(self.stage['claude'], 'projects', '*', self.stage['session'] + '.jsonl')):
+        # The session the inbox holds now: /login or /clear starts another.
+        with open(os.path.join(self.stage['inbox'], 'session')) as f:
+            session = f.read().strip()
+        for path in glob.glob(os.path.join(self.stage['claude'], 'projects', '*', session + '.jsonl')):
             if os.path.getmtime(path) < since:
                 continue
             with open(path, errors='replace') as f:
@@ -279,9 +282,12 @@ class DevTake:
         """On the mobile window: a loop round the squeezed day cards."""
         self.beat('2 stack on mobile')
         frame = self.window(self.mobile)
-        # The card's title: the date above it wraps once the day has its number.
-        first = self.find(self.mobile, 'Arrive')
-        top = first[1] - 40
+        # The card's title: the date above it wraps once the day has its number. Beat 1's number can
+        # cover the title's first letters, so the date line answers instead.
+        try:
+            top = self.find(self.mobile, 'Arrive')[1] - 40
+        except TakeFailed:
+            top = self.find(self.mobile, 'OCT 12')[1] - 15
         box = (frame[0] + 24, top, frame[2] - 48, min(frame[1] + frame[3] - 40, top + 220) - top)
         self.loop(box, self.mobile, pad=(8, 14), seconds=1.2)
         offset = self.send('stack these on mobile')

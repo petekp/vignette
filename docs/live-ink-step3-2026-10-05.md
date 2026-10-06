@@ -16,13 +16,11 @@ and it never shows over the wrong content.
   marks there trailed the content and jumped.
 - **The window goes away: the marks go with it.** Minimised, hidden, or on another Space, they
   fade with the window and come back with it. Closed, they are erased.
-- **A session edits the page: the marks glide.** While a session works on an ask, its marks are
-  what the person watches, so they glide over 0.3 s to where their content went instead of fading.
-  A page that reloads makes new elements, and the old ones read nothing. A mark whose element stops
-  reading is then looked for by its pixels while it still shows, every 0.15 s and after 2 s every
-  second. Once two looks agree, it glides there and takes the element now under it as its anchor
-  (`LiveWindows.relocate`, `LiveAnchor.rebased`). A mark that is never found stays where it is
-  until the turn ends, so the done animation still plays.
+- **A session edits the page: the marks hold still.** While a session works on an ask, and while
+  its marks play their done animation, a change of the content under them moves nothing
+  (`LiveWindows.holding`). The person is watching the change land. Marks that faded, then glided
+  to where their content went, read as the answer shifting around (Pete, 2026-10-05). They finish
+  where they are when the turn ends. Moving or resizing the window still carries them.
 
 ## Pieces
 

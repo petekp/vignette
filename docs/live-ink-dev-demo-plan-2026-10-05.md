@@ -22,10 +22,10 @@ note that opens beside the ink, and the work happens. Each beat is one ask:
    mobile". The note remembers the session. While Claude works, the developer drags the window in
    from the corner, and the ink goes with it. The cards stack, and the ink finishes as before.
 3. **Review on mobile.** A loop round the mobile page: "what else should we fix on mobile?" Claude
-   answers on the window. Its reply hangs on the question, its marks point at what breaks ("Share
+   answers on the window. Its reply takes the question's place and quotes it, its marks point at what breaks ("Share
    cut off", "Map cropped"), and two buttons sit under the reply: "Fix both" and "Header only". The
-   developer clicks "Fix both". The answer and the ink shimmer while Claude fixes both, glide with
-   the page as it reloads, and finish.
+   developer clicks "Fix both". The answer and the ink shimmer while Claude fixes both, hold still
+   as the page reloads, and finish.
 
 The beats show what a screenshot tool cannot: ink on live windows, a window moved mid-task with its
 ink, and the agent answering on the page itself, in one continuous session with no capture step.

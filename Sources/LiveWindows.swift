@@ -78,7 +78,6 @@ final class LiveWindows {
         /// at the marks found by their pixels next, and until when to keep looking.
         var checkAt: CFTimeInterval?
         var checkUntil: CFTimeInterval = 0
-        var lastRelocate: CFTimeInterval = 0
 
         init(id: CGWindowID, pid: pid_t, app: String?, frame: CGRect) {
             self.id = id
@@ -102,10 +101,6 @@ final class LiveWindows {
         var phase: Phase = .shown
         /// When the content under it last moved: a scroll over it, or its anchor's reading changing.
         var lastScroll: CFTimeInterval = 0
-        /// When its anchor stopped being readable while it glides, as a page does while it reloads.
-        var unreadSince: CFTimeInterval?
-        /// Drawn faint, because it has stayed unread for `dimAfter` while it glides.
-        var dimmed = false
         var lastChange: CFTimeInterval = 0
         /// The trackpad's scroll since it hid, and whether its anchor has moved since then.
         var scrolledSinceHide = CGVector.zero
@@ -127,9 +122,6 @@ final class LiveWindows {
         /// look found it: it comes back once two looks agree.
         var checking = false
         var seen: (shift: CGVector?, at: CFTimeInterval)?
-        /// Where the last look by its pixels found a gliding mark whose anchor went unread
-        /// (`relocate`): it glides there once the next look agrees.
-        var relocated: CGVector?
 
         enum Phase: String { case shown, moving, lost }
     }
@@ -152,14 +144,6 @@ final class LiveWindows {
             case .follows: "follows"
             case .window: "window"
             }
-        }
-
-        var isFollower: Bool {
-            if case .follows = self { true } else { false }
-        }
-
-        func follows(_ leader: Mark.ID) -> Bool {
-            if case .follows(let id, _) = self { id == leader } else { false }
         }
     }
 
@@ -294,8 +278,7 @@ final class LiveWindows {
 
     func show(markStyle: MarkStyle, textStyle: TextStyle, drawingOn: Set<Mark.ID>, pulsing: Set<Mark.ID>,
               finishing: [Mark.ID: LiveMarksLayer.Finish] = [:]) {
-        // A mark playing its done animation keeps gliding, so a late move does not fade it mid-way.
-        gliding = pulsing.union(finishing.keys)
+        holding = pulsing.union(finishing.keys)
         for window in windows.values {
             window.overlay.marks.show(window.pins.map(\.mark), markStyle: markStyle, textStyle: textStyle,
                                       drawingOn: drawingOn, pulsing: pulsing, finishing: finishing)
@@ -427,14 +410,6 @@ final class LiveWindows {
             let after = reading.shift(from: anchor.pinned, focus: anchor.focus)
             window.pins[index].reading = reading
             window.pins[index].readAt = started
-            if after != nil { window.pins[index].unreadSince = nil }
-            // While the session works the mark stays, so its turn ends with the mark on screen.
-            if let since = window.pins[index].unreadSince, now - since > Self.unreadLimit, window.pins[index].phase == .shown,
-               !gliding.contains(id) {
-                window.pins[index].unreadSince = nil
-                hide(index, in: window, because: "unread")
-                continue
-            }
             guard !Self.same(before, after) else { continue }
             window.pins[index].lastChange = now
             window.pins[index].changedSinceHide = true
@@ -443,14 +418,7 @@ final class LiveWindows {
                 // Moved with nothing on the trackpad: a key, a click or the page itself scrolled it.
                 if let after, Self.same(after, window.pins[index].shift) { continue }
                 // A scroll of the person's hid it already (`scrolled`), so this move is the page's own.
-                if gliding.contains(id) {
-                    if let after {
-                        glide(index, in: window, to: after)
-                    } else if window.pins[index].unreadSince == nil {
-                        window.pins[index].unreadSince = now
-                    }
-                    continue
-                }
+                if holding.contains(id) { continue }
                 let pin = window.pins[index]
                 if !window.late, now - pin.shownAt < 0.6, pin.lastScroll < pin.shownAt, pin.shownAt > pin.pinnedAt + 0.01 {
                     window.late = true
@@ -464,42 +432,20 @@ final class LiveWindows {
                 break
             }
         }
-        if window.pins.contains(where: { $0.phase == .shown && $0.unreadSince != nil && $0.patch != nil }) { relocate(window) }
-        // A follower dims with the mark it follows, not by its own reading.
-        for index in window.pins.indices where window.pins[index].phase == .shown && !window.pins[index].anchor.isFollower {
-            let lost = window.pins[index].unreadSince.map { now - $0 > Self.dimAfter } ?? false
-            if lost != window.pins[index].dimmed { dim(index, in: window, lost) }
-        }
     }
-
-    /// A gliding mark not found for this long is drawn faint until it is, so a mark the page changed
-    /// under does not stand at full strength on something else for the rest of the turn.
-    private static let dimAfter: CFTimeInterval = 3
-    private static let dimmedOpacity: Float = 0.4
 
     /// Draws the marks of `all` that are not `lit` faint, as an answer's action points at its own
     /// findings, and the rest at their own strength.
     func light(_ lit: Set<Mark.ID>, among all: Set<Mark.ID>) {
         for window in windows.values {
             for pin in window.pins where all.contains(pin.mark.id) && pin.phase == .shown {
-                let strength: Float = lit.contains(pin.mark.id) ? (pin.dimmed ? Self.dimmedOpacity : 1) : Self.unlitOpacity
+                let strength: Float = lit.contains(pin.mark.id) ? 1 : Self.unlitOpacity
                 window.overlay.marks.fade(pin.mark.id, to: strength, duration: 0.18 * Settings.shared.motionScale)
             }
         }
     }
 
     private static let unlitOpacity: Float = 0.2
-
-    /// Draws a mark, and the marks that follow it, faint or back at full strength.
-    private func dim(_ index: Int, in window: Tracked, _ dimmed: Bool) {
-        let id = window.pins[index].mark.id
-        Log.write("[live-ink] \(dimmed ? "dim" : "undim") window=\(window.id)")
-        for follower in window.pins.indices where follower == index || window.pins[follower].anchor.follows(id) {
-            guard window.pins[follower].phase == .shown else { continue }
-            window.pins[follower].dimmed = dimmed
-            window.overlay.marks.fade(window.pins[follower].mark.id, to: dimmed ? Self.dimmedOpacity : 1, duration: 0.4 * Settings.shared.motionScale)
-        }
-    }
 
     private static func same(_ a: CGVector?, _ b: CGVector?) -> Bool {
         switch (a, b) {
@@ -517,7 +463,6 @@ final class LiveWindows {
         let now = CACurrentMediaTime()
         if window.pins[index].phase == .shown { Log.write("[live-ink] hide window=\(window.id) because=\(reason)") }
         window.pins[index].phase = .moving
-        window.pins[index].dimmed = false
         window.pins[index].hiddenAt = now
         window.pins[index].ride = .zero
         window.pins[index].scrolledSinceHide = .zero
@@ -526,99 +471,11 @@ final class LiveWindows {
         syncFollowers(of: window.pins[index].mark.id, in: window)
     }
 
-    /// The marks of an ask a session is working on. The session's edits are what moves their content
-    /// then, and the person is watching for them, so these glide to where it went rather than fade
-    /// out and back in.
-    private var gliding = Set<Mark.ID>()
-    private static let glideDuration: CFTimeInterval = 0.3
-    /// How long a mark that stopped gliding stays where it is while its anchor cannot be read, before
-    /// it hides.
-    private static let unreadLimit: CFTimeInterval = 2
-
-    /// How often `relocate` looks: often at first, as a page reloads, then seldom, as for content the
-    /// session took off the page.
-    private static let relocateInterval: CFTimeInterval = 0.15
-    private static let relocateSlowly: CFTimeInterval = 1
-
-    /// Looks for the gliding marks whose anchors went unread by their pixels, while they still show.
-    /// A page that reloads makes new elements, so the old ones read nothing. Once two looks in a row
-    /// agree, the mark glides there and takes the element now under it as its anchor.
-    private func relocate(_ window: Tracked) {
-        let now = CACurrentMediaTime()
-        let since = window.pins.compactMap(\.unreadSince).min() ?? now
-        let interval = now - since > Self.unreadLimit ? Self.relocateSlowly : Self.relocateInterval
-        guard !window.capturing, now - window.lastRelocate >= interval else { return }
-        window.capturing = true
-        window.lastRelocate = now
-        let id = window.id, size = window.frame.size
-        let wanted = window.pins.compactMap { pin -> (Mark.ID, LivePatch, CGVector)? in
-            guard pin.phase == .shown, pin.unreadSince != nil, let patch = pin.patch else { return nil }
-            return (pin.mark.id, patch, pin.relocated ?? pin.shift)
-        }
-        Task { [weak self] in
-            let image = await WindowImage.capture(id, size: size)
-            let found = await Task.detached(priority: .userInitiated) {
-                wanted.map { id, patch, expected in (id, image.flatMap { patch.shift(in: $0, expected: expected) }) }
-            }.value
-            guard let self, let window = self.windows[id] else { return }
-            window.capturing = false
-            for (markID, shift) in found {
-                guard let index = window.pins.firstIndex(where: { $0.mark.id == markID }), window.pins[index].phase == .shown,
-                      window.pins[index].unreadSince != nil, window.lastResize < now else { continue }
-                let steady = shift != nil && Self.same(window.pins[index].relocated, shift)
-                window.pins[index].relocated = shift
-                guard steady, let shift else { continue }
-                window.pins[index].relocated = nil
-                window.pins[index].unreadSince = nil
-                if !Self.same(shift, window.pins[index].shift) { self.glide(index, in: window, to: shift) }
-                self.reanchor(index, in: window)
-            }
-        }
-    }
-
-    /// Anchors a mark that shows to the element now under it, as a mark pinned there would be, with
-    /// its readings counted from where the mark was first pinned.
-    private func reanchor(_ index: Int, in window: Tracked) {
-        guard case .accessibility(let old) = window.pins[index].anchor else { return }
-        let pin = window.pins[index]
-        let local = old.focus ?? Self.anchorPoint(of: pin.mark)
-        let point = CGPoint(x: window.frame.minX + local.x + pin.shift.dx, y: window.frame.minY + local.y + pin.shift.dy)
-        let shift = pin.shift, markID = pin.mark.id, windowID = window.id, pid = window.pid, origin = window.frame.origin
-        let asked = CACurrentMediaTime()
-        window.queue.async { [weak self] in
-            let anchor = LiveAnchor.find(at: point, pid: pid, windowID: windowID, windowOrigin: origin)?.rebased(by: shift)
-            let reading = anchor?.read(windowOrigin: origin)
-            let owner = self
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self = owner, let window = self.windows[windowID],
-                          let index = window.pins.firstIndex(where: { $0.mark.id == markID }), let anchor else { return }
-                    let pin = window.pins[index]
-                    guard pin.phase == .shown, Self.same(pin.shift, shift), pin.lastScroll < asked, window.lastResize < asked else { return }
-                    window.pins[index].anchor = .accessibility(anchor)
-                    window.pins[index].reading = reading
-                    window.pins[index].readAt = asked
-                    Log.write("[live-ink] anchor window=\(windowID) kind=\(anchor.name) again")
-                }
-            }
-        }
-    }
-
-    /// Moves a mark that shows, and the marks that follow it, to where its content is now.
-    private func glide(_ index: Int, in window: Tracked, to shift: CGVector) {
-        let id = window.pins[index].mark.id
-        Log.write("[live-ink] glide window=\(window.id) shift=\(Int(shift.dx)),\(Int(shift.dy))")
-        window.pins[index].shift = shift
-        let duration = Self.glideDuration * Settings.shared.motionScale
-        window.overlay.marks.move(id, by: shift, duration: duration)
-        for follower in window.pins.indices {
-            guard case .follows(let leader, let base) = window.pins[follower].anchor, leader == id, window.pins[follower].phase == .shown else { continue }
-            let moved = CGVector(dx: shift.dx - base.dx, dy: shift.dy - base.dy)
-            window.pins[follower].shift = moved
-            window.overlay.marks.move(window.pins[follower].mark.id, by: moved, duration: duration)
-        }
-        fitOverlay(window)
-    }
+    /// The marks of an ask a session is working on, and of one playing its done animation. They hold
+    /// still while the content under them changes: the person is watching the session's change land,
+    /// and marks that followed it, fading or gliding, read as the answer shifting around. They finish
+    /// where they are when the turn ends.
+    private var holding = Set<Mark.ID>()
 
     /// Shows a mark where its content is now.
     private func reveal(_ index: Int, in window: Tracked, at shift: CGVector) {
@@ -630,7 +487,6 @@ final class LiveWindows {
         window.pins[index].shift = shift
         window.pins[index].ride = .zero
         window.pins[index].phase = .shown
-        window.pins[index].dimmed = false
         window.pins[index].shownAt = CACurrentMediaTime()
         window.pins[index].windowSize = window.frame.size
         window.overlay.marks.move(window.pins[index].mark.id, by: shift)
@@ -984,10 +840,10 @@ final class LiveWindows {
         window.capturing = true
         let id = window.id, size = window.frame.size
         let started = CACurrentMediaTime()
-        let gliding = gliding
+        let holding = holding
         let wanted = window.pins.compactMap { pin -> (Mark.ID, LivePatch, CGVector, Bool)? in
             guard case .pixels(let patch) = pin.anchor, pin.phase != .moving || pin.checking else { return nil }
-            return (pin.mark.id, patch, pin.seen?.shift ?? pin.shift, pin.phase == .shown && !gliding.contains(pin.mark.id))
+            return (pin.mark.id, patch, pin.seen?.shift ?? pin.shift, pin.phase == .shown && !holding.contains(pin.mark.id))
         }
         Task { [weak self] in
             let image = await WindowImage.capture(id, size: size)
@@ -1017,10 +873,7 @@ final class LiveWindows {
                 switch pin.phase {
                 case .shown:
                     guard !Self.same(shift, pin.shift) else { continue }
-                    if let shift, gliding.contains(markID) {
-                        self.glide(index, in: window, to: shift)
-                        continue
-                    }
+                    if holding.contains(markID) { continue }
                     Log.write("[live-ink] window=\(id) moved with no scroll")
                     self.hide(index, in: window, because: "pixels-moved")
                     window.pins[index].checking = true

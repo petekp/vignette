@@ -306,6 +306,48 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(placed.findings[1], placed.marks.dropFirst().map(\.id), "the arrow and its label")
     }
 
+    func testInsideALoopRoundTheWholePageTheReplyHangsUnderTheNoteAndLabelsStay() {
+        let loop = CGRect(x: 40, y: 40, width: 1400, height: 900)
+        let question = CGRect(x: 500, y: 60, width: 260, height: 30)
+        let scene = LiveAnswerLayout.Scene(room: room, ink: [Mark(geometry: .ellipse(loop))], text: [], notes: [question])
+        let answer = LiveAnswer(say: "Two more things break at this width.",
+                                marks: [AnswerMark(kind: .arrow, line: "t1", label: "Map cropped")])
+        let marks = LiveAnswerLayout.marks(for: answer, targets: [CGRect(x: 600, y: 500, width: 90, height: 24)], asked: loop,
+                                           question: question, scene: scene, sizes: sizes)
+        let reply = LiveAnswerLayout.noteBox(marks[0], sizes: sizes) ?? .null
+        XCTAssertEqual(reply.minY, question.maxY + LiveAnswerLayout.threadGap, accuracy: 0.5, "under the note, inside the loop")
+        XCTAssertEqual(marks.map(\.kind), [.text, .arrow, .text], "the label is kept")
+    }
+
+    func testAReplyTakesTheQuestionsPlaceAndQuotesItOnOneMutedLine() throws {
+        let question = CGRect(x: 500, y: 300, width: 260, height: 30)
+        let scene = LiveAnswerLayout.Scene(room: room, ink: [], text: [], notes: [question])
+        let words = "what else should we fix on mobile before we ship this to everyone on the trip?"
+        let reply = LiveAnswerLayout.reply("Two more things.", question: question, quote: words, near: question, scene: scene,
+                                           obstacles: [], sizes: sizes)
+        XCTAssertEqual(reply.quote, words)
+        let box = try XCTUnwrap(LiveAnswerLayout.noteBox(reply, sizes: sizes))
+        XCTAssertEqual(box.minX, question.minX, accuracy: 0.5, "where the question was")
+        guard case .text(let text) = reply.geometry else { return XCTFail("a note") }
+        let layout = TextLayout(text, imageWidth: .greatestFiniteMagnitude, pointScale: 1, style: sizes.style.forMark(reply))
+        let quote = try XCTUnwrap(layout.quote)
+        XCTAssertLessThanOrEqual(quote.rect.width, layout.box.width - 2 * layout.padding.side + 0.5, "cut to the reply's width")
+        XCTAssertLessThan(quote.rect.maxY, layout.lines[0].rect.minY + 0.5, "above the reply's words")
+        let plain = LiveAnswerLayout.reply("Two more things.", question: question, near: question, scene: scene, obstacles: [], sizes: sizes)
+        XCTAssertGreaterThan(box.height, try XCTUnwrap(LiveAnswerLayout.noteBox(plain, sizes: sizes)).height, "taller by the quote")
+    }
+
+    func testAnArrowGrowsLongerWhenItsLabelHasNoRoomAtAShortOnesTail() {
+        // The reply fills the room round the target at short range, as at the top of a narrow window.
+        let target = CGRect(x: 1400, y: 40, width: 30, height: 24)
+        let question = CGRect(x: 1180, y: 90, width: 300, height: 60)
+        let scene = LiveAnswerLayout.Scene(room: CGRect(x: 1100, y: 20, width: 380, height: 600), ink: [], text: [], notes: [question])
+        let answer = LiveAnswer(say: "Beyond the hero, four things break at this width.", marks: [AnswerMark(kind: .arrow, line: "t1", label: "Share cut off")])
+        let marks = LiveAnswerLayout.marks(for: answer, targets: [target], asked: question, question: question, quote: "what else?",
+                                           scene: scene, sizes: sizes)
+        XCTAssertEqual(marks.map(\.kind), [.text, .arrow, .text], "the label is kept")
+    }
+
     func testAHookAtTheHeadDoesNotTurnTheWayAnArrowLeavesItsTail() {
         // Straight to the right for 200 pt, then a hook back up and left at the head.
         let via = stride(from: 10, through: 200, by: 10).map { CGPoint(x: 100 + CGFloat($0), y: 300) } + [CGPoint(x: 290, y: 260)]

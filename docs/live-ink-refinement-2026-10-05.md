@@ -25,11 +25,10 @@ log.
 5. **Marks stay on the page.** The person's note sat on the mobile window's title bar, and an answer
    could too. The room for notes and answers is now the page's web area when the app reports one,
    else the window.
-6. **Marks no longer blink while Claude edits.** When Chrome reloads the page, the elements the
-   marks are anchored to die. The marks then sat where they were for 2 s, hid, and came back
-   160 ms later, found by their pixels. Now, while the session works, a mark whose element stops
-   reading is looked for by its pixels while it still shows. Once two looks agree, it glides there
-   and takes the element now under it as its anchor.
+6. **Marks hold still while Claude edits.** When Chrome reloaded the page, the marks sat for 2 s,
+   hid, and came back found by their pixels. Gliding them to their content instead still read as
+   everything shifting around. Now, while the session works and while the done animation plays,
+   the content moving under a mark moves nothing. The marks finish where they are.
 7. **The note opens sooner.** It showed 0.53 s after the chord was let go, waiting on the capture
    of the window. The capture's steps are timed in the log, and the slow ones run side by side.
 8. **The skill asks for cohesive answers.** Marks in reading order, one finding each. Labels that
@@ -45,16 +44,15 @@ log.
     the answer points at and other notes, not the person's ink, so with the note above a loop the
     reply could land on the loop. It now counts the ink too, and tries the note's right edge as well
     as its left before going above the note.
-12. **The answer moves as one piece.** Claude's arrows were anchored to their own words and the
-    reply to the person's ink, so after a reload a label glided onto the reply before the reply
-    moved. Every mark of the answer now follows the person's ink. The cost: a mark in another
-    scroll area than the ink, such as a sidebar, moves with the ink's area rather than its own.
+12. **Claude's marks stay on their targets.** Making every mark of the answer follow the person's
+    ink kept the label off the reply, but when Claude's fix moved the content under the ink, every
+    mark slid away from what it pointed at (take of 2026-10-05 17:50). Each pointing mark is again
+    anchored to its own target.
 13. **The chip sits by the ink.** A note left of its ink keeps the pill and the chip against its
     right edge, next to the ink.
 14. **A hook does not flip the note.** Which way an arrow leaves its tail is measured over its first
     24 pt, so a stroke that curls at the head no longer puts the note on the wrong side.
-15. **A mark that is never found fades.** A gliding mark not found for 3 s is drawn faint until it
-    is found, so it does not stand at full strength on the wrong thing for the rest of the turn.
+15. **Withdrawn: fading a mark that is never found.** It belonged to the glide, which item 6 removed.
 16. **Claude's labels touch their arrows, in a column.** A label goes where a hand writes one, the
     same spots as the person's note: touching an arrow's tail on the far side, or a circle's edge.
     Later arrows come from the first one's side, with their tails level, so the labels line up.
@@ -67,6 +65,13 @@ log.
     beat, stops a beat as soon as the stage's Claude Code logs an API error, and runs that beat
     again once.
 19. **The demo notes lost an outdated tip** about keeping the pointer still: the note follows the ink.
+20. **The reply replaces the question and quotes it.** Once Claude answers, the person's note goes,
+    and the reply sits in its place. Its first line is the person's words in quotes, in their font,
+    smaller and muted, cut with an ellipsis to the reply's width. The question and the reply no
+    longer compete for room, so the reply is never pushed away from it.
+21. **Ink counts as strokes.** Notes and labels avoided the whole bounding box of the person's ink,
+    so with a loop round the whole page the reply went to the window's bottom and both labels were
+    dropped. The ink now counts as its strokes; what a loop encloses counts as lightly as text.
 
 ## Verification
 

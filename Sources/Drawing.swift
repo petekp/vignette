@@ -62,6 +62,9 @@ struct Mark: Equatable, Identifiable {
     /// An agent's note that names another of its marks, as a live answer's labels do. It is drawn
     /// without the badge, since the answer's reply names the agent once. Never written to a file.
     var isLabel = false
+    /// For an agent's reply to a person's note, the note's words, drawn small and muted above the
+    /// reply's own, as the note it replaces. Never written to a file.
+    var quote: String?
 
     init(id: UUID = UUID(), geometry: Geometry, agent: Bool = false, agentName: String? = nil) {
         self.id = id
