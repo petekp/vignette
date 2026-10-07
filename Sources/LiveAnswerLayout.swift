@@ -37,13 +37,7 @@ enum LiveAnswerLayout {
     /// top-left points, or nil for one whose target was not found, which is dropped. The reply comes
     /// first, so it gets the spot under the question. `streamed` is the reply's note as it streamed
     /// in, which keeps its place and its id. `below` is room kept under the reply's note, for its actions.
-    static func marks(for answer: LiveAnswer, targets: [CGRect?], asked: CGRect, question: CGRect? = nil, quote: String? = nil, scene: Scene,
-                      sizes: Sizes, streamed: Mark? = nil, below: CGFloat = 0) -> [Mark] {
-        placed(for: answer, targets: targets, asked: asked, question: question, quote: quote, scene: scene, sizes: sizes, streamed: streamed,
-               below: below).marks
-    }
-
-    /// `marks(for:)`, and for each of the answer's marks the ids of the mark drawn for it and its
+    /// `findings` holds, for each of the answer's marks, the ids of the mark drawn for it and its
     /// label, none for one that was dropped, which the answer's actions name by index.
     static func placed(for answer: LiveAnswer, targets: [CGRect?], asked: CGRect, question: CGRect? = nil, quote: String? = nil, scene: Scene,
                        sizes: Sizes, streamed: Mark? = nil, below: CGFloat = 0) -> (marks: [Mark], findings: [[Mark.ID]]) {
@@ -145,15 +139,10 @@ enum LiveAnswerLayout {
         hypot(arrow.start.x - arrow.end.x, arrow.start.y - arrow.end.y) > arrowLength * 1.4
     }
 
-    /// A circle round `target`, or an arrow at it. A circle that would sit on a loop of the person's
-    /// is drawn as an arrow instead, since two loops round one thing read as one. A circle is kept
-    /// inside the room, so one round something at the window's edge is not cut off.
-    static func pointer(_ kind: AnswerMark.Kind, at target: CGRect, scene: Scene, obstacles: [CGRect]) -> Mark {
-        pointers(kind, at: target, scene: scene, obstacles: obstacles)[0]
-    }
-
-    /// The ways to point at `target`, best first: a circle, or each arrow, least covering first.
-    /// `column` adds arrows from either side whose tails stand at that x.
+    /// The ways to point at `target`, best first: a circle, or each arrow, least covering first. A
+    /// circle that would sit on a loop of the person's gives way to the arrows, since two loops round
+    /// one thing read as one. A circle is kept inside the room, so one round something at the
+    /// window's edge is not cut off. `column` adds arrows from either side whose tails stand at that x.
     static func pointers(_ kind: AnswerMark.Kind, at target: CGRect, scene: Scene, obstacles: [CGRect], column: CGFloat? = nil) -> [Mark] {
         if kind == .circle {
             let round = inside(circle(around: target), scene.room)
@@ -196,11 +185,6 @@ enum LiveAnswerLayout {
         guard !shared.isNull else { return false }
         let smaller = min(loop.width * loop.height, frame.width * frame.height)
         return smaller > 0 && shared.width * shared.height / smaller > 0.5
-    }
-
-    /// An arrow ending `arrowGap` from `target`, from the side whose span covers least.
-    static func arrow(to target: CGRect, room: CGRect, obstacles: [CGRect]) -> Mark.Arrow {
-        arrows(to: target, room: room, obstacles: obstacles)[0]
     }
 
     /// The arrows ending `arrowGap` from `target`, one from each side, least covering first. With a

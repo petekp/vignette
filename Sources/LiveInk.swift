@@ -1113,7 +1113,7 @@ final class LiveInk {
         }
         steps = Array(groups.dropFirst())
         stepsWindow = packet.windowID
-        // `marks(for:)` places one pointing mark for each target found, in order.
+        // `placed(for:)` places one pointing mark for each target found, in order.
         let pointers = groups.compactMap(\.first)
         stepTargets = Dictionary(uniqueKeysWithValues: zip(pointers, targets.compactMap { $0 }).compactMap { mark, target in
             mark.shapeExtent.map { (mark.id, (target, $0.origin)) }
