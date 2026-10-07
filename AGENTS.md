@@ -802,7 +802,10 @@ screenshot location for such a launch is written with the same variable:
   session it came from (an agent's reply, or a push with `session=`). Copy is Done under a label
   that says what it does. The bar's panel takes the keys only for a press on the message field
   (`ToolbarPanel.sendEvent`), since SwiftUI's buttons ask for them as a field does; a press on a
-  button leaves them with the editor. The field counts as typed in only while the panel is key
+  button leaves them with the editor. The panel also takes them once the image's window is up, when
+  the bar has a message field and no key or press has reached the editor yet
+  (`AnnotationController.offerTyping`), so typing goes to the agent at once. The field counts as
+  typed in only while the panel is key
   (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. There is no
   palette: a mark's colour says who drew it. Send starts on
   the session you came from (`AgentDestination.defaultTarget`). When the app before Vignette
@@ -833,7 +836,9 @@ screenshot location for such a launch is written with the same variable:
   app, a kept list that holds the shown thread settles the target at once; one that does not waits
   for the fresh list, since the thread may be newer. Return copies and replies only on a card that names its session; Cmd+Return
   sends or replies (`EditorCore.finishes`). On the image, Return never sends to a session Vignette
-  picked. In the message field Return sends, as in a chat app, with the target beside it.
+  picked. In the message field Return sends, as in a chat app, with the target beside it. A field
+  that took the keys on its own and is still empty has nothing that asks to send, so Return and Esc
+  there do what they do on the image (`Model.fieldReturn`, `fieldEscCloses`).
   `docs/send-and-reply-2026-09-24.md` has the rules. While one image follows another with no gap (a click on
   another card, or the queue moving on) the bar stays on screen and springs to the next image's
   place, and keeps the image before's target until the next image's settles (`Model.begin`'s

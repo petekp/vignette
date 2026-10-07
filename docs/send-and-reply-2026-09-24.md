@@ -39,7 +39,9 @@ shown before anything is sent, and Return never sends to it.
 
 The message field keeps these keys. Return and Cmd+Return send, or reply on Reply, as in a chat
 app: typing a message is the intent to send it, and the target the message goes to is beside the
-field. Send keeps showing ⌘↩, which sends from anywhere in the editor; a hint that changed with the
+field. The field takes the keys as the image opens, before a key or a press reaches the image, so
+typing goes to the agent at once. Until something is typed in it, Return and Esc there are the
+image's, so opening an image and pressing Return still copies. Send keeps showing ⌘↩, which sends from anywhere in the editor; a hint that changed with the
 focus changed the button's width and moved the whole bar. `docs/request-line-2026-09-25.md` has what the
 message becomes.
 

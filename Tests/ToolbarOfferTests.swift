@@ -23,6 +23,32 @@ final class ToolbarOfferTests: XCTestCase {
                        "Return replies: the image names where it came from")
     }
 
+    /// The message field takes the keys as the image opens. Until something is typed in it, Return
+    /// and Esc there are the image's, so opening and pressing Return copies rather than sending.
+    func testAFieldThatTookTheKeysOnItsOwnSendsOnlyOnceSomethingIsTyped() {
+        let model = AnnotatorToolbar.Model()
+        let mew = session("mew", focus: .pane)
+        model.begin(replyTo: nil, carryingTarget: false)
+        model.answered([mew], complete: true)
+        model.tookKeysOnOpen = true
+        XCTAssertEqual(model.fieldReturn, .done, "Return copies: the target is Vignette's pick")
+        XCTAssertTrue(model.fieldEscCloses)
+        model.message = " \n "
+        XCTAssertEqual(model.fieldReturn, .done, "blank is empty")
+        model.message = "fix this"
+        XCTAssertEqual(model.fieldReturn, .send)
+        XCTAssertFalse(model.fieldEscCloses, "Esc keeps the words and hands the keys back")
+
+        model.begin(replyTo: nil, carryingTarget: true)
+        XCTAssertFalse(model.tookKeysOnOpen, "each image starts over")
+        XCTAssertEqual(model.fieldReturn, .send, "a field the person moved to sends, as before")
+        XCTAssertFalse(model.fieldEscCloses)
+
+        model.begin(replyTo: mew, carryingTarget: false)
+        model.tookKeysOnOpen = true
+        XCTAssertEqual(model.fieldReturn, .send, "Return replies: the image names where it came from")
+    }
+
     /// A Claude Code session missing from the whole list has closed, since herdr lists every pane.
     /// Codex lists only the threads used last, so a Codex thread missing from it may still be there.
     func testAReplyGivesWayOnlyWhenItsClaudeSessionHasClosed() {
