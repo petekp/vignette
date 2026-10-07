@@ -1,9 +1,10 @@
 import Foundation
 
 /// Everything that names this app on a machine, read from the bundle so a fork renames only
-/// project.yml. The settings path stays literal (`~/.config/vignette/settings.json`): it is
-/// documented and lives in dotfiles. The unit-test bundle has none of these keys and gets the
-/// same defaults as the shipped app.
+/// project.yml. The settings file is `~/.config/<URL scheme>/settings.json`, so Vignette's stays at
+/// the documented `~/.config/vignette/settings.json`, which people keep in dotfiles, and a fork gets
+/// its own. The unit-test bundle has none of these keys and gets the same defaults as the shipped
+/// app.
 enum Identity {
     static let bundleID = Bundle.main.bundleIdentifier ?? "com.petepetrash.vignette"
     static let name = Bundle.main.infoDictionary?["CFBundleName"] as? String ?? "Vignette"
