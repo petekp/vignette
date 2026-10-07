@@ -40,7 +40,8 @@ enum ListenUntil: String {
     case pause
 }
 
-/// Everything a user changes per machine. Lives in ~/.config/vignette/settings.json.
+/// Everything a user changes per machine. Lives in ~/.config/<URL scheme>/settings.json, which is
+/// ~/.config/vignette/settings.json for Vignette.
 /// Missing keys fall back to defaults, so a partial file is fine.
 struct SettingsData: Codable, Equatable {
     var version = Settings.currentVersion    // file format version; `Settings.migrate` brings older files up
@@ -473,7 +474,7 @@ final class Settings: ObservableObject {
             return URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent("vignette-test-\(ProcessInfo.processInfo.processIdentifier)/settings.json")
         }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/vignette/settings.json")
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/\(Identity.urlScheme)/settings.json")
     }()
     static var directory: URL { fileURL.deletingLastPathComponent() }
 

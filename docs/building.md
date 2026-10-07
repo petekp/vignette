@@ -7,7 +7,17 @@
 ./scripts/build.sh --test # the same build plus the unit tests
 ```
 
-Requires Xcode and `xcodegen`. `Info.plist` is generated from `project.yml`, so edit that.
+Requires Xcode 26 or later and `xcodegen` (`brew install xcodegen`). The build also needs Xcode's
+Metal toolchain, for `Sources/IntroFunnel.metal`. Xcode 26 downloads it separately:
+
+```
+xcodebuild -downloadComponent MetalToolchain
+```
+
+The app runs on macOS 14 or later. `Info.plist` is generated from `project.yml`, so edit that.
+
+`run.sh` quits any running Vignette, including an installed copy. It then opens the new build from
+`build/Build/Products/Debug/`, which uses your real settings file and screenshots folder.
 
 ## Where things live
 
@@ -18,6 +28,8 @@ Drawings are files the app keeps on disk, one per screenshot, in
 `~/Library/Application Support/com.petepetrash.vignette/drawings/`. The editor hands its drawing
 over 0.3 seconds after each change and again when it closes or the app quits, so a drawing
 survives a relaunch.
+
+The app logs every action, command and error to `~/Library/Logs/Vignette.log`.
 
 Three places hold what you are most likely to change:
 
@@ -49,7 +61,8 @@ DEVELOPMENT_TEAM=ABCDE12345
 A self-signed code-signing certificate works the same way. Make one in Keychain Access, under
 Certificate Assistant → Create a Certificate, type Code Signing. This was verified too: its
 designated requirement names the certificate, and a build rebuilt from changed source kept its
-Accessibility grant. Leave `DEVELOPMENT_TEAM` empty for it.
+Accessibility grant. Set `CODE_SIGN_IDENTITY` to the certificate's name and leave
+`DEVELOPMENT_TEAM` empty.
 
 Two things matter on that route.
 
@@ -67,8 +80,8 @@ installs global event monitors.
 
 ## Releasing
 
-`docs/releasing.md` has the checks before a release, the steps to publish it, and how to write
-its release notes. This section covers the script.
+[releasing.md](releasing.md) has the checks before a release, the steps to publish it, and how to
+write its release notes. This section covers the script.
 
 `scripts/release.sh <version>` builds a Release archive, exports it Developer ID signed, packages a
 disk image with an Applications alias, notarizes it, and staples the ticket. Finder lays out the
@@ -101,9 +114,12 @@ It refuses to run without three things:
   `generate_appcast` signs the image and writes `build/dist/appcast.xml`. The Keychain may ask for
   your password the first time a Sparkle tool reads the key; choose Always Allow. Keep a backup of
   the key in a password manager: `generate_keys --account vignette -x <file>` exports it. Installs
-  trust only this key, so without it no later version can reach them.
+  trust only this key, so without it no later version can reach them. Sparkle's tools,
+  `generate_keys` among them, are in `build/release/SourcePackages/artifacts/sparkle/Sparkle/bin/`
+  after the script has built an archive. A dry run gets that far without a key.
 
-It also refuses a dirty working tree, so the artifact matches the tag it goes out under.
+A real release also refuses a dirty working tree, so the artifact matches the tag it goes out
+under. A dry run does not check.
 
 The script archives and exports rather than running `xcodebuild build`. A plain build is signed for
 development and carries the `get-task-allow` entitlement whatever the configuration says, and the
@@ -133,13 +149,19 @@ The README and the site link to `/releases/latest`, so both always point at the 
 ## Forking
 
 1. In `project.yml`, change `name`, the target and scheme keys that repeat it, both
-   `PRODUCT_BUNDLE_IDENTIFIER` values, and the URL scheme. The log name, status item, drawings
-   folder, and hotkey registration follow the bundle id at runtime.
+   `PRODUCT_BUNDLE_IDENTIFIER` values, and the URL scheme, `VIGNETTE_URL_SCHEME`. These follow the
+   bundle id at runtime (`Sources/Identity.swift`): the Application Support folder, which holds the
+   drawings, the status item's saved position, and the hotkey registration. The log,
+   `~/Library/Logs/<name>.log`, follows `name`. The agent plugin installs as
+   `vignette@<URL scheme>`, and the settings file is `~/.config/<URL scheme>/settings.json`.
 2. Add `scripts/signing.env` with your certificate. Or accept ad-hoc and re-grant Accessibility
    after each rebuild if you use the double-tap shortcut.
 3. Run `./scripts/build.sh --test`. A clone builds with no manual step.
 4. Point `SUFeedURL` in `project.yml` at your own releases and make your own update key.
    `generate_keys --account <name>` prints the public key for `SUPublicEDKey`, and
-   `SPARKLE_ACCOUNT=<name>` tells `scripts/release.sh` to sign with it.
+   `SPARKLE_ACCOUNT=<name>` tells `scripts/release.sh` to sign with it. Keep `SUFeedURL` in the
+   form `https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml`. `release.sh`
+   refuses any other.
 5. Point `VignetteIssuesURL` in `project.yml` at your own repository's new-issue page, or remove it
-   to leave Report a Problem… out of the menu. The form it opens is `.github/ISSUE_TEMPLATE/bug_report.yml`.
+   to leave Report a Problem… out of the menu. The form it opens is
+   `.github/ISSUE_TEMPLATE/bug_report.yml`.

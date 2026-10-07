@@ -523,8 +523,9 @@ struct CopiedMarks: Equatable {
 /// image: `x` and `y` from its top-left corner, `w` and `h` of its size, `x2` and `y2` where an arrow
 /// points, so a mark does not depend on the screenshot's pixel size. `parse` checks them.
 ///
-/// On a text mark `w` is the box the words wrap in, and it is optional: without it the box is the
-/// room between `x` and the right edge. `h` is the wrap's, never the mark's.
+/// On a text mark `w` is the box the words wrap in, and it is optional: without it the words wrap
+/// as a person's note does, at `noteMaxWidth` or the right edge, and never narrower than
+/// `TextLayout.minimumRoom` (`AgentMarks`). `h` is the wrap's, never the mark's.
 struct AgentMark: Codable, Equatable {
     let type: MarkKind
     let x: Double

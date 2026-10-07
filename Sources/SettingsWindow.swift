@@ -362,12 +362,12 @@ struct SettingsView: View {
             footer("These change macOS's own screenshot settings.")
         }
         Section {
-            Toggle("Copy to the clipboard", isOn: binding(\.copyOnCapture))
+            Toggle("Copy to Clipboard", isOn: binding(\.copyOnCapture))
             Toggle(isOn: binding(\.annotateOnCapture)) {
-                Text("Instant draw")
+                Text("Instant Draw")
                 Text("Instead of showing a thumbnail.")
             }
-            // Visible with "Instant draw" on too: a thumbnail that comes back from the editor
+            // Visible with "Instant Draw" on too: a thumbnail that comes back from the editor
             // without a copy, after Send for example, stays this long.
             LabeledContent("Show the thumbnail for") {
                 HStack {

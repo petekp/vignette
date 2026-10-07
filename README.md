@@ -4,88 +4,81 @@
   <a href="https://vignette.pete.design"><img src="docs/logotype.svg" width="150" alt="Vignette"></a>
 </p>
 
-Vignette is a free, open source screenshot tool for Mac. Use it on its own, or with coding agents
-like Claude Code and Codex.
+<h1 align="center">Show, don’t prompt.</h1>
 
-Take screenshots with Cmd+Shift+4 as usual. Vignette keeps your recent ones a shortcut away, a double
-tap of right Shift by default, so you don't have to dig through a folder for the one you want. Draw
-a box or an arrow on any of them, or stitch several into a single image.
+Vignette works like the Mac’s screenshot tool, with quicker drawing and a Send button for Claude
+Code and Codex. Your agent can draw on a screenshot and send it back, too.
 
-A picture is worth a thousand-word prompt. Send a drawing to the Claude Code or Codex session you
-were just in. Your agent can send you screenshots too, with its own marks on them, and you can draw
-on those and reply.
-
-## Tour
+**[Download Vignette](https://github.com/petekp/vignette/releases/latest)**. It’s free and open
+source, for macOS 14 or later. You can try it in your browser at
+[vignette.pete.design](https://vignette.pete.design).
 
 https://github.com/user-attachments/assets/eb7e5cee-5110-4d25-9c72-121783a37048
 
 ## What it does
 
-### Capture
-
-- **The same shortcuts**<br>
-  Cmd+Shift+3, 4 and 5 still take the screenshot. Vignette's thumbnail appears in the bottom right
-  corner in place of macOS's, with Copy and Delete on hover. Click it to draw.
-- **Copies on capture**<br>
-  Every screenshot lands on the clipboard.
-- **Screen recordings too**<br>
-  A recording from Cmd+Shift+5 gets a card with its length. Click it to play it.
-
 ### Recent screenshots
 
-- **Screenshot history, one key away**<br>
-  Use the Vignette shortcut (double-tap right Shift, by default) and a stack of your recent
-  screenshots slides in from the right. A camera roll for screenshots. Arrows move, Space selects,
-  Return opens.
-- **One-click stitch**<br>
-  Join several screenshots into one image. Each piece gets a number, and the layout stays readable
-  after Claude shrinks the image.
-- **Drag into a terminal**<br>
-  Drag a card into Claude Code, a chat or Finder. A card you drew on drops the drawing.
+Keep taking screenshots with Cmd+Shift+3, 4 or 5. Vignette takes over what happens after. Each new
+screenshot goes on your clipboard as soon as it’s saved, and a thumbnail shows up in the corner, as
+it does with macOS. Hover it to copy or delete it, or click it to draw on it.
+
+When you need one from a few minutes ago, double-tap right Shift. Your recent screenshots slide in
+from the right edge of the screen as a stack of cards, newest at the bottom, so you don’t have to
+dig through a folder for them. Arrow keys move between cards and Return opens one. The app you were
+using stays in front, and when you close the stack you’re right back where you were.
+
+Select a few cards to copy, stitch, drag or delete them together. Hold the second tap of the
+shortcut and the newest screenshot opens in the editor.
 
 ### Drawing
 
-- **Simple by design**<br>
-  Three drawing tools: rectangle, arrow and text. No colour picker. Your marks are red and an
-  agent's are indigo. A thin white edge keeps them visible on any screenshot.
-- **Notes and freehand arrows**<br>
-  Type right after drawing a box or an arrow and a note starts beside it. Arrows follow your hand,
-  and a nearly straight stroke draws a straight arrow.
-- **Non-destructive**<br>
-  Your drawing is kept in its own file, apart from the original. Go back, change it, undo it. The
-  original stays as it was.
-- **Queue**<br>
-  Draw on several in a row. Open them together, and each one you copy or send opens the next.
+Click a card to draw on it. There’s a box, an arrow and a text note, and that’s it. Draw a box or an
+arrow and start typing, and the note goes right next to it. Arrows follow your hand, so they can
+curve around what’s in the way. A stroke that’s nearly straight comes out straight.
 
-### Coding agents
+There’s no colour picker. Your marks are red and your agent’s are indigo, so you can tell who drew
+what. A thin white edge keeps every mark readable on dark and light screenshots.
 
-These features are experimental.
+Your drawing is saved apart from the screenshot. The original file never changes, and you can come
+back later to move, change or delete any mark.
 
-- **Your agent shows you things**<br>
-  With the Vignette plugin, which ships with the app, Claude Code or Codex can put a screenshot in
-  your stack with its own marks on it. You can change its marks like your own. Setup offers to
-  install the plugin, and Settings → Agents adds or removes it.
-- **Send and Reply**<br>
-  Send hands your drawing, with a message if you type one, to the Claude Code or Codex session you
-  were just in. Click the session to pick another. On a screenshot from your agent, Reply sends
-  your drawing straight back.
-- **What Send needs**<br>
-  Claude Code gets your drawing through the plugin, in any terminal. A session that was already
-  open when you installed the plugin needs `/reload-plugins` first. In auto mode, Claude Code asks
-  once before it reads the first drawing. Sending to Codex needs the `codex` command-line tool.
+To draw on several screenshots in a row, select their cards and press Return. Copy or send one and
+the next one opens.
 
-### The app
+### Sending to Claude Code and Codex
 
-- **Native, refined feel**<br>
-  The stack answers your keys without taking focus from the app you're in. Hold the shortcut and
-  the newest shot lifts into the editor. Close it and you're back where you were.
-- **Customizable and hackable**<br>
-  Every setting lives in a file, every action is a URL, and the source is MIT licensed.
+Draw on a screenshot, type a message if you want, and press Send. It goes to the Claude Code or
+Codex session you were just in. Click the session’s name in the toolbar to pick another.
+
+Your agent can send you screenshots too, with its own marks on them. You can change its marks like
+your own, and Reply sends your drawing straight back to that session.
+
+This works through the Vignette plugin, which comes with the app. Setup offers to install it, and
+the Agents tab in Settings adds or removes it.
+
+- Claude Code gets your drawings through the plugin, in any terminal. A session that was already
+  open when you installed the plugin needs `/reload-plugins` first.
+- Codex needs the Codex app or its command-line tool.
+
+### A few more things
+
+- **Stitch** joins the cards you selected into one image and numbers each piece. Claude shrinks
+  large images before reading them, so Stitch picks the layout that keeps the most detail.
+- **Drag a card** into Claude Code, a chat or Finder. If you drew on it, the image you drop has your
+  drawing on it.
+- **Screen recordings** from Cmd+Shift+5 show up as cards with their length. Click one to play it.
+- **Instant Draw**, in the menu bar menu, opens each new screenshot in the editor right away. It
+  flies in from the part of the screen you captured.
+- **Cards fly** into the editor and back. Change your mind halfway and a card turns around in
+  mid-air.
+- **Scripts and settings.** Every action is a `vignette://` URL, which is how your agent shows you
+  screenshots. Settings live in a JSON file you can edit. The source is MIT licensed.
 
 ## Get it
 
-**[Download Vignette](https://github.com/petekp/vignette/releases/latest)** for macOS 14 or later.
-Open the disk image and drag Vignette to Applications. The app is notarized by Apple.
+Download Vignette from the [latest release](https://github.com/petekp/vignette/releases/latest).
+Open the disk image and drag Vignette to Applications. Apple has notarized the app.
 
 The first launch opens a short setup:
 
@@ -94,15 +87,15 @@ The first launch opens a short setup:
 - Pick the shortcut. The double tap needs Accessibility permission. A key combination needs none.
 - If Claude Code or Codex is installed, choose whether to add the Vignette plugin.
 
-While Vignette runs, it turns off macOS's floating thumbnail and shows its own. Quitting Vignette
-turns macOS's thumbnail back on.
+While Vignette runs, it turns off macOS’s floating thumbnail and shows its own. Quitting Vignette
+turns macOS’s thumbnail back on.
 
 Vignette checks for updates once a day. It installs one only when you choose Install.
 
-Something wrong? Report a Problem…, in the menu bar menu, opens a GitHub issue with your version
-and Mac filled in, and shows Vignette's log in Finder so you can attach it.
+To report a problem, choose Report a Problem… in the menu bar menu. It opens a GitHub issue with
+your version and Mac filled in, and shows Vignette’s log in Finder so you can attach it.
 
-Or build it yourself:
+### Build it yourself
 
 ```
 git clone https://github.com/petekp/vignette.git
@@ -110,35 +103,14 @@ cd vignette
 ./scripts/run.sh
 ```
 
-You need Xcode and `xcodegen`. [docs/building.md](docs/building.md) has the details,
+You need Xcode 26 or later and `xcodegen`. [docs/building.md](docs/building.md) has the details,
 including why macOS asks you to re-trust your own build for Accessibility after each rebuild, and
 how a signing certificate avoids it.
 
-## How it works
-
-```
-Cmd+Shift+4  ──►  <your screenshots folder>/Screenshot ….png
-                        │
-                        ▼  ScreenshotWatcher (DispatchSource on the folder)
-                  ThumbnailController  ── bottom-right panel: fresh shot, or recent stack
-                        │ Copy / Draw / Delete
-                        ▼
-                  AnnotationController ── window hosting EditorView, the drawing editor
-                        │ Copy: the drawing, rendered off the main thread
-                        ▼
-                  Clipboard + "<name>-<result-id>-annotated.png" next to the original
-```
-
-Send takes the same rendering to an agent session instead (`ScreenshotRequests`,
-`AgentConnection`). `Sources/` is the whole app, in Swift. The drawing editor is native AppKit, and
-[docs/editor.md](docs/editor.md) says how it behaves.
-
-Each copied or dragged rendering has its own file. Vignette keeps it until you delete it, so a
-path pasted into a terminal still points to that rendering after another copy or an app restart.
-
 ## Guides
 
-- [Using Vignette](docs/using.md): the recent stack, the annotator, the shortcut.
+- [Using Vignette](docs/using.md): after a screenshot, the recent stack, the annotator, Send and
+  Reply, the shortcut.
 - [The drawing editor](docs/editor.md): the tools, the keys, the clipboard, the drawing file.
 - [Commands](docs/commands.md): every action as a `vignette://` URL, the marks format, the log.
 - [Settings](docs/settings.md): `settings.json`, the `ui` numbers, the tweaks panel.
