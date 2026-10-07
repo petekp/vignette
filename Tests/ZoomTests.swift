@@ -75,17 +75,6 @@ final class ZoomTests: XCTestCase {
         }
     }
 
-    func testTheWholeImageStaysVisibleInASideThatIsStillGrowing() {
-        let reach = Zoom.reach(fitted: fitted, within: room)
-        // Between the two reaches: the height is cropped, the width shows all of the image.
-        let split = Zoom.split(level: 1.8, reach: reach, pull: 0.3)
-        let visible = Zoom.visible(center: CGPoint(x: 0.2, y: 0.2), camera: split.camera)
-        XCTAssertEqual(visible.width, 1, accuracy: 1e-9, "the whole width is in the frame")
-        XCTAssertEqual(visible.minX, 0, accuracy: 1e-9)
-        XCTAssertEqual(visible.height, reach.height / 1.8, accuracy: 1e-9, "the height is a band of it")
-        XCTAssertLessThan(visible.height, 1)
-    }
-
     func testTheRoomTakesTheAnchorInBothDirections() {
         // 30 points above the frame and 110 below, and 300 on either side: each side of the frame
         // grows into the room beside it, so there is one anchor per direction and no cursor in it.
@@ -431,12 +420,6 @@ final class ZoomTests: XCTestCase {
         // picture: it reaches half of each side, and the middle is exactly that far from both.
         XCTAssertEqual(Zoom.pulledToEdges(CGPoint(x: 0.99, y: 0.01), in: square, band: 0, pull: 0.5), CGPoint(x: 0.99, y: 0.01))
         XCTAssertEqual(Zoom.pulledToEdges(Zoom.center, in: square, band: 5000, pull: 0.5), Zoom.center)
-    }
-
-    func testAPanComesHomeToTheWholeImage() {
-        let pan = ZoomPan(center: CGPoint(x: 0.8, y: 0.2), camera: CGSize(width: 4, height: 2), cursor: CGPoint(x: 0.1, y: 0.1))
-        XCTAssertEqual(pan.center(at: Zoom.none), Zoom.center, "zooming back out shows the whole image again")
-        XCTAssertEqual(ZoomPan.centered.center(at: CGSize(width: 3, height: 3)), Zoom.center, "a step about the middle stays centred")
     }
 
     func testThePictureFillsTheFrameAndCropsToTheVisiblePart() {

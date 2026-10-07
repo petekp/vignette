@@ -201,15 +201,6 @@ final class ScreenshotRequestsTests: XCTestCase {
 
     // MARK: Acceptance
 
-    func testAValidReplyIsAcceptedAndAcknowledged() throws {
-        let record = try makeRequest()
-        let attemptID = UUID().uuidString.lowercased()
-        try requests.receiveReply(envelope: stageReply(record, attemptID: attemptID))
-        let receipt = try XCTUnwrap(self.receipt(record, attemptID))
-        XCTAssertEqual(receipt.acceptance, .accepted)
-        XCTAssertEqual(receipt.attemptID, attemptID)
-    }
-
     /// The skill's helper is `ReplyCommand`. What it writes has to be what this side accepts, and a
     /// retry of the same bundle has to be acknowledged without a second card.
     func testAReplyTheCommandPreparesIsAcceptedAndItsRetryMakesNoSecondCard() throws {
@@ -234,6 +225,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         requests.receiveReply(envelope: second.envelope)
         XCTAssertEqual(self.receipt(record, second.id)?.acceptance, .accepted)
         XCTAssertEqual(presented.count, cards, "a retry makes no second card")
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.count, 1)
     }
 
     /// The command sends the agent's picture as a PNG whatever it was, and with it an empty marks
@@ -273,17 +265,6 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(self.receipt(record, attemptID)?.acceptance, .rejected)
         XCTAssertEqual(self.receipt(record, attemptID)?.errorCode, "bad-authorization")
         XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.count, 0)
-    }
-
-    func testTheSameReplyDispatchedAgainIsAcknowledgedAndMakesNoSecondCard() throws {
-        let record = try makeRequest()
-        let replyID = UUID().uuidString.lowercased()
-        try requests.receiveReply(envelope: stageReply(record, replyID: replyID, attemptID: "aaaaaaaa-0000-4000-8000-000000000001"))
-        let cards = presented.count
-        try requests.receiveReply(envelope: stageReply(record, replyID: replyID, attemptID: "aaaaaaaa-0000-4000-8000-000000000002"))
-        XCTAssertEqual(self.receipt(record, "aaaaaaaa-0000-4000-8000-000000000002")?.acceptance, .accepted)
-        XCTAssertEqual(presented.count, cards, "a lost acknowledgement must not cost a second card")
-        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.count, 1)
     }
 
     func testTheSameReplyIdWithOtherBytesIsRefusedAndLeavesTheFirstAlone() throws {

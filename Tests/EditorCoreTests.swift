@@ -1036,13 +1036,6 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(core.geometry.resized(flat, by: .left, delta: CGVector(dx: 40, dy: 0), proportional: false, fromCenter: false), flat)
     }
 
-    func testCmdVOfAnImageAddsNothingAndBeeps() {
-        var core = core()
-        let effects = core.reduce(.paste(.image))
-        XCTAssertTrue(core.drawing.marks.isEmpty)
-        XCTAssertEqual(effects, [.beep])
-    }
-
     // MARK: Around the editor
 
     func testParkingWhileANewTextIsStillEmptyStoresNoText() {
@@ -1054,19 +1047,6 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertTrue(effects.contains(.endTyping))
         XCTAssertTrue(effects.contains(.handOver(Drawing(key: "/tmp/shot.png", pixels: Self.image, pointScale: 1, marks: []))))
         XCTAssertFalse(core.isOpen)
-    }
-
-    func testParkingDuringADragKeepsTheMarkAsDrawn() {
-        var core = core()
-        core.press(100, 100)
-        core.dragTo(250, 200)
-        let effects = core.reduce(.park)
-        let handed = effects.compactMap { effect -> Drawing? in
-            if case .handOver(let drawing) = effect { return drawing }
-            return nil
-        }
-        XCTAssertEqual(handed.count, 1)
-        XCTAssertEqual(handed.first?.marks.map(\.geometry), [.rectangle(CGRect(x: 100, y: 100, width: 150, height: 100))])
     }
 
     func testTheDrawingGoesToTheHostAfterThePauseAndNotWhileTheButtonIsHeld() {

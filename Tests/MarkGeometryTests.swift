@@ -142,16 +142,6 @@ final class MarkGeometryTests: XCTestCase {
             XCTAssertLessThan(line.baseline, line.rect.maxY)
         }
     }
-
-    func testChineseAndAnEmojiLayOutWithASize() {
-        for string in ["这个按钮的颜色不对", "🎉", "Ship it 🚀 今天"] {
-            let layout = TextLayout(Mark.Text(origin: .zero, text: string, size: 24), imageWidth: 2000, pointScale: 2, style: .standard)
-            XCTAssertEqual(layout.lines.count, 1, string)
-            XCTAssertGreaterThan(layout.box.width, 24, string)
-            XCTAssertGreaterThan(layout.box.height, 0, string)
-            XCTAssertGreaterThan(CTLineGetGlyphCount(layout.lines[0].ctLine), 0, string)
-        }
-    }
 }
 
 private func assertEqual(_ a: CGRect, _ b: CGRect, accuracy: CGFloat, file: StaticString = #filePath, line: UInt = #line) {

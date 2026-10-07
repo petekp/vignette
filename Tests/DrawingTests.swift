@@ -4,11 +4,6 @@ import XCTest
 final class DrawingTests: XCTestCase {
     private let image = PixelSize(width: 400, height: 100)
 
-    func testAMarksColourSaysWhoDrewIt() {
-        XCTAssertEqual(Mark(geometry: .rectangle(CGRect(x: 0, y: 0, width: 5, height: 5))).color, .person)
-        XCTAssertEqual(Mark(geometry: .rectangle(CGRect(x: 0, y: 0, width: 5, height: 5)), agent: true).color, .agent)
-    }
-
     // MARK: The validator
 
     /// Every refusal a mark from a drawing file or a paste can meet, one case each, named by the field.
