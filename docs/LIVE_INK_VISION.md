@@ -82,11 +82,11 @@ the screen itself: by showing, by making the change, or by asking you back.
 - You can always see what the agent can see. Only what you pointed at, and the context around it,
   leaves the Mac.
 
-## Where the prototype is
+## Where it is now
 
-The prototype on branch `spike/live-ink` does a small part of this. It takes loops, arrows and taps
-with a typed note. It understands them through Accessibility and on-screen text, and it draws the
-agent's marks back so they stay on their targets as windows move and pages scroll.
+Live ink on branch `live-ink` does a small part of this. It takes loops, arrows and taps with a
+typed or spoken note. It understands them through Accessibility and the window's text, and it draws
+the agent's marks back on the window they point at, where they move with it.
 
 The three largest steps from there:
 

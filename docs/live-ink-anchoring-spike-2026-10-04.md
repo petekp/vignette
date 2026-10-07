@@ -1,7 +1,7 @@
 # Live ink: marks that stay on their window (spike, 2026-10-04)
 
-Status: done. The probes are in `spikes/live-ink-anchors/`. They are disposable and separate from
-the app. Each one builds on its own with `swiftc -O -swift-version 5 <file>.swift`.
+Status: done. The probes are no longer on the branch. Commit `cbacbae` has them in
+`spikes/live-ink-anchors/`, and each one builds on its own with `swiftc -O -swift-version 5 <file>.swift`.
 
 Step 3 of live ink (`docs/live-ink-integration-2026-10-04.md`) keeps a mark on what it points at.
 In this note, an **anchor** is what a mark is attached to. A mark anchored to a window should move

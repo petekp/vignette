@@ -2,7 +2,7 @@
 
 Status: steps 1 and 2 are built: the overlay, chord, ink and clear, then the ask and the answer
 drawn on the screen. Steps 3 and 4 are a plan. Two spikes stand behind it:
-`docs/live-ink-spike-2026-10-04.md`, the prototype on the `spike/live-ink` branch, and
+`docs/live-ink-spike-2026-10-04.md`, the first prototype, and
 `docs/live-ink-step2-spike-2026-10-04.md`, which measured who should answer and then tried step 2
 end to end. "Step 1 as built" and "Step 2 as built" record where the build departed from the plan.
 

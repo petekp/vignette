@@ -1,11 +1,10 @@
 # Live ink: drawing on the live screen with an agent (spike, 2026-10-04)
 
-Status: done. Branch `spike/live-ink`, worktree `~/Code/worktrees/vignette/live-ink`.
+Status: done. The prototypes were not kept.
 
 Pete wants to go past screenshots: draw straight on the screen, have Vignette work out what the
 drawing points at and hand the agent a context packet, and have the agent draw back on the screen
-the same way. This note records what each experiment showed. The prototypes are in
-`spikes/live-ink/`. They are disposable and separate from the app.
+the same way. This note records what each experiment showed.
 
 ## Questions
 
@@ -37,21 +36,18 @@ Each one has a result that would change the design.
 - Pete's running Vignette, his settings and his screenshots folder are left alone.
 - Synthetic presses go to the overlay only after its own state says it is up and taking presses.
 
-## Trying it
+## The prototype
 
-`spikes/live-ink/run.sh` builds InkLab and runs it with `ask.py`, which answers each packet with
-`claude -p` (Sonnet; `INKLAB_MODEL` picks another) and has InkLab draw the reply. Run it from a
-terminal that holds Accessibility and Screen Recording. Hold Control and Option, draw, and let go:
-a note field opens beside the ink. Type a question or nothing, and press Return; the note stays on
-the ink, and the answer draws itself on about 10 s later. Esc drops that ink instead. Control,
-Option and Delete clears every mark. A packet holds screenshots of the
-screen and goes to Claude. Ctrl-C in the terminal stops both.
+InkLab was a command-line tool. Holding Control and Option, drawing and letting go opened a note
+field beside the ink. Return sent a packet, which held screenshots of the screen, to `claude -p`
+(Sonnet), and the answer drew itself on about 10 s later. Esc dropped that ink instead, and
+Control, Option and Delete cleared every mark.
 
 ## Results
 
 The lab is a Tart VM (`ink-lab`, macOS 15.7.7) with a checkout page in Safari. Pete's Mac was
-locked, and a synthetic key must never reach a lock screen. The prototype is InkLab
-(`spikes/live-ink`), run from the VM's Terminal, which holds Accessibility and Screen Recording.
+locked, and a synthetic key must never reach a lock screen. InkLab ran from the VM's Terminal,
+which held Accessibility and Screen Recording.
 Every stroke below is a real mouse drag through VNC, sent only after InkLab's own state said the
 overlay was taking presses.
 
