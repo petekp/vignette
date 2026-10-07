@@ -114,6 +114,9 @@ final class LiveWindows {
         var shownAt: CFTimeInterval = 0
         /// Drawn inside its scroll area, so it is cut off at the area's edge as the content is.
         var clipped = false
+        /// Its opacity while it shows: faint while the answer points elsewhere (`light`), so it comes
+        /// back faint after its content moves.
+        var strength: Float = 1
         /// For an element's anchor, the pixels round the mark, which decide where it shows: Chromium
         /// moves an element's position late, and only to the nearest run of text.
         var patch: LivePatch?
@@ -220,6 +223,10 @@ final class LiveWindows {
         start()
     }
 
+    func popover(of id: Mark.ID) -> ReplyPopover? {
+        windows.values.lazy.compactMap { $0.overlay.marks.popover(of: id) }.first
+    }
+
     /// Takes these marks off their windows.
     func remove(_ ids: Set<Mark.ID>) {
         guard !ids.isEmpty else { return }
@@ -277,11 +284,11 @@ final class LiveWindows {
     }
 
     func show(markStyle: MarkStyle, textStyle: TextStyle, drawingOn: Set<Mark.ID>, pulsing: Set<Mark.ID>,
-              finishing: [Mark.ID: LiveMarksLayer.Finish] = [:]) {
+              finishing: [Mark.ID: LiveMarksLayer.Finish] = [:], overDark: Set<Mark.ID> = [], hands: [Mark.ID: InkHand] = [:]) {
         holding = pulsing.union(finishing.keys)
         for window in windows.values {
             window.overlay.marks.show(window.pins.map(\.mark), markStyle: markStyle, textStyle: textStyle,
-                                      drawingOn: drawingOn, pulsing: pulsing, finishing: finishing)
+                                      drawingOn: drawingOn, pulsing: pulsing, finishing: finishing, overDark: overDark, hands: hands)
             place(window)
         }
     }
@@ -435,12 +442,15 @@ final class LiveWindows {
     }
 
     /// Draws the marks of `all` that are not `lit` faint, as an answer's action points at its own
-    /// findings, and the rest at their own strength.
+    /// findings, and the rest at full strength. A mark hidden while its content moves takes its
+    /// strength when it shows again.
     func light(_ lit: Set<Mark.ID>, among all: Set<Mark.ID>) {
         for window in windows.values {
-            for pin in window.pins where all.contains(pin.mark.id) && pin.phase == .shown {
-                let strength: Float = lit.contains(pin.mark.id) ? 1 : Self.unlitOpacity
-                window.overlay.marks.fade(pin.mark.id, to: strength, duration: 0.18 * Settings.shared.motionScale)
+            for index in window.pins.indices where all.contains(window.pins[index].mark.id) {
+                let strength: Float = lit.contains(window.pins[index].mark.id) ? 1 : Self.unlitOpacity
+                window.pins[index].strength = strength
+                guard window.pins[index].phase == .shown else { continue }
+                window.overlay.marks.fade(window.pins[index].mark.id, to: strength, duration: 0.18 * Settings.shared.motionScale)
             }
         }
     }
@@ -491,7 +501,7 @@ final class LiveWindows {
         window.pins[index].windowSize = window.frame.size
         window.overlay.marks.move(window.pins[index].mark.id, by: shift)
         window.overlay.marks.clip(window.pins[index].mark.id, to: pin.clipped ? pin.reading?.clip : nil)
-        window.overlay.marks.fade(window.pins[index].mark.id, shown: true, duration: Settings.shared.motionUI.liveInkShowFade)
+        window.overlay.marks.fade(window.pins[index].mark.id, to: pin.strength, duration: Settings.shared.motionUI.liveInkShowFade)
         syncFollowers(of: window.pins[index].mark.id, in: window)
         fitOverlay(window)
     }
@@ -1072,7 +1082,9 @@ final class LiveWindows {
         case .text(var text):
             text.origin = text.origin.moved(by: offset)
             moved.geometry = .text(text)
+            moved.popover = mark.popover?.offsetBy(dx: offset.dx, dy: offset.dy)
         }
+        moved.focus = mark.focus?.moved(by: offset)
         return moved
     }
 }
@@ -1131,6 +1143,8 @@ final class WindowOverlay: NSPanel {
         content.wantsLayer = true
         contentView = content
         content.layer?.addSublayer(marks)
+        marks.host = content
+        marks.sharing = sharingType
     }
 
     override var canBecomeKey: Bool { false }

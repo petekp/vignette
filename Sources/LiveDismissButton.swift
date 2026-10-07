@@ -2,7 +2,8 @@ import AppKit
 
 /// The × that takes a session's answer off the screen, shown at the top-left corner of the answer's
 /// note while the pointer is over it, as a notification's close button is. A panel of its own, so a
-/// click on it never reaches the window under the answer, and one that never takes the keys.
+/// click on it never reaches the window under the answer, and one that never takes the keys. It is
+/// a child of the reply's window, so a window raised over the answer covers it too.
 @MainActor
 final class LiveDismissButton: NSPanel {
     var onClick: (() -> Void)?
@@ -15,13 +16,12 @@ final class LiveDismissButton: NSPanel {
     private static let size: CGFloat = 20
     private static let margin: CGFloat = 6
 
-    /// Opens centred on `corner`, in global top-left points.
-    init(at corner: CGPoint) {
+    /// Opens centred on `corner`, in global top-left points, over `reply`.
+    init(at corner: CGPoint, over reply: ReplyPopover) {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
-        level = .popUpMenu
         collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace, .ignoresCycle]
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
@@ -58,6 +58,7 @@ final class LiveDismissButton: NSPanel {
 
         place(at: corner)
         alphaValue = 0
+        reply.carry(self)
         orderFrontRegardless()
         let motion = Settings.shared.motionScale
         let grow = CASpringAnimation(keyPath: "transform.scale")
@@ -98,8 +99,11 @@ final class LiveDismissButton: NSPanel {
             context.duration = 0.12 * Settings.shared.motionScale
             animator().alphaValue = 0
         } completionHandler: {
-            self.orderOut(nil)
-            self.close()
+            MainActor.assumeIsolated {
+                self.parent?.removeChildWindow(self)
+                self.orderOut(nil)
+                self.close()
+            }
         }
     }
 

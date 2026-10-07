@@ -40,6 +40,8 @@ struct LivePacket: @unchecked Sendable {
     /// A part of the window round the ink at full detail, for a window too large to read whole after
     /// the reader's resize, with its rect in fractions of the picture.
     let detail: (png: Data, box: CGRect)?
+    /// How light the capture is, coarsely, before the ink was drawn in.
+    let luminance: Luminance?
     /// Says whether the window's text is what it was in an earlier packet.
     var textSignature: String { lines.map(\.text).joined(separator: "\n") }
 
@@ -73,15 +75,7 @@ struct LivePacket: @unchecked Sendable {
     static func build(at point: CGPoint, window id: CGWindowID? = nil, ink: [Mark], style: TextStyle,
                       markStyle: MarkStyle, glanced: (@Sendable (Glance) -> Void)? = nil) async throws -> LivePacket {
         let started = Date()
-        guard CGPreflightScreenCaptureAccess() else {
-            throw Failure(reason: "Live ink needs Screen Recording permission to see the screen.", detail: "screen-recording")
-        }
-        let content: SCShareableContent
-        do {
-            content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-        } catch {
-            throw Failure(reason: "Vignette couldn't see the screen.", detail: "shareable content: \(error.localizedDescription)")
-        }
+        let content = try await shareableContent()
         let named = id.flatMap { id in content.windows.contains { $0.windowID == id } ? (id: id, frame: CGRect.null) : nil }
         let target = named ?? window(under: point)
         let filter: SCContentFilter
@@ -100,21 +94,11 @@ struct LivePacket: @unchecked Sendable {
         } else {
             throw Failure(reason: "Vignette couldn't see the screen.", detail: "no window or display")
         }
-        let primaryHeight = StateReport.primaryHeight
-        let scale = NSScreen.screens.first { screen in
-            let frame = screen.frame
-            return CGRect(x: frame.minX, y: primaryHeight - frame.maxY, width: frame.width, height: frame.height).contains(point)
-        }?.backingScaleFactor ?? 2
-        let configuration = SCStreamConfiguration()
-        configuration.width = max(1, Int((frame.width * scale).rounded()))
-        configuration.height = max(1, Int((frame.height * scale).rounded()))
-        configuration.showsCursor = false
-        configuration.ignoreShadowsSingleWindow = true
         let capture: CGImage
         do {
-            capture = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+            capture = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration(frame, scale: scale(at: point)))
         } catch {
-            throw Failure(reason: "Vignette couldn't capture the window.", detail: "capture: \(error.localizedDescription)")
+            throw captureFailed(error)
         }
         let captured = Date()
         // Each Accessibility call may wait out its 0.1 s timeout, and a web page takes many, so the
@@ -140,7 +124,59 @@ struct LivePacket: @unchecked Sendable {
         let ms = { (date: Date) in Int(date.timeIntervalSince(started) * 1000) }
         Log.write("[live-ink] looked ms capture=\(ms(captured)) page=\(ms(page.at)) read=\(ms(assembled.at))")
         return LivePacket(frame: frame, windowID: target?.id, app: app, title: title, location: page.page?.location, page: page.page?.area,
-                          lines: assembled.lines, picture: assembled.picture, numbers: assembled.numbers, detail: assembled.detail)
+                          lines: assembled.lines, picture: assembled.picture, numbers: assembled.numbers, detail: assembled.detail,
+                          luminance: assembled.luminance)
+    }
+
+    /// The window `id` as it is now, alone, so none of Vignette's overlays are in it, with its frame in
+    /// global top-left points.
+    static func capture(window id: CGWindowID) async throws -> (image: CGImage, frame: CGRect) {
+        let content = try await shareableContent()
+        guard let window = content.windows.first(where: { $0.windowID == id }) else {
+            throw Failure(reason: "Vignette couldn't find the window.", detail: "no window \(id)")
+        }
+        let frame = window.frame
+        let configuration = configuration(frame, scale: scale(at: CGPoint(x: frame.midX, y: frame.midY)))
+        do {
+            return (try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: window),
+                                                               configuration: configuration), frame)
+        } catch {
+            throw captureFailed(error)
+        }
+    }
+
+    private static func shareableContent() async throws -> SCShareableContent {
+        guard CGPreflightScreenCaptureAccess() else {
+            throw Failure(reason: "Live ink needs Screen Recording permission to see the screen.", detail: "screen-recording")
+        }
+        do {
+            return try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        } catch {
+            throw Failure(reason: "Vignette couldn't see the screen.", detail: "shareable content: \(error.localizedDescription)")
+        }
+    }
+
+    /// The backing scale of the screen holding `point`, in global top-left points.
+    private static func scale(at point: CGPoint) -> CGFloat {
+        let primaryHeight = StateReport.primaryHeight
+        return NSScreen.screens.first { screen in
+            let frame = screen.frame
+            return CGRect(x: frame.minX, y: primaryHeight - frame.maxY, width: frame.width, height: frame.height).contains(point)
+        }?.backingScaleFactor ?? 2
+    }
+
+    /// A capture of `frame`'s size at `scale` pixels a point, without the cursor or a window's shadow.
+    private static func configuration(_ frame: CGRect, scale: CGFloat) -> SCStreamConfiguration {
+        let configuration = SCStreamConfiguration()
+        configuration.width = max(1, Int((frame.width * scale).rounded()))
+        configuration.height = max(1, Int((frame.height * scale).rounded()))
+        configuration.showsCursor = false
+        configuration.ignoreShadowsSingleWindow = true
+        return configuration
+    }
+
+    private static func captureFailed(_ error: Error) -> Failure {
+        Failure(reason: "Vignette couldn't capture the window.", detail: "capture: \(error.localizedDescription)")
     }
 
     /// What `assemble` makes, and when it was done. Unchecked for the packet's reason: its lines'
@@ -150,6 +186,7 @@ struct LivePacket: @unchecked Sendable {
         let picture: Data
         let numbers: [Mark.ID: Int]
         let detail: (png: Data, box: CGRect)?
+        let luminance: Luminance?
         let at: Date
     }
 
@@ -174,7 +211,8 @@ struct LivePacket: @unchecked Sendable {
            let png = png(crop, scale: Stitch.readerScale(CGSize(width: crop.width, height: crop.height))) {
             detail = (png, box)
         }
-        return Assembled(lines: lines, picture: picture, numbers: numbers, detail: detail, at: Date())
+        return Assembled(lines: lines, picture: picture, numbers: numbers, detail: detail,
+                         luminance: Luminance(capture, frame: frame), at: Date())
     }
 
     /// The lines nearest `ink`, a rect in global top-left points, that fit in `sentCharacters`, in
@@ -484,5 +522,57 @@ struct LivePacket: @unchecked Sendable {
     private static func attribute(_ element: AXUIElement, _ name: String) -> AnyObject? {
         var value: AnyObject?
         return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
+    }
+}
+
+extension LivePacket {
+    /// A capture's luminance averaged over a grid of cells about 1/64 of its width across, so an
+    /// answer's mark can be drawn for what is behind it.
+    struct Luminance: Sendable {
+        /// The capture's frame, in global top-left points.
+        let frame: CGRect
+        let columns: Int
+        let rows: Int
+        /// Row by row from the top, 0 for black and 255 for white.
+        let cells: [UInt8]
+        /// The mean luminance at or below which a window counts as dark behind what is drawn over it.
+        static let dark: CGFloat = 0.45
+
+        init?(_ image: CGImage, frame: CGRect) {
+            let columns = 64
+            let rows = max(1, Int((CGFloat(columns) * CGFloat(image.height) / CGFloat(max(image.width, 1))).rounded()))
+            var cells = [UInt8](repeating: 0, count: columns * rows)
+            let drawn = cells.withUnsafeMutableBytes { buffer -> Bool in
+                guard let context = CGContext(data: buffer.baseAddress, width: columns, height: rows, bitsPerComponent: 8, bytesPerRow: columns,
+                                              space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+                context.interpolationQuality = .high
+                context.draw(image, in: CGRect(x: 0, y: 0, width: columns, height: rows))
+                return true
+            }
+            guard drawn else { return nil }
+            self.frame = frame
+            self.columns = columns
+            self.rows = rows
+            self.cells = cells
+        }
+
+        /// The mean luminance, 0 to 1, of the cells under `rect`, in global top-left points, or nil
+        /// when it is outside the capture.
+        func mean(in rect: CGRect) -> CGFloat? {
+            let part = rect.intersection(frame)
+            guard !part.isNull, frame.width > 0, frame.height > 0 else { return nil }
+            let x0 = Int(((part.minX - frame.minX) / frame.width * CGFloat(columns)).rounded(.down))
+            let x1 = Int(((part.maxX - frame.minX) / frame.width * CGFloat(columns)).rounded(.up))
+            let y0 = Int(((part.minY - frame.minY) / frame.height * CGFloat(rows)).rounded(.down))
+            let y1 = Int(((part.maxY - frame.minY) / frame.height * CGFloat(rows)).rounded(.up))
+            var sum = 0, count = 0
+            for row in max(0, y0)..<min(rows, max(y1, y0 + 1)) {
+                for column in max(0, x0)..<min(columns, max(x1, x0 + 1)) {
+                    sum += Int(cells[row * columns + column])
+                    count += 1
+                }
+            }
+            return count > 0 ? CGFloat(sum) / CGFloat(count * 255) : nil
+        }
     }
 }

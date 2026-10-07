@@ -149,12 +149,15 @@ final class LiveResponder {
     means ink 2. The numbers are Vignette's; never mention them.
 
     Answer what they asked about the thing their ink points at. With no note, say what matters about it. \
-    Be specific and brief: one to three short sentences in `say`, plain text, no Markdown. `say` hangs \
-    under their note as the reply to it; with labelled marks, it ties them together and does not repeat \
-    the labels. List marks in reading order, top to bottom. Point with \
+    Be specific and brief: one to three short sentences in `say`, plain text, no Markdown. `say` takes \
+    the place of their note as the reply to it, beside your first mark; with labelled marks, it ties them \
+    together and does not repeat the labels. List marks in reading order, top to bottom. Point with \
     marks rather than describing where things are: up to four, only where they help, and never at what \
     their ink already points at. `circle` goes \
-    round a thing and `arrow` points at it. Name a text line by its id in `line`, and copy `words` from \
+    round a thing and `arrow` points at it. `focus` pulls their eye to it while they read: the rest of the \
+    window goes soft for a few seconds and it stays sharp. Use it for the one thing the answer is about, or \
+    for several in the order `say` talks about them, one sentence each, to walk them through; add \
+    `"zoom": true` to magnify something too small to see. Name a text line by its id in `line`, and copy `words` from \
     that line when the thing is part of the line. For text in the picture that is not among the lines, \
     leave out `line` and copy its `words`. Use `box` only for something with no text. A `label` \
     is one to four words beside a mark, only when the mark needs it.

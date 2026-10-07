@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "14"
+  version: "15"
 ---
 
 # Vignette
@@ -133,8 +133,8 @@ on the window to confirm a change. Answer in your session as usual.
 
 Answer on the window, with `--answer`, only when pointing at something there helps them: what they
 asked about is somewhere on the screen, a change landed where they would not look, or you need them
-to choose between things they can see. Your words hang under their note, as the reply to it, and
-each mark circles or points at the words it names:
+to choose between things they can see. Your words take the place of their note, as the reply to
+it beside your first mark, and each mark circles, points at or pulls focus to the words it names:
 
 ```sh
 cat > /tmp/answer.json <<'JSON'
@@ -158,6 +158,11 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --answe
   name the nearest whole words. A mark whose words are not found is left out.
 - `kind` is `circle` for one thing and `arrow` for a place or an edge. A `label` is one to four
   words, and a label with no room beside its mark is left out. At most four marks.
+- `focus` pulls their eye to one thing while they read: the rest of the window goes soft and grey
+  for a few seconds, and it stays sharp. Give several in the order `say` talks about them, one
+  sentence each, and the focus moves from one to the next as they read. Add `"zoom": true` to
+  magnify something too small to see, such as a 1 px gap or fine print. A focus lets go on its
+  own, so use `circle` for what they should still see after reading.
 - For something with no text, give `box` instead of `words`: `[x, y, w, h]` as fractions of the
   image you were sent.
 - `actions` are up to three buttons under your words, one to three words each, for what they will

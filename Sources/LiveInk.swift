@@ -53,6 +53,8 @@ final class LiveInk {
     /// The answer's actions, under its reply while it is on the screen.
     private var actionsPanel: LiveAnswerActions?
     private var pointerWatch: [Any] = []
+    private var replyWatch: NSObjectProtocol?
+    private var focusRun: FocusRun?
     /// The packet for the ink the note is open on, captured when it opened, so its text can move
     /// the note clear of the window's text and the ask need not capture again.
     private var prepared: (ink: Set<Mark.ID>, packet: Task<LivePacket, Error>, glance: Task<LivePacket.Glance?, Never>)?
@@ -97,6 +99,11 @@ final class LiveInk {
     private var lastPicture: (conversation: Int, windowID: CGWindowID?, text: String, lines: Set<String>)?
     /// Marks that draw themselves on at the next `showMarks`.
     private var drawingOn = Set<Mark.ID>()
+    /// The answer's shapes whose window was dark behind them when it was captured, which are drawn
+    /// as light on dark (`LightMarkLayer`).
+    private var overDark = Set<Mark.ID>()
+    /// How the person's hand drew each of their marks, so it is drawn as their ink.
+    private var hands: [Mark.ID: InkHand] = [:]
     /// What a tap where the pointer is would do, shown while inking.
     private var preview: LiveMarksLayer.Preview?
     /// The mark a tap just made the person's: no preview shows a tap erasing it until the pointer
@@ -130,6 +137,9 @@ final class LiveInk {
         var session: Shared?
         /// The answer's actions, shown as buttons under its reply.
         var actions: [LiveAnswer.Action] = []
+        /// The action the person picked, whose button stays checked under the reply, with the rest,
+        /// all disabled, while the session works on it.
+        var picked: String?
         /// For each of the answer's marks, the marks drawn for it, which an action names by index.
         var findings: [[Mark.ID]] = []
     }
@@ -357,9 +367,13 @@ final class LiveInk {
             "windows": windows.stateJSON,
             "new": newInk.count,
             "steps": stepClicks == nil ? 0 : steps.count + 1,
+            "focus": focusRun.map { run -> Any in
+                ["stop": run.index + 1, "stops": run.stops.count, "zoom": run.stops.indices.contains(run.index) && run.stops[run.index].first?.focus?.zoom == true]
+            } ?? NSNull(),
             "note": note.map { panel -> Any in StateReport.topLeft(panel.frame, primaryHeight: StateReport.primaryHeight) } ?? NSNull(),
             "actions": actionsPanel.map { panel -> Any in
-                panel.buttons.map { ["title": $0.title, "frame": [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height].map { Int($0.rounded()) }] }
+                panel.buttons.map { ["title": $0.title, "frame": [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height].map { Int($0.rounded()) },
+                                     "enabled": $0.enabled, "picked": $0.picked] }
             } ?? NSNull(),
             "dismiss": dismissButton.map { button -> Any in StateReport.topLeft(button.frame, primaryHeight: StateReport.primaryHeight) } ?? NSNull(),
             "noteTarget": note.map { panel -> Any in panel.target == .responder ? "responder" : "session" } ?? NSNull(),
@@ -385,13 +399,13 @@ final class LiveInk {
         switch InkStroke(points, shortestArrow: ui.shortestArrow) {
         case .ellipse(let frame):
             let mark = Mark(geometry: .ellipse(frame))
-            stroked(mark)
+            stroked(mark, by: points)
             place(mark, on: surface, among: among, markStyle: ui.markStyle)
             outcome = .drew(.ellipse)
             drewWhileInking = true
         case .arrow(let arrow):
             let mark = Mark(geometry: .arrow(arrow))
-            stroked(mark)
+            stroked(mark, by: points)
             place(mark, on: surface, among: among, markStyle: ui.markStyle)
             outcome = .drew(.arrow)
             drewWhileInking = true
@@ -415,9 +429,14 @@ final class LiveInk {
         return outcome
     }
 
-    /// Records when `mark` was drawn: from the stroke's first move to now.
-    private func stroked(_ mark: Mark) {
+    /// Records when `mark` was drawn: from the stroke's first move to now. With the stroke's `points`,
+    /// it also records the hand that drew it, and the mark eases onto its shape from them.
+    private func stroked(_ mark: Mark, by points: [CGPoint]? = nil) {
         strokeTimes[mark.id] = (strokeBegan ?? Date(), Date())
+        if let points, let hand = InkHand(raw: points, mark: mark) {
+            hands[mark.id] = hand
+            drawingOn.insert(mark.id)
+        }
     }
 
     /// Puts a mark the person drew on the window under it, or on `surface` where there is none.
@@ -449,7 +468,7 @@ final class LiveInk {
         guard let index = Self.markToErase(at: point, in: candidates, markStyle: Settings.shared.data.ui.markStyle,
                                            noteBox: { LiveAnswerLayout.noteBox($0, sizes: sizes) }) else { return nil }
         let hit = candidates[index]
-        return hit.agent && hit.kind != .text && answerMarks.contains(hit.id) ? .pick(hit) : .erase(hit)
+        return hit.agent && hit.kind != .text && hit.focus == nil && answerMarks.contains(hit.id) ? .pick(hit) : .erase(hit)
     }
 
     /// Shows what a tap at `point` would do, or nothing with no point.
@@ -737,13 +756,14 @@ final class LiveInk {
         return note
     }
 
-    /// How long an ask may shimmer with no word on the session's turn, as from a route that cannot tell.
+    /// How long an ask may show the thinking light with no word on the session's turn, as from a
+    /// route that cannot tell.
     private static let workingLimit: TimeInterval = 180
     /// How long the turn must stay idle to count as over: the line waits for a turn under way to
     /// end, and the session's own turn starts a moment after.
     private static let idleSettle: TimeInterval = 2
 
-    /// Reads the session's turn twice a second, and ends the shimmer once the turn it started is
+    /// Reads the session's turn twice a second, and ends the thinking light once the turn it started is
     /// over, whether or not it answered on the screen.
     private func watchWorking(_ request: String) {
         working = (request, false, nil, Date().addingTimeInterval(Self.workingLimit))
@@ -775,11 +795,11 @@ final class LiveInk {
 
     /// The session's turn is over. With no answer drawn on the window, the ink and its note play
     /// the done animation and go, since the person sees the change itself; an answer keeps them,
-    /// as what it is beside.
+    /// as what it is beside. The reply an action was picked under is not an answer to it.
     private func finishWorking() {
         stopWorking()
         asking?.phase = .answered
-        guard let about = asking?.about, asking?.say == nil else { return showMarks() }
+        guard let about = asking?.about, asking?.say == nil || asking?.picked != nil else { return showMarks() }
         finish(about, .done)
     }
 
@@ -810,6 +830,7 @@ final class LiveInk {
     func dismissAnswer() {
         hideDismissButton()
         stopSteps()
+        letGoOfFocus(because: "dismissed")
         let ids = answerMarks.union(asking?.about ?? [])
         guard !ids.isEmpty else { return }
         finish(ids, .dismissed)
@@ -872,18 +893,26 @@ final class LiveInk {
 
     // MARK: Dismissing and actions
 
-    /// The answer's note, where it is now, in global top-left points.
-    private var shownSay: CGRect? {
+    /// The answer's reply popover, while it is up.
+    private var shownReply: ReplyPopover? {
         guard let say = asking?.say, answerMarks.contains(say.id), finishing[say.id] == nil,
-              let box = LiveAnswerLayout.noteBox(say, sizes: answerSizes) else { return nil }
-        let shift = windows.shift(of: say.id) ?? .zero
-        return box.offsetBy(dx: shift.dx, dy: shift.dy)
+              let popover = windows.popover(of: say.id) ?? surfaces.lazy.compactMap({ $0.overlay.popover(of: say.id) }).first,
+              popover.globalFrame != nil
+        else { return nil }
+        return popover
     }
 
-    /// Follows the pointer while an answer is on screen, to show the × over its note, and keeps the
-    /// actions under the note as its window scrolls.
+    /// The answer's reply, its popover's body where AppKit put it, in global top-left points.
+    private var shownSay: CGRect? { shownReply?.globalFrame }
+
+    /// Follows the pointer while an answer is on screen, to show the × over its reply, and keeps the
+    /// actions at the reply's foot as its window scrolls.
     private func watchPointer() {
         guard pointerWatch.isEmpty else { return }
+        // The reply's popover can move with its window, or fade, while the pointer is still.
+        replyWatch = NotificationCenter.default.addObserver(forName: .liveReplyChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pointerMoved() }
+        }
         let moved: (NSEvent) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.pointerMoved() } }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .scrollWheel], handler: moved) {
             pointerWatch.append(global)
@@ -896,21 +925,24 @@ final class LiveInk {
     private func stopWatchingPointer() {
         pointerWatch.forEach(NSEvent.removeMonitor)
         pointerWatch = []
+        replyWatch.map(NotificationCenter.default.removeObserver)
+        replyWatch = nil
         hideDismissButton()
         hideActions()
     }
 
     private func pointerMoved() {
         showActions()
-        guard let note = shownSay, !isInking else { return hideDismissButton() }
+        guard let reply = shownReply, let note = reply.globalFrame, !isInking, asking?.picked == nil else { return hideDismissButton() }
         let mouse = NSEvent.mouseLocation
         let point = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
         let over = note.insetBy(dx: -10, dy: -10).contains(point) || dismissButton?.globalFrame.insetBy(dx: -6, dy: -6).contains(point) == true
         guard over else { return hideDismissButton() }
         if let dismissButton {
+            reply.carry(dismissButton)
             dismissButton.place(at: CGPoint(x: note.minX, y: note.minY))
         } else {
-            let button = LiveDismissButton(at: CGPoint(x: note.minX, y: note.minY))
+            let button = LiveDismissButton(at: CGPoint(x: note.minX, y: note.minY), over: reply)
             button.onClick = { [weak self] in
                 Log.write("[live-ink] answer dismissed by its ×")
                 self?.dismissAnswer()
@@ -924,12 +956,17 @@ final class LiveInk {
         dismissButton = nil
     }
 
-    /// Shows the answer's actions under its reply, or moves them there.
+    /// Shows the answer's actions in the room kept at its reply's foot, or moves them there.
     private func showActions() {
-        guard let note = shownSay, let actions = asking?.actions, !actions.isEmpty, asking?.phase == .answered else { return hideActions() }
-        let corner = CGPoint(x: note.minX, y: note.maxY + 8)
-        if let actionsPanel { return actionsPanel.place(at: corner) }
-        let panel = LiveAnswerActions(actions, at: corner, color: Settings.shared.data.ui.markStyle.color(.agent))
+        guard let reply = shownReply, let note = reply.globalFrame, let actions = asking?.actions, !actions.isEmpty,
+              asking?.phase == .answered || asking?.picked != nil
+        else { return hideActions() }
+        let corner = CGPoint(x: note.minX + ReplyContent.insets.left, y: note.maxY - ReplyContent.insets.bottom - LiveAnswerActions.height)
+        if let actionsPanel {
+            reply.carry(actionsPanel)
+            return actionsPanel.place(at: corner)
+        }
+        let panel = LiveAnswerActions(actions, at: corner, over: reply, picked: asking?.picked)
         panel.onPick = { [weak self] action in self?.act(action) }
         panel.onPoint = { [weak self] action in self?.point(at: action) }
         actionsPanel = panel
@@ -952,21 +989,22 @@ final class LiveInk {
     }
 
     /// The person clicked one of the answer's actions: its words go back to the session as their
-    /// reply, with a fresh picture of the window, and the answer and the ink it was about shimmer
-    /// while the session works, as an ask does. An answer from the responder takes them as a
+    /// reply, with a fresh picture of the window, and the answer and the ink it was about carry the
+    /// thinking light while the session works, as an ask does. An answer from the responder takes them as a
     /// follow-up ask.
     private func act(_ action: String) {
         Log.write("[live-ink] action picked words=\(action.count)")
-        hideActions()
         hideDismissButton()
         guard let shared = asking?.session, let sendToSession, let note = shownSay else {
+            hideActions()
             ask(action)
             return
         }
+        point(at: nil)
+        actionsPanel?.pick(action)
         let about = (asking?.about ?? []).union(answerMarks)
         let ui = Settings.shared.data.ui
-        asking?.say = nil
-        asking?.actions = []
+        asking?.picked = action
         asking?.phase = .working
         asking?.about = about
         showMarks()
@@ -998,7 +1036,7 @@ final class LiveInk {
     /// Whether the request is one live ink sent, which its answer and its failures come back to.
     func sent(request: String) -> Bool { sending[request] != nil }
 
-    /// A send's client answered. A send that went says nothing, since the shimmer already says the
+    /// A send's client answered. A send that went says nothing, since the thinking light already says the
     /// session has it; any other outcome says why on the ink, while that ink is still the last asked about.
     func delivered(request: String, _ state: SendNotice.State, reason: String?) {
         guard let shared = sending[request] else { return }
@@ -1080,17 +1118,30 @@ final class LiveInk {
         ["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": png.base64EncodedString()]]
     }
 
-    private func scene(for packet: LivePacket) -> LiveAnswerLayout.Scene {
-        scene(frame: packet.frame, page: packet.page, text: packet.lines.map { packet.global($0.box) })
+    /// `question` is the person's note an answer replies to, which goes as the reply comes, so the
+    /// answer need not keep clear of it.
+    private func scene(for packet: LivePacket, leaving question: Mark? = nil) -> LiveAnswerLayout.Scene {
+        scene(frame: packet.frame, page: packet.page, text: packet.lines.map { packet.global($0.box) }, leaving: question)
     }
 
     /// The window at `frame` with its text at `text`, both in global top-left points.
-    private func scene(frame: CGRect, page: CGRect?, text: [CGRect]) -> LiveAnswerLayout.Scene {
+    private func scene(frame: CGRect, page: CGRect?, text: [CGRect], leaving question: Mark? = nil) -> LiveAnswerLayout.Scene {
         let screen = activeSurfaces().map(\.overlay.globalFrame).first { $0.intersects(frame) } ?? frame
         // A browser's page, not its tabs and toolbar: notes on those read as being about the browser.
         let room = (page ?? frame).intersection(screen).insetBy(dx: 8, dy: 8)
+        let ink = self.ink.filter { $0.id != question?.id }
         let notes = ink.filter { $0.kind == .text }.compactMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) }
-        return LiveAnswerLayout.Scene(room: room.isNull ? frame : room, ink: ink, text: text, notes: notes)
+        return LiveAnswerLayout.Scene(room: room.isNull ? frame : room, ink: ink, text: text, notes: notes,
+                                      screen: Self.visibleScreen(around: frame)?.insetBy(dx: 8, dy: 8))
+    }
+
+    /// The visible part of the screen `frame` is on, without the menu bar and the Dock, in global
+    /// top-left points.
+    private static func visibleScreen(around frame: CGRect) -> CGRect? {
+        let centre = CGPoint(x: frame.midX, y: StateReport.primaryHeight - frame.midY)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(centre) }) ?? NSScreen.main else { return nil }
+        let visible = screen.visibleFrame
+        return CGRect(x: visible.minX, y: StateReport.primaryHeight - visible.maxY, width: visible.width, height: visible.height)
     }
 
     /// The note the person asked with, among the marks `about`.
@@ -1110,18 +1161,16 @@ final class LiveInk {
         showMarks()
     }
 
-    /// The reply so far, as a note in the question's place, quoting it, or beside the ink. It keeps
-    /// the spot it first took, so it grows in place rather than jumping as words arrive.
+    /// The reply so far, as a popover hung from the ink, quoting the question. It keeps where it hangs,
+    /// so it grows rather than jumping as words arrive.
     private func showSay(_ say: String, near asked: CGRect, question: Mark?, packet: LivePacket) {
         guard asking?.phase == .asking else { return }
-        let scene = scene(for: packet)
-        let tag = question.flatMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) }
+        let scene = scene(for: packet, leaving: question)
         let note: Mark
         if let shown = asking?.say {
-            note = LiveAnswerLayout.grown(shown, to: say, near: tag ?? asked, scene: scene, sizes: answerSizes)
+            note = LiveAnswerLayout.grown(shown, to: say, sizes: answerSizes)
         } else {
-            note = LiveAnswerLayout.reply(say, question: tag, quote: words(of: question), near: asked, scene: scene,
-                                          obstacles: LiveAnswerLayout.obstacles(in: scene), sizes: answerSizes)
+            note = LiveAnswerLayout.reply(say, quote: words(of: question), from: asked, scene: scene, sizes: answerSizes)
             drawingOn.insert(note.id)
         }
         asking?.say = note
@@ -1136,28 +1185,37 @@ final class LiveInk {
         guard asking != nil else { return }
         let targets = answer.marks.map { target(of: $0, in: packet, sent: sent) }
         let layout = LiveAnswerLayout.placed(for: answer, targets: targets, asked: asked,
-                                             question: question.flatMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) },
-                                             quote: words(of: question), scene: scene(for: packet), sizes: answerSizes, streamed: asking?.say,
+                                             quote: words(of: question), scene: scene(for: packet, leaving: question), sizes: answerSizes, streamed: asking?.say,
                                              below: answer.actions.isEmpty ? 0 : LiveAnswerActions.room)
         let placed = layout.marks.map { mark in
             var mark = mark
             if mark.agent { mark.agentName = agent }
             return mark
         }
+        // The focus marks, each with its label, come in one at a time once the window is captured.
+        let focus = Self.steps(in: Array(placed.dropFirst())).filter { $0.first?.focus != nil }
+        let held = Set(focus.joined().map(\.id))
+        let shown = placed.filter { !held.contains($0.id) }
         // A reply that streamed in is on the screen already, so only the rest draw themselves on.
-        drawingOn.formUnion(placed.map(\.id).filter { $0 != asking?.say?.id })
+        drawingOn.formUnion(shown.map(\.id).filter { $0 != asking?.say?.id })
+        for mark in placed where mark.agent && mark.kind != .text {
+            let behind = mark.shapeExtent.flatMap { packet.luminance?.mean(in: $0.insetBy(dx: -8, dy: -8)) }
+            if let behind, behind <= LivePacket.Luminance.dark { overDark.insert(mark.id) }
+        }
         asking?.phase = .answered
         asking?.say = placed.first
         asking?.actions = answer.actions
         asking?.findings = layout.findings
-        answerMarks.formUnion(placed.map(\.id))
+        answerMarks.formUnion(shown.map(\.id))
         let labels = zip(answer.marks, targets).filter { $0.0.label != nil && $0.1 != nil }.count
         Log.write("[live-ink] drew answer marks=\(placed.count - 1) dropped=\(targets.filter { $0 == nil }.count) "
-                  + "labels=\(layout.findings.filter { $0.count > 1 }.count)/\(labels)\(answer.steps ? " steps" : "")")
+                  + "labels=\(layout.findings.filter { $0.count > 1 }.count)/\(labels)\(answer.steps ? " steps" : "")"
+                  + (focus.isEmpty ? "" : " focus=\(focus.count)"))
         let groups = Self.steps(in: Array(placed.dropFirst()))
         defer { replace(question: question) }
         guard answer.steps, groups.count > 1 else {
-            put(placed, window: packet.windowID)
+            put(shown, window: packet.windowID)
+            pullFocus(focus, window: packet.windowID, say: answer.say, replies: layout.tour)
             return
         }
         steps = Array(groups.dropFirst())
@@ -1170,6 +1228,7 @@ final class LiveInk {
         put([placed[0]] + groups[0], window: packet.windowID)
         watchStepClicks()
     }
+
 
     /// An answer's marks after its reply, as steps: each pointing mark with the labels after it.
     private static func steps(in marks: [Mark]) -> [[Mark]] {
@@ -1242,6 +1301,159 @@ final class LiveInk {
         }
     }
 
+    // MARK: Pulling focus
+
+    /// The agent pulling focus: an answer's focus marks, each with its label, shown one stop at a time.
+    private struct FocusRun {
+        let id = UUID()
+        var stops: [[Mark]]
+        let holds: [TimeInterval]
+        let window: CGWindowID
+        /// Where the reply hangs at each stop after the first, by the stop's focus mark's id.
+        let replies: [Mark.ID: PopoverPlace]
+        var index = -1
+        var timer: Timer?
+        var watch: [Any] = []
+        /// The pointer when the focus came in, in AppKit's global coordinates.
+        var origin: CGPoint?
+    }
+
+    /// Captures the window the answer is on and pulls focus to each of `stops` in turn, for as long as
+    /// the reply's sentence about it takes to read (`Focus.holds`).
+    private func pullFocus(_ stops: [[Mark]], window: CGWindowID?, say: String, replies: [Mark.ID: PopoverPlace]) {
+        letGoOfFocus(because: "replaced")
+        guard !stops.isEmpty else { return }
+        guard let window else { return Log.write("[live-ink] focus skipped: the answer is on no window") }
+        let run = FocusRun(stops: stops, holds: Focus.holds(for: say, stops: stops.count), window: window, replies: replies)
+        focusRun = run
+        let zooms = stops.compactMap { $0.first?.focus?.zoom }
+        let rack = zooms.contains(false), loupe = zooms.contains(true)
+        let started = Date()
+        Task { @MainActor [weak self] in
+            do {
+                let capture = try await LivePacket.capture(window: window)
+                let picture = await Task.detached(priority: .userInitiated) {
+                    FocusPicture.make(capture.image, frame: capture.frame, rack: rack, loupe: loupe)
+                }.value
+                guard let self, self.focusRun?.id == run.id else { return }
+                guard let picture else {
+                    self.focusRun = nil
+                    return Log.write("[live-ink] error focus picture")
+                }
+                Log.write("[live-ink] focus ready ms=\(Int(Date().timeIntervalSince(started) * 1000)) stops=\(stops.count)")
+                self.focusRun?.stops = stops.map { stop in
+                    stop.map { mark in
+                        var mark = mark
+                        mark.focus?.show(picture)
+                        return mark
+                    }
+                }
+                self.nextFocus()
+            } catch {
+                Log.write("[live-ink] error focus \(error)")
+                if self?.focusRun?.id == run.id { self?.focusRun = nil }
+            }
+        }
+    }
+
+    /// Shows the next stop, and lets the one before go once the new one is mostly in, so the old target
+    /// blurs and then the new one sharpens. The reply moves to hang from each stop, and the window's
+    /// other marks fade (`lightStop`). After the last stop, lets go.
+    private func nextFocus() {
+        guard var run = focusRun else { return }
+        let previous = run.index >= 0 ? run.stops[run.index] : []
+        run.index += 1
+        guard run.index < run.stops.count else { return letGoOfFocus(because: "read") }
+        let stop = run.stops[run.index]
+        run.origin = run.origin ?? NSEvent.mouseLocation
+        run.timer = Timer.scheduledTimer(withTimeInterval: run.holds[run.index], repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.nextFocus() }
+        }
+        focusRun = run
+        answerMarks.formUnion(stop.map(\.id))
+        drawingOn.formUnion(stop.map(\.id))
+        if let place = stop.first.flatMap({ run.replies[$0.id] }), var reply = asking?.say, case .text(var words) = reply.geometry,
+           answerMarks.contains(reply.id) {
+            words.origin = place.body.origin
+            reply.geometry = .text(words)
+            reply.popover = place
+            asking?.say = reply
+            put(stop + [reply], window: run.window)
+        } else {
+            put(stop, window: run.window)
+        }
+        lightStop(stop, leaving: previous, on: run.window)
+        Log.write("[live-ink] focus stop=\(run.index + 1)/\(run.stops.count) zoom=\(stop.first?.focus?.zoom ?? false) hold=\(String(format: "%.1f", run.holds[run.index]))")
+        watchFocus()
+        guard !previous.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Focus.fade * Focus.overlap * Settings.shared.motionScale) { [weak self] in
+            self?.dropFocus(previous)
+        }
+    }
+
+    /// Lets the focus go: the stop on the screen fades out, and the rest of the tour is dropped.
+    private func letGoOfFocus(because reason: String) {
+        guard let run = focusRun else { return }
+        focusRun = nil
+        run.timer?.invalidate()
+        run.watch.forEach(NSEvent.removeMonitor)
+        if run.stops.indices.contains(run.index) { dropFocus(run.stops[run.index]) }
+        let all = Set(windows.marks.filter { $0.window == run.window }.map(\.mark.id))
+        windows.light(all, among: all)
+        Log.write("[live-ink] focus let go because=\(reason)")
+    }
+
+    /// While a stop shows, the window's other marks fade to a fifth, so nothing else draws the eye:
+    /// all but the stop, the reply, and the person's ink on the stop's target or round it. Ink that
+    /// only grazes the target, as a loop round the line below does, fades. The stop `leaving` keeps
+    /// its strength, since it is handing over to this one.
+    private func lightStop(_ stop: [Mark], leaving: [Mark], on window: CGWindowID) {
+        let shown = windows.marks.filter { $0.window == window }.map(\.mark)
+        let ids = Set(stop.map(\.id))
+        let target = shown.first { ids.contains($0.id) }?.focus?.target ?? .null
+        let handing = Set(leaving.map(\.id))
+        let onTarget = { (ink: CGRect) in
+            target.insetBy(dx: -8, dy: -6).contains(CGPoint(x: ink.midX, y: ink.midY)) || ink.contains(CGPoint(x: target.midX, y: target.midY))
+        }
+        let lit = shown.filter { mark in
+            ids.contains(mark.id) || handing.contains(mark.id) || mark.id == asking?.say?.id
+                || (!mark.agent && !answerMarks.contains(mark.id) && mark.shapeExtent.map(onTarget) == true)
+        }
+        windows.light(Set(lit.map(\.id)), among: Set(shown.map(\.id)))
+    }
+
+    private func dropFocus(_ stop: [Mark]) {
+        let ids = Set(stop.map(\.id)).intersection(answerMarks)
+        guard !ids.isEmpty else { return }
+        answerMarks.subtract(ids)
+        remove(ids)
+        showMarks()
+    }
+
+    /// Lets the focus go when the person takes over: a key, a click, a scroll, or the pointer moving
+    /// `Focus.pointerReach` from where it was when the focus came in.
+    private func watchFocus() {
+        guard var run = focusRun, run.watch.isEmpty else { return }
+        let heard: (NSEvent) -> Void = { [weak self] event in MainActor.assumeIsolated { self?.focusHeard(event) } }
+        let kinds: NSEvent.EventTypeMask = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .mouseMoved]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: kinds, handler: heard) { run.watch.append(global) }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: kinds, handler: { heard($0); return $0 }) { run.watch.append(local) }
+        focusRun = run
+    }
+
+    private func focusHeard(_ event: NSEvent) {
+        guard let run = focusRun, run.index >= 0 else { return }
+        switch event.type {
+        case .mouseMoved:
+            let mouse = NSEvent.mouseLocation
+            guard let origin = run.origin, hypot(mouse.x - origin.x, mouse.y - origin.y) > Focus.pointerReach else { return }
+            letGoOfFocus(because: "pointer")
+        case .keyDown: letGoOfFocus(because: "key")
+        case .scrollWheel: letGoOfFocus(because: "scroll")
+        default: letGoOfFocus(because: "click")
+        }
+    }
+
     /// Where an answer's mark points, in global top-left points: a line, the words within it that the
     /// mark names, or its box. Words Vision gives no box for fall back to the line. Words with no line
     /// in `sent`, as a session names them or the responder names text it was not sent, are looked for
@@ -1297,14 +1509,19 @@ final class LiveInk {
             moved = CGVector(dx: now.dx - then.dx, dy: now.dy - then.dy)
         }
         let still = leader.map { windows.isShown($0.id) && moved == .zero } ?? true
+        // A reply follows the mark it hangs from, so it is pinned after it.
+        let ids = Set(placed.map(\.id))
+        let hangs = { (mark: Mark) in mark.popover?.anchor.map(ids.contains) ?? false }
         // The mark a label names comes just before it.
         var labelled: Mark.ID?
-        for mark in placed {
+        for mark in placed.filter({ !hangs($0) }) + placed.filter(hangs) {
             remove([mark.id])
             if let target {
                 let mark = LiveWindows.translated(mark, by: moved)
                 let anchor: LiveWindows.Anchor
-                if mark.isLabel, still, let labelled {
+                if let hung = mark.popover?.anchor, ids.contains(hung) {
+                    anchor = .follows(hung)
+                } else if mark.isLabel, still, let labelled {
                     anchor = .follows(labelled)
                 } else if let leader, leader.window == target.id, !still || mark.kind == .text {
                     anchor = .follows(leader.id)
@@ -1326,6 +1543,8 @@ final class LiveInk {
     /// Takes the last answer's marks, or the last failure's note, off the screen.
     private func removeAnswer() {
         stopSteps()
+        letGoOfFocus(because: "replaced")
+        hideActions()
         guard !answerMarks.isEmpty else { return }
         remove(answerMarks)
         answerMarks = []
@@ -1340,6 +1559,7 @@ final class LiveInk {
         letGoOfNote(into: nil)
         responder.stop()
         asked = []
+        letGoOfFocus(because: "cleared")
         answerMarks = []
         stopSteps()
         stopWorking()
@@ -1371,6 +1591,7 @@ final class LiveInk {
 
     private func startInking() {
         isInking = true
+        letGoOfFocus(because: "ink")
         drewWhileInking = false
         // Pressed again before the button came up: the stroke now ends without ending the inking.
         releaseWatch?.invalidate()
@@ -1451,7 +1672,9 @@ final class LiveInk {
         glowing = on
         let ui = Settings.shared.motionUI
         let color = ui.markStyle.color(.person)
-        inking.forEach { $0.overlay.showGlow(on, ui: ui, color: color) }
+        let mouse = NSEvent.mouseLocation
+        let pen = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
+        inking.forEach { $0.overlay.showGlow(on, ui: ui, color: color, pen: pen) }
     }
 
     // MARK: Listening
@@ -1553,11 +1776,15 @@ final class LiveInk {
     private func showMarks() {
         let ui = Settings.shared.data.ui
         let pulsing = asking.map { [.looking, .asking, .working].contains($0.phase) ? $0.about : [] } ?? []
+        overDark.formIntersection(answerMarks)
+        let ids = Set(marks.map(\.id))
+        hands = hands.filter { ids.contains($0.key) }
         for surface in surfaces {
             surface.overlay.show(surface.marks, markStyle: ui.markStyle, textStyle: ui.textStyle, drawingOn: drawingOn, pulsing: pulsing,
-                                 finishing: finishing)
+                                 finishing: finishing, overDark: overDark, hands: hands)
         }
-        windows.show(markStyle: ui.markStyle, textStyle: ui.textStyle, drawingOn: drawingOn, pulsing: pulsing, finishing: finishing)
+        windows.show(markStyle: ui.markStyle, textStyle: ui.textStyle, drawingOn: drawingOn, pulsing: pulsing, finishing: finishing,
+                     overDark: overDark, hands: hands)
         drawingOn = []
         if shownSay == nil {
             stopWatchingPointer()

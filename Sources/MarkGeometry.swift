@@ -390,8 +390,6 @@ struct TextStyle: Hashable, @unchecked Sendable {
     private(set) var badge: String?
     /// Set in the agent's font rather than the person's.
     private(set) var agentWords = false
-    /// The person's words a reply answers (`Mark.quote`), set above its own.
-    private(set) var quote: String?
     /// Whether the lines are balanced (`TextLayout`). Off only for the note being typed, whose lines
     /// must not move under the caret.
     var balanced = true
@@ -448,7 +446,6 @@ struct TextStyle: Hashable, @unchecked Sendable {
         guard mark.agent else { return person }
         var style = forAgent(named: mark.agentName)
         if mark.isLabel { style.badge = nil }
-        style.quote = mark.quote.flatMap { $0.isEmpty ? nil : $0 }
         return style
     }
 
@@ -465,18 +462,11 @@ struct TextStyle: Hashable, @unchecked Sendable {
         var style = self
         style.badge = nil
         style.agentWords = false
-        style.quote = nil
         return style
     }
 
     /// The face at `size`.
     func font(size: CGFloat) -> CTFont { CTFontCreateWithFontDescriptor(agentWords ? agentFace : personFace, size, nil) }
-
-    /// The quote's face at `size`: the person's, since they are the person's words.
-    func quoteFont(size: CGFloat) -> CTFont { CTFontCreateWithFontDescriptor(personFace, size, nil) }
-
-    /// The quote's size, as a fraction of the note's.
-    static let quoteSize: CGFloat = 0.82
 
     /// The badge's face at `size`.
     func badgeFont(size: CGFloat) -> CTFont { CTFontCreateWithFontDescriptor(badgeFace, size, nil) }
@@ -484,7 +474,7 @@ struct TextStyle: Hashable, @unchecked Sendable {
     /// The values the faces are made from, which say everything about the style.
     private var values: [AnyHashable] {
         [personFont, agentFont, personWeight.rawValue, agentWeight.rawValue, lineHeight, padTop, padBottom, padSide, widthCap,
-         badgeInset, badgeOverlap, agentSize, badge, agentWords, quote, balanced]
+         badgeInset, badgeOverlap, agentSize, badge, agentWords, balanced]
     }
 
     static func == (a: TextStyle, b: TextStyle) -> Bool { a.values == b.values }
@@ -526,9 +516,6 @@ struct TextLayout {
     let padding: (top: CGFloat, side: CGFloat, bottom: CGFloat)
     /// The agent's badge across the tag's top edge, for an agent's style.
     let badge: NoteBadge?
-    /// The person's words a reply answers, on one line above its own, cut with an ellipsis to the
-    /// reply's width (`TextStyle.quote`).
-    let quote: Line?
 
     /// The least room a text without a wrap width wraps in, as a fraction of the image's width. One
     /// that starts with less to its right moves left instead of wrapping into a narrow column.
@@ -600,11 +587,9 @@ struct TextLayout {
             ranges = breaks(at: high)
         }
         let left = text.origin.x + padding.side
-        let quoteFont = style.quoteFont(size: fontSize * TextStyle.quoteSize)
-        let quoteHeight = style.quote == nil ? 0 : fontSize * TextStyle.quoteSize * style.lineHeight
         var lines: [Line] = []
         func add(_ line: CTLine) {
-            let top = text.origin.y + padding.top + quoteHeight + CGFloat(lines.count) * lineHeight
+            let top = text.origin.y + padding.top + CGFloat(lines.count) * lineHeight
             let words = CTLineGetTypographicBounds(line, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(line)
             lines.append(Line(rect: CGRect(x: left, y: top, width: max(0, words), height: lineHeight), baseline: top + baseline, ctLine: line))
         }
@@ -619,20 +604,8 @@ struct TextLayout {
         self.padding = padding
         self.badge = badge
         let words = max(lines.map(\.rect.width).max() ?? 0, (badge.map { $0.leastTagWidth(padSide: padding.side) } ?? 0) - 2 * padding.side)
-        quote = style.quote.map { said in
-            let attributes: [NSAttributedString.Key: Any] = [.font: quoteFont]
-            let oneLine = said.components(separatedBy: .newlines).joined(separator: " ")
-            let whole = CTLineCreateWithAttributedString(NSAttributedString(string: "\u{201C}\(oneLine)\u{201D}", attributes: attributes))
-            let ellipsis = CTLineCreateWithAttributedString(NSAttributedString(string: "\u{2026}", attributes: attributes))
-            let line = CTLineCreateTruncatedLine(whole, Double(words), .end, ellipsis) ?? whole
-            let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-            let ascent = CTFontGetAscent(quoteFont), descent = CTFontGetDescent(quoteFont)
-            let top = text.origin.y + padding.top
-            return Line(rect: CGRect(x: left, y: top, width: width, height: quoteHeight),
-                        baseline: top + (quoteHeight - ascent - descent) / 2 + ascent, ctLine: line)
-        }
         box = CGRect(x: text.origin.x, y: text.origin.y, width: words + 2 * padding.side,
-                     height: padding.top + quoteHeight + CGFloat(lines.count) * lineHeight + padding.bottom)
+                     height: padding.top + CGFloat(lines.count) * lineHeight + padding.bottom)
         radius = (padding.top + padding.bottom + lineHeight) / 2
     }
 

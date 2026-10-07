@@ -408,22 +408,16 @@ extension Mark {
         } else if case .text(let text) = geometry {
             let layout = TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: style.forMark(self))
             NoteTag.draw(layout, color: markStyle.color(color), edge: edge, style: markStyle, in: ctx)
-            NoteTag.drawWords(layout.lines, ink: markStyle.wordColor.cgColor, in: ctx)
-            if let quote = layout.quote {
-                NoteTag.drawWords([quote], ink: markStyle.wordColor.cgColor.copy(alpha: NoteTag.quoteAlpha) ?? markStyle.wordColor.cgColor, in: ctx)
-            }
+            NoteTag.drawWords(layout, ink: markStyle.wordColor.cgColor, in: ctx)
         }
     }
 }
 
 extension NoteTag {
-    /// How strongly a reply's quote of the person's words is drawn, against its own words' 1.
-    static let quoteAlpha: CGFloat = 0.62
-
     /// Every letter filled in `ink`, in one pass. A glyph with no outline, such as a colour emoji, is
     /// drawn as the font draws it, in its own colours.
-    static func drawWords(_ lines: [TextLayout.Line], ink: CGColor, in ctx: CGContext) {
-        let runs = lines.flatMap { line in
+    static func drawWords(_ layout: TextLayout, ink: CGColor, in ctx: CGContext) {
+        let runs = layout.lines.flatMap { line in
             ((CTLineGetGlyphRuns(line.ctLine) as? [CTRun]) ?? []).compactMap { GlyphRun($0, at: CGPoint(x: line.rect.minX, y: line.baseline)) }
         }
         let letters = CGMutablePath()

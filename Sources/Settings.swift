@@ -272,8 +272,8 @@ struct UITweaks: Codable, Equatable {
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
     // Live ink's glow along the screen's edges, which says the screen is taking ink
-    var liveInkGlowWidth = 10.0      // points
-    var liveInkGlowOpacity = 0.5
+    var liveInkGlowWidth = 22.0      // points into the screen at which the glow is a third as strong as at the edge
+    var liveInkGlowOpacity = 1.0     // near the pointer; far from it the glow is a third as bright
     var liveInkGlowDelay = 0.25      // how long the chord is held before the glow shows, unless a press shows it sooner
     var liveInkGlowFade = 0.2
     // Live ink's answers

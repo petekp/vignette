@@ -13,12 +13,16 @@ The names in brackets are `// MARK:` sections.
 |---|---|
 | The chord, inking, the overlays per screen and Space | `LiveInk.swift` (Inking, Surfaces), `LiveInkOverlay.swift`, `ModifierChord.swift` |
 | What a stroke becomes, and erasing | `InkStroke.swift`, `LiveInk.swift` (Strokes) |
+| How the person's ink looks | `LiveInkHand.swift` |
+| How an agent's shapes look | `LiveInkLight.swift` |
 | The note: opening, placing, sending, waiting on a session | `LiveInk.swift` (Asking), `LiveNotePanel.swift` |
 | What an ask sends | `LivePacket.swift` |
 | Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
 | Claude on the screen, the `claude` process | `LiveResponder.swift` |
-| The answer: reading it, drawing it, steps, the quote | `LiveAnswer.swift`, `LiveInk.swift` (Answering) |
+| The answer: reading it, drawing it, steps | `LiveAnswer.swift`, `LiveInk.swift` (Answering) |
+| The reply's popover: its header, its words, what it is laid over | `LiveReplyPopover.swift`, `LiveInkOverlay.swift` (`LiveMarksLayer.showPopover`) |
 | Where the person's note, the reply, labels and pointing marks go | `LiveAnswerLayout.swift` (Pointing, Notes) |
+| The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its action buttons, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
 | Marks following their window, holding still, hiding | `LiveWindows.swift`, `LiveAnchor.swift` (Accessibility), `LivePatch.swift` (pixels) |
 
@@ -68,13 +72,46 @@ The names in brackets are `// MARK:` sections.
   `ui.liveInkGlowDelay` instead, or shows at the first press. An overlay never becomes key. Erasing
   is a tap on a mark with the chord held, not a key: Vignette sees a key but cannot keep it from the
   frontmost app, where ⌃⌥⌫ deletes a word.
-- Marks are `Mark`s in global top-left points at a `pointScale` of 1, drawn by `ShapeMarkLayer` as
-  the editor draws them, and so is the stroke being drawn, on every screen it crosses. `InkStroke`
-  reads a stroke: a loop is the ellipse round it, and any other stroke the editor's freehand arrow
+- While inking, the edge glow (`EdgeGlow`) says the screen takes ink: a thin line on each edge in a
+  lighter shade of the person's colour, with a soft falloff inward that is a third as strong
+  `ui.liveInkGlowWidth` points in. It is brightest near the pointer and a third as bright far from
+  it. Each edge is a strip with its own radial mask that follows the pointer, so a move composites
+  four thin strips again rather than the whole screen. The strips' pictures are drawn once for each
+  screen size, width and colour.
+- Marks are `Mark`s in global top-left points at a `pointScale` of 1. `InkStroke` reads a stroke: a loop is the ellipse round it, and any other stroke the editor's freehand arrow
   (`Mark.Arrow.freehand`, at the editor's tolerances). A stroke under `ui.shortestArrow` is a tap,
   which erases the topmost mark whose stroke it is within `LiveInk.eraseReach` of, measured as the
   editor measures (`EditorGeometry.strokeDistance`), or else the smallest ellipse it is inside. The
   reach is wider than the editor's, since nothing shows which mark a tap would erase.
+- The person's marks are ink (`InkMarkLayer`), and so is the stroke being drawn, on every screen it
+  crosses. Ink is a filled outline whose width follows the hand: wider where it slowed, read from
+  the spacing of the pointer's events before smoothing (`InkHand.stroke`). It tapers where the pen
+  landed and, on a loop, where it lifted. Its edge is darker than its middle, it casts a soft
+  shadow, and while it is wet a lighter streak trails the pen. On release the stroke eases onto the
+  shape it became over `LiveMarksLayer.inkEase`, each point keeping its width, so the ellipse or
+  arrow still looks drawn by hand. `LiveInk.hands` keeps each mark's `InkHand`, its widths and
+  where each point sits on the shape, for as long as the mark is on the screen. A mark no hand drew,
+  such as an answer's mark the person picked, gets an even hand that starts at its upper left
+  (`InkHand.even`) and draws itself on.
+- An agent's rectangle, ellipse or arrow is drawn as light, not ink (`LightMarkLayer`): a core that
+  is lighter along its middle, a bloom cast by two shadows, and while it draws itself on, a glint
+  at its head. The bloom settles over `LiveMarksLayer.lightSettle` once it has drawn on. The overlay
+  cannot add light to another app's pixels, so the window behind decides the form. The ask's
+  capture keeps a coarse grid of its luminance (`LivePacket.Luminance`). A shape whose surroundings
+  average 0.45 or less (`LivePacket.Luminance.dark`) gets a white core, a rim of its colour and a glow;
+  over a lighter window its core darkens towards the edge and the bloom tints what is behind. A
+  tap would make it the person's, so while the pointer rests on it the light gives way to the
+  person's ink. The person's marks stay ink, so the material says who drew a mark as the colour
+  does (`docs/live-ink-look-2026-10-07.md`).
+- While an ask waits, the ink and the note it is about carry the thinking light
+  (`LiveMarksLayer.think`): a 40 pt band of light runs along each stroke every 1.15 s, and a sheen
+  crosses the note a third of a beat later. Every band counts from one start, so marks that began
+  waiting at different moments move together. The light fades in and out over 0.2 s. With motion
+  off the ink brightens and holds. While a follow-up waits, after a click on one of the answer's
+  actions, the reply carries it too (`ReplyView.think`): its words dim to 45%, and a band at full
+  strength crosses them on the note's beat. The band is the words' own opacity rather than a light
+  colour, so it shows on a light popover and a dark one. With motion off the words dim to 60% and
+  hold.
 - `vignette://live-ink-clear` erases every mark, and `live-ink-stroke?points=x,y;x,y` (debug) takes
   a stroke as if by hand, whether the stack is up or not, so a script can test without posting
   input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`,
@@ -111,8 +148,8 @@ The names in brackets are `// MARK:` sections.
   said gets `[n]` after the word said as stroke `n` was drawn (`SpokenNote.marked`, from
   `strokeTimes`), for the agent only; the note on screen keeps the person's words.
 - An ask sent to a session goes through Send, as one line that names the app, the window and its
-  URL. The person's words stay beside their ink as their own note, and both shimmer until the
-  session's turn ends (`LiveInk.watchWorking`, from the `turn` file the plugin's hooks write in its
+  URL. The person's words stay beside their ink as their own note, and both carry the thinking
+  light until the session's turn ends (`LiveInk.watchWorking`, from the `turn` file the plugin's hooks write in its
   inbox; a route that cannot tell stops after 3 minutes). A send that went says nothing more. The
   session sees its own change land, so the skill asks it to answer on the window only when pointing
   helps. It does that with `scripts/reply --answer`: words, and up to four marks that each
@@ -153,12 +190,29 @@ The names in brackets are `// MARK:` sections.
   for when turned on (`ScreenRecording.request`, macOS's own alert, once); a row under the switch and
   the menu's first item open its pane. On macOS 15 the first capture also raised macOS's "bypass the
   system private window picker" alert.
-- The answer streams in: `say` is drawn as a note under the person's note as its words arrive
-  (`LiveAnswer.partialSay`), left-aligned with it, so the question, the reply and its actions read
-  as one thread. The reply takes the note's place and the note goes: its words are the reply's
-  first line, small, muted and cut to the reply's width (`Mark.quote`, never written to a file).
-  Without a note, the reply goes beside the ink. It wraps at `ui.liveInkTextWidth`, and the marks draw themselves on when the
-  answer is whole (`ShapeMarkLayer.drawOn`). `LiveAnswerLayout` places them in global points inside
+- The answer streams in: `say` shows as the reply as its words arrive (`LiveAnswer.partialSay`).
+  The reply is a popover from the overlay it is drawn on (`ReplyPopover`): the agent's logo and
+  name and the person's question in quotes on one line, then the reply's words, which wrap at
+  `ui.liveInkTextWidth`. The person's note goes as the reply comes, and `Mark.quote` keeps its words
+  for the header; it is never written to a file. A whole answer hangs the reply from its first
+  pointing mark, off the middle of a circle's or a box's side or from an arrow's tail, so the words
+  lead along the mark to what it points at. That mark's label is placed with the reply, so neither
+  covers the other. An answer that points at nothing, an answer in steps, and a reply that streams
+  in hang it from the person's ink, and a streamed reply stays where it hangs as it grows
+  (`LiveAnswerLayout.grown`). It is tried below, above, right and left of what it hangs from, and
+  may hang past the window onto the visible screen (`Scene.screen`). The reply is still a text
+  `Mark`, with where it hangs in `Mark.popover`, so it follows its window, a tap erases it, and
+  Clear clears it. Its window lets every click through, as a note on the overlay does. The answer's
+  × and actions are panels of their own, child windows of the popover's window
+  (`ReplyPopover.carry`), so they take its layer: a window raised over the answer covers them, and
+  they move with it. On macOS 15 a button inside the popover took the person's keys from their app
+  (`docs/live-ink-look-2026-10-07.md`, step 6). The actions are AppKit's push buttons
+  (`LiveAnswerActions`). macOS draws them as it draws controls in an app that is not frontmost,
+  which Vignette never is while an answer shows, so none is filled with the accent colour. A click
+  keeps them: every button is disabled, the picked one gains a checkmark (`LiveAnswerActions.pick`),
+  and they stay under the reply while the session works. They go with the reply when the turn ends
+  or the session's answer replaces it. The marks draw themselves on when the answer is
+  whole (`LightMarkLayer.drawOn`). `LiveAnswerLayout` places them in global points inside
   the page (a browser's web area, from Accessibility, else the window), clear of the person's ink,
   the window's text and each other, and no note covers what the answer points at: a circle round a
   long line is a box, and a circle on a loop of the person's is an arrow. A label touches its mark
@@ -166,8 +220,9 @@ The names in brackets are `// MARK:` sections.
   arrow's tail, on the side away from its head, or against a circle's edge, with the arrow's side
   chosen for where its label fits. Later arrows come from the first one's side, with their tails
   level with its tail, so the labels stand in a column. Labels are `Mark.isLabel`, drawn without
-  the agent's badge, so only the reply names the agent. The reply follows the ink it was about, a
-  pointing mark is anchored to what it points at, and a label follows its mark: marks that all
+  the agent's badge, so only the reply names the agent. The reply follows the mark it hangs from or
+  the ink it was about, a pointing mark is anchored to what it points at, and a label follows its
+  mark: marks that all
   followed the ink drifted off their targets when the session's edit moved the content under the
   ink. The person's ink counts as its strokes, not its bounding box (`LiveAnswerLayout.strokes`),
   so a loop round a whole page leaves room inside it. While the session works, and while the done
@@ -177,7 +232,35 @@ The names in brackets are `// MARK:` sections.
   at its button fades the answer's other findings (`LiveWindows.light`). They are agent `Mark`s on the same surfaces, so a tap
   erases them (a note's tag counts) and Clear clears them, and the next ask takes them off. Notes on
   the overlay are `NoteLayer`s, a bitmap `Mark.draw` makes on the main thread, not `MarkLayers`,
-  which draws a drawing on an image.
+  which draws a drawing on an image. The reply is the exception: its popover draws it.
+- An answer's `focus` mark pulls the person's eye to its target, as a camera racks focus
+  (`LiveFocus.swift`). It draws no stroke. The layout gives it the target's rect, padded 8 by 6 pt,
+  or with `zoom` the lens's rect, so labels, the reply and the other marks keep clear of it and the
+  reply can hang from it. When the answer is shown, Vignette captures the window once, without its
+  own overlays, and `FocusPicture.make` softens it off the main thread. Rack focus blurs the window
+  5 pt, keeps 20% of its colour and dims it 10%, or 35% on a dark window. A mask cuts the target out
+  of that picture with an edge that softens over 16 pt. The loupe blurs the window lightly, dims it
+  22%, or 45% on a dark window, and shows the target at 1.7× under a lens with a rim and a shadow.
+  The picture sits under every other mark, so the person's ink, the labels and the reply stay sharp.
+  Several focus marks make a tour. One shows at a time, and the next comes in before the last goes.
+  Each holds for the reply's sentence about it, read at 0.3 s a word, at least 2 s; the last holds
+  at least 2.5 s and then lets go. The reply moves to hang from each stop, with that stop's label
+  put back beside it (`LiveAnswerLayout.placed`'s `tour`). It keeps its side when it can and
+  slides there on a spring over 0.45 s (`ReplyPopover.slide`), since AppKit moves a popover in one
+  frame when its positioning rect changes; it stays at the last stop when the tour ends. While a
+  stop shows, the window's other marks fade to 20% over 0.18 s (`LiveInk.lightStop`): all but the
+  stop, the reply, and the person's ink centred on the stop's target or round it; ink that only
+  grazes it, as a loop round the next line does, fades. `LiveWindows` keeps each mark's strength,
+  so a mark hidden by a resize or its content moving comes back faint. They come back when the
+  focus lets go. The focus
+  lets go at once on a key, a click, a scroll, the ink chord, or the pointer moving 120 pt from
+  where it was when the focus came in. A key is heard only while Vignette is trusted for
+  Accessibility, which the chord already needs. A focus comes in over 0.45 s and leaves as every
+  answer mark leaves (`LiveMarksLayer.removalFade`). A tap erases it. In an answer in steps it is a
+  circle, since a step is something to click. `Mark.focus` carries the target and the picture and is
+  never written to a file. A mark pinned to a window moves into the window's coordinates with its
+  focus (`LiveWindows.translated`). `[state] liveInk.focus` names the stop shown and whether it
+  zooms, and `[live-ink] focus` lines log each stop and why the focus let go.
 - Vignette's own words about an ask (sending, sent, failed, why) are a note beside the ink in the
   person's colour without a badge, not an agent mark, and are not ink: the next ask is not about them.
 - A session picked in the note's target gets the picture through `ScreenshotRequests.send`, as Send

@@ -55,6 +55,8 @@ final class LiveInkOverlay: NSPanel {
         hidesOnDeactivate = false
         animationBehavior = .none
         contentView = canvas
+        canvas.marksLayer.host = canvas
+        canvas.marksLayer.sharing = sharingType
         fit(to: screen)
         orderFrontRegardless()
     }
@@ -94,8 +96,9 @@ final class LiveInkOverlay: NSPanel {
 
     /// `drawingOn` names the marks that draw themselves on as they appear, in the order of `marks`.
     func show(_ marks: [Mark], markStyle: MarkStyle, textStyle: TextStyle, drawingOn: Set<Mark.ID> = [], pulsing: Set<Mark.ID> = [],
-              finishing: [Mark.ID: LiveMarksLayer.Finish] = [:]) {
-        canvas.show(marks, markStyle: markStyle, textStyle: textStyle, drawingOn: drawingOn, pulsing: pulsing, finishing: finishing)
+              finishing: [Mark.ID: LiveMarksLayer.Finish] = [:], overDark: Set<Mark.ID> = [], hands: [Mark.ID: InkHand] = [:]) {
+        canvas.marksLayer.show(marks, markStyle: markStyle, textStyle: textStyle, drawingOn: drawingOn, pulsing: pulsing,
+                               finishing: finishing, overDark: overDark, hands: hands)
     }
 
     /// The stroke being drawn on any screen, in global top-left points, so one that crosses onto
@@ -104,11 +107,14 @@ final class LiveInkOverlay: NSPanel {
         canvas.showPen(points, markStyle: markStyle)
     }
 
-    func showGlow(_ on: Bool, ui: UITweaks, color: CGColor) {
-        canvas.glow.show(on, ui: ui, color: color)
+    /// `pen` is in global top-left points; the glow follows the pointer over this screen after that.
+    func showGlow(_ on: Bool, ui: UITweaks, color: CGColor, pen: CGPoint?) {
+        canvas.showGlow(on, ui: ui, color: color, pen: pen)
     }
 
     func preview(_ preview: LiveMarksLayer.Preview?) { canvas.marksLayer.preview(preview) }
+
+    func popover(of id: Mark.ID) -> ReplyPopover? { canvas.marksLayer.popover(of: id) }
 
     /// The canvas: the marks, the stroke being drawn, and the glow. Flipped, so its layers run from
     /// the screen's top-left corner, y down, as the marks' coordinates do.
@@ -123,7 +129,7 @@ final class LiveInkOverlay: NSPanel {
         /// The marks, in global points: moved by the screen's origin so each lands on this screen.
         let marksLayer: LiveMarksLayer
         /// The stroke being drawn, above the marks, moved as they are.
-        private let pen: ShapeMarkLayer
+        private let pen: InkMarkLayer
         private var stroke: [CGPoint] = []
         private let scale: CGFloat
 
@@ -132,13 +138,13 @@ final class LiveInkOverlay: NSPanel {
         init(frame: CGRect, scale: CGFloat) {
             self.scale = scale
             glow = EdgeGlow(scale: scale)
-            pen = ShapeMarkLayer(scale: scale)
+            pen = InkMarkLayer(scale: scale)
             marksLayer = LiveMarksLayer(scale: scale)
             super.init(frame: frame)
             layer = host
             wantsLayer = true
             host.contentsScale = scale
-            for layer in [marksLayer, pen.root] {
+            for layer in [marksLayer, pen] {
                 layer.anchorPoint = .zero
                 host.addSublayer(layer)
             }
@@ -151,7 +157,7 @@ final class LiveInkOverlay: NSPanel {
             self.origin = origin
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            for layer in [marksLayer, pen.root] {
+            for layer in [marksLayer, pen] {
                 layer.setAffineTransform(CGAffineTransform(translationX: -origin.x, y: -origin.y))
             }
             glow.frame = bounds
@@ -166,35 +172,35 @@ final class LiveInkOverlay: NSPanel {
 
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-        func show(_ marks: [Mark], markStyle: MarkStyle, textStyle: TextStyle, drawingOn: Set<Mark.ID>, pulsing: Set<Mark.ID>,
-                  finishing: [Mark.ID: LiveMarksLayer.Finish]) {
-            marksLayer.show(marks, markStyle: markStyle, textStyle: textStyle, drawingOn: drawingOn, pulsing: pulsing, finishing: finishing)
-        }
-
         func showPen(_ points: [CGPoint], markStyle: MarkStyle) {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             defer { CATransaction.commit() }
-            let smoothed = FreehandStroke.smoothed(points, spacing: EditorCore.strokeSpacing)
-            pen.root.isHidden = smoothed.count < 2
-            guard smoothed.count > 1 else { return }
-            let path = CGMutablePath()
-            path.addLines(between: smoothed)
-            pen.show(MarkShape(stroked: path, filled: nil, lineWidth: markStyle.strokeWidth), color: .person, pointScale: 1, markStyle: markStyle)
+            let stroke = InkHand.stroke(points, tapersEnd: false)
+            pen.isHidden = stroke.points.count < 2
+            guard stroke.points.count > 1 else { return }
+            pen.showPen(stroke, markStyle: markStyle)
+        }
+
+        func showGlow(_ on: Bool, ui: UITweaks, color: CGColor, pen: CGPoint?) {
+            glow.show(on, ui: ui, color: color, pen: pen.map { CGPoint(x: $0.x - origin.x, y: $0.y - origin.y) })
         }
 
         override func mouseMoved(with event: NSEvent) {
+            glow.follow(convert(event.locationInWindow, from: nil))
             guard !isTracking else { return }
             onHover?(location(of: event))
         }
 
         override func mouseDown(with event: NSEvent) {
+            glow.follow(convert(event.locationInWindow, from: nil))
             stroke = [location(of: event)]
             onStrokeMoved?(stroke)
         }
 
         override func mouseDragged(with event: NSEvent) {
             guard isTracking else { return }
+            glow.follow(convert(event.locationInWindow, from: nil))
             stroke.append(location(of: event))
             onStrokeMoved?(stroke)
         }
@@ -237,12 +243,16 @@ final class LiveMarksLayer: CALayer {
         let holder = CALayer()
         /// Inside the holder: dimmed for a tap's preview.
         let previewed = CALayer()
-        var shape: ShapeMarkLayer?
+        /// A person's shape, or an agent's shown as the person's while a tap would pick it.
+        var ink: InkMarkLayer?
+        /// An agent's shape.
+        var light: LightMarkLayer?
         var note: NoteLayer?
+        /// An agent's focus, under every other mark.
+        var focus: FocusLayer?
         var mark: Mark?
         /// The done animation has started on it; the mark is removed once it ends.
         var finished = false
-        var layer: CALayer { shape?.root ?? note ?? holder }
     }
 
     /// What a tap where the pointer is would do, shown while the chord is held: a mark it would erase
@@ -268,6 +278,11 @@ final class LiveMarksLayer: CALayer {
     private var previewing: Preview?
     private var markStyle: MarkStyle?
     private let scale: CGFloat
+    /// An answer's reply is a popover from this view, the one whose layer holds the marks, rather
+    /// than a note drawn here. Its window shares with captures as `sharing` says, as the overlay does.
+    weak var host: NSView?
+    var sharing: NSWindow.SharingType = .none
+    private var popovers: [Mark.ID: ReplyPopover] = [:]
 
     init(scale: CGFloat) {
         self.scale = scale
@@ -284,9 +299,11 @@ final class LiveMarksLayer: CALayer {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     /// `drawingOn` names the marks that draw themselves on as they appear, in the order of `marks`,
-    /// `pulsing` the ones that shimmer, and `finishing` the ones that leave, and how.
+    /// `pulsing` the ones that carry the thinking light, `finishing` the ones that leave, and how, `overDark` the
+    /// agent's shapes whose window is dark behind them, and `hands` how the person drew their marks. A
+    /// person's mark that draws itself on eases from where the hand drew it, when its hand is known.
     func show(_ marks: [Mark], markStyle: MarkStyle, textStyle: TextStyle, drawingOn: Set<Mark.ID>, pulsing: Set<Mark.ID>,
-              finishing: [Mark.ID: Finish] = [:]) {
+              finishing: [Mark.ID: Finish] = [:], overDark: Set<Mark.ID> = [], hands: [Mark.ID: InkHand] = [:]) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let ids = Set(marks.map(\.id))
@@ -294,9 +311,11 @@ final class LiveMarksLayer: CALayer {
         var delay: CFTimeInterval = 0
         let motion = Settings.shared.motionUI
         self.markStyle = markStyle
-        // One check for what finishes together: on its note, or its last shape when it has none.
-        let done = marks.filter { finishing[$0.id] == .done }
+        // One check for what finishes together: on its note, or its last shape when it has none. A
+        // reply's popover would cover a check on it.
+        let done = marks.filter { finishing[$0.id] == .done && $0.popover == nil }
         let checked = (done.first { if case .text = $0.geometry { true } else { false } } ?? done.last)?.id
+        var appearing = Set<Mark.ID>()
         for mark in marks {
             var record = drawn[mark.id] ?? Drawn()
             let new = drawn[mark.id] == nil
@@ -307,16 +326,42 @@ final class LiveMarksLayer: CALayer {
                 addSublayer(record.holder)
             }
             record.mark = mark
-            if case .text = mark.geometry {
+            if mark.popover != nil, let host {
+                if popovers[mark.id] == nil { popovers[mark.id] = ReplyPopover(host: host, sharing: sharing) }
+                if drawingOn.contains(mark.id) { appearing.insert(mark.id) }
+            } else if let place = mark.focus {
+                let focus = record.focus ?? FocusLayer()
+                focus.show(place, spot: mark.shapeExtent ?? place.target)
+                if record.focus == nil {
+                    record.previewed.addSublayer(focus.root)
+                    record.holder.zPosition = -1
+                    record.focus = focus
+                }
+                if drawingOn.contains(mark.id) { focus.appear(duration: Focus.fade * Settings.shared.motionScale) }
+            } else if case .text = mark.geometry {
                 let note = record.note ?? NoteLayer(scale: scale)
                 note.show(mark, textStyle: textStyle, markStyle: markStyle)
                 if record.note == nil { record.previewed.addSublayer(note); record.note = note }
                 if drawingOn.contains(mark.id) { note.springIn(after: delay, duration: motion.liveInkDrawOn); delay += motion.liveInkDrawOn * 0.3 }
+            } else if mark.agent {
+                let light = record.light ?? LightMarkLayer(scale: scale)
+                light.show(mark, markStyle: markStyle, dark: overDark.contains(mark.id))
+                if record.light == nil { record.previewed.addSublayer(light.root); record.light = light }
+                if drawingOn.contains(mark.id) {
+                    light.drawOn(after: delay, duration: motion.liveInkDrawOn, settle: Self.lightSettle * Settings.shared.motionScale)
+                    delay += motion.liveInkDrawOn * 0.6
+                }
             } else {
-                let shape = record.shape ?? ShapeMarkLayer(scale: scale)
-                shape.show(previewing == .pick(mark.id) ? Self.persons(mark) : mark, pointScale: 1, markStyle: markStyle)
-                if record.shape == nil { record.previewed.addSublayer(shape.root); record.shape = shape }
-                if drawingOn.contains(mark.id) { shape.drawOn(after: delay, duration: motion.liveInkDrawOn); delay += motion.liveInkDrawOn * 0.6 }
+                let ink = record.ink ?? InkMarkLayer(scale: scale)
+                let hand = hands[mark.id]
+                ink.show(mark, hand: hand, markStyle: markStyle)
+                if record.ink == nil { record.previewed.addSublayer(ink); record.ink = ink }
+                if drawingOn.contains(mark.id), let hand {
+                    ink.ease(from: hand.drawn(for: mark), duration: Self.inkEase * Settings.shared.motionScale)
+                } else if drawingOn.contains(mark.id) {
+                    ink.drawOn(after: delay, duration: motion.liveInkDrawOn)
+                    delay += motion.liveInkDrawOn * 0.6
+                }
             }
             if let how = finishing[mark.id], !record.finished {
                 record.finished = true
@@ -324,14 +369,27 @@ final class LiveMarksLayer: CALayer {
             }
             drawn[mark.id] = record
         }
-        let shimmering = marks.filter { pulsing.contains($0.id) && finishing[$0.id] == nil }
-        let area = shimmering.compactMap { drawn[$0.id].flatMap(Self.extent(of:)) }.reduce(CGRect.null) { $0.union($1) }
         for mark in marks {
             guard let record = drawn[mark.id] else { continue }
-            shimmer(record, over: shimmering.contains { $0.id == mark.id } && !area.isNull ? area : nil)
+            let thinking = pulsing.contains(mark.id) && finishing[mark.id] == nil
+            think(record, thinking, markStyle: markStyle)
+            popovers[mark.id]?.think(thinking)
         }
         CATransaction.commit()
+        for mark in marks where popovers[mark.id] != nil && finishing[mark.id] == nil {
+            showPopover(of: mark.id, appearing: appearing.contains(mark.id))
+        }
     }
+
+    /// Puts a reply's popover where its mark is now, faded as its mark is, over `fade` seconds.
+    private func showPopover(of id: Mark.ID, appearing: Bool = false, fade: CFTimeInterval = 0) {
+        guard let popover = popovers[id], let record = drawn[id], let mark = record.mark, let place = mark.popover,
+              let hostLayer = host?.layer else { return }
+        popover.show(mark, place: place, at: record.holder.convert(place.at, to: hostLayer), appearing: appearing)
+        popover.fade(to: CGFloat(record.holder.opacity * record.previewed.opacity), duration: fade)
+    }
+
+    func popover(of id: Mark.ID) -> ReplyPopover? { popovers[id] }
 
     /// Shows what a tap would do to one mark, and puts the last one back, over a short fade.
     func preview(_ preview: Preview?) {
@@ -350,9 +408,28 @@ final class LiveMarksLayer: CALayer {
         switch preview {
         case .erase:
             record.previewed.opacity = on ? 0.35 : 1
+            showPopover(of: preview.id, fade: CATransaction.animationDuration())
         case .pick:
-            guard let mark = record.mark, let markStyle else { return }
-            record.shape?.show(on ? Self.persons(mark) : mark, pointScale: 1, markStyle: markStyle)
+            guard let mark = record.mark, let markStyle, let light = record.light else { return }
+            // The light gives way to the person's ink, which is what a tap would make it.
+            let ink: InkMarkLayer
+            if let shown = record.ink {
+                ink = shown
+            } else {
+                ink = InkMarkLayer(scale: scale)
+                ink.show(Self.persons(mark), hand: nil, markStyle: markStyle)
+                record.previewed.addSublayer(ink)
+                var record = record
+                record.ink = ink
+                drawn[preview.id] = record
+                // A layer added in this transaction takes its first opacity without animating.
+                let appear = CABasicAnimation(keyPath: "opacity")
+                appear.fromValue = 0
+                appear.duration = CATransaction.animationDuration()
+                ink.add(appear, forKey: "pick")
+            }
+            ink.opacity = on ? 1 : 0
+            light.root.opacity = on ? 0 : 1
         }
     }
 
@@ -370,13 +447,14 @@ final class LiveMarksLayer: CALayer {
     func removeAll() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for id in drawn.keys { remove(id) }
+        for id in Array(drawn.keys) { remove(id) }
         CATransaction.commit()
     }
 
     /// Fades a mark out and lets it go, rather than taking it off in a frame.
     private func remove(_ id: Mark.ID) {
         if previewing?.id == id { previewing = nil }
+        popovers.removeValue(forKey: id)?.close(fade: Self.removalFade)
         guard let holder = drawn.removeValue(forKey: id)?.holder else { return }
         let fade = Self.removalFade
         guard fade > 0, holder.opacity > 0 else { holder.removeFromSuperlayer(); return }
@@ -404,6 +482,7 @@ final class LiveMarksLayer: CALayer {
         CATransaction.setDisableActions(true)
         holder.position = position
         CATransaction.commit()
+        showPopover(of: id)
         guard duration > 0 else { return }
         let glide = CABasicAnimation(keyPath: "position")
         glide.fromValue = NSValue(point: from)
@@ -447,6 +526,7 @@ final class LiveMarksLayer: CALayer {
         CATransaction.setDisableActions(true)
         holder.opacity = target
         CATransaction.commit()
+        showPopover(of: id, fade: duration * Double(abs(target - from)))
         guard duration > 0, from != target else { holder.removeAnimation(forKey: "fade"); return }
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = from
@@ -456,44 +536,54 @@ final class LiveMarksLayer: CALayer {
         holder.add(fade, forKey: "fade")
     }
 
-    /// What is waiting for its answer shimmers: a lighter band sweeps across it, the rest at full
-    /// strength, so it reads as being worked on. One band crosses every mark of the ask, as if they
-    /// were one picture: each mark's mask spans `area`, the marks' extent in their own coordinates,
-    /// and every sweep keeps time with `shimmerEpoch`. A mask is in its layer's coordinates, which
-    /// are the marks' for a shape and start at the note's corner for a note.
-    private func shimmer(_ record: Drawn, over area: CGRect?) {
-        let layer = record.layer
-        let frame = area.map { area in record.note.map { area.offsetBy(dx: -$0.frame.minX, dy: -$0.frame.minY) } ?? area }
-        guard let frame, !frame.isEmpty else {
-            if layer.mask is ShimmerMask { layer.mask = nil }
+    /// What is waiting for its answer carries the thinking light: a short band of light runs along
+    /// each of its strokes, and a sheen crosses its note a third of a beat later, so the marks read as
+    /// being worked on. Every band and sheen keeps time with `thinkingEpoch`, so marks that start at
+    /// different moments move together. With motion off the ink brightens and holds. The light fades
+    /// in and out; one fading out has opacity 0 and counts as gone.
+    private func think(_ record: Drawn, _ on: Bool, markStyle: MarkStyle) {
+        let lit = { (layer: CALayer) in (layer is ThinkingBand || layer is NoteSheen) && layer.opacity > 0 }
+        let shown = record.previewed.sublayers?.first(where: lit) ?? record.note?.sublayers?.first(where: lit)
+        let fade = Self.thinkingFade * Settings.shared.motionScale
+        guard on, let mark = record.mark else {
+            guard let shown else { return }
+            let from = shown.presentation()?.opacity ?? shown.opacity
+            shown.opacity = 0
+            guard fade > 0 else { shown.removeFromSuperlayer(); return }
+            CATransaction.begin()
+            CATransaction.setCompletionBlock { shown.removeFromSuperlayer() }
+            let out = CABasicAnimation(keyPath: "opacity")
+            out.fromValue = from
+            out.toValue = 0
+            out.duration = fade
+            shown.add(out, forKey: "fade")
+            CATransaction.commit()
             return
         }
-        if let band = layer.mask as? ShimmerMask { band.frame = frame; return }
-        let band = ShimmerMask()
-        band.frame = frame
-        let light = CGColor(gray: 1, alpha: 0.4), full = CGColor(gray: 1, alpha: 1)
-        band.startPoint = CGPoint(x: 0, y: 0.3)
-        band.endPoint = CGPoint(x: 1, y: 0.7)
-        layer.mask = band
-        guard Settings.shared.motionScale > 0 else {
-            band.colors = [CGColor(gray: 1, alpha: 0.7), CGColor(gray: 1, alpha: 0.7)]
+        guard shown == nil else { return }
+        let still = Settings.shared.motionScale == 0
+        let light: CALayer
+        if let note = record.note {
+            light = NoteSheen(over: note, still: still)
+            note.addSublayer(light)
+        } else if let path = record.ink?.centreLine ?? mark.shape(pointScale: 1, markStyle: markStyle)?.stroked {
+            light = ThinkingBand(along: path, width: markStyle.strokeWidth, scale: scale, still: still)
+            record.previewed.addSublayer(light)
+        } else {
             return
         }
-        band.colors = [full, light, full]
-        band.locations = [0, 0.15, 0.3]
-        let sweep = CABasicAnimation(keyPath: "locations")
-        sweep.fromValue = [-0.3, -0.15, 0]
-        sweep.toValue = [1, 1.15, 1.3]
-        sweep.duration = 1.4
-        sweep.repeatCount = .infinity
-        sweep.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        sweep.beginTime = band.convertTime(Self.shimmerEpoch, from: nil)
-        band.add(sweep, forKey: "sweep")
+        guard fade > 0 else { return }
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0
+        fadeIn.duration = fade
+        light.add(fadeIn, forKey: "fade")
     }
 
-    /// When the first shimmer began, which every sweep counts from, so marks that start shimmering
-    /// at different moments sweep together.
-    private static let shimmerEpoch = CACurrentMediaTime()
+    /// When the first thinking light began, which every band and sheen counts from, how long one
+    /// takes to cross its mark, and how long the light takes to come and go at full motion.
+    nonisolated static let thinkingEpoch = CACurrentMediaTime()
+    nonisolated static let thinkingPeriod: CFTimeInterval = 1.15
+    static let thinkingFade: CFTimeInterval = 0.2
 
     /// Done: the mark turns green, the note of the ask, or its last shape when it has none, raises a
     /// small green check, and then the mark leaves. Dismissed: it leaves at once. The layers stay at
@@ -501,7 +591,12 @@ final class LiveMarksLayer: CALayer {
     private func finish(_ record: Drawn, _ how: Finish, check: Bool, markStyle: MarkStyle, textStyle: TextStyle) {
         let motion = Settings.shared.motionScale
         let now = record.previewed.convertTime(CACurrentMediaTime(), from: nil)
-        guard motion > 0, let mark = record.mark else {
+        // A reply's popover stays while the marks it answered turn green, and leaves with them.
+        if let popover = record.mark.flatMap({ popovers[$0.id] }) {
+            return popover.close(after: how == .done ? Self.doneHold * motion : 0, fade: motion > 0 ? Self.doneAway * motion : Self.doneFade)
+        }
+        // A focus has nothing to turn green.
+        guard motion > 0, let mark = record.mark, record.focus == nil else {
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = 1
             fade.toValue = 0
@@ -527,6 +622,8 @@ final class LiveMarksLayer: CALayer {
             let copy = NoteLayer(scale: scale)
             copy.show(mark, textStyle: textStyle, markStyle: green)
             twin = copy
+        } else if let ink = record.ink {
+            twin = ink.twin(in: green)
         } else {
             let copy = ShapeMarkLayer(scale: scale)
             copy.show(mark, pointScale: 1, markStyle: green)
@@ -573,6 +670,9 @@ final class LiveMarksLayer: CALayer {
                 undraw.isRemovedOnCompletion = false
                 undraw.timingFunction = CAMediaTimingFunction(name: .easeIn)
                 shape.add(undraw, forKey: "done")
+            }
+            for ink in (record.previewed.sublayers ?? []).compactMap({ $0 as? InkMarkLayer }) {
+                ink.undraw(at: now + hold * 0.8, duration: away)
             }
         }
         let fade = CABasicAnimation(keyPath: "opacity")
@@ -659,12 +759,6 @@ final class LiveMarksLayer: CALayer {
         return badge
     }
 
-    /// What a mark draws, in the marks' coordinates: a note's bitmap, or a shape's extent with room
-    /// for its edge and shadow.
-    private static func extent(of record: Drawn) -> CGRect? {
-        record.note?.frame ?? record.mark?.shapeExtent?.insetBy(dx: -shimmerMargin, dy: -shimmerMargin)
-    }
-
     private static func shapeLayers(in layer: CALayer) -> [CAShapeLayer] {
         ([layer as? CAShapeLayer].compactMap { $0 }) + (layer.sublayers ?? []).flatMap(shapeLayers(in:))
     }
@@ -674,16 +768,95 @@ final class LiveMarksLayer: CALayer {
     static let doneHold: CFTimeInterval = 0.9
     static let doneAway: CFTimeInterval = 0.45
     static let doneFade: CFTimeInterval = 0.3
+    /// How long an agent's light takes to settle once it has drawn itself on, and how long the
+    /// person's ink takes to ease onto its shape, at full motion.
+    static let lightSettle: CFTimeInterval = 0.9
+    static let inkEase: CFTimeInterval = 0.3
     /// The done state's green, macOS's system green in light mode, and the check's diameter in pt.
     static let doneColor = SRGB(hex: "#34C759")!
     private static let checkSize: CGFloat = 16
-
-    /// Room round a shape for its edge and shadow, which the mask would otherwise cut off.
-    private static let shimmerMargin: CGFloat = 16
 }
 
-/// The mask that makes a mark shimmer, told apart from any other mask its layer might have.
-private final class ShimmerMask: CAGradientLayer {}
+/// The thinking light on one stroke: a band of light `bandLength` long that runs along it from start
+/// to end, starting and finishing `runUp` off the stroke so each pass ends in a short rest.
+private final class ThinkingBand: CAShapeLayer {
+    init(along path: CGPath, width: CGFloat, scale: CGFloat, still: Bool) {
+        super.init()
+        anchorPoint = .zero
+        contentsScale = scale
+        self.path = path
+        fillColor = nil
+        strokeColor = CGColor(gray: 1, alpha: 0.85)
+        lineWidth = width * 0.7
+        lineCap = .round
+        lineJoin = .round
+        shadowColor = CGColor(gray: 1, alpha: 1)
+        shadowOffset = .zero
+        shadowRadius = 4
+        shadowOpacity = 0.9
+        guard !still else { opacity = 0.35; return }
+        let length = max(path.length, 1)
+        let reach = Self.bandLength / length, runUp = Self.runUp / length
+        // Core Animation clamps the ends to the stroke, so the band grows in at the start and shrinks
+        // away at the end.
+        let end = CABasicAnimation(keyPath: "strokeEnd")
+        end.fromValue = -runUp
+        end.toValue = 1 + reach + runUp
+        let start = CABasicAnimation(keyPath: "strokeStart")
+        start.fromValue = -runUp - reach
+        start.toValue = 1 + runUp
+        let run = CAAnimationGroup()
+        run.animations = [end, start]
+        run.duration = LiveMarksLayer.thinkingPeriod
+        run.repeatCount = .infinity
+        run.beginTime = convertTime(LiveMarksLayer.thinkingEpoch, from: nil)
+        add(run, forKey: "think")
+    }
+
+    override init(layer: Any) { super.init(layer: layer) }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    static let bandLength: CGFloat = 40
+    static let runUp: CGFloat = 40
+}
+
+/// The thinking light on a note: a sheen that crosses its tag a third of a beat after the band on
+/// the ink, masked by the note's own picture so only the tag catches it.
+private final class NoteSheen: CAGradientLayer {
+    init(over note: NoteLayer, still: Bool) {
+        super.init()
+        frame = note.bounds
+        contentsScale = note.contentsScale
+        let tag = CALayer()
+        tag.frame = bounds
+        tag.contents = note.contents
+        tag.contentsScale = note.contentsScale
+        mask = tag
+        startPoint = CGPoint(x: 0, y: 0.3)
+        endPoint = CGPoint(x: 1, y: 0.7)
+        guard !still else {
+            colors = [CGColor(gray: 1, alpha: 0.15), CGColor(gray: 1, alpha: 0.15)]
+            return
+        }
+        let clear = CGColor(gray: 1, alpha: 0), lit = CGColor(gray: 1, alpha: 0.42)
+        colors = [clear, lit, clear]
+        locations = [-0.3, -0.15, 0]
+        let sweep = CABasicAnimation(keyPath: "locations")
+        sweep.fromValue = [-0.3, -0.15, 0]
+        sweep.toValue = [1, 1.15, 1.3]
+        sweep.duration = LiveMarksLayer.thinkingPeriod
+        sweep.repeatCount = .infinity
+        sweep.beginTime = convertTime(LiveMarksLayer.thinkingEpoch, from: nil)
+        // Two thirds of a beat ahead is a third behind: the sheen follows the band.
+        sweep.timeOffset = LiveMarksLayer.thinkingPeriod * 0.65
+        add(sweep, forKey: "think")
+    }
+
+    override init(layer: Any) { super.init(layer: layer) }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+}
 
 /// A note on the live screen: its tag, badge and words drawn by the renderer into one bitmap at the
 /// screen's scale, as `Mark.draw` draws a note on a screenshot. A few short notes, so on the main thread.
@@ -742,38 +915,42 @@ final class NoteLayer: CALayer {
     }
 }
 
-/// A soft band of colour along the screen's edges, which says the screen is taking ink.
+/// A thin bright line along the screen's edges with a soft glow falling off inward, brightest near
+/// the pen, which says the screen is taking ink.
 @MainActor
 final class EdgeGlow: CALayer {
-    private let band = CAShapeLayer()
+    /// The glow, cut into a strip along each edge as deep as it reaches: the top and bottom span the
+    /// width and the sides fit between them. Each strip has its own mask for the brightness round
+    /// the pen, so following the pen composites the strips again rather than the whole screen.
+    private let strips: [Strip]
+    /// Where the pen is, in this layer's points.
+    private var pen: CGPoint?
+    /// What the strips' pictures were drawn for.
+    private var laid: (size: CGSize, reach: CGFloat, color: CGColor)?
 
     /// Sublayers of a layer-hosting view do not take the screen's scale from it.
     init(scale: CGFloat) {
+        strips = (0..<4).map { _ in Strip(scale: scale) }
         super.init()
         contentsScale = scale
-        band.contentsScale = scale
-        band.fillColor = nil
-        band.shadowOffset = .zero
-        addSublayer(band)
+        strips.forEach { addSublayer($0.layer) }
         opacity = 0
     }
 
-    override init(layer: Any) { super.init(layer: layer) }
+    override init(layer: Any) {
+        strips = []
+        super.init(layer: layer)
+    }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func show(_ on: Bool, ui: UITweaks, color: CGColor) {
+    /// Shows or hides the glow, `pen` in this layer's points, drawn in a lighter `color`.
+    func show(_ on: Bool, ui: UITweaks, color: CGColor, pen: CGPoint?) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let width = ui.liveInkGlowWidth
-        band.path = CGPath(rect: bounds, transform: nil)
-        // Without a shadow path, Core Animation finds the shadow's shape from the band's pixels, offscreen.
-        band.shadowPath = band.path?.copy(strokingWithWidth: width, lineCap: .butt, lineJoin: .miter, miterLimit: 10)
-        band.lineWidth = width
-        band.strokeColor = color
-        band.shadowColor = color
-        band.shadowRadius = width
-        band.shadowOpacity = 1
+        if on { lay(out: ui.liveInkGlowWidth, color: color.mixed(with: .white, Self.lighten)) }
+        if let pen { self.pen = pen }
+        follow()
         let target: Float = on ? Float(ui.liveInkGlowOpacity) : 0
         let from = presentation()?.opacity ?? opacity
         opacity = target
@@ -786,5 +963,123 @@ final class EdgeGlow: CALayer {
         fade.toValue = target
         fade.duration = ui.liveInkGlowFade
         add(fade, forKey: "opacity")
+    }
+
+    /// Moves the brightest part of the glow to `pen`, in this layer's points.
+    func follow(_ pen: CGPoint) {
+        guard opacity > 0 else { return }
+        self.pen = pen
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        follow()
+        CATransaction.commit()
+    }
+
+    /// Draws the line and the glow into each strip, unless they are drawn already for this size, reach
+    /// and colour.
+    private func lay(out reach: CGFloat, color: CGColor) {
+        let size = bounds.size
+        if let laid, laid.size == size, laid.reach == reach, laid.color == color { return }
+        laid = (size, reach, color)
+        let depth = min(reach * Self.tail, size.width / 2, size.height / 2)
+        let rects = [CGRect(x: 0, y: 0, width: size.width, height: depth),
+                     CGRect(x: 0, y: size.height - depth, width: size.width, height: depth),
+                     CGRect(x: 0, y: depth, width: depth, height: size.height - depth * 2),
+                     CGRect(x: size.width - depth, y: depth, width: depth, height: size.height - depth * 2)]
+        for (strip, rect) in zip(strips, rects) {
+            strip.layer.frame = rect
+            strip.layer.contents = Self.picture(of: rect, on: size, scale: contentsScale, reach: reach, color: color)
+        }
+    }
+
+    /// Sets each strip's mask from `pen`: full brightness under it, falling to `floor` far from it.
+    private func follow() {
+        let size = bounds.size
+        guard let pen, size.width > 0, size.height > 0 else { return }
+        // A Gaussian of the distance from the pen, as stops of a radial gradient, which reaches
+        // twice the screen's diagonal so no strip is outside it.
+        let reach = 2 * hypot(size.width, size.height), spread = Self.spread * size.height
+        let stops: [CGFloat] = [0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.45, 1]
+        let colors = stops.map { stop -> CGColor in
+            let near = exp(-pow(stop * reach / spread, 2))
+            return CGColor(gray: 1, alpha: Self.floor + (1 - Self.floor) * near)
+        }
+        for strip in strips {
+            strip.brightness(at: pen, reach: reach, stops: stops.map { NSNumber(value: Double($0)) }, colors: colors)
+        }
+    }
+
+    /// The line and the glow over one strip of the screen, as a bitmap: each pixel's strength comes
+    /// from its distance to the nearest edge, so the corners meet on their diagonals.
+    private static func picture(of rect: CGRect, on screen: CGSize, scale: CGFloat, reach: CGFloat, color: CGColor) -> CGImage? {
+        let width = Int((rect.width * scale).rounded()), height = Int((rect.height * scale).rounded())
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        guard width > 0, height > 0, reach > 0,
+              let rgb = color.converted(to: space, intent: .defaultIntent, options: nil)?.components, rgb.count >= 3,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = context.data else { return nil }
+        // The strength at each whole pixel of distance, as far as a strip reaches.
+        let strengths = (0...Int(reach * tail * scale) + 1).map { step -> CGFloat in
+            let distance = (CGFloat(step) + 0.5) / scale
+            return min(1, lineAlpha * exp(-distance / lineFalloff) + glowAlpha * exp(-distance / reach))
+        }
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        for row in 0..<height {
+            let y = rect.minY + (CGFloat(row) + 0.5) / scale
+            let fromTopOrBottom = min(y, screen.height - y)
+            for column in 0..<width {
+                let x = rect.minX + (CGFloat(column) + 0.5) / scale
+                let distance = min(fromTopOrBottom, x, screen.width - x)
+                let alpha = strengths[min(Int(distance * scale), strengths.count - 1)]
+                let pixel = pixels + (row * width + column) * 4
+                pixel[0] = UInt8(rgb[0] * alpha * 255)
+                pixel[1] = UInt8(rgb[1] * alpha * 255)
+                pixel[2] = UInt8(rgb[2] * alpha * 255)
+                pixel[3] = UInt8(alpha * 255)
+            }
+        }
+        return context.makeImage()
+    }
+
+    /// How far the glow is moved towards white from the person's colour.
+    private static let lighten: CGFloat = 0.3
+    /// The line's strength at the edge and the distance over which it falls to a third, in points,
+    /// and the glow's strength at the edge, which falls to a third over the glow's width.
+    private static let lineAlpha: CGFloat = 0.9
+    private static let lineFalloff: CGFloat = 1.6
+    private static let glowAlpha: CGFloat = 0.55
+    /// How many glow widths a strip reaches into the screen, where the glow has all but gone.
+    private static let tail: CGFloat = 4
+    /// How bright the glow is far from the pen, and how far its brightness spreads round the pen, as
+    /// a fraction of the screen's height.
+    private static let floor: CGFloat = 0.35
+    private static let spread: CGFloat = 0.55
+
+    /// One edge's strip of the glow: its picture, and the mask that brightens it near the pen.
+    @MainActor
+    private final class Strip {
+        let layer = CALayer()
+        private let mask = CAGradientLayer()
+
+        init(scale: CGFloat) {
+            for layer in [layer, mask] {
+                layer.anchorPoint = .zero
+                layer.contentsScale = scale
+            }
+            mask.type = .radial
+            layer.mask = mask
+        }
+
+        func brightness(at pen: CGPoint, reach: CGFloat, stops: [NSNumber], colors: [CGColor]) {
+            let rect = layer.frame
+            guard rect.width > 0, rect.height > 0 else { return }
+            mask.frame = CGRect(origin: .zero, size: rect.size)
+            let centre = CGPoint(x: (pen.x - rect.minX) / rect.width, y: (pen.y - rect.minY) / rect.height)
+            mask.startPoint = centre
+            mask.endPoint = CGPoint(x: centre.x + reach / rect.width, y: centre.y + reach / rect.height)
+            mask.colors = colors
+            mask.locations = stops
+        }
     }
 }

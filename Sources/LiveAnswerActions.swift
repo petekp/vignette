@@ -1,59 +1,61 @@
 import AppKit
 
-/// The buttons under a session's answer, one for each action it offered, such as "Fix both": the
-/// first filled in the agent's colour, the rest outlined in it. A click sends the button's words
-/// back to the session (`LiveInk.act`). A panel of its own, so a click on it never reaches the
-/// window under the answer, and one that never takes the keys. Pointing at a button reports its
-/// action (`onPoint`), and leaving the buttons reports nil.
+/// The buttons under a session's answer, one for each action it offered, such as "Fix both": AppKit's
+/// own push buttons, so they look as a popover's buttons do on each version of macOS. A click sends
+/// the button's words back to the session (`LiveInk.act`), and the buttons then stay, all disabled,
+/// with a checkmark on the one picked (`pick`). A panel of its own, so a click on it never reaches the
+/// window under the answer, and one that never takes the keys. It is a child of the reply's window,
+/// so a window raised over the answer covers it too. Pointing at a button reports its action
+/// (`onPoint`), and leaving the buttons reports nil.
+///
+/// macOS draws them as it draws any control in an app that is not frontmost, which Vignette never is
+/// while an answer shows, so none is filled with the accent colour, the recommended first one included.
 @MainActor
 final class LiveAnswerActions: NSPanel {
     var onPick: ((String) -> Void)?
     var onPoint: ((LiveAnswer.Action?) -> Void)?
 
     private var hiding = false
+    private let row: NSStackView
 
-    /// A button's height, its side padding and the gap between buttons, in points, and the room
-    /// round the row for the buttons' shadows.
-    static let height: CGFloat = 26
-    private static let pad: CGFloat = 12
-    private static let gap: CGFloat = 6
+    /// A button's height on this version of macOS, in points.
+    static let height: CGFloat = ActionButton(title: "").intrinsicContentSize.height
+    /// The room round the row for the buttons' shadows, in points.
     private static let margin: CGFloat = 6
     /// The room an answer keeps under its reply for the row.
     static let room: CGFloat = height + 8
 
-    /// Opens with its first button's top-left corner at `corner`, in global top-left points.
-    init(_ actions: [LiveAnswer.Action], at corner: CGPoint, color: CGColor) {
+    /// Opens with its first button's top-left corner at `corner`, in global top-left points, over
+    /// `reply`, with `picked`'s button already checked.
+    init(_ actions: [LiveAnswer.Action], at corner: CGPoint, over reply: ReplyPopover, picked: String?) {
+        row = NSStackView()
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
-        level = .popUpMenu
         collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace, .ignoresCycle]
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         animationBehavior = .none
 
-        let font = NSFont.systemFont(ofSize: 12.5, weight: .semibold)
-        var x = Self.margin
-        let row = NSView()
-        row.wantsLayer = true
-        for (index, action) in actions.enumerated() {
-            let width = ceil((action.title as NSString).size(withAttributes: [.font: font]).width) + Self.pad * 2
-            let button = ActionButton(frame: CGRect(x: x, y: Self.margin, width: width, height: Self.height),
-                                      title: action.title, font: font, color: color, filled: index == 0)
-            button.onClick = { [weak self] in self?.onPick?(action.title) }
+        for action in actions {
+            let button = ActionButton(title: action.title)
+            button.target = self
+            button.action = #selector(clicked(_:))
             button.onHover = { [weak self] inside in self?.onPoint?(inside ? action : nil) }
-            row.addSubview(button)
-            x += width + Self.gap
+            row.addArrangedSubview(button)
         }
-        let size = CGSize(width: x - Self.gap + Self.margin, height: Self.height + Self.margin * 2)
-        row.frame = CGRect(origin: .zero, size: size)
+        row.spacing = 8
+        row.edgeInsets = NSEdgeInsets(top: Self.margin, left: Self.margin, bottom: Self.margin, right: Self.margin)
+        row.wantsLayer = true
         contentView = row
-        setContentSize(size)
+        if let picked { check(picked) }
+        setContentSize(row.fittingSize)
         place(at: corner)
 
         let motion = Settings.shared.motionScale
         alphaValue = 0
+        reply.carry(self)
         orderFrontRegardless()
         let final = frame
         setFrame(final.offsetBy(dx: 0, dy: motion > 0 ? 4 : 0), display: true)
@@ -68,18 +70,21 @@ final class LiveAnswerActions: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
+    private var buttonViews: [ActionButton] { row.arrangedSubviews.compactMap { $0 as? ActionButton } }
+
     /// The buttons, in global top-left points.
     var globalFrame: CGRect {
         CGRect(x: frame.minX, y: StateReport.primaryHeight - frame.maxY, width: frame.width, height: frame.height)
             .insetBy(dx: Self.margin, dy: Self.margin)
     }
 
-    /// Each button's words and frame, in global top-left points, for `[state]`.
-    var buttons: [(title: String, frame: CGRect)] {
-        (contentView?.subviews ?? []).compactMap { view -> (title: String, frame: CGRect)? in
-            guard let button = view as? ActionButton else { return nil }
-            let rect = convertToScreen(button.convert(button.bounds, to: nil))
-            return (button.title, CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: rect.width, height: rect.height))
+    /// Each button's words, its frame as drawn, in global top-left points, and whether it was picked,
+    /// for `[state]`.
+    var buttons: [(title: String, frame: CGRect, enabled: Bool, picked: Bool)] {
+        buttonViews.map { button in
+            let rect = convertToScreen(button.convert(button.alignmentRect(forFrame: button.bounds), to: nil))
+            return (button.title, CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: rect.width, height: rect.height),
+                    button.isEnabled, button.image != nil)
         }
     }
 
@@ -96,6 +101,34 @@ final class LiveAnswerActions: NSPanel {
         setFrameOrigin(origin)
     }
 
+    /// The person picked `title`: every button is disabled and that one gains a checkmark, which
+    /// widens it, so the row cross-fades to its new layout and the panel grows to the right.
+    func pick(_ title: String) {
+        let fade = 0.15 * Settings.shared.motionScale
+        if fade > 0 {
+            let transition = CATransition()
+            transition.type = .fade
+            transition.duration = fade
+            row.layer?.add(transition, forKey: "pick")
+        }
+        check(title)
+        let top = frame.maxY
+        let size = row.fittingSize
+        setFrame(CGRect(x: frame.minX, y: top - size.height, width: size.width, height: size.height), display: true)
+    }
+
+    private func check(_ title: String) {
+        for button in buttonViews {
+            button.isEnabled = false
+            if button.title == title {
+                button.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)
+                button.imagePosition = .imageLeading
+            }
+        }
+    }
+
+    @objc private func clicked(_ sender: ActionButton) { onPick?(sender.title) }
+
     /// Fades out and closes.
     func hide() {
         guard !hiding else { return }
@@ -104,62 +137,45 @@ final class LiveAnswerActions: NSPanel {
             context.duration = 0.15 * Settings.shared.motionScale
             animator().alphaValue = 0
         } completionHandler: {
-            self.orderOut(nil)
-            self.close()
+            MainActor.assumeIsolated {
+                self.parent?.removeChildWindow(self)
+                self.orderOut(nil)
+                self.close()
+            }
         }
     }
 
-    /// A pill that takes a press without activating the app, and counts a release inside it as the click.
-    private final class ActionButton: NSView {
-        var onClick: (() -> Void)?
+    /// A push button that takes a click without activating the app, and reports the pointer while enabled.
+    private final class ActionButton: NSButton {
         var onHover: ((Bool) -> Void)?
-        let title: String
-        private let pill = CALayer()
+        private var hoverArea: NSTrackingArea?
 
-        init(frame: CGRect, title: String, font: NSFont, color: CGColor, filled: Bool) {
+        convenience init(title: String) {
+            self.init(frame: .zero)
             self.title = title
-            super.init(frame: frame)
-            wantsLayer = true
-            pill.frame = bounds
-            pill.cornerRadius = bounds.height / 2
-            pill.backgroundColor = filled ? color : CGColor(gray: 1, alpha: 1)
-            pill.borderColor = filled ? CGColor(gray: 1, alpha: 1) : color
-            pill.borderWidth = 1.5
-            pill.shadowColor = CGColor(gray: 0, alpha: 1)
-            pill.shadowOpacity = 0.22
-            pill.shadowRadius = 3
-            pill.shadowOffset = CGSize(width: 0, height: -1)
-            layer?.addSublayer(pill)
-            let label = CATextLayer()
-            label.string = NSAttributedString(string: title, attributes: [
-                .font: font, .foregroundColor: filled ? NSColor.white : (NSColor(cgColor: color) ?? .labelColor),
-            ])
-            label.alignmentMode = .center
-            label.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
-            let lineHeight = ceil(font.ascender - font.descender)
-            label.frame = CGRect(x: 0, y: (bounds.height - lineHeight) / 2, width: bounds.width, height: lineHeight)
-            pill.addSublayer(label)
+            bezelStyle = .push
+            controlSize = .large
         }
-
-        required init?(coder: NSCoder) { fatalError("not used") }
 
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
         // The app is never active while the answer shows, so the area tracks whatever app is.
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
-            trackingAreas.forEach(removeTrackingArea)
-            addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
+            hoverArea.map(removeTrackingArea)
+            let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self)
+            addTrackingArea(area)
+            hoverArea = area
         }
 
-        override func mouseEntered(with event: NSEvent) { onHover?(true) }
-        override func mouseExited(with event: NSEvent) { onHover?(false) }
+        override func mouseEntered(with event: NSEvent) {
+            super.mouseEntered(with: event)
+            if isEnabled { onHover?(true) }
+        }
 
-        override func mouseDown(with event: NSEvent) { pill.opacity = 0.75 }
-
-        override func mouseUp(with event: NSEvent) {
-            pill.opacity = 1
-            if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+        override func mouseExited(with event: NSEvent) {
+            super.mouseExited(with: event)
+            if isEnabled { onHover?(false) }
         }
     }
 }

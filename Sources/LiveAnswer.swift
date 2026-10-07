@@ -59,7 +59,8 @@ struct LiveAnswer: Equatable {
                 "type": "array", "items": {"type": "integer"}, "minItems": 4, "maxItems": 4,
                 "description": "x, y, width and height in thousandths of the picture, from its top-left corner, for something with no text line."
               },
-              "label": {"type": "string", "description": "One to four words drawn beside the mark, only when the mark needs them."}
+              "label": {"type": "string", "description": "One to four words drawn beside the mark, only when the mark needs them."},
+              "zoom": {"type": "boolean", "description": "For a focus mark: magnify what it points at, for something too small to see."}
             }
           }
         },
@@ -190,6 +191,8 @@ struct AnswerMark: Equatable {
         case circle
         /// Points at it from the side with the most room.
         case arrow
+        /// Pulls focus to it: the rest of the window goes soft and grey for a while, and it stays sharp.
+        case focus
     }
 
     var kind: Kind
@@ -199,13 +202,16 @@ struct AnswerMark: Equatable {
     /// In fractions of the picture, from its top-left corner, inside it.
     var box: CGRect?
     var label: String?
+    /// For a focus mark: magnify what it points at under a lens.
+    var zoom = false
 
-    init(kind: Kind, line: String? = nil, words: String? = nil, box: CGRect? = nil, label: String? = nil) {
+    init(kind: Kind, line: String? = nil, words: String? = nil, box: CGRect? = nil, label: String? = nil, zoom: Bool = false) {
         self.kind = kind
         self.line = line
         self.words = words
         self.box = box
         self.label = label
+        self.zoom = kind == .focus && zoom
     }
 
     /// Nil for an unknown kind, or for a mark with no line, no words and no box inside the picture.
@@ -217,6 +223,7 @@ struct AnswerMark: Equatable {
         words = (object["words"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
         label = (object["label"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
             .map { LiveAnswer.cut($0, to: LiveAnswer.maxLabel) }
+        zoom = kind == .focus && object["zoom"] as? Bool == true
         if let numbers = object["box"] as? [Any], numbers.count == 4 {
             let values = numbers.compactMap { DrawingJSON.number($0) }
             let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -279,7 +286,7 @@ extension LiveAnswer.Action: Codable {
 }
 
 extension AnswerMark: Codable {
-    private enum Keys: String, CodingKey { case kind, line, words, box, label }
+    private enum Keys: String, CodingKey { case kind, line, words, box, label, zoom }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: Keys.self)
@@ -288,6 +295,7 @@ extension AnswerMark: Codable {
         object["words"] = try container.decodeIfPresent(String.self, forKey: .words)
         object["box"] = try container.decodeIfPresent([Double].self, forKey: .box)
         object["label"] = try container.decodeIfPresent(String.self, forKey: .label)
+        object["zoom"] = try container.decodeIfPresent(Bool.self, forKey: .zoom)
         guard let mark = AnswerMark(json: object) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "a mark points at nothing"))
         }
@@ -301,6 +309,7 @@ extension AnswerMark: Codable {
         try container.encodeIfPresent(words, forKey: .words)
         try container.encodeIfPresent(box.map { [$0.minX, $0.minY, $0.width, $0.height] }, forKey: .box)
         try container.encodeIfPresent(label, forKey: .label)
+        if zoom { try container.encode(zoom, forKey: .zoom) }
     }
 }
 

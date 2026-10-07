@@ -221,7 +221,7 @@ struct DebugPanelView: View {
                     Tweak("Long side", \.stitchLongSide, 512...8192, step: 128, unit: "px")
                 }
                 Section("Live ink") {
-                    Tweak("Glow width", \.liveInkGlowWidth, 0...40, unit: "pt")
+                    Tweak("Glow width", \.liveInkGlowWidth, 0...80, unit: "pt")
                     Tweak("Glow opacity", \.liveInkGlowOpacity, 0...1, step: 0.05)
                     Tweak("Glow delay", \.liveInkGlowDelay, 0...1, step: 0.05, unit: "s")
                     Tweak("Glow fade", \.liveInkGlowFade, 0...1, step: 0.05, unit: "s")

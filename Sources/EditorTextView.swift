@@ -121,7 +121,7 @@ final class TypingField: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
             ctx.addPath(TextLayout.tagPath(box, radius: balanced.radius))
             ctx.clip()
             ctx.setAlpha(settled)
-            NoteTag.drawWords(balanced.lines, ink: paint.wordColor.cgColor, in: ctx)
+            NoteTag.drawWords(balanced, ink: paint.wordColor.cgColor, in: ctx)
             ctx.restoreGState()
         }
     }

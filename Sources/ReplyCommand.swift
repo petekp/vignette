@@ -46,9 +46,9 @@ enum ReplyCommand {
     the marks may be an empty array. A JPEG or any other image macOS reads is converted.
 
     A request drawn with live ink says so, and is answered on the window itself with --answer:
-    your words appear beside the person's ink, and each mark circles or points at the words it
-    names, found on the window as it looks when your reply arrives, so name words that are on
-    screen after your change. At most \(LiveAnswer.maxMarks) marks, each label one to four words.
+    your words take the place of the person's note, and each mark circles, points at or pulls
+    focus to the words it names, found on the window as it looks when your reply arrives, so name
+    words that are on screen after your change. At most \(LiveAnswer.maxMarks) marks, each label one to four words.
 
         {"say": "Moved the dates under the title and made them smaller.",
          "marks": [{"kind": "circle", "words": "October 12 to 18", "label": "moved"},
