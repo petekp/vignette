@@ -57,14 +57,6 @@ final class AnnotatorTransitionTests: XCTestCase {
         XCTAssertEqual(t.phase, .idle)
     }
 
-    func testCloseReturnsTheCard() {
-        var t = T()
-        _ = t.reduce(.annotate("a")); _ = t.reduce(.shown)
-        XCTAssertEqual(t.reduce(.close), [.park("a")])
-        XCTAssertEqual(t.reduce(.parked), [.returnCard("a", copied: false)])
-        XCTAssertEqual(t.phase, .idle)
-    }
-
     func testDismissWinsOverALaterAnnotate() {
         var t = T()
         _ = t.reduce(.annotate("a")); _ = t.reduce(.shown)

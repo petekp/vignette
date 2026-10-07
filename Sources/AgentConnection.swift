@@ -430,10 +430,10 @@ struct ClaudeCodeConnection: AgentConnection {
     }
 
     /// Where herdr may be. The app is launched by LaunchServices, so it inherits no shell PATH.
-    static let herdrPaths = ["\(NSHomeDirectory())/.local/bin/herdr", "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr"]
+    private static let herdrPaths = ["\(NSHomeDirectory())/.local/bin/herdr", "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr"]
 
-    static func herdrBinary(exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
-        herdrPaths.first(where: exists)
+    static func herdrBinary() -> String? {
+        herdrPaths.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     /// herdr's focused pane and its tab, from a `herdr pane list` answer, which lists every pane,

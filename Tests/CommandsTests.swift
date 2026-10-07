@@ -232,10 +232,8 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(Config.stripAction(in: row, for: [image, recording]).id, "annotate")
     }
 
-    func testErrorCodesAreKebabCaseAndUnique() {
-        let codes = CommandError.allCases.map(\.rawValue)
-        XCTAssertEqual(Set(codes).count, codes.count)
-        for code in codes { XCTAssertNil(code.rangeOfCharacter(from: CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz-").inverted), code) }
+    func testErrorCodesAreKebabCase() {
+        for code in CommandError.allCases.map(\.rawValue) { XCTAssertNil(code.rangeOfCharacter(from: CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz-").inverted), code) }
     }
 }
 

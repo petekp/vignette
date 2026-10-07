@@ -41,7 +41,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 && !FileManager.default.fileExists(atPath: url.path)
         }
 
-        func candidates(retaining previous: [String: Date] = [:]) -> [String: Date] {
+        func candidates(retaining previous: [String: Date]) -> [String: Date] {
             Dictionary(uniqueKeysWithValues: names.filter(ScreenshotWatcher.isCandidate).map {
                 ($0, dates[$0] ?? previous[$0] ?? .distantPast)
             })
@@ -362,14 +362,6 @@ final class ScreenshotWatcher: @unchecked Sendable {
         return candidateExtensions.contains((lower as NSString).pathExtension)
     }
 
-    /// Every candidate in `folder` with its modification date, from one bulk listing. Asking the
-    /// listing for the date is what keeps this cheap: a per-file attribute call reads extended
-    /// attributes too and costs about 20 times more (measured on 1300 files: 7 ms against 110 ms).
-    static func listing(of folder: URL) -> [String: Date] {
-        guard case .available(let inventory) = read(folder) else { return [:] }
-        return inventory.candidates()
-    }
-
     private enum Listing {
         case available(Inventory)
         case unavailable(Availability)
@@ -382,6 +374,9 @@ final class ScreenshotWatcher: @unchecked Sendable {
         }
     }
 
+    /// The folder's inventory, from one bulk listing. Asking the listing for each file's date is what
+    /// keeps this cheap: a per-file attribute call reads extended attributes too and costs about 20
+    /// times more (measured on 1300 files: 7 ms against 110 ms).
     private static func read(_ folder: URL) -> Listing {
         let observedAt = ProcessInfo.processInfo.systemUptime
         let before = DirectoryID(folder.path)
@@ -419,10 +414,5 @@ final class ScreenshotWatcher: @unchecked Sendable {
             .map { folder.appendingPathComponent($0.key) }
             .filter(include)
         return (Array(visible.prefix(max(0, limit))), visible.count)   // prefix traps on a negative count
-    }
-
-    /// A fresh listing sorted like the index; for tests and for a folder that is not watched.
-    static func recent(in folder: URL, limit: Int) -> (recent: [URL], files: Int) {
-        recent(from: listing(of: folder), in: folder, limit: limit)
     }
 }

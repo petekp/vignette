@@ -33,14 +33,6 @@ final class ScreenshotWatcherTests: XCTestCase {
         wait(for: [reached], timeout: 4)
     }
 
-    func testRecentCountsEveryCandidate() throws {
-        _ = try png("Screenshot a.png"); _ = try png("Screenshot b.png"); _ = try png("Screenshot c.png")
-        try Data("x".utf8).write(to: dir.appendingPathComponent("notes.txt"))
-        let recent = ScreenshotWatcher.recent(in: dir, limit: 2)
-        XCTAssertEqual(recent.recent.count, 2)
-        XCTAssertEqual(recent.files, 3)
-    }
-
     func testProtectedAreaIsTheDesktopDocumentsOrDownloadsAndWhatIsInside() {
         let home = URL(fileURLWithPath: "/Users/someone")
         func area(_ path: String) -> String? { ScreenshotWatcher.protectedArea(of: URL(fileURLWithPath: path), home: home) }
@@ -66,12 +58,13 @@ final class ScreenshotWatcherTests: XCTestCase {
         let old = try png("old.png", mtime: now.addingTimeInterval(-30))
         let mid = try png("mid.png", mtime: now.addingTimeInterval(-20))
         let new = try png("new.png", mtime: now.addingTimeInterval(-10))
-        try "no".write(to: dir.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
-        XCTAssertEqual(ScreenshotWatcher.recent(in: dir, limit: 10).recent, [new, mid, old])
-        XCTAssertEqual(ScreenshotWatcher.recent(in: dir, limit: 2).recent, [new, mid])
-        XCTAssertEqual(ScreenshotWatcher.recent(in: dir, limit: -1).recent, [], "a negative limit yields nothing instead of trapping")
         let same = try png("same.png", mtime: now.addingTimeInterval(-10))
-        XCTAssertEqual(ScreenshotWatcher.recent(in: dir, limit: 1).recent, [same], "an equal date falls to the name, which carries the capture time")
+        try "no".write(to: dir.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+        let watcher = ScreenshotWatcher(folder: dir, onNew: { _ in }, onRemoved: { _, _ in })
+        XCTAssertEqual(watcher.recent(limit: 10).recent, [same, new, mid, old], "an equal date falls to the name, which carries the capture time")
+        XCTAssertEqual(watcher.recent(limit: 2).recent, [same, new])
+        XCTAssertEqual(watcher.recent(limit: 2).files, 4, "the count is every candidate, past the limit")
+        XCTAssertEqual(watcher.recent(limit: -1).recent, [], "a negative limit yields nothing instead of trapping")
     }
 
     func testDiffReportsAddedAndRemovedSorted() {

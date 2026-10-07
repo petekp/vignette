@@ -162,14 +162,6 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: store.url(for: output.path)), bytes)
     }
 
-    func testASentDrawingIsStoredWithItsTicketBeforeAnythingIsSubmitted() throws {
-        let record = try makeRequest()
-        let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("image.png").path))
-        XCTAssertEqual(try ticket(for: record).requestID, record.id)
-        XCTAssertFalse(try ticket(for: record).secret.isEmpty)
-    }
-
     /// The line names only the image. The skill finds the ticket beside it, so that is where it must be.
     func testTheRequestLineNamesTheImageBesideItsTicketAndNotTheSecret() throws {
         let record = try makeRequest()
@@ -177,7 +169,9 @@ final class ScreenshotRequestsTests: XCTestCase {
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
         XCTAssertTrue(line.hasPrefix("From Vignette: \"\(directory.appendingPathComponent("image.png").path)\""))
         XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("ticket.json").path))
-        XCTAssertFalse(line.contains(try ticket(for: record).secret), "a secret in the line would be logged with the URL")
+        let secret = try ticket(for: record).secret
+        XCTAssertFalse(secret.isEmpty)
+        XCTAssertFalse(line.contains(secret), "a secret in the line would be logged with the URL")
         XCTAssertFalse(line.contains("\n"), "herdr submits the line with Return")
 
         let asked = ScreenshotRequests.requestLine(record: record, root: root, message: "Make this bigger")
@@ -233,15 +227,6 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(marks.map(\.type), [.text, .ellipse])
     }
 
-    func testAValidReplyIsAcceptedAndAcknowledged() throws {
-        let record = try makeRequest()
-        let attemptID = UUID().uuidString.lowercased()
-        try requests.receiveReply(envelope: stageReply(record, attemptID: attemptID))
-        let receipt = try XCTUnwrap(self.receipt(record, attemptID))
-        XCTAssertEqual(receipt.acceptance, .accepted)
-        XCTAssertEqual(receipt.attemptID, attemptID)
-    }
-
     /// The skill's helper is `ReplyCommand`. What it writes has to be what this side accepts, and a
     /// retry of the same bundle has to be acknowledged without a second card.
     func testAReplyTheCommandPreparesIsAcceptedAndItsRetryMakesNoSecondCard() throws {
@@ -266,6 +251,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         requests.receiveReply(envelope: second.envelope)
         XCTAssertEqual(self.receipt(record, second.id)?.acceptance, .accepted)
         XCTAssertEqual(presented.count, cards, "a retry makes no second card")
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.count, 1)
     }
 
     /// The command sends the agent's picture as a PNG whatever it was, and with it an empty marks
@@ -298,6 +284,21 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertTrue(presented.isEmpty)
     }
 
+    /// The attempt names its bundle's digest, so bytes changed after the helper checked them are
+    /// refused rather than shown as what the agent sent.
+    func testABundleChangedAfterItsAttemptWasWrittenIsRefused() throws {
+        let record = try makeRequest()
+        let replyID = UUID().uuidString.lowercased(), attemptID = UUID().uuidString.lowercased()
+        let envelope = try stageReply(record, replyID: replyID, attemptID: attemptID)
+        let bundle = ReplyProtocol.submissionDirectory(root: root, requestID: record.id, replyID: replyID).appendingPathComponent("bundle.json")
+        let changed = try String(contentsOf: bundle, encoding: .utf8).replacingOccurrences(of: #""x":0.1"#, with: #""x":0.5"#)
+        try Data(changed.utf8).write(to: bundle)
+        requests.receiveReply(envelope: envelope)
+        XCTAssertEqual(receipt(record, attemptID)?.errorCode, ReplyProtocol.Refusal.digestMismatch.rawValue)
+        XCTAssertTrue(presented.isEmpty)
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.count, 0)
+    }
+
     func testAReplyWithoutTheTicketIsRefusedAndNothingIsStored() throws {
         let record = try makeRequest()
         let attemptID = UUID().uuidString.lowercased()
@@ -305,17 +306,6 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(self.receipt(record, attemptID)?.acceptance, .rejected)
         XCTAssertEqual(self.receipt(record, attemptID)?.errorCode, "bad-authorization")
         XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.count, 0)
-    }
-
-    func testTheSameReplyDispatchedAgainIsAcknowledgedAndMakesNoSecondCard() throws {
-        let record = try makeRequest()
-        let replyID = UUID().uuidString.lowercased()
-        try requests.receiveReply(envelope: stageReply(record, replyID: replyID, attemptID: "aaaaaaaa-0000-4000-8000-000000000001"))
-        let cards = presented.count
-        try requests.receiveReply(envelope: stageReply(record, replyID: replyID, attemptID: "aaaaaaaa-0000-4000-8000-000000000002"))
-        XCTAssertEqual(self.receipt(record, "aaaaaaaa-0000-4000-8000-000000000002")?.acceptance, .accepted)
-        XCTAssertEqual(presented.count, cards, "a lost acknowledgement must not cost a second card")
-        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.count, 1)
     }
 
     func testTheSameReplyIdWithOtherBytesIsRefusedAndLeavesTheFirstAlone() throws {
