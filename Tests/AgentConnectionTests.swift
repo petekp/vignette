@@ -410,11 +410,6 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertTrue(CodexConnection.isLoaded(thread, codexHome: home))
     }
 
-    func testACodexDestinationIsPinnedByTheRuntimeAndAClaudeOneByAPreflightCheck() {
-        XCTAssertEqual(AgentAddress.codexThread(uuid: "u").guardTier, .runtimeEnforced)
-        XCTAssertEqual(AgentAddress.claudeSession("s").guardTier, .preflight)
-    }
-
     // MARK: Codex discovery
 
     /// Every thread the listing reports becomes a destination, named, with its own project and

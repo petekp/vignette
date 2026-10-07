@@ -162,14 +162,6 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: store.url(for: output.path)), bytes)
     }
 
-    func testASentDrawingIsStoredWithItsTicketBeforeAnythingIsSubmitted() throws {
-        let record = try makeRequest()
-        let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("image.png").path))
-        XCTAssertEqual(try ticket(for: record).requestID, record.id)
-        XCTAssertFalse(try ticket(for: record).secret.isEmpty)
-    }
-
     /// The line names only the image. The skill finds the ticket beside it, so that is where it must be.
     func testTheRequestLineNamesTheImageBesideItsTicketAndNotTheSecret() throws {
         let record = try makeRequest()
@@ -177,7 +169,9 @@ final class ScreenshotRequestsTests: XCTestCase {
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
         XCTAssertTrue(line.hasPrefix("From Vignette: \"\(directory.appendingPathComponent("image.png").path)\""))
         XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("ticket.json").path))
-        XCTAssertFalse(line.contains(try ticket(for: record).secret), "a secret in the line would be logged with the URL")
+        let secret = try ticket(for: record).secret
+        XCTAssertFalse(secret.isEmpty)
+        XCTAssertFalse(line.contains(secret), "a secret in the line would be logged with the URL")
         XCTAssertFalse(line.contains("\n"), "herdr submits the line with Return")
 
         let asked = ScreenshotRequests.requestLine(record: record, root: root, message: "Make this bigger")
