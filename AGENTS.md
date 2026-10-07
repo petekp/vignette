@@ -98,7 +98,8 @@ Before you drive the app:
   no herdr unless `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names one (`AgentTools.forSessions`), since
   any other found on the Mac reaches the person's own sessions; the launch logs
   `[tools] test launch: codex=… herdr=…`. The plugin's skill names the copy's own URL scheme and log
-  (`AgentPlugin.stage`).
+  (`AgentPlugin.stage`), and every `open` in it names that copy's path with `-a`, so an agent's
+  command never starts another build of the same bundle id on the person's settings.
 - Stop a test copy by its PID before you launch another copy of the same bundle id. On 2026-09-26,
   `open -a <a Release copy> <url>`, sent after a Debug copy of the same bundle id had run, launched a
   second Release instance without `VIGNETTE_SETTINGS`, on the user's real settings file.

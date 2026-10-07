@@ -35,8 +35,10 @@ final class AgentPluginTests: XCTestCase {
 
     private func read(_ url: URL) throws -> String { try String(contentsOf: url, encoding: .utf8) }
 
-    private func stage(marketplace: String = "vignette", appName: String = "Vignette") throws -> Bool {
-        try AgentPlugin.stage(template: template, skill: skill, into: staged, inboxRoot: inboxes, marketplace: marketplace, appName: appName)
+    private func stage(marketplace: String = "vignette", appName: String = "Vignette",
+                       app: URL = URL(fileURLWithPath: "/Applications/Vignette.app")) throws -> Bool {
+        try AgentPlugin.stage(template: template, skill: skill, into: staged, inboxRoot: inboxes, marketplace: marketplace, appName: appName,
+                              app: app)
     }
 
     // MARK: The marketplace
@@ -61,13 +63,16 @@ final class AgentPluginTests: XCTestCase {
     }
 
     /// A test copy's or a fork's skill names its own URL scheme and log; left as written, its agent
-    /// would drive the real Vignette.
+    /// would drive the real Vignette. Every copy's commands name the copy itself, since a bare `open`
+    /// can start another build of the app on the person's settings.
     func testStageNamesThisCopyOfTheAppInTheSkill() throws {
-        try write("---\nname: vignette\n---\nRun `open -g vignette://help` and read `~/Library/Logs/Vignette.log`.\n",
-                  to: skill.appendingPathComponent("SKILL.md"))
-        XCTAssertTrue(try stage(marketplace: "vignette-e2e", appName: "Vignette E2E"))
+        try write("---\nname: vignette\n---\nRun `open -g vignette://help`, then `open -g \"vignette://state?tag=1\"`, "
+                  + "and read `~/Library/Logs/Vignette.log`.\n", to: skill.appendingPathComponent("SKILL.md"))
+        XCTAssertTrue(try stage(marketplace: "vignette-e2e", appName: "Vignette E2E", app: URL(fileURLWithPath: "/tmp/Pete's builds/Vignette E2E.app")))
         XCTAssertEqual(try read(AgentPlugin.pluginFolder(in: staged).appendingPathComponent("skills/vignette/SKILL.md")),
-                       "---\nname: vignette\n---\nRun `open -g vignette-e2e://help` and read `~/Library/Logs/Vignette E2E.log`.\n")
+                       "---\nname: vignette\n---\nRun `open -g -a '/tmp/Pete'\\''s builds/Vignette E2E.app' vignette-e2e://help`, "
+                       + "then `open -g -a '/tmp/Pete'\\''s builds/Vignette E2E.app' \"vignette-e2e://state?tag=1\"`, "
+                       + "and read `~/Library/Logs/Vignette E2E.log`.\n")
     }
 
     /// Launch updates the agents only when the copy changed, so an unchanged one has to say so.
