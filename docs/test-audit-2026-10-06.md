@@ -129,7 +129,7 @@ are wrappers that only tests call.
   so it passes only because of the order the candidates are listed in.
 - The comments in `placed(for:)` and `LiveInk.swift` that name `marks(for:)` change with it.
 
-This lands with the live ink commit or right after it.
+It is committed on `live-ink` by itself, ahead of the live ink work.
 
 ## Verification
 
