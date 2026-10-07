@@ -53,6 +53,11 @@ final class AnnotationController {
     /// Where the toolbar's Send or Reply goes once the editor hands over the drawing. A key that
     /// sends goes where the bar's filled button would.
     private var sendingTo: AgentDestination?
+    /// No key and no press has reached the editor since `prepare`, and the message field has not
+    /// taken the keys on its own yet (`offerTyping`).
+    private var editorUntouched = false
+    /// `show` has put this image's window up.
+    private var windowUp = false
     /// The text style of the tweaks.
     private var textStyle = TextStyle.standard
 
@@ -79,7 +84,12 @@ final class AnnotationController {
         editor.onLeaveCanvas = { [weak self] backward in self?.toolbar.enter(backward: backward) }
         toolbar.onLeave = { [weak self] backward in self?.editor.enterCanvas(backward: backward) ?? false }
         editor.onFocusMessage = { [weak self] in self?.toolbar.focusMessage() }
-        editor.onPress = { [weak self] in self?.toolbar.clearFocus() }
+        editor.onPress = { [weak self] in
+            self?.editorUntouched = false
+            self?.toolbar.clearFocus()
+        }
+        editor.onKey = { [weak self] in self?.editorUntouched = false }
+        toolbar.onClose = { [weak self] in self?.cancel() }
         editor.takesKey = { [weak self] key, modifiers in
             guard let toolbar = self?.toolbar, toolbar.model.focus != nil, modifiers.isSubset(of: .shift) else { return false }
             switch key {
@@ -131,6 +141,8 @@ final class AnnotationController {
         place(win, frame: frame)
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
+        editorUntouched = true
+        windowUp = false
         win.alphaValue = 0
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -309,6 +321,17 @@ final class AnnotationController {
         // flight lands on it, and a hand cannot react inside `outsideClickSettling`.
         outsideClick.start(settling: Self.outsideClickSettling) { [weak self] in self?.cancel() }
         probeEvents()
+        windowUp = true
+        // A turn later, once the app is active and the bar is up.
+        DispatchQueue.main.async { [weak self] in self?.offerTyping() }
+    }
+
+    /// Typing goes to the agent: once the window is up, the bar's message field takes the keys, when
+    /// the bar has one and no key or press has reached the editor. Once per image, so a field the
+    /// keys left is not given them again when the session list answers.
+    private func offerTyping() {
+        guard windowUp, editorUntouched, current != nil, toolbar.typeOnOpen() else { return }
+        editorUntouched = false
     }
 
     /// Finds the moment the window server starts giving this window the presses on its frame. The
@@ -532,9 +555,11 @@ final class AnnotationController {
         offerChanged()
     }
 
-    /// Return and Cmd+Return do what the bar offers.
+    /// Return and Cmd+Return do what the bar offers, and a message field that arrived with the
+    /// session list may take the keys.
     private func offerChanged() {
         editor.finishes = toolbar.model.offer.finishes
+        offerTyping()
     }
 
     /// True from Send's press until the bar leaves; the button shows the send and takes no second

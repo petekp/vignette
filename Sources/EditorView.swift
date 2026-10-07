@@ -40,6 +40,8 @@ final class EditorView: NSView {
     var onFocusMessage: (() -> Void)?
     /// A press on the canvas, which takes the keyboard's focus back from the toolbar.
     var onPress: (() -> Void)?
+    /// A key reached the editor.
+    var onKey: (() -> Void)?
     /// Offered each key before the core while no text is typed: true when the host took it. While one
     /// of the toolbar's controls has the focus, the keys stay here and Tab and Space are the toolbar's.
     var takesKey: ((EditorCore.Key, EditorCore.Modifiers) -> Bool)?
@@ -548,6 +550,7 @@ final class EditorView: NSView {
     // MARK: Keys
 
     override func keyDown(with event: NSEvent) {
+        onKey?()
         guard let key = Self.key(event) else { return super.keyDown(with: event) }
         if typingField == nil, takesKey?(key, Self.modifiers(event)) == true { return }
         if key.direction != nil { heldArrows.insert(key) }
@@ -570,6 +573,7 @@ final class EditorView: NSView {
               let responder = window?.firstResponder, responder === self || responder === typingField?.textView else {
             return super.performKeyEquivalent(with: event)
         }
+        onKey?()
         let modifiers = Self.modifiers(event)
         if key == .character("z") {
             if modifiers.contains(.shift) { redo(nil) } else { undo(nil) }
@@ -674,6 +678,7 @@ final class EditorView: NSView {
         let pointer = EditorCore.Pointer(location: location, modifiers: modifiers, time: event.time)
         switch event.phase {
         case .pressed(let clickCount):
+            onPress?()
             textPress = nil
             if handle(.pointerPressed(pointer, clickCount: clickCount)).contains(.passPressToText) {
                 pressText(at: viewPoint(forImagePoint: location), clickCount: clickCount, extending: modifiers.contains(.shift))

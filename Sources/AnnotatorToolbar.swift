@@ -55,6 +55,19 @@ final class AnnotatorToolbar {
         @Published var message = ""
         /// The bar's panel holds the keys, which it does only while the message field is typed in.
         @Published var keyed = false
+        /// The message field took the keys on its own as the image opened, and has kept them since.
+        var tookKeysOnOpen = false
+
+        /// What Return in the message field does. A field that took the keys on its own and is still
+        /// empty has nothing that asks to send, so Return there does what it does on the image, which
+        /// never sends to a session Vignette picked.
+        var fieldReturn: EditorCore.Finish {
+            tookKeysOnOpen && sentMessage == nil ? offer.finishes.returnKey : .send
+        }
+
+        /// Esc in the message field closes the editor, as on the image, when the field took the keys on
+        /// its own and is still empty. Otherwise it hands the keys back to the image.
+        var fieldEscCloses: Bool { tookKeysOnOpen && sentMessage == nil }
 
         /// A control Tab reaches, in the bar's order.
         enum Control: Hashable {
@@ -109,6 +122,7 @@ final class AnnotatorToolbar {
             self.replyTo = replyTo
             message = ""
             focus = nil
+            tookKeysOnOpen = false
             listed = false
             picked = false
             carried = carryingTarget && target != nil
@@ -153,6 +167,8 @@ final class AnnotatorToolbar {
     var onSend: ((AgentDestination) -> Void)?
     /// Esc in the message field: the keys go back to the editor.
     var onMessageEnd: (() -> Void)?
+    /// Esc in a message field that took the keys on its own and is still empty: the editor closes.
+    var onClose: (() -> Void)?
     /// Tab past the last control, or Shift+Tab past the first: the editor takes the focus back. False
     /// when it has no marks to take it, and the bar goes round its own controls.
     var onLeave: ((_ backward: Bool) -> Bool)?
@@ -197,7 +213,8 @@ final class AnnotatorToolbar {
                                                       onFocusMessage: { [weak self] in self?.focusMessage() },
                                                       onTargetFrame: { [weak self] in self?.targetFrame = $0 },
                                                       onWidth: { [weak self] in self?.refit() },
-                                                      onMessageEnd: { [weak self] in self?.onMessageEnd?() }))
+                                                      onMessageEnd: { [weak self] in self?.onMessageEnd?() },
+                                                      onClose: { [weak self] in self?.onClose?() }))
         // `position` alone sizes the panel, about the bar's centre (`onWidth`). As the window's
         // content view, the hosting view resized the window to its new content from the window's
         // left edge, and a bar that grew from Reply to Send stayed off centre.
@@ -237,6 +254,7 @@ final class AnnotatorToolbar {
             NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.model.keyed = false
+                    self?.model.tookKeysOnOpen = false
                     if self?.model.focus == .message { self?.model.focus = nil }
                     _ = self?.panel.makeFirstResponder(nil)
                 }
@@ -281,6 +299,15 @@ final class AnnotatorToolbar {
     func focusMessage() {
         guard model.controls.contains(.message) else { return }
         focus(on: .message)
+    }
+
+    /// The image opened and the hand has not reached it: the message field, when the bar has one,
+    /// takes the keys, so typing goes to the agent. False when there is no field to take them.
+    func typeOnOpen() -> Bool {
+        guard model.controls.contains(.message), model.focus == nil, !panel.isKeyWindow else { return false }
+        focus(on: .message)
+        model.tookKeysOnOpen = panel.isKeyWindow
+        return true
     }
 
     /// A press on the image takes the focus back from a control. The message field loses it when the
@@ -459,7 +486,8 @@ final class ToolbarPanel: NSPanel {
     var onPress: ((_ onField: Bool) -> Void)?
     override var canBecomeKey: Bool { pressOnField || wantsKeys || isKeyWindow }
 
-    /// Takes the keys for the message field without a press on it: Tab onto it, or M or P.
+    /// Takes the keys for the message field without a press on it: Tab onto it, M or P, or the image
+    /// opening (`AnnotatorToolbar.typeOnOpen`).
     func takeKeys() {
         wantsKeys = true
         makeKey()
@@ -575,6 +603,7 @@ private struct ToolbarView: View {
     /// width moves on every frame of the spring, and the panel grows with it.
     let onWidth: () -> Void
     let onMessageEnd: () -> Void
+    let onClose: () -> Void
     @FocusState private var focused: Bool
     /// The control the pointer is on, and the one whose tooltip is up (`tip`).
     @State private var tipOver: AnnotatorToolbar.Model.Control?
@@ -777,7 +806,8 @@ private struct ToolbarView: View {
     /// What goes with the drawing, typed in the bar. One line wide in the bar; while it is typed in
     /// it grows down past the bar's bottom, up to `messageLines` lines, and the bar keeps its size.
     /// Return and Cmd+Return send (`ToolbarPanel`), since typing a message is the intent to send it.
-    /// Esc hands the keys back to the editor.
+    /// Esc hands the keys back to the editor. In a field that took the keys on its own and is still
+    /// empty, Return and Esc do what they do on the image (`Model.fieldReturn`).
     private func messageField(send: @escaping () -> Void) -> some View {
         let grown = typing && !model.message.isEmpty
         // The bar's middle is 7 pt above its bottom edge; a margin keeps the field off the Dock.
@@ -796,8 +826,13 @@ private struct ToolbarView: View {
                     .font(.system(size: 13))
                     .lineLimit(typing ? 1...Self.messageLines : 1...1)
                     .focused($focused)
-                    .onSubmit { if !model.sending { send() } }
-                    .onExitCommand { onMessageEnd() }
+                    .onSubmit {
+                        switch model.fieldReturn {
+                        case .done: onDone()
+                        case .send: if !model.sending { send() }
+                        }
+                    }
+                    .onExitCommand { if model.fieldEscCloses { onClose() } else { onMessageEnd() } }
                     .onChange(of: model.message) { _, words in
                         if words.count > AnnotatorToolbar.Model.messageLimit { model.message = String(words.prefix(AnnotatorToolbar.Model.messageLimit)) }
                     }
