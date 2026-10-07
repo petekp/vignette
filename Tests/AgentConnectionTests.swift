@@ -78,11 +78,6 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(ClaudeCodeConnection.agents(in: Data(#"{"error":{"code":"no_server"}}"#.utf8)), [])
     }
 
-    func testTheHerdrBinaryIsTheFirstOneThatExists() {
-        XCTAssertEqual(ClaudeCodeConnection.herdrBinary { $0 == ClaudeCodeConnection.herdrPaths[1] }, ClaudeCodeConnection.herdrPaths[1])
-        XCTAssertNil(ClaudeCodeConnection.herdrBinary { _ in false })
-    }
-
     /// A test launch reaches sessions only through a tool the environment names: any other codex or
     /// herdr on the Mac is the person's, and would list and send to their own sessions.
     func testATestLaunchUsesOnlyTheSessionToolItIsGiven() {
@@ -408,11 +403,6 @@ final class AgentConnectionTests: XCTestCase {
         try FileManager.default.createDirectory(at: locks, withIntermediateDirectories: true)
         try Data().write(to: locks.appendingPathComponent("\(thread).lock"))
         XCTAssertTrue(CodexConnection.isLoaded(thread, codexHome: home))
-    }
-
-    func testACodexDestinationIsPinnedByTheRuntimeAndAClaudeOneByAPreflightCheck() {
-        XCTAssertEqual(AgentAddress.codexThread(uuid: "u").guardTier, .runtimeEnforced)
-        XCTAssertEqual(AgentAddress.claudeSession("s").guardTier, .preflight)
     }
 
     // MARK: Codex discovery

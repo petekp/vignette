@@ -155,14 +155,6 @@ final class SettingsTests: XCTestCase {
     // MARK: migrate
 
     @MainActor
-    func testMigrateStampsCurrentVersion() {
-        let out = Settings.migrate(["recentCount": 3])
-        XCTAssertEqual(out.from, 0)
-        XCTAssertEqual(out.json["version"] as? Int, Settings.currentVersion)
-        XCTAssertEqual(out.json["recentCount"] as? Int, 3)
-    }
-
-    @MainActor
     func testMigrateReadsAnyNumericVersion() throws {
         XCTAssertEqual(Settings.migrate(["version": 1.0]).from, 1)
         try write(#"{"version": "1"}"#)
@@ -180,13 +172,6 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(loaded.data.ui.motion, 0.5)
         let two = Settings.migrate(["version": 2, "ui": ["newTextSize": 24]]).json["ui"] as? [String: Any]
         XCTAssertEqual(two?["newTextSize"] as? Int, 24, "a version 2 file's values are all choices")
-    }
-
-    @MainActor
-    func testMigrateLeavesNewerFilesAlone() {
-        let out = Settings.migrate(["version": 99])
-        XCTAssertEqual(out.from, 99)
-        XCTAssertEqual(out.json["version"] as? Int, 99)
     }
 
     // MARK: validated

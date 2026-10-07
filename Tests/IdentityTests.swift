@@ -1,8 +1,7 @@
 import XCTest
 
 final class IdentityTests: XCTestCase {
-    func testSignatureIsStableAndDistinguishesBundleIds() {
-        XCTAssertEqual(Identity.hotKeySignature(for: "com.petepetrash.vignette"), Identity.hotKeySignature(for: "com.petepetrash.vignette"))
+    func testSignatureDistinguishesBundleIds() {
         XCTAssertNotEqual(Identity.hotKeySignature(for: "com.petepetrash.vignette"), Identity.hotKeySignature(for: "com.example.vignette"))
     }
 

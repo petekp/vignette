@@ -203,11 +203,11 @@ final class DrawingStoreTests: XCTestCase {
         XCTAssertEqual(DrawingStore(directory: dir.appendingPathComponent("never-made")).scan(), [])
     }
 
+    /// A drawing's file is named by this id, so an update that changed it would leave every saved
+    /// drawing unread.
     func testIdIsStableAndFilenameSafe() {
         let id = DrawingStore.id(for: "/Users/p/Screenshots/Screenshot 2026-09-15 at 2.50.12 PM.png")
-        XCTAssertEqual(id, DrawingStore.id(for: "/Users/p/Screenshots/Screenshot 2026-09-15 at 2.50.12 PM.png"))
-        XCTAssertEqual(id.count, 32)
-        XCTAssertTrue(id.allSatisfy { $0.isHexDigit })
+        XCTAssertEqual(id, "d3505803f4177afef13729ce2b67cd84")
         XCTAssertNotEqual(id, DrawingStore.id(for: "/Users/p/Screenshots/Screenshot 2026-09-15 at 2.50.13 PM.png"))
     }
 }

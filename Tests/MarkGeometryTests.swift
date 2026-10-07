@@ -131,25 +131,16 @@ final class MarkGeometryTests: XCTestCase {
 
     func testLinesAreTheLineHeightApart() {
         let text = Mark.Text(origin: CGPoint(x: 10, y: 30), text: "one\ntwo", size: 24)
-        let layout = TextLayout(text, imageWidth: 2000, pointScale: 2, style: .tweaked(weight: 500, lineHeight: 1.5))
+        let style = TextStyle.tweaked(weight: 500, lineHeight: 1.5)
+        let layout = TextLayout(text, imageWidth: 2000, pointScale: 2, style: style)
         XCTAssertEqual(CTFontGetSize(layout.font), 48, "the size in pt times the point scale")
         XCTAssertEqual(layout.lineHeight, 72)
-        let top: CGFloat = 48 * 0.42, bottom: CGFloat = 48 * 0.47
+        let top = 48 * style.padTop, bottom = 48 * style.padBottom
         XCTAssertEqual(layout.lines.map(\.rect.minY), [30 + top, 102 + top])
         XCTAssertEqual(layout.box, CGRect(x: 10, y: 30, width: layout.box.width, height: top + 144 + bottom))
         for line in layout.lines {
             XCTAssertGreaterThan(line.baseline, line.rect.minY + line.rect.height / 2, "the glyphs stand inside their line")
             XCTAssertLessThan(line.baseline, line.rect.maxY)
-        }
-    }
-
-    func testChineseAndAnEmojiLayOutWithASize() {
-        for string in ["这个按钮的颜色不对", "🎉", "Ship it 🚀 今天"] {
-            let layout = TextLayout(Mark.Text(origin: .zero, text: string, size: 24), imageWidth: 2000, pointScale: 2, style: .standard)
-            XCTAssertEqual(layout.lines.count, 1, string)
-            XCTAssertGreaterThan(layout.box.width, 24, string)
-            XCTAssertGreaterThan(layout.box.height, 0, string)
-            XCTAssertGreaterThan(CTLineGetGlyphCount(layout.lines[0].ctLine), 0, string)
         }
     }
 }

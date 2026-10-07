@@ -11,18 +11,23 @@ final class MotionTests: XCTestCase {
         XCTAssertEqual(Motion.scale(reduceMotion: true, multiplier: 1), 0)
     }
 
+    /// Every setting is sorted by its name, so a new duration that `scaledForMotion` leaves out fails
+    /// here, and so does a dwell time or a size it scales by mistake.
     func testScaledTweaksTouchOnlyMotion() {
         let base = UITweaks()
         let off = base.scaledForMotion(0)
-        for path in [\UITweaks.slideInDuration, \.slideOutDuration, \.staggerDelay, \.staggerTotalMax, \.relayoutDuration,
-                     \.expandDuration, \.introDuration, \.hoverRevealDuration, \.backdropFadeIn, \.backdropFadeOut, \.backdropSlideIn, \.backdropSlideOut, \.dimFade,
-                     \.flightArc, \.flightDepth] {
-            XCTAssertEqual(off[keyPath: path], 0)
+        // Motion without a motion word in the name: how far a flight bows and swells.
+        let motion: Set<String> = ["flightArc", "flightDepth"]
+        // A motion word without motion: a press's wait before a drag, and a share of the funnel's travel.
+        let notMotion: Set<String> = ["textDragDelay", "introFunnelFade"]
+        for bound in UITweaks.bounds {
+            let named = ["Duration", "Fade", "Slide", "Delay", "stagger"].contains { bound.name.contains($0) }
+            if motion.contains(bound.name) || (named && !notMotion.contains(bound.name)) {
+                XCTAssertEqual(off[keyPath: bound.path], 0, "\(bound.name) is motion")
+            } else {
+                XCTAssertEqual(off[keyPath: bound.path], base[keyPath: bound.path], "\(bound.name) is not motion")
+            }
         }
-        XCTAssertEqual(off.thumbnailSeconds, base.thumbnailSeconds, "a dwell time is not motion")
-        XCTAssertEqual(off.markSeconds, base.markSeconds)
-        XCTAssertEqual(off.cardMaxWidth, base.cardMaxWidth)
-        XCTAssertEqual(off.flightArcMax, base.flightArcMax, "the cap is a limit on the bow, not an amount of it")
         XCTAssertEqual(base.scaledForMotion(1), base)
         XCTAssertEqual(base.scaledForMotion(0.5).slideInDuration, base.slideInDuration / 2)
     }
