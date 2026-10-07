@@ -581,17 +581,24 @@ final class EditorCoreTests: XCTestCase {
         }
     }
 
-    func testTheHandlesOfAMarkInTheImagesCornerCanAllBeTakenInsideTheImage() {
+    func testTheHandlesOfAMarkInTheImagesCornerCanAllBeTakenInsideTheImage() throws {
         let core = core([rect(0, 0, 10, 10)])
         let id = core.drawing.marks[0].id
         let handles = core.overlay.handles
         XCTAssertEqual(handles.count, 8)
+        let geometry = core.geometry, inset = geometry.outlineOffset
+        let ink = geometry.inkExtent(of: core.drawing.marks[0])
+        XCTAssertLessThan(ink.minX, inset, "the stroke runs along the image's edge")
         // The frame runs outside the stroke and its white edge except where the image ends, where it stays inside by
         // half the outline's width, so all of the outline is seen.
-        XCTAssertEqual(core.overlay.frame, CGRect(x: 1.75, y: 1.75, width: 13.25, height: 13.25))
+        let frame = try XCTUnwrap(core.overlay.frame)
+        XCTAssertEqual(frame.origin, CGPoint(x: inset, y: inset))
+        XCTAssertEqual(frame.maxX, ink.maxX + inset, accuracy: 1e-9)
+        XCTAssertEqual(frame.maxY, ink.maxY + inset, accuracy: 1e-9)
+        let corner = geometry.screen(core.metrics.cornerHitSize), edge = geometry.screen(core.metrics.edgeHitSize)
         for handle in handles {
             XCTAssertTrue(CGRect(x: 0, y: 0, width: 1000, height: 600).contains(handle.hitArea), "\(handle.position)")
-            let width: CGFloat = handle.position.isCorner ? 13.5 : handle.position.xSide != 0 ? 9 : 13.25
+            let width = handle.position.isCorner ? corner : handle.position.xSide != 0 ? edge : frame.width
             XCTAssertEqual(handle.hitArea.width, width, "\(handle.position)")
         }
         for corner in handles where corner.position.isCorner {
@@ -600,8 +607,8 @@ final class EditorCoreTests: XCTestCase {
                                 y: corner.position.ySide < 0 ? corner.hitArea.minY : corner.hitArea.maxY)
             XCTAssertEqual(core.target(at: point), .handle(id, corner.position))
         }
-        XCTAssertEqual(handles.first { $0.position == .topLeft }?.square?.midX, 1.75)
-        XCTAssertEqual(handles.first { $0.position == .topLeft }?.square?.midY, 1.75)
+        XCTAssertEqual(handles.first { $0.position == .topLeft }?.square?.midX, inset)
+        XCTAssertEqual(handles.first { $0.position == .topLeft }?.square?.midY, inset)
     }
 
     func testDraggingATextsRightEdgeSetsItsWrapWidthAndDraggingItsCornerScalesItsFont() throws {

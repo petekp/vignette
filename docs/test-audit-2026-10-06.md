@@ -3,20 +3,24 @@
 The unit tests are mostly sound. Nineteen changes remove what costs upkeep and protects nothing:
 tests that a stronger test already covers, assertions that cannot fail, and production code that
 only tests call. Two changes add checks where nothing guarded a contract: a drawing's file name
-across versions, and the refusal of a reply changed after it was prepared. On `main` the changes
-remove 127 lines of tests and 10 lines of production code, net. Change 19, on `live-ink`, removes
+across versions, and the refusal of a reply changed after it was prepared. Two more make tests
+check a rule instead of a hand-made list or a tuned number: every setting against Reduce Motion,
+and the editor's geometry. On `main` the changes remove 114 lines of tests and 10 lines of
+production code, net. Change 19, on `live-ink`, removes
 about 15 more lines of production code. Nothing here changes what the app does.
 
 ## Where the work lands
 
 - **On a new branch, `test-audit`, off `main`**, in `~/Code/worktrees/vignette/test-audit`.
-  Changes 1 to 18, 20 and 21 touch code that `main` already has. `main` has not moved since
+  Changes 1 to 18 and 20 to 23 touch code that `main` already has. `main` has not moved since
   `live-ink` branched from it at `535e42b`.
 - **Not on `live-ink`.** That branch has live ink work in progress, much of it uncommitted. Mixed
   into it, these changes would make that work harder to review, and they would wait for live ink to
   land.
-- **The cost is one merge conflict.** `live-ink` adds a test directly above change 1 in
-  `ScreenshotRequestsTests.swift`, so merging it after this branch needs one small resolution.
+- **The cost is one merge conflict and one follow-on edit.** `live-ink` adds a test directly above
+  change 1 in `ScreenshotRequestsTests.swift`, so merging it after this branch needs one small
+  resolution. Change 22's motion test also needs `live-ink`'s new settings sorted, which the merge
+  does.
 - **Change 19 goes on `live-ink`.** The code it removes exists only there.
 
 ## Commit 1: delete tests a stronger test covers
@@ -80,6 +84,37 @@ reply record.
   check. With the check removed, the changed reply was accepted and became a card.
 - **Why nothing catches it now:** only the digest function itself was tested.
 
+## Commit 6: check every setting against Reduce Motion
+
+**22.** `MotionTests.testScaledTweaksTouchOnlyMotion` listed by hand the settings that motion
+scales, and the list missed `shiftUpDuration` and `noteSettleDuration`. It now checks every setting
+in `UITweaks.bounds`. At motion 0, a motion setting is 0 and every other setting is unchanged.
+
+- **What counts as motion:** a name with Duration, Fade, Slide, Delay or stagger in it, and
+  `flightArc` and `flightDepth`, the flight's bow and swell.
+- **What does not, despite its name:** `textDragDelay`, a press's wait before a drag, and
+  `introFunnelFade`, a share of the funnel's travel.
+- **What it protects:** Reduce Motion and `ui.motion` reach every animation.
+- **The failure it catches:** a new duration left out of `UITweaks.scaledForMotion`, which would
+  keep animating with Reduce Motion on, and a dwell time or a size scaled by mistake. With
+  `shiftUpDuration` dropped from `scaledForMotion`, the test fails. The old list did not name it.
+- **On `live-ink`:** `liveInkDrawOn` is motion, and `liveInkGlowDelay`, how long the chord is held
+  before the glow shows, is not. The merge adds each to its set.
+
+## Commit 7: take geometry numbers from the code
+
+**23.** Two tests hard-coded numbers worked out from tuned defaults, so retuning a default broke
+them with no bug.
+
+- `MarkGeometryTests.testLinesAreTheLineHeightApart` reads the note's padding from its style.
+- `EditorCoreTests.testTheHandlesOfAMarkInTheImagesCornerCanAllBeTakenInsideTheImage` states its
+  rule in the editor's own geometry: the frame's sides at the image's edge are the outline offset
+  inside it, and its other sides the outline offset outside the ink. Its hit areas are the
+  corner and edge hit sizes on screen.
+- **Checked both ways:** both pass with seven defaults retuned (the hit sizes, the outline, stroke
+  and edge widths, and the note padding). Each fails when its rule breaks: the frame allowed past
+  the image's edge, or the note's top padding read from the bottom.
+
 ## On `live-ink`: change 19
 
 `LiveAnswerLayout.marks(for:)`, `pointer(_:at:scene:obstacles:)` and `arrow(to:room:obstacles:)`
@@ -105,7 +140,8 @@ This lands with the live ink commit or right after it.
   were then put back.
 - **The changed and added tests catch their failures.** The pinned id fails when the hash's input
   changes, the watcher test fails when equal dates stop falling to the name, and the new reply test
-  fails when `receiveReply` skips its digest check.
+  fails when `receiveReply` skips its digest check. Changes 22 and 23 were checked as their
+  sections say.
 - **Builds** went to the worktree's `.derived-data`. Nothing a person sees changes, so the app was
   not launched.
 
@@ -121,14 +157,3 @@ This lands with the live ink commit or right after it.
   the argument lists for `codex`, `claude` and `herdr`, the security refusals, the memory-bound
   checks, and the live ink answer format.
 
-## Follow-ups, each its own decision
-
-- **The motion list.** `MotionTests.testScaledTweaksTouchOnlyMotion` lists by hand the settings that
-  motion scales. The list misses `shiftUpDuration`, `noteSettleDuration` and, on `live-ink`, the live
-  ink fades. A new duration left out of `UITweaks.scaledForMotion` would ignore Reduce Motion, and a
-  hand list cannot catch that. A check over every setting whose name says it is a duration or a
-  fade would.
-- **Note padding numbers.** `MarkGeometryTests.testLinesAreTheLineHeightApart` and
-  `EditorCoreTests.testTheHandlesOfAMarkInTheImagesCornerCanAllBeTakenInsideTheImage` hard-code
-  numbers worked out from the note padding defaults, so retuning a default breaks them. They should
-  compute those numbers from the style.
