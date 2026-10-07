@@ -252,6 +252,21 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertTrue(presented.isEmpty)
     }
 
+    /// The attempt names its bundle's digest, so bytes changed after the helper checked them are
+    /// refused rather than shown as what the agent sent.
+    func testABundleChangedAfterItsAttemptWasWrittenIsRefused() throws {
+        let record = try makeRequest()
+        let replyID = UUID().uuidString.lowercased(), attemptID = UUID().uuidString.lowercased()
+        let envelope = try stageReply(record, replyID: replyID, attemptID: attemptID)
+        let bundle = ReplyProtocol.submissionDirectory(root: root, requestID: record.id, replyID: replyID).appendingPathComponent("bundle.json")
+        let changed = try String(contentsOf: bundle, encoding: .utf8).replacingOccurrences(of: #""x":0.1"#, with: #""x":0.5"#)
+        try Data(changed.utf8).write(to: bundle)
+        requests.receiveReply(envelope: envelope)
+        XCTAssertEqual(receipt(record, attemptID)?.errorCode, ReplyProtocol.Refusal.digestMismatch.rawValue)
+        XCTAssertTrue(presented.isEmpty)
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.count, 0)
+    }
+
     func testAReplyWithoutTheTicketIsRefusedAndNothingIsStored() throws {
         let record = try makeRequest()
         let attemptID = UUID().uuidString.lowercased()
