@@ -2,11 +2,11 @@
 
 ## Commands
 
-Every action is a URL. `open -g` leaves your terminal in front, and plain `open` activates
-Vignette. Without `?file=` an action acts on the newest file it can take: `annotate` passes over a
-newer recording, and `open` over newer screenshots. `file=` repeats for several. A file the action
-cannot take, such as a recording given to `annotate`, answers `unsupported-type`. Percent-encode
-every path. A path must be inside the watch folder, unless `debug` is on. `add` is the exception: it
+Every action is a URL. `open -g` leaves your terminal in front, and plain `open` activates Vignette.
+Without `?file=` an action acts on the newest file it can take: `annotate` passes over a newer
+recording, and `open` over newer screenshots. `file=` repeats for several. A file the action cannot
+take, such as a recording given to `annotate`, answers `unsupported-type`. Percent-encode every
+path. A path must be inside the screenshots folder, unless `debug` is on. `add` is the exception: it
 copies an image in from anywhere.
 
 ```
@@ -17,7 +17,7 @@ open -g vignette://paths                      # copy the path as text
 open -g vignette://open                       # open the newest recording in the app that plays movies
 open -g "vignette://trash?file=~/Dropbox/Screenshots/x.png"
 open -g "vignette://stitch?file=~/Dropbox/Screenshots/a.png&file=~/Dropbox/Screenshots/b.png"
-open -g vignette://last                       # show the thumbnail for the newest screenshot
+open -g vignette://last                       # show the newest screenshot or recording as a lone thumbnail
 open -g "vignette://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a tab naming the agent
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude&session=$CLAUDE_CODE_SESSION_ID"  # the same, and Reply on the card goes back to that Claude Code session
@@ -28,20 +28,29 @@ open -g vignette://cancel                     # close the annotator without copy
 open -g "vignette://state?tag=t1"             # one [state] {json} line in the log, tag echoed
 open -g vignette://help                       # list every command in the log
 open -g vignette://settings                   # open the Settings window
-open -g vignette://install-skill              # install the Vignette plugin for Claude Code and Codex
+open -g vignette://install-skill              # install the Vignette plugin for Claude Code and Codex; &root=<dir> installs into one .claude or .codex folder (needs "debug": true)
 open -g vignette://requests                   # list the open screenshot requests; &clear=<id or all> clears them
+open -g "vignette://reply?file=<envelope>"    # an agent's reply to a screenshot request; only the skill's reply helper sends it
 open -g vignette://restore-apple-defaults     # put Apple's screencapture defaults back
 open -g vignette://tweaks                     # live UI tweaks panel (needs "debug": true)
 open -g vignette://intro-lab                  # the Intro Lab, for the intro into the menu bar icon (needs "debug": true)
 ```
 
+`add` refuses a file that is not a png, jpg, jpeg or heic, a name ending in `-annotated`, and the
+name of an agent reply, with `unsupported-type`. A file already in the screenshots folder is shown
+where it is. Reply on the card needs `agent=claude` and a `session=` that is a UUID. Any other
+`session=` is not recorded, and `[add]` still answers `ok` with a warning.
+
 `copy-annotated` answers with `files=["<absolute path>", ...]`, followed by how many had drawings.
 The JSON array keeps selection order. A card without a drawing returns its original path. Each
 rendering is a new `<name>-<result-id>-annotated.png` beside its source, kept until the person
-deletes it. Decode the returned paths; a long source name may be shortened.
+deletes it. Parse the array as JSON, since each `/` in it is written as `\/`. A long source name
+may be shortened, so use the returned path.
 
-Done and Copy Drawing in the editor log the same `files=` field after the rendering finishes.
-The PNG, TIFF and file URL on the clipboard all refer to that result.
+Copy in the editor, and Cmd+C there with nothing selected, log the same `files=` field once the
+rendering finishes, as `[annotate] done` and `[annotate] copied`. The PNG, TIFF and file URL on the
+clipboard all refer to that result. With nothing drawn, no file is written, and the line says
+`nothing drawn, original copied`.
 
 ## Marks
 
@@ -55,20 +64,23 @@ on its pixel size:
  {"type": "text", "x": 0.1, "y": 0.8, "w": 0.5, "text": "Header should not scroll"}]
 ```
 
-The types are `ellipse`, `rectangle`, `arrow`, and `text`. The toolbar has no ellipse button, and
-an agent can push one anyway. `ellipse` and `rectangle` take `x`, `y`, `w`, `h`. `arrow` takes
-`x`, `y`, `x2`, `y2`. `text` takes `x`, `y`, `text`, and an optional `w`, the box the words wrap in. Without
-`w` the box runs from `x` to the right edge. Every mark is moved inside the image, and a mark with
-nothing inside it is dropped. Text is sized for the image, and a box that would run off the bottom
-is widened first. Text too long to fit is cut off at the edge and logged as
+The types are `ellipse`, `rectangle`, `arrow`, and `text`. The toolbar has no ellipse button, and an
+agent can push one anyway. `ellipse` and `rectangle` take `x`, `y`, `w`, `h`. `arrow` takes `x`,
+`y`, `x2`, `y2`. `text` takes `x`, `y`, `text`, and an optional `w`, the box the words wrap in.
+Without `w`, the words wrap as a person's note does: at 18 times the text's size (`noteMaxWidth`),
+about a quarter of the image's width, or sooner at the image's right edge, but never narrower than
+15% of the width. Every mark is moved inside the image, and a mark with nothing inside it is
+dropped. One push takes at most 100 marks and 256 KB. A file that breaks a rule answers
+`invalid-marks`, naming the mark and the field. Text is sized for the image, and a box that would
+run off the bottom is widened first. Text too long to fit is cut off at the edge and logged as
 `[marks] text too long for <name>`, and [pushed-text-2026-09-19.md](pushed-text-2026-09-19.md) has
 the numbers.
 
 Every agent's mark is drawn in the agent colour, indigo, so the person can tell it from their own. A
-`color` field is accepted and ignored, with one `[marks] color ignored for <name>` line. Pushed marks join
-the image's drawing before the card appears, so the card and Copy Drawing show them, and the editor
-can move, retype, or delete them. A push to the image open in the editor joins its drawing as one
-undo step.
+`color` field is accepted and ignored, with one `[marks] color ignored for <name>` line. Pushed
+marks join the image's drawing before the card appears, so the card and Copy Drawing show them, and
+the editor can move, retype, or delete them. A push to the image open in the editor joins its
+drawing as one undo step.
 
 ## The log
 

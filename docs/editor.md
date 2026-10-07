@@ -42,12 +42,12 @@ parks and zooms the editor, and the rest of the app, which stores and renders it
 | 7 | Can arrows be curved? | Yes. The Arrow tool draws freehand, so an arrow follows the hand's path and gets its head where the button comes up. A stroke that stays close to a straight line draws a straight arrow, which bends by its middle dot. | A curve shows something moving from one place to another, and takes an arrow around a mark it would otherwise cross. Most arrows are meant to be straight, and a straight one is easier to read. |
 | 8 | What sets the size of strokes and text? | Each drawing records its point scale, the px per pt of the display the annotator is on when the drawing's first mark is made. A drawing that an agent's marks start takes the main display's. Every mark in the drawing uses it. | The drawing looks the same on any display it reopens on. A capture file does not say which display took it, so the annotator's display is the best available guess. |
 | 9 | Which font does text use? | SF Pro Rounded for yours, SF Mono for an agent's. | Both are the system's own faces, so nothing is bundled and macOS supplies every script and emoji. The rounded face reads as a note, apart from the SF Pro text in most screenshots. The app already uses it for the numbers on selected cards. SF Mono tells an agent's words from yours at a glance. It is wider, so an agent's note takes more room. |
-| 10 | What do Cmd+C and Cmd+V do? | With marks selected, Cmd+C copies those marks, and Cmd+V pastes them. With nothing selected, Cmd+C copies the drawing as an image, the same PNG Done makes, and the editor stays open. Cmd+V with text adds a text mark. Cmd+V with an image beeps and adds nothing. Section 8 has the details. | The visible selection says what Cmd+C will copy. |
+| 10 | What do Cmd+C and Cmd+V do? | With marks selected, Cmd+C copies those marks, and Cmd+V pastes them. With nothing selected, Cmd+C copies the drawing as an image, the same PNG the toolbar's Copy makes, and the editor stays open. Cmd+V with text adds a text mark. Cmd+V with an image beeps and adds nothing. Section 8 has the details. | The visible selection says what Cmd+C will copy. |
 | 11 | Do marks snap to each other and to the image's edges? | No. | Marks point at things in the screenshot, so alignment between marks rarely matters. |
 | 12 | Can several selected marks be resized together? | No. Several selected marks can be moved, duplicated and deleted. | A group resize would scale the text but not the strokes, which distorts the group. |
 | 13 | How is a drawing stored? | In a JSON file of Vignette's own, in px, with a version number. Section 1 has the format. | A format in px does not depend on the display. |
 | 14 | How fast does park answer? | At once, in the same turn of the run loop. `ThumbnailController` queues an event that arrives while it is still handling one, and runs it right after. | A swap's park and the next card's opening land in the same frame. Queuing the event keeps the transition's events in order. |
-| 15 | Which colour profile does a rendering use? | The screenshot's own. The marks are drawn into that colour space. | The screenshot's pixels come out unchanged. Converting to sRGB shifts saturated colours, so a note about a wrong colour would ship a different colour. |
+| 15 | Which colour profile does a rendering use? | The screenshot's own. The marks are drawn into that colour space. A grey or CMYK screenshot is rendered in sRGB, since those colour spaces cannot hold coloured marks. | The screenshot's pixels come out unchanged. Converting to sRGB shifts saturated colours, so a note about a wrong colour would ship a different colour. |
 | 16 | How do cards and flights show a drawing? | They draw its marks with the editor's renderer, over the thumbnail. No preview images are stored. | A card is current the moment its drawing parks, and sharp at any card size. Park has no rendering to wait for. |
 | 17 | How does zoom draw? | The editor draws inside the annotator's window, and zoom scales its layers. | One process draws the frame and the drawing, so both move in the same frame. |
 | 18 | What does an arrowhead look like? | A filled triangle whose size follows the stroke width. Its proportions are tuned live in the tweaks panel. | It reads at a glance at any capture size. |
@@ -68,7 +68,7 @@ parks and zooms the editor, and the rest of the app, which stores and renders it
 |---|---|---|
 | Rectangle | frame `x y w h` | Rectangle tool, agents |
 | Ellipse | frame `x y w h`. The ellipse fills the frame. | Agents |
-| Arrow | start `x y`, end `x2 y2`, and either `bend` or `via` | Arrow tool, agents. Only the Arrow tool makes `via`. |
+| Arrow | start `x y`, end `x2 y2`, and `bend` or `via` when it is not straight | Arrow tool, agents. Only the Arrow tool makes `via`. |
 | Text | `x y` of the tag's top-left corner, `text`, `wrap`, the widest the tag may be, or none, `size` | Text tool, agents, Cmd+V |
 
 Every mark also has:
@@ -107,9 +107,9 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
 }
 ```
 
-- `pixels` is the image's size when the drawing was made. A drawing whose `pixels` differ from the
-  image's size no longer fits it. The image opens without it, with a log line, and the file stays on
-  disk.
+- `pixels` is the image's size when the drawing was made. A file whose `pixels` differ from the
+  image's size, or whose `key` names another screenshot, does not fit the image. The image opens
+  without it, with a log line, and the file stays on disk.
 - `pointScale` is between 0.5 and 8.
 - A mark's fields are the ones its type uses. `bend`, `via`, `wrap`, `agent` and `agentName` are
   left out at their defaults. A text's `size` is always written. A mark has no id and no colour in
@@ -163,7 +163,7 @@ Most numbers below are defaults. The tweaks panel's Editor, Marks and Notes sect
 | Rectangle | A closed path with sharp corners |
 | Ellipse | Inscribed in its frame |
 | Arrow body | A straight line, a circular arc through both ends and the bend point, or a freehand arrow's smooth curve through its `via` points |
-| Arrowhead | A filled triangle at the tip, per Decision 18 |
+| Arrowhead | A filled triangle at the tip, 4.5 stroke widths long and 4 wide, per Decision 18. A short arrow gets a smaller head, at most half the body's length. |
 | Text | SF Pro Rounded Semibold at 17 pt, left-aligned, on a tag. The line height is 1.32 times the size. An agent's text is SF Mono Semibold. |
 | Tag | Filled with the mark's colour, inside a 1.5 pt white edge, with padding of 0.42 em above, 0.47 em below and 0.8 em at the sides. Its corners are half the height of a one-line tag, so one line is a pill. The edge casts two faint shadows. |
 | Words on a tag | White |
@@ -173,10 +173,10 @@ Most numbers below are defaults. The tweaks panel's Editor, Marks and Notes sect
 | Hover | The selection outline at half opacity, so the two can be told apart |
 | Resize handles | 8 screen pt squares with a near-black fill and a 1.5 screen pt blue stroke, at the four corners of the selection outline |
 | Arrow dots | Circles of radius 4 screen pt, white fill, 1.5 screen pt blue stroke. A hovered dot gets a 12 screen pt halo, blue at 20% opacity. |
-| Brush | A rectangle with a 1 screen pt stroke, grey at 25% opacity, over a grey fill at 10% |
+| Brush | A rectangle with a 1 screen pt stroke, grey at 25% opacity, over a grey fill at 10%. The same rectangle shows the width a Text tool drag sets. |
 | Caret while typing | The colour of the words on the tag |
 | Selected text while typing | Blue background, white letters |
-| Cursors | The system's: a crosshair while drawing, the arrow in Select, resize cursors on handles, an open hand on arrow dots, a closed hand while moving |
+| Cursors | The system's: a crosshair while drawing, the arrow in Select, resize cursors on handles, an open hand on arrow dots, a closed hand while moving. On macOS 14, which has no diagonal resize cursor, a corner handle shows the crosshair. |
 | Behind the image | `#1a1a1a`, so a screenshot's transparent pixels are never see-through: in the editor, on a card and in flight |
 
 Marks and text scale with the zoom. Handles, selection and hover outlines, dots, the brush and hit
@@ -213,8 +213,8 @@ everywhere else. The cursor and the hover outline show which will happen before 
 
 - The empty inside of a selected rectangle draws, so a second box can go inside the one just drawn.
   In Select, the same press would move the rectangle.
-- An arrow cannot start on a text box, because a press there selects the text. To draw from a note,
-  start just outside its box.
+- An arrow cannot start on a note, because a press on its tag selects it. To draw from a note,
+  start just outside its tag.
 
 ### Rectangle
 
@@ -254,7 +254,7 @@ everywhere else. The cursor and the hover outline show which will happen before 
 | Trigger | Result |
 |---|---|
 | Click | A text mark starts at the click, and typing begins at once. The click is the left end of the first line and its vertical centre. |
-| Press, wait 150 ms, then drag more than 24 screen pt sideways | A text mark whose wrap width is the drag's width. Vertical movement is ignored. |
+| Press, wait 150 ms, then drag more than 24 screen pt sideways | A text mark whose wrap width is the drag's width, at least 1 em. Vertical movement is ignored. A drag brought back under 24 screen pt before the release is a click. |
 | Click on an existing text | That text is edited, with the caret at the click |
 | Typing ends with no text | The text mark is removed. Spaces and empty lines count as no text. |
 | Esc with the Text tool active and nothing being typed | The editor closes |
@@ -275,12 +275,12 @@ Hover, press and release use one rule:
 | Mark | Hit when the pointer is |
 |---|---|
 | Rectangle, ellipse, arrow | Within the hit band of the stroke's centre line. The band is the stroke's half-width on screen plus 4 screen pt. |
-| Text | Anywhere inside its box |
+| Text | Anywhere inside its tag |
 | A selected rectangle or ellipse, in Select | Anywhere inside it, or within its band |
-| Any selected mark's handles | Within the handle's hit area, which beats every mark |
+| A selected mark's handles, or a selected arrow's dots | Within the hit area, which beats every mark |
 
-- When several marks are hit, the one whose stroke is closest wins. A text box beats strokes under
-  it.
+- When several marks are hit, the one whose stroke is closest wins. A note's tag beats the strokes
+  under it and loses to the strokes over it.
 - The empty inside of an unselected rectangle is not a hit. A press there starts a brush, and the
   Rectangle tool can draw a box inside a box.
 
@@ -300,7 +300,7 @@ Hover, press and release use one rule:
 | Shift+press or Cmd+press on an unselected mark | It is added, on the press |
 | Shift+click or Cmd+click on a selected mark | It is removed, on release |
 | Press on empty space | The selection clears on the press |
-| Drag from empty space | A brush. Marks whose outline it crosses, or that lie wholly inside it, are selected as it moves. A brush wholly inside a hollow rectangle does not select the rectangle. A brush inside a text box selects the text. |
+| Drag from empty space | A brush. Marks whose outline it crosses, or that lie wholly inside it, are selected as it moves. A brush wholly inside a hollow rectangle does not select the rectangle. A brush inside a note's tag selects the note. |
 | Shift held during a brush | The brush adds to the selection from before it started |
 | Esc during a brush | The selection from before the brush comes back, and the editor stays open |
 | Cmd+A | Every mark |
@@ -337,7 +337,7 @@ Hover, press and release use one rule:
 | Dragging past the opposite side | The mark flips to that side |
 | Dragging past the image | The dragged side stops at the image's edge |
 | A single text: drag a left or right edge | Sets the wrap width. The text wraps and its height follows. The top stays. |
-| A single text: drag a corner, or the top or bottom edge | Scales the whole text, font included |
+| A single text: drag a corner, or the top or bottom edge | Scales the whole text, font included, down to 6 pt |
 | Esc while resizing | Back to the size at the start, and the editor stays open |
 
 ### A selected arrow
@@ -385,7 +385,7 @@ The double-click interval is the system's setting, for editing and for zoom.
 | Trigger | Result |
 |---|---|
 | Text tool click or drag | Typing starts in the new text |
-| A character typed right after drawing a box | Typing starts in a note beside the box, with that character |
+| A character typed right after drawing a box or an arrow | Typing starts in a note for that mark, with that character |
 | Double-click a text | Typing starts, all text selected |
 | Click a selected text | Typing starts, caret at the click |
 | Shift+Return or Option+Return with one text selected | Typing starts, all text selected |
@@ -415,8 +415,9 @@ The double-click interval is the system's setting, for editing and for zoom.
 | Cmd+B, Cmd+I, Cmd+U and other formatting keys | Nothing. The text is plain. |
 | Cmd+Plus, Cmd+Minus, Cmd+0 | The host's zoom |
 
-- Notes on screenshots often hold code and names. So there is no spell-check, no autocorrect, and no
-  automatic replacement of quotes, dashes, links or text shortcuts. What is typed is what is drawn.
+- Notes on screenshots often hold code and names. So there is no spell-check, no autocorrect, no
+  inline prediction, no Writing Tools, and no automatic replacement of quotes, dashes, links or text
+  shortcuts. What is typed is what is drawn.
 
 ### A note for a box or an arrow
 
@@ -479,8 +480,8 @@ Keys that act on a selection are in section 4. The rest:
 | Key | Result |
 |---|---|
 | Esc | During a drag, brush, move or resize, cancels it. Otherwise closes the editor. |
-| Return | Done. On a card that names the session it came from, Send back to that session, which the toolbar calls Reply. |
-| Cmd+Return | Send to the toolbar's session, or back to the card's. Done when there is no session to send to. |
+| Return | Copy: copies the drawing and closes the editor. On a card that names the session it came from, Send back to that session, which the toolbar calls Reply. |
+| Cmd+Return | Send to the toolbar's session, or back to the card's. Copy when there is no session to send to. |
 | Cmd+Z | Undoes one step |
 | Shift+Cmd+Z | Redoes one step |
 | Cmd+Plus, Cmd+Minus, Cmd+0 | The host's zoom: in, out, back to fit |
@@ -489,6 +490,7 @@ Keys that act on a selection are in section 4. The rest:
 | Space | Presses the toolbar control that has the keyboard focus |
 | Plain wheel or two-finger scroll | Pans a zoomed-in image |
 | Cmd or Ctrl with a wheel or two-finger scroll | The host's zoom |
+| A Command key the editor does not use, such as Cmd+W | Goes to the app. Cmd+W closes the editor, as Esc does. |
 | Any other key | Nothing |
 
 ## 7. Undo and redo
@@ -514,12 +516,12 @@ Per Decision 10, Cmd+C copies what is selected, and the whole drawing when nothi
 
 | Action | Result |
 |---|---|
-| Cmd+C with nothing selected | The drawing as a PNG, the same as Done's, and a new rendering file beside the screenshot. The editor stays open. With no marks, the original file. |
+| Cmd+C with nothing selected | The drawing as a PNG, the same as Copy's, and a new rendering file beside the screenshot. The editor stays open. With no marks, the original file. |
 | Cmd+C with marks selected | The marks. Any texts among them also go on the clipboard as plain text, so pasting into another app gives their words. |
 | Cmd+X with marks selected | Copies them as Cmd+C does, then deletes them. One undo step. |
 | Cmd+X with nothing selected | Nothing |
 | Cmd+V with copied marks | Pastes them, selected, as one undo step. Where they land is below. |
-| Cmd+V with text | A text mark at the pointer, or at the image's centre when the pointer is outside it. It follows the growth rules in section 5. |
+| Cmd+V with text | A text mark at the pointer, or at the image's centre when the pointer is outside it, selected, as one undo step. It follows the growth rules in section 5. |
 | Cmd+V with an image or a file | Nothing is added, and the Mac beeps. |
 | Cmd+V with anything else | Nothing is added, and the Mac beeps. |
 | A file dropped on the editor | The same as Cmd+V with an image |
@@ -543,9 +545,9 @@ Copied marks:
 - A pasted mark keeps the original's fields, so an agent's mark pasted is still the agent's.
 
 A mark is selected right after it is drawn, and on reopen the newest mark is selected. So Cmd+C at
-those moments copies that mark, not the drawing, as the visible selection shows. A click on empty
-space clears the selection, whatever tool is active, so copying the whole drawing is always one
-click and Cmd+C away. A copy shows nothing, as in other Mac apps.
+those moments copies that mark, not the drawing, as the visible selection shows. With any tool but
+Text, a click on empty space clears the selection. So copying the whole drawing is one click and
+Cmd+C away. A copy shows nothing, as in other Mac apps.
 
 Return copies the drawing and closes the editor. It is the main way to share. On a card that names
 the session it came from, Return replies instead. Return never sends to a session the host picked.
@@ -568,15 +570,16 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
 - If the card turns back while the button is down, after Esc or another image opening, that press
   draws nothing.
 - A second click where the card was, within a double-click's interval of the click that opened it,
-  does nothing. Opening narrows the stack and can slide another card into the slot, so the second click
-  would otherwise reach the app behind or open that other card. Opening with Return or a URL has no
-  first click, so nothing is swallowed.
+  does nothing. Opening narrows the stack and can slide another card into the slot, so the second
+  click would otherwise reach the app behind or open that other card. Opening with Return or a URL
+  has no first click, so nothing is swallowed.
 
 ### The toolbar
 
 - The native toolbar shows the four tools, then one of three offers: Copy alone when there is no
   session to send to; Copy, the target session, a message field and Send; or a message field and
-  Reply on a card that names the session it came from. Copy does what Done does.
+  Reply on a card that names the session it came from. Copy copies the drawing and closes the
+  editor.
   `docs/send-and-reply-2026-09-24.md` has the rules.
 - The message field is one line in the bar. While it is typed in, it grows down past the bar's
   bottom, up to six lines, and the bar keeps its size. When growing down would bring it within 8 pt
@@ -630,23 +633,24 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
 
 | Output | What it is |
 |---|---|
-| Done | The screenshot with its marks, at the screenshot's exact pixel size, in its colour profile and with its DPI. With no marks, the host copies the original file and writes nothing. |
-| Send | The same rendering. The editor stays open while it renders. Once the request is stored, the card goes home without a Copied notice, and a queue opens its next card. A failed rendering sends nothing, and the drawing stays as it is. |
-| Copy Drawing | The same rendering for each selected card, without opening them |
+| Copy | The screenshot with its marks, at the screenshot's exact pixel size, in its colour profile and with its DPI. With no marks, the host copies the original file and writes nothing. |
+| Send | The same rendering, even with no marks, so the image keeps its orientation and DPI. No file is written. The editor stays open while it renders. Once the request is stored, the card goes home without a Copied notice, and a queue opens its next card. A failed rendering sends nothing, and the drawing stays as it is. |
+| Copy Drawing | The same rendering for each selected card, without opening them. A card without a drawing copies its own file. |
+| A card with a drawing, dragged out of the stack | The same rendering, started when the drag begins. A card without a drawing drops its own file. |
 
 - Renderings run off the main thread, one at a time, drawing straight at the output size. The
   largest capture on this Mac is 3102 by 6780 px, about 85 MB as a bitmap.
-- Done puts its rendering file's path on the clipboard at once as text, promises the PNG, a
-  TIFF and the file, and sends the card home. The rendering fills the promise, and a paste that
-  comes before it finishes waits for it, for up to 5 seconds. The
-  `<name>-<result-id>-annotated.png` file is written when the rendering finishes. Done's rendering goes ahead of any
-  that has not started.
-- Each result has a distinct file beside its screenshot, kept until the person deletes it. Copying
-  again, deleting the source, or restarting Vignette leaves the completed result unchanged. The
-  completion log gives its absolute path in a JSON `files=` array; long source names are shortened.
-- A rendering that fails answers `unreadable-image` or `write-failed`. After Done, it also takes the
-  clipboard and the card's Copied notice back, and the card says "Not copied" and why. A card that is
-  not on screen comes up as the lone thumbnail to say it.
+- Copy puts its rendering file's path on the clipboard at once as text, promises the PNG, a TIFF and
+  the file, and sends the card home. The rendering fills the promise, and a paste that comes before
+  it finishes waits for it, for up to 5 seconds. The `<name>-<result-id>-annotated.png` file is
+  written when the rendering finishes. Copy's rendering goes ahead of any that has not started.
+- Every rendering but Send's is written as its own file beside its screenshot, and kept until the
+  person deletes it. Copying again, deleting the source, or restarting Vignette leaves the completed
+  result unchanged. The completion log gives its absolute path in a JSON `files=` array. Long source
+  names are shortened.
+- A rendering that fails answers `unreadable-image` or `write-failed`. After Copy or Cmd+C, it also
+  takes the clipboard and the card's Copied notice back, and the card says "Not copied" and why. A
+  card that is not on screen comes up as the lone thumbnail to say it.
 
 ### Cards and flights
 
@@ -696,14 +700,14 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
 - A double-click with Select on empty space asks the host for smart zoom.
 - The zoom keys and the double-click do nothing until the card has landed, a double-click on the
   flying card included.
-- The editor draws at whatever zoom the host sets, per Decision 17. The frame and the drawing move in
-  the same frame.
+- The editor draws at whatever zoom the host sets, per Decision 17. The frame and the drawing move
+  in the same frame.
 
 ### Inspecting and driving
 
-- `[state]` has an `editor` section: the tool, each mark's type, frame in px and whether an agent
-  made it, the selection, whether text is being typed, and the undo and redo depth. It never holds a
-  text's words.
+- `[state]` has an `editor` section: whether the editor is open, the tool, each mark's type, frame
+  in px and whether an agent made it, the selection, whether text is being typed, and the undo and
+  redo depth. It never holds a text's words.
 - `[annotate] loaded <ms>ms <name>` reports when the editor has the image.
 
 ### Failures
@@ -719,8 +723,8 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
 ## 10. Later
 
 - **Sizes from the capturing display.** Decision 8 takes the point scale from the annotator's
-  display. Recording the capturing display's scale when the file arrives would be exact on a Mac with
-  displays of different scales.
+  display. Recording the capturing display's scale when the file arrives would be exact on a Mac
+  with displays of different scales.
 - **Attaching arrows.** Revisit if people expect an arrow to follow the box it points at, per
   Decision 3. The tip would still land exactly where the pointer was released.
 - **Snapping.** Revisit per Decision 11.

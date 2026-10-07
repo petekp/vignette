@@ -29,11 +29,40 @@ Report a Problem…, in the menu bar menu, opens a new GitHub issue with Vignett
 your Mac filled in. It also shows Vignette's log in Finder, with any Vignette crash reports, so you
 can drag them onto the form. The log lists your screenshots' file names and folder paths.
 
+Vignette checks for updates once a day. When one is ready, a dot appears on the menu bar icon and
+the menu offers Update Available…. Nothing installs until you choose to.
+
+With Show in menu bar off, in Settings → General, open Vignette again from Finder or Spotlight to
+get back to Settings.
+
+## After a screenshot
+
+Take screenshots with Cmd+Shift+3, 4 or 5, as usual. Each new screenshot goes to the clipboard and
+comes up as a card in the corner of the screen. This card is the lone thumbnail. It leaves after 5
+seconds, unless the pointer is on it. Click it to draw on it. Hover it to show Copy in its
+bottom-left corner and Delete in its bottom-right.
+
+Take several in a row and their cards gather in the corner. Select one and the corner becomes the
+recent stack.
+
+The menu bar menu has two switches under After a Screenshot, and Settings → Screenshots has the
+same two:
+
+- Copy to Clipboard puts each new screenshot on the clipboard. It is on by default.
+- Instant Draw opens each new screenshot in the annotator instead of showing its card. The image
+  flies in from the part of the screen you captured. It is off by default.
+
+Settings → Screenshots also sets how long the card stays, with Show the thumbnail for.
+
 ## The stack
 
-Press the Vignette shortcut to show your recent screenshots in a column in the corner. It holds 30
-by default. The stack answers your keys and the app you were in stays frontmost. Opening the
-annotator activates Vignette, and closing it hands focus back.
+Press the Vignette shortcut to show your recent screenshots in a column in the corner. This column
+is the recent stack. It holds 30 cards, and How many to show in Settings → General changes that.
+Press the shortcut again, or click outside the stack, to close it. The stack answers your keys and
+the app you were in stays frontmost. Opening the annotator activates Vignette, and closing it hands
+focus back.
+
+Click a card to draw on it. Hover a card to show Copy and Delete in its bottom corners.
 
 The newest card has focus as soon as the stack is up, and the focus follows the mouse: move onto a
 card and the keys act on that card.
@@ -60,11 +89,11 @@ column's order instead: oldest first.
 
 Keyboard:
 
-- Arrows move focus.
+- Up and Down arrows move focus.
 - Shift+arrow extends the selection in the direction you travel. Turning back drops the card it
   added last.
 - Space toggles the card.
-- Cmd+A selects all.
+- Cmd+A selects all, and Cmd+Shift+A clears the selection.
 - Esc clears the selection, then dismisses the stack.
 
 Space over one card after another builds a selection without clicking. A shortcut runs on the
@@ -72,10 +101,10 @@ selection when there is one, and on the focused card otherwise.
 
 ## Actions on a selection
 
-The selected cards get a control strip to their left: Copy, Draw, Stitch, Delete. It stays centered
-between the topmost and the bottommost selected card, and follows the selection. Each button names
-itself and shows its shortcut for as long as anything is selected. The strip hides while you are
-drawing. The cards stay selected and it comes back when you are done.
+The selected cards get a selection strip to their left: Copy, Draw, Stitch, Delete. It stays
+centered between the topmost and the bottommost selected card, and follows the selection. Each
+button names itself and shows its shortcut for as long as anything is selected. The strip hides
+while you are drawing. The cards stay selected and it comes back when you are done.
 
 - Cmd+C copies the selection as files, as paths in text, and as the first image's pixels. Chat apps
   attach all of them, and terminals paste the paths.
@@ -86,15 +115,16 @@ drawing. The cards stay selected and it comes back when you are done.
 
 Cmd+S stitches two or more selected cards into one image with numbered badges, saved next to
 the originals and copied. Vignette picks the number of columns that keeps the pieces largest once an
-AI model shrinks the image to read it. Each badge is the number the card's circle showed. The selected cards fly together into the new card, which takes their place
-at the bottom of the stack, or opens in the annotator when Instant Draw is on.
+AI model shrinks the image to read it. Each badge is the number the card's circle showed. The
+selected cards fly together into the new card, which takes their place at the bottom of the stack,
+or opens in the annotator when Instant Draw is on.
 
 Drag a card out to drop it on a chat window, Finder, or a terminal. A card you drew on drops the
 drawing, and any other card drops the screenshot. A selected card drags the whole selection.
 
 ## The annotator
 
-Press Return, or click Draw in the strip, to open a card and draw on it.
+Click a card, press Return, or click Draw in the strip to open a card and draw on it.
 
 Return on several selected cards opens them one after another, in the order you picked them.
 Copying or sending each one sends it home and opens the next. They stay selected the whole time,
@@ -102,23 +132,27 @@ so Cmd+C or Cmd+S afterwards still takes all of them. Selecting another card whi
 it to the end of that run, and deselecting it takes it out. Esc, or closing the stack, drops the
 rest of the queue.
 
-A card on its way to the annotator can be turned around. In the stack, press Esc or click another
-card, and it goes straight home from wherever it is. Anything drawn on it is kept.
+A card on its way to the annotator can be turned around. Press Esc, or click another card in the
+stack, and it goes straight home from wherever it is. Anything drawn on it is kept.
 
 The editor has four tools: V selects, R draws rectangles, A arrows, and T text. A fresh image opens
 on the rectangle tool. Reopening a card you have already drawn on opens on the selection tool with
 the mark you drew last already selected, so a drag, an arrow key or Delete acts on it without a
 click first. Return copies the drawing and sends the card home. Esc cancels a drag in progress, and
 at rest closes the editor without copying. A card opened from the stack goes back to its place
-there. A thumbnail opened on its own leaves the screen, since there is nothing left to do with it;
-the screenshot and its drawing are still in the recent stack. [The drawing editor](editor.md) lists every key and
-gesture.
+there. A lone thumbnail leaves the screen, since there is nothing left to do with it; the
+screenshot and its drawing are still in the recent stack. With Close after copying a drawing on, in
+Settings → General, Return also closes the stack. [The drawing editor](editor.md) lists every key
+and gesture.
 
-When a coding agent session can take the drawing, the toolbar shows it beside Send: the agent's
-logo and the project's folder. It starts on the session you were last in, and a click on it picks
-another. Cmd+Return sends. On a card an agent sent you, the toolbar has one button, Reply, and
-Return sends your drawing back to that session. A Claude Code session takes a drawing through the
-Vignette plugin, in any terminal. Codex threads need the `codex` command-line tool.
+When a coding agent session can take the drawing, the toolbar shows that session, with the agent's
+logo and the project's folder, then a message field and Send. It starts on the session you were
+last in, and a click on it picks another. Type in Add a message to send words with the drawing.
+Cmd+Return sends, and so does Return in the message field. On a card an agent sent you, the toolbar
+has the message field and Reply, and Return sends your drawing back to that session. After a send,
+the card says where the drawing went and whether it arrived. A Claude Code session takes a drawing
+through the Vignette plugin, in any terminal. A Codex thread needs the Codex app or its `codex`
+command-line tool. [For agents](agents.md) covers installing the plugin.
 
 Cmd+C with nothing selected copies the drawing, the same image Return copies, and leaves the editor
 open. With marks selected it copies the marks, which paste into this image or another one.
@@ -129,11 +163,11 @@ it shows on any screenshot. An agent's note becomes yours when you change its wo
 Pinch, Cmd+scroll, or Cmd+plus and Cmd+minus zoom the image. Cmd+0 fits it again. A plain scroll
 moves around a zoomed-in image. The window grows with the image: each side widens or heightens until
 it reaches the edge of the space the annotator has. A two-finger double tap, or a double-click on
-empty space with the selection tool, zooms in twice on the point you are on, and comes home to the
-fitted size from anywhere above it. A double-click on a text edits it instead.
+empty space with the selection tool, zooms in to twice the size on the point you are on. Zoomed in,
+the same gesture returns to the fitted size. A double-click on a text edits it instead.
 
-A card whose drawing you parked with Esc or a swap shows the drawing in its thumbnail. Reopen the
-card and the drawing is back. Copy Drawing renders it without opening the editor.
+A card you drew on shows its drawing, however you left the editor. Reopen the card and the drawing
+is back. Cmd+Shift+C copies it without opening the editor.
 
 ## The shortcut
 
@@ -166,8 +200,8 @@ selection, Draw is greyed in the strip, and hovering it says why. Their shortcut
 selected card is a recording, Draw becomes Open.
 
 Cmd+C copies a recording as a file, which chat apps attach and terminals paste as its path. Draw on
-Newest Screenshot and the held shortcut skip recordings and open the newest screenshot. Open to
-Draw leaves a new recording in the stack.
+Newest Screenshot and the held shortcut skip recordings and open the newest screenshot. Instant
+Draw shows a new recording as a card in the corner.
 
 ## Cards from an agent
 
