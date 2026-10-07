@@ -106,6 +106,10 @@ The names in brackets are `// MARK:` sections.
   rather than send audio to Apple. The Settings switch asks for the microphone and speech
   recognition; nothing else does. `[speech]` lines log listening, and `[state] liveInk.listening`
   says whether it is.
+- Every ask's picture numbers the person's strokes in the order drawn, with a badge beside each
+  (`LivePacket.numbers`), and the responder's ink carries the same `n`. A spoken note sent as it was
+  said gets `[n]` after the word said as stroke `n` was drawn (`SpokenNote.marked`, from
+  `strokeTimes`), for the agent only; the note on screen keeps the person's words.
 - An ask sent to a session goes through Send, as one line that names the app, the window and its
   URL. The person's words stay beside their ink as their own note, and both shimmer until the
   session's turn ends (`LiveInk.watchWorking`, from the `turn` file the plugin's hooks write in its
@@ -121,21 +125,31 @@ The names in brackets are `// MARK:` sections.
   has the reasons.
 - An ask is answered by `LiveResponder`: one `claude -p` process in stream-json mode, run with
   `--safe-mode --tools ""`, its own system prompt, and `--json-schema` for the answer
-  (`LiveAnswer.schema`). Started plainly, the process registered itself as a session in Vignette's
+  (`LiveAnswer.schema`, fixed text that lists `say` first, the field that streams in as the reply).
+  Started plainly, the process registered itself as a session in Vignette's
   inbox and could read files, so those flags are the isolation, and the process stops before any
   screen content is sent unless its `init` line lists no tool but `StructuredOutput` and no MCP
-  server. It starts at the first inking and sends a short warm-up ask ($0.001 to $0.008) that checks
-  that line and caches the prompt. It stops after 10 minutes with nothing asked, and when the ink is
-  cleared or live ink is turned off, and starts a new conversation after 12 asks. In a test launch it runs only the `claude` that
+  server. It starts at the first inking and sends a short warm-up ask ($0.001 to $0.01) that checks
+  that line and caches the prompt. `docs/live-ink-ask-cost-2026-10-06.md` has what an ask costs and
+  why. It runs on Claude's 5-minute prompt cache (`CLAUDE_CODE_PROMPT_CACHE_TTL=5m`) and stops 4.5
+  minutes after its last request, since an ask after the cache ends would write the whole
+  conversation again. It also stops when the ink is cleared or live ink is turned off, and starts a
+  new conversation after 12 asks. In a test launch it runs only the `claude` that
   `VIGNETTE_CLAUDE` names, since any other runs on the person's account;
   `scripts/e2e/fake_claude.py` stands in for it.
 - `LivePacket` is the ask's content, built in about 300 ms: a ScreenCaptureKit capture of the
   topmost window under the ink below the Dock's level (the Dock has a window over the whole screen at
   its level), Vision's accurate text lines read before the ink is drawn in, with ids, the person's
   ink drawn into the picture and listed as boxes, and the app, title and the Accessibility document
-  or web area URL. Ink across a line garbled what Vision read of it, and the fast level garbled code
+  or web area URL. An ask sends the pictures, then the lines of the window's text nearest the ink, up
+  to 4,500 characters, as plain lines (`t2 12 34 640 14 words`: id, box, words), then the rest as
+  JSON, so the note comes after the long parts. Boxes are in
+  thousandths of the picture both ways; as JSON objects the same lines cost nearly twice the tokens.
+  An answer names a line by id only among those sent, and other text by its words or a box
+  (`docs/live-ink-ask-cost-2026-10-06.md`).
+  Ink across a line garbled what Vision read of it, and the fast level garbled code
   (`docs/live-ink-step2-spike-2026-10-04.md`). A follow-up to the same window showing the same text,
-  in the same conversation, sends no picture. Capturing needs Screen Recording, which the switch asks
+  in the same conversation, sends no picture, only the nearby lines not sent yet. Capturing needs Screen Recording, which the switch asks
   for when turned on (`ScreenRecording.request`, macOS's own alert, once); a row under the switch and
   the menu's first item open its pane. On macOS 15 the first capture also raised macOS's "bypass the
   system private window picker" alert.

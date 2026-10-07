@@ -125,3 +125,45 @@ final class LiveListening {
         Log.write("[speech] stopped listening")
     }
 }
+
+/// A spoken note with the ink's numbers put into it where each stroke was drawn, so "this [2]" says
+/// which ink "this" is. The agent reads the numbers; the note on the screen keeps the person's words.
+enum SpokenNote {
+    /// A stroke's number in the ask, and when it was drawn, in seconds on the words' clock.
+    struct Stroke: Equatable {
+        let number: Int
+        let start: TimeInterval
+        let end: TimeInterval
+    }
+
+    /// Words that point. A stroke's number goes after the nearest one said within `reach` of it.
+    static let pointingWords: Set<String> = ["this", "that", "these", "those", "here", "there", "it"]
+    static let reach: TimeInterval = 1
+
+    /// `words` joined, with `[n]` after the pointing word nearest each stroke in time, or, with none
+    /// near it, where the stroke began among the words. A word takes one stroke's number at most.
+    static func marked(_ words: [SpokenWord], strokes: [Stroke]) -> String {
+        var after: [Int: [Int]] = [:]
+        var taken = Set<Int>()
+        for stroke in strokes.sorted(by: { $0.start < $1.start }) {
+            let near = words.indices.filter { !taken.contains($0) && points(words[$0]) && gap(words[$0], stroke) <= reach }
+            if let best = near.min(by: { gap(words[$0], stroke) < gap(words[$1], stroke) }) {
+                taken.insert(best)
+                after[best, default: []].append(stroke.number)
+            } else {
+                after[words.lastIndex { $0.start <= stroke.start } ?? -1, default: []].append(stroke.number)
+            }
+        }
+        let tags = { (index: Int) in (after[index] ?? []).map { "[\($0)]" } }
+        return (tags(-1) + words.indices.flatMap { [words[$0].text] + tags($0) }).joined(separator: " ")
+    }
+
+    private static func points(_ word: SpokenWord) -> Bool {
+        word.text.lowercased().split(separator: " ").contains { pointingWords.contains($0.trimmingCharacters(in: .punctuationCharacters)) }
+    }
+
+    /// Seconds between a word and a stroke, zero when they overlap.
+    private static func gap(_ word: SpokenWord, _ stroke: Stroke) -> TimeInterval {
+        max(0, word.start - stroke.end, stroke.start - word.end)
+    }
+}

@@ -216,10 +216,11 @@ an isolated Chrome with the real responder.
   the reader's resize also sends a crop round the ink at full detail. Sized by
   `Stitch.readerScale`.
 - **The text:** Vision's accurate recognition of the capture *before* the ink is drawn in, since
-  ink across a line garbles it. Each line gets an id (`t1`, `t2`) and its box as fractions of the
-  picture. Fast recognition garbles code, so accurate it is, warmed up when live ink turns on: its
-  first call takes 300 to 480 ms, and later ones 100 to 170 ms for a window.
-- **The ink**, drawn into the picture after recognition, and its shapes as fractions of the
+  ink across a line garbles it. Each line gets an id (`t1`, `t2`) and its box in thousandths of the
+  picture, and goes as one plain line of text (`docs/live-ink-ask-cost-2026-10-06.md`). Fast
+  recognition garbles code, so accurate it is, warmed up when live ink turns on: its first call
+  takes 300 to 480 ms, and later ones 100 to 170 ms for a window.
+- **The ink**, drawn into the picture after recognition, and its shapes in thousandths of the
   picture, with the new strokes marked.
 - **Where:** the app's name, the window's title, and the page's URL or the document's path when
   Accessibility gives one.
@@ -240,9 +241,10 @@ Codex app nothing), and Vision reads the same text from any app.
     --safe-mode --tools "" --system-prompt <its own> --no-session-persistence
   ```
 
-  Each ask is one user message: the picture inline as an image, and the packet as JSON text. The
-  answer is the `result` line's `structured_output`, which the schema keeps valid. Sonnet answered
-  in 1.7 to 3.3 s, and Haiku was slower, not faster.
+  Each ask is one user message: the pictures inline as images, the window's text as plain lines,
+  and the rest of the packet as JSON text, after them. The answer is the `result` line's
+  `structured_output`, which the schema keeps valid. Sonnet answered in 1.7 to 3.3 s, and Haiku
+  was slower, not faster.
 - **It runs apart from the person's setup.** Started plainly, the process loaded Pete's hooks,
   plugins and MCP servers, registered itself as a Claude Code session in Vignette's inbox, and had
   about 150 tools, Slack and Notion among them. `--safe-mode` keeps the person's sign-in and drops
@@ -262,8 +264,8 @@ Codex app nothing), and Vision reads the same text from any app.
 
 - **The responder replies with JSON:** `say`, a short answer, and up to four marks. A mark names a
   text line (`loop` around `t3`, `arrow` to `t5` from a side, `point` under `t2`), and may narrow it
-  to words within the line (`"words": "surface.markz"`), or gives fractions of the picture. A
-  whole line was too coarse: the typo in a 90-character line got a loop round all of it. Vignette
+  to words within the line (`"words": "surface.markz"`), or gives a box in thousandths of the
+  picture. A whole line was too coarse: the typo in a 90-character line got a loop round all of it. Vignette
   finds the words' box with Vision's `VNRecognizedText.boundingBox(for:)`, and falls back to the
   line when it cannot.
 - **`say` starts drawing as it streams,** about a second before the marks arrive, 1.3 to 2.3 s

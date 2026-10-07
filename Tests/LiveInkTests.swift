@@ -40,6 +40,31 @@ final class LiveInkTests: XCTestCase {
         XCTAssertTrue(end.isOver(at: ListeningEnd.longest), "but never past the longest listening")
     }
 
+    // MARK: Tying spoken words to strokes
+
+    private func words(_ spoken: [(String, TimeInterval)]) -> [SpokenWord] {
+        spoken.map { SpokenWord(text: $0.0, start: $0.1, duration: 0.2) }
+    }
+
+    func testAStrokeIsNumberedAfterThePointingWordSaidAsItWasDrawn() {
+        let said = words([("Make", 0), ("this", 0.3), ("one", 0.5), ("the", 0.7), ("same", 0.8), ("size", 1.1), ("as", 1.4), ("that", 1.6), ("one", 1.8)])
+        let strokes = [SpokenNote.Stroke(number: 1, start: 0.1, end: 0.9), SpokenNote.Stroke(number: 2, start: 1.5, end: 2.4)]
+        XCTAssertEqual(SpokenNote.marked(said, strokes: strokes), "Make this [1] one the same size as that [2] one")
+    }
+
+    func testAStrokeWithNoPointingWordNearIsNumberedWhereItBegan() {
+        let said = words([("Bigger", 0), ("please", 0.4)])
+        XCTAssertEqual(SpokenNote.marked(said, strokes: [SpokenNote.Stroke(number: 1, start: 0.5, end: 0.8)]), "Bigger please [1]")
+        XCTAssertEqual(SpokenNote.marked(said, strokes: [SpokenNote.Stroke(number: 1, start: -0.5, end: -0.1)]), "[1] Bigger please",
+                       "a stroke drawn before the first word goes before it")
+    }
+
+    func testTwoStrokesNearOnePointingWordDoNotShareIt() {
+        let said = words([("this", 0.2), ("and", 0.5), ("this", 1.4)])
+        let strokes = [SpokenNote.Stroke(number: 1, start: 0, end: 0.6), SpokenNote.Stroke(number: 2, start: 0.7, end: 1.2)]
+        XCTAssertEqual(SpokenNote.marked(said, strokes: strokes), "this [1] and this [2]")
+    }
+
     // MARK: The chord
 
     func testBeginsOnExactlyControlAndOptionInEitherOrder() {
@@ -177,13 +202,20 @@ final class LiveInkTests: XCTestCase {
             AnswerMark(kind: .circle, line: "t3", words: "$197.85", label: "Should be $194.24"),
             AnswerMark(kind: .arrow, box: CGRect(x: 0.5, y: 0.75, width: 0.5, height: 0.25)),
         ], "a box is cut to the picture; a mark with no target or an unknown kind is dropped")
+        XCTAssertEqual(try LiveAnswer(responder: ["say": "Here.", "marks": [["kind": "arrow", "box": [500, 750, 800, 500]]]]).marks,
+                       [AnswerMark(kind: .arrow, box: CGRect(x: 0.5, y: 0.75, width: 0.5, height: 0.25))],
+                       "the responder's boxes are in thousandths, as its schema asks")
         XCTAssertFalse(answer.steps)
         XCTAssertTrue(try LiveAnswer(json: ["say": "Two clicks.", "marks": [], "steps": true]).steps)
         XCTAssertThrowsError(try LiveAnswer(json: ["say": " ", "marks": []]))
         XCTAssertThrowsError(try LiveAnswer(json: ["marks": []]))
     }
 
-    func testTheReplyStreamsInAsTheAnswersJSONArrives() {
+    func testTheReplyStreamsInAsTheAnswersJSONArrives() throws {
+        // `say` streams in ahead of the marks only when the schema lists it first.
+        XCTAssertNoThrow(try JSONSerialization.jsonObject(with: Data(LiveAnswer.schema.utf8)))
+        let fields = LiveAnswer.schema[try XCTUnwrap(LiveAnswer.schema.range(of: #""properties""#)).upperBound...]
+        XCTAssertLessThan(try XCTUnwrap(fields.range(of: #""say""#)).lowerBound, try XCTUnwrap(fields.range(of: #""marks""#)).lowerBound)
         let pieces = ["{\"say\": \"The", " total", " is \\\"$197", ".85\\\"\\nnot", " $194\\u00b7", "\", \"marks\": []}"]
         var json = "", seen: [String] = []
         XCTAssertNil(LiveAnswer.partialSay(in: "{\"say\": \""))

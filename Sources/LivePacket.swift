@@ -34,6 +34,9 @@ struct LivePacket: @unchecked Sendable {
     let lines: [Line]
     /// The capture with the ink drawn in, sized for the reader.
     let picture: Data
+    /// The number drawn beside each of the person's strokes in the picture, from 1 in the order they
+    /// were drawn. The ink in `message` and a spoken note's `[n]` use the same numbers.
+    let numbers: [Mark.ID: Int]
     /// A part of the window round the ink at full detail, for a window too large to read whole after
     /// the reader's resize, with its rect in fractions of the picture.
     let detail: (png: Data, box: CGRect)?
@@ -54,9 +57,12 @@ struct LivePacket: @unchecked Sendable {
         var description: String { "\(reason) (\(detail))" }
     }
 
-    /// The most text lines a packet carries, and the longest line, in characters.
-    static let maxLines = 300
+    /// The longest text line a packet keeps, in characters.
     static let maxLineLength = 200
+    /// The most an ask sends of the window's text, in characters of `textLines`, the lines nearest its
+    /// ink: about half of a terminal's, whose text cost more than the pictures
+    /// (docs/live-ink-ask-cost-2026-10-06.md).
+    static let sentCharacters = 4_500
 
     /// The window under `point`, in global top-left points, captured and read, or the window `id`
     /// names while it is on screen, whatever covers it. `ink` is every mark of the person's to draw
@@ -134,7 +140,7 @@ struct LivePacket: @unchecked Sendable {
         let ms = { (date: Date) in Int(date.timeIntervalSince(started) * 1000) }
         Log.write("[live-ink] looked ms capture=\(ms(captured)) page=\(ms(page.at)) read=\(ms(assembled.at))")
         return LivePacket(frame: frame, windowID: target?.id, app: app, title: title, location: page.page?.location, page: page.page?.area,
-                          lines: assembled.lines, picture: assembled.picture, detail: assembled.detail)
+                          lines: assembled.lines, picture: assembled.picture, numbers: assembled.numbers, detail: assembled.detail)
     }
 
     /// What `assemble` makes, and when it was done. Unchecked for the packet's reason: its lines'
@@ -142,6 +148,7 @@ struct LivePacket: @unchecked Sendable {
     private struct Assembled: @unchecked Sendable {
         let lines: [Line]
         let picture: Data
+        let numbers: [Mark.ID: Int]
         let detail: (png: Data, box: CGRect)?
         let at: Date
     }
@@ -150,7 +157,8 @@ struct LivePacket: @unchecked Sendable {
     private static func assemble(_ capture: CGImage, frame: CGRect, ink: [Mark], style: TextStyle, markStyle: MarkStyle) throws -> Assembled {
         let lines = read(capture)
         let pixels = CGSize(width: capture.width, height: capture.height)
-        guard let inked = draw(ink, on: capture, frame: frame, style: style, markStyle: markStyle) else {
+        let numbers = numbered(ink, in: frame)
+        guard let inked = draw(ink, numbers: numbers, on: capture, frame: frame, style: style, markStyle: markStyle) else {
             throw Failure(reason: "Vignette couldn't draw the ink into the picture.", detail: "bitmap")
         }
         let readerScale = Stitch.readerScale(pixels)
@@ -166,11 +174,44 @@ struct LivePacket: @unchecked Sendable {
            let png = png(crop, scale: Stitch.readerScale(CGSize(width: crop.width, height: crop.height))) {
             detail = (png, box)
         }
-        return Assembled(lines: lines, picture: picture, detail: detail, at: Date())
+        return Assembled(lines: lines, picture: picture, numbers: numbers, detail: detail, at: Date())
     }
 
-    /// The text JSON of an ask: `freshPicture` false for a follow-up that sends no picture, whose text
-    /// lines are the ones sent with the picture before.
+    /// The lines nearest `ink`, a rect in global top-left points, that fit in `sentCharacters`, in
+    /// reading order. Characters rather than lines, since the text is the cost: Vision splits a row
+    /// into pieces, and a line of code can be ten times a terminal prompt's length.
+    func lines(near ink: CGRect) -> [Line] {
+        let gaps = lines.map { line -> CGFloat in
+            guard !ink.isNull else { return 0 }
+            let box = global(line.box)
+            return hypot(max(0, box.minX - ink.maxX, ink.minX - box.maxX), max(0, box.minY - ink.maxY, ink.minY - box.maxY))
+        }
+        var room = Self.sentCharacters
+        var kept: [Int] = []
+        for index in lines.indices.sorted(by: { (gaps[$0], $0) < (gaps[$1], $1) }) {
+            let size = Self.textLine(lines[index]).count + 1
+            guard size <= room else { break }
+            room -= size
+            kept.append(index)
+        }
+        return kept.sorted().map { lines[$0] }
+    }
+
+    /// `lines` for an ask, one per line: the line's id, its box in thousandths of the picture, then
+    /// its words, as `t2 12 34 640 14 error: …`. As JSON the same lines cost the reader nearly twice
+    /// the tokens (docs/live-ink-ask-cost-2026-10-06.md). Nil for no lines.
+    static func textLines(_ lines: [Line]) -> String? {
+        lines.isEmpty ? nil : lines.map(textLine).joined(separator: "\n")
+    }
+
+    private static func textLine(_ line: Line) -> String {
+        // A newline in the words would start a line with no id.
+        let words = line.text.components(separatedBy: .newlines).joined(separator: " ")
+        return ([line.id] + thousandths(line.box).map(String.init) + [words]).joined(separator: " ")
+    }
+
+    /// The JSON of an ask, sent after its pictures and text lines: `freshPicture` false for a
+    /// follow-up that sends no picture, about the picture and text lines sent before.
     func message(note: String, ink: [Mark], new: Set<Mark.ID>, freshPicture: Bool) -> String {
         var json: [String: Any] = [:]
         if let app { json["app"] = app }
@@ -179,32 +220,28 @@ struct LivePacket: @unchecked Sendable {
         json["note"] = note
         json["ink"] = ink.compactMap { mark -> [String: Any]? in
             guard let extent = mark.shapeExtent else { return nil }
-            var item: [String: Any] = ["kind": mark.kind == .ellipse ? "circle" : mark.kind.rawValue, "box": fractions(extent),
+            var item: [String: Any] = ["kind": mark.kind == .ellipse ? "circle" : mark.kind.rawValue, "box": thousandths(of: extent),
                                        "new": new.contains(mark.id)]
+            if let number = numbers[mark.id] { item["n"] = number }
             if case .arrow(let arrow) = mark.geometry {
-                item["from"] = fractions(arrow.start)
-                item["to"] = fractions(arrow.end)
+                item["from"] = thousandths(of: arrow.start)
+                item["to"] = thousandths(of: arrow.end)
             }
             return item
         }
-        if freshPicture {
-            json["text"] = lines.map { ["id": $0.id, "text": $0.text, "box": Self.rounded($0.box)] as [String: Any] }
-            if let detail { json["detail"] = ["box": Self.rounded(detail.box), "about": "the second picture is this part at full detail"] }
-        } else {
-            json["picture"] = "the same as the last picture; the text lines are as sent with it"
-        }
-        let data = (try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])) ?? Data()
+        if freshPicture, let detail { json["detail"] = Self.thousandths(detail.box) }
+        let data = (try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// `rect`, in global top-left points, in fractions of the picture.
-    func fractions(_ rect: CGRect) -> [NSDecimalNumber] {
-        Self.rounded(CGRect(x: (rect.minX - frame.minX) / frame.width, y: (rect.minY - frame.minY) / frame.height,
-                            width: rect.width / frame.width, height: rect.height / frame.height))
+    /// `rect`, in global top-left points, in thousandths of the picture.
+    func thousandths(of rect: CGRect) -> [Int] {
+        Self.thousandths(CGRect(x: (rect.minX - frame.minX) / frame.width, y: (rect.minY - frame.minY) / frame.height,
+                                width: rect.width / frame.width, height: rect.height / frame.height))
     }
 
-    func fractions(_ point: CGPoint) -> [NSDecimalNumber] {
-        [(point.x - frame.minX) / frame.width, (point.y - frame.minY) / frame.height].map(Self.rounded)
+    func thousandths(of point: CGPoint) -> [Int] {
+        [(point.x - frame.minX) / frame.width, (point.y - frame.minY) / frame.height].map(Self.thousandths)
     }
 
     /// A rect in fractions of the picture, in global top-left points.
@@ -213,14 +250,13 @@ struct LivePacket: @unchecked Sendable {
                width: fractions.width * frame.width, height: fractions.height * frame.height)
     }
 
-    static func rounded(_ rect: CGRect) -> [NSDecimalNumber] {
-        [rect.minX, rect.minY, rect.width, rect.height].map(rounded)
+    /// A rect in fractions of the picture as the reader gets it: x, y, width and height in thousandths.
+    static func thousandths(_ rect: CGRect) -> [Int] {
+        [rect.minX, rect.minY, rect.width, rect.height].map(thousandths)
     }
 
-    /// Three decimals, written as such: `JSONSerialization` writes a `Double` in full, so 0.235 went
-    /// as 0.23499999999999999, which the reader pays for in tokens.
-    static func rounded(_ value: CGFloat) -> NSDecimalNumber {
-        NSDecimalNumber(string: String(format: "%.3f", Double(value)))
+    static func thousandths(_ fraction: CGFloat) -> Int {
+        Int((fraction * 1000).rounded())
     }
 
     // MARK: Pieces
@@ -262,7 +298,7 @@ struct LivePacket: @unchecked Sendable {
             let rowA = (a.1.midY / rowHeight).rounded(), rowB = (b.1.midY / rowHeight).rounded()
             return rowA == rowB ? a.1.minX < b.1.minX : rowA < rowB
         }
-        return ordered.prefix(maxLines).enumerated().map { index, item in
+        return ordered.enumerated().map { index, item in
             Line(id: "t\(index + 1)", text: String(item.0.string.prefix(maxLineLength)), box: item.1, recognized: item.0)
         }
     }
@@ -301,8 +337,15 @@ struct LivePacket: @unchecked Sendable {
         }
     }
 
-    /// The capture with `ink` drawn over it, at the capture's own size.
-    private static func draw(_ ink: [Mark], on capture: CGImage, frame: CGRect, style: TextStyle, markStyle: MarkStyle) -> CGImage? {
+    /// The person's strokes on the window, numbered from 1 in the order they were drawn.
+    static func numbered(_ ink: [Mark], in frame: CGRect) -> [Mark.ID: Int] {
+        let strokes = ink.filter { $0.shapeExtent?.intersects(frame) ?? false }
+        return Dictionary(uniqueKeysWithValues: strokes.enumerated().map { ($1.id, $0 + 1) })
+    }
+
+    /// The capture with `ink` drawn over it, and each stroke's number beside it, at the capture's own size.
+    private static func draw(_ ink: [Mark], numbers: [Mark.ID: Int], on capture: CGImage, frame: CGRect, style: TextStyle,
+                             markStyle: MarkStyle) -> CGImage? {
         let space = capture.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
         guard let context = CGContext(data: nil, width: capture.width, height: capture.height, bitsPerComponent: 8, bytesPerRow: 0,
                                       space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
@@ -313,7 +356,52 @@ struct LivePacket: @unchecked Sendable {
         context.scaleBy(x: scale, y: -scale)
         context.translateBy(x: -frame.minX, y: -frame.minY)
         for mark in ink { mark.draw(in: context, pointScale: 1, imageWidth: frame.maxX, style: style, markStyle: markStyle) }
+        for mark in ink {
+            if let number = numbers[mark.id] { drawNumber(number, beside: mark, in: context, frame: frame, markStyle: markStyle) }
+        }
         return context.makeImage()
+    }
+
+    /// A badge's radius, in points.
+    private static let badgeRadius: CGFloat = 9
+
+    /// A round badge in the person's colour with `number` in white, outside the stroke where a hand
+    /// would write it: past an arrow's tail, or off a loop's top-left. `context` is in global top-left
+    /// points.
+    private static func drawNumber(_ number: Int, beside mark: Mark, in context: CGContext, frame: CGRect, markStyle: MarkStyle) {
+        let r = badgeRadius
+        var center: CGPoint
+        switch mark.geometry {
+        case .arrow(let arrow):
+            let dx = arrow.start.x - arrow.end.x, dy = arrow.start.y - arrow.end.y
+            let length = max(1, hypot(dx, dy))
+            center = CGPoint(x: arrow.start.x + dx / length * (r + 4), y: arrow.start.y + dy / length * (r + 4))
+        case .ellipse(let box):
+            let edge = CGPoint(x: box.midX - box.width / 2 * 0.7071, y: box.midY - box.height / 2 * 0.7071)
+            center = CGPoint(x: edge.x - (r + 3) * 0.7071, y: edge.y - (r + 3) * 0.7071)
+        case .rectangle(let box):
+            center = CGPoint(x: box.minX - r - 2, y: box.minY - r - 2)
+        case .text:
+            return
+        }
+        center.x = min(max(center.x, frame.minX + r + 1), frame.maxX - r - 1)
+        center.y = min(max(center.y, frame.minY + r + 1), frame.maxY - r - 1)
+        let badge = CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r)
+        context.setFillColor(markStyle.color(.person))
+        context.fillEllipse(in: badge)
+        context.setStrokeColor(markStyle.edgeColor.cgColor)
+        context.setLineWidth(1.5)
+        context.strokeEllipse(in: badge)
+        let font = NSFont.systemFont(ofSize: number < 10 ? 11 : 9, weight: .bold)
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: "\(number)", attributes: [.font: font, .foregroundColor: NSColor.white]))
+        let bounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+        context.saveGState()
+        // The context runs y down; text is drawn y up, so it is flipped about its own baseline.
+        context.textMatrix = .identity
+        context.translateBy(x: center.x - bounds.midX, y: center.y + bounds.midY)
+        context.scaleBy(x: 1, y: -1)
+        CTLineDraw(line, context)
+        context.restoreGState()
     }
 
     private static func png(_ image: CGImage, scale: CGFloat) -> Data? {

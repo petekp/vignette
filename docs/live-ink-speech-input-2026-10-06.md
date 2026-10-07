@@ -1,7 +1,7 @@
 # Live ink: speech input (2026-10-06)
 
-Status: steps 1 and 2 are built on `live-ink` and pass the unit tests. Nothing has been heard yet:
-the microphone needs the entitlement below, and the recognizer needs its permission.
+Status: steps 1 to 3 are built on `live-ink`. Steps 1 and 2 were tried by voice on 2026-10-06 and
+worked well; step 3 passes its unit tests and has not been tried by voice.
 
 ## What it does
 
@@ -84,14 +84,21 @@ listening.
 
 ### 4. Tying words to ink
 
-Each mark the person draws records when it was drawn. When the ask goes, Vignette numbers the ink
-and puts each number into the words where it was drawn: "make this [2] the same size as that [3]".
-The agent reads that as language and resolves "this" itself. The ink in the ask's `ink` list
-carries the same numbers.
+Each stroke the person draws records when it began and ended. Every ask's picture has a small
+numbered badge beside each of the person's strokes, in the order they were drawn, and the ink in the
+responder's JSON carries the same number as `n`. The numbers are drawn on every ask, typed or
+spoken, so they never depend on when the note was typed, and the person never sees them: the badges
+are only in the picture the agent gets.
 
-The responder's ask has the ink as a list, so the numbers work there. An ask sent to a session
-carries only the picture and one line, and its picture has no numbers on the ink. Step 3 decides
-whether to draw numbers into that picture or send the words without them.
+A spoken note sent as it was said gets `[n]` put into its words where stroke `n` was drawn
+(`SpokenNote.marked`): after the nearest "this", "that", "these", "those", "here", "there" or "it"
+said within a second of the stroke, or, with none near, where the stroke began among the words. A
+word takes one stroke's number at most. "Make this [1] the same size as that [2]" goes to the
+agent; the note on the screen keeps the words as they were said. A note the person edited, or typed,
+gets no numbers.
+
+The responder's prompt says what `n` and `[n]` mean and not to mention them. A session's line adds
+one sentence saying that each `[n]` is where the ink numbered `n` in the picture was drawn.
 
 ### 5. Permissions and the build
 
@@ -132,6 +139,9 @@ decided, its switch and key go, and the chosen behaviour stays.
 
 ## Steps
 
-1. The transcriber, the Apple engine, the microphone, and the file check.
-2. Listening in live ink: words in the note, and both experiments.
-3. Tying words to ink, and the session route.
+1. The transcriber, the Apple engine, the microphone, and the file check. Done.
+2. Listening in live ink: words in the note, and both experiments. Done.
+3. Tying words to ink, and the session route. Done.
+4. Words on the page as hints: read the window as the glow shows, hold the audio until its words are
+   in, and start recognition with the most useful 100. Without the hint, "Arno" was heard as
+   "the RO"; with it, as "Arno".

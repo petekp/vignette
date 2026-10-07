@@ -13,6 +13,7 @@ lists, one a line, to stand in for a CLI that ignores `--tools ""`.
 """
 import json
 import os
+import re
 import sys
 import time
 
@@ -46,11 +47,9 @@ def reply(folder, text):
     path = os.path.join(folder, 'answer.json')
     if os.path.exists(path):
         return json.load(open(path))
-    try:
-        lines = json.loads(text).get('text') or []
-    except ValueError:
-        lines = []
-    marks = [{'kind': 'circle', 'line': lines[0]['id'], 'label': 'This one'}] if lines else []
+    # The window's text lines each start with their id: `t2 12 34 640 14 words`.
+    lines = re.findall(r'(?m)^(t\d+) ', text)
+    marks = [{'kind': 'circle', 'line': lines[0], 'label': 'This one'}] if lines else []
     return {'say': f'The fake responder read {len(lines)} lines.', 'marks': marks}
 
 
