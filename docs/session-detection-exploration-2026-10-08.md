@@ -373,8 +373,9 @@ and is removed before live ink reaches main.
   the main thread. A test launch writes it beside its scratch settings file instead. It stops at
   20 MB. It is a file of its own because `Vignette.log` rotates at 5 MB and would lose the first
   days.
-- **What it keeps:** session ids, folders, bundle ids, port numbers, and the screenshot's file name,
-  which joins a capture to its send. Never a window's title, a page's URL or a document's name.
+- **What it keeps:** session ids, folders, bundle ids, port numbers, and a digest of the
+  screenshot's file name, which joins a capture to its send. Never a window's title, a page's URL or
+  a file's name: an agent names the image it pushes for what it shows.
   Titles are only compared, in memory, with each session's name and folder. No model inputs are
   kept unless Pete chooses that (question 8).
 - **`capture`, at each new screenshot** (the watcher's report, whatever "draw on capture" says):
@@ -391,7 +392,7 @@ and is removed before live ink reaches main.
     title contains.
   - `sessions`: each live Claude Code session's id, folder, herdr `focus` and seconds `idle`.
   - `readMs`: how long the window's reads took.
-- **`send`, at each send from the editor:** `file`, `request`, `to`, `client`, and `offered`, where
+- **`send`, at each send from the editor:** `file` (the digest), `request`, `to`, `client`, and `offered`, where
   the bar's filled button sent before the person changed it, with `reply` when that was a Reply.
 - **`note`, at each live ink note sent:** `to` (a session id, or `responder` for the built-in
   Claude), `offered` (the target the note started on), and the window's facts as for a capture.

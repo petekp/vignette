@@ -1,12 +1,13 @@
 import AppKit
+import CryptoKit
 import Darwin
 
 /// A few days' record of what Vignette could see at each capture and each send, to score ways of
 /// choosing the session a drawing goes to against where it went
 /// (docs/session-detection-exploration-2026-10-08.md, "The shadow log"). It keeps session ids,
-/// folders, bundle ids and port numbers, and the screenshot's file name to join a capture to its
-/// send; never a window's title, a page's URL or a document's name. Temporary: it is removed before
-/// live ink reaches main.
+/// folders, bundle ids and port numbers, and a digest of the screenshot's file name to join a capture
+/// to its send; never a window's title, a page's URL or a file's name, since an agent's push is named
+/// for what it shows. Temporary: it is removed before live ink reaches main.
 enum SendContext {
     private static let queue = DispatchQueue(label: "send-context", qos: .utility)
     /// A test launch writes beside its scratch settings file, never into the person's folder.
@@ -45,7 +46,7 @@ enum SendContext {
         let name = shot.lastPathComponent
         queue.async {
             let (how, window) = captured(size: size, cursor: cursor, windows: windows, displays: displays)
-            var record: [String: Any] = ["event": "capture", "file": name, "capture": how]
+            var record: [String: Any] = ["event": "capture", "file": digest(name), "capture": how]
             record.merge(facts(of: window, location: nil)) { $1 }
             append(record, at: at)
         }
@@ -58,7 +59,7 @@ enum SendContext {
         let at = Date()
         let to = destination.id, client = destination.client.rawValue
         queue.async {
-            var record: [String: Any] = ["event": "send", "file": file, "request": request, "to": to, "client": client]
+            var record: [String: Any] = ["event": "send", "file": digest(file), "request": request, "to": to, "client": client]
             if let offered { record["offered"] = offered.id; record["reply"] = offered.reply }
             append(record, at: at)
         }
@@ -80,6 +81,10 @@ enum SendContext {
             record.merge(facts(of: window, location: location ?? "")) { $1 }
             append(record, at: at)
         }
+    }
+
+    private static func digest(_ name: String) -> String {
+        SHA256.hash(data: Data(name.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
     private static func append(_ record: [String: Any], at: Date) {
