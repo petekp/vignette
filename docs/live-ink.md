@@ -47,6 +47,11 @@ The names in brackets are `// MARK:` sections.
   (`LiveWindows`): it moves with it, the windows above it cover it, it hides while the content
   scrolls or resizes and comes back on its spot, and it goes when the window closes
   (`docs/live-ink-step3-2026-10-05.md`). A mark drawn on no window stays at its place on the screen.
+  Its spot comes from Accessibility, else from the window's pixels. Only an Electron app is asked
+  to build its page's tree (`AXManualAccessibility`), and only when a mark lands where it has none,
+  since it keeps the tree until it quits (`[live-ink] accessibility tree requested`). A Chromium
+  browser such as Chrome or Dia is not asked, so its marks go by their pixels and its page gives the
+  note no URL, unless it runs with `--force-renderer-accessibility`, as the demo's Chrome does.
 - An overlay joins no other Space, so macOS keeps it where it was put up; it is closed, never
   ordered out, since ordered in again it would come up on the active Space. A surface exists while
   it has marks, and the active Space's while the chord is held, so an idle live ink puts no
