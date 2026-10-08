@@ -211,6 +211,25 @@ final class LiveInkTests: XCTestCase {
         XCTAssertThrowsError(try LiveAnswer(json: ["marks": []]))
     }
 
+    func testTheReplyHelperRefusesAMarkItWouldDropAndNamesIt() throws {
+        let good: [String: Any] = ["kind": "circle", "words": "$72k", "box": [0.25, 0.5, 0.125, 0.0625]]
+        let kept = try LiveAnswer(json: ["say": "Here.", "marks": [good]], strict: true)
+        XCTAssertEqual(kept.marks, [AnswerMark(kind: .circle, words: "$72k", box: CGRect(x: 0.25, y: 0.5, width: 0.125, height: 0.0625))],
+                       "words and a box together are kept, so the box can stand in when the words are not found")
+        let refused: [(Any, String)] = [
+            ([good, ["kind": "underline", "words": "Total"]], "mark 2"),
+            ([good, good, ["kind": "arrow", "box": [1.2, 0.5, 0.1, 0.1]]], "mark 3"),
+            ([["kind": "arrow"]], "mark 1"),
+            (Array(repeating: good, count: LiveAnswer.maxMarks + 1), "at most"),
+        ]
+        for (marks, named) in refused {
+            XCTAssertThrowsError(try LiveAnswer(json: ["say": "Here.", "marks": marks], strict: true)) { error in
+                XCTAssertTrue("\(error)".contains(named), "\(error)")
+            }
+            XCTAssertNoThrow(try LiveAnswer(json: ["say": "Here.", "marks": marks]), "the responder's answer still drops them and is shown")
+        }
+    }
+
     func testOnlyAFocusZoomsAndItSurvivesTheReplysBundle() throws {
         let answer = try LiveAnswer(json: ["say": "Look here.", "marks": [["kind": "focus", "words": "1 px", "zoom": true],
                                                                           ["kind": "circle", "words": "Share", "zoom": true]]])

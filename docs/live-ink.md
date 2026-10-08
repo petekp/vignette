@@ -219,6 +219,10 @@ The names in brackets are `// MARK:` sections.
   `scripts/e2e/fake_claude.py` stands in for it. In `[live-ink] answered … marks=<n> thrownOut=<n>`,
   `thrownOut` counts the marks the responder gave that point at nothing, such as a box in pixels
   rather than thousandths. They are thrown out as the answer is read, before `drew answer` counts.
+  A session's answer is read strictly instead (`LiveAnswer(json:strict:)`): the reply helper
+  refuses one with a mark it would throw out and names the mark, since the session can fix it. A
+  mark whose words are not found on the window falls back to its box (`LiveInk.target`), and is
+  left out without one, counted in `drew answer … dropped=<n>`.
 - `LivePacket` is the ask's content, built in about 300 ms: a ScreenCaptureKit capture of the
   topmost window under the ink below the Dock's level (the Dock has a window over the whole screen at
   its level), Vision's accurate text lines read before the ink is drawn in, with ids, the person's

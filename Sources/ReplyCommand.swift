@@ -49,6 +49,8 @@ enum ReplyCommand {
     your words take the place of the person's note, and each mark circles, points at or pulls
     focus to the words it names, found on the window as it looks when your reply arrives, so name
     words that are on screen after your change. At most \(LiveAnswer.maxMarks) marks, each label one to four words.
+    A mark's "box", [x, y, w, h] in fractions of the picture you were sent, is used when its words
+    are not found, so give one with a number or a price, which the capture can misread.
 
         {"say": "Moved the dates under the title and made them smaller.",
          "marks": [{"kind": "circle", "words": "October 12 to 18", "label": "moved"},
@@ -183,7 +185,7 @@ enum ReplyCommand {
             throw Failure("cannot read an answer at \(url.path)")
         }
         guard let object = try? DrawingJSON.object(from: data) else { throw Failure("the answer at \(path) is not JSON") }
-        do { return try LiveAnswer(json: object) } catch { throw Failure("the answer at \(path): \(error)") }
+        do { return try LiveAnswer(json: object, strict: true) } catch { throw Failure("the answer at \(path): \(error)") }
     }
 
     /// The agent's picture as the PNG the app accepts (`ReplyProtocol.isPNG`): a PNG as it is, and
