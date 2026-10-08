@@ -97,6 +97,8 @@ final class LiveInk {
     private var handing: LiveNotePanel?
     /// The note's target picked last, which the next note starts on.
     private var lastTarget: LiveNotePanel.Target = .responder
+    /// The target the open note started on, for `SendContext`.
+    private var noteOffered: LiveNotePanel.Target?
     /// The ask under way, or the last one.
     private var asking: AskState?
     /// The answer a follow-up under way was sent from, and the words sent, which a failed follow-up
@@ -596,6 +598,7 @@ final class LiveInk {
         closeNote()
         let ui = Settings.shared.data.ui
         let panel = LiveNotePanel(beside: newest, textSize: answerSizes.textSize, style: ui.textStyle, markStyle: ui.markStyle, target: lastTarget)
+        noteOffered = lastTarget
         panel.onAsk = { [weak self, weak panel] words, target in
             guard let self else { return }
             self.stopListening()
@@ -694,6 +697,14 @@ final class LiveInk {
                     packet = try await early.value
                 } else {
                     packet = try await LivePacket.build(at: point, ink: person, style: ui.textStyle, markStyle: ui.markStyle)
+                }
+                if reply == nil {
+                    let offered: String? = switch self?.noteOffered {
+                    case .responder: "responder"
+                    case .session(let destination): destination.id
+                    case nil: nil
+                    }
+                    SendContext.note(packet, to: session?.id ?? "responder", offered: offered)
                 }
                 if let session {
                     self?.share(packet, words: words, spoken: said, with: session, from: spot)
@@ -1877,7 +1888,9 @@ final class LiveInk {
 
     // MARK: Inking
 
-    private func chordChanged(_ change: HeldChord.Change) {
+    /// The chord pressed or let go: by the hand, through `HeldChord`, or by a script, through
+    /// `live-ink-chord-down` and `live-ink-chord-up`.
+    func chordChanged(_ change: HeldChord.Change) {
         switch change {
         case .began:
             guard mayInk() else {

@@ -35,6 +35,8 @@ open -g "vignette://reply?file=<envelope>"    # an agent's reply to a screenshot
 open -g vignette://restore-apple-defaults     # put Apple's screencapture defaults back
 open -g vignette://live-ink-clear             # erase every live ink mark
 open -g "vignette://live-ink-stroke?points=100,100;300,120"  # draw a live ink stroke as if by hand (needs "debug": true)
+open -g vignette://live-ink-chord-down       # hold the live ink chord down, as if by hand (needs "debug": true)
+open -g vignette://live-ink-chord-up         # let go of it: with ink drawn while it was down, the note opens (needs "debug": true)
 open -g "vignette://live-ink-ask?message=is%20this%20right"  # ask Claude about the live ink, as Return in its note does (needs "debug": true)
 open -g vignette://tweaks                     # live UI tweaks panel (needs "debug": true)
 open -g vignette://intro-lab                  # the Intro Lab, for the intro into the menu bar icon (needs "debug": true)

@@ -542,17 +542,30 @@ final class AnnotationController {
     /// that re-read it on every click would stall the bar.
     func beginDestinations(replyTo: AgentDestination?) {
         toolbar.model.begin(replyTo: replyTo, carryingTarget: toolbar.model.shown)
+        offered = nil
+        logOffer(was: nil)
         offerChanged()
     }
 
     /// Another client answered with its sessions; `complete` on the last.
     func destinationsAnswered(_ list: [AgentDestination], complete: Bool) {
-        let before = toolbar.model.target?.id
+        let before = toolbar.model.offer.destination?.id
         toolbar.model.answered(list, complete: complete)
-        if let target = toolbar.model.target, target.id != before {
-            Log.write("[send] target \(target.address.description) project=\(target.detail) focus=\(target.focus?.rawValue ?? "none")")
-        }
+        logOffer(was: before)
         offerChanged()
+    }
+
+    /// Where the bar's filled button sent before the person picked another target, and whether it
+    /// was a Reply, for `SendContext`. A pick never comes through `logOffer`.
+    private(set) var offered: (id: String, reply: Bool)?
+
+    /// Logs where the bar's filled button sends, whenever that changes: the card's own session for a
+    /// Reply, else the target. `reply` marks the first, since the target is then not on the bar.
+    private func logOffer(was before: String?) {
+        let offer = toolbar.model.offer
+        guard let to = offer.destination, to.id != before else { return }
+        offered = (to.id, !offer.isSend)
+        Log.write("[send] target \(to.address.description) project=\(to.detail) focus=\(to.focus?.rawValue ?? "none")\(offer.isSend ? "" : " reply")")
     }
 
     /// Return and Cmd+Return do what the bar offers, and a message field that arrived with the

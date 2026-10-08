@@ -108,11 +108,11 @@ final class LiveAnchor: @unchecked Sendable {
         guard AXIsProcessTrusted() else { return nil }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.25)
-        // Chromium and Electron build their tree for Accessibility only when asked.
-        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
         var hit: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit) == .success, let element = hit else { return nil }
-        AXUIElementSetMessagingTimeout(element, 0.25)
+        if AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit) != .success { hit = nil }
+        if let hit { AXUIElementSetMessagingTimeout(hit, 0.25) }
+        requestTree(app, pid: pid, below: hit)
+        guard let element = hit else { return nil }
         let window = Self.window(of: element, id: windowID)
         let origin = window.flatMap { frame(of: $0)?.origin } ?? windowOrigin
         let scrollArea = enclosing(element, roles: ["AXScrollArea", "AXWebArea"])
@@ -155,6 +155,16 @@ final class LiveAnchor: @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    /// An Electron app builds its page's tree only when asked and keeps it until it quits, at a cost in
+    /// memory and CPU, so it is asked only when a mark lands where it has no page yet. No other app is.
+    private static func requestTree(_ app: AXUIElement, pid: pid_t, below hit: AXUIElement?) {
+        guard let bundle = NSRunningApplication(processIdentifier: pid)?.bundleURL,
+              FileManager.default.fileExists(atPath: bundle.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path),
+              hit.flatMap({ enclosing($0, roles: ["AXWebArea"]) }) == nil else { return }
+        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        Log.write("[live-ink] accessibility tree requested app=\(bundle.deletingPathExtension().lastPathComponent)")
     }
 
     /// The window `element` is in: its `AXWindow`, checked against the window list's id.

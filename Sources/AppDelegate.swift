@@ -668,6 +668,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Commands.error(cmd, .invalidPoints, "give &points=x,y;x,y in global top-left points"); return
             }
             Commands.ok(cmd, "\(liveInk.take(points).description) marks=\(liveInk.marks.count)")
+        case "live-ink-chord-down", "live-ink-chord-up":
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\": true in settings.json"); return }
+            liveInk.chordChanged(cmd == "live-ink-chord-down" ? .began : .ended)
+            Commands.ok(cmd, "inking=\(liveInk.isInking)")
         case "live-ink-ask":
             guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\": true in settings.json"); return }
             let words = request.message ?? ""
@@ -1425,6 +1429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // carries on. `sending` stays on, so the button keeps its plane while the bar leaves;
         // the next `prepare` resets it.
         sentShots[record.id] = shot
+        SendContext.sent(file: shot.url.lastPathComponent, request: record.id, to: destination, offered: annotator.offered)
         thumbnail.showSending(shot, request: record.id, to: destination)
         thumbnail.annotationSent()
     }
@@ -1491,6 +1496,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             // stored. A watcher report for one — the copy that made it, or a later rescan — is
             // never a capture, so it neither goes to the clipboard nor opens the editor.
             guard self.requests.isCapture(url) else { return }
+            SendContext.capture(url)
             self.requests.refreshKeptLists()   // so Send's list is current if this opens in the editor
             if self.settings.data.copyOnCapture {
                 Clipboard.copyFiles([url])
