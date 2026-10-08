@@ -2,7 +2,8 @@ import AppKit
 
 /// Where the person types what they ask about their live ink: their note, drawn as the note it
 /// becomes, beside the newest ink, opened when they let go of the chord after drawing. Return asks,
-/// with or without words; Esc, or a click anywhere else, closes it and keeps the ink.
+/// with or without words; Esc, or a click anywhere else, closes it and keeps the ink; ⌘⌫ closes it
+/// and takes back the ink it was opened for.
 ///
 /// The target, on a chip under the note, starts on the one picked last, else the responder, which
 /// answers on the screen, and lists the working sessions after it
@@ -32,6 +33,8 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
     var onAsk: ((String, Target) -> Void)?
     /// Esc, or the keys went elsewhere.
     var onClose: (() -> Void)?
+    /// ⌘⌫: the person takes back the note and the ink drawn for it.
+    var onDiscard: (() -> Void)?
     /// The person typed in the note, which takes over from what they say.
     var onTyped: (() -> Void)?
     private(set) var target: Target
@@ -442,6 +445,11 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
         case #selector(NSResponder.cancelOperation(_:)):
             dismiss()
             onClose?()
+            return true
+        // ⌘⌫, which in a text field deletes the line: here it deletes the whole note, ink and all.
+        case #selector(NSResponder.deleteToBeginningOfLine(_:)):
+            dismiss()
+            onDiscard?()
             return true
         case #selector(NSResponder.moveDown(_:)):
             showTargets()

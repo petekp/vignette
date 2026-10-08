@@ -78,6 +78,9 @@ final class LiveInk {
     /// A mark was drawn since the chord went down, so letting it go opens the note.
     private var drewWhileInking = false
     private var note: LiveNotePanel?
+    /// The ink drawn for the note: since the chord went down with no note open, so a press that goes
+    /// on with an open note keeps the ink it had. ⌘⌫ in the note takes it back.
+    private var noteInk = Set<Mark.ID>()
     /// Listening to the person while they draw, with speech on. It can span several presses of the
     /// chord, so "this" and "that" drawn in two strokes are one note.
     private var listening: LiveListening?
@@ -459,10 +462,12 @@ final class LiveInk {
         return outcome
     }
 
-    /// Records when `mark` was drawn: from the stroke's first move to now. With the stroke's `points`,
-    /// it also records the hand that drew it, and the mark eases onto its shape from them.
+    /// Records when `mark` was drawn: from the stroke's first move to now, and that it is the note's
+    /// ink. With the stroke's `points`, it also records the hand that drew it, and the mark eases onto
+    /// its shape from them.
     private func stroked(_ mark: Mark, by points: [CGPoint]? = nil) {
         strokeTimes[mark.id] = (strokeBegan ?? Date(), Date())
+        noteInk.insert(mark.id)
         if let points, let hand = InkHand(raw: points, mark: mark) {
             hands[mark.id] = hand
             drawingOn.insert(mark.id)
@@ -607,6 +612,7 @@ final class LiveInk {
             self?.stopListening()
             Log.write("[live-ink] note closed")
         }
+        panel.onDiscard = { [weak self] in self?.discardNote() }
         panel.onTyped = { [weak self] in self?.typedInNote() }
         if let listening {
             panel.setListening(true)
@@ -619,6 +625,19 @@ final class LiveInk {
     private func closeNote() {
         note?.dismiss()
         note = nil
+    }
+
+    /// ⌘⌫ in the note: the note goes, with what was said for it and the ink drawn for it. Ink an
+    /// earlier note kept stays.
+    private func discardNote() {
+        note = nil
+        stopListening()
+        let before = marks.count
+        remove(noteInk)
+        noteInk = []
+        showMarks()
+        closeEmpty(fade: LiveMarksLayer.removalFade)
+        Log.write("[live-ink] note discarded marks=\(before - marks.count)")
     }
 
     /// Fades the sent note into the drawn one at `tag`, or where it is.
@@ -1865,6 +1884,8 @@ final class LiveInk {
                 Log.write("[live-ink] not inking: the stack or the annotator is up")
                 return
             }
+            // A press while the note is open goes on with that note, and with its ink.
+            if note == nil { noteInk = [] }
             closeNote()
             listening?.pressedAgain()
             responder.prepare()
