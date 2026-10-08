@@ -1,11 +1,10 @@
 # Live ink: five questions, worked overnight (2026-10-07)
 
-Pete asked five things before going to sleep. Everything here is on branch `live-ink-overnight`,
-in the worktree `~/Code/worktrees/vignette/live-ink-overnight`, branched from `live-ink` at
-8bc5a6f. Nothing is committed or pushed. Pete's running copy and the `live-ink` worktree are
-untouched.
+Pete asked five things before going to sleep. The work was done on branch `live-ink-overnight`,
+in the worktree `~/Code/worktrees/vignette/live-ink-overnight`, and merged into `live-ink` on
+2026-10-08 as cd86080.
 
-Status: done, waiting on Pete's review.
+Status: done. Pete reviewed it on 2026-10-08.
 
 The agents' reports and scripts are in the worktree's `.scratch/overnight/`, which Git ignores.
 
@@ -20,18 +19,17 @@ The agents' reports and scripts are in the worktree's `.scratch/overnight/`, whi
    keep every one, off by default.
 4. **Agents answering in prose.** Clean tests didn't reproduce it, and no wording change helped.
    Vignette now logs marks it throws out, and the next tests to run are listed.
-5. **The feature.** When a session finishes, the ink shows whether anything changed where you
-   drew: the before plays back and wipes away, or a note says nothing changed. Built, unit tested,
-   and run end to end in the macOS 26 VM. Building it showed that Vignette gave up on a busy
-   session after 3 minutes, so the feature would rarely have run. This branch fixes that too.
+5. **The feature.** When a session finishes and something changed where you drew, the before
+   plays back and wipes away. Built, unit tested, run end to end in the macOS 26 VM, and seen on
+   Pete's Mac on macOS 15. Building it showed that Vignette gave up on a busy session after 3
+   minutes, so the feature would rarely have run. This branch fixes that too.
 
-## What needs Pete
+## Pete's answers (2026-10-08)
 
-- Whether to merge `live-ink-overnight` into `live-ink` and rebuild his copy.
-- Whether the "Nothing changed" note should go on its own after a while. Today it stays until
-  tapped or cleared.
-- Whether to add the walk-through sentence to the skill. That needs a plugin version bump and
-  `/reload-plugins` in open sessions.
+- Merge into `live-ink` and rebuild his copy: done.
+- Add the walk-through sentence to the skill: done, with the plugin at 6.3.8.
+- The "Nothing changed" note: removed. Pete tried the feature and found the note unhelpful, so a
+  turn that changed nothing under the ink plays the done animation alone.
 
 ## The questions
 
@@ -297,18 +295,16 @@ prompt, so it needs more runs before it ships.
 
 ## 5. The feature: ink that tells you whether the change landed
 
-**Built and tested in the VM.** When a session finishes an ask, the ink now shows whether
-anything changed where the person drew. A change plays back: how it looked before comes in over
-the window, then wipes away to how it looks now. If nothing changed there, the ink stays and says
-so. The code is in this worktree, uncommitted. All 54 live ink unit tests pass, 7 of them new,
-and so does the full suite.
+**Built, and tested in the VM and on Pete's Mac.** When a session finishes an ask and something
+changed where the person drew, the change plays back: how it looked before comes in over the
+window, then wipes away to how it looks now. Otherwise the ink goes as it did before. The code is
+on `live-ink`.
 
 ### The problem
 
 Today, live ink sent to a session ends the same way whatever happened. When the session's turn
 ends with no answer drawn, the ink and its note play the done animation and go.
 - The person has to look for the change themselves.
-- If nothing changed where they pointed, nothing says so.
 - If something did change, the picture of how it looked before is gone with the ink.
 
 ### What it does now
@@ -319,14 +315,15 @@ again:
 | Case | What the person sees |
 |---|---|
 | Changed under the ink | The old pixels come in over the window with a "Before" tag, hold for 0.8 s, and wipe away from left to right. The done animation follows: green, a check, gone. About 3.5 s in all. |
-| Nothing changed under the ink | The ink stays, and Vignette's note beside it says "Nothing changed under your ink. Check *project*." The session may have answered in words, as it does for a question. |
+| Nothing changed under the ink | The done animation plays, as it did before. Vignette adds no note: after a question nothing changes, and after a change the session says in its own words what it did. |
 | Can't tell | The window closed or changed size, or Vignette stopped waiting on a turn it couldn't see end, as with Codex. The done animation plays, as it did before. |
 | The session answered on the window | Nothing new. The answer and the ink stay, as before. |
 
 The rule for "changed":
-- The window is read on a grid of 3 pt cells of grey.
+- The window is read on a grid of 3 pt cells of colour.
 - Only the cells under the ink decide: its shapes plus 12 pt.
-- A cell counts when its grey moved by more than 24 of 255.
+- A cell counts when its red, green or blue moved by more than 24 of 255. Grey alone missed a
+  green button turned red, since the two read only 18 apart.
 - A cell that also moves between two captures half a second apart is ignored, so a caret or a
   spinner never counts.
 - Changed means at least 2% of the deciding cells, and at least 4.
@@ -346,13 +343,21 @@ In the macOS 26 VM, with a fake Claude Code session and a page in Safari:
 | Case | Log | Seen |
 |---|---|---|
 | The page changed | `landed changed=0.095`, then `done` 2.0 s later | The four steps above, recorded at about 6 frames a second over VNC |
-| The page didn't change | `nothing changed under the ink changed=0.000` | The note, clear of the person's own note |
+| The page didn't change | `nothing changed under the ink changed=0.000` | A note, since removed |
 | The window was resized during the turn | `can't tell whether it landed: the window changed size`, then `done` | Today's done animation |
 | The session answered with `--answer` | `drew answer marks=2`, and no `landed` | The answer stays |
 | The request waited 200 s behind another turn, then its own turn changed the page | No `stopped waiting`. `session's turn ended` once its own turn went idle, then `landed changed=0.095` | The playback, as in the first row |
 
 In the last case the fake session sat idle for 1.3 s between the other turn and its own, as a
 real one does while the monitor hands the request over. The watch didn't take that gap for the end.
+
+On Pete's Mac (macOS 15), on 2026-10-08, the session was a real Claude Code session and the page
+was in Chrome:
+
+| Ask | Log | Seen |
+|---|---|---|
+| "make this green", on a grey button | `landed changed=0.069`, 0.6 s after `session's turn ended` | The playback, which looked right to Pete |
+| "make this red", on the green button | `nothing changed under the ink changed=0.000` | The note, though the button had changed. This is why the comparison now reads colour. |
 
 ### Changes outside the feature
 
@@ -367,8 +372,7 @@ real one does while the monitor hands the request over. The watch didn't take th
   start may run 30 minutes. A turn the person interrupted counts as over, as the plugin's monitor
   already reads it.
 - `say()` now places Vignette's note clear of the person's own note, not only their ink. Before,
-  the "Nothing changed" note covered the person's words. The same overlap could already happen
-  with "Queued for…" and "Check…".
+  its notes, such as "Queued for…" and "Check…", could cover the person's words.
 - `LiveWindows.Anchor` gained `.window`, a mark pinned to the window alone. The playback uses it.
 
 ### Known gaps
@@ -383,8 +387,6 @@ real one does while the monitor hands the request over. The watch didn't take th
 - **Only the latest ask is resolved.** An earlier ask that a newer one replaced still sits there,
   as section 2 describes. Giving each ask its own state fixes both.
 - **The before and after pictures aren't saved.** Section 3's moments would keep them.
-- **Seen only on macOS 26.** Pete runs macOS 15. The window capture and the marks pinned to a
-  window already run there every day; the playback itself hasn't been seen there.
 - **About 2.6 s between a turn's end and the playback.** 2 s of that is the existing wait that
   makes sure the turn really ended.
 
@@ -394,6 +396,6 @@ real one does while the monitor hands the request over. The watch didn't take th
 - It needs only a rebuild: no plugin or skill change, so no `/reload-plugins`.
 - It is built on parts that exist: the turn watch (`LiveInk.watchWorking`), the window capture
   (`LivePacket.capture(window:)`), marks pinned to windows (`LiveWindows`), and the done animation.
-- It helps question 2: ink that landed clears itself, and ink that didn't stays and says so.
+- It helps question 2: ink that landed plays its change back and clears itself.
 - It is the first step to the vision's "ink that resolves itself" (`docs/LIVE_INK_VISION.md`).
 - The VM can test it end to end, with a fake session and a hand-written `turn` file.
