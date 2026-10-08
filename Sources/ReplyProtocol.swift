@@ -15,7 +15,7 @@ import ImageIO
 enum ReplyProtocol {
     /// Goes up with any change to the envelope, the bundle, the digest, or the receipt. A helper
     /// built for another version is refused rather than half-understood.
-    static let version = 4
+    static let version = 5
 
     /// The most a bundle or an attempt file may be. Marks are a few kilobytes; anything near this
     /// is a mistake, and both files are read on the main thread.
@@ -307,10 +307,13 @@ enum ReplyProtocol {
         let acceptance: Acceptance
         var publication: Publication?
         var errorCode: String?
+        /// For an answer to live ink, once it is drawn: the indexes of its marks that were not, on
+        /// the window or on the card it became. The receipt is written again then.
+        var notDrawn: [Int]?
 
         enum CodingKeys: String, CodingKey {
             case protocolVersion, requestID = "requestId", replyID = "replyId", attemptID = "attemptId"
-            case payloadDigest, acceptance, publication, errorCode
+            case payloadDigest, acceptance, publication, errorCode, notDrawn
         }
     }
 }

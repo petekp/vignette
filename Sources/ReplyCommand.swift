@@ -23,6 +23,9 @@ enum ReplyCommand {
     /// an app that is busy rendering somebody's drawing.
     static let receiptTimeout: TimeInterval = 30
     static let receiptPoll: TimeInterval = 0.1
+    /// How long to wait, once an answer is accepted, for it to be drawn: a fresh capture of the
+    /// window and reading its text take about a second.
+    static let answerTimeout: TimeInterval = 5
 
     static let usage = """
     usage: reply --ticket <ticket.json> --marks <marks.json> [--image <your image>]
@@ -56,6 +59,10 @@ enum ReplyCommand {
          "marks": [{"kind": "circle", "words": "October 12 to 18", "label": "moved"},
                    {"kind": "arrow", "words": "A week in Tuscany"}]}
 
+    With --answer it waits until the answer is drawn, about a second. "notDrawn" then lists each
+    mark whose words were not found, which the person does not see: say that finding in your own
+    words instead.
+
     Prints one JSON line and exits 0 accepted, 1 not sent, 2 refused, or 3 unconfirmed. Not sent
     means an argument, a file or a mark is wrong, and "error" says which. Unconfirmed means
     Vignette never answered: the reply may or may not have arrived, so do not send a new one.
@@ -88,6 +95,7 @@ enum ReplyCommand {
         let ticket = try loadTicket(ticketFile.path)
         try checkIssuer(ticket)
         let prepared: Prepared
+        var answer: LiveAnswer?
         if let retry = options.retry {
             // A retry is the same bytes again, which is what makes it safe to send twice. Marks given
             // with it would be dropped without a word, so they are refused instead.
@@ -99,11 +107,13 @@ enum ReplyCommand {
             } catch is Failure where isCleared(ticket) {
                 throw Failure("the user cleared this request, which removed the reply prepared for it; it takes no replies now")
             }
-        } else if let answer = options.answer {
+        } else if let answerPath = options.answer {
             guard options.marks == nil, options.image == nil else {
                 throw Failure("--answer comes alone; drop --marks and --image")
             }
-            prepared = try prepare(ticket: ticket, marks: [], image: nil, answer: try loadAnswer(answer))
+            let loaded = try loadAnswer(answerPath)
+            prepared = try prepare(ticket: ticket, marks: [], image: nil, answer: loaded)
+            answer = loaded
         } else {
             guard options.marks != nil || options.image != nil else {
                 throw Failure("nothing to send: give --marks, --image, or both, or --answer")
@@ -115,7 +125,7 @@ enum ReplyCommand {
 
         let attempt = try writeAttempt(ticket: ticket, prepared: prepared)
         let dispatch = self.dispatch(attempt.envelope, ticket: ticket)
-        guard let receipt = waitForReceipt(ticket: ticket, prepared: prepared, attemptID: attempt.id) else {
+        guard var receipt = waitForReceipt(ticket: ticket, prepared: prepared, attemptID: attempt.id) else {
             let retry = [Bundle.main.executablePath ?? CommandLine.arguments[0], "reply", "--ticket", ticketFile.path,
                          "--retry", prepared.directory.path].map(quoted).joined(separator: " ")
             emit(["status": "unconfirmed", "replyId": prepared.replyID, "bundle": prepared.directory.path,
@@ -128,7 +138,13 @@ enum ReplyCommand {
             emit(["status": "refused", "replyId": prepared.replyID, "error": receipt.errorCode ?? "refused"])
             exit(2)
         }
-        emit(["status": "accepted", "replyId": prepared.replyID, "publication": receipt.publication?.rawValue])
+        // An answer's receipt is written again once it is drawn, naming the marks that were not.
+        if answer != nil, receipt.publication == .pending {
+            receipt = waitForReceipt(ticket: ticket, prepared: prepared, attemptID: attempt.id, timeout: answerTimeout,
+                                     until: { $0.publication != .pending }) ?? receipt
+        }
+        emit(["status": "accepted", "replyId": prepared.replyID, "publication": receipt.publication?.rawValue,
+              "notDrawn": answer.flatMap { notDrawn(receipt, of: $0) }])
         exit(0)
     }
 
@@ -295,19 +311,32 @@ enum ReplyCommand {
         return (process.terminationStatus, text.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    /// The receipt for this attempt, or nil when none came within `receiptTimeout`.
-    static func waitForReceipt(ticket: ReplyProtocol.Ticket, prepared: Prepared, attemptID: String) -> ReplyProtocol.Receipt? {
+    /// The receipt for this attempt that `until` takes, or nil when none came within `timeout`.
+    static func waitForReceipt(ticket: ReplyProtocol.Ticket, prepared: Prepared, attemptID: String,
+                               timeout: TimeInterval = receiptTimeout,
+                               until done: (ReplyProtocol.Receipt) -> Bool = { _ in true }) -> ReplyProtocol.Receipt? {
         let url = ReplyProtocol.receiptURL(root: root(of: ticket), requestID: ticket.requestID, attemptID: attemptID)
-        let deadline = Date().addingTimeInterval(receiptTimeout)
+        let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if let data = try? Data(contentsOf: url),
                let receipt = try? JSONDecoder().decode(ReplyProtocol.Receipt.self, from: data),
-               answers(receipt, ticket: ticket, prepared: prepared, attemptID: attemptID) {
+               answers(receipt, ticket: ticket, prepared: prepared, attemptID: attemptID), done(receipt) {
                 return receipt
             }
             Thread.sleep(forTimeInterval: receiptPoll)
         }
         return nil
+    }
+
+    /// The marks of `answer` the receipt says were not drawn, each with the words it named, or nil
+    /// when every mark was drawn or the answer is not drawn yet.
+    static func notDrawn(_ receipt: ReplyProtocol.Receipt, of answer: LiveAnswer) -> [[String: Any]]? {
+        let marks = (receipt.notDrawn ?? []).filter { answer.marks.indices.contains($0) }.map { index -> [String: Any] in
+            var mark: [String: Any] = ["mark": index]
+            if let words = answer.marks[index].words { mark["words"] = words }
+            return mark
+        }
+        return marks.isEmpty ? nil : marks
     }
 
     /// Every correlation field is checked: a receipt for some other attempt does not answer this one.
@@ -380,8 +409,8 @@ enum ReplyCommand {
 
     /// One JSON line with its fields in the order given, so `status` reads first. A nil value is
     /// left out.
-    private static func emit(_ fields: KeyValuePairs<String, String?>) {
-        func json(_ value: String) -> String {
+    private static func emit(_ fields: KeyValuePairs<String, Any?>) {
+        func json(_ value: Any) -> String {
             let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .withoutEscapingSlashes])
             return data.map { String(decoding: $0, as: UTF8.self) } ?? "\"\""
         }

@@ -222,7 +222,9 @@ The names in brackets are `// MARK:` sections.
   A session's answer is read strictly instead (`LiveAnswer(json:strict:)`): the reply helper
   refuses one with a mark it would throw out and names the mark, since the session can fix it. A
   mark whose words are not found on the window falls back to its box (`LiveInk.target`), and is
-  left out without one, counted in `drew answer … dropped=<n>`.
+  left out without one, counted in `drew answer … dropped=<n>`. Once the answer is drawn, on the
+  window or as a card, Vignette writes its receipt again with `notDrawn`, the indexes of the marks
+  left out, and the helper, which waits up to 5 s for that, prints them with their words.
 - `LivePacket` is the ask's content, built in about 300 ms: a ScreenCaptureKit capture of the
   topmost window under the ink below the Dock's level (the Dock has a window over the whole screen at
   its level), Vision's accurate text lines read before the ink is drawn in, with ids, the person's
