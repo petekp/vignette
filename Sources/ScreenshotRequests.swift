@@ -22,10 +22,9 @@ final class ScreenshotRequests {
         }
         /// Shows a published reply's card. Managed replies never reach the watcher's capture path.
         var present: (Screenshot) -> Void = { _ in }
-        /// Draws an answer on the window the request's live ink was drawn on, then answers whether it
-        /// did. One that could not be drawn there is made a card instead.
-        /// Answers the indexes of the marks it could not draw, or nil when the answer is not drawn
-        /// on its window at all and becomes a card.
+        /// Draws an answer on the window the request's live ink was drawn on, then answers the indexes
+        /// of the marks it could not draw, or nil when it could not draw there at all and the answer
+        /// becomes a card.
         var presentLive: (Record, LiveAnswer, @escaping ([Int]?) -> Void) -> Void = { _, _, done in done(nil) }
         var watchFolder: () -> URL = { FileManager.default.temporaryDirectory }
         /// What the client answered for a request, which the card that was sent shows.
@@ -62,9 +61,6 @@ final class ScreenshotRequests {
     private var pendingImports: [String] = []
     private var importing = false
     private var publishedAt: [String: TimeInterval] = [:]
-    /// The attempts at an answer still being drawn, by reply id, whose helpers wait to hear how it went.
-    /// Kept for this launch only: after a relaunch a helper's wait runs out and it reports `pending`.
-    private var answerAttempts: [String: [ReplyProtocol.Attempt]] = [:]
     private var publicationReady = false
     /// Cancellation takes effect in memory even when its record cannot yet be written.
     private var pendingCleanupWrites: Set<String> = []
@@ -506,9 +502,7 @@ final class ScreenshotRequests {
             guard existing.digest == attempt.payloadDigest else {
                 throw ReplyProtocol.Problem(.conflictingReply, "reply \(attempt.replyID) was accepted with other bytes")
             }
-            writeReceipt(attempt, acceptance: .accepted, publication: existing.publication, errorCode: existing.errorCode,
-                         notDrawn: existing.notDrawn)
-            if existing.answer != nil, existing.publication == .pending { answerAttempts[existing.id, default: []].append(attempt) }
+            writeReceipt(attempt, for: existing)
             Commands.ok("reply", "\(attempt.replyID) already \(existing.stage.rawValue)")
             return
         }
@@ -538,8 +532,7 @@ final class ScreenshotRequests {
         }
         replies[reply.id] = reply
         pendingImports.append(reply.id)
-        writeReceipt(attempt, acceptance: .accepted, publication: .pending, errorCode: nil)
-        if reply.answer != nil { answerAttempts[reply.id, default: []].append(attempt) }
+        writeReceipt(attempt, for: reply)
         Commands.ok("reply", "\(reply.id) accepted for \(request.id) marks=\(reply.marks.count)\(reply.hasImage ? " image" : "")\(reply.answer == nil ? "" : " answer")")
         importNext()
     }
@@ -561,17 +554,26 @@ final class ScreenshotRequests {
     /// helper reading it never sees half a file.
     private func writeReceipt(_ attempt: ReplyProtocol.Attempt, acceptance: ReplyProtocol.Receipt.Acceptance,
                               publication: ReplyProtocol.Receipt.Publication?, errorCode: String?, notDrawn: [Int]? = nil) {
-        let receipt = ReplyProtocol.Receipt(
+        write(ReplyProtocol.Receipt(
             requestID: attempt.requestID, replyID: attempt.replyID, attemptID: attempt.attemptID,
             payloadDigest: attempt.payloadDigest, acceptance: acceptance, publication: publication, errorCode: errorCode,
-            notDrawn: notDrawn)
-        let url = ReplyProtocol.receiptURL(root: root, requestID: attempt.requestID, attemptID: attempt.attemptID)
+            notDrawn: notDrawn))
+    }
+
+    /// An accepted attempt's acknowledgement: where its reply has reached, from the reply's record.
+    private func writeReceipt(_ attempt: ReplyProtocol.Attempt, for reply: Reply) {
+        writeReceipt(attempt, acceptance: .accepted, publication: reply.publication, errorCode: reply.errorCode,
+                     notDrawn: reply.notDrawn)
+    }
+
+    private func write(_ receipt: ReplyProtocol.Receipt) {
+        let url = ReplyProtocol.receiptURL(root: root, requestID: receipt.requestID, attemptID: receipt.attemptID)
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try encode(receipt, to: url)
         } catch {
             // Derived from the authoritative record, so a repeated submission rebuilds it.
-            Log.write("[reply] error write-failed receipt \(attempt.attemptID): \(error.localizedDescription)")
+            Log.write("[reply] error write-failed receipt \(receipt.attemptID): \(error.localizedDescription)")
         }
     }
 
@@ -583,7 +585,6 @@ final class ScreenshotRequests {
         guard let request = requests[reply.requestID], request.takesReplies else {
             pendingImports.removeAll { $0 == id }
             fail(id, stage: .cancelled, code: "request-cleared")
-            settleAnswer(id)
             importNext()
             return
         }
@@ -592,18 +593,7 @@ final class ScreenshotRequests {
             guard let self else { return }
             self.importing = false
             self.pendingImports.removeAll { $0 == id }
-            self.settleAnswer(id)
             self.importNext()
-        }
-    }
-
-    /// Writes the receipts of an answer's attempts again once its import is over, so a helper still
-    /// waiting learns where the answer went and which of its marks were not drawn.
-    private func settleAnswer(_ id: String) {
-        guard let attempts = answerAttempts.removeValue(forKey: id), let reply = replies[id] else { return }
-        for attempt in attempts {
-            writeReceipt(attempt, acceptance: .accepted, publication: reply.publication, errorCode: reply.errorCode,
-                         notDrawn: reply.notDrawn)
         }
     }
 
@@ -875,6 +865,22 @@ final class ScreenshotRequests {
         try FileManager.default.createDirectory(at: directory.appendingPathComponent("replies"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: directory.appendingPathComponent("payloads"), withIntermediateDirectories: true)
         try encode(reply, to: directory.appendingPathComponent("replies").appendingPathComponent(reply.id + ".json"))
+        refreshReceipts(of: reply)
+    }
+
+    /// Brings the receipts of the reply's accepted attempts up to its record, so a helper still
+    /// waiting on an answer learns where it went and which of its marks were not drawn.
+    private func refreshReceipts(of reply: Reply) {
+        let folder = ReplyProtocol.requestDirectory(root: root, requestID: reply.requestID).appendingPathComponent("receipts")
+        for url in (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [] {
+            guard var receipt: ReplyProtocol.Receipt = decode(url), receipt.replyID == reply.id,
+                  receipt.payloadDigest == reply.digest, receipt.acceptance == .accepted else { continue }
+            let before = receipt
+            receipt.publication = reply.publication
+            receipt.errorCode = reply.errorCode
+            receipt.notDrawn = reply.notDrawn
+            if receipt != before { write(receipt) }
+        }
     }
 
     private func encode<T: Encodable>(_ value: T, to url: URL) throws {

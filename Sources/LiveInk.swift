@@ -1248,7 +1248,7 @@ final class LiveInk {
     /// responder's answers are drawn: its marks point at the words they name, read from a fresh
     /// capture of the window, since the session has likely changed what the window shows. Answers
     /// nil when the ink is gone or the window cannot be read, and the answer becomes a card, and
-    /// otherwise the indexes of the marks whose words were not found on the window.
+    /// otherwise the indexes of the marks it did not draw.
     func showAnswer(request: String, _ answer: LiveAnswer, agent: String, done: @escaping ([Int]?) -> Void) {
         let person = marks.filter { !$0.agent && !answerMarks.contains($0.id) }
         guard let shared = sending[request], isOn else { return done(nil) }
@@ -1378,7 +1378,7 @@ final class LiveInk {
     }
 
     /// `sent` is the ids of the text lines the answer was given, the only ones it may name. Answers
-    /// the indexes of the marks whose words were not found, or nil when nothing was drawn.
+    /// the indexes of the marks it did not draw, or nil when nothing was drawn.
     @discardableResult
     private func answered(_ answer: LiveAnswer, packet: LivePacket, sent: Set<String>, near asked: CGRect, question: Mark?,
                           agent: String = LiveAnswerLayout.agentName) -> [Int]? {
@@ -1410,7 +1410,7 @@ final class LiveInk {
         asking?.findings = layout.findings
         answerMarks.formUnion(shown.map(\.id))
         let labels = zip(answer.marks, targets).filter { $0.0.label != nil && $0.1 != nil }.count
-        let notDrawn = targets.indices.filter { targets[$0] == nil }
+        let notDrawn = layout.findings.indices.filter { layout.findings[$0].isEmpty }
         Log.write("[live-ink] drew answer marks=\(placed.count - 1) dropped=\(notDrawn.count) "
                   + "labels=\(layout.findings.filter { $0.count > 1 }.count)/\(labels)\(answer.steps ? " steps" : "")"
                   + (focus.isEmpty ? "" : " focus=\(focus.count)"))
@@ -2016,8 +2016,10 @@ final class LiveInk {
         let mouse = NSEvent.mouseLocation
         let pen = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
         inking.forEach { $0.overlay.showGlow(on, ui: ui, color: color, pen: pen) }
-        // After the glow, so making the recognizer never holds it back.
-        if on { listen() }
+        guard on else { return }
+        // The glow goes to the screen first, so making the recognizer on this thread never holds it back.
+        CATransaction.flush()
+        listen()
     }
 
     // MARK: Listening
