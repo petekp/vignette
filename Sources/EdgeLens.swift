@@ -38,9 +38,15 @@ final class ScreenFeed: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked S
         configuration.queueDepth = 4
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
-        lock.withLock { frames = 0 }
-        try await stream.startCapture()
-        lock.withLock { self.stream = stream }
+        // A new stream starts with no picture, and only its own frames are kept, so a frame of an
+        // earlier stream, still on its way when that one stopped, is never drawn as the screen now.
+        lock.withLock { self.stream = stream; latest = nil; fresh = false; frames = 0 }
+        do {
+            try await stream.startCapture()
+        } catch {
+            lock.withLock { if self.stream === stream { self.stream = nil } }
+            throw error
+        }
     }
 
     func stop() {
@@ -68,6 +74,7 @@ final class ScreenFeed: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked S
               let status = attachments.first?[.status] as? Int, SCFrameStatus(rawValue: status) == .complete,
               let buffer = sampleBuffer.imageBuffer else { return }
         lock.withLock {
+            guard stream === self.stream else { return }
             latest = buffer
             fresh = true
             frames += 1
@@ -75,6 +82,16 @@ final class ScreenFeed: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked S
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
+        // Its last picture goes with it: about 24 MB on a 3024 by 1964 display. A stream this feed
+        // already stopped or replaced says nothing.
+        let current = lock.withLock { () -> Bool in
+            guard stream === self.stream else { return false }
+            self.stream = nil
+            latest = nil
+            fresh = false
+            return true
+        }
+        guard current else { return }
         DispatchQueue.main.async { [weak self] in self?.onStopped?(error) }
     }
 }
@@ -270,7 +287,9 @@ final class EdgeLensLayer: CAMetalLayer {
         dirty = false
         draw(picture?.frame, at: now)
         if !shown {
-            if needsPicture { Log.write("[live-ink] edge first frame ms=\(Int((now - asked) * 1000))") }
+            // `ms` is how long the look waited for the picture once it was wanted, `stream-ms` how long
+            // since the picture was asked for, as the chord went down.
+            if needsPicture { Log.write("[live-ink] edge first frame ms=\(Int((now - started) * 1000)) stream-ms=\(Int((now - asked) * 1000))") }
             fade(in: true)
         }
     }

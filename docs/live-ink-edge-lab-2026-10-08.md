@@ -59,12 +59,23 @@ these looks need no new permission. They add the indicator for as long as the ch
 error, live ink draws the glow, and the next chord tries the picture again. In the VM, a copy never
 granted Screen Recording logged `edge feed could not start: noPermission` when the look was held,
 and showed the glow along all four edges. Holding it again tried the picture again and showed the
-glow again. macOS raised no prompt. A stream that stops with an error was not run.
+glow again. macOS raised no prompt.
 
-**On Pete's Mac the picture takes a third of a second to start.** On macOS 15, on an M4 Max with
-its built-in display, the first frame came 330 to 415 ms after the chord, against 50 to 140 ms in
-the VM. So the look fades in about a third of a second after the chord, while the ink draws at
-once. While inking, the picture came at about 61 frames a second, the stream's cap of 60.
+**A stream that stops with an error falls back to the glow.** In the VM, killing `replayd` while
+the look was held stopped the stream with `SCStreamErrorDomain -3805`. The glow took over along all
+four edges, and holding the look again brought it back, its first frame in 97 ms. A stream that
+stops lets its last picture go, and a new stream keeps only its own frames, so the look never
+draws the screen as it was before the chord.
+
+**The picture starts in about 100 ms.** On Pete's Mac, macOS 15 on an M4 Max with its built-in
+display, the Edge Lab's preview drew its first frame 100 ms after asking for it, and a stream
+started from a terminal gave its first frame in 57 to 170 ms. A chord showed the look 330 to 415 ms
+after it went down. Of that, 250 ms is the glow's wait (`liveInkGlowDelay`), so Control-Option on
+its way to a shortcut does not flash it. The rest was speech input starting the microphone on the
+main thread before the glow could show. The microphone now starts on its own queue, after the glow
+(`Microphone`). `edge first frame` logs `ms`, how long the look waited for its picture once it was
+wanted, and `stream-ms`, the time since the chord. While inking, the picture came at about 61
+frames a second, the stream's cap of 60.
 
 **The log gives the GPU's time.** `edge feed stopped` also says how many times the look was drawn
 and the GPU's time for each drawing: `drawn=232 gpu-ms mean=1.32 max=17.62` in the VM. A look keeps
@@ -76,7 +87,8 @@ a drag. The VM's GPU is not a real one, so these say little about a real Mac.
 
 **The frame rate is not measured.** The VM reports the whole screen as changed about 30 times a
 second, even on a still page. So the VM cannot say how often a real Mac sends frames, or whether
-the band lags behind fast scrolling.
+the band lags behind fast scrolling. Pete's display runs at up to 120 Hz, and the stream is capped
+at 60, so the band may trail fast-moving content there by a frame.
 
 **Four problems were found in the VM and fixed:**
 
@@ -135,13 +147,14 @@ the wake at strength 0.95, size 36 and duration 0.85. The glow's own width is 29
 - How the looks do on macOS 15 and over fast scrolling. Pete tuned aurora ripple and the wake on
   his Mac, on macOS 15, so those draw there. The other looks were not checked there, and nobody has
   watched one over a fast scroll.
-- More than one display. Each screen starts its own picture and display link. Pete's Mac has one.
+- More than one display. Each screen starts its own picture and display link. Pete's Mac has one
+  display, and the VM supports only one.
 - What the GPU spends on a real Mac, for each look and for the wake while really inking. Glass
   with frost and colour split reads 72 samples for each pixel in the band, and each pixel near the
   pen sums up to 96 of the wake's rings. The `gpu-ms` in the log answers both once Pete has inked
   with this build.
 - Whether the wake makes the ink lag behind a long, fast stroke on Pete's Mac.
-- Whether the picture can start sooner than a third of a second after the chord.
+- Whether the look now shows about 250 ms after the chord on Pete's Mac, with speech on.
 - Ripple at its highest waves can still fold the picture back. It was left, since its waves are
   meant to distort.
 - Whether 10 pt matches the real top corners of Pete's display, and 8 pt the notch's.
