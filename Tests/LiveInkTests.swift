@@ -512,6 +512,95 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(away.dy, 0, accuracy: 0.01)
     }
 
+    // MARK: Whether a change landed
+
+    func testTheRegionComparedIsTheInkWithAMarginInsideTheWindow() {
+        let room = CGRect(x: 0, y: 0, width: 500, height: 400)
+        XCTAssertEqual(LiveChange.region(around: CGRect(x: 100, y: 100, width: 50, height: 20), in: room),
+                       CGRect(x: 88, y: 88, width: 74, height: 44))
+        XCTAssertEqual(LiveChange.region(around: CGRect(x: 490, y: 5, width: 40, height: 20), in: room),
+                       CGRect(x: 478, y: 0, width: 22, height: 37))
+        XCTAssertNil(LiveChange.region(around: CGRect(x: 600, y: 100, width: 50, height: 20), in: room))
+    }
+
+    func testTheSamePictureHasNotChanged() throws {
+        let page = try Self.region(blocks: [CGRect(x: 20, y: 20, width: 60, height: 14)])
+        guard case .unchanged = LiveChange.compare(before: page, after: page, again: page, size: CGSize(width: 200, height: 80)) else {
+            return XCTFail("the same picture read as changed")
+        }
+    }
+
+    func testSomethingNewUnderTheInkIsAChange() throws {
+        let before = try Self.region(blocks: [CGRect(x: 20, y: 20, width: 60, height: 14)])
+        let after = try Self.region(blocks: [CGRect(x: 20, y: 20, width: 60, height: 14), CGRect(x: 120, y: 30, width: 40, height: 30)])
+        guard case .changed(let share, let around) = LiveChange.compare(before: before, after: after, again: after, size: CGSize(width: 200, height: 80)) else {
+            return XCTFail("a new block read as no change")
+        }
+        XCTAssertEqual(share, 0.075, accuracy: 0.02)
+        XCTAssertEqual(around.minX, 120, accuracy: 3)
+        XCTAssertEqual(around.maxY, 60, accuracy: 3)
+    }
+
+    func testOnlyTheInkDecidesButTheChangeRoundItIsKept() throws {
+        let ink = CGRect(x: 20, y: 20, width: 50, height: 40)
+        let before = try Self.region(blocks: [CGRect(x: 30, y: 30, width: 50, height: 20)])
+        // The block under the ink grew past it to the right.
+        let grew = try Self.region(blocks: [CGRect(x: 30, y: 30, width: 130, height: 20)])
+        guard case .unchanged = LiveChange.compare(before: before, after: grew, again: grew, size: CGSize(width: 200, height: 80), ink: ink) else {
+            return XCTFail("a change outside the ink decided")
+        }
+        // Grown and moved down, so the ink's part changed too.
+        let moved = try Self.region(blocks: [CGRect(x: 30, y: 44, width: 130, height: 20)])
+        guard case .changed(_, let around) = LiveChange.compare(before: before, after: moved, again: moved, size: CGSize(width: 200, height: 80), ink: ink) else {
+            return XCTFail("the change under the ink read as none")
+        }
+        XCTAssertEqual(around.maxX, 160, accuracy: 3)
+    }
+
+    func testAFewPixelsAreNotAChange() throws {
+        let before = try Self.region(blocks: [])
+        let after = try Self.region(blocks: [CGRect(x: 100, y: 40, width: 3, height: 3)])
+        guard case .unchanged = LiveChange.compare(before: before, after: after, again: after, size: CGSize(width: 200, height: 80)) else {
+            return XCTFail("a dot read as a change")
+        }
+    }
+
+    func testWhatMovesOnItsOwnAfterTheTurnIsNotAChange() throws {
+        // A spinner: there in one picture after the turn, gone in the next.
+        let before = try Self.region(blocks: [])
+        let after = try Self.region(blocks: [CGRect(x: 100, y: 10, width: 12, height: 60)])
+        guard case .changed = LiveChange.compare(before: before, after: after, again: nil, size: CGSize(width: 200, height: 80)) else {
+            return XCTFail("the caret alone did not read as a change")
+        }
+        guard case .unchanged = LiveChange.compare(before: before, after: after, again: before, size: CGSize(width: 200, height: 80)) else {
+            return XCTFail("a caret that blinked read as a change")
+        }
+    }
+
+    func testACropKeepsThePixelsUnderItsRect() throws {
+        let page = try Self.region(blocks: [CGRect(x: 100, y: 40, width: 20, height: 20)])
+        // The window at (1000, 500), at 1 px per pt.
+        let crop = try XCTUnwrap(LiveChange.crop(page, frame: CGRect(x: 1000, y: 500, width: 200, height: 80),
+                                                 to: CGRect(x: 1090, y: 530, width: 40, height: 40)))
+        XCTAssertEqual(crop.width, 40)
+        XCTAssertEqual(crop.height, 40)
+        guard case .changed = LiveChange.compare(before: try Self.region(blocks: [], size: CGSize(width: 40, height: 40)), after: crop,
+                                                 again: crop, size: CGSize(width: 40, height: 40)) else {
+            return XCTFail("the crop lost the block")
+        }
+    }
+
+    /// A white picture of `size` points at 1 px per pt with black `blocks`, from its top-left corner.
+    private static func region(blocks: [CGRect], size: CGSize = CGSize(width: 200, height: 80)) throws -> CGImage {
+        let context = try XCTUnwrap(CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
+                                              space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue))
+        context.setFillColor(gray: 1, alpha: 1)
+        context.fill(CGRect(origin: .zero, size: size))
+        context.setFillColor(gray: 0, alpha: 1)
+        for block in blocks { context.fill(CGRect(x: block.minX, y: size.height - block.maxY, width: block.width, height: block.height)) }
+        return try XCTUnwrap(context.makeImage())
+    }
+
     // MARK: Marks that stay on their window
 
     func testAPatchFindsItsContentWhereTheScrollTookIt() throws {

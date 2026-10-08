@@ -325,10 +325,10 @@ final class ScreenshotRequests {
         }
     }
 
-    /// Whether the session is in the middle of a turn, or nil when its route cannot tell. Reads one
-    /// small file in its inbox.
-    func isWorking(_ destination: AgentDestination) -> Bool? {
-        connections[destination.address.client]?.isWorking(destination)
+    /// Where the session is in its turns, or nil when its route cannot tell. Reads a few small
+    /// files in its inbox.
+    func turn(of destination: AgentDestination) -> SessionTurn? {
+        connections[destination.address.client]?.turn(of: destination)
     }
 
     // MARK: Sending

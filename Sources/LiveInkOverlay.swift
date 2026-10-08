@@ -250,6 +250,8 @@ final class LiveMarksLayer: CALayer {
         var note: NoteLayer?
         /// An agent's focus, under every other mark.
         var focus: FocusLayer?
+        /// The window as it was under the ink, played back under every other mark.
+        var before: BeforeLayer?
         var mark: Mark?
         /// The done animation has started on it; the mark is removed once it ends.
         var finished = false
@@ -329,6 +331,15 @@ final class LiveMarksLayer: CALayer {
             if mark.popover != nil, let host {
                 if popovers[mark.id] == nil { popovers[mark.id] = ReplyPopover(host: host, sharing: sharing) }
                 if drawingOn.contains(mark.id) { appearing.insert(mark.id) }
+            } else if let picture = mark.before {
+                let before = record.before ?? BeforeLayer(scale: scale)
+                before.show(picture, in: mark.shapeExtent ?? .zero)
+                if record.before == nil {
+                    record.previewed.addSublayer(before.root)
+                    record.holder.zPosition = -1
+                    record.before = before
+                }
+                if drawingOn.contains(mark.id) { before.play() }
             } else if let place = mark.focus {
                 let focus = record.focus ?? FocusLayer()
                 focus.show(place, spot: mark.shapeExtent ?? place.target)
@@ -595,8 +606,8 @@ final class LiveMarksLayer: CALayer {
         if let popover = record.mark.flatMap({ popovers[$0.id] }) {
             return popover.close(after: how == .done ? Self.doneHold * motion : 0, fade: motion > 0 ? Self.doneAway * motion : Self.doneFade)
         }
-        // A focus has nothing to turn green.
-        guard motion > 0, let mark = record.mark, record.focus == nil else {
+        // A focus or a replay has nothing to turn green.
+        guard motion > 0, let mark = record.mark, record.focus == nil, record.before == nil else {
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = 1
             fade.toValue = 0

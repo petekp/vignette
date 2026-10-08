@@ -74,6 +74,9 @@ struct Mark: Equatable, Identifiable {
     /// For a live answer's focus mark, a rectangle that draws no stroke: where the agent pulls focus.
     /// Never written to a file.
     var focus: FocusPlace?
+    /// For live ink's replay of a change, a rectangle that draws no stroke: how the window looked
+    /// there when the person asked (`BeforeLayer`). Never written to a file.
+    var before: BeforePicture?
 
     init(id: UUID = UUID(), geometry: Geometry, agent: Bool = false, agentName: String? = nil) {
         self.id = id

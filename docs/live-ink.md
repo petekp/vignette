@@ -25,6 +25,7 @@ The names in brackets are `// MARK:` sections.
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
 | Marks following their window, holding still, hiding | `LiveWindows.swift`, `LiveAnchor.swift` (Accessibility), `LivePatch.swift` (pixels) |
+| Whether a session's turn changed what the ink is on, and the before played back | `LiveChange.swift`, `LiveInk.swift` (Whether it landed) |
 
 ## Checking a change
 
@@ -149,8 +150,12 @@ The names in brackets are `// MARK:` sections.
   `strokeTimes`), for the agent only; the note on screen keeps the person's words.
 - An ask sent to a session goes through Send, as one line that names the app, the window and its
   URL. The person's words stay beside their ink as their own note, and both carry the thinking
-  light until the session's turn ends (`LiveInk.watchWorking`, from the `turn` file the plugin's hooks write in its
-  inbox; a route that cannot tell stops after 3 minutes). A send that went says nothing more. The
+  light until the session's turn ends (`LiveInk.watchWorking`, `ClaudeCodeConnection.turn(of:)`).
+  The request waits in the session's inbox while another turn runs, and the `turn` file the
+  plugin's hooks write there says when its own turn starts and ends. Vignette stops waiting 3
+  minutes after the session takes the request when it sees no turn start, as with Codex. It stops
+  30 minutes into a turn it saw start, or 30 minutes after the ask while the request is still
+  queued. A send that went says nothing more. The
   session sees its own change land, so the skill asks it to answer on the window only when pointing
   helps. It does that with `scripts/reply --answer`: words, and up to four marks that each
   name words on the window (`LiveAnswer`, in the reply's bundle). `LiveInk.showAnswer` captures the
@@ -160,6 +165,27 @@ The names in brackets are `// MARK:` sections.
   drawn there, because the ink was cleared, a newer ask is under way or the app relaunched, becomes
   a card with the words in its corner (`Reply.cardMarks`). `docs/adr/0021-a-sessions-answer-to-live-ink-is-drawn-on-the-window.md`
   has the reasons.
+- When a session's turn ends with no answer drawn, Vignette looks at the window again before the
+  ink goes (`LiveInk.resolve`, `LiveChange`).
+  - **The before picture.** As the ask goes, Vignette keeps the part of the window round the ink:
+    the ink's shapes with 64 pt round them, inside the web page when there is one (`keepBefore`).
+  - **The comparison.** At the turn's end it captures the window twice, half a second apart, and
+    compares that same part of the window on a grid of 3 pt cells of grey. A cell counts when its
+    grey moved more than 24 of 255 and did not move between the two later captures. That leaves
+    out a caret or a spinner. Only the cells under the ink, its shapes with a 12 pt margin, decide.
+    The ink's part changed when at least 2% of those cells counted, and at least 4.
+  - **Changed.** The window as it was plays back over the ink's part and every cell round it that
+    changed, so a button that grew past the ink plays back whole. It comes in with a "Before" tag,
+    then wipes away from left to right (`BeforeLayer`, drawn for a `Mark.before` pinned to the
+    window). Then the done animation plays.
+  - **Unchanged.** The ink stays, and Vignette's note beside it says "Nothing changed under your
+    ink. Check *project*." The session may have answered in words, as it does for a question.
+  - **Can't tell.** A window that closed or changed size, or a turn Vignette stopped waiting on,
+    plays the done animation as before. With motion off, a change plays the done animation alone.
+  - **One known gap.** The part compared stays at its place in the window. So content the session
+    moved away counts as a change there, and so does content the person scrolled.
+  - **The log.** `[live-ink] landed changed=` or `[live-ink] nothing changed under the ink` gives
+    the outcome.
 - An ask is answered by `LiveResponder`: one `claude -p` process in stream-json mode, run with
   `--safe-mode --tools ""`, its own system prompt, and `--json-schema` for the answer
   (`LiveAnswer.schema`, fixed text that lists `say` first, the field that streams in as the reply).
@@ -173,7 +199,9 @@ The names in brackets are `// MARK:` sections.
   conversation again. It also stops when the ink is cleared or live ink is turned off, and starts a
   new conversation after 12 asks. In a test launch it runs only the `claude` that
   `VIGNETTE_CLAUDE` names, since any other runs on the person's account;
-  `scripts/e2e/fake_claude.py` stands in for it.
+  `scripts/e2e/fake_claude.py` stands in for it. In `[live-ink] answered … marks=<n> thrownOut=<n>`,
+  `thrownOut` counts the marks the responder gave that point at nothing, such as a box in pixels
+  rather than thousandths. They are thrown out as the answer is read, before `drew answer` counts.
 - `LivePacket` is the ask's content, built in about 300 ms: a ScreenCaptureKit capture of the
   topmost window under the ink below the Dock's level (the Dock has a window over the whole screen at
   its level), Vision's accurate text lines read before the ink is drawn in, with ids, the person's
