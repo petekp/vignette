@@ -270,9 +270,9 @@ prompt, so it needs more runs before it ships.
   a price or a table cell.
 - **Marks on questions that need none.** 22 of 25 responder answers to "explain" or "why"
   questions carried marks. No rewrite fixed it.
-- **A session learns nothing once `--answer` is accepted.** A mark whose words aren't found, with
-  no box, is left out as the answer is drawn, after the helper has exited. Only the app's
-  `drew answer … dropped=<n>` says so.
+- **A session learns which marks were left out.** A mark whose words aren't found, with no box, is
+  left out as the answer is drawn. The helper waits for the drawing, about a second, and its line
+  lists those marks under `notDrawn`, so the session can say those findings in words.
 
 ### What to try next
 

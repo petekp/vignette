@@ -196,13 +196,15 @@ final class ScreenshotRequestsTests: XCTestCase {
     // MARK: Acceptance
 
     /// An answer to live ink is drawn on the window and makes no file; one the window cannot take,
-    /// because the ink was cleared or the app relaunched, still reaches the person as a card.
+    /// because the ink was cleared or the app relaunched, still reaches the person as a card. Either
+    /// way the receipt is written again once it is drawn, naming the marks that were not.
     func testAnAnswerIsDrawnOnTheWindowOrElseBecomesACard() throws {
         var shown: [LiveAnswer] = []
         var drawsLive = true
         requests.callbacks.presentLive = { _, answer, done in
             shown.append(answer)
-            done(drawsLive)
+            // The words of the first mark are not on the window.
+            done(drawsLive ? [0] : nil)
         }
         let answer = #"{"say":"Moved the dates under the title.","marks":[{"kind":"circle","words":"October 12","label":"moved"},{"kind":"arrow","box":[0.1,0.2,0.3,0.1]}]}"#
 
@@ -212,6 +214,8 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(shown.first?.say, "Moved the dates under the title.")
         XCTAssertEqual(shown.first?.marks.first?.words, "October 12")
         XCTAssertEqual(receipt(live, attemptID)?.acceptance, .accepted)
+        XCTAssertEqual(receipt(live, attemptID)?.publication, .ready)
+        XCTAssertEqual(receipt(live, attemptID)?.notDrawn, [0])
         let replies = (requests.stateJSON["replies"] as? [[String: Any]]) ?? []
         XCTAssertEqual(replies.first { $0["request"] as? String == live.id }?["stage"] as? String, "shown")
         XCTAssertTrue(presented.isEmpty)
@@ -219,12 +223,14 @@ final class ScreenshotRequestsTests: XCTestCase {
 
         drawsLive = false
         let card = try makeRequest()
-        try requests.receiveReply(envelope: stageReply(card, answer: answer))
+        let cardAttempt = UUID().uuidString.lowercased()
+        try requests.receiveReply(envelope: stageReply(card, attemptID: cardAttempt, answer: answer))
         XCTAssertEqual(presented.count, 1)
         let marks = try XCTUnwrap(added.last)
         XCTAssertEqual(marks.first?.text, "Moved the dates under the title.")
         // The words-only mark has nothing to find on the request's picture; the boxed one is ringed.
         XCTAssertEqual(marks.map(\.type), [.text, .ellipse])
+        XCTAssertEqual(receipt(card, cardAttempt)?.notDrawn, [0])
     }
 
     /// The skill's helper is `ReplyCommand`. What it writes has to be what this side accepts, and a

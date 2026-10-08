@@ -1240,15 +1240,16 @@ final class LiveInk {
     /// Draws a working session's answer beside the ink it was about, on that ink's window, as the
     /// responder's answers are drawn: its marks point at the words they name, read from a fresh
     /// capture of the window, since the session has likely changed what the window shows. Answers
-    /// false when the ink is gone or the window cannot be read, and the answer becomes a card.
-    func showAnswer(request: String, _ answer: LiveAnswer, agent: String, done: @escaping (Bool) -> Void) {
+    /// nil when the ink is gone or the window cannot be read, and the answer becomes a card, and
+    /// otherwise the indexes of the marks whose words were not found on the window.
+    func showAnswer(request: String, _ answer: LiveAnswer, agent: String, done: @escaping ([Int]?) -> Void) {
         let person = marks.filter { !$0.agent && !answerMarks.contains($0.id) }
-        guard let shared = sending[request], isOn else { return done(false) }
+        guard let shared = sending[request], isOn else { return done(nil) }
         let about = person.filter { shared.about.contains($0.id) }
         let asked = about.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
         guard !asked.isNull else {
             Log.write("[live-ink] answer for \(request) has no ink to go beside")
-            return done(false)
+            return done(nil)
         }
         closeNote()
         // The ink leads, not the person's note: the notes follow it directly, so moving its content
@@ -1272,16 +1273,15 @@ final class LiveInk {
             do {
                 let packet = try await LivePacket.build(at: CGPoint(x: asked.midX, y: asked.midY), window: shared.windowID,
                                                         ink: person, style: ui.textStyle, markStyle: ui.markStyle)
-                guard let self, self.asking?.about == shared.about else { return done(false) }
+                guard let self, self.asking?.about == shared.about else { return done(nil) }
                 self.sending[request] = nil
                 self.befores[request] = nil
                 self.stopWorking()
-                self.answered(answer, packet: packet, sent: [], near: asked, question: self.question(in: shared.about), agent: agent)
-                done(true)
+                done(self.answered(answer, packet: packet, sent: [], near: asked, question: self.question(in: shared.about), agent: agent))
             } catch {
                 Log.write("[live-ink] error answer packet \(error)")
                 self?.asking = nil
-                done(false)
+                done(nil)
             }
         }
     }
@@ -1370,10 +1370,12 @@ final class LiveInk {
         replace(question: question)
     }
 
-    /// `sent` is the ids of the text lines the answer was given, the only ones it may name.
+    /// `sent` is the ids of the text lines the answer was given, the only ones it may name. Answers
+    /// the indexes of the marks whose words were not found, or nil when nothing was drawn.
+    @discardableResult
     private func answered(_ answer: LiveAnswer, packet: LivePacket, sent: Set<String>, near asked: CGRect, question: Mark?,
-                          agent: String = LiveAnswerLayout.agentName) {
-        guard asking != nil else { return }
+                          agent: String = LiveAnswerLayout.agentName) -> [Int]? {
+        guard asking != nil else { return nil }
         clearEarlierAnswer()
         let targets = answer.marks.map { target(of: $0, in: packet, sent: sent) }
         let layout = LiveAnswerLayout.placed(for: answer, targets: targets, asked: asked,
@@ -1401,7 +1403,8 @@ final class LiveInk {
         asking?.findings = layout.findings
         answerMarks.formUnion(shown.map(\.id))
         let labels = zip(answer.marks, targets).filter { $0.0.label != nil && $0.1 != nil }.count
-        Log.write("[live-ink] drew answer marks=\(placed.count - 1) dropped=\(targets.filter { $0 == nil }.count) "
+        let notDrawn = targets.indices.filter { targets[$0] == nil }
+        Log.write("[live-ink] drew answer marks=\(placed.count - 1) dropped=\(notDrawn.count) "
                   + "labels=\(layout.findings.filter { $0.count > 1 }.count)/\(labels)\(answer.steps ? " steps" : "")"
                   + (focus.isEmpty ? "" : " focus=\(focus.count)"))
         let groups = Self.steps(in: Array(placed.dropFirst()))
@@ -1409,7 +1412,7 @@ final class LiveInk {
         guard answer.steps, groups.count > 1 else {
             put(shown, window: packet.windowID)
             pullFocus(focus, window: packet.windowID, say: answer.say, replies: layout.tour)
-            return
+            return notDrawn
         }
         steps = Array(groups.dropFirst())
         stepsWindow = packet.windowID
@@ -1420,6 +1423,7 @@ final class LiveInk {
         })
         put([placed[0]] + groups[0], window: packet.windowID)
         watchStepClicks()
+        return notDrawn
     }
 
 

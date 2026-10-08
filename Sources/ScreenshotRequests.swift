@@ -24,7 +24,9 @@ final class ScreenshotRequests {
         var present: (Screenshot) -> Void = { _ in }
         /// Draws an answer on the window the request's live ink was drawn on, then answers whether it
         /// did. One that could not be drawn there is made a card instead.
-        var presentLive: (Record, LiveAnswer, @escaping (Bool) -> Void) -> Void = { _, _, done in done(false) }
+        /// Answers the indexes of the marks it could not draw, or nil when the answer is not drawn
+        /// on its window at all and becomes a card.
+        var presentLive: (Record, LiveAnswer, @escaping ([Int]?) -> Void) -> Void = { _, _, done in done(nil) }
         var watchFolder: () -> URL = { FileManager.default.temporaryDirectory }
         /// What the client answered for a request, which the card that was sent shows.
         var delivered: (Record, SubmissionOutcome) -> Void = { _, _ in }
@@ -60,6 +62,9 @@ final class ScreenshotRequests {
     private var pendingImports: [String] = []
     private var importing = false
     private var publishedAt: [String: TimeInterval] = [:]
+    /// The attempts at an answer still being drawn, by reply id, whose helpers wait to hear how it went.
+    /// Kept for this launch only: after a relaunch a helper's wait runs out and it reports `pending`.
+    private var answerAttempts: [String: [ReplyProtocol.Attempt]] = [:]
     private var publicationReady = false
     /// Cancellation takes effect in memory even when its record cannot yet be written.
     private var pendingCleanupWrites: Set<String> = []
@@ -120,6 +125,8 @@ final class ScreenshotRequests {
         /// The person deleted the published file. Publication still happened and is not undone.
         var deleted = false
         var errorCode: String?
+        /// For an answer, once it is drawn: the indexes of its marks that were not.
+        var notDrawn: [Int]?
 
         enum Stage: String, Codable {
             /// Vignette owns every byte. The helper may release its bundle.
@@ -150,6 +157,12 @@ final class ScreenshotRequests {
                 }
             }
             return marks
+        }
+
+        /// The answer's marks a card leaves out: those that name only words.
+        var undrawnOnCard: [Int] {
+            guard let answer else { return [] }
+            return answer.marks.indices.filter { answer.marks[$0].box == nil }
         }
 
         /// The reserved watch-folder name. Derived, so a record and its file cannot drift apart.
@@ -493,7 +506,9 @@ final class ScreenshotRequests {
             guard existing.digest == attempt.payloadDigest else {
                 throw ReplyProtocol.Problem(.conflictingReply, "reply \(attempt.replyID) was accepted with other bytes")
             }
-            writeReceipt(attempt, acceptance: .accepted, publication: existing.publication, errorCode: existing.errorCode)
+            writeReceipt(attempt, acceptance: .accepted, publication: existing.publication, errorCode: existing.errorCode,
+                         notDrawn: existing.notDrawn)
+            if existing.answer != nil, existing.publication == .pending { answerAttempts[existing.id, default: []].append(attempt) }
             Commands.ok("reply", "\(attempt.replyID) already \(existing.stage.rawValue)")
             return
         }
@@ -524,6 +539,7 @@ final class ScreenshotRequests {
         replies[reply.id] = reply
         pendingImports.append(reply.id)
         writeReceipt(attempt, acceptance: .accepted, publication: .pending, errorCode: nil)
+        if reply.answer != nil { answerAttempts[reply.id, default: []].append(attempt) }
         Commands.ok("reply", "\(reply.id) accepted for \(request.id) marks=\(reply.marks.count)\(reply.hasImage ? " image" : "")\(reply.answer == nil ? "" : " answer")")
         importNext()
     }
@@ -544,10 +560,11 @@ final class ScreenshotRequests {
     /// The acknowledgement, at a path Vignette derives from the attempt's own ids. Atomic, so a
     /// helper reading it never sees half a file.
     private func writeReceipt(_ attempt: ReplyProtocol.Attempt, acceptance: ReplyProtocol.Receipt.Acceptance,
-                              publication: ReplyProtocol.Receipt.Publication?, errorCode: String?) {
+                              publication: ReplyProtocol.Receipt.Publication?, errorCode: String?, notDrawn: [Int]? = nil) {
         let receipt = ReplyProtocol.Receipt(
             requestID: attempt.requestID, replyID: attempt.replyID, attemptID: attempt.attemptID,
-            payloadDigest: attempt.payloadDigest, acceptance: acceptance, publication: publication, errorCode: errorCode)
+            payloadDigest: attempt.payloadDigest, acceptance: acceptance, publication: publication, errorCode: errorCode,
+            notDrawn: notDrawn)
         let url = ReplyProtocol.receiptURL(root: root, requestID: attempt.requestID, attemptID: attempt.attemptID)
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -566,6 +583,7 @@ final class ScreenshotRequests {
         guard let request = requests[reply.requestID], request.takesReplies else {
             pendingImports.removeAll { $0 == id }
             fail(id, stage: .cancelled, code: "request-cleared")
+            settleAnswer(id)
             importNext()
             return
         }
@@ -574,7 +592,18 @@ final class ScreenshotRequests {
             guard let self else { return }
             self.importing = false
             self.pendingImports.removeAll { $0 == id }
+            self.settleAnswer(id)
             self.importNext()
+        }
+    }
+
+    /// Writes the receipts of an answer's attempts again once its import is over, so a helper still
+    /// waiting learns where the answer went and which of its marks were not drawn.
+    private func settleAnswer(_ id: String) {
+        guard let attempts = answerAttempts.removeValue(forKey: id), let reply = replies[id] else { return }
+        for attempt in attempts {
+            writeReceipt(attempt, acceptance: .accepted, publication: reply.publication, errorCode: reply.errorCode,
+                         notDrawn: reply.notDrawn)
         }
     }
 
@@ -582,12 +611,13 @@ final class ScreenshotRequests {
     /// the last step, so a stop anywhere in here leaves no ordinary file and no half-drawn card.
     private func publish(_ reply: Reply, done: @escaping () -> Void) {
         if let answer = reply.answer, reply.stage == .accepted, let request = requests[reply.requestID] {
-            return callbacks.presentLive(request, answer) { [weak self] shown in
+            return callbacks.presentLive(request, answer) { [weak self] notDrawn in
                 guard let self else { return done() }
-                guard shown else { return self.publishCard(reply, done: done) }
+                guard let notDrawn else { return self.publishCard(reply, done: done) }
                 guard requests[reply.requestID]?.takesReplies == true, var shownReply = replies[reply.id],
                       shownReply.stage == .accepted else { return done() }
                 shownReply.stage = .shown
+                shownReply.notDrawn = notDrawn
                 replies[reply.id] = shownReply
                 if (try? write(shownReply)) == nil { Log.write("[reply] error write-failed \(reply.id) shown") }
                 Log.write("[reply] shown \(reply.id) on the window marks=\(answer.marks.count)")
@@ -654,6 +684,7 @@ final class ScreenshotRequests {
         var reply = reply
         reply.stage = .published
         reply.errorCode = nil
+        if reply.answer != nil { reply.notDrawn = reply.undrawnOnCard }
         guard (try? write(reply)) != nil else { fail(reply.id, stage: .failed, code: "publish-failed"); return done() }
         replies[reply.id] = reply
         publishedAt[reply.id] = ProcessInfo.processInfo.systemUptime

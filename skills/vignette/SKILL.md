@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "18"
+  version: "19"
 ---
 
 # Vignette
@@ -182,8 +182,9 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --answe
   it yet, and leave them out otherwise.
 - `--answer` comes alone, without `--marks` or `--image`. The exit codes are the same. A mark
   Vignette could not draw, such as an unknown `kind`, a fifth mark or a box outside the picture,
-  is not sent: the helper exits 1 and `error` names the mark. Accepted means it is drawn within a
-  second. There is nothing to check after it.
+  is not sent: the helper exits 1 and `error` names the mark. Accepted waits until the answer is
+  drawn, about a second. When the line has `notDrawn`, those marks are not on the window, since
+  their words were not found: say those findings in your words in your session.
 - If the ink is gone by the time your answer arrives, Vignette shows it as a card instead.
 
 ## Read back what they drew

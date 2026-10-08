@@ -1283,7 +1283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 self?.thumbnail.show(shot)
             },
             presentLive: { [weak self] record, answer, done in
-                guard let self else { return done(false) }
+                guard let self else { return done(nil) }
                 liveInk.showAnswer(request: record.id, answer, agent: record.address.client.rawValue, done: done)
             },
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
