@@ -79,6 +79,31 @@ final class ScreenFeed: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked S
     }
 }
 
+/// The GPU time of each drawing, added from Metal's completion threads, so the log can say whether a
+/// look keeps up with the display.
+final class GPUTimes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    private var total: CFTimeInterval = 0
+    private var worst: CFTimeInterval = 0
+
+    func add(_ seconds: CFTimeInterval) {
+        guard seconds > 0 else { return }
+        lock.withLock { count += 1; total += seconds; worst = max(worst, seconds) }
+    }
+
+    func reset() { lock.withLock { count = 0; total = 0; worst = 0 } }
+
+    /// `drawn=<n> gpu-ms mean=<m> max=<m>` for the drawings so far, and starts again.
+    func take() -> String {
+        lock.withLock {
+            defer { count = 0; total = 0; worst = 0 }
+            let mean = count > 0 ? total / Double(count) * 1000 : 0
+            return String(format: "drawn=%d gpu-ms mean=%.2f max=%.2f", count, mean, worst * 1000)
+        }
+    }
+}
+
 /// Live ink's edge drawn by a Metal shader over a live picture of the screen: glass, and the other
 /// looks the edge lab tries, and the wake that follows the pen while drawing
 /// (docs/live-ink-edge-lab-2026-10-08.md). It fades in once the first frame is drawn, so it never
@@ -107,6 +132,8 @@ final class EdgeLensLayer: CAMetalLayer {
     static var isAvailable: Bool { metal != nil }
 
     private let feed = ScreenFeed()
+    /// How long the GPU took over each drawing since the look came up, logged with the feed's frames.
+    private let gpuTimes = GPUTimes()
     private var textures: CVMetalTextureCache?
     private var link: CADisplayLink?
     private var ui = UITweaks()
@@ -184,7 +211,7 @@ final class EdgeLensLayer: CAMetalLayer {
         streaming = false
         feed.stop()
         link?.isPaused = true
-        Log.write("[live-ink] edge feed stopped frames=\(feed.frameCount)")
+        Log.write("[live-ink] edge feed stopped frames=\(feed.frameCount) \(gpuTimes.take())")
     }
 
     func show(_ on: Bool, ui: UITweaks, color: CGColor, pen: CGPoint?) {
@@ -198,7 +225,7 @@ final class EdgeLensLayer: CAMetalLayer {
         dirty = true
         if !on { trail = [] }
         if on {
-            if started == 0 { started = CACurrentMediaTime() }
+            if started == 0 { started = CACurrentMediaTime(); gpuTimes.reset() }
             link?.isPaused = false
         } else {
             started = 0
@@ -301,7 +328,10 @@ final class EdgeLensLayer: CAMetalLayer {
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         // The capture's buffer must outlive the GPU's read of it.
-        commands.addCompletedHandler { _ in withExtendedLifetime(picture) {} }
+        commands.addCompletedHandler { [gpuTimes] buffer in
+            withExtendedLifetime(picture) {}
+            gpuTimes.add(buffer.gpuEndTime - buffer.gpuStartTime)
+        }
         commands.present(drawable)
         commands.commit()
     }

@@ -56,8 +56,19 @@ aurora draw only light and start no feed. Live ink already uses ScreenCaptureKit
 these looks need no new permission. They add the indicator for as long as the chord is held.
 
 **Without the picture, the glow shows.** With no Screen Recording, or when the stream stops with an
-error, live ink draws the glow, and the next chord tries the picture again. This was read in the
-code, not run.
+error, live ink draws the glow, and the next chord tries the picture again. In the VM, a copy never
+granted Screen Recording logged `edge feed could not start: noPermission` when the look was held,
+and showed the glow along all four edges. Holding it again tried the picture again and showed the
+glow again. macOS raised no prompt. A stream that stops with an error was not run.
+
+**On Pete's Mac the picture takes a third of a second to start.** On macOS 15, on an M4 Max with
+its built-in display, the first frame came 330 to 415 ms after the chord, against 50 to 140 ms in
+the VM. So the look fades in about a third of a second after the chord, while the ink draws at
+once. While inking, the picture came at about 61 frames a second, the stream's cap of 60.
+
+**The log gives the GPU's time.** `edge feed stopped` also says how many times the look was drawn
+and the GPU's time for each drawing: `drawn=232 gpu-ms mean=1.32 max=17.62` in the VM. A look keeps
+up while that stays well under a refresh, 8.3 ms at 120 Hz.
 
 **Moving looks and the wake cost more.** A look that moves, or a wake with rings, redraws every
 refresh. In the VM, aurora ripple held the app at about 16 % CPU, and the wake peaked at 29 % during
@@ -121,13 +132,15 @@ the wake at strength 0.95, size 36 and duration 0.85. The glow's own width is 29
 
 ## Still open
 
-- How the looks behave on macOS 15, on a real display, and over fast scrolling.
-- More than one display. Each screen starts its own picture and display link; only one was tested.
-- What the GPU spends on a large display. Glass with frost and colour split reads 72 samples for
-  each pixel in the band. Only the CPU was measured, and only in the VM.
-- What the wake costs on a real GPU. Each pixel near the path sums up to 96 rings while they last.
-- The wake while really inking. Every test drove it with a drag while the look was held, since VNC
-  cannot hold the chord. While inking, the overlay's own presses drive it.
+- How the band follows fast scrolling. Pete tuned every look on his Mac, on macOS 15, so they draw
+  there, but nobody has watched one over a fast scroll.
+- More than one display. Each screen starts its own picture and display link. Pete's Mac has one.
+- What the GPU spends on a real Mac, for each look and for the wake while really inking. Glass
+  with frost and colour split reads 72 samples for each pixel in the band, and each pixel near the
+  pen sums up to 96 of the wake's rings. The `gpu-ms` in the log answers both once Pete has inked
+  with this build.
+- Whether the wake makes the ink lag behind a long, fast stroke on Pete's Mac.
+- Whether the picture can start sooner than a third of a second after the chord.
 - Ripple at its highest waves can still fold the picture back. It was left, since its waves are
   meant to distort.
 - Whether 10 pt matches the real top corners of Pete's display, and 8 pt the notch's.
