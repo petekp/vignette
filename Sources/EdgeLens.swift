@@ -44,17 +44,27 @@ final class ScreenFeed: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked S
         do {
             try await stream.startCapture()
         } catch {
-            lock.withLock { if self.stream === stream { self.stream = nil } }
+            detach(stream)
             throw error
         }
     }
 
     func stop() {
-        let stream = lock.withLock { () -> SCStream? in
-            defer { self.stream = nil; latest = nil; fresh = false }
-            return self.stream
+        detach()?.stopCapture { _ in }
+    }
+
+    /// Forgets the stream and its last picture, about 24 MB on a 3024 by 1964 display, and answers
+    /// the stream it forgot. Given a stream, forgets only that one, so a stream this feed already
+    /// stopped or replaced changes nothing.
+    @discardableResult
+    private func detach(_ stream: SCStream? = nil) -> SCStream? {
+        lock.withLock {
+            guard let current = self.stream, stream.map({ $0 === current }) ?? true else { return nil }
+            self.stream = nil
+            latest = nil
+            fresh = false
+            return current
         }
-        stream?.stopCapture { _ in }
     }
 
     /// The newest frame, and whether it arrived since the last time this was asked.
@@ -82,16 +92,8 @@ final class ScreenFeed: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked S
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        // Its last picture goes with it: about 24 MB on a 3024 by 1964 display. A stream this feed
-        // already stopped or replaced says nothing.
-        let current = lock.withLock { () -> Bool in
-            guard stream === self.stream else { return false }
-            self.stream = nil
-            latest = nil
-            fresh = false
-            return true
-        }
-        guard current else { return }
+        // A stream this feed already stopped or replaced says nothing.
+        guard detach(stream) != nil else { return }
         DispatchQueue.main.async { [weak self] in self?.onStopped?(error) }
     }
 }
