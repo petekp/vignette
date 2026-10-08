@@ -93,14 +93,24 @@ struct LiveAnswer: Equatable {
     }
 
     /// Checks an answer from outside the process. A mark that names nothing it can point at is
-    /// dropped rather than failing the answer, since the reply is still worth showing.
-    init(json: Any) throws {
+    /// dropped rather than failing the answer, since the reply is still worth showing. `strict`, as
+    /// the reply helper reads a session's answer, fails it instead and names the mark, since the
+    /// session can still fix it and the helper's receipt would otherwise say nothing was dropped.
+    init(json: Any, strict: Bool = false) throws {
         guard let object = json as? [String: Any] else { throw Problem(description: "the answer is not an object") }
         guard let say = (object["say"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !say.isEmpty else {
             throw Problem(description: "the answer has no say")
         }
         self.say = Self.cut(say, to: Self.maxSay)
         let items = object["marks"] as? [Any] ?? []
+        if strict {
+            guard items.count <= Self.maxMarks else {
+                throw Problem(description: "the answer has \(items.count) marks; at most \(Self.maxMarks) are drawn")
+            }
+            for (index, item) in items.enumerated() {
+                if let problem = AnswerMark.problem(with: item) { throw Problem(description: "mark \(index + 1): \(problem)") }
+            }
+        }
         marks = items.prefix(Self.maxMarks).compactMap(AnswerMark.init(json:))
         steps = object["steps"] as? Bool ?? false
         actions = Self.actions(object["actions"])
@@ -233,6 +243,20 @@ struct AnswerMark: Equatable {
             }
         }
         guard line != nil || words != nil || box != nil else { return nil }
+    }
+
+    /// Why `init(json:)` would drop `json` or its box, or nil when it keeps both.
+    static func problem(with json: Any) -> String? {
+        guard let object = json as? [String: Any] else { return "it is not an object" }
+        let kinds = Kind.allCases.map(\.rawValue)
+        guard (object["kind"] as? String).flatMap(Kind.init(rawValue:)) != nil else {
+            return "kind must be \(kinds.dropLast().joined(separator: ", ")) or \(kinds.last ?? "")"
+        }
+        let mark = AnswerMark(json: object)
+        if object["box"] != nil, mark?.box == nil {
+            return "box must be [x, y, w, h] in fractions of the picture, and inside it"
+        }
+        return mark == nil ? "it needs words, or a box" : nil
     }
 }
 

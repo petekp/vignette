@@ -262,15 +262,17 @@ prompt, so it needs more runs before it ships.
 - **A mark can be thrown out as the answer is read.** In 3 of 144 answers the responder gave a box
   in pixels instead of thousandths. The mark fell outside the picture and was dropped, and nothing
   logged it. Vignette now logs it for the responder: `[live-ink] answered … thrownOut=<n>`. A
-  session's marks are checked by the reply helper, which still drops them silently. This is the one
-  change from this section, and it needs only a rebuild.
+  session's answer goes through the reply helper, which now refuses an answer with a mark it would
+  drop, such as an unknown kind or a box outside the picture, and names the mark in its error.
 - **A session's words are found by reading the window, and reading can fail.** In the VM, Vision
-  read `$72k` as `1ZL$`, so all 14 session marks that named it were dropped. A session could give
-  a box as well as words for a number or a table cell, and Vignette would use the box when the
-  words aren't found. Untested.
+  read `$72k` as `1ZL$`, so all 14 session marks that named it were dropped. Vignette uses a mark's
+  box when its words aren't found, and the skill now asks for a box as well as words for a number,
+  a price or a table cell.
 - **Marks on questions that need none.** 22 of 25 responder answers to "explain" or "why"
   questions carried marks. No rewrite fixed it.
-- **A session learns nothing from `--answer`.** It can't tell that a mark was dropped.
+- **A session learns nothing once `--answer` is accepted.** A mark whose words aren't found, with
+  no box, is left out as the answer is drawn, after the helper has exited. Only the app's
+  `drew answer … dropped=<n>` says so.
 
 ### What to try next
 
@@ -350,6 +352,13 @@ In the macOS 26 VM, with a fake Claude Code session and a page in Safari:
 
 In the last case the fake session sat idle for 1.3 s between the other turn and its own, as a
 real one does while the monitor hands the request over. The watch didn't take that gap for the end.
+
+Two more takes in the VM on 2026-10-08, with the scripted ink commands:
+
+| Case | Log |
+|---|---|
+| The person interrupted the turn: `turn` stayed busy and the transcript's last line became Claude Code's interrupt marker | Nothing while busy. `session's turn ended` 2.5 s after the marker, then the done animation |
+| A second ask to the same session while its first turn ran | The first turn's end did not end the second ask's watch, since its line still waited in the inbox. `session's turn ended` for the second ask once its own turn ended |
 
 On Pete's Mac (macOS 15), on 2026-10-08, the session was a real Claude Code session and the page
 was in Chrome:

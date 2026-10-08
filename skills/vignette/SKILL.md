@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "17"
+  version: "18"
 ---
 
 # Vignette
@@ -160,7 +160,7 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --answe
 - Vignette finds each mark's `words` in a fresh capture of the window when your reply arrives, so
   name text that is on screen after your change. Copy it exactly, from one line, and pick words
   that show in full and appear once on the screen. For something cut off at the window's edge,
-  name the nearest whole words. A mark whose words are not found is left out.
+  name the nearest whole words. A mark whose words are not found is left out, unless it has a box.
 - `kind` is `circle` for one thing and `arrow` for a place or an edge. A `label` is one to four
   words, and a label with no room beside its mark is left out. At most four marks.
 - `focus` pulls their eye to one thing while they read: the rest of the window goes soft and grey
@@ -169,8 +169,10 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --answe
   moves from one to the next as they read. Add `"zoom": true` to
   magnify something too small to see, such as a 1 px gap or fine print. A focus lets go on its
   own, so use `circle` for what they should still see after reading.
-- For something with no text, give `box` instead of `words`: `[x, y, w, h]` as fractions of the
-  image you were sent.
+- `box` is `[x, y, w, h]` as fractions of the image you were sent. Give it as well as `words` for a
+  number, a price or a table cell, which the capture can misread: Vignette uses the box when it
+  cannot find the words, so put it where they will be after your change. For something with no
+  text, give `box` alone.
 - `actions` are up to three buttons under your words, one to three words each, for what they will
   most likely want next. Match them to the marks: "Fix both" and "Header only" for two findings.
   The first is the one you recommend. An action that acts on some of the marks, not all, is
@@ -178,8 +180,10 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --answe
   and fades the others. A click sends the button's words back to you as their reply,
   with a fresh picture of the window. Offer them when you found something to do and have not done
   it yet, and leave them out otherwise.
-- `--answer` comes alone, without `--marks` or `--image`. The exit codes are the same, and
-  accepted means it is drawn within a second. There is nothing to check after it.
+- `--answer` comes alone, without `--marks` or `--image`. The exit codes are the same. A mark
+  Vignette could not draw, such as an unknown `kind`, a fifth mark or a box outside the picture,
+  is not sent: the helper exits 1 and `error` names the mark. Accepted means it is drawn within a
+  second. There is nothing to check after it.
 - If the ink is gone by the time your answer arrives, Vignette shows it as a card instead.
 
 ## Read back what they drew
