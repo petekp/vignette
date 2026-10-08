@@ -97,6 +97,9 @@ The menu bar menu names the switch as the General tab does.
 | The menu bar intro's popover, while Screen Recording is missing | Live ink needs Screen Recording. Click the icon to allow it. |
 | The note's placeholder (`LiveNotePanel.placeholder`) | Ask about this |
 | The note's placeholder while it listens (`LiveNotePanel.listeningPlaceholder`) | Listening… |
+| The last of a reply's buttons (`LiveAnswerActions.replyTitle`) | Reply |
+| The field Reply opens, empty | Reply to *agent* |
+| The button beside that field (`LiveAnswerActions.cancelTitle`) | Cancel |
 | The General tab, under the speech switch while a permission is missing (`liveInkSpeechReason`) | Needs microphone and speech recognition permission. Lets Vignette hear what you say while you draw. The words are made on this Mac. |
 | macOS's microphone prompt (`NSMicrophoneUsageDescription`) | Vignette hears what you say while you draw, and turns it into words on this Mac. |
 | macOS's speech recognition prompt (`NSSpeechRecognitionUsageDescription`) | Vignette turns what you say while you draw into words, on this Mac. |

@@ -306,7 +306,7 @@ open. Each step is checked in a test copy on scratch settings, never in Pete's t
 
    - The popover holds only words: the header and the reply. Its window ignores the mouse, as
      today's note does, so a click on it reaches the app under it. The × and the actions stay
-     panels of their own, laid over the popover's top-left corner and its bottom edge, which keeps
+     panels of their own, laid over the popover's top-right corner and its bottom edge, which keeps
      room for them. Buttons inside the popover take the person's keys on macOS 15. The panels are
      child windows of the popover's window, so they share its layer: a window raised over the
      answer covers them with it.
@@ -404,6 +404,139 @@ open. Each step is checked in a test copy on scratch settings, never in Pete's t
      stood at full strength at the second, whose line it is on.
    - The focus still leaves over 0.18 s, as every answer mark leaves, so the page shows as soon as
      the person acts.
+9. **Reply.** Pete chose a Reply button that opens a field inside the reply, shown on every
+   answer. Each choice and its reason:
+
+   - Reply is the last of the reply's buttons, gray like the actions, or alone when there are
+     none. It is always there, so answering in words never depends on what the agent offered.
+   - A click gives the row's place to a one-line field, as a Messages notification's Reply does.
+     The field is in the buttons' own panel, which takes the keys only while the field is up, as
+     the note does, so the app the person was in stays in front.
+   - Return sends what was typed. Cancel, beside the field, puts the buttons back, as do Esc,
+     Return with nothing typed and a click elsewhere. Pete asked for a visible way back to the
+     buttons after trying the field. Cancel is a push button like the rest of the row and the word
+     macOS uses for leaving without sending. An × in the field would read as clearing it, as a
+     search field's does.
+   - The field keeps what was typed when it closes, and the next Reply opens with it, the caret
+     after the last word. Pete asked for this too: a person who cancels to look at an action, or
+     clicks into their app to check something, comes back to their words. A send clears it.
+   - A typed reply and an action's click are one follow-up. The button used is checked, as an
+     action's was. The reply quotes the person's words and carries the thinking light until the
+     next answer takes its place where it hangs. The earlier answer stays until then, so nothing
+     on the screen is empty while the answer is drawn. A session's message says "Replied under your
+     answer" or "Picked under your answer".
+   - The reply is never narrower than its row of buttons, since the row now always has one more,
+     or than a 200 pt field with Cancel beside it. Without that floor, a short answer with Reply
+     alone left the field about 40 pt wide once Cancel took its share.
+
+   **Built.** `LiveAnswerActions` holds the row and the field, and `LiveInk.respond` sends either.
+   Checked in the macOS 26 VM against a fake session, on TextEdit: the field opened with the keys,
+   a click on TextEdit put the buttons back, Return sent "make the green box wider. Replied under
+   your answer on TextEdit, …", and the session's answer replaced the reply in place, with Reply
+   alone under it. Keys typed after Return reached TextEdit.
+
+   Two things found on the way. Letting go of the keys needs `NSApp.deactivate()`, since the app
+   the person was in never stopped being the active one and activating it does nothing. And a
+   popover's window can be key: when a panel that once held Vignette's keys closed, macOS made the
+   reply's popover key, even after Vignette had let go, which kept the keys and turned the glass
+   light. The reply now lets go as soon as that happens (`ReplyPopover.letGoOfKeys`). A field in
+   a panel of its own, closed on Return, hit this every time; one in the buttons' panel hits it
+   only when the panel closes.
+
+   Cancel and the kept draft, checked in the same VM: "make the green" typed, Cancel put the
+   buttons back and let go of the keys, Reply opened with the words and the caret after them, " box
+   wider" joined them, a click on TextEdit kept all 24 characters, and Return sent "make the green
+   box wider". The next answer's Reply opened empty. The narrowest reply, "Done." under "Why?",
+   is 306 pt wide, and its field 200 pt. `[live-ink] reply field open draft=<n>` and `closed
+   draft=<n>` in the log say how many characters the field held.
+
+   The draft belongs to the answer, not the buttons' panel, since the panel goes whenever the reply
+   is out of sight, as when its window is minimized. The pointer watch that shows the × and the
+   buttons runs for as long as the answer does, so both come back when the reply fades back in.
+   Checked by minimizing TextEdit and restoring it, once after Cancel and once with the field open:
+   the buttons came back both times, and Reply opened with all 23 characters. Keys typed after
+   Cancel, after a click on TextEdit, and after the answer came back all reached TextEdit. The ×
+   closes the answer, and no × or button comes back over where it was.
+
+   Esc in the field closes it with the draft kept. It was sent over VNC, which reaches only the VM,
+   once `[state]` showed the field up. A follow-up to the built-in responder, run against a stand-in
+   `claude` that `VIGNETTE_CLAUDE` names, keeps the reply in place: while it works every button is
+   disabled with ✓ Reply, then the answer takes the reply's place with Reply alone under it.
+   Opening and dismissing the stack over an answer made the reply's popover key, it let go at once,
+   and the next key reached TextEdit. The note's close was not driven: the chord is Control-Option,
+   and neither VNC path into the VM sends Option.
+
+10. **Contrast.** Pete found the reply hard to read. The glass takes the colour of what is under
+    it, so over a dark window it turned dark under dark text. Measured in the macOS 26 VM with the
+    reply over TextEdit's white page and Terminal's black window, as text against what is behind
+    it, where 4.5:1 is the usual floor for body text:
+
+    | Reply text | Glass alone | 75% backing |
+    |---|---|---|
+    | Words over the white page | 8.0:1 | 8.3:1 |
+    | Words over the black window | 2.1 to 3.0:1 | 7.0:1 |
+    | Quote over the black window | 2.1:1 | 7.0:1 |
+    | Dark appearance: words over white, over black | | 7.2:1, 12.0:1 |
+    | Dark appearance: quote over black | | 8.8:1 |
+
+    - The window's background at 75% backs the header and the words (`ReplyView.backing`). At 60%
+      the words read 6.1:1 and at 90% 7.9:1; 75% keeps a little of the glass.
+    - The quote is black or white at 70%, by appearance (`ReplyContent.quoteColor`): lighter than
+      the words, at 85%, and darker than macOS's secondary label, which read 2.6:1 even on the
+      backing. `labelColor.withAlphaComponent(0.7)` stayed black in the dark appearance, at 1.2:1,
+      so the colour is made per appearance.
+    - The dark appearance was measured with only the popover set dark, since a script cannot
+      switch a running VM session's appearance. The buttons, in a panel of their own, stayed light
+      in that check.
+    - The comparison's other options are gone: matching the window under the ink, and forcing dark.
+    - Each figure is a median background against the darkest 1% of the text's pixels, so thin,
+      smoothed glyphs read lower than their colours would.
+
+11. **A follow-up that fails.** Before this, a follow-up that failed took the answer off the screen,
+    with its buttons and the words the person typed, and put a note with the reason beside the ink.
+    Now the answer stays as it was (`LiveInk.restoreFollowed`). Its buttons come back, typed words
+    wait in Reply again, and the reply's header gives the reason where it quoted the person's words
+    (`Mark.notice`). A quote is cut to the header's one line, but a reason wraps, since it is the
+    thing to read: the reason "Claude stopped before it answered. You can ask again." runs past the
+    320 pt a reply wraps at. Once the next answer starts to come in it has replaced the earlier one,
+    so a failure after that is still a note.
+
+    A send to a Codex thread can also come back queued, for a thread no engine has open, or not
+    confirmed, when `codex queue` does not answer in time. Neither is a failure: the words arrived or
+    may still arrive. For a follow-up, the answer stays as the follow-up left it, with the button
+    checked and the thinking light on, and the header says "Queued for …" or "Check …" in place of
+    the person's words (`LiveInk.noteOnFollowUp`). Before this, either one took the answer off the
+    screen. The next answer clears the notice when it takes the reply's place.
+
+    **Built and checked.** The unit tests pass, with one new test: a long reason makes the header
+    wrap within the reply's width. Driven in the macOS 26 VM against the stand-in `claude`, on
+    TextEdit, with the stand-in failing every ask after the first:
+    - A typed follow-up, "make the green box wider": while it ran, every button was disabled with
+      Reply checked. Then `[state] liveInk.ask` read phase `answered` with the reason "Claude
+      couldn't answer. You can ask again.", where it used to read `failed`. All three buttons came
+      back enabled and none picked. The header read "Claude · Claude couldn't answer. You can ask
+      again.", the words were out of the thinking dim, and the × showed. Reply opened with the 24
+      characters (`reply field open draft=24`).
+    - An action's click, "Make them match", after Cancel: the same, and Reply kept the 24
+      characters it held, not the action's title.
+    - The kept words sent again with the stand-in answering: the header quoted them, Reply stood
+      alone under "Done.", and the reason was gone.
+
+    The VM had no network for that round, so the build and the commands went through a shared
+    folder (`--dir`) and an agent in the VM's Terminal (`native/vmq.py`).
+
+    Driven next, with the stand-in `claude` streaming part of an answer before it fails, and a
+    stand-in `codex` (`native/fakecodex/codex`) that lists one thread and queues a send at once, or
+    holds it past Vignette's 25 s wait:
+    - A failure after part of the answer streamed in: the stand-in sent "The green box is already
+      as wide as" (`sayLength` 35), then failed. The answer went with its buttons, phase `failed`,
+      and the note beside the ink said "Claude couldn't answer. You can ask again."
+    - A typed follow-up to the Codex thread, queued: the header read "Codex · Queued for project.
+      Codex reads it when you open this thread." The answer stayed, dimmed, with Reply checked and
+      phase `working`. The next answer took the reply's place and quoted the follow-up's words.
+    - A follow-up that `codex queue` never answered: 27 s after the send, the header read "Check
+      project. Codex didn't confirm it. It may still have arrived.", with the answer and the checked
+      Reply kept. The next answer cleared it the same way.
 
 ## Decisions for Pete
 
@@ -412,6 +545,16 @@ open. Each step is checked in a test copy on scratch settings, never in Pete's t
 3. **Where the answer sits.** Pete chose a popover attached to the agent's target.
 4. **The agent's highlight.** Pete chose a stroke of light.
 5. **How the agent pulls focus.** Pete chose rack focus, the tour and the loupe on 2026-10-07.
+6. **Answering a reply in words.** Pete chose a Reply button, always shown, that opens a field in
+   the reply, on 2026-10-07.
+7. **An action's click.** Pete chose that the next answer replaces the reply in place, as it does
+   for a typed reply, on 2026-10-07.
+8. **The reply's contrast.** Pete chose the window's background at 75% behind the words and a
+   darker quote, on 2026-10-07.
+9. **A follow-up that fails.** Pete chose to keep the answer and show the reason in the reply's
+   header, on 2026-10-07.
+10. **A follow-up that is queued or not confirmed.** Pete chose to show the reply's ×, with Reply
+    still checked, on 2026-10-07.
 
 ## The lab
 

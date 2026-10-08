@@ -419,10 +419,27 @@ final class LiveInkTests: XCTestCase {
         let reply = LiveAnswerLayout.reply("Two more things.", quote: words, from: CGRect(x: 500, y: 300, width: 260, height: 30),
                                            scene: LiveAnswerLayout.Scene(room: room, ink: [], text: []), sizes: sizes)
         XCTAssertEqual(reply.quote, words)
-        let quoted = ReplyContent.size("Two more things.", agent: reply.agentName, quote: words, wrap: sizes.textWidth, foot: 0)
-        let plain = ReplyContent.size("Two more things.", agent: reply.agentName, quote: nil, wrap: sizes.textWidth, foot: 0)
+        let quoted = ReplyContent.size("Two more things.", agent: reply.agentName, quote: words, wrap: sizes.textWidth, foot: .zero)
+        let plain = ReplyContent.size("Two more things.", agent: reply.agentName, quote: nil, wrap: sizes.textWidth, foot: .zero)
         XCTAssertEqual(quoted.height, plain.height, "the question is cut to the header's one line")
         XCTAssertLessThanOrEqual(quoted.width, ReplyContent.insets.left + sizes.textWidth + ReplyContent.insets.right + 1, "and to the reply's width")
+    }
+
+    func testAReplysNoticeWrapsSoAllOfItShows() {
+        let reason = "Not sent. Claude Code closed that session, so Vignette has nowhere to send your reply."
+        let plain = ReplyContent.size("Two more things.", agent: LiveAnswerLayout.agentName, quote: nil, wrap: sizes.textWidth, foot: .zero)
+        let noticed = ReplyContent.size("Two more things.", agent: LiveAnswerLayout.agentName, quote: "why?", notice: reason,
+                                        wrap: sizes.textWidth, foot: .zero)
+        XCTAssertGreaterThan(noticed.height, plain.height, "the reason wraps under the name instead of being cut")
+        XCTAssertLessThanOrEqual(noticed.width, ReplyContent.insets.left + sizes.textWidth + ReplyContent.insets.right + 1, "within the reply's width")
+    }
+
+    func testAReplyIsNeverNarrowerThanItsButtons() {
+        let plain = ReplyContent.size("Done.", agent: LiveAnswerLayout.agentName, quote: nil, wrap: sizes.textWidth, foot: .zero)
+        let row = CGSize(width: sizes.textWidth + 60, height: 36)
+        let footed = ReplyContent.size("Done.", agent: LiveAnswerLayout.agentName, quote: nil, wrap: sizes.textWidth, foot: row)
+        XCTAssertEqual(footed.width, ReplyContent.insets.left + row.width + ReplyContent.insets.right, accuracy: 1, "as wide as its row of buttons")
+        XCTAssertEqual(footed.height, plain.height + row.height, accuracy: 1, "with the row's room under its words")
     }
 
     func testAnArrowGrowsLongerWhenItsLabelHasNoRoomAtAShortOnesTail() {
@@ -461,6 +478,10 @@ final class LiveInkTests: XCTestCase {
                                               targets: [target], asked: .null, scene: scene, sizes: sizes).marks
         XCTAssertNil(stepped[1].focus, "a step is something to click")
         XCTAssertEqual(stepped[1].kind, .ellipse)
+
+        let windowless = LiveAnswerLayout.placed(for: answer, targets: [target], asked: .null, scene: scene, sizes: sizes, focusable: false).marks
+        XCTAssertNil(windowless[1].focus, "with no window to blur, a focus would show nothing")
+        XCTAssertEqual(windowless.map(\.kind), [.text, .ellipse, .text], "the label is kept")
 
         let later = CGRect(x: 300, y: 900, width: 80, height: 20)
         let tour = LiveAnswerLayout.placed(for: LiveAnswer(say: "This one, then that one.", marks: [AnswerMark(kind: .focus, line: "t1", label: "Here"),

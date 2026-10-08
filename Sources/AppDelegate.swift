@@ -678,7 +678,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
             // The session a person would pick in the note's target, from the list Send has.
             var answered = false
-            requests.destinations { [weak self] found, complete, _ in
+            // A kept list can predate the session, so only fresh lists can say it is missing.
+            requests.destinations { [weak self] found, _, fresh in
                 guard let self, !answered else { return }
                 if let session = found.first(where: { $0.id == id }) {
                     answered = true
@@ -686,7 +687,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                     case .success: Commands.ok(cmd, "sending to \(session.project)")
                     case .failure(let failure): Commands.error(cmd, .liveInkNotAsked, failure.reason)
                     }
-                } else if complete {
+                } else if fresh {
                     answered = true
                     Commands.error(cmd, .noAgent, "no session \(id) in the list Send has")
                 }
@@ -767,8 +768,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         report.sections["liveInk"] = liveInk.stateJSON
         report.sections["memory"] = ["rss": residentBytes(), "thumbnails": Thumbnailer.cacheBytes]
         if let section {
-            guard let picked = report.sections[section], !["tag", "app"].contains(section) else {
-                Commands.error("state", .unknownSection, "\"\(section)\"; the sections are \(report.sections.keys.sorted().joined(separator: " "))")
+            let always = ["tag", "app"]
+            guard let picked = report.sections[section], !always.contains(section) else {
+                let choices = report.sections.keys.filter { !always.contains($0) }.sorted()
+                Commands.error("state", .unknownSection, "\"\(section)\"; the sections are \(choices.joined(separator: " ")), and every report has app and tag")
                 return
             }
             report.sections = ["tag": tag as Any, "app": report.sections["app"] as Any, section: picked]

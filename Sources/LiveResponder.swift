@@ -157,7 +157,8 @@ final class LiveResponder {
     round a thing and `arrow` points at it. `focus` pulls their eye to it while they read: the rest of the \
     window goes soft for a few seconds and it stays sharp. Use it for the one thing the answer is about, or \
     for several in the order `say` talks about them, one sentence each, to walk them through; add \
-    `"zoom": true` to magnify something too small to see. Name a text line by its id in `line`, and copy `words` from \
+    `"zoom": true` to magnify something too small to see. A focus lets go after a few seconds, so when \
+    they ask you to mark, circle or point things out, use `circle` or `arrow`, which stay. Name a text line by its id in `line`, and copy `words` from \
     that line when the thing is part of the line. For text in the picture that is not among the lines, \
     leave out `line` and copy its `words`. Use `box` only for something with no text. A `label` \
     is one to four words beside a mark, only when the mark needs it.

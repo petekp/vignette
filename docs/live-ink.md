@@ -23,7 +23,7 @@ The names in brackets are `// MARK:` sections.
 | The reply's popover: its header, its words, what it is laid over | `LiveReplyPopover.swift`, `LiveInkOverlay.swift` (`LiveMarksLayer.showPopover`) |
 | Where the person's note, the reply, labels and pointing marks go | `LiveAnswerLayout.swift` (Pointing, Notes) |
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
-| The answer's ×, its action buttons, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
+| The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
 | Marks following their window, holding still, hiding | `LiveWindows.swift`, `LiveAnchor.swift` (Accessibility), `LivePatch.swift` (pixels) |
 
 ## Checking a change
@@ -107,8 +107,8 @@ The names in brackets are `// MARK:` sections.
   (`LiveMarksLayer.think`): a 40 pt band of light runs along each stroke every 1.15 s, and a sheen
   crosses the note a third of a beat later. Every band counts from one start, so marks that began
   waiting at different moments move together. The light fades in and out over 0.2 s. With motion
-  off the ink brightens and holds. While a follow-up waits, after a click on one of the answer's
-  actions, the reply carries it too (`ReplyView.think`): its words dim to 45%, and a band at full
+  off the ink brightens and holds. While a follow-up waits, after the person answers the reply with
+  an action or Reply, the reply carries it too (`ReplyView.think`): its words dim to 45%, and a band at full
   strength crosses them on the note's beat. The band is the words' own opacity rather than a light
   colour, so it shows on a light popover and a dark one. With motion off the words dim to 60% and
   hold.
@@ -193,7 +193,9 @@ The names in brackets are `// MARK:` sections.
 - The answer streams in: `say` shows as the reply as its words arrive (`LiveAnswer.partialSay`).
   The reply is a popover from the overlay it is drawn on (`ReplyPopover`): the agent's logo and
   name and the person's question in quotes on one line, then the reply's words, which wrap at
-  `ui.liveInkTextWidth`. The person's note goes as the reply comes, and `Mark.quote` keeps its words
+  `ui.liveInkTextWidth`. The window's background at 75% backs them (`ReplyView.backing`), since the
+  glass alone turns dark over a dark window and left dark text at 2 to 3:1; the quote is black or
+  white at 70% by appearance (`ReplyContent.quoteColor`). The person's note goes as the reply comes, and `Mark.quote` keeps its words
   for the header; it is never written to a file. A whole answer hangs the reply from its first
   pointing mark, off the middle of a circle's or a box's side or from an arrow's tail, so the words
   lead along the mark to what it points at. That mark's label is placed with the reply, so neither
@@ -206,12 +208,36 @@ The names in brackets are `// MARK:` sections.
   × and actions are panels of their own, child windows of the popover's window
   (`ReplyPopover.carry`), so they take its layer: a window raised over the answer covers them, and
   they move with it. On macOS 15 a button inside the popover took the person's keys from their app
-  (`docs/live-ink-look-2026-10-07.md`, step 6). The actions are AppKit's push buttons
-  (`LiveAnswerActions`). macOS draws them as it draws controls in an app that is not frontmost,
-  which Vignette never is while an answer shows, so none is filled with the accent colour. A click
-  keeps them: every button is disabled, the picked one gains a checkmark (`LiveAnswerActions.pick`),
-  and they stay under the reply while the session works. They go with the reply when the turn ends
-  or the session's answer replaces it. The marks draw themselves on when the answer is
+  (`docs/live-ink-look-2026-10-07.md`, step 6). The buttons are the answer's actions, then Reply,
+  as AppKit's push buttons (`LiveAnswerActions`). macOS draws them as it draws controls in an app
+  that is not frontmost, which Vignette never is while an answer shows, so none is filled with the
+  accent colour. The reply is never narrower than the row, or than the field with Cancel (`ReplyContent.size`'s
+  `foot`, from `LiveAnswerActions.room`). Reply
+  gives the row's place to a field and Cancel in the same panel, which takes the keys only while the
+  field is up, as the note does. Return sends what was typed; Cancel, Esc, Return with nothing typed
+  or a click elsewhere puts the buttons back. The field keeps its words when it closes, and the next
+  Reply opens with them; a send clears them. The words belong to the answer (`AskState.draft`), not
+  the panel, since the panel goes whenever the reply is out of sight, as when its window is
+  minimized, and comes back with it. An action's click and a typed reply are one follow-up (`LiveInk.respond`):
+  every button is disabled, the one used gains a checkmark (`LiveAnswerActions.pick`), and the reply
+  quotes the person's words and carries the thinking light with the answer's marks. A session gets
+  the words with a fresh picture, as "… Picked under your answer on …" or "… Replied under your
+  answer on …"; the responder takes them as a follow-up ask. The next answer takes the reply's
+  place where it hangs, with buttons of its own, and the earlier answer stays until it is drawn. With no answer drawn, they
+  go when the session's turn ends. A follow-up that fails leaves the answer as it was
+  (`LiveInk.restoreFollowed`): the buttons come back, typed words wait in Reply again, and the
+  reply's header gives the reason where it quoted them (`Mark.notice`), wrapped so all of it shows.
+  Once the next answer has started to come in, it has replaced the earlier one, so a failure after
+  that is a note beside the ink, as for any ask. A follow-up whose send to a Codex thread is queued
+  or not confirmed may still arrive, so the answer stays as the follow-up left it, with the button
+  checked and the thinking light on, and the header says so (`LiveInk.noteOnFollowUp`). Its ×
+  shows, unlike a follow-up's still under way, since its answer may not come until someone opens
+  the thread (`LiveInk.offersDismiss`). Closing the field lets go of the keys with
+  `NSApp.deactivate()`: the app the person was in never stopped being the active one, so activating
+  it does nothing. A popover's window can be key, and macOS makes the reply's key when a panel that
+  held Vignette's keys closes, even after Vignette let go; the keys would stay with Vignette and the
+  glass turn light, so the reply lets go at once (`ReplyPopover.letGoOfKeys`, `[live-ink] reply let
+  go of the keys`). The marks draw themselves on when the answer is
   whole (`LightMarkLayer.drawOn`). `LiveAnswerLayout` places them in global points inside
   the page (a browser's web area, from Accessibility, else the window), clear of the person's ink,
   the window's text and each other, and no note covers what the answer points at: a circle round a
@@ -257,18 +283,24 @@ The names in brackets are `// MARK:` sections.
   where it was when the focus came in. A key is heard only while Vignette is trusted for
   Accessibility, which the chord already needs. A focus comes in over 0.45 s and leaves as every
   answer mark leaves (`LiveMarksLayer.removalFade`). A tap erases it. In an answer in steps it is a
-  circle, since a step is something to click. `Mark.focus` carries the target and the picture and is
+  circle, since a step is something to click. It is a circle too on no window, such as the desktop,
+  since there is no capture to blur, and when the capture fails every stop shows at once as a
+  circle with its label (`LiveInk.showUnfocused`). `Mark.focus` carries the target and the picture and is
   never written to a file. A mark pinned to a window moves into the window's coordinates with its
   focus (`LiveWindows.translated`). `[state] liveInk.focus` names the stop shown and whether it
   zooms, and `[live-ink] focus` lines log each stop and why the focus let go.
 - Vignette's own words about an ask (sending, sent, failed, why) are a note beside the ink in the
   person's colour without a badge, not an agent mark, and are not ink: the next ask is not about them.
+  The exception is a follow-up, whose failure, queued send or unconfirmed send is said in its
+  answer's header.
 - A session picked in the note's target gets the picture through `ScreenshotRequests.send`, as Send
   sends a drawing, with the words and where the ink is in the line. The client's answer goes to the
   ink (`LiveInk.delivered`) rather than a card.
 - `live-ink-ask?message=` (debug) asks as Return does, and `&session=<id>` sends to that session.
-  `[state] liveInk` adds `new` (ink not yet asked about), `note`, `responder` and `ask` (phase,
-  whether it sent a picture, the reply's length), and each mark's `id` and `agent`. A script that polls asks for `state?section=liveInk`: the whole report runs to tens of KB, and twice a second it rotated the 5 MB log twice in one take; `app.screenRecording`
+  `[state] liveInk` adds `new` (ink not yet asked about), `note`, `actions` (each button's words,
+  frame, and whether it is enabled and picked), `replyField` and `replyCancel` (the field's and Cancel's frames while they are up),
+  `responder` and `ask` (phase, whether it sent a picture, the reply's length), and each mark's
+  `id` and `agent`. A script that polls asks for `state?section=liveInk`: the whole report runs to tens of KB, and twice a second it rotated the 5 MB log twice in one take; `app.screenRecording`
   says whether captures are allowed. A test launch with `VIGNETTE_SHARE_LIVE_INK` set lets captures
   see the overlays, so a script can look at what was drawn; the overlay rests under floating
   windows, so a test window that floats keeps the ask on it and must be lowered to be looked at.

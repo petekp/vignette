@@ -42,12 +42,13 @@ enum LiveAnswerLayout {
     /// points, or nil for one whose target was not found, which is dropped. `streamed` is the reply
     /// as it streamed in, which keeps where it hangs and its id: it is being read. `quote` is the
     /// words of the note the person asked with, which the reply's header quotes. `below` is room kept
-    /// at the foot of the reply, for its actions. `findings` holds, for each of the answer's marks,
+    /// at the foot of the reply, for its buttons. `findings` holds, for each of the answer's marks,
     /// the ids of the mark drawn for it and its label, none for one that was dropped, which the
     /// answer's actions name by index. `tour` holds where the reply hangs while each focus after the
-    /// first is shown, by the focus mark's id.
+    /// first is shown, by the focus mark's id. `focusable` is false when the answer is on no window
+    /// whose capture a focus could blur.
     static func placed(for answer: LiveAnswer, targets: [CGRect?], asked: CGRect, quote: String? = nil, scene: Scene,
-                       sizes: Sizes, streamed: Mark? = nil, below: CGFloat = 0)
+                       sizes: Sizes, streamed: Mark? = nil, below: CGSize = .zero, focusable: Bool = true)
         -> (marks: [Mark], findings: [[Mark.ID]], tour: [Mark.ID: PopoverPlace]) {
         // No note of the answer covers what the answer points at. `marks` is what nothing may cover:
         // the person's marks and notes, the targets, and what the answer has drawn so far.
@@ -71,8 +72,9 @@ enum LiveAnswerLayout {
             // A mark and its label are placed together: of the ways to point, the one whose label
             // covers least, so a label is not pushed onto another note by where its arrow went.
             var best: (mark: Mark, label: Mark?, cost: CGFloat)?
-            // A step is something to click, so a focus in steps is a circle.
-            let kind = answer.steps && answerMark.kind == .focus ? .circle : answerMark.kind
+            // A step is something to click, and a focus with no window to blur would show nothing, so
+            // either way a focus is a circle.
+            let kind = (answer.steps || !focusable) && answerMark.kind == .focus ? .circle : answerMark.kind
             for mark in pointers(kind, at: target, scene: scene, obstacles: marks + text, column: column?.x, zoom: answerMark.zoom) {
                 guard let extent = mark.shapeExtent else { continue }
                 var total = cost(extent, room: scene.room, obstacles: marks + text)
@@ -428,7 +430,7 @@ enum LiveAnswerLayout {
     /// The reply as a popover hung from `ink`, the person's ink the ask was about, off the middle of
     /// one of its sides, clear of the person's marks and notes: an answer that points at nothing, or
     /// that points in steps, and a reply as it streams in, before its marks are known.
-    static func reply(_ text: String, quote: String?, from ink: CGRect, scene: Scene, sizes: Sizes, below: CGFloat = 0) -> Mark {
+    static func reply(_ text: String, quote: String?, from ink: CGRect, scene: Scene, sizes: Sizes, below: CGSize = .zero) -> Mark {
         hung(text, quote: quote, from: nil, spots: sides(of: ink), scene: scene, marks: personsMarks(in: scene),
              text: scene.text.map { $0.insetBy(dx: -2, dy: -2) } + enclosed(in: scene), sizes: sizes, below: below).reply
     }
@@ -454,7 +456,7 @@ enum LiveAnswerLayout {
     /// `beside` places a note that must keep clear of the body, such as the mark's label, and answers
     /// what it costs, which counts with the body's.
     private static func hung(_ text: String, quote: String?, from mark: Mark?, spots: [(at: CGRect, edge: PopoverPlace.Edge)],
-                             scene: Scene, marks: [CGRect], text lines: [CGRect], sizes: Sizes, below: CGFloat,
+                             scene: Scene, marks: [CGRect], text lines: [CGRect], sizes: Sizes, below: CGSize,
                              beside: (CGRect) -> (note: Mark?, cost: CGFloat) = { _ in (nil, 0) }) -> (reply: Mark, label: Mark?) {
         let size = ReplyContent.size(text, agent: agentName, quote: quote, wrap: sizes.textWidth, foot: below)
         let room = scene.screen ?? scene.room
@@ -489,14 +491,14 @@ enum LiveAnswerLayout {
         return moved
     }
 
-    /// `reply` with its words now `text`, as it streams in, and `foot` points kept at its foot. It
+    /// `reply` with its words now `text`, as it streams in, and `foot` kept at its foot. It
     /// keeps where it hangs, so it grows away from what it hangs from rather than moving while it is
     /// read.
-    static func grown(_ reply: Mark, to text: String, sizes: Sizes, foot: CGFloat = 0) -> Mark {
+    static func grown(_ reply: Mark, to text: String, sizes: Sizes, foot: CGSize = .zero) -> Mark {
         guard case .text(var words) = reply.geometry, var place = reply.popover else { return reply }
         words.text = text
         place.foot = foot
-        let size = ReplyContent.size(text, agent: reply.agentName, quote: reply.quote, wrap: words.wrap ?? sizes.textWidth, foot: foot)
+        let size = ReplyContent.size(text, agent: reply.agentName, quote: reply.quote, notice: reply.notice, wrap: words.wrap ?? sizes.textWidth, foot: foot)
         place.body = PopoverPlace.body(size, hungFrom: place.at, edge: place.edge)
         words.origin = place.body.origin
         var grown = reply

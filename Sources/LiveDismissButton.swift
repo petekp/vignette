@@ -1,9 +1,9 @@
 import AppKit
 
-/// The × that takes a session's answer off the screen, shown at the top-left corner of the answer's
-/// note while the pointer is over it, as a notification's close button is. A panel of its own, so a
-/// click on it never reaches the window under the answer, and one that never takes the keys. It is
-/// a child of the reply's window, so a window raised over the answer covers it too.
+/// The × that takes a session's answer off the screen, shown at the top-right corner of the answer's
+/// note while the pointer is over it. A panel of its own, so a click on it never reaches the window
+/// under the answer, and one that never takes the keys. It is a child of the reply's window, so a
+/// window raised over the answer covers it too.
 @MainActor
 final class LiveDismissButton: NSPanel {
     var onClick: (() -> Void)?

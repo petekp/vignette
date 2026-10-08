@@ -14,8 +14,9 @@ struct PopoverPlace: Equatable {
     var at: CGRect
     var edge: Edge
     var body: CGRect
-    /// Room kept at the foot of its body, for the answer's actions, in points.
-    var foot: CGFloat
+    /// Room kept at the foot of its body for the answer's buttons, in points: as wide as their row,
+    /// which the body is never narrower than, and as tall.
+    var foot: CGSize
 
     func offsetBy(dx: CGFloat, dy: CGFloat) -> PopoverPlace {
         var moved = self
@@ -56,23 +57,34 @@ enum ReplyContent {
     static let measuring: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
 
     static func name(_ agent: String?) -> NSAttributedString {
-        NSAttributedString(string: NoteBadge.label(for: agent), attributes: [.font: nameFont, .foregroundColor: NSColor.secondaryLabelColor])
+        NSAttributedString(string: NoteBadge.label(for: agent), attributes: [.font: nameFont, .foregroundColor: NSColor.labelColor])
+    }
+
+    /// Lighter than the words, and darker than macOS's secondary label, which read at 2 to 3:1 on the
+    /// reply's backing over a dark window. Made per appearance: `labelColor.withAlphaComponent` stayed
+    /// black in the dark appearance.
+    static let quoteColor = NSColor(name: nil) { appearance in
+        NSColor(white: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 1 : 0, alpha: 0.7)
     }
 
     static func quote(_ words: String?) -> NSAttributedString? {
         guard let words = words?.trimmingCharacters(in: .whitespacesAndNewlines), !words.isEmpty else { return nil }
-        return NSAttributedString(string: "·  \u{201C}\(words)\u{201D}", attributes: [.font: quoteFont, .foregroundColor: NSColor.secondaryLabelColor])
+        return NSAttributedString(string: "·  \u{201C}\(words)\u{201D}", attributes: [.font: quoteFont, .foregroundColor: quoteColor])
     }
 
-    /// The header after the logo: the agent's name, then the question, cut at the end to one line.
-    static func header(agent: String?, quote words: String?) -> NSAttributedString {
+    /// The header after the logo: the agent's name, then the question, cut at the end to one line. A
+    /// `notice`, Vignette's word on the reply, takes the question's place and wraps, so all of it shows.
+    static func header(agent: String?, quote words: String?, notice: String? = nil) -> NSAttributedString {
         let header = NSMutableAttributedString(attributedString: name(agent))
-        if let quote = quote(words) {
+        let notice = notice?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let aside = notice.flatMap { $0.isEmpty ? nil : NSAttributedString(string: "·  \($0)", attributes: [.font: quoteFont, .foregroundColor: quoteColor]) }
+            ?? quote(words)
+        if let aside {
             header.append(NSAttributedString(string: " ", attributes: [.font: quoteFont]))
-            header.append(quote)
+            header.append(aside)
         }
         let line = NSMutableParagraphStyle()
-        line.lineBreakMode = .byTruncatingTail
+        line.lineBreakMode = notice?.isEmpty == false ? .byWordWrapping : .byTruncatingTail
         header.addAttribute(.paragraphStyle, value: line, range: NSRange(location: 0, length: header.length))
         return header
     }
@@ -93,18 +105,30 @@ enum ReplyContent {
     }
 
     /// The header's width before any of the question is cut.
-    static func headerWidth(agent: String?, quote words: String?) -> CGFloat {
+    static func headerWidth(agent: String?, quote words: String?, notice: String? = nil) -> CGFloat {
         let one = CGSize(width: 10_000, height: 100)
         let logo = agent.map { _ in logoSize + spacing } ?? 0
-        return logo + ceil(header(agent: agent, quote: words).boundingRect(with: one, options: measuring).width)
+        return logo + ceil(header(agent: agent, quote: words, notice: notice).boundingRect(with: one, options: measuring).width)
     }
 
-    /// The body's size for `text` wrapped at `wrap` points, with `foot` points kept at its foot.
-    static func size(_ text: String, agent: String?, quote: String?, wrap: CGFloat, foot: CGFloat) -> CGSize {
+    /// The header's height in a body `inner` points wide inside its insets: one line, or as many as
+    /// a notice wraps to.
+    static func headerHeight(agent: String?, quote words: String?, notice: String?, inner: CGFloat) -> CGFloat {
+        guard notice?.isEmpty == false else { return headerHeight }
+        let logo = agent.map { _ in logoSize + spacing } ?? 0
+        let room = CGSize(width: inner - logo, height: .greatestFiniteMagnitude)
+        return max(headerHeight, ceil(header(agent: agent, quote: words, notice: notice).boundingRect(with: room, options: measuring).height))
+    }
+
+    /// The body's size for `text` wrapped at `wrap` points, with `foot` kept at its foot.
+    static func size(_ text: String, agent: String?, quote: String?, notice: String? = nil, wrap: CGFloat, foot: CGSize) -> CGSize {
         let words = wordsSize(text, wrap: wrap)
-        let inner = min(wrap, max(words.width, headerWidth(agent: agent, quote: quote)))
-        let height = insets.top + headerHeight + spacing + words.height + insets.bottom + foot
-        return CGSize(width: ceil(insets.left + inner + insets.right), height: ceil(height))
+        let inner = max(min(wrap, max(words.width, headerWidth(agent: agent, quote: quote, notice: notice))), foot.width)
+        let width = ceil(insets.left + inner + insets.right)
+        // Measured at the width the view lays it out in, so it wraps to the same lines.
+        let header = headerHeight(agent: agent, quote: quote, notice: notice, inner: width - insets.left - insets.right)
+        let height = insets.top + header + spacing + words.height + insets.bottom + foot.height
+        return CGSize(width: width, height: ceil(height))
     }
 }
 
@@ -123,25 +147,43 @@ final class ReplyView: NSView {
         logo.imageScaling = .scaleProportionallyUpOrDown
         logo.contentTintColor = .secondaryLabelColor
         for view in [logo, header, words] as [NSView] { addSubview(view) }
+        wantsLayer = true
+        updateBacking()
         words.wantsLayer = true
         words.layerContentsRedrawPolicy = .onSetNeedsDisplay
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// Shows `text` from `agent`, under the question's `quote`, wrapped at `wrap`, in a body of `size`.
-    /// With `fade`, the words cross-fade from the last ones over that many seconds.
-    func show(_ text: String, agent: String?, quote: String?, wrap: CGFloat, size: CGSize, fade: CFTimeInterval) {
+    /// How solid the window's background is behind the header and words. The glass alone takes the
+    /// colour of what is under it, and over a dark window it turned dark under dark text: 2 to 3:1,
+    /// where 75% keeps 7:1 and a little of the glass (docs/live-ink-look-2026-10-07.md, step 10).
+    private static let backing: CGFloat = 0.75
+
+    private func updateBacking() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(Self.backing).cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateBacking()
+    }
+
+    /// Shows `text` from `agent`, under the question's `quote` or Vignette's `notice`, wrapped at `wrap`,
+    /// in a body of `size`. With `fade`, the words cross-fade from the last ones over that many seconds.
+    func show(_ text: String, agent: String?, quote: String?, notice: String?, wrap: CGFloat, size: CGSize, fade: CFTimeInterval) {
         let insets = ReplyContent.insets
         let inner = size.width - insets.left - insets.right
-        let line = ReplyContent.headerHeight
+        let line = ReplyContent.headerHeight(agent: agent, quote: quote, notice: notice, inner: inner)
         logo.image = agent.flatMap { Agent.logo(for: $0) }
         logo.isHidden = logo.image == nil
-        logo.frame = CGRect(x: insets.left, y: insets.top + (line - ReplyContent.logoSize) / 2,
+        logo.frame = CGRect(x: insets.left, y: insets.top + (ReplyContent.headerHeight - ReplyContent.logoSize) / 2,
                             width: ReplyContent.logoSize, height: ReplyContent.logoSize)
         let headerX = insets.left + (logo.isHidden ? 0 : ReplyContent.logoSize + ReplyContent.spacing)
         self.header.frame = CGRect(x: headerX, y: insets.top, width: insets.left + inner - headerX, height: line)
-        self.header.text = ReplyContent.header(agent: agent, quote: quote)
+        self.header.text = ReplyContent.header(agent: agent, quote: quote, notice: notice)
         self.header.options = [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine]
         let measured = ReplyContent.wordsSize(text, wrap: wrap)
         let changed = words.text?.string != text
@@ -151,7 +193,8 @@ final class ReplyView: NSView {
             transition.duration = fade
             words.layer?.add(transition, forKey: "words")
         }
-        words.frame = CGRect(x: insets.left, y: insets.top + line + ReplyContent.spacing, width: inner, height: measured.height)
+        // A body widened for its buttons still wraps the words where they were measured.
+        words.frame = CGRect(x: insets.left, y: insets.top + line + ReplyContent.spacing, width: min(inner, wrap), height: measured.height)
         words.text = ReplyContent.words(text)
         if let light = words.layer?.mask {
             CATransaction.begin()
@@ -243,7 +286,7 @@ final class ReplyPopover {
     private let view = ReplyView(frame: .zero)
     private weak var host: NSView?
     private let sharing: NSWindow.SharingType
-    private var shown: (text: String, quote: String?, agent: String?, wrap: CGFloat, foot: CGFloat)?
+    private var shown: (text: String, quote: String?, notice: String?, agent: String?, wrap: CGFloat, foot: CGSize)?
     /// The edge it hangs from now, and the mark.
     private var edge: PopoverPlace.Edge?
     private var anchor: Mark.ID?
@@ -288,10 +331,10 @@ final class ReplyPopover {
         // A reply always wraps where the layout measured it.
         guard case .text(let text) = mark.geometry, let wrap = text.wrap, let host, !closing else { return }
         let motion = Settings.shared.motionScale
-        let size = ReplyContent.size(text.text, agent: mark.agentName, quote: mark.quote, wrap: wrap, foot: place.foot)
-        let next = (text: text.text, quote: mark.quote, agent: mark.agentName, wrap: wrap, foot: place.foot)
+        let size = ReplyContent.size(text.text, agent: mark.agentName, quote: mark.quote, notice: mark.notice, wrap: wrap, foot: place.foot)
+        let next = (text: text.text, quote: mark.quote, notice: mark.notice, agent: mark.agentName, wrap: wrap, foot: place.foot)
         if shown.map({ $0 != next }) ?? true {
-            view.show(text.text, agent: mark.agentName, quote: mark.quote, wrap: wrap, size: size,
+            view.show(text.text, agent: mark.agentName, quote: mark.quote, notice: mark.notice, wrap: wrap, size: size,
                       fade: shown == nil ? 0 : Self.wordsFade * motion)
             shown = next
         }
@@ -327,8 +370,23 @@ final class ReplyPopover {
                     NotificationCenter.default.post(name: .liveReplyChanged, object: nil)
                 }
             }
+            // Run as the window becomes key, so its glass never draws as key.
+            watching.append(NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: nil) { [weak window] _ in
+                MainActor.assumeIsolated { window.map(Self.letGoOfKeys) }
+            })
         }
         NotificationCenter.default.post(name: .liveReplyChanged, object: nil)
+    }
+
+    /// A popover's window can be key, and macOS makes it key when a panel of Vignette's that held the
+    /// keys, such as the reply field's, closes, though Vignette had let go of them: the keys would stay
+    /// with Vignette, and the glass turns light. Nothing in the reply takes keys, so it lets go at
+    /// once. The app the person was in never stopped being the active one, so letting go hands the
+    /// keys back to it, and resigning redraws the glass.
+    private static func letGoOfKeys(_ window: NSWindow) {
+        Log.write("[live-ink] reply let go of the keys")
+        if NSApp.isActive { NSApp.deactivate() }
+        window.resignKey()
     }
 
     /// Moves it along a spring to hang at `rect`, from wherever it is, as a tour moves the reply from

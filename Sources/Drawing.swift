@@ -65,6 +65,9 @@ struct Mark: Equatable, Identifiable {
     /// For an agent's reply to a person's note, the note's words, which the reply's popover quotes in
     /// its header. Never written to a file.
     var quote: String?
+    /// For a live answer's reply, Vignette's word on it, which its header shows in the quote's place:
+    /// why the person's follow-up to it failed. Never written to a file.
+    var notice: String?
     /// For a live answer's reply, where it hangs as a popover; a text without it is a note. Never
     /// written to a file.
     var popover: PopoverPlace?

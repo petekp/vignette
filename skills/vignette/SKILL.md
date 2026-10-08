@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "15"
+  version: "16"
 ---
 
 # Vignette
@@ -130,6 +130,11 @@ Move these under the title, smaller. Drawn with Vignette's live ink on Google Ch
 The image is the whole window with their ink drawn in. The user is looking at that window, and
 their ink shimmers there until your turn ends, so they see a change you make to it. Do not answer
 on the window to confirm a change. Answer in your session as usual.
+
+The user can also reply to your answer in words, with the Reply button under it. That message reads
+`<their words>. Replied under your answer on <app>, "<window>", <url>. [From Vignette: …]`, and an
+action's click reads `Picked under your answer on …`. Either is a follow-up about the same ink, so
+answer it the same way.
 
 Answer on the window, with `--answer`, only when pointing at something there helps them: what they
 asked about is somewhere on the screen, a change landed where they would not look, or you need them
