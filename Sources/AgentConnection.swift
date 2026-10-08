@@ -243,6 +243,10 @@ enum Subprocess {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
+        // `waitUntilExit` polls, and can return 60 to 70 ms after the child exits, even off the main
+        // thread. The handler runs as it exits.
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         do { try process.run() } catch { return nil }
         let killed = OSAllocatedUnfairLock(initialState: false)
         let watchdog = DispatchWorkItem {
@@ -252,7 +256,7 @@ enum Subprocess {
         }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        exited.wait()
         watchdog.cancel()
         return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "", killed.withLock { $0 })
     }
