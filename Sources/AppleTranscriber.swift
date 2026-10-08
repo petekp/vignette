@@ -6,8 +6,9 @@ import Speech
 final class AppleTranscriber: Transcriber, @unchecked Sendable {
     let name = "apple"
     private let recognizer: SFSpeechRecognizer
-    /// Guards everything below it: `append` runs on the audio thread, the result handler on the
-    /// recognizer's queue, and the rest on the main thread.
+    /// Guards everything below it, which is reached from the audio thread (`append`), the
+    /// recognizer's queue (the result handler), the microphone's queue (`begin`, and `cancel` when
+    /// the microphone fails to start) and the main thread.
     private let lock = NSLock()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
