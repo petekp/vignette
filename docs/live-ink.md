@@ -121,8 +121,12 @@ The names in brackets are `// MARK:` sections.
 - Letting go of the chord after drawing opens `LiveNotePanel` beside the new ink, a non-activating
   panel that takes the keys as the stack's does. It is drawn as the note it becomes, and its target
   is a chip under it. Return asks about the ink drawn since the last ask, or, with none, about the
-  ink asked about last. Its target starts on the one picked last, else the responder, and lists the
-  sessions Send lists after it. The words stay beside the ink as the person's own note, whichever
+  ink asked about last. Esc, or a click elsewhere, closes the note and keeps the ink. ⌘⌫ closes it
+  and takes back the ink drawn for it (`noteInk`): the ink since the chord went down with no note
+  open, so a press while the note is open adds to that note's ink. Ink an earlier note kept stays.
+  ⌘⌫ is the text field's delete-the-line key, and the note handles its command
+  (`deleteToBeginningOfLine:`) as it does Esc's. Its target starts on the one picked last, else the
+  responder, and lists the sessions Send lists after it. The words stay beside the ink as the person's own note, whichever
   target answers: the chip fades and the panel hands over to the drawn note without the words
   moving (`settle`). The note opens against its ink, where a hand writes one
   (`LiveAnswerLayout.noteSpot`): touching an arrow's tail on the side away from its head, or beside a
@@ -135,7 +139,7 @@ The names in brackets are `// MARK:` sections.
   its way to a shortcut never turns the microphone on, and a press of the chord while it listens goes
   on with the same listening, so "this" and "that" drawn in two strokes are one note. The note opens
   on release with what was said so far and fills as the person talks. A key typed in it ends
-  listening and keeps the words; Esc, an ask, standing aside and clearing drop them. `ListeningEnd`
+  listening and keeps the words; Esc, ⌘⌫, an ask, standing aside and clearing drop them. `ListeningEnd`
   decides the end: `liveInkListenUntil` is `release` (0.3 s after the chord is let go) or `pause`
   (the input under `ui.liveInkSpeechQuiet` for `ui.liveInkSpeechPause` after release), and never
   past 60 s. With `liveInkSendWhenQuiet`, the final words are sent as Return sends them. Speech is
