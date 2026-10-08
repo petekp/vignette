@@ -216,6 +216,26 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(encoded?["launchAtLogin"] as? Bool, true, "the file key is the contract")
     }
 
+    // MARK: merge
+
+    @MainActor
+    func testAnEditToTheFileAndAChangeInTheAppBothSurvive() throws {
+        let base = SettingsData()
+        var app = base
+        app.screenshotsFolder = "~/Pictures"   // as following macOS's save location does
+        app.ui.cardMaxWidth = 300
+        app.recentCount = 12
+        var file = base
+        file.ui.motion = 0                      // an edit made to the file before the app wrote
+        file.recentCount = 7
+        let merged = try XCTUnwrap(Settings.merged(base: base, app: app, file: file))
+        XCTAssertEqual(merged.data.screenshotsFolder, "~/Pictures")
+        XCTAssertEqual(merged.data.ui.cardMaxWidth, 300)
+        XCTAssertEqual(merged.data.ui.motion, 0)
+        XCTAssertEqual(merged.data.recentCount, 7, "where both changed a key, the file's value stands")
+        XCTAssertEqual(merged.conflicts, ["recentCount"])
+    }
+
     func testEveryTweakHasABound() {
         let encoded = try! JSONSerialization.jsonObject(with: JSONEncoder().encode(UITweaks())) as! [String: Any]
         let doubles = Set(encoded.filter { $0.value is Double || $0.value is Int }.keys).subtracting(["backdropBands"])

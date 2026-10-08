@@ -547,8 +547,9 @@ final class Settings: ObservableObject {
 
     private var directorySource: DispatchSourceFileSystemObject?
     private var fileSource: DispatchSourceFileSystemObject?
-    private var lastWritten: Data?
-    private var lastWrittenData: SettingsData?
+    /// The file as this app last wrote or read it: the state the file and the app last agreed on.
+    private var syncedBytes: Data?
+    private var syncedData: SettingsData?
     private var reloadWork: DispatchWorkItem?
     private var writeWork: DispatchWorkItem?
     private var appleLocation: AppleScreencapture.Observer?
@@ -561,8 +562,8 @@ final class Settings: ObservableObject {
         readOnly = boot.readOnly
         readOnlyReason = boot.readOnlyReason
         for line in boot.log { Log.write("[settings] \(line)") }
-        if let written = boot.written { lastWritten = written }
-        lastWrittenData = boot.data
+        syncedBytes = boot.written ?? (try? Data(contentsOf: Settings.fileURL))
+        syncedData = boot.data
         watch()
         motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
@@ -780,14 +781,21 @@ final class Settings: ObservableObject {
     func flush() {
         guard let work = writeWork, !work.isCancelled else { return }
         work.cancel()
-        writeNow(data)
+        writeAppChanges()
     }
 
     private func scheduleWrite() {
         writeWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in guard let self else { return }; self.writeNow(self.data) }
+        let work = DispatchWorkItem { [weak self] in self?.writeAppChanges() }
         writeWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
+
+    /// Writes this app's settings. The file may have been edited since the app last read it, with
+    /// the watcher's reload still to come, so that edit is taken in first and the write keeps it.
+    private func writeAppChanges() {
+        takeInFileChanges()
+        writeNow(data)
     }
 
     private func apply(_ next: SettingsData, source: String, pushApple: Bool = true) {
@@ -885,16 +893,52 @@ final class Settings: ObservableObject {
         return out
     }
 
+    /// Three-way merge from `base`, what the file and the app last agreed on: a key the app changed
+    /// takes the app's value, and every other key the file's. Where both changed a key, the file's
+    /// value stands, and the key is listed in `conflicts`. nil when one of them does not encode.
+    static func merged(base: SettingsData, app: SettingsData, file: SettingsData) -> (data: SettingsData, conflicts: [String])? {
+        func object(_ d: SettingsData) -> [String: Any]? {
+            (try? JSONEncoder().encode(d)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        }
+        func same(_ a: Any?, _ b: Any?) -> Bool {
+            switch (a, b) {
+            case (nil, nil): true
+            case let (a?, b?): (a as AnyObject).isEqual(b)
+            default: false
+            }
+        }
+        func merge(_ base: [String: Any], _ app: [String: Any], _ file: [String: Any], path: String,
+                   conflicts: inout [String]) -> [String: Any] {
+            var out = file
+            for key in Set(app.keys).union(base.keys) where !same(app[key], base[key]) {
+                if let b = base[key] as? [String: Any], let a = app[key] as? [String: Any], let f = file[key] as? [String: Any] {
+                    out[key] = merge(b, a, f, path: "\(path)\(key).", conflicts: &conflicts)
+                } else if same(file[key], base[key]) {
+                    out[key] = app[key]
+                } else if !same(file[key], app[key]) {
+                    conflicts.append(path + key)
+                }
+            }
+            return out
+        }
+        guard let b = object(base), let a = object(app), let f = object(file) else { return nil }
+        var conflicts: [String] = []
+        let out = merge(b, a, f, path: "", conflicts: &conflicts)
+        guard let raw = try? JSONSerialization.data(withJSONObject: out),
+              let data = try? JSONDecoder().decode(SettingsData.self, from: raw) else { return nil }
+        return (data, conflicts.sorted())
+    }
+
     private func writeNow(_ d: SettingsData) {
         if readOnly { Log.write("[settings] warning not written: \(readOnlyReason)"); return }
         guard let raw = try? Settings.encoder().encode(d) else { return }
         // Tweak-panel changes are not logged as they happen (a drag is many of them); the write is.
-        if let previous = lastWrittenData {
+        if let previous = syncedData {
             let changed = Settings.uiChanges(from: previous.ui, to: d.ui)
             if !changed.isEmpty { Log.write("[settings] wrote \(changed.joined(separator: " "))") }
         }
-        lastWritten = raw
-        lastWrittenData = d
+        syncedBytes = raw
+        syncedData = d
         Settings.write(raw, to: Settings.fileURL)
         watchFile()   // atomic write replaced the inode
     }
@@ -942,13 +986,13 @@ final class Settings: ObservableObject {
 
     private func scheduleReload() {
         reloadWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.reloadFromDisk() }
+        let work = DispatchWorkItem { [weak self] in self?.takeInFileChanges() }
         reloadWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 
-    private func reloadFromDisk() {
-        guard let raw = try? Data(contentsOf: Settings.fileURL), raw != lastWritten else { return }
+    private func takeInFileChanges() {
+        guard let raw = try? Data(contentsOf: Settings.fileURL), raw != syncedBytes else { return }
         switch Settings.load(Settings.fileURL) {
         case .missing:
             return
@@ -965,8 +1009,16 @@ final class Settings: ObservableObject {
             if loaded.data.appleOriginal == nil { loaded.data.appleOriginal = data.appleOriginal }
             let validated = loaded.data.validated()
             for note in validated.corrections { Log.write("[settings] warning clamped \(note)") }
-            apply(validated.data, source: "file")
-            lastWrittenData = validated.data   // the next tweak-panel write logs only what it changed
+            // A change made in the app since the last write is not in the file yet. Merging from
+            // what the two last agreed on keeps it beside the file's edit.
+            var next = validated.data
+            if let base = syncedData, let merged = Settings.merged(base: base, app: data, file: validated.data) {
+                next = merged.data
+                for key in merged.conflicts { Log.write("[settings] kept the file's \(key) over this app's change") }
+            }
+            apply(next, source: "file")
+            syncedBytes = raw
+            syncedData = validated.data   // the next tweak-panel write logs only what it changed
             // Stamp a pre-version file once so the migration does not repeat on every reload.
             if loaded.fileVersion < Settings.currentVersion { writeNow(loaded.data) }
         }
