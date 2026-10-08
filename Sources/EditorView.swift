@@ -134,7 +134,11 @@ final class EditorView: NSView {
         stopTimers()
         heldArrows = []
         screenshotName = URL(fileURLWithPath: drawing.key).deletingPathExtension().lastPathComponent
+        // Without this, the screenshot and the new marks layer fade in over Core Animation's 0.25 s.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         self.picture.open(image, pixels: drawing.pixels)
+        CATransaction.commit()
         placedPicture = picture
         handle(.open(drawing, style: style, metrics: metrics, markStyle: markStyle))
         dropLingering()

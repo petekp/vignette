@@ -15,6 +15,9 @@ extension NSWindow {
                                    "CGWindowListCreateImage is gone; this test needs another way to see the window")
         let createImage = unsafeBitCast(symbol, to: CreateImage.self)
         setFrameOrigin(NSPoint(x: -30000, y: -30000))
+        // A window that animates in is captured part way through on a slow Mac, such as a CI runner:
+        // smaller than its frame, with every pixel off where the test looks.
+        animationBehavior = .none
         orderFrontRegardless()
         defer { orderOut(nil) }
         // The window server composites on its own schedule; wait for the view's picture to arrive.
