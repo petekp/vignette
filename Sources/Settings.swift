@@ -859,13 +859,8 @@ final class Settings: ObservableObject {
         func object(_ d: SettingsData) -> [String: Any]? {
             (try? JSONEncoder().encode(d)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         }
-        func same(_ a: Any?, _ b: Any?) -> Bool {
-            switch (a, b) {
-            case (nil, nil): true
-            case let (a?, b?): (a as AnyObject).isEqual(b)
-            default: false
-            }
-        }
+        // JSONSerialization's values are all NSObjects, which compare with `isEqual`.
+        func same(_ a: Any?, _ b: Any?) -> Bool { (a as? NSObject) == (b as? NSObject) }
         func merge(_ base: [String: Any], _ app: [String: Any], _ file: [String: Any], path: String,
                    conflicts: inout [String]) -> [String: Any] {
             var out = file
@@ -971,7 +966,7 @@ final class Settings: ObservableObject {
             // A change made in the app since the last write is not in the file yet. Merging from
             // what the two last agreed on keeps it beside the file's edit.
             var next = validated.data
-            if let base = syncedData, let merged = Settings.merged(base: base, app: data, file: validated.data) {
+            if let base = syncedData, base != data, let merged = Settings.merged(base: base, app: data, file: validated.data) {
                 next = merged.data
                 for key in merged.conflicts { Log.write("[settings] kept the file's \(key) over this app's change") }
             }
