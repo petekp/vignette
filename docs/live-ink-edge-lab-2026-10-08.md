@@ -74,7 +74,8 @@ after it went down. Of that, 250 ms is the glow's wait (`liveInkGlowDelay`), so 
 its way to a shortcut does not flash it. The rest was speech input starting the microphone on the
 main thread before the glow could show. The microphone now starts on its own queue, after the glow
 (`Microphone`). `edge first frame` logs `ms`, how long the look waited for its picture once it was
-wanted, and `stream-ms`, the time since the chord. While inking, the picture came at about 61
+wanted, and `stream-ms`, the time since the picture was asked for, which is the chord unless an
+earlier chord's picture was still running. While inking, the picture came at about 61
 frames a second, the stream's cap of 60.
 
 **The log gives the GPU's time.** `edge feed stopped` also says how many times the look was drawn
