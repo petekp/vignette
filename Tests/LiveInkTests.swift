@@ -577,6 +577,16 @@ final class LiveInkTests: XCTestCase {
         }
     }
 
+    func testARecolourAtTheSameBrightnessIsAChange() throws {
+        // A green and a red that read only 18 apart in grey, under the threshold.
+        let button = CGRect(x: 120, y: 30, width: 60, height: 30)
+        let green = try Self.region(blocks: [button], colour: CGColor(srgbRed: 0x1f / 255, green: 0x9d / 255, blue: 0x55 / 255, alpha: 1))
+        let red = try Self.region(blocks: [button], colour: CGColor(srgbRed: 0xd9 / 255, green: 0x36 / 255, blue: 0x36 / 255, alpha: 1))
+        guard case .changed = LiveChange.compare(before: green, after: red, again: red, size: CGSize(width: 200, height: 80)) else {
+            return XCTFail("a green button turned red read as no change")
+        }
+    }
+
     func testACropKeepsThePixelsUnderItsRect() throws {
         let page = try Self.region(blocks: [CGRect(x: 100, y: 40, width: 20, height: 20)])
         // The window at (1000, 500), at 1 px per pt.
@@ -590,13 +600,14 @@ final class LiveInkTests: XCTestCase {
         }
     }
 
-    /// A white picture of `size` points at 1 px per pt with black `blocks`, from its top-left corner.
-    private static func region(blocks: [CGRect], size: CGSize = CGSize(width: 200, height: 80)) throws -> CGImage {
+    /// A white picture of `size` points at 1 px per pt with `blocks` in `colour`, from its top-left corner.
+    private static func region(blocks: [CGRect], size: CGSize = CGSize(width: 200, height: 80),
+                               colour: CGColor = CGColor(gray: 0, alpha: 1)) throws -> CGImage {
         let context = try XCTUnwrap(CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
-                                              space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue))
+                                              space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
         context.setFillColor(gray: 1, alpha: 1)
         context.fill(CGRect(origin: .zero, size: size))
-        context.setFillColor(gray: 0, alpha: 1)
+        context.setFillColor(colour)
         for block in blocks { context.fill(CGRect(x: block.minX, y: size.height - block.maxY, width: block.width, height: block.height)) }
         return try XCTUnwrap(context.makeImage())
     }

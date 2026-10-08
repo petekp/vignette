@@ -186,16 +186,17 @@ The names in brackets are `// MARK:` sections.
   - **The before picture.** As the ask goes, Vignette keeps the part of the window round the ink:
     the ink's shapes with 64 pt round them, inside the web page when there is one (`keepBefore`).
   - **The comparison.** At the turn's end it captures the window twice, half a second apart, and
-    compares that same part of the window on a grid of 3 pt cells of grey. A cell counts when its
-    grey moved more than 24 of 255 and did not move between the two later captures. That leaves
-    out a caret or a spinner. Only the cells under the ink, its shapes with a 12 pt margin, decide.
+    compares that same part of the window on a grid of 3 pt cells of colour. A cell counts when its
+    red, green or blue moved more than 24 of 255 and did not move between the two later captures.
+    That leaves out a caret or a spinner. Grey alone missed a green button turned red, since the
+    two are about as bright. Only the cells under the ink, its shapes with a 12 pt margin, decide.
     The ink's part changed when at least 2% of those cells counted, and at least 4.
   - **Changed.** The window as it was plays back over the ink's part and every cell round it that
     changed, so a button that grew past the ink plays back whole. It comes in with a "Before" tag,
     then wipes away from left to right (`BeforeLayer`, drawn for a `Mark.before` pinned to the
     window). Then the done animation plays.
-  - **Unchanged.** The ink stays, and Vignette's note beside it says "Nothing changed under your
-    ink. Check *project*." The session may have answered in words, as it does for a question.
+  - **Unchanged.** The done animation plays alone, and Vignette adds no note. After a question
+    nothing changes, and after a change the session says in its own words what it did.
   - **Can't tell.** A window that closed or changed size, or a turn Vignette stopped waiting on,
     plays the done animation as before. With motion off, a change plays the done animation alone.
   - **One known gap.** The part compared stays at its place in the window. So content the session

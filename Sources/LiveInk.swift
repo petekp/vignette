@@ -859,7 +859,7 @@ final class LiveInk {
         guard seenToEnd, asking?.say == nil, let before else { return finish(about, .done) }
         // The thinking light goes while Vignette looks.
         showMarks()
-        resolve(about, before: before, project: sending[request]?.session.project)
+        resolve(about, before: before)
     }
 
     // MARK: Whether it landed
@@ -887,10 +887,9 @@ final class LiveInk {
     }
 
     /// Looks at the window again now that the session's turn is over. When what is under the ink
-    /// changed, the before plays back there and then the done animation; when nothing did, the ink
-    /// stays and says so, since the session may have answered in words; when Vignette can't tell,
-    /// the done animation plays as before.
-    private func resolve(_ about: Set<Mark.ID>, before: Before, project: String?) {
+    /// changed, the before plays back there and then the done animation; otherwise the done
+    /// animation plays alone.
+    private func resolve(_ about: Set<Mark.ID>, before: Before) {
         Task { @MainActor [weak self] in
             let seen = await Self.look(again: before)
             guard let self, self.asking?.about == about, self.asking?.phase == .answered else { return }
@@ -900,7 +899,7 @@ final class LiveInk {
                 self.replay(before, changed: around, window: origin, about: about)
             case .some((.unchanged(let share), _)):
                 Log.write("[live-ink] nothing changed under the ink changed=\(String(format: "%.3f", share))")
-                self.say("Nothing changed under your ink." + (project.map { " Check \($0)." } ?? ""), about: about)
+                self.finish(about, .done)
             case .none:
                 self.finish(about, .done)
             }

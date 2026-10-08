@@ -3,9 +3,10 @@ import QuartzCore
 
 /// Whether a session's turn changed what is under the person's ink: the window under the ink when
 /// the ask was sent, against the window when the turn ended (docs/live-ink-overnight-2026-10-07.md,
-/// question 5). Both are read on a coarse grid of grey, so a change of a few pixels of anti-aliasing
-/// is not one. Cells that change between two captures of the ended turn, half a second apart, are
-/// moving on their own, as a caret or a spinner does, and never count.
+/// question 5). Both are read on a coarse grid of colour, so a change of a few pixels of anti-aliasing
+/// is not one. Colour rather than grey, since a recolour can keep its brightness: a green button
+/// turned red reads as no change in grey. Cells that change between two captures of the ended turn, half a second
+/// apart, are moving on their own, as a caret or a spinner does, and never count.
 enum LiveChange {
     /// What the comparison saw: the fraction of the cells under the ink that changed, and where
     /// anything in the picture changed, in its points.
@@ -18,7 +19,7 @@ enum LiveChange {
     static let cell: CGFloat = 3
     /// The most cells a side of the grid has, so a large region is read at the same cost as a small one.
     static let maxCells = 160
-    /// How far a cell's grey must move, of 255, to count as changed.
+    /// How far a cell's red, green or blue must move, of 255, to count as changed.
     static let cellThreshold = 24
     /// The share of cells that must change, and the fewest, for the region to have changed.
     static let changedShare = 0.02
@@ -61,10 +62,10 @@ enum LiveChange {
     static func compare(before: CGImage, after: CGImage, again: CGImage?, size: CGSize, ink: CGRect? = nil) -> Outcome {
         let columns = max(1, min(maxCells, Int((size.width / cell).rounded()))), rows = max(1, min(maxCells, Int((size.height / cell).rounded())))
         let side = CGSize(width: size.width / CGFloat(columns), height: size.height / CGFloat(rows))
-        guard let old = grey(before, columns: columns, rows: rows), let new = grey(after, columns: columns, rows: rows) else {
+        guard let old = colours(before, columns: columns, rows: rows), let new = colours(after, columns: columns, rows: rows) else {
             return .changed(1, around: CGRect(origin: .zero, size: size))
         }
-        let later = again.flatMap { grey($0, columns: columns, rows: rows) }
+        let later = again.flatMap { colours($0, columns: columns, rows: rows) }
         var inside = 0, changedInside = 0
         var around = CGRect.null
         for row in 0..<rows {
@@ -73,8 +74,8 @@ enum LiveChange {
                 let cell = CGRect(x: CGFloat(column) * side.width, y: CGFloat(row) * side.height, width: side.width, height: side.height)
                 let decides = ink.map { $0.contains(CGPoint(x: cell.midX, y: cell.midY)) } ?? true
                 if decides { inside += 1 }
-                let moved = abs(Int(old[index]) - Int(new[index])) > cellThreshold
-                let restless = later.map { abs(Int($0[index]) - Int(new[index])) > cellThreshold } ?? false
+                let moved = differ(old, new, at: index)
+                let restless = later.map { differ($0, new, at: index) } ?? false
                 guard moved && !restless else { continue }
                 around = around.union(cell)
                 if decides { changedInside += 1 }
@@ -84,12 +85,20 @@ enum LiveChange {
         return changedInside >= fewestCells && share >= changedShare ? .changed(share, around: around) : .unchanged(share)
     }
 
-    /// `image` drawn into `columns` by `rows` cells of grey, each the average of the pixels it covers.
-    private static func grey(_ image: CGImage, columns: Int, rows: Int) -> [UInt8]? {
-        var cells = [UInt8](repeating: 0, count: columns * rows)
+    /// Whether cell `index` of two grids from `colours` differs by more than `cellThreshold` in any of
+    /// red, green and blue.
+    private static func differ(_ a: [UInt8], _ b: [UInt8], at index: Int) -> Bool {
+        let first = index * 4
+        return (first..<first + 3).contains { abs(Int(a[$0]) - Int(b[$0])) > cellThreshold }
+    }
+
+    /// `image` drawn into `columns` by `rows` cells of colour, each the average of the pixels it
+    /// covers: four bytes a cell, red, green, blue and one unused.
+    private static func colours(_ image: CGImage, columns: Int, rows: Int) -> [UInt8]? {
+        var cells = [UInt8](repeating: 0, count: columns * rows * 4)
         let drawn = cells.withUnsafeMutableBytes { bytes -> Bool in
-            guard let context = CGContext(data: bytes.baseAddress, width: columns, height: rows, bitsPerComponent: 8, bytesPerRow: columns,
-                                          space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+            guard let context = CGContext(data: bytes.baseAddress, width: columns, height: rows, bitsPerComponent: 8, bytesPerRow: columns * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return false }
             context.interpolationQuality = .medium
             context.draw(image, in: CGRect(x: 0, y: 0, width: columns, height: rows))
             return true
