@@ -132,8 +132,9 @@ the wake at strength 0.95, size 36 and duration 0.85. The glow's own width is 29
 
 ## Still open
 
-- How the band follows fast scrolling. Pete tuned every look on his Mac, on macOS 15, so they draw
-  there, but nobody has watched one over a fast scroll.
+- How the looks do on macOS 15 and over fast scrolling. Pete tuned aurora ripple and the wake on
+  his Mac, on macOS 15, so those draw there. The other looks were not checked there, and nobody has
+  watched one over a fast scroll.
 - More than one display. Each screen starts its own picture and display link. Pete's Mac has one.
 - What the GPU spends on a real Mac, for each look and for the wake while really inking. Glass
   with frost and colour split reads 72 samples for each pixel in the band, and each pixel near the
