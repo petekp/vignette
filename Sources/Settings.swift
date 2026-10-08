@@ -287,7 +287,7 @@ struct UITweaks: Codable, Equatable {
     var liveInkEdgeFrost = 0.0       // 0 to 1: how much the look blurs what is under it
     var liveInkEdgeTint = 1.0        // 0 to 1: how much of the ink colour the look takes
     var liveInkEdgeSpeed = 1.51      // how fast an animated look moves; 0 holds it still
-    var liveInkEdgeCorner = 10.0     // the screen's corner radius, in points
+    var liveInkEdgeCorner = 10.0     // the top corners' radius of a display with a notch, in points; macOS does not report it
     var liveInkEdgeFocus = 0.5       // 0 to 1: how much the look gathers round the pointer
     var liveInkEdgeLight = 1.0       // 0 to 1: the coloured light on aurora ripple's waves
     // The light's colours in aurora and aurora ripple, and how aurora ripple's light meets the screen.

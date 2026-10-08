@@ -100,6 +100,9 @@ private struct EdgeLabView: View {
                 ForEach(style.sliders, id: \.label) { slider in
                     Tweak(slider.label, slider.path, slider.range, step: slider.step, unit: slider.unit)
                 }
+                if style != .glow {
+                    Tweak("Screen corners", \.liveInkEdgeCorner, 0...30, unit: "pt")
+                }
                 Tweak("Opacity", \.liveInkGlowOpacity, 0...1, step: 0.05)
                 Tweak("Fade", \.liveInkGlowFade, 0...1, step: 0.05, unit: "s")
                 Button("Reset this look") { pick(style) }

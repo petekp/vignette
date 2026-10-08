@@ -18,7 +18,6 @@ struct EdgeUniforms {
     float frost;        // 0 to 1: how much the look blurs what is under it
     float tint;         // 0 to 1: how much of the ink colour the look takes
     float speed;        // animation rate; 0 holds it still
-    float corner;       // the screen's corner radius
     float focus;        // 0 to 1: how much the look gathers round the pen
     float time;         // seconds
     float light;        // 0 to 1: the coloured light on aurora ripple's waves
@@ -44,6 +43,14 @@ struct EdgeUniforms {
     float color2R;
     float color2G;
     float color2B;
+    float radiusTopLeft;     // the display's corners, square at 0
+    float radiusTopRight;
+    float radiusBottomRight;
+    float radiusBottomLeft;
+    float notchLeft;         // the notch, which the band goes round; no notch at height 0
+    float notchRight;
+    float notchHeight;
+    float notchRadius;       // the notch's bottom corners
 };
 
 struct Varyings {
@@ -60,20 +67,34 @@ vertex Varyings edgeVertex(uint id [[vertex_id]]) {
     return out;
 }
 
-// Distance in from the nearest edge of the screen's rounded rect, and the unit normal pointing in.
-static float inset(float2 p, float2 size, float radius, thread float2 &normal) {
-    float2 half_ = size * 0.5;
-    float2 c = p - half_;
-    float2 q = abs(c) - (half_ - radius);
-    float2 s = float2(c.x < 0 ? -1 : 1, c.y < 0 ? -1 : 1);
-    if (q.x > 0 && q.y > 0) {
-        float2 n = normalize(q);
-        normal = -n * s;
-        return radius - length(q);
-    }
-    if (q.x > q.y) { normal = float2(-s.x, 0); return radius - q.x; }
-    normal = float2(0, -s.y);
-    return radius - q.y;
+// Signed distance from `p` to a box round `center`, `half_` from it each way, positive outside.
+// `radii` are its corners' radii: top left, top right, bottom right, bottom left, y down.
+static float roundedBox(float2 p, float2 center, float2 half_, float4 radii) {
+    float2 c = p - center;
+    float r = c.x > 0.0 ? (c.y > 0.0 ? radii.z : radii.y) : (c.y > 0.0 ? radii.w : radii.x);
+    float2 q = abs(c) - half_ + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+
+// How far `p` is inside the display's shape: its corners, less the notch. The top edge turns into
+// the notch along a curve, from a smooth minimum, rather than at a crease.
+static float inside(float2 p, constant EdgeUniforms &u) {
+    float4 corners = float4(u.radiusTopLeft, u.radiusTopRight, u.radiusBottomRight, u.radiusBottomLeft);
+    float screenIn = -roundedBox(p, u.size * 0.5, u.size * 0.5, corners);
+    if (u.notchHeight <= 0.0) return screenIn;
+    // The notch's box reaches as far above the screen as below its top, so only its bottom corners show.
+    float half_ = (u.notchRight - u.notchLeft) * 0.5;
+    float notchOut = roundedBox(p, float2(u.notchLeft + half_, 0.0), float2(half_, u.notchHeight), float4(u.notchRadius));
+    float k = 8.0;
+    float h = max(k - abs(screenIn - notchOut), 0.0) / k;
+    return min(screenIn, notchOut) - h * h * k * 0.25;
+}
+
+// The unit normal pointing further inside the shape, from its gradient.
+static float2 inward(float2 p, constant EdgeUniforms &u) {
+    float2 e = float2(0.5, 0.0);
+    float2 g = float2(inside(p + e.xy, u) - inside(p - e.xy, u), inside(p + e.yx, u) - inside(p - e.yx, u));
+    return length(g) > 1e-5 ? normalize(g) : float2(0.0, 1.0);
 }
 
 static float3 sampleScreen(texture2d<float> screen, float2 p, float2 size) {
@@ -331,8 +352,7 @@ fragment float4 edgeFragment(Varyings in [[stage_in]],
     float2 p = in.uv * u.size;
     float2 shift = wakeShift(p, u, trail);
     float moved = length(shift);
-    float2 n;
-    float d = inset(p, u.size, u.corner, n);
+    float d = inside(p, u);
     float w = max(u.width, 1.0);
     int style = int(u.style + 0.5);
     // Glow is drawn by EdgeGlow, so with it this layer draws only the wake.
@@ -347,7 +367,7 @@ fragment float4 edgeFragment(Varyings in [[stage_in]],
     Band b;
     b.p = p;
     b.at = p - shift;
-    b.n = n;
+    b.n = inward(p, u);
     b.d = d;
     b.w = w;
     b.s = clamp(1.0 - d / w, 0.0, 1.0);

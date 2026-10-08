@@ -88,10 +88,13 @@ The names in brackets are `// MARK:` sections.
   indicator. The layer fades in from its first frame, so it never shows the screen as it was. It
   draws only from its display link: drawing on each frame's arrival starved the main thread until
   the app hung. With no Metal, no Screen Recording or a stream error, the glow shows instead, and
-  the next chord tries again. The wake (`ui.liveInkWake*`, on by default, off at 0 strength) bends
-  the screen in rings behind the pen while drawing, with any look, from the same picture. The Edge
-  Lab (`vignette://edge-lab`, needs `debug`) tunes both. Its "Hold on screen" keeps the look up at
-  the inking level while presses pass through, and any drag then makes the wake.
+  the next chord tries again. The band follows the display's shape (`DisplayShape`): it goes round
+  the notch, and a display with a notch gets rounded top corners of `ui.liveInkEdgeCorner`, since
+  macOS reports the notch but not the corners. The wake (`ui.liveInkWake*`, on by default, off at
+  0 strength) bends the screen in rings behind the pen while drawing, with any look, from the same
+  picture. The Edge Lab (`vignette://edge-lab`, needs `debug`) tunes both. Its "Hold on screen"
+  keeps the look up at the inking level while presses pass through, and any drag then makes the
+  wake.
 - Marks are `Mark`s in global top-left points at a `pointScale` of 1. `InkStroke` reads a stroke: a loop is the ellipse round it, and any other stroke the editor's freehand arrow
   (`Mark.Arrow.freehand`, at the editor's tolerances). A stroke under `ui.shortestArrow` is a tap,
   which erases the topmost mark whose stroke it is within `LiveInk.eraseReach` of, measured as the

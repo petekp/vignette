@@ -122,6 +122,8 @@ final class EdgeLensLayer: CAMetalLayer {
     /// The points the pen passed while drawing, oldest first, each the centre of one of the wake's
     /// rings. Weight is less where points crowd, so slow drawing does not stack rings.
     private var trail: [(point: CGPoint, born: CFTimeInterval, weight: Float)] = []
+    /// The display's corners and notch, taken when the look is readied on it.
+    private var shape = DisplayShape()
     /// The most points the shader takes, which fits `setFragmentBytes`' 4 KB.
     private static let trailLimit = 96
     /// Runs when the look cannot be drawn, so the plain glow can show in its place.
@@ -155,6 +157,7 @@ final class EdgeLensLayer: CAMetalLayer {
     /// picture now, so the first frame is there by the time the look shows.
     func prepare(display: CGDirectDisplayID, screen: NSScreen, excluding window: CGWindowID, capture: Bool) {
         guard Self.metal != nil else { return }
+        shape = DisplayShape(of: screen)
         if link == nil {
             link = screen.displayLink(target: self, selector: #selector(tick))
             link?.add(to: .main, forMode: .common)
@@ -324,7 +327,6 @@ final class EdgeLensLayer: CAMetalLayer {
         uniforms.frost = Float(ui.liveInkEdgeFrost)
         uniforms.tint = Float(ui.liveInkEdgeTint)
         uniforms.speed = Float(ui.liveInkEdgeSpeed)
-        uniforms.corner = Float(ui.liveInkEdgeCorner)
         uniforms.focus = Float(ui.liveInkEdgeFocus)
         uniforms.time = Float(now - started)
         uniforms.light = Float(ui.liveInkEdgeLight)
@@ -336,6 +338,14 @@ final class EdgeLensLayer: CAMetalLayer {
         uniforms.brightness = Float(ui.liveInkEdgeBrightness)
         uniforms.drift = Float(ui.liveInkEdgeDrift)
         uniforms.blend = Float(ui.liveInkEdgeBlend)
+        let top = Float(shape.roundedTop ? ui.liveInkEdgeCorner : 0)
+        (uniforms.radiusTopLeft, uniforms.radiusTopRight) = (top, top)
+        if let notch = shape.notch {
+            uniforms.notchLeft = Float(notch.minX)
+            uniforms.notchRight = Float(notch.maxX)
+            uniforms.notchHeight = Float(notch.height)
+            uniforms.notchRadius = Float(DisplayShape.notchRadius)
+        }
         let first = Self.layerColor(ui.liveInkEdgeColor1), second = Self.layerColor(ui.liveInkEdgeColor2)
         (uniforms.color1R, uniforms.color1G, uniforms.color1B) = (first.x, first.y, first.z)
         (uniforms.color2R, uniforms.color2G, uniforms.color2B) = (second.x, second.y, second.z)
@@ -369,7 +379,6 @@ struct EdgeUniforms {
     var frost: Float = 0
     var tint: Float = 0
     var speed: Float = 0
-    var corner: Float = 0
     var focus: Float = 0
     var time: Float = 0
     var light: Float = 0
@@ -395,6 +404,36 @@ struct EdgeUniforms {
     var color2R: Float = 0
     var color2G: Float = 0
     var color2B: Float = 0
+    var radiusTopLeft: Float = 0
+    var radiusTopRight: Float = 0
+    var radiusBottomRight: Float = 0
+    var radiusBottomLeft: Float = 0
+    var notchLeft: Float = 0
+    var notchRight: Float = 0
+    var notchHeight: Float = 0
+    var notchRadius: Float = 0
+}
+
+/// The display's own shape, which the band follows: its notch, and whether its top corners are
+/// rounded. macOS reports the notch, through the menu bar's areas either side of it, but not the
+/// corners' radius. The MacBook displays with a notch round their top corners and not their bottom
+/// ones, so a display with a notch gets top corners of `ui.liveInkEdgeCorner`, and any other display
+/// square ones.
+struct DisplayShape {
+    var roundedTop = false
+    /// The notch in the screen's points, y down from its top.
+    var notch: CGRect?
+    /// The notch's bottom corners, an estimate: macOS does not report them either.
+    static let notchRadius: CGFloat = 8
+
+    init() {}
+
+    init(of screen: NSScreen) {
+        guard screen.safeAreaInsets.top > 0, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea,
+              right.minX > left.maxX else { return }
+        roundedTop = true
+        notch = CGRect(x: left.maxX - screen.frame.minX, y: 0, width: right.minX - left.maxX, height: screen.safeAreaInsets.top)
+    }
 }
 
 extension UITweaks {
@@ -452,19 +491,19 @@ extension EdgeLensLayer {
             switch self {
             case .glow: [(\.liveInkGlowWidth, UITweaks().liveInkGlowWidth)]
             case .glass: [(\.liveInkEdgeWidth, 28), (\.liveInkEdgeBend, 0.5), (\.liveInkEdgeSplit, 0.3), (\.liveInkEdgeShine, 0.6),
-                          (\.liveInkEdgeFrost, 0), (\.liveInkEdgeTint, 0.15), (\.liveInkEdgeFocus, 0.5), (\.liveInkEdgeCorner, 10)]
+                          (\.liveInkEdgeFrost, 0), (\.liveInkEdgeTint, 0.15), (\.liveInkEdgeFocus, 0.5)]
             case .lens: [(\.liveInkEdgeWidth, 70), (\.liveInkEdgeBend, 1.1), (\.liveInkEdgeSplit, 0.5), (\.liveInkEdgeShine, 0.2),
-                         (\.liveInkEdgeTint, 0.1), (\.liveInkEdgeFocus, 0.3), (\.liveInkEdgeCorner, 10)]
+                         (\.liveInkEdgeTint, 0.1), (\.liveInkEdgeFocus, 0.3)]
             case .aurora: [(\.liveInkEdgeWidth, 60), (\.liveInkEdgeShine, 0.6), (\.liveInkEdgeSpeed, 0.6),
-                           (\.liveInkEdgeFocus, 0.4), (\.liveInkEdgeCorner, 10), (\.liveInkEdgeColors, 1), (\.liveInkEdgeRepeats, 2),
+                           (\.liveInkEdgeFocus, 0.4), (\.liveInkEdgeColors, 1), (\.liveInkEdgeRepeats, 2),
                            (\.liveInkEdgeHue, 0), (\.liveInkEdgeSaturation, 0.75), (\.liveInkEdgeBrightness, 1), (\.liveInkEdgeDrift, 0.05)]
             case .ripple: [(\.liveInkEdgeWidth, 48), (\.liveInkEdgeBend, 1.2), (\.liveInkEdgeSplit, 0.4), (\.liveInkEdgeShine, 0.5),
-                           (\.liveInkEdgeSpeed, 0.8), (\.liveInkEdgeFocus, 0.5), (\.liveInkEdgeCorner, 10)]
+                           (\.liveInkEdgeSpeed, 0.8), (\.liveInkEdgeFocus, 0.5)]
             case .frost: [(\.liveInkEdgeWidth, 36), (\.liveInkEdgeFrost, 0.7), (\.liveInkEdgeShine, 0.6), (\.liveInkEdgeTint, 0.1),
-                          (\.liveInkEdgeFocus, 0.3), (\.liveInkEdgeCorner, 10)]
+                          (\.liveInkEdgeFocus, 0.3)]
             case .auroraRipple: [(\.liveInkEdgeWidth, 38), (\.liveInkEdgeBend, 2), (\.liveInkEdgeLight, 1), (\.liveInkEdgeSplit, 0.5),
                                  (\.liveInkEdgeShine, 0.89), (\.liveInkEdgeSpeed, 1.51),
-                                 (\.liveInkEdgeFocus, 0.5), (\.liveInkEdgeCorner, 10), (\.liveInkEdgeColors, 0), (\.liveInkEdgeRepeats, 2),
+                                 (\.liveInkEdgeFocus, 0.5), (\.liveInkEdgeColors, 0), (\.liveInkEdgeRepeats, 2),
                                  (\.liveInkEdgeVariation, 0), (\.liveInkEdgeHue, 0), (\.liveInkEdgeSaturation, 1), (\.liveInkEdgeBrightness, 1),
                                  (\.liveInkEdgeDrift, 0.05), (\.liveInkEdgeBlend, 0)]
             }
@@ -480,16 +519,15 @@ extension EdgeLensLayer {
             let frost = Slider(label: "Frost", path: \.liveInkEdgeFrost, range: 0...1)
             let tint = Slider(label: "Tint", path: \.liveInkEdgeTint, range: 0...1)
             let speed = Slider(label: "Speed", path: \.liveInkEdgeSpeed, range: 0...3)
-            let corner = Slider(label: "Corner radius", path: \.liveInkEdgeCorner, range: 0...40, step: 1, unit: "pt")
             let focus = Slider(label: "Pointer focus", path: \.liveInkEdgeFocus, range: 0...1)
             switch self {
             case .glow: return []
-            case .glass: return [bend, split, shine, frost, tint, focus, corner]
-            case .lens: return [bend, split, shine, tint, focus, corner]
-            case .aurora: return [shine, speed, focus, corner]
-            case .ripple: return [bend, split, shine, speed, focus, corner]
-            case .frost: return [frost, shine, tint, focus, corner]
-            case .auroraRipple: return [bend, light, split, shine, speed, focus, corner]
+            case .glass: return [bend, split, shine, frost, tint, focus]
+            case .lens: return [bend, split, shine, tint, focus]
+            case .aurora: return [shine, speed, focus]
+            case .ripple: return [bend, split, shine, speed, focus]
+            case .frost: return [frost, shine, tint, focus]
+            case .auroraRipple: return [bend, light, split, shine, speed, focus]
             }
         }
 

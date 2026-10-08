@@ -50,7 +50,8 @@ the screen, and every check passed:
 | After the chord is let go | the feed stops once the fade is over, 0.25 s at the default fade |
 
 **macOS shows that the screen is being recorded.** While a look that draws from the screen is up,
-the purple recording indicator shows in the menu bar, and it goes when the feed stops. Glow and
+the purple recording indicator shows in the menu bar, and it goes when the feed stops. Pete
+accepted this on 2026-10-08. Glow and
 aurora draw only light and start no feed. Live ink already uses ScreenCaptureKit when it sends, so
 these looks need no new permission. They add the indicator for as long as the chord is held.
 
@@ -92,6 +93,13 @@ the band lags behind fast scrolling.
   mode (`ui.liveInkEdgeBlend`): normal, add, screen, overlay, soft light, colour dodge, multiply,
   colour or difference, each as CSS defines it. Plain aurora draws light alone, with no picture of
   the screen to blend with. Their defaults reproduce Pete's tuning: the ink colour, blended normally.
+- **The display's shape.** The band follows the display's corners and goes round its notch, so on
+  a MacBook it hugs the screen it is drawn on. macOS reports the notch, through the menu bar's
+  areas either side of it, but not the corners. MacBook displays with a notch round their top
+  corners and not their bottom ones, so such a display gets rounded top corners of
+  `ui.liveInkEdgeCorner`, an estimated 10 pt, and every other display square ones. The notch's
+  bottom corners are an estimated 8 pt. Checked in the VM with a notch put in by hand, since the VM
+  has none.
 - **The wake,** with any look. While the pen draws, a ring spreads from each point it passes and
   bends the screen under it, like water behind a boat. Each ring lasts `ui.liveInkWakeDuration`
   and spreads `ui.liveInkWakeSize` points. `ui.liveInkWakeStrength` at 0 turns it off. It reads the same live picture as the looks, so it shows the recording indicator too.
@@ -113,7 +121,6 @@ the wake at strength 0.95, size 36 and duration 0.85. The glow's own width is 29
 
 ## Still open
 
-- Whether the recording indicator is acceptable for the looks that draw from the screen.
 - How the looks behave on macOS 15, on a real display, and over fast scrolling.
 - More than one display. Each screen starts its own picture and display link; only one was tested.
 - What the GPU spends on a large display. Glass with frost and colour split reads 72 samples for
@@ -123,5 +130,4 @@ the wake at strength 0.95, size 36 and duration 0.85. The glow's own width is 29
   cannot hold the chord. While inking, the overlay's own presses drive it.
 - Ripple at its highest waves can still fold the picture back. It was left, since its waves are
   meant to distort.
-- Whether the band should follow the display's own rounded corners and notch. It uses one corner
-  radius on every corner now.
+- Whether 10 pt matches the real top corners of Pete's display, and 8 pt the notch's.
