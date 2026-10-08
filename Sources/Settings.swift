@@ -272,10 +272,27 @@ struct UITweaks: Codable, Equatable {
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
     // Live ink's glow along the screen's edges, which says the screen is taking ink
-    var liveInkGlowWidth = 22.0      // points into the screen at which the glow is a third as strong as at the edge
+    var liveInkGlowWidth = 29.0      // points into the screen at which the glow is a third as strong as at the edge
     var liveInkGlowOpacity = 1.0     // near the pointer; far from it the glow is a third as bright
     var liveInkGlowDelay = 0.25      // how long the chord is held before the glow shows, unless a press shows it sooner
-    var liveInkGlowFade = 0.2
+    var liveInkGlowFade = 0.5
+    // The edge lab's looks (docs/live-ink-edge-lab-2026-10-08.md), as `EdgeLensLayer.Style`. 0 is the
+    // glow above; `EdgeLensLayer` draws the rest. The default is aurora ripple, as Pete tuned it.
+    var liveInkEdgeStyle = 6.0
+    var liveInkEdgeWidth = 38.0      // points into the screen that the look reaches
+    var liveInkEdgeBend = 2.0        // 0 to 2: how far the look moves what is under it
+    var liveInkEdgeSplit = 0.5       // 0 to 1: how far red and blue part where the look moves the picture
+    var liveInkEdgeShine = 0.89      // 0 to 1: the light along the rim
+    var liveInkEdgeFrost = 0.0       // 0 to 1: how much the look blurs what is under it
+    var liveInkEdgeTint = 1.0        // 0 to 1: how much of the ink colour the look takes
+    var liveInkEdgeSpeed = 1.51      // how fast an animated look moves; 0 holds it still
+    var liveInkEdgeCorner = 10.0     // the screen's corner radius, in points
+    var liveInkEdgeFocus = 0.5       // 0 to 1: how much the look gathers round the pointer
+    var liveInkEdgeLight = 1.0       // 0 to 1: the coloured light on aurora ripple's waves
+    // The wake: rings that spread behind the pen while drawing and bend the screen under them. 0 is off.
+    var liveInkWakeStrength = 0.95   // 0 to 1: how far the rings move the screen
+    var liveInkWakeSize = 36.0       // points a ring spreads before it is gone
+    var liveInkWakeDuration = 0.85   // how long a ring lasts
     // Live ink's answers
     var liveInkDrawOn = 0.5          // how long an answer's mark takes to draw itself on
     var liveInkHideFade = 0.12       // a mark fading out as the content under it starts to move
@@ -309,6 +326,7 @@ struct UITweaks: Codable, Equatable {
         u.introDuration *= scale
         u.noteSettleDuration *= scale
         u.liveInkGlowFade *= scale; u.liveInkDrawOn *= scale
+        u.liveInkEdgeSpeed *= scale; u.liveInkWakeDuration *= scale
         u.liveInkHideFade *= scale; u.liveInkShowFade *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
@@ -374,6 +392,13 @@ struct UITweaks: Codable, Equatable {
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
         Bound("liveInkGlowWidth", \.liveInkGlowWidth, 0...1000), Bound("liveInkGlowOpacity", \.liveInkGlowOpacity, 0...1),
         Bound("liveInkGlowDelay", \.liveInkGlowDelay, 0...60), Bound("liveInkGlowFade", \.liveInkGlowFade, 0...60),
+        Bound("liveInkEdgeStyle", \.liveInkEdgeStyle, 0...6), Bound("liveInkEdgeWidth", \.liveInkEdgeWidth, 1...400),
+        Bound("liveInkEdgeBend", \.liveInkEdgeBend, 0...2), Bound("liveInkEdgeSplit", \.liveInkEdgeSplit, 0...1),
+        Bound("liveInkEdgeShine", \.liveInkEdgeShine, 0...1), Bound("liveInkEdgeFrost", \.liveInkEdgeFrost, 0...1),
+        Bound("liveInkEdgeTint", \.liveInkEdgeTint, 0...1), Bound("liveInkEdgeSpeed", \.liveInkEdgeSpeed, 0...10),
+        Bound("liveInkEdgeCorner", \.liveInkEdgeCorner, 0...60), Bound("liveInkEdgeFocus", \.liveInkEdgeFocus, 0...1),
+        Bound("liveInkEdgeLight", \.liveInkEdgeLight, 0...1), Bound("liveInkWakeStrength", \.liveInkWakeStrength, 0...1),
+        Bound("liveInkWakeSize", \.liveInkWakeSize, 0...1000), Bound("liveInkWakeDuration", \.liveInkWakeDuration, 0...10),
         Bound("liveInkDrawOn", \.liveInkDrawOn, 0...60),
         Bound("liveInkHideFade", \.liveInkHideFade, 0...10), Bound("liveInkShowFade", \.liveInkShowFade, 0...10), Bound("liveInkTextSize", \.liveInkTextSize, 4...200),
         Bound("liveInkTextWidth", \.liveInkTextWidth, 40...2000),

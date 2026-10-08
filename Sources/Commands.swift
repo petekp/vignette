@@ -56,6 +56,8 @@ struct CommandRequest: Equatable {
     var message: String? = nil
     /// `section=` from the query: the one section `state` reports beside `app`.
     var section: String? = nil
+    /// `preview=` from the query: `edge-lab` holds live ink's edge look on screen, or lets it go.
+    var preview: Bool? = nil
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -86,6 +88,7 @@ enum Commands {
         Fixed(name: "live-ink-stroke", summary: "draw a live ink stroke as if by hand: &points=x,y;x,y;… in global top-left points, the [state] convention; a loop draws an ellipse, another stroke an arrow, a tap erases the mark under it, or makes an answer's loop or arrow the person's", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "intro-lab", summary: "open the Intro Lab, for tuning how setup's window goes into the menu bar icon", needsDebug: true),
+        Fixed(name: "edge-lab", summary: "open the Edge Lab, for trying and tuning live ink's look along the screen's edges; &preview=1 holds the look on screen without opening it, and &preview=0 lets it go", needsDebug: true),
     ]
 
     /// URLComponents decodes each query value once; `open` does not encode again, so nothing else may.
@@ -105,7 +108,8 @@ enum Commands {
                               clear: items.first { $0.name == "clear" }?.value,
                               points: items.first { $0.name == "points" }?.value,
                               message: items.first { $0.name == "message" }?.value,
-                              section: items.first { $0.name == "section" }?.value)
+                              section: items.first { $0.name == "section" }?.value,
+                              preview: items.first { $0.name == "preview" }.map { !["0", "false"].contains($0.value ?? "") })
     }
 
     /// `points=` as a stroke: `x,y` pairs joined by `;`. Nil when it holds none, or any pair is not

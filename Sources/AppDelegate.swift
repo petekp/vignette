@@ -42,7 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail: { [weak self] in self?.openLast() },
         stack: { [weak self] in self?.toggleRecent() },
         annotator: { [weak self] in self?.annotateLast() },
-        intro: { [weak self] in self?.introLab.show() }))
+        intro: { [weak self] in self?.introLab.show() },
+        edge: { [weak self] in self?.edgeLab.show() }))
     private lazy var introLab = IntroLabController(
         play: { [weak self] window in
             self?.introduceMenuBar(from: window, close: { window.close() }, finished: {}) ?? false
@@ -50,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         iconFrame: { [weak self] in
             self?.visibleStatusButton.flatMap { button in button.window?.convertToScreen(button.convert(button.bounds, to: nil)) }
         })
+    private lazy var edgeLab = EdgeLabController(preview: { [weak self] on in self?.liveInk.previewEdge(on) })
     private let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
     /// What `add` still owes a file it put in the watch folder, by file name. The watcher reports
@@ -694,6 +696,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
         case "intro-lab": introLab.show(); Commands.ok("intro-lab")
+        case "edge-lab":
+            if let preview = request.preview {
+                edgeLab.hold(preview)
+                Commands.ok(cmd, preview ? "holding the edge look" : "let the edge look go")
+            } else {
+                edgeLab.show()
+                Commands.ok(cmd)
+            }
         case "dismiss": thumbnail.dismiss(); Commands.ok("dismiss")
         case "cancel": Commands.ok("cancel", annotator.cancelForDebug() ? "" : "nothing was open")
         default:

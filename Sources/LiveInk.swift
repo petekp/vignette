@@ -328,6 +328,13 @@ final class LiveInk {
     func applyTweaks() {
         showMarks()
         if glowing { showGlow(true) }
+        if !previewing.isEmpty {
+            let ui = Settings.shared.motionUI
+            previewing.forEach { surface in
+                surface.overlay.prepareEdge(ui: ui)
+                surface.overlay.showGlow(true, ui: ui, color: ui.markStyle.color(.person), pen: nil)
+            }
+        }
     }
 
     /// How far past a stroke's edge a tap still erases it. Wider than the editor's hit margin: nothing
@@ -1741,6 +1748,8 @@ final class LiveInk {
         releaseWatch = nil
         inking = activeSurfaces()
         inking.forEach { $0.overlay.setInking(true) }
+        let ui = Settings.shared.motionUI
+        inking.forEach { $0.overlay.prepareEdge(ui: ui) }
         let mouse = NSEvent.mouseLocation
         hover(at: CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y))
         // The glow waits, so holding the chord on the way to a key, as in a window manager's
@@ -1759,6 +1768,7 @@ final class LiveInk {
         releaseWatch = nil
         showGlow(false)
         inking.forEach { $0.overlay.setInking(false) }
+        previewing.forEach { $0.overlay.raise(true) }
         inking = []
         closeEmpty(fade: Settings.shared.motionUI.liveInkGlowFade)
         Log.write("[live-ink] stopped")
@@ -1808,9 +1818,62 @@ final class LiveInk {
         }
     }
 
+    // MARK: The edge lab's preview
+
+    /// The surfaces holding the edge look for the edge lab, and the monitors that move its brightest
+    /// part with the pointer, since those surfaces pass every press and move through.
+    private var previewing: [Surface] = []
+    private var previewMonitors: [Any] = []
+
+    /// Holds the edge look on every screen at the inking level, passing every press through, so what
+    /// the lab tunes is what inking shows.
+    func previewEdge(_ on: Bool) {
+        guard on != !previewing.isEmpty else { return }
+        let ui = Settings.shared.motionUI
+        let color = ui.markStyle.color(.person)
+        let mouse = NSEvent.mouseLocation
+        let pen = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
+        if on {
+            previewing = activeSurfaces()
+            previewing.forEach { surface in
+                surface.overlay.raise(true)
+                surface.overlay.prepareEdge(ui: ui)
+                surface.overlay.showGlow(true, ui: ui, color: color, pen: pen)
+            }
+            // Any drag stands in for drawing, so the wake can be tuned while the presses pass through.
+            let follow: (NSEvent) -> Void = { [weak self] event in
+                let mouse = NSEvent.mouseLocation
+                let point = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
+                self?.previewing.forEach { surface in
+                    surface.overlay.followGlow(point)
+                    if event.type != .mouseMoved { surface.overlay.wake(point) }
+                }
+            }
+            let moves: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDown, .leftMouseDragged]
+            previewMonitors = [NSEvent.addGlobalMonitorForEvents(matching: moves, handler: follow),
+                               NSEvent.addLocalMonitorForEvents(matching: moves) { follow($0); return $0 }]
+                .compactMap { $0 }
+            Log.write("[live-ink] edge preview on style=\(Int(ui.liveInkEdgeStyle))")
+        } else {
+            previewMonitors.forEach(NSEvent.removeMonitor)
+            previewMonitors = []
+            let shown = previewing
+            previewing = []
+            shown.forEach { surface in
+                guard !inking.contains(where: { $0 === surface }) else { return }
+                surface.overlay.showGlow(false, ui: ui, color: color, pen: nil)
+                surface.overlay.raise(false)
+            }
+            closeEmpty(fade: ui.liveInkGlowFade)
+            Log.write("[live-ink] edge preview off")
+        }
+    }
+
     private func showGlow(_ on: Bool) {
         glowTimer?.invalidate()
         if on { listen() }
+        // The edge lab's preview keeps its look when inking ends.
+        if !on, !previewing.isEmpty { return }
         if !on && !glowing { return }
         glowing = on
         let ui = Settings.shared.motionUI
@@ -1911,7 +1974,9 @@ final class LiveInk {
     /// A surface with no marks closes, unless it is taking ink, so an idle live ink puts no
     /// full-screen window over every app.
     private func closeEmpty(fade: TimeInterval) {
-        let empty = surfaces.filter { surface in surface.marks.isEmpty && !inking.contains { $0 === surface } }
+        let empty = surfaces.filter { surface in
+            surface.marks.isEmpty && !inking.contains { $0 === surface } && !previewing.contains { $0 === surface }
+        }
         empty.forEach { $0.overlay.close(after: fade) }
         surfaces.removeAll { surface in empty.contains { $0 === surface } }
     }

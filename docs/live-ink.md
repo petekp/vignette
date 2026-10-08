@@ -25,6 +25,7 @@ The names in brackets are `// MARK:` sections.
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
 | Marks following their window, holding still, hiding | `LiveWindows.swift`, `LiveAnchor.swift` (Accessibility), `LivePatch.swift` (pixels) |
+| The edge while inking: the glow, the looks that bend the screen, the Edge Lab | `LiveInkOverlay.swift` (`EdgeGlow`), `EdgeLens.swift`, `EdgeLens.metal`, `EdgeLab.swift`, `LiveInk.swift` (The edge lab's preview) |
 
 ## Checking a change
 
@@ -78,6 +79,18 @@ The names in brackets are `// MARK:` sections.
   it. Each edge is a strip with its own radial mask that follows the pointer, so a move composites
   four thin strips again rather than the whole screen. The strips' pictures are drawn once for each
   screen size, width and colour.
+- `ui.liveInkEdgeStyle` picks the edge's look (`docs/live-ink-edge-lab-2026-10-08.md`). The default
+  is aurora ripple, and 0 is the glow above. Every look but the glow is `EdgeLensLayer`, a Metal
+  layer under the marks. Every look but the glow and aurora draws from a live picture of the
+  display (`ScreenFeed`). The picture starts when the chord goes down, leaves out the overlay by its
+  window id, and stops once the look has faded out. While it runs, macOS shows its recording
+  indicator. The layer fades in from its first frame, so it never shows the screen as it was. It
+  draws only from its display link: drawing on each frame's arrival starved the main thread until
+  the app hung. With no Metal, no Screen Recording or a stream error, the glow shows instead, and
+  the next chord tries again. The wake (`ui.liveInkWake*`, on by default, off at 0 strength) bends
+  the screen in rings behind the pen while drawing, with any look, from the same picture. The Edge
+  Lab (`vignette://edge-lab`, needs `debug`) tunes both. Its "Hold on screen" keeps the look up at
+  the inking level while presses pass through, and any drag then makes the wake.
 - Marks are `Mark`s in global top-left points at a `pointScale` of 1. `InkStroke` reads a stroke: a loop is the ellipse round it, and any other stroke the editor's freehand arrow
   (`Mark.Arrow.freehand`, at the editor's tolerances). A stroke under `ui.shortestArrow` is a tap,
   which erases the topmost mark whose stroke it is within `LiveInk.eraseReach` of, measured as the

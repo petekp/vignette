@@ -112,6 +112,38 @@ final class LiveInkOverlay: NSPanel {
         canvas.showGlow(on, ui: ui, color: color, pen: pen)
     }
 
+    /// Raises it to the inking level, or puts it back, without taking presses: the edge lab's
+    /// preview shows the edge where inking shows it.
+    func raise(_ up: Bool) {
+        level = up ? .screenSaver : Self.restingLevel
+    }
+
+    /// Moves the brightest part of the edge to `point`, in global top-left points.
+    func followGlow(_ point: CGPoint) { canvas.followGlow(point) }
+
+    /// Starts one of the wake's rings at `point`, in global top-left points.
+    func wake(_ point: CGPoint) { canvas.wake(point) }
+
+    /// Starts the live picture of the screen that a look drawing from it, or the wake, needs, ahead of
+    /// the look, so its first frame is there by the time the look shows. Without either it stops the
+    /// picture, so macOS stops showing that the screen is being recorded.
+    func prepareEdge(ui: UITweaks) {
+        let key = NSDeviceDescriptionKey("NSScreenNumber")
+        let look = EdgeLensLayer.Style(rawValue: Int(ui.liveInkEdgeStyle.rounded())) ?? .glow
+        let capture = look.drawsFromScreen || ui.wakes
+        if !capture { canvas.lens.stopFeed() }
+        guard look != .glow || ui.wakes,
+              let screen = NSScreen.screens.first(where: { ($0.deviceDescription[key] as? NSNumber)?.uint32Value == display }) else { return }
+        // Each chord tries the picture again: a refusal or a stream error may be over by now.
+        canvas.lensFailed = false
+        canvas.lens.prepare(display: display, screen: screen, excluding: CGWindowID(windowNumber), capture: capture)
+    }
+
+    override func close() {
+        canvas.lens.stopFeed()
+        super.close()
+    }
+
     func preview(_ preview: LiveMarksLayer.Preview?) { canvas.marksLayer.preview(preview) }
 
     func popover(of id: Mark.ID) -> ReplyPopover? { canvas.marksLayer.popover(of: id) }
@@ -123,6 +155,11 @@ final class LiveInkOverlay: NSPanel {
         var onStrokeMoved: (([CGPoint]) -> Void)?
         var onHover: ((CGPoint) -> Void)?
         let glow: EdgeGlow
+        /// The looks that bend the screen's own pixels, under the marks so ink near the edge stays
+        /// sharp. The glow stands in when they cannot be drawn.
+        let lens: EdgeLensLayer
+        var lensFailed = false
+        private var lastGlow: (on: Bool, ui: UITweaks, color: CGColor)?
         /// The screen's top-left corner in global top-left points, the coordinates marks are in.
         private(set) var origin: CGPoint = .zero
         private let host = CALayer()
@@ -138,12 +175,19 @@ final class LiveInkOverlay: NSPanel {
         init(frame: CGRect, scale: CGFloat) {
             self.scale = scale
             glow = EdgeGlow(scale: scale)
+            lens = EdgeLensLayer(scale: scale)
             pen = InkMarkLayer(scale: scale)
             marksLayer = LiveMarksLayer(scale: scale)
             super.init(frame: frame)
             layer = host
             wantsLayer = true
             host.contentsScale = scale
+            host.addSublayer(lens)
+            lens.onUnavailable = { [weak self] in
+                guard let self else { return }
+                self.lensFailed = true
+                if let last = self.lastGlow, last.on { self.showGlow(true, ui: last.ui, color: last.color, pen: nil) }
+            }
             for layer in [marksLayer, pen] {
                 layer.anchorPoint = .zero
                 host.addSublayer(layer)
@@ -161,6 +205,7 @@ final class LiveInkOverlay: NSPanel {
                 layer.setAffineTransform(CGAffineTransform(translationX: -origin.x, y: -origin.y))
             }
             glow.frame = bounds
+            lens.frame = bounds
             CATransaction.commit()
         }
 
@@ -183,24 +228,46 @@ final class LiveInkOverlay: NSPanel {
         }
 
         func showGlow(_ on: Bool, ui: UITweaks, color: CGColor, pen: CGPoint?) {
-            glow.show(on, ui: ui, color: color, pen: pen.map { CGPoint(x: $0.x - origin.x, y: $0.y - origin.y) })
+            lastGlow = (on, ui, color)
+            let local = pen.map { CGPoint(x: $0.x - origin.x, y: $0.y - origin.y) }
+            let available = EdgeLensLayer.isAvailable && !lensFailed
+            let shader = ui.liveInkEdgeStyle >= 1 && available
+            glow.show(on && !shader, ui: ui, color: color, pen: local)
+            // With the glow, the lens layer draws only the wake.
+            lens.show(on && (shader || (available && ui.wakes)), ui: ui, color: color.mixed(with: .white, 0.3), pen: local)
         }
 
+        /// Moves the edge's brightest part to the pen, and with `drawing`, starts a ring of the wake there.
+        private func follow(_ event: NSEvent, drawing: Bool) {
+            let point = convert(event.locationInWindow, from: nil)
+            glow.follow(point)
+            lens.follow(point)
+            if drawing { lens.wake(point) }
+        }
+
+        func followGlow(_ global: CGPoint) {
+            let point = CGPoint(x: global.x - origin.x, y: global.y - origin.y)
+            glow.follow(point)
+            lens.follow(point)
+        }
+
+        func wake(_ global: CGPoint) { lens.wake(CGPoint(x: global.x - origin.x, y: global.y - origin.y)) }
+
         override func mouseMoved(with event: NSEvent) {
-            glow.follow(convert(event.locationInWindow, from: nil))
+            follow(event, drawing: false)
             guard !isTracking else { return }
             onHover?(location(of: event))
         }
 
         override func mouseDown(with event: NSEvent) {
-            glow.follow(convert(event.locationInWindow, from: nil))
+            follow(event, drawing: true)
             stroke = [location(of: event)]
             onStrokeMoved?(stroke)
         }
 
         override func mouseDragged(with event: NSEvent) {
             guard isTracking else { return }
-            glow.follow(convert(event.locationInWindow, from: nil))
+            follow(event, drawing: true)
             stroke.append(location(of: event))
             onStrokeMoved?(stroke)
         }
