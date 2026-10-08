@@ -84,6 +84,8 @@ enum Commands {
         Fixed(name: "live-ink-clear", summary: "erase every live ink mark from the screen"),
         Fixed(name: "live-ink-ask", summary: "ask about the live ink on the screen, as Return in its note does: &message=<the note's words>; with no new ink it asks again about the ink asked about last. The answer is drawn on the screen and logged as [live-ink] lines. &session=<id> sends the picture to that agent session instead, as picking it in the note's target does", needsDebug: true),
         Fixed(name: "live-ink-stroke", summary: "draw a live ink stroke as if by hand: &points=x,y;x,y;… in global top-left points, the [state] convention; a loop draws an ellipse, another stroke an arrow, a tap erases the mark under it, or makes an answer's loop or arrow the person's", needsDebug: true),
+        Fixed(name: "live-ink-chord-down", summary: "hold the live ink chord down as if by hand: the glow comes up and listening starts", needsDebug: true),
+        Fixed(name: "live-ink-chord-up", summary: "let go of the live ink chord as if by hand: with ink drawn since it went down, the note opens", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "intro-lab", summary: "open the Intro Lab, for tuning how setup's window goes into the menu bar icon", needsDebug: true),
     ]

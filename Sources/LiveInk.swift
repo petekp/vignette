@@ -1870,7 +1870,9 @@ final class LiveInk {
 
     // MARK: Inking
 
-    private func chordChanged(_ change: HeldChord.Change) {
+    /// The chord pressed or let go: by the hand, through `HeldChord`, or by a script, through
+    /// `live-ink-chord-down` and `live-ink-chord-up`.
+    func chordChanged(_ change: HeldChord.Change) {
         switch change {
         case .began:
             guard mayInk() else {

@@ -30,6 +30,9 @@ The names in brackets are `// MARK:` sections.
 ## Checking a change
 
 - `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement and anchoring.
+- A script reaches the note without a hand on the keys: `live-ink-chord-down`, then
+  `live-ink-stroke` for each stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot
+  press ⌃⌥, so this is the only way a VM check opens the note.
 - A take performs the developer demo on a stage and records it
   (`docs/live-ink-dev-demo-plan-2026-10-05.md`). It takes over the screen for several minutes. From
   `media/live-ink-demo/`: `python3 ../trailer/trailer.py build`, then `python3 dev.py up`, left

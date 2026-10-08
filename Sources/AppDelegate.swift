@@ -666,6 +666,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Commands.error(cmd, .invalidPoints, "give &points=x,y;x,y in global top-left points"); return
             }
             Commands.ok(cmd, "\(liveInk.take(points).description) marks=\(liveInk.marks.count)")
+        case "live-ink-chord-down", "live-ink-chord-up":
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\": true in settings.json"); return }
+            liveInk.chordChanged(cmd == "live-ink-chord-down" ? .began : .ended)
+            Commands.ok(cmd, "inking=\(liveInk.isInking)")
         case "live-ink-ask":
             guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\": true in settings.json"); return }
             let words = request.message ?? ""
