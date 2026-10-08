@@ -111,9 +111,8 @@ enum ReplyCommand {
             guard options.marks == nil, options.image == nil else {
                 throw Failure("--answer comes alone; drop --marks and --image")
             }
-            let loaded = try loadAnswer(answerPath)
-            prepared = try prepare(ticket: ticket, marks: [], image: nil, answer: loaded)
-            answer = loaded
+            answer = try loadAnswer(answerPath)
+            prepared = try prepare(ticket: ticket, marks: [], image: nil, answer: answer)
         } else {
             guard options.marks != nil || options.image != nil else {
                 throw Failure("nothing to send: give --marks, --image, or both, or --answer")

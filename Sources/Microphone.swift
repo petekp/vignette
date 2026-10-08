@@ -7,12 +7,13 @@ import Speech
 /// macOS shows its microphone dot in the menu bar for exactly as long as this runs.
 ///
 /// Starting the transcriber and the engine took 80 to 165 ms on an M4 Max (2026-10-08), and on the
-/// main thread it held back the glow and the first stroke. So both start on the microphone's own
-/// queue, which takes start and stop in order: a stop sent while a start is under way turns the
-/// microphone off once it is on, and only then lets the transcriber end.
+/// main thread it held back the glow and the first stroke. So both start on one queue shared by
+/// every microphone, which takes starts and stops in order: a stop sent while a start is under way
+/// turns the microphone off once it is on, and only then lets the transcriber end, and one
+/// listening's stop is done before the next one's start.
 final class Microphone: @unchecked Sendable {
-    /// The engine and `running` are touched only on this queue.
-    private let queue = DispatchQueue(label: "vignette.microphone", qos: .userInitiated)
+    /// Each engine and its `running` are touched only on this queue.
+    private static let queue = DispatchQueue(label: "vignette.microphone", qos: .userInitiated)
     private let engine = AVAudioEngine()
     private var running = false
 
@@ -22,14 +23,13 @@ final class Microphone: @unchecked Sendable {
     func start(into transcriber: Transcriber, onLevel: @escaping @MainActor @Sendable (Float) -> Void,
                answer: @escaping @MainActor @Sendable (TranscriberFailure?) -> Void) {
         let report = Self.levelReporter(onLevel)
-        queue.async { [self] in
+        Self.queue.async { [self] in
             let failure = begin(transcriber, report: report)
             DispatchQueue.main.async { MainActor.assumeIsolated { answer(failure) } }
         }
     }
 
     private func begin(_ transcriber: Transcriber, report: @escaping @Sendable (Float) -> Void) -> TranscriberFailure? {
-        guard !running else { return nil }
         do {
             try transcriber.begin(hints: [])
         } catch {
@@ -61,7 +61,7 @@ final class Microphone: @unchecked Sendable {
 
     /// Turns the microphone off, after any start still under way, then runs `then` on the main thread.
     func stop(then: @escaping @MainActor @Sendable () -> Void) {
-        queue.async { [self] in
+        Self.queue.async { [self] in
             if running {
                 engine.inputNode.removeTap(onBus: 0)
                 engine.stop()
