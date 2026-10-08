@@ -1419,6 +1419,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // carries on. `sending` stays on, so the button keeps its plane while the bar leaves;
         // the next `prepare` resets it.
         sentShots[record.id] = shot
+        SendContext.sent(file: shot.url.lastPathComponent, request: record.id, to: destination, offered: annotator.offered)
         thumbnail.showSending(shot, request: record.id, to: destination)
         thumbnail.annotationSent()
     }
@@ -1485,6 +1486,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             // stored. A watcher report for one — the copy that made it, or a later rescan — is
             // never a capture, so it neither goes to the clipboard nor opens the editor.
             guard self.requests.isCapture(url) else { return }
+            SendContext.capture(url)
             self.requests.refreshKeptLists()   // so Send's list is current if this opens in the editor
             if self.settings.data.copyOnCapture {
                 Clipboard.copyFiles([url])

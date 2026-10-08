@@ -482,7 +482,7 @@ struct LivePacket: @unchecked Sendable {
     }
 
     /// The window at `frame`'s document or page, from Accessibility.
-    private static func page(pid: pid_t, frame: CGRect) -> Page? {
+    static func page(pid: pid_t, frame: CGRect) -> Page? {
         guard AXIsProcessTrusted() else { return nil }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.1)
