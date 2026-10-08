@@ -126,7 +126,8 @@ struct SettingsData: Codable, Equatable {
             notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"
         }
         for (name, path) in [("personColor", \UITweaks.personColor), ("agentColor", \.agentColor), ("edgeColor", \.edgeColor),
-                             ("noteTextColor", \.noteTextColor)] where SRGB(hex: d.ui[keyPath: path]) == nil {
+                             ("noteTextColor", \.noteTextColor), ("liveInkEdgeColor1", \.liveInkEdgeColor1),
+                             ("liveInkEdgeColor2", \.liveInkEdgeColor2)] where SRGB(hex: d.ui[keyPath: path]) == nil {
             let fixed = UITweaks()[keyPath: path]
             notes.append("ui.\(name) \"\(d.ui[keyPath: path])\" -> \"\(fixed)\": a colour is #rrggbb"); d.ui[keyPath: path] = fixed
         }
@@ -289,6 +290,17 @@ struct UITweaks: Codable, Equatable {
     var liveInkEdgeCorner = 10.0     // the screen's corner radius, in points
     var liveInkEdgeFocus = 0.5       // 0 to 1: how much the look gathers round the pointer
     var liveInkEdgeLight = 1.0       // 0 to 1: the coloured light on aurora ripple's waves
+    // The light's colours in aurora and aurora ripple, and how aurora ripple's light meets the screen.
+    var liveInkEdgeColors = 0.0      // EdgeLensLayer.Palette: 0 the ink colour, 1 a rainbow, 2 two colours
+    var liveInkEdgeColor1 = "#38d9a9" // the two colours the light runs between
+    var liveInkEdgeColor2 = "#845ef7"
+    var liveInkEdgeRepeats = 2.0     // how many times the colours repeat round the screen, a whole number
+    var liveInkEdgeVariation = 0.0   // 0 to 1: how far the ink colour's hue swings to either side
+    var liveInkEdgeHue = 0.0         // 0 to 1: turns every colour round the colour wheel
+    var liveInkEdgeSaturation = 1.0
+    var liveInkEdgeBrightness = 1.0
+    var liveInkEdgeDrift = 0.05      // how fast the colours flow round, in repeats a second at speed 1
+    var liveInkEdgeBlend = 0.0       // EdgeLensLayer.Blend
     // The wake: rings that spread behind the pen while drawing and bend the screen under them. 0 is off.
     var liveInkWakeStrength = 0.95   // 0 to 1: how far the rings move the screen
     var liveInkWakeSize = 36.0       // points a ring spreads before it is gone
@@ -398,6 +410,10 @@ struct UITweaks: Codable, Equatable {
         Bound("liveInkEdgeTint", \.liveInkEdgeTint, 0...1), Bound("liveInkEdgeSpeed", \.liveInkEdgeSpeed, 0...10),
         Bound("liveInkEdgeCorner", \.liveInkEdgeCorner, 0...60), Bound("liveInkEdgeFocus", \.liveInkEdgeFocus, 0...1),
         Bound("liveInkEdgeLight", \.liveInkEdgeLight, 0...1), Bound("liveInkWakeStrength", \.liveInkWakeStrength, 0...1),
+        Bound("liveInkEdgeColors", \.liveInkEdgeColors, 0...2), Bound("liveInkEdgeRepeats", \.liveInkEdgeRepeats, 1...12),
+        Bound("liveInkEdgeVariation", \.liveInkEdgeVariation, 0...1), Bound("liveInkEdgeHue", \.liveInkEdgeHue, 0...1),
+        Bound("liveInkEdgeSaturation", \.liveInkEdgeSaturation, 0...2), Bound("liveInkEdgeBrightness", \.liveInkEdgeBrightness, 0...3),
+        Bound("liveInkEdgeDrift", \.liveInkEdgeDrift, 0...2), Bound("liveInkEdgeBlend", \.liveInkEdgeBlend, 0...8),
         Bound("liveInkWakeSize", \.liveInkWakeSize, 0...1000), Bound("liveInkWakeDuration", \.liveInkWakeDuration, 0...10),
         Bound("liveInkDrawOn", \.liveInkDrawOn, 0...60),
         Bound("liveInkHideFade", \.liveInkHideFade, 0...10), Bound("liveInkShowFade", \.liveInkShowFade, 0...10), Bound("liveInkTextSize", \.liveInkTextSize, 4...200),

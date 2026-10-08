@@ -286,7 +286,7 @@ struct Tweak: View {
 
 /// A colour setting, `#rrggbb`, picked in the system colour panel.
 @MainActor
-private struct ColorTweak: View {
+struct ColorTweak: View {
     let label: String
     let path: WritableKeyPath<UITweaks, String>
     @ObservedObject private var settings = Settings.shared

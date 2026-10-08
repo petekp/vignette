@@ -69,6 +69,14 @@ private struct EdgeLabView: View {
         EdgeLensLayer.Style(rawValue: Int(settings.data.ui.liveInkEdgeStyle.rounded())) ?? .glow
     }
 
+    private var palette: EdgeLensLayer.Palette {
+        EdgeLensLayer.Palette(rawValue: Int(settings.data.ui.liveInkEdgeColors.rounded())) ?? .ink
+    }
+
+    private var blend: EdgeLensLayer.Blend {
+        EdgeLensLayer.Blend(rawValue: Int(settings.data.ui.liveInkEdgeBlend.rounded())) ?? .normal
+    }
+
     var body: some View {
         Form {
             Section {
@@ -95,6 +103,35 @@ private struct EdgeLabView: View {
                 Tweak("Opacity", \.liveInkGlowOpacity, 0...1, step: 0.05)
                 Tweak("Fade", \.liveInkGlowFade, 0...1, step: 0.05, unit: "s")
                 Button("Reset this look") { pick(style) }
+            }
+            if style.hasAuroraLight {
+                Section("Colour") {
+                    Picker("Colours", selection: Binding(get: { palette }, set: { picked in
+                        settings.update { $0.ui.liveInkEdgeColors = Double(picked.rawValue) }
+                    })) {
+                        ForEach(EdgeLensLayer.Palette.allCases, id: \.self) { Text($0.name).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    switch palette {
+                    case .ink: Tweak("Hue swing", \.liveInkEdgeVariation, 0...1, step: 0.01)
+                    case .rainbow: EmptyView()
+                    case .twoColours:
+                        ColorTweak("First colour", \.liveInkEdgeColor1)
+                        ColorTweak("Second colour", \.liveInkEdgeColor2)
+                    }
+                    Tweak("Repeats", \.liveInkEdgeRepeats, 1...8)
+                    Tweak("Hue shift", \.liveInkEdgeHue, 0...1, step: 0.01)
+                    Tweak("Saturation", \.liveInkEdgeSaturation, 0...2, step: 0.01)
+                    Tweak("Brightness", \.liveInkEdgeBrightness, 0...3, step: 0.01)
+                    Tweak("Drift", \.liveInkEdgeDrift, 0...0.5, step: 0.01)
+                    if style == .auroraRipple {
+                        Picker("Blend", selection: Binding(get: { blend }, set: { picked in
+                            settings.update { $0.ui.liveInkEdgeBlend = Double(picked.rawValue) }
+                        })) {
+                            ForEach(EdgeLensLayer.Blend.allCases, id: \.self) { Text($0.name).tag($0) }
+                        }
+                    }
+                }
             }
             Section {
                 Tweak("Strength", \.liveInkWakeStrength, 0...1, step: 0.05)

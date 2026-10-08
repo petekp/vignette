@@ -30,6 +30,20 @@ struct EdgeUniforms {
     float wakeTop;
     float wakeRight;
     float wakeBottom;
+    float colors;       // the aurora's colours: 0 the ink's, 1 a rainbow, 2 between color1 and color2
+    float repeats;      // how many times the colours repeat round the screen
+    float variation;    // 0 to 1: how far the ink colour's hue swings to either side
+    float hue;          // 0 to 1: turns every colour round the colour wheel
+    float saturation;   // 0 to 2
+    float brightness;   // 0 to 3
+    float drift;        // how fast the colours flow round, in repeats a second at speed 1
+    float blend;        // how aurora ripple's light meets the screen, EdgeLensLayer.Blend's raw value
+    float color1R;      // the two colours, in the layer's colour space
+    float color1G;
+    float color1B;
+    float color2R;
+    float color2G;
+    float color2B;
 };
 
 struct Varyings {
@@ -95,9 +109,61 @@ static float around(float2 p, float2 size) {
     return atan2(c.y * size.x / size.y, c.x) / (2.0 * M_PI_F) + 0.5;
 }
 
-static float3 palette(float x, float3 ink, float tint) {
-    float3 hues = 0.5 + 0.5 * cos(2.0 * M_PI_F * (x + float3(0.0, 0.33, 0.67)));
-    return mix(hues, ink, tint);
+// `c` turned `turns` of the way round the colour wheel, about the grey axis.
+static float3 hueTurned(float3 c, float turns) {
+    float a = 2.0 * M_PI_F * turns;
+    float3 k = float3(0.57735027);
+    return c * cos(a) + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - cos(a));
+}
+
+// The aurora's colour at `x` round the screen. A whole number of repeats meets itself where `x`
+// wraps, so the colours have no seam.
+static float3 auroraColor(float x, float t, constant EdgeUniforms &u) {
+    float phase = round(max(u.repeats, 1.0)) * x + u.drift * t;
+    float3 c;
+    int colors = int(u.colors + 0.5);
+    if (colors == 1) {
+        c = 0.5 + 0.5 * cos(2.0 * M_PI_F * (phase + float3(0.0, 0.33, 0.67)));
+    } else if (colors == 2) {
+        c = mix(float3(u.color1R, u.color1G, u.color1B), float3(u.color2R, u.color2G, u.color2B), 0.5 + 0.5 * sin(2.0 * M_PI_F * phase));
+    } else {
+        c = hueTurned(u.color.rgb, u.variation * 0.25 * sin(2.0 * M_PI_F * phase));
+    }
+    c = hueTurned(c, u.hue);
+    float grey = dot(c, float3(0.2126, 0.7152, 0.0722));
+    return max(mix(float3(grey), c, u.saturation), 0.0) * u.brightness;
+}
+
+static float luminance(float3 c) { return dot(c, float3(0.3, 0.59, 0.11)); }
+
+// `c` with the luminance `l`, its hue and saturation kept as far as the gamut allows, as CSS's
+// colour blend mode defines it.
+static float3 withLuminance(float3 c, float l) {
+    c += l - luminance(c);
+    float lum = luminance(c);
+    float low = min(min(c.r, c.g), c.b);
+    float high = max(max(c.r, c.g), c.b);
+    if (low < 0.0) c = lum + (c - lum) * lum / max(lum - low, 1e-5);
+    if (high > 1.0) c = lum + (c - lum) * (1.0 - lum) / max(high - lum, 1e-5);
+    return c;
+}
+
+// The light `l` blended onto the screen `b`, by EdgeLensLayer.Blend's raw value, as CSS defines each.
+static float3 blended(int mode, float3 b, float3 l) {
+    switch (mode) {
+        case 1: return min(b + l, 1.0);
+        case 2: return 1.0 - (1.0 - b) * (1.0 - l);
+        case 3: return select(1.0 - 2.0 * (1.0 - b) * (1.0 - l), 2.0 * b * l, b < 0.5);
+        case 4: {
+            float3 d = select(sqrt(b), ((16.0 * b - 12.0) * b + 4.0) * b, b <= 0.25);
+            return select(b + (2.0 * l - 1.0) * (d - b), b - (1.0 - 2.0 * l) * b * (1.0 - b), l <= 0.5);
+        }
+        case 5: return min(b / max(1.0 - l, 1e-3), 1.0);
+        case 6: return b * l;
+        case 7: return withLuminance(l, luminance(b));
+        case 8: return abs(b - l);
+        default: return l;
+    }
 }
 
 // The screen moved `reach` along the normal, red and blue moved `apart` more and less, blurred by `blur`.
@@ -170,19 +236,21 @@ struct Band {
 
 static float4 premultiplied(float3 color, float alpha) { return float4(min(color, 1.0) * alpha, alpha); }
 
-// Light in the ink's colours flowing round the edges, swelling and thinning, `amount` as strong.
+// Light in the aurora's colours flowing round the edges, swelling and thinning, `amount` as strong:
+// its colour, not premultiplied, and how much it covers.
 static float4 auroraLight(Band b, constant EdgeUniforms &u, float x, float t, float swell, float amount) {
     float glow = exp(-b.d / max(b.w * 0.35 * swell, 1.0)) * (0.55 + 0.45 * b.strength) * amount;
     float line = u.shine * exp(-max(b.d, 0.0) / 1.6);
-    float3 color = palette(2.0 * x + 0.05 * t, u.color.rgb, u.tint);
+    float3 color = mix(auroraColor(x, t, u), float3(1), line * 0.6);
     float alpha = clamp(glow * 0.85 + line, 0.0, 1.0) * smoothstep(0.0, 0.15, b.s);
-    return premultiplied(mix(color, float3(1), line * 0.6), alpha);
+    return float4(min(color, 1.0), alpha);
 }
 
 static float4 aurora(Band b, constant EdgeUniforms &u) {
     float x = around(b.p, u.size);
     float t = u.time * u.speed;
-    return auroraLight(b, u, x, t, swellAt(x, t), 1.0);
+    float4 light = auroraLight(b, u, x, t, swellAt(x, t), 1.0);
+    return premultiplied(light.rgb, light.a);
 }
 
 // Lens: the band packs in more of the screen than its width, as the rim of a wide lens does, and
@@ -218,9 +286,13 @@ static float4 auroraRipple(Band b, texture2d<float> screen, constant EdgeUniform
     float wave = waveAt(x, t);
     float height = (wave * 0.6 * swell + ringsAt(b.p, u.pen, b.w, t) * 0.8) * b.s * b.s;
     float reach = u.bend * b.strength * b.w * 0.25 * height;
-    float4 water = premultiplied(bent(screen, b.at, b.n, reach, u.split * 0.5, 0.0, b.turn, u.size), smoothstep(0.0, 0.3, b.s));
+    float bending = smoothstep(0.0, 0.3, b.s);
+    // Under the light: the bent screen, and the screen as it is where the band fades out, so a
+    // blend mode has a picture to work on across the whole band.
+    float3 water = mix(sampleScreen(screen, b.at, u.size), bent(screen, b.at, b.n, reach, u.split * 0.5, 0.0, b.turn, u.size), bending);
     float4 light = auroraLight(b, u, x, t, swell, u.light * (0.5 + max(wave, 0.0)));
-    return light + water * (1.0 - light.a);
+    float3 color = mix(water, blended(int(u.blend + 0.5), water, light.rgb), light.a);
+    return premultiplied(color, max(bending, light.a));
 }
 
 // Frost: a band of frosted glass with a bright rim, and no bend.

@@ -85,6 +85,13 @@ the band lags behind fast scrolling.
   aurora ripple, where ripple's waves bend the screen and aurora's light rides on their crests.
   Glow is `EdgeGlow`. The others are one Metal shader, `Sources/EdgeLens.metal`, drawn by
   `EdgeLensLayer` under the marks, so ink near the edge stays sharp.
+- **The aurora's colours,** in aurora and aurora ripple. The light takes the ink colour, a
+  rainbow, or two picked colours (`ui.liveInkEdgeColors`, `liveInkEdgeColor1`, `liveInkEdgeColor2`).
+  Repeats, a whole number so the colours meet themselves without a seam, hue shift, saturation,
+  brightness and drift change any of them. Aurora ripple's light meets the screen through a blend
+  mode (`ui.liveInkEdgeBlend`): normal, add, screen, overlay, soft light, colour dodge, multiply,
+  colour or difference, each as CSS defines it. Plain aurora draws light alone, with no picture of
+  the screen to blend with. Their defaults reproduce Pete's tuning: the ink colour, blended normally.
 - **The wake,** with any look. While the pen draws, a ring spreads from each point it passes and
   bends the screen under it, like water behind a boat. Each ring lasts `ui.liveInkWakeDuration`
   and spreads `ui.liveInkWakeSize` points. `ui.liveInkWakeStrength` at 0 turns it off. It reads the same live picture as the looks, so it shows the recording indicator too.

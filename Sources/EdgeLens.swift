@@ -303,6 +303,13 @@ final class EdgeLensLayer: CAMetalLayer {
         commands.commit()
     }
 
+    /// A `#rrggbb` setting in the layer's Display P3, black for one that does not parse.
+    private static func layerColor(_ hex: String) -> SIMD3<Float> {
+        guard let components = SRGB(hex: hex)?.cgColor.converted(to: CGColorSpace(name: CGColorSpace.displayP3)!, intent: .defaultIntent, options: nil)?.components,
+              components.count >= 3 else { return .zero }
+        return SIMD3(Float(components[0]), Float(components[1]), Float(components[2]))
+    }
+
     private func uniforms(size: CGSize, at now: CFTimeInterval) -> EdgeUniforms {
         var uniforms = EdgeUniforms()
         uniforms.color = color
@@ -321,6 +328,17 @@ final class EdgeLensLayer: CAMetalLayer {
         uniforms.focus = Float(ui.liveInkEdgeFocus)
         uniforms.time = Float(now - started)
         uniforms.light = Float(ui.liveInkEdgeLight)
+        uniforms.colors = Float(ui.liveInkEdgeColors)
+        uniforms.repeats = Float(ui.liveInkEdgeRepeats)
+        uniforms.variation = Float(ui.liveInkEdgeVariation)
+        uniforms.hue = Float(ui.liveInkEdgeHue)
+        uniforms.saturation = Float(ui.liveInkEdgeSaturation)
+        uniforms.brightness = Float(ui.liveInkEdgeBrightness)
+        uniforms.drift = Float(ui.liveInkEdgeDrift)
+        uniforms.blend = Float(ui.liveInkEdgeBlend)
+        let first = Self.layerColor(ui.liveInkEdgeColor1), second = Self.layerColor(ui.liveInkEdgeColor2)
+        (uniforms.color1R, uniforms.color1G, uniforms.color1B) = (first.x, first.y, first.z)
+        (uniforms.color2R, uniforms.color2G, uniforms.color2B) = (second.x, second.y, second.z)
         uniforms.wakeCount = Float(trail.count)
         uniforms.wakeStrength = Float(ui.liveInkWakeStrength)
         uniforms.wakeSize = Float(ui.liveInkWakeSize)
@@ -363,6 +381,20 @@ struct EdgeUniforms {
     var wakeTop: Float = 0
     var wakeRight: Float = 0
     var wakeBottom: Float = 0
+    var colors: Float = 0
+    var repeats: Float = 0
+    var variation: Float = 0
+    var hue: Float = 0
+    var saturation: Float = 0
+    var brightness: Float = 0
+    var drift: Float = 0
+    var blend: Float = 0
+    var color1R: Float = 0
+    var color1G: Float = 0
+    var color1B: Float = 0
+    var color2R: Float = 0
+    var color2G: Float = 0
+    var color2B: Float = 0
 }
 
 extension UITweaks {
@@ -423,15 +455,18 @@ extension EdgeLensLayer {
                           (\.liveInkEdgeFrost, 0), (\.liveInkEdgeTint, 0.15), (\.liveInkEdgeFocus, 0.5), (\.liveInkEdgeCorner, 10)]
             case .lens: [(\.liveInkEdgeWidth, 70), (\.liveInkEdgeBend, 1.1), (\.liveInkEdgeSplit, 0.5), (\.liveInkEdgeShine, 0.2),
                          (\.liveInkEdgeTint, 0.1), (\.liveInkEdgeFocus, 0.3), (\.liveInkEdgeCorner, 10)]
-            case .aurora: [(\.liveInkEdgeWidth, 60), (\.liveInkEdgeShine, 0.6), (\.liveInkEdgeTint, 0.35), (\.liveInkEdgeSpeed, 0.6),
-                           (\.liveInkEdgeFocus, 0.4), (\.liveInkEdgeCorner, 10)]
+            case .aurora: [(\.liveInkEdgeWidth, 60), (\.liveInkEdgeShine, 0.6), (\.liveInkEdgeSpeed, 0.6),
+                           (\.liveInkEdgeFocus, 0.4), (\.liveInkEdgeCorner, 10), (\.liveInkEdgeColors, 1), (\.liveInkEdgeRepeats, 2),
+                           (\.liveInkEdgeHue, 0), (\.liveInkEdgeSaturation, 0.75), (\.liveInkEdgeBrightness, 1), (\.liveInkEdgeDrift, 0.05)]
             case .ripple: [(\.liveInkEdgeWidth, 48), (\.liveInkEdgeBend, 1.2), (\.liveInkEdgeSplit, 0.4), (\.liveInkEdgeShine, 0.5),
                            (\.liveInkEdgeSpeed, 0.8), (\.liveInkEdgeFocus, 0.5), (\.liveInkEdgeCorner, 10)]
             case .frost: [(\.liveInkEdgeWidth, 36), (\.liveInkEdgeFrost, 0.7), (\.liveInkEdgeShine, 0.6), (\.liveInkEdgeTint, 0.1),
                           (\.liveInkEdgeFocus, 0.3), (\.liveInkEdgeCorner, 10)]
             case .auroraRipple: [(\.liveInkEdgeWidth, 38), (\.liveInkEdgeBend, 2), (\.liveInkEdgeLight, 1), (\.liveInkEdgeSplit, 0.5),
-                                 (\.liveInkEdgeShine, 0.89), (\.liveInkEdgeTint, 1), (\.liveInkEdgeSpeed, 1.51),
-                                 (\.liveInkEdgeFocus, 0.5), (\.liveInkEdgeCorner, 10)]
+                                 (\.liveInkEdgeShine, 0.89), (\.liveInkEdgeSpeed, 1.51),
+                                 (\.liveInkEdgeFocus, 0.5), (\.liveInkEdgeCorner, 10), (\.liveInkEdgeColors, 0), (\.liveInkEdgeRepeats, 2),
+                                 (\.liveInkEdgeVariation, 0), (\.liveInkEdgeHue, 0), (\.liveInkEdgeSaturation, 1), (\.liveInkEdgeBrightness, 1),
+                                 (\.liveInkEdgeDrift, 0.05), (\.liveInkEdgeBlend, 0)]
             }
         }
 
@@ -451,10 +486,46 @@ extension EdgeLensLayer {
             case .glow: return []
             case .glass: return [bend, split, shine, frost, tint, focus, corner]
             case .lens: return [bend, split, shine, tint, focus, corner]
-            case .aurora: return [shine, tint, speed, focus, corner]
+            case .aurora: return [shine, speed, focus, corner]
             case .ripple: return [bend, split, shine, speed, focus, corner]
             case .frost: return [frost, shine, tint, focus, corner]
-            case .auroraRipple: return [bend, light, split, shine, tint, speed, focus, corner]
+            case .auroraRipple: return [bend, light, split, shine, speed, focus, corner]
+            }
+        }
+
+        /// Whether the Colour section tunes its light.
+        var hasAuroraLight: Bool { self == .aurora || self == .auroraRipple }
+    }
+
+    /// Where the aurora's colours come from, as `ui.liveInkEdgeColors`.
+    enum Palette: Int, CaseIterable {
+        case ink, rainbow, twoColours
+
+        var name: String {
+            switch self {
+            case .ink: "Ink"
+            case .rainbow: "Rainbow"
+            case .twoColours: "Two colours"
+            }
+        }
+    }
+
+    /// How aurora ripple's light meets the screen under it, as `ui.liveInkEdgeBlend`. Each is CSS's
+    /// blend mode of that name.
+    enum Blend: Int, CaseIterable {
+        case normal, add, screen, overlay, softLight, colorDodge, multiply, color, difference
+
+        var name: String {
+            switch self {
+            case .normal: "Normal"
+            case .add: "Add"
+            case .screen: "Screen"
+            case .overlay: "Overlay"
+            case .softLight: "Soft light"
+            case .colorDodge: "Colour dodge"
+            case .multiply: "Multiply"
+            case .color: "Colour"
+            case .difference: "Difference"
             }
         }
     }
