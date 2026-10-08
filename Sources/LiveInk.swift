@@ -40,11 +40,12 @@ final class LiveInk {
     /// Sends a picture and a message to a session through today's Send: the request's id, or why it
     /// was refused.
     var sendToSession: ((Data, AgentDestination, String) -> Result<String, ScreenshotRequests.Refusal>)?
-    /// Whether a session is in the middle of a turn, or nil when that cannot be told.
-    var isWorking: ((AgentDestination) -> Bool?)?
+    /// Where a session is in its turns, or nil when that cannot be told.
+    var turn: ((AgentDestination) -> SessionTurn?)?
     /// The ask a session is working on, watched until its turn ends: whether the turn was seen to
-    /// start, and since when it has been idle.
-    private var working: (request: String, seenBusy: Bool, idleSince: Date?, until: Date)?
+    /// start, since when it has been idle, since when the session has had the request, and when it
+    /// was asked.
+    private var working: (request: String, seenBusy: Bool, idleSince: Date?, since: Date, asked: Date)?
     private var workingWatch: Timer?
     /// The marks leaving, and how, removed once they have gone.
     private var finishing: [Mark.ID: LiveMarksLayer.Finish] = [:]
@@ -60,6 +61,18 @@ final class LiveInk {
     private var prepared: (ink: Set<Mark.ID>, packet: Task<LivePacket, Error>, glance: Task<LivePacket.Glance?, Never>)?
     /// The request ids of sends from live ink still waiting for their client's answer.
     private var sending: [String: Shared] = [:]
+    /// How the window looked under each sent ask's ink as it went, kept until the session's turn ends,
+    /// when `resolve` compares it with the window then.
+    private var befores: [String: Before] = [:]
+    private struct Before {
+        /// The part of the window compared, `region`, in points from the window's top-left corner;
+        /// `ink`, the part under the ink, which decides; and the window's size then.
+        let picture: CGImage
+        let region: CGRect
+        let ink: CGRect
+        let windowSize: CGSize
+        let windowID: CGWindowID
+    }
     /// The person's marks some ask has been about. The rest are new, and the next ask is about them.
     private var asked = Set<Mark.ID>()
     /// A mark was drawn since the chord went down, so letting it go opens the note.
@@ -375,11 +388,12 @@ final class LiveInk {
             "marks": marks.map { mark -> [String: Any] in
                 let extent = mark.shapeExtent ?? LiveAnswerLayout.noteBox(mark, sizes: answerSizes)
                 let frame = extent.map { [$0.minX, $0.minY, $0.width, $0.height].map { Int($0.rounded()) } } ?? []
-                return ["id": mark.id.uuidString, "type": mark.kind.rawValue, "frame": frame, "agent": mark.agent,
+                return ["id": mark.id.uuidString, "type": mark.kind.rawValue, "frame": frame, "agent": mark.agent, "before": mark.before != nil,
                         "shown": shownMarks.contains { $0.id == mark.id }, "window": windows.window(of: mark.id).map { Int($0) } ?? NSNull()]
             },
             "windows": windows.stateJSON,
             "new": newInk.count,
+            "beforePictures": befores.count,
             "steps": stepClicks == nil ? 0 : steps.count + 1,
             "focus": focusRun.map { run -> Any in
                 ["stop": run.index + 1, "stops": run.stops.count, "zoom": run.stops.indices.contains(run.index) && run.stops[run.index].first?.focus?.zoom == true]
@@ -484,7 +498,7 @@ final class LiveInk {
         guard let index = Self.markToErase(at: point, in: candidates, markStyle: Settings.shared.data.ui.markStyle,
                                            noteBox: { LiveAnswerLayout.noteBox($0, sizes: sizes) }) else { return nil }
         let hit = candidates[index]
-        return hit.agent && hit.kind != .text && hit.focus == nil && answerMarks.contains(hit.id) ? .pick(hit) : .erase(hit)
+        return hit.agent && hit.kind != .text && hit.focus == nil && hit.before == nil && answerMarks.contains(hit.id) ? .pick(hit) : .erase(hit)
     }
 
     /// Shows what a tap at `point` would do, or nothing with no point.
@@ -743,6 +757,7 @@ final class LiveInk {
             Log.write("[live-ink] sent to a session request=\(request)")
             watchWorking(request)
             showMarks()
+            keepBefore(request, window: packet.windowID, about: about, page: packet.page)
         case .failure(let refusal):
             failed(LiveResponder.Failure(reason: "Not sent. " + refusal.reason, detail: "send refused"))
         }
@@ -782,17 +797,20 @@ final class LiveInk {
         return note
     }
 
-    /// How long an ask may show the thinking light with no word on the session's turn, as from a
-    /// route that cannot tell.
+    /// How long an ask may show the thinking light once the session has the request, with no word
+    /// that its turn started, as from a route that cannot tell.
     private static let workingLimit: TimeInterval = 180
-    /// How long the turn must stay idle to count as over: the line waits for a turn under way to
-    /// end, and the session's own turn starts a moment after.
+    /// How long a turn the session said it started may run, and how long after the ask a request
+    /// may still wait in the inbox, before Vignette stops waiting on it.
+    private static let turnLimit: TimeInterval = 30 * 60
+    /// How long the turn must stay idle to count as over: requests handed over together can run as
+    /// turns one after another, idle for a moment between them.
     private static let idleSettle: TimeInterval = 2
 
     /// Reads the session's turn twice a second, and ends the thinking light once the turn it started is
     /// over, whether or not it answered on the screen.
     private func watchWorking(_ request: String) {
-        working = (request, false, nil, Date().addingTimeInterval(Self.workingLimit))
+        working = (request, false, nil, Date(), Date())
         workingWatch?.invalidate()
         workingWatch = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkWorking() }
@@ -802,31 +820,141 @@ final class LiveInk {
     private func checkWorking() {
         guard let watched = working, let shared = sending[watched.request], asking?.phase == .working,
               asking?.about == shared.about else { return stopWorking() }
-        let busy = isWorking?(shared.session)
-        if busy == true {
+        let turn = self.turn?(shared.session)
+        switch turn {
+        case .waiting:
+            // The request is still in the inbox, so a turn under way is another one's.
+            working?.seenBusy = false
+            working?.idleSince = nil
+            working?.since = Date()
+        case .busy:
             working?.seenBusy = true
             working?.idleSince = nil
-        } else if busy == false, watched.seenBusy {
+        case .idle where watched.seenBusy:
             let since = watched.idleSince ?? Date()
             working?.idleSince = since
             guard Date().timeIntervalSince(since) >= Self.idleSettle else { return }
             Log.write("[live-ink] session's turn ended request=\(watched.request)")
-            return finishWorking()
+            return finishWorking(watched.request, seenToEnd: true)
+        case .idle, nil:
+            break
         }
-        if Date() > watched.until {
+        // A request still in the inbox counts from the ask, and anything else from when the session took it.
+        let waited = Date().timeIntervalSince(turn == .waiting ? watched.asked : watched.since)
+        if waited > (turn == .busy || turn == .waiting ? Self.turnLimit : Self.workingLimit) {
             Log.write("[live-ink] stopped waiting on the session request=\(watched.request)")
-            finishWorking()
+            finishWorking(watched.request, seenToEnd: false)
         }
     }
 
     /// The session's turn is over. With no answer drawn on the window, the ink and its note play
-    /// the done animation and go, since the person sees the change itself; an answer keeps them,
-    /// as what it is beside. The reply the person answered is not an answer to what they said.
-    private func finishWorking() {
+    /// the done animation and go; an answer keeps them, as what it is beside. The reply the person
+    /// answered is not an answer to what they said. An ask whose turn was seen to end is first
+    /// looked at again (`resolve`); one Vignette stopped waiting on may still be under way.
+    private func finishWorking(_ request: String, seenToEnd: Bool) {
         stopWorking()
         asking?.phase = .answered
+        let before = befores.removeValue(forKey: request)
         guard let about = asking?.about, asking?.say == nil || asking?.picked != nil else { return showMarks() }
-        finish(about, .done)
+        guard seenToEnd, asking?.say == nil, let before else { return finish(about, .done) }
+        // The thinking light goes while Vignette looks.
+        showMarks()
+        resolve(about, before: before, project: sending[request]?.session.project)
+    }
+
+    // MARK: Whether it landed
+
+    /// Captures the window round the ink as the ask goes, for `resolve` to compare when the turn
+    /// ends: the ink's shapes with `LiveChange.reach` round them, inside the web page when there is one.
+    private func keepBefore(_ request: String, window: CGWindowID?, about: Set<Mark.ID>, page: CGRect?) {
+        let ink = shownMarks.filter { about.contains($0.id) && !$0.agent && $0.kind != .text }
+            .compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
+        guard let window, !ink.isNull else { return }
+        Task { @MainActor [weak self] in
+            do {
+                let capture = try await LivePacket.capture(window: window)
+                let room = page.map { $0.intersection(capture.frame) } ?? capture.frame
+                guard let self, self.sending[request] != nil, let under = LiveChange.region(around: ink, in: room),
+                      let region = LiveChange.region(around: ink, in: room, margin: LiveChange.reach),
+                      let picture = LiveChange.crop(capture.image, frame: capture.frame, to: region) else { return }
+                let origin = CGVector(dx: -capture.frame.minX, dy: -capture.frame.minY)
+                self.befores[request] = Before(picture: picture, region: region.offsetBy(dx: origin.dx, dy: origin.dy),
+                                               ink: under.offsetBy(dx: origin.dx, dy: origin.dy), windowSize: capture.frame.size, windowID: window)
+            } catch {
+                Log.write("[live-ink] no before for request=\(request): \(error)")
+            }
+        }
+    }
+
+    /// Looks at the window again now that the session's turn is over. When what is under the ink
+    /// changed, the before plays back there and then the done animation; when nothing did, the ink
+    /// stays and says so, since the session may have answered in words; when Vignette can't tell,
+    /// the done animation plays as before.
+    private func resolve(_ about: Set<Mark.ID>, before: Before, project: String?) {
+        Task { @MainActor [weak self] in
+            let seen = await Self.look(again: before)
+            guard let self, self.asking?.about == about, self.asking?.phase == .answered else { return }
+            switch seen {
+            case .some((.changed(let share, let around), let origin)):
+                Log.write("[live-ink] landed changed=\(String(format: "%.3f", share))")
+                self.replay(before, changed: around, window: origin, about: about)
+            case .some((.unchanged(let share), _)):
+                Log.write("[live-ink] nothing changed under the ink changed=\(String(format: "%.3f", share))")
+                self.say("Nothing changed under your ink." + (project.map { " Check \($0)." } ?? ""), about: about)
+            case .none:
+                self.finish(about, .done)
+            }
+        }
+    }
+
+    /// The window round the ink now, twice `LiveChange.settle` apart, against `before`, with the
+    /// window's top-left corner now, in global top-left points. Nil when the window is gone or
+    /// changed size.
+    private static func look(again before: Before) async -> (LiveChange.Outcome, CGPoint)? {
+        do {
+            let after = try await LivePacket.capture(window: before.windowID)
+            try await Task.sleep(nanoseconds: UInt64(LiveChange.settle * 1_000_000_000))
+            let again = try await LivePacket.capture(window: before.windowID)
+            guard abs(after.frame.width - before.windowSize.width) < 1, abs(after.frame.height - before.windowSize.height) < 1 else {
+                Log.write("[live-ink] can't tell whether it landed: the window changed size")
+                return nil
+            }
+            let region = before.region.offsetBy(dx: after.frame.minX, dy: after.frame.minY)
+            let regionAgain = before.region.offsetBy(dx: again.frame.minX, dy: again.frame.minY)
+            let ink = before.ink.offsetBy(dx: -before.region.minX, dy: -before.region.minY)
+            return await Task.detached(priority: .userInitiated) { () -> (LiveChange.Outcome, CGPoint)? in
+                guard let now = LiveChange.crop(after.image, frame: after.frame, to: region) else { return nil }
+                let later = LiveChange.crop(again.image, frame: again.frame, to: regionAgain)
+                return (LiveChange.compare(before: before.picture, after: now, again: later, size: region.size, ink: ink), after.frame.origin)
+            }.value
+        } catch {
+            Log.write("[live-ink] can't tell whether it landed: \(error)")
+            return nil
+        }
+    }
+
+    /// Plays the window as it was back over it, then the done animation: the part under the ink and
+    /// whatever changed round it, `around` in the before picture's points, with the window's
+    /// top-left corner now at `origin`. With motion off, the done animation alone.
+    private func replay(_ before: Before, changed around: CGRect, window origin: CGPoint, about: Set<Mark.ID>) {
+        let shown = before.ink.union(around.offsetBy(dx: before.region.minX, dy: before.region.minY))
+            .insetBy(dx: -4, dy: -4).intersection(before.region).integral
+        guard Settings.shared.motionScale > 0, let target = windows.target(id: before.windowID),
+              let picture = LiveChange.crop(before.picture, frame: before.region, to: shown) else { return finish(about, .done) }
+        var mark = Mark(geometry: .rectangle(shown.offsetBy(dx: origin.x, dy: origin.y)), agent: true)
+        mark.before = BeforePicture(picture)
+        answerMarks.insert(mark.id)
+        drawingOn.insert(mark.id)
+        windows.pin(mark, to: target, anchor: .window)
+        showMarks()
+        DispatchQueue.main.asyncAfter(deadline: .now() + BeforeLayer.duration) { [weak self] in
+            // A newer ask takes it off first, and the ink stays with that ask's.
+            guard let self, self.answerMarks.contains(mark.id) else { return }
+            self.answerMarks.remove(mark.id)
+            self.remove([mark.id])
+            guard self.asking?.about == about else { return self.showMarks() }
+            self.finish(about, .done)
+        }
     }
 
     /// How long marks take to leave before they are removed.
@@ -1101,6 +1229,7 @@ final class LiveInk {
             if !noteOnFollowUp(notice, about: shared.about) { say(notice, about: shared.about) }
         default:
             sending[request] = nil
+            befores[request] = nil
             if asking?.about == shared.about {
                 stopWorking()
                 if restoreFollowed(saying: "Not sent. " + (reason ?? "")) { return }
@@ -1153,6 +1282,7 @@ final class LiveInk {
                                                         ink: person, style: ui.textStyle, markStyle: ui.markStyle)
                 guard let self, self.asking?.about == shared.about else { return done(false) }
                 self.sending[request] = nil
+                self.befores[request] = nil
                 self.stopWorking()
                 self.answered(answer, packet: packet, sent: [], near: asked, question: self.question(in: shared.about), agent: agent)
                 done(true)
@@ -1173,8 +1303,10 @@ final class LiveInk {
         guard !near.isNull else { showMarks(); return }
         let screen = activeSurfaces().map(\.overlay.globalFrame).first { $0.intersects(near) } ?? near
         let scene = LiveAnswerLayout.Scene(room: screen.insetBy(dx: 8, dy: 8), ink: ink, text: [])
+        // Clear of the person's own note too, which a session's ask leaves beside the ink.
+        let obstacles = scene.ink.compactMap { $0.shapeExtent ?? LiveAnswerLayout.noteBox($0, sizes: answerSizes) }
         let note = LiveAnswerLayout.note(words.trimmingCharacters(in: .whitespaces), near: near, scene: scene,
-                                         obstacles: scene.ink.compactMap(\.shapeExtent), sizes: answerSizes, byPerson: true)
+                                         obstacles: obstacles, sizes: answerSizes, byPerson: true)
         answerMarks.insert(note.id)
         drawingOn.insert(note.id)
         put([note], window: nil)
@@ -1716,6 +1848,7 @@ final class LiveInk {
         finishing = [:]
         prepared = nil
         sending = [:]
+        befores = [:]
         lastPicture = nil
         asking = nil
     }

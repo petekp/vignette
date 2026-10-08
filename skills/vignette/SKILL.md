@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "16"
+  version: "17"
 ---
 
 # Vignette
@@ -164,8 +164,9 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --answe
 - `kind` is `circle` for one thing and `arrow` for a place or an edge. A `label` is one to four
   words, and a label with no room beside its mark is left out. At most four marks.
 - `focus` pulls their eye to one thing while they read: the rest of the window goes soft and grey
-  for a few seconds, and it stays sharp. Give several in the order `say` talks about them, one
-  sentence each, and the focus moves from one to the next as they read. Add `"zoom": true` to
+  for a few seconds, and it stays sharp. When they ask to be walked through something, give a
+  `focus` mark for each stop, in the order `say` talks about them, one sentence each. The focus
+  moves from one to the next as they read. Add `"zoom": true` to
   magnify something too small to see, such as a 1 px gap or fine print. A focus lets go on its
   own, so use `circle` for what they should still see after reading.
 - For something with no text, give `box` instead of `words`: `[x, y, w, h]` as fractions of the

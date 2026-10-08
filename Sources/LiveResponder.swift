@@ -358,9 +358,13 @@ final class LiveResponder {
             ask.onAnswer(.failure(Failure(reason: Self.reason(forError: detail), detail: detail)))
         } else {
             do {
-                let answer = try LiveAnswer(responder: result["structured_output"] as Any)
+                let output = result["structured_output"] as Any
+                let answer = try LiveAnswer(responder: output)
                 answered += 1
-                Log.write("[live-ink] answered ms=\(milliseconds) firstToken=\(Self.since(sentAt, firstToken)) firstWord=\(Self.since(sentAt, firstWord)) cost=\(cost) \(Self.tokens(in: result)) marks=\(answer.marks.count)")
+                // A mark that points at nothing, such as a box in pixels rather than thousandths, is
+                // thrown out as the answer is read, before `drew answer` could count it.
+                let given = min(((output as? [String: Any])?["marks"] as? [Any])?.count ?? 0, LiveAnswer.maxMarks)
+                Log.write("[live-ink] answered ms=\(milliseconds) firstToken=\(Self.since(sentAt, firstToken)) firstWord=\(Self.since(sentAt, firstWord)) cost=\(cost) \(Self.tokens(in: result)) marks=\(answer.marks.count) thrownOut=\(given - answer.marks.count)")
                 ask.onAnswer(.success(answer))
             } catch {
                 Log.write("[live-ink] responder error invalid-answer \(error)")

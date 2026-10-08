@@ -210,14 +210,22 @@ protocol AgentConnection: Sendable {
     /// the ones it lists, such as a Codex thread used weeks ago that the Codex app shows.
     func destinations(including id: String) -> [AgentDestination]
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome
-    /// Whether the session is in the middle of a turn, or nil when the route cannot tell.
-    func isWorking(_ destination: AgentDestination) -> Bool?
+    /// Where the session is in its turns, or nil when the route cannot tell.
+    func turn(of destination: AgentDestination) -> SessionTurn?
+}
+
+/// Where a session is in its turns, as far as a request sent to it is concerned.
+enum SessionTurn: Equatable {
+    /// A request is still in the session's inbox: its turn has not started.
+    case waiting
+    case busy
+    case idle
 }
 
 extension AgentConnection {
     var keepsList: Bool { false }
     func destinations(including id: String) -> [AgentDestination] { destinations() }
-    func isWorking(_ destination: AgentDestination) -> Bool? { nil }
+    func turn(of destination: AgentDestination) -> SessionTurn? { nil }
 }
 
 // MARK: Running a command
@@ -333,22 +341,33 @@ struct ClaudeCodeConnection: AgentConnection {
         }
     }
 
-    /// The inboxes a request can be written to: the process is running and its monitor is. An
-    /// inbox whose process has gone is removed, since the monitor may have been stopped before it
-    /// could remove it itself.
-    /// From the `turn` file the plugin's hooks write in the session's inbox: `busy` from a prompt
-    /// to the end of the turn, `idle` after it.
-    func isWorking(_ destination: AgentDestination) -> Bool? {
+    /// From the inbox: `waiting` while a request is still in it, since the monitor hands requests
+    /// over only between turns; otherwise the `turn` file the plugin's hooks write, `busy` from a
+    /// prompt to the end of the turn and `idle` after it.
+    func turn(of destination: AgentDestination) -> SessionTurn? {
         guard case .claudeSession(let session) = destination.address,
               let inbox = liveInboxes().first(where: { $0.session == session }),
               let turn = try? String(contentsOf: inbox.folder.appendingPathComponent("turn"), encoding: .utf8) else { return nil }
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: inbox.folder.path)) ?? []
+        if names.contains(where: { $0.hasSuffix(".line") }) { return .waiting }
         switch turn.trimmingCharacters(in: .whitespacesAndNewlines) {
-        case "busy": return true
-        case "idle": return false
+        case "busy": return Self.interrupted(inbox) ? .idle : .busy
+        case "idle": return .idle
         default: return nil
         }
     }
 
+    /// Stop does not run when the person interrupts a turn, so `turn` still says busy; the
+    /// transcript's last entry is then Claude Code's interrupt marker. inbox.sh reads it the same way.
+    static func interrupted(_ inbox: Inbox) -> Bool {
+        guard let path = inbox.transcript, let tail = tail(of: URL(fileURLWithPath: path), bytes: 4096),
+              let last = tail.split(separator: UInt8(ascii: "\n")).last else { return false }
+        return String(decoding: last, as: UTF8.self).contains("[Request interrupted by user")
+    }
+
+    /// The inboxes a request can be written to: the process is running and its monitor is. An
+    /// inbox whose process has gone is removed, since the monitor may have been stopped before it
+    /// could remove it itself.
     func liveInboxes() -> [Inbox] {
         Self.inboxes(in: inboxes).filter { inbox in
             guard isRunning(inbox.pid) else {

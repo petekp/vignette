@@ -116,6 +116,8 @@ Vignette's own words about an ask, beside the ink it was about.
 | The session took it | Sent to *project*. Its reply comes back as a card. |
 | Queued, or not confirmed in time | Queued for *project*. / Check *project*. Then the reason, as on a card. |
 | The session did not take it | Not sent. Then the reason, as on a card. |
+| The session's turn ended and nothing under the ink changed | Nothing changed under your ink. Check *project*. |
+| The tag on the window as it was, played back before the done animation | Before |
 | No Screen Recording | Live ink needs Screen Recording permission to see the screen. |
 | The capture failed | Vignette couldn't see the screen. / Vignette couldn't capture the window. |
 | No `claude` found | Vignette couldn't find Claude Code. |

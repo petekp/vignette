@@ -118,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         liveInk.listSessions = { [weak self] answer in
             self?.requests.destinations { found, _, _ in answer(found) }
         }
-        liveInk.isWorking = { [weak self] destination in self?.requests.isWorking(destination) }
+        liveInk.turn = { [weak self] destination in self?.requests.turn(of: destination) }
         liveInk.sendToSession = { [weak self] png, destination, message in
             guard let self else { return .failure(ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason)) }
             do {

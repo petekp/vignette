@@ -156,6 +156,9 @@ final class LiveWindows {
         case at(CGPoint)
         /// To another mark on the same window, as an answer's note follows the ink it answers.
         case follows(Mark.ID)
+        /// To the window alone, as a replay of how the window looked is: it moves with the window and
+        /// hides once the content moves.
+        case window
     }
 
     /// An app's window, from the window list.
@@ -216,6 +219,9 @@ final class LiveWindows {
         case .at(let point):
             window.pins.append(pin)
             find(anchorAt: point, for: mark.id, in: window)
+        case .window:
+            pin.anchor = .window
+            window.pins.append(pin)
         }
         window.pins.removeAll { $0.mark.id == mark.id && $0.pinnedAt != pin.pinnedAt }
         fitOverlay(window)
