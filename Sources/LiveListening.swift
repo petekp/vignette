@@ -72,19 +72,24 @@ final class LiveListening {
         end = ListeningEnd(until: until, pause: pause, quiet: quiet, began: CACurrentMediaTime())
     }
 
-    func start() throws {
+    /// Starts listening and answers at once: the microphone starts on its own queue. `failed` runs on
+    /// the main thread when it could not start, and listening is over then.
+    func start(failed: @escaping @MainActor @Sendable (TranscriberFailure) -> Void) {
         transcriber.onWords = { [weak self] words in
             guard let self, !self.finishing else { return }
             self.words = words
             self.onWords?(words)
         }
-        try transcriber.begin(hints: [])
-        microphone.onLevel = { [weak self] level in self?.end.heard(level: level, at: CACurrentMediaTime()) }
-        do {
-            try microphone.start(into: transcriber)
-        } catch {
-            transcriber.cancel()
-            throw error
+        let onLevel: @MainActor @Sendable (Float) -> Void = { [weak self] level in self?.end.heard(level: level, at: CACurrentMediaTime()) }
+        microphone.start(into: transcriber, onLevel: onLevel) { [weak self] failure in
+            guard let self, !self.finishing else { return }
+            guard let failure else {
+                Log.write("[speech] listening engine=\(self.transcriber.name) until=\(self.end.until.rawValue)")
+                return
+            }
+            self.finishing = true
+            self.timer?.invalidate()
+            failed(failure)
         }
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -92,7 +97,6 @@ final class LiveListening {
                 self.finish()
             }
         }
-        Log.write("[speech] listening engine=\(transcriber.name) until=\(end.until.rawValue)")
     }
 
     func released() { end.release(at: CACurrentMediaTime()) }
@@ -104,14 +108,15 @@ final class LiveListening {
         guard !finishing else { return }
         finishing = true
         timer?.invalidate()
-        microphone.stop()
         let seconds = Date().timeIntervalSince(began)
-        Task { @MainActor [weak self, transcriber] in
-            let words = await transcriber.finish(timeout: 2)
-            guard let self else { return }
-            self.words = words
-            Log.write("[speech] heard words=\(words.count) seconds=\(String(format: "%.1f", seconds))")
-            self.onFinished?(words)
+        microphone.stop { [weak self, transcriber] in
+            Task { @MainActor [weak self, transcriber] in
+                let words = await transcriber.finish(timeout: 2)
+                guard let self else { return }
+                self.words = words
+                Log.write("[speech] heard words=\(words.count) seconds=\(String(format: "%.1f", seconds))")
+                self.onFinished?(words)
+            }
         }
     }
 
@@ -120,8 +125,7 @@ final class LiveListening {
         guard !finishing else { return }
         finishing = true
         timer?.invalidate()
-        microphone.stop()
-        transcriber.cancel()
+        microphone.stop { [transcriber] in transcriber.cancel() }
         Log.write("[speech] stopped listening")
     }
 }

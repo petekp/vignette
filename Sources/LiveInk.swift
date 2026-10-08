@@ -1942,7 +1942,6 @@ final class LiveInk {
 
     private func showGlow(_ on: Bool) {
         glowTimer?.invalidate()
-        if on { listen() }
         if !on && !glowing { return }
         glowing = on
         let ui = Settings.shared.motionUI
@@ -1950,6 +1949,8 @@ final class LiveInk {
         let mouse = NSEvent.mouseLocation
         let pen = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
         inking.forEach { $0.overlay.showGlow(on, ui: ui, color: color, pen: pen) }
+        // After the glow, so making the recognizer never holds it back.
+        if on { listen() }
     }
 
     // MARK: Listening
@@ -1975,15 +1976,13 @@ final class LiveInk {
             guard let self, let listening, self.listening === listening else { return }
             self.doneListening(words, began: listening.began)
         }
-        do {
-            try listening.start()
-            self.listening = listening
-            typedOver = false
-        } catch let failure as TranscriberFailure {
+        listening.start { [weak self, weak listening] failure in
             Log.write("[speech] error \(failure.detail)")
-        } catch {
-            Log.write("[speech] error \(error)")
+            guard let self, let listening, self.listening === listening else { return }
+            self.listening = nil
         }
+        self.listening = listening
+        typedOver = false
     }
 
     private func heard(_ words: [SpokenWord]) {

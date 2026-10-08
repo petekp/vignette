@@ -2,26 +2,47 @@ import AppKit
 import AVFoundation
 import Speech
 
-/// The microphone, while speech input listens: it hands each buffer to the transcriber, in the
-/// transcriber's format, and reports how loud the input is, which tells a pause from speech.
+/// The microphone, while speech input listens: it starts the transcriber, hands it each buffer in
+/// the transcriber's format, and reports how loud the input is, which tells a pause from speech.
 /// macOS shows its microphone dot in the menu bar for exactly as long as this runs.
-@MainActor
-final class Microphone {
+///
+/// Starting the transcriber and the engine took 80 to 165 ms on an M4 Max (2026-10-08), and on the
+/// main thread it held back the glow and the first stroke. So both start on the microphone's own
+/// queue, which takes start and stop in order: a stop sent while a start is under way turns the
+/// microphone off once it is on, and only then lets the transcriber end.
+final class Microphone: @unchecked Sendable {
+    /// The engine and `running` are touched only on this queue.
+    private let queue = DispatchQueue(label: "vignette.microphone", qos: .userInitiated)
     private let engine = AVAudioEngine()
-    private(set) var running = false
-    /// The input's level, 0 to 1, about ten times a second.
-    var onLevel: ((Float) -> Void)?
+    private var running = false
 
-    func start(into transcriber: Transcriber) throws {
-        guard !running else { return }
+    /// Starts the transcriber and the microphone into it, and answers on the main thread: nil once
+    /// both run, or why they could not. `onLevel` gets the input's level, 0 to 1, on the main thread
+    /// about ten times a second.
+    func start(into transcriber: Transcriber, onLevel: @escaping @MainActor @Sendable (Float) -> Void,
+               answer: @escaping @MainActor @Sendable (TranscriberFailure?) -> Void) {
+        let report = Self.levelReporter(onLevel)
+        queue.async { [self] in
+            let failure = begin(transcriber, report: report)
+            DispatchQueue.main.async { MainActor.assumeIsolated { answer(failure) } }
+        }
+    }
+
+    private func begin(_ transcriber: Transcriber, report: @escaping @Sendable (Float) -> Void) -> TranscriberFailure? {
+        guard !running else { return nil }
+        do {
+            try transcriber.begin(hints: [])
+        } catch {
+            return error as? TranscriberFailure ?? TranscriberFailure(reason: "Vignette couldn't start listening.", detail: "\(error)")
+        }
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else {
-            throw TranscriberFailure(reason: "Vignette couldn't find a microphone.", detail: "input has no format")
+            transcriber.cancel()
+            return TranscriberFailure(reason: "Vignette couldn't find a microphone.", detail: "input has no format")
         }
         let target = transcriber.format
         let converter = AVAudioConverter(from: format, to: target)
-        let report = Self.levelReporter { [weak self] level in self?.onLevel?(level) }
         input.installTap(onBus: 0, bufferSize: AVAudioFrameCount(format.sampleRate / 10), format: format) { buffer, _ in
             if let converted = AudioFeed.convert(buffer, with: converter, to: target) { transcriber.append(converted) }
             report(Self.level(of: buffer))
@@ -31,25 +52,32 @@ final class Microphone {
             try engine.start()
         } catch {
             input.removeTap(onBus: 0)
-            throw TranscriberFailure(reason: "Vignette couldn't start the microphone.", detail: "\(error)")
+            transcriber.cancel()
+            return TranscriberFailure(reason: "Vignette couldn't start the microphone.", detail: "\(error)")
         }
         running = true
+        return nil
     }
 
-    func stop() {
-        guard running else { return }
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        running = false
+    /// Turns the microphone off, after any start still under way, then runs `then` on the main thread.
+    func stop(then: @escaping @MainActor @Sendable () -> Void) {
+        queue.async { [self] in
+            if running {
+                engine.inputNode.removeTap(onBus: 0)
+                engine.stop()
+                running = false
+            }
+            DispatchQueue.main.async { MainActor.assumeIsolated { then() } }
+        }
     }
 
     /// A closure the audio thread can call, which hands the level to the main thread.
-    private nonisolated static func levelReporter(_ onLevel: @escaping @MainActor (Float) -> Void) -> @Sendable (Float) -> Void {
+    private static func levelReporter(_ onLevel: @escaping @MainActor @Sendable (Float) -> Void) -> @Sendable (Float) -> Void {
         { level in DispatchQueue.main.async { MainActor.assumeIsolated { onLevel(level) } } }
     }
 
     /// The buffer's loudness as a fraction: its RMS in decibels, from -60 dB at 0 to 0 dB at 1.
-    nonisolated static func level(of buffer: AVAudioPCMBuffer) -> Float {
+    static func level(of buffer: AVAudioPCMBuffer) -> Float {
         guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
         var sum: Float = 0
         for i in 0..<Int(buffer.frameLength) { sum += samples[i] * samples[i] }
