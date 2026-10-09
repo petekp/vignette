@@ -1,20 +1,41 @@
 import Foundation
 
-/// Which agent session Send starts on before the person picks one, and the order its menu lists the
-/// sessions in. Every rule for that pick is here, so a new one changes this file and its tests. It
-/// takes facts, the sessions listed so far, herdr's focus and the agent's app that was in front, and
-/// marks the session you came from.
+/// Which agent session Send, or a live ink note, starts on before the person picks one, and the
+/// order Send's menu lists the sessions in. Every rule for that pick is here, so a new one changes
+/// this file and its tests. It takes facts and answers the pick. Send's facts are the sessions listed
+/// so far, herdr's focus and the agent's app that was in front, and it marks the session you came
+/// from. A note's fact is its own pick, and it reads neither herdr's focus nor an agent's app.
 enum DestinationChoice {
+    /// Who is asking, and the facts only that asker uses.
+    enum Asker {
+        /// Send, on the annotator's toolbar. `cameFrom` is the agent's own app that was in front
+        /// before Vignette, such as the Codex app, and the thread it shows.
+        case send(cameFrom: (client: AgentClient, shown: String?)?)
+        /// The live ink note. It reads neither herdr's focus nor an agent's app.
+        case liveNote(LiveNotePick)
+    }
+
+    /// The live ink note's own pick, a fact the note keeps. Nil is no session: the responder.
+    enum LiveNotePick: Equatable {
+        /// Nobody has picked on this note yet: the target the note before it was sent to.
+        case remembered(AgentDestination?)
+        /// The person picked on this note.
+        case byHand(AgentDestination?)
+    }
+
     /// One answer from the listing, and the pick made from it.
     struct Answer: Equatable {
-        /// The sessions in Send's order, each marked with why it is the session you came from.
+        /// The sessions in Send's order. For Send, each is marked with why it is the session you
+        /// came from; a live ink note's carry no mark.
         let list: [AgentDestination]
         /// Every client has answered, and no fresher list is awaited.
         let complete: Bool
         /// Whether this answer is enough to pick: a session is marked as the one you came from, or
-        /// the whole list is in, since the session used last is a comparison across every client.
+        /// the whole list is in, since the session used last is a comparison across every client. A
+        /// live ink note's answer is always decided: the note starts on each answer's pick at once.
         let decided: Bool
-        /// The session Send starts on when `decided`. Nil when there is none to send to.
+        /// The session the asker starts on when `decided`. Nil is no session: Send has none to
+        /// send to, and a live ink note starts on the responder.
         let pick: AgentDestination?
     }
 
@@ -42,14 +63,47 @@ enum DestinationChoice {
         client == markedByHerdr && !listed.isEmpty
     }
 
-    /// The pick from the candidates found so far. `cameFrom` is the agent's own app that was in
-    /// front before Vignette, such as the Codex app, and the thread it shows.
-    static func choose(_ candidates: Candidates, cameFrom: (client: AgentClient, shown: String?)?) -> Answer {
-        let unmarked = candidates.destinations.map { destination -> AgentDestination in
+    /// The pick `asker` starts on from the candidates found so far.
+    static func choose(_ candidates: Candidates, for asker: Asker) -> Answer {
+        switch asker {
+        case .send(let cameFrom):
+            return choose(forSend: candidates, cameFrom: cameFrom)
+        case .liveNote(let pick):
+            let list = unmarked(candidates)
+            return Answer(list: list, complete: candidates.complete, decided: true, pick: start(pick, in: list))
+        }
+    }
+
+    private static func unmarked(_ candidates: Candidates) -> [AgentDestination] {
+        candidates.destinations.map { destination in
             var cleared = destination
             cleared.focus = nil
             return cleared
         }
+    }
+
+    /// Where a live ink note starts. A hand pick stays while the list has its id; the session
+    /// remembered from the note before is found again, even after `/clear`.
+    private static func start(_ pick: LiveNotePick, in list: [AgentDestination]) -> AgentDestination? {
+        switch pick {
+        case .byHand(let session?): return list.contains { $0.id == session.id } ? session : nil
+        case .remembered(let session?): return again(session, in: list)
+        case .byHand(nil), .remembered(nil): return nil
+        }
+    }
+
+    /// `session` again in `list`: by its id, or, after `/clear` gave it a new id, as the one session
+    /// of its agent in its project. Never by `project`, which falls back to the agent's name.
+    private static func again(_ session: AgentDestination, in list: [AgentDestination]) -> AgentDestination? {
+        if let same = list.first(where: { $0.id == session.id }) { return same }
+        let alike = list.filter { $0.client == session.client && !$0.detail.isEmpty && $0.detail == session.detail }
+        return alike.count == 1 ? alike[0] : nil
+    }
+
+    /// Send's pick from the candidates found so far. `cameFrom` is the agent's own app that was in
+    /// front before Vignette, such as the Codex app, and the thread it shows.
+    private static func choose(forSend candidates: Candidates, cameFrom: (client: AgentClient, shown: String?)?) -> Answer {
+        let unmarked = Self.unmarked(candidates)
         var complete = candidates.complete
         let list: [AgentDestination]
         if let cameFrom {

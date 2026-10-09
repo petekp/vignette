@@ -271,7 +271,7 @@ enum SendContext {
         let listed = claude.destinations()
         let herdr = DestinationChoice.readsHerdr(beside: .claude, listed: listed) ? HerdrFocus.read() : nil
         let candidates = DestinationChoice.Candidates(destinations: listed, complete: true, fresh: true, herdr: herdr)
-        return DestinationChoice.choose(candidates, cameFrom: nil).list.map {
+        return DestinationChoice.choose(candidates, for: .send(cameFrom: nil)).list.map {
             Session(id: $0.id, name: $0.name, folder: folders[$0.id] ?? "", focus: $0.focus?.rawValue, lastUsed: $0.lastUsed)
         }
     }

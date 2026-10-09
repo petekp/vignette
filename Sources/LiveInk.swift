@@ -34,9 +34,9 @@ final class LiveInk {
     /// The marks drawn on an app's window, which stay on it (docs/live-ink-step3-2026-10-05.md). The
     /// surfaces keep the rest: marks drawn where no window is.
     private let windows = LiveWindows()
-    /// The working sessions Send can reach, newest first; it may answer twice, with a kept list and
-    /// then a fresh one.
-    var listSessions: ((@escaping ([AgentDestination]) -> Void) -> Void)?
+    /// The working sessions Send can reach, newest first, as the candidates found so far: once from
+    /// the kept lists, then again as each client's fresh answer arrives.
+    var listSessions: ((@escaping (DestinationChoice.Candidates) -> Void) -> Void)?
     /// Sends a note to a session through today's Send, as the card it becomes, and answers on the
     /// main thread with the request's id and whether the card flies from the window, or why it was
     /// refused.
@@ -635,7 +635,7 @@ final class LiveInk {
             if case .failure = self.ask(words, sendingTo: session, from: panel?.tagFrame) { self.letGoOfNote(into: nil) }
         }
         prepare(beside: mark, panel: panel)
-        listSessions? { [weak panel] list in panel?.setSessions(list) }
+        listSessions? { [weak panel] candidates in panel?.setSessions(candidates) }
         panel.onClose = { [weak self] in
             self?.note = nil
             self?.stopListening()
