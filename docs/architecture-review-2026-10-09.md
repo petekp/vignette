@@ -5,8 +5,27 @@ run, the zoom, card notices, drawings and the reply protocol. It is weak where l
 There, state machines are held as loose fields, one rule is spread across `AppDelegate`, `LiveInk`
 and the panels, and none of the ordering is tested.
 
-Six changes are recommended, in the order below. Nothing has been changed yet. Each change needs
-Pete's go-ahead before it starts.
+Six changes are recommended, in the order below.
+
+## Progress
+
+- **1, destination choice:** done. Send's rules on main as `d666c89` and `a824394`; the live ink
+  note adopted them on live-ink as `cc3f728`.
+- **2, files written into the screenshots folder:** done. `FolderWrites` on main as `98a2135`;
+  live-ink's note cards and result cards call it since the merge of main that follows.
+- **4, result card placement:** done on live-ink as `3fd6de9`, with the badge fix below.
+- **6, settings file sync:** done on main as `880ec84`.
+- **3, a note card's wait,** and **5, the live ink ask as a reducer:** not started.
+
+Open questions the changes left as they were:
+
+- A stitch records no write time, unlike an add, a reply or a live ink card.
+  `testAStitchIsNotReservedAndRecordsNoWriteTime` pins this, so changing it is a deliberate edit.
+- `LiveNotePanel.setSessions` still takes a list that arrives after the note was sent or began
+  closing. It had no guard before either, and whether such a list can change what the sent note
+  shows has not been checked.
+- A remembered session can be picked from a kept list before the fresh one arrives, and then move
+  if the fresh one says otherwise. That is today's behaviour, kept.
 
 This review covers the live-ink branch, which holds main and live ink. Symbols are cited rather
 than line numbers, because the two branches number lines differently.
