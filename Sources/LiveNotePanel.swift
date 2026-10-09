@@ -5,10 +5,10 @@ import AppKit
 /// with or without words; Esc, or a click anywhere else, closes it and keeps the ink; ⌘⌫ closes it
 /// and takes back the ink it was opened for.
 ///
-/// The target, on a chip under the note, starts on the one picked last, else the responder, which
-/// answers on the screen, and lists the working sessions after it
-/// (docs/live-ink-integration-2026-10-04.md, decision 7). A click on it or the Down arrow opens the
-/// list. Sent to a session, the chip fades, the pill narrows to its words, and the drawn note takes
+/// The target, on a chip under the note, starts on the one picked last, else the responder
+/// (`DestinationChoice` decides), which answers on the screen, and lists the working sessions after
+/// it (docs/live-ink-integration-2026-10-04.md, decision 7). A click on it or the Down arrow opens
+/// the list. Sent to a session, the chip fades, the pill narrows to its words, and the drawn note takes
 /// its place (`settle`).
 ///
 /// A non-activating panel that takes the keys while it is up, as the stack's does, so the app the
@@ -38,9 +38,9 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
     /// The person typed in the note, which takes over from what they say.
     var onTyped: (() -> Void)?
     private(set) var target: Target
-    /// The target picked last, which a session list resolves until the person picks by hand.
-    private let remembered: Target
-    private var pickedByHand = false
+    /// The note's own pick, which each session list resolves: the session picked last until the
+    /// person picks by hand, then their pick, the responder once a hand-picked session leaves the list.
+    private var ownPick: DestinationChoice.LiveNotePick
 
     private let field = NSTextField()
     private let pill = NSView()
@@ -84,7 +84,7 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
         edge = markStyle.edgeWidth
         font = layout.font as NSFont
         self.target = target
-        remembered = target
+        ownPick = if case .session(let destination) = target { .remembered(destination) } else { .remembered(nil) }
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
@@ -133,27 +133,14 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    /// The working sessions to offer after the responder, newest first. The list can arrive in two
-    /// answers, a kept one and a fresh one; a session picked stays picked while the list has it.
-    /// The session picked last is found again by its id, or, after `/clear` gave it a new id, as the
-    /// one session of its agent in its project.
-    func setSessions(_ list: [AgentDestination]) {
-        sessions = list
-        if !pickedByHand {
-            let found: Target = switch remembered {
-            case .responder: .responder
-            case .session(let last): Self.find(last, in: list).map(Target.session) ?? .responder
-            }
-            if found != target { show(found) }
-        } else if case .session(let picked) = target, !list.contains(where: { $0.id == picked.id }) {
-            pick(.responder)
-        }
-    }
-
-    private static func find(_ session: AgentDestination, in list: [AgentDestination]) -> AgentDestination? {
-        if let same = list.first(where: { $0.id == session.id }) { return same }
-        let alike = list.filter { $0.client == session.client && !$0.detail.isEmpty && $0.detail == session.detail }
-        return alike.count == 1 ? alike[0] : nil
+    /// The working sessions to offer after the responder. The list can arrive in several answers, a
+    /// kept one and fresh ones; `DestinationChoice` says which target each one starts the note on.
+    func setSessions(_ candidates: DestinationChoice.Candidates) {
+        let answer = DestinationChoice.choose(candidates, for: .liveNote(ownPick))
+        sessions = answer.list
+        let found: Target = answer.pick.map(Target.session) ?? .responder
+        guard found != target else { return }
+        if case .byHand = ownPick { pick(found) } else { show(found) }
     }
 
     /// Closes without a word to the callbacks.
@@ -341,8 +328,8 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
     }
 
     private func pick(_ target: Target) {
-        pickedByHand = true
         show(target)
+        ownPick = .byHand(currentSession)
         Log.write("[live-ink] note target \(target == .responder ? "responder" : "session")")
     }
 

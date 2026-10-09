@@ -11,7 +11,7 @@ final class ToolbarOfferTests: XCTestCase {
     }
 
     private func answer(_ list: [AgentDestination], complete: Bool, herdr: HerdrFocus? = nil) -> DestinationChoice.Answer {
-        DestinationChoice.choose(.init(destinations: list, complete: complete, fresh: true, herdr: herdr), cameFrom: nil)
+        DestinationChoice.choose(.init(destinations: list, complete: complete, fresh: true, herdr: herdr), for: .send(cameFrom: nil))
     }
 
     /// herdr's focus on the pane running session `id`.

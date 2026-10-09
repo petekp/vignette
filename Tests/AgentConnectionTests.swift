@@ -169,7 +169,7 @@ final class AgentConnectionTests: XCTestCase {
     func testSendStartsOnTheSessionInHerdrsFocus() {
         let mew = ClaudeCodeConnection.destination(session: session, cwd: "/Users/p/Code/vignette", transcript: .init())
         func choose(_ sessions: [AgentDestination], complete: Bool = false, herdr: HerdrFocus?) -> DestinationChoice.Answer {
-            DestinationChoice.choose(.init(destinations: sessions, complete: complete, fresh: true, herdr: herdr), cameFrom: nil)
+            DestinationChoice.choose(.init(destinations: sessions, complete: complete, fresh: true, herdr: herdr), for: .send(cameFrom: nil))
         }
         func focus(_ pane: String) -> AgentDestination.Focus? {
             choose([mew], herdr: HerdrFocus(paneList: Data(paneList(session: session, focused: pane).utf8))).list.first?.focus
@@ -224,7 +224,7 @@ final class AgentConnectionTests: XCTestCase {
         let shown = AgentDestination(id: "t2", name: "Build showroom MCP App PoC", address: .codexThread(uuid: "t2"))
         let list = [focused, recent, shown]
         func choose(_ id: String?, in list: [AgentDestination] = list, fresh: Bool = true) -> DestinationChoice.Answer {
-            DestinationChoice.choose(.init(destinations: list, complete: true, fresh: fresh, herdr: herdr), cameFrom: (.codex, id))
+            DestinationChoice.choose(.init(destinations: list, complete: true, fresh: fresh, herdr: herdr), for: .send(cameFrom: (.codex, id)))
         }
         XCTAssertEqual(choose("t2").pick?.id, "t2")
         XCTAssertEqual(choose(nil).pick?.id, "t1", "an app showing no thread gives the Codex thread used last")
@@ -237,6 +237,72 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertFalse(kept.decided)
         XCTAssertNil(kept.pick)
         XCTAssertEqual(choose("t2", fresh: false).pick?.id, "t2", "a thread the kept list has settles at once")
+    }
+
+    private static let project = "/Users/p/Code/vignette"
+    private static func claude(_ id: String, name: String = "x", detail: String = project) -> AgentDestination {
+        AgentDestination(id: id, name: name, detail: detail, address: .claudeSession(id))
+    }
+
+    private func note(_ list: [AgentDestination], _ pick: DestinationChoice.LiveNotePick, complete: Bool = true,
+                      fresh: Bool = true, herdr: HerdrFocus? = nil) -> DestinationChoice.Answer {
+        DestinationChoice.choose(.init(destinations: list, complete: complete, fresh: fresh, herdr: herdr), for: .liveNote(pick))
+    }
+
+    /// A live ink note starts on the session it was sent to last, found again by its id or, after
+    /// `/clear` gave it a new id, as the one session of its agent in its project; else the responder.
+    func testALiveNoteStartsOnTheSessionItWasSentToLast() {
+        let a = Self.claude("a"), b = Self.claude("b"), c = Self.claude("c")
+        let thread = AgentDestination(id: "t", name: "x", detail: Self.project, address: .codexThread(uuid: "t"))
+        let renamed = Self.claude("a", name: "Renamed since")
+        XCTAssertEqual(note([b, renamed], .remembered(a)).pick, renamed, "found by id, as the list has it now")
+        XCTAssertEqual(note([b, a], .remembered(a)).pick?.id, "a", "the id comes before the project")
+        XCTAssertEqual(note([b], .remembered(a)).pick?.id, "b", "after /clear, the one session in its project")
+        XCTAssertNil(note([Self.claude("e", detail: "/Users/p/Code/other")], .remembered(a)).pick,
+                     "the one session of its agent in another project is not it")
+        XCTAssertEqual(note([Self.claude("e", detail: "/Users/p/Code/other"), b], .remembered(a)).pick?.id, "b",
+                       "after /clear, a session in another project does not count against the one in its own")
+        XCTAssertNil(note([b, c], .remembered(a)).pick, "two sessions in its project: neither is it")
+        XCTAssertNil(note([thread], .remembered(a)).pick, "another agent in the same project is not it")
+        XCTAssertNil(note([Self.claude("e", detail: "")], .remembered(Self.claude("d", detail: ""))).pick,
+                     "no project: never matched by the agent's name")
+        XCTAssertNil(note([a, b], .remembered(nil)).pick, "the responder stays, not the session used last")
+        XCTAssertNil(note([], .remembered(a)).pick, "an empty list starts on the responder")
+
+        XCTAssertEqual(note([a], .remembered(a), complete: false, fresh: false).pick?.id, "a",
+                       "a kept partial list that has the session starts on it at once, without waiting for the rest")
+        XCTAssertNil(note([thread], .remembered(a), complete: false, fresh: false).pick,
+                     "a kept partial list without the session starts on the responder for now")
+        XCTAssertEqual(note([thread, a], .remembered(a)).pick?.id, "a", "and a later answer brings the session back")
+    }
+
+    /// A session the person picked on the note stays while it is listed, and drops to the responder
+    /// when it is not. It is matched by id alone.
+    func testALiveNoteKeepsAHandPickWhileItIsListed() {
+        let a = Self.claude("a"), b = Self.claude("b"), c = Self.claude("c")
+        let stale = Self.claude("a", name: "Named before")
+        XCTAssertEqual(note([Self.claude("a", name: "Named since"), b], .byHand(stale)).pick, stale,
+                       "a listed hand pick is not replaced by the list's copy, so the chip does not change under the person")
+        XCTAssertEqual(note([a], .byHand(a), complete: false, fresh: false).pick?.id, "a",
+                       "a kept partial list keeps a listed hand pick at once")
+        XCTAssertNil(note([b, c], .byHand(a)).pick, "a hand pick gone from the list drops to the responder")
+        XCTAssertNil(note([], .byHand(a)).pick, "an empty list drops a hand pick too")
+        XCTAssertNil(note([b], .byHand(a)).pick, "a hand pick is not found again after /clear")
+        XCTAssertNil(note([a, b], .byHand(nil)).pick, "a hand-picked responder stays")
+    }
+
+    /// A live ink note reads neither herdr's focus nor marks its list, although Send, given the same
+    /// candidates, starts on the focused session.
+    func testALiveNoteIgnoresHerdrsFocus() {
+        let a = Self.claude("a"), b = Self.claude("b")
+        let herdr = HerdrFocus(pane: "p", tab: "t", agents: [.init(pane: "p", session: "b", tab: "t")])
+        let send = DestinationChoice.choose(.init(destinations: [a, b], complete: true, fresh: true, herdr: herdr),
+                                            for: .send(cameFrom: nil))
+        XCTAssertEqual(send.pick?.id, "b", "Send starts on herdr's focus")
+        XCTAssertNil(note([a, b], .remembered(nil), herdr: herdr).pick, "the note keeps the responder")
+        XCTAssertEqual(note([a, b], .remembered(a), herdr: herdr).pick?.id, "a", "and the session it was sent to")
+        XCTAssertEqual(note([a, b], .remembered(nil), herdr: herdr).list.map(\.focus), [nil, nil],
+                       "the note's list carries no focus")
     }
 
     /// A thread is named as the Codex app names it: the app's rule, read from its bundle and checked
@@ -600,7 +666,7 @@ final class AgentConnectionTests: XCTestCase {
             if candidates.fresh { allFresh.fulfill() }
         }
         XCTAssertEqual(delivered.all.count, 1)
-        XCTAssertFalse(delivered.all.first.map { DestinationChoice.choose($0, cameFrom: nil).decided } ?? true,
+        XCTAssertFalse(delivered.all.first.map { DestinationChoice.choose($0, for: .send(cameFrom: nil)).decided } ?? true,
                        "the kept threads alone decide nothing: Claude Code has not answered")
         await fulfillment(of: [claudeAnswered], timeout: 5)
         // Every delivery from the first that holds Claude Code's sessions carries the focus and
@@ -611,7 +677,7 @@ final class AgentConnectionTests: XCTestCase {
             }
             for candidates in delivered.all[first...] {
                 XCTAssertEqual(candidates.herdr, focus, "the focus comes with Claude Code's answer, \(when)")
-                let answer = DestinationChoice.choose(candidates, cameFrom: nil)
+                let answer = DestinationChoice.choose(candidates, for: .send(cameFrom: nil))
                 XCTAssertTrue(answer.decided)
                 XCTAssertEqual(answer.pick?.id, "mew", when)
                 XCTAssertEqual(answer.list.first { $0.id == "mew" }?.focus, .pane, when)

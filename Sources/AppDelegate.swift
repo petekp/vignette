@@ -120,9 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }
         thumbnail.onAnnotatorPress = { [weak self] event, key in self?.annotator.take(event, for: key) }
         thumbnail.onTakesScreen = { [weak self] in self?.liveInk.standAside() }
-        liveInk.listSessions = { [weak self] answer in
-            self?.sessions.list { candidates in answer(candidates.destinations) }
-        }
+        liveInk.listSessions = { [weak self] answer in self?.sessions.list(answer) }
         liveInk.turn = { [weak self] destination in self?.requests.turn(of: destination) }
         liveInk.sendNote = { [weak self] note, destination, message, done in
             guard let self else { return done(.failure(ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason))) }
@@ -1377,7 +1375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[send] sessions \(candidates.destinations.count)\(candidates.complete ? " complete" : "")\(candidates.fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
             // A file can reopen while its earlier destination listing is still running.
             guard self.annotator.session == session else { return }
-            self.annotator.destinationsAnswered(DestinationChoice.choose(candidates, cameFrom: cameFrom))
+            self.annotator.destinationsAnswered(DestinationChoice.choose(candidates, for: .send(cameFrom: cameFrom)))
         }
     }
 
