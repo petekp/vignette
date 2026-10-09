@@ -1269,6 +1269,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Wires the coordinator and reads what is already on disk. Runs before the watcher starts and
     /// before anything warms the stack: until the reply records are loaded nothing knows which
     /// managed files are unfinished, and an unfinished one must never read as an ordinary capture.
+    /// The point scale a reply's new drawing takes: the main screen's, the best guess with no
+    /// annotator open.
+    private static var replyPointScale: CGFloat { (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor }
+
     private func startRequests() {
         requests.connections = [.claude: ClaudeCodeConnection(),
                                 .codex: CodexConnection()]
@@ -1278,7 +1282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Task {
                     do {
                         try self.drawings.installReply(marks, from: agent, at: shot.url, style: self.settings.data.ui.textStyle,
-                                                  newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)
+                                                  newPointScale: Self.replyPointScale)
                         done(nil)
                     } catch let failure as Drawings.Failure {
                         done(failure)
@@ -1286,6 +1290,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                         done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
                     }
                 }
+            },
+            cardCanvas: { [weak self] url, agent in
+                guard let self, let pixels = PixelSize(imageAt: url) else { return nil }
+                let pointScale = min(max(Self.replyPointScale, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
+                return LiveAnswer.Canvas(pixels: pixels, pointScale: pointScale, style: settings.data.ui.textStyle, agent: agent)
             },
             present: { [weak self] shot in
                 self?.screenshotWrittenAt = ProcessInfo.processInfo.systemUptime

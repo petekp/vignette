@@ -143,11 +143,25 @@ struct LiveAnswer: Equatable {
         }.prefix(maxActions).map { $0 }
     }
 
-    /// The answer as a card draws it: its words in the top-left corner, and for each mark with a
-    /// place in `targets`, in fractions of the card's picture, a ring round that place, or for an
-    /// arrow, an arrow at it from the side with more room, with the mark's label beside it.
-    func cardMarks(targets: [CGRect?]) -> [AgentMark] {
-        var drawn = [AgentMark(type: .text, x: 0.03, y: 0.03, w: 0.5, text: say)]
+    /// The picture an answer's card is drawn on, which its words and labels are measured on: its
+    /// size, the point scale its drawing takes, the text style, and the agent whose notes they are.
+    struct Canvas {
+        let pixels: PixelSize
+        let pointScale: CGFloat
+        let style: TextStyle
+        let agent: String?
+    }
+
+    /// The answer as a card draws it. For each mark with a place in `targets`, in fractions of the
+    /// card's picture, a ring round that place, or for an arrow, an arrow at it from the side with
+    /// more room. Then each mark's label beside it, and the words beside the first mark drawn, or
+    /// beside `about`, the ink the note was about, when none is. Each text covers as little of the
+    /// marks and the texts placed before it as it can. The words come first in the list. How many
+    /// marks there are never depends on `canvas`, since a reply's card is checked against its stored
+    /// drawing after a relaunch. With nothing to measure on or to place the words beside, the words
+    /// go in the top-left corner, and without a canvas each label goes under its mark.
+    func cardMarks(targets: [CGRect?], about: CGRect? = nil, on canvas: Canvas?) -> [AgentMark] {
+        var shapes: [(mark: AgentMark, extent: CGRect, label: (text: String, near: CGRect, corner: CGPoint)?)] = []
         for (mark, target) in zip(marks, targets) {
             guard let box = target else { continue }
             if mark.kind == .arrow {
@@ -155,18 +169,52 @@ struct LiveAnswer: Equatable {
                 let head = CGPoint(x: fromLeft ? box.minX - 0.01 : box.maxX + 0.01, y: box.midY)
                 let tail = CGPoint(x: min(max(head.x + (fromLeft ? -0.12 : 0.12), 0.02), 0.98),
                                    y: box.maxY < 0.85 ? min(head.y + 0.08, 0.95) : max(head.y - 0.08, 0.05))
-                drawn.append(AgentMark(type: .arrow, x: tail.x, y: tail.y, x2: head.x, y2: head.y))
-                if let label = mark.label {
-                    drawn.append(AgentMark(type: .text, x: fromLeft ? max(tail.x - 0.1, 0.02) : tail.x, y: min(tail.y + 0.01, 0.95), text: label))
-                }
+                let span = CGRect(x: min(tail.x, head.x), y: min(tail.y, head.y), width: abs(head.x - tail.x), height: abs(head.y - tail.y))
+                shapes.append((AgentMark(type: .arrow, x: tail.x, y: tail.y, x2: head.x, y2: head.y), span,
+                               mark.label.map { ($0, CGRect(origin: tail, size: .zero),
+                                                 CGPoint(x: fromLeft ? max(tail.x - 0.1, 0.02) : tail.x, y: min(tail.y + 0.01, 0.95))) }))
             } else {
-                drawn.append(AgentMark(type: .ellipse, x: box.minX, y: box.minY, w: box.width, h: box.height))
-                if let label = mark.label {
-                    drawn.append(AgentMark(type: .text, x: box.minX, y: min(box.maxY + 0.01, 0.95), text: label))
-                }
+                shapes.append((AgentMark(type: .ellipse, x: box.minX, y: box.minY, w: box.width, h: box.height), box,
+                               mark.label.map { ($0, box, CGPoint(x: box.minX, y: min(box.maxY + 0.01, 0.95))) }))
             }
         }
-        return drawn
+        let corner = AgentMark(type: .text, x: 0.03, y: 0.03, w: 0.5, text: say)
+        guard let canvas else {
+            return [corner] + shapes.flatMap { shape in
+                [shape.mark] + (shape.label.map { [AgentMark(type: .text, x: $0.corner.x, y: $0.corner.y, text: $0.text)] } ?? [])
+            }
+        }
+        // Laid out in the picture's points, the unit `LiveAnswerLayout.place` keeps its gaps in.
+        let width = CGFloat(canvas.pixels.width), height = CGFloat(canvas.pixels.height), scale = canvas.pointScale
+        func points(_ fraction: CGRect) -> CGRect {
+            CGRect(x: fraction.minX * width / scale, y: fraction.minY * height / scale,
+                   width: fraction.width * width / scale, height: fraction.height * height / scale)
+        }
+        // Inside the margin `AgentMark.marks` keeps a text from the edges, so it leaves the text where it is put.
+        let margin = TextLayout.margin * width / scale
+        let room = CGRect(x: 0, y: 0, width: width / scale, height: height / scale).insetBy(dx: margin, dy: margin)
+        var obstacles = shapes.map { points($0.extent).insetBy(dx: -4, dy: -4) }
+        func note(_ text: String, near: CGRect) -> AgentMark? {
+            // Set as the card will set it, at the wrap it chooses, with the badge above the tag.
+            guard let set = AgentMark.marks([AgentMark(type: .text, x: 0, y: 0, text: text)], from: canvas.agent, in: canvas.pixels,
+                                            pointScale: scale, style: canvas.style).marks.first,
+                  case .text(let words) = set.geometry, let wrap = words.wrap else { return nil }
+            let layout = TextLayout(words, imageWidth: width, pointScale: scale, style: canvas.style.forMark(set))
+            let above = layout.badge?.above ?? 0
+            let drawn = CGRect(x: layout.box.minX, y: layout.box.minY - above, width: layout.box.width, height: layout.box.height + above)
+            let spot = LiveAnswerLayout.place(CGSize(width: drawn.width / scale, height: drawn.height / scale), near: points(near),
+                                              room: room, obstacles: obstacles)
+            obstacles.append(spot)
+            return AgentMark(type: .text, x: (spot.minX * scale + words.origin.x - drawn.minX) / width,
+                             y: (spot.minY * scale + words.origin.y - drawn.minY) / height, w: wrap / width, text: text)
+        }
+        let labelled = shapes.map { shape in
+            [shape.mark] + (shape.label.map { label in
+                note(label.text, near: label.near) ?? AgentMark(type: .text, x: label.corner.x, y: label.corner.y, text: label.text)
+            }.map { [$0] } ?? [])
+        }
+        let said = (shapes.first.map(\.extent) ?? about).flatMap { note(say, near: $0) } ?? corner
+        return [said] + labelled.flatMap { $0 }
     }
 
     /// `text` no longer than `limit` characters, cut after the last whole word, with an ellipsis.

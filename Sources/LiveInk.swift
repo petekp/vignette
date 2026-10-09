@@ -1246,7 +1246,12 @@ final class LiveInk {
                 }
                 let notDrawn = targets.indices.filter { targets[$0] == nil }
                 Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(notDrawn.count)")
-                done((packet.capture, packet.scale, answer.cardMarks(targets: targets), notDrawn))
+                let ink = watched.ink.intersection(frame)
+                let about = ink.isNull ? nil : CGRect(x: (ink.minX - frame.minX) / frame.width, y: (ink.minY - frame.minY) / frame.height,
+                                                      width: ink.width / frame.width, height: ink.height / frame.height)
+                let canvas = LiveAnswer.Canvas(pixels: PixelSize(width: packet.capture.width, height: packet.capture.height),
+                                               pointScale: packet.scale, style: ui.textStyle, agent: watched.session.client.rawValue)
+                done((packet.capture, packet.scale, answer.cardMarks(targets: targets, about: about, on: canvas), notDrawn))
             } catch {
                 Log.write("[live-ink] no result capture for request=\(request): \(error)")
                 done(nil)

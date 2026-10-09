@@ -201,13 +201,18 @@ The names in brackets are `// MARK:` sections.
 - A session's answer with `scripts/reply --answer`, words and up to four marks that each name words
   on the window (`LiveAnswer`, in the reply's bundle), becomes the note's result card
   (`LiveInk.result`): the window captured afresh, since the session has usually changed what it
-  shows, with the words in a corner and each mark at the words it names in that capture
-  (`LiveAnswer.cardMarks`). The card is from the session: `AppDelegate.addLiveResult` records the
+  shows, with each mark at the words it names in that capture (`LiveAnswer.cardMarks`). The labels
+  go beside their marks and the words beside the first mark, or beside the ink when no mark was
+  found, each measured as the card sets it and placed where it covers the least of the rest
+  (`LiveAnswerLayout.place`). How many marks there are
+  never depends on that measuring, since a reply's stored drawing is checked against the count after
+  a relaunch. The card is from the session: `AppDelegate.addLiveResult` records the
   agent and the session on it as an `add` does, so it wears the agent's tab and Reply on it goes
   back there (`Agent.origin`). A Codex thread goes in `Agent.threadAttribute`, which `add` never
   writes. The reply's stage is then `shown`, with no file of its own. A window off the screen,
   or a relaunch since the note went, makes the reply a card on the picture the session was sent,
-  with a ring or an arrow for each mark that gave a box (`Reply.cardMarks`).
+  with a ring or an arrow for each mark that gave a box (`Reply.cardMarks`), laid out the same way
+  on that picture (`ScreenshotRequests.Callbacks.cardCanvas`).
 - When a session's turn ends with no reply, Vignette looks at the window again (`LiveInk.endTurn`,
   `LiveChange`).
   - **The before picture.** The note's own capture gives the part of the window round the ink: the
