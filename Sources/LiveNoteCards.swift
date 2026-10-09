@@ -26,11 +26,22 @@ final class LiveNoteCards {
         let ink: CGRect
         var before: Before?
         var wait: NoteCardWait
+        /// The result card made when the turn ended, which an answer that comes later is drawn on.
+        var resultCard: Capture?
+    }
+
+    /// A window as it was captured: its picture, its frame in global top-left points, and its pixels
+    /// per point. A result card's file is its picture.
+    private struct Capture {
+        let image: CGImage
+        let frame: CGRect
+        let pointScale: CGFloat
+        var file: URL?
     }
 
     private enum Input {
         case event(String, NoteCardWait.Event, at: Date)
-        case looked(String, after: (window: CGImage, pointScale: CGFloat)?, replied: Bool, at: Date)
+        case looked(String, after: Capture?, replied: Bool, at: Date)
         case answer(ScreenshotRequests.Record, LiveAnswer, at: Date, done: ([Int]?) -> Void)
     }
 
@@ -157,12 +168,12 @@ final class LiveNoteCards {
             guard let before = note.before else { return }
             Task { @MainActor [weak self] in
                 let seen = await Self.look(again: before)
-                var after: (CGImage, CGFloat)?
+                var after: Capture?
                 switch seen {
-                case .some((.changed(let share, _), let window, let scale)):
+                case .some((.changed(let share, _), let window)):
                     Log.write("[live-ink] landed changed=\(String(format: "%.3f", share))")
-                    after = (window, scale)
-                case .some((.unchanged(let share), _, _)):
+                    after = window
+                case .some((.unchanged(let share), _)):
                     Log.write("[live-ink] nothing changed under the ink changed=\(String(format: "%.3f", share))")
                 case .none:
                     break
@@ -172,7 +183,12 @@ final class LiveNoteCards {
             }
         case .makeResultCard:
             guard case .looked(_, let after?, _, _) = input else { return }
-            addResult(after.window, pointScale: after.pointScale, marks: [], from: note.destination) { _ in }
+            addResult(after.image, pointScale: after.pointScale, marks: [], from: note.destination) { [weak self] url in
+                guard let url else { return }
+                var card = after
+                card.file = url
+                self?.notes[id]?.resultCard = card
+            }
         case .sayDone:
             guard FileManager.default.fileExists(atPath: note.shot.url.path) else { return }
             Log.write("[live-ink] done with no result card request=\(id)")
@@ -180,6 +196,9 @@ final class LiveNoteCards {
         case .drawReplyOnFreshCapture:
             guard case .answer(let record, let answer, _, let done) = input else { return }
             drawFresh(answer, for: record, on: note, done: done)
+        case .drawReplyOnResultCard:
+            guard case .answer(_, let answer, _, let done) = input else { return }
+            drawOnResultCard(answer, for: id, on: note, done: done)
         case .drawReplyOnSentPicture:
             guard case .answer(_, _, _, let done) = input else { return }
             done(nil)
@@ -219,8 +238,8 @@ final class LiveNoteCards {
     }
 
     /// The window round the ink now, twice `LiveChange.settle` apart, against `before`, with the
-    /// window as it is now and its pixels per point. Nil when the window is gone or changed size.
-    private static func look(again before: Before) async -> (LiveChange.Outcome, CGImage, CGFloat)? {
+    /// window as it is now. Nil when the window is gone or changed size.
+    private static func look(again before: Before) async -> (LiveChange.Outcome, Capture)? {
         do {
             let after = try await LivePacket.capture(window: before.windowID)
             try await Task.sleep(nanoseconds: UInt64(LiveChange.settle * 1_000_000_000))
@@ -232,11 +251,11 @@ final class LiveNoteCards {
             let region = before.region.offsetBy(dx: after.frame.minX, dy: after.frame.minY)
             let regionAgain = before.region.offsetBy(dx: again.frame.minX, dy: again.frame.minY)
             let ink = before.ink.offsetBy(dx: -before.region.minX, dy: -before.region.minY)
-            return await Task.detached(priority: .userInitiated) { () -> (LiveChange.Outcome, CGImage, CGFloat)? in
+            return await Task.detached(priority: .userInitiated) { () -> (LiveChange.Outcome, Capture)? in
                 guard let now = LiveChange.crop(after.image, frame: after.frame, to: region) else { return nil }
                 let later = LiveChange.crop(again.image, frame: again.frame, to: regionAgain)
                 return (LiveChange.compare(before: before.picture, after: now, again: later, size: region.size, ink: ink),
-                        again.image, CGFloat(again.image.width) / again.frame.width)
+                        Capture(image: again.image, frame: again.frame, pointScale: CGFloat(again.image.width) / again.frame.width))
             }.value
         } catch {
             Log.write("[live-ink] can't tell whether it landed: \(error)")
@@ -271,8 +290,8 @@ final class LiveNoteCards {
                 let drawn = card.marks(for: answer, about: note.ink, style: ui.textStyle, agent: note.destination.client.rawValue)
                 Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(drawn.notDrawn.count)")
                 guard let self else { return done(nil) }
-                addResult(packet.capture, pointScale: packet.scale, marks: drawn.marks, from: destination) { added in
-                    done(added ? drawn.notDrawn : nil)
+                addResult(packet.capture, pointScale: packet.scale, marks: drawn.marks, from: destination) { url in
+                    done(url == nil ? nil : drawn.notDrawn)
                 }
             } catch {
                 Log.write("[live-ink] no result capture for request=\(request): \(error)")
@@ -281,22 +300,49 @@ final class LiveNoteCards {
         }
     }
 
+    /// A session's answer that came after its note's result card was made, drawn on that card, each
+    /// mark at the words it names in the card's picture. Answers nil when there is no such card, and
+    /// the reply then becomes a card on the picture the session was sent.
+    private func drawOnResultCard(_ answer: LiveAnswer, for request: String, on note: Note, done: @escaping ([Int]?) -> Void) {
+        guard let made = note.resultCard, let file = made.file, FileManager.default.fileExists(atPath: file.path) else {
+            return done(nil)
+        }
+        let style = Settings.shared.data.ui.textStyle
+        let agent = note.destination.client.rawValue
+        Task { @MainActor [weak self] in
+            let image = made.image
+            let lines = await Task.detached(priority: .userInitiated) { LivePacket.read(image) }.value
+            // The page is not known here, so the words may go anywhere on the picture.
+            let card = ResultCard(frame: made.frame, pixels: PixelSize(width: image.width, height: image.height),
+                                  pointScale: made.pointScale, page: nil, lines: lines)
+            let drawn = card.marks(for: answer, about: note.ink, style: style, agent: agent)
+            Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(drawn.notDrawn.count) on \(file.lastPathComponent)")
+            guard let self else { return done(nil) }
+            guard !drawn.marks.isEmpty else { return done(drawn.notDrawn) }
+            addMarks(drawn.marks, agent, file) { result in
+                guard case .failure(let failure) = result else { return done(drawn.notDrawn) }
+                Log.write("[live-ink] error result marks \(file.lastPathComponent): \(failure)")
+                done(nil)
+            }
+        }
+    }
+
     /// A live ink note's result, as a card from the session it went to: `window`, the note's window
     /// as it was when the result came, with `marks` from the session's answer. It carries the agent
     /// and the session as a push with `add` does, so it wears the agent's tab and Reply on it goes
-    /// back to that session. Answers whether the card was made.
+    /// back to that session. Answers the card's file, or nil when it was not made.
     private func addResult(_ window: CGImage, pointScale: CGFloat, marks: [AgentMark], from destination: AgentDestination,
-                           done: @escaping (Bool) -> Void) {
+                           done: @escaping (URL?) -> Void) {
         folder.writeCard(named: "Live ink result", png: { LivePacket.screenshotPNG(window, pointScale: pointScale) },
                          from: destination) { [weak self] url in
-            guard let self, let url else { return done(false) }
+            guard let self, let url else { return done(nil) }
             let name = url.lastPathComponent
             let agent = destination.client.rawValue
             let show = { [weak self] in
                 guard let self else { return }
                 Log.write("[live-ink] result card \(name) agent=\(agent) marks=\(marks.count)")
                 folder.ready(url)
-                done(true)
+                done(url)
             }
             guard !marks.isEmpty else { return show() }
             addMarks(marks, agent, url) { result in

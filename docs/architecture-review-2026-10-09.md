@@ -15,19 +15,13 @@ Six changes are recommended, in the order below.
   live-ink's note cards and result cards call it since `99be46c`.
 - **3, a note card's wait:** done on live-ink. `NoteCardWait` decides and `LiveNoteCards` runs it.
   A note to a Codex thread is no longer watched: it stops waiting as it is sent, where it used to
-  stop 180 s later without a word.
+  stop 180 s later without a word. An answer that comes after a note's result card was made goes
+  on that card instead of becoming a second card.
 - **4, result card placement:** done on live-ink as `3fd6de9`, with the badge fix below.
 - **6, settings file sync:** done on main as `880ec84`.
 - **5, the live ink ask as a reducer:** not started.
 
 Open questions the changes left as they were:
-
-- **A late answer becomes a second card.** A Claude Code note's turn ends, the window changed, so
-  a result card is made. If the session's `--answer` reply is accepted after that, it becomes a
-  second card, `Agent reply <id>.png`, on the picture the note was sent with. A later reply made
-  with `--marks` or `--image` is always a card of its own. Whether the late answer should go on
-  the result card, or be dropped, is Pete's call. Either is one case in `NoteCardWait.handle`, and
-  `testAnAnswerAfterAChangedResultCardBecomesASecondCardOnTheSentPicture` pins today's behaviour.
 
 - A stitch records no write time, unlike an add, a reply or a live ink card.
   `testAStitchIsNotReservedAndRecordsNoWriteTime` pins this, so changing it is a deliberate edit.

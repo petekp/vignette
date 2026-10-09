@@ -219,7 +219,9 @@ The names in brackets are `// MARK:` sections.
     two are about as bright. Only the cells under the ink, its shapes with a 12 pt margin, decide.
     The ink's part changed when at least 2% of those cells counted, and at least 4.
   - **Changed.** The window as it is now becomes the result card, from the session
-    (`[live-ink] result card`).
+    (`[live-ink] result card`). An answer that comes after it, for as long as a turn may run
+    (30 minutes), is drawn on that card, each mark at the words it names in the card's picture,
+    with no page to keep the words to. It joins the card's drawing rather than making a second card.
   - **Unchanged, or can't tell.** No result card. The note's card says Done in *project*
     (`[live-ink] done with no result card`). A window that closed, was minimized or changed size
     can't be told.
