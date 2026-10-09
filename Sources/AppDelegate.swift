@@ -71,6 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let agentPlugins = AgentPlugins()
     /// The screenshot each request sent this launch was made from, until its client answers.
     private var sentShots: [String: Screenshot] = [:]
+    /// Each live ink note sent to a session this launch, by request, until its session's turn ends:
+    /// its card and where it went.
+    private var liveNotes: [String: (shot: Screenshot, destination: AgentDestination)] = [:]
     private var watcherGeneration = 0
     private var screenshotWrittenAt: TimeInterval = 0
     private var deferredRemovals: Set<URL> = []
@@ -119,19 +122,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             self?.requests.destinations { found, _, _ in answer(found) }
         }
         liveInk.turn = { [weak self] destination in self?.requests.turn(of: destination) }
-        liveInk.sendToSession = { [weak self] png, destination, message in
-            guard let self else { return .failure(ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason)) }
-            do {
-                // The record names a screenshot by its file; a live ink picture has none in the folder.
-                let record = try requests.send(png: png, source: URL(fileURLWithPath: "Live ink.png"), to: destination,
-                                               message: message, instructions: settings.data.sendInstructions)
-                return .success(record.id)
-            } catch let refusal as ScreenshotRequests.Refusal {
-                return .failure(refusal)
-            } catch {
-                return .failure(ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason))
-            }
+        liveInk.sendNote = { [weak self] note, destination, message, done in
+            guard let self else { return done(.failure(ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason))) }
+            sendLiveNote(note, to: destination, message: message, done: done)
         }
+        liveInk.turnEnded = { [weak self] request, end in self?.liveNoteEnded(request, end) }
         annotator.onTakesEvents = { [weak self] key in self?.thumbnail.annotatorTakesEvents(key) }
         annotator.onFinished = { [weak self] shot, drawing in self?.finishAnnotation(shot, drawing) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
@@ -1298,7 +1293,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             },
             presentLive: { [weak self] record, answer, done in
                 guard let self else { return done(nil) }
-                liveInk.showAnswer(request: record.id, answer, agent: record.address.client.rawValue, done: done)
+                let destination = AgentDestination(id: record.destinationID, name: record.destinationName, address: record.address)
+                liveInk.result(for: record.id, answer) { [weak self] result in
+                    guard let self, let result else { return done(nil) }
+                    addLiveResult(result.capture, pointScale: result.pointScale, marks: result.marks, from: destination) { added in
+                        done(added ? result.notDrawn : nil)
+                    }
+                }
             },
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
             delivered: { [weak self] record, outcome in
@@ -1310,14 +1311,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 case .uncertain: state = .uncertain
                 case .notSubmitted, .destinationChanged: state = .failed
                 }
-                if liveInk.sent(request: record.id) { return liveInk.delivered(request: record.id, state, reason: outcome.reason) }
+                if state == .failed {
+                    liveInk.stopWatching(record.id)
+                    liveNotes[record.id] = nil
+                }
                 guard let shot = sentShots.removeValue(forKey: record.id) else { return }
                 thumbnail.delivered(shot, request: record.id, state, reason: outcome.reason)
             },
             replyFailed: { [weak self] record, reason in
                 // The record keeps the sent screenshot's name; a send is made from the watch folder.
                 guard let self else { return }
-                if liveInk.sent(request: record.id) { return liveInk.replyFailed(request: record.id, reason: reason) }
                 let shot = Screenshot(url: watchFolder.appendingPathComponent(record.source))
                 guard FileManager.default.fileExists(atPath: shot.url.path) else { return }
                 thumbnail.replyFailed(shot, request: record.id, client: record.address.client, reason: reason)
@@ -1433,6 +1436,129 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.showSending(shot, request: record.id, to: destination)
         thumbnail.annotationSent()
     }
+
+    // MARK: Live ink notes sent to a session (docs/live-ink-note-cards-2026-10-08.md)
+
+    /// A live ink note sent to a session (`LiveInk.share`): the window without the ink lands in the
+    /// watch folder with the ink and the words as its drawing, the request names that file, and its
+    /// card shows the send as a send from the editor does. A send refused before it is stored takes
+    /// the file and its drawing back, and the ink stays on the window, saying why.
+    private func sendLiveNote(_ note: LiveInk.NoteCard, to destination: AgentDestination, message: String,
+                              done: @escaping (Result<String, ScreenshotRequests.Refusal>) -> Void) {
+        let refused = ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason)
+        writeLiveCard(note.capture, pointScale: note.pointScale, named: "Live ink note") { [weak self] url in
+            guard let self, let url else { return done(.failure(refused)) }
+            let name = url.lastPathComponent
+            let pixels = PixelSize(width: note.capture.width, height: note.capture.height)
+            let pointScale = min(max(note.pointScale, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
+            let style = settings.data.ui.textStyle
+            let marks = note.marks.compactMap { $0.placed(in: pixels, pointScale: pointScale, style: style) }
+            let drawing = Drawing(key: url.path, pixels: pixels, pointScale: pointScale, marks: marks)
+            drawings.write(drawing, reason: "built")
+            let record: ScreenshotRequests.Record
+            do {
+                record = try requests.send(png: note.picture, source: url, to: destination, message: message,
+                                           instructions: settings.data.sendInstructions)
+            } catch {
+                pendingAdds[name] = nil
+                try? FileManager.default.removeItem(at: url)
+                drawings.remove([url])
+                return done(.failure((error as? ScreenshotRequests.Refusal) ?? refused))
+            }
+            let shot = Screenshot(url: url)
+            sentShots[record.id] = shot
+            liveNotes[record.id] = (shot, destination)
+            // The card flies from the window as the ink leaves it, ahead of the watcher's report,
+            // which then finds the card there.
+            let origin = NSRect(x: note.frame.minX, y: StateReport.primaryHeight - note.frame.maxY,
+                                width: note.frame.width, height: note.frame.height)
+            thumbnail.show(shot, flyingFrom: origin, image: NSImage(cgImage: note.capture, size: note.frame.size), drawing: drawing)
+            pendingAdds[name]?.addingMarks = false
+            presentAdd(name)
+            thumbnail.showSending(shot, request: record.id, to: destination)
+            done(.success(record.id))
+        }
+    }
+
+    /// A live ink note's session finished its turn. A reply from the session is its result already.
+    /// Otherwise a change under the ink makes a result card from the session, and anything else has
+    /// the note's card say the session is done. Nothing more is said when Vignette stopped waiting.
+    private func liveNoteEnded(_ request: String, _ end: LiveInk.TurnEnd) {
+        guard let note = liveNotes.removeValue(forKey: request) else { return }
+        guard !requests.hasReply(to: request) else {
+            return Log.write("[live-ink] the session's reply is the result request=\(request)")
+        }
+        switch end {
+        case .changed(let window, let pointScale):
+            addLiveResult(window, pointScale: pointScale, marks: [], from: note.destination) { _ in }
+        case .unchanged:
+            guard FileManager.default.fileExists(atPath: note.shot.url.path) else { return }
+            Log.write("[live-ink] done with no result card request=\(request)")
+            thumbnail.finished(note.shot, request: request, in: note.destination)
+        case .stoppedWaiting:
+            break
+        }
+    }
+
+    /// A live ink note's result, as a card from the session it went to: `window`, the note's window
+    /// as it was when the result came, with `marks` from the session's answer. It carries the agent
+    /// and the session as a push with `add` does, so it wears the agent's tab and Reply on it goes
+    /// back to that session. Answers whether the card was made.
+    private func addLiveResult(_ window: CGImage, pointScale: CGFloat, marks: [AgentMark], from destination: AgentDestination,
+                               done: @escaping (Bool) -> Void) {
+        writeLiveCard(window, pointScale: pointScale, named: "Live ink result") { [weak self] url in
+            guard let self, let url else { return done(false) }
+            let name = url.lastPathComponent
+            let agent = destination.client.rawValue
+            Agent.record(agent, on: url)
+            if case .claudeSession(let session) = destination.address { Agent.record(session: session, on: url) }
+            let show = { [weak self] in
+                guard let self else { return }
+                Log.write("[live-ink] result card \(name) agent=\(agent) marks=\(marks.count)")
+                pendingAdds[name]?.addingMarks = false
+                presentAdd(name)
+                done(true)
+            }
+            guard !marks.isEmpty else { return show() }
+            addMarks(marks, from: agent, to: url) { result in
+                if case .failure(let failure) = result { Log.write("[live-ink] error result marks \(name): \(failure)") }
+                show()
+            }
+        }
+    }
+
+    /// Writes `image` into the watch folder as `<prefix> <date> at <time>.png`, off the main thread,
+    /// and answers its URL on the main thread, or nil when it could not be written. The name is in
+    /// `pendingAdds` from the start, so the watcher's report of the file skips the capture switches,
+    /// as an `add` does, and the card waits until its caller clears `addingMarks`.
+    private func writeLiveCard(_ image: CGImage, pointScale: CGFloat, named prefix: String, done: @escaping (URL?) -> Void) {
+        let url = Commands.destination(for: URL(fileURLWithPath: "\(prefix) \(Self.liveCardTime.string(from: Date())).png"), in: watchFolder) {
+            FileManager.default.fileExists(atPath: $0.path) || self.pendingAdds[$0.lastPathComponent] != nil
+        }
+        let name = url.lastPathComponent
+        pendingAdds[name] = PendingAdd(annotate: false, addingMarks: true, waiting: nil)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let written = LivePacket.screenshotPNG(image, pointScale: pointScale).map { (try? $0.write(to: url, options: .atomic)) != nil } ?? false
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard written else {
+                        self.pendingAdds[name] = nil
+                        Log.write("[live-ink] error write-failed \(name)")
+                        return done(nil)
+                    }
+                    self.screenshotWrittenAt = ProcessInfo.processInfo.systemUptime
+                    done(url)
+                }
+            }
+        }
+    }
+
+    private static let liveCardTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        return formatter
+    }()
 
     private func present(_ shot: Screenshot, annotate: Bool) {
         guard annotate, shot.kind == .image else { return thumbnail.show(shot) }

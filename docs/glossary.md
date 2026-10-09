@@ -72,8 +72,17 @@ _Avoid_: Annotation, layer, overlay
 **Live ink**:
 Drawing straight on the screen, over any app, while Control and Option are held: the chord. While
 it is held the screen is inking, and each stroke becomes a mark or, as a tap, erases one. Its marks
-belong to no screenshot and are no drawing; they stay where they were drawn until they are erased.
+belong to no screenshot and are no drawing; they stay where they were drawn until they are erased,
+or until a note sent to an agent session takes them into its note card.
 _Avoid_: Live annotation, screen drawing
+
+**Note card**:
+The card a live ink note sent to an agent session becomes: the window without the ink, in the
+screenshots folder, with the ink and the words as its drawing.
+
+**Result card**:
+The card from an agent session once its turn on a note card is over: the window as it was then, with
+the session's answer drawn on it when it gave one.
 
 **Responder**:
 The `claude` process Vignette keeps running to answer live ink: the person's own Claude Code, with

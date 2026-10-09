@@ -44,6 +44,7 @@ anything works inside.
 | Not confirmed in time | Check *project* | Codex didn't confirm it. It may still have arrived. |
 | Not sent | Not sent | One of the reasons below |
 | A reply that could not be shown | Reply not shown | You can ask *agent* to send it again. / Vignette couldn't save the reply. The log has details. |
+| A live ink note whose session finished with nothing to show as a result card | Done in *project* | |
 
 ### Why a send did not go (`SubmissionOutcome.reason`)
 
@@ -112,11 +113,7 @@ Vignette's own words about an ask, beside the ink it was about.
 
 | When | Words |
 | --- | --- |
-| Sending to a session | Sending to *project* |
-| The session took it | Sent to *project*. Its reply comes back as a card. |
-| Queued, or not confirmed in time | Queued for *project*. / Check *project*. Then the reason, as on a card. |
-| The session did not take it | Not sent. Then the reason, as on a card. |
-| The tag on the window as it was, played back before the done animation | Before |
+| A session did not take the note | Not sent. Then the reason, as on a card. |
 | No Screen Recording | Live ink needs Screen Recording permission to see the screen. |
 | The capture failed | Vignette couldn't see the screen. / Vignette couldn't capture the window. |
 | No `claude` found | Vignette couldn't find Claude Code. |

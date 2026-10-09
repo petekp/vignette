@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "19"
+  version: "20"
 ---
 
 # Vignette
@@ -127,26 +127,23 @@ says where the ink is:
 Move these under the title, smaller. Drawn with Vignette's live ink on Google Chrome, "Postcard", http://localhost:5173/. [From Vignette: "<folder>/image.png". …]
 ```
 
-The image is the whole window with their ink drawn in. The user is looking at that window, and
-their ink shimmers there until your turn ends, so they see a change you make to it. Do not answer
-on the window to confirm a change. Answer in your session as usual.
+The image is the whole window with their ink drawn in, each stroke numbered. Once the note is
+sent, the ink leaves the user's screen and becomes a card in Vignette's corner. When your turn
+ends, Vignette looks at the window again. If it changed under the ink, that window becomes a card
+from you, and Reply on it comes back to you as a new drawing. If nothing changed there, their card
+says you are done. So you do not need to confirm a change on the window. Answer in your session as
+usual.
 
-The user can also reply to your answer in words, with the Reply button under it. That message reads
-`<their words>. Replied under your answer on <app>, "<window>", <url>. [From Vignette: …]`, and an
-action's click reads `Picked under your answer on …`. Either is a follow-up about the same ink, so
-answer it the same way.
-
-Answer on the window, with `--answer`, only when pointing at something there helps them: what they
-asked about is somewhere on the screen, a change landed where they would not look, or you need them
-to choose between things they can see. Your words take the place of their note, as the reply to
-it beside your first mark, and each mark circles, points at or pulls focus to the words it names:
+Answer with `--answer` only when pointing at something helps them: what they asked about is
+somewhere on the screen, a change landed where they would not look, or you need them to choose
+between things they can see. Your answer becomes the card from you: Vignette captures the window
+afresh when it arrives, writes your words in its corner, and draws each mark at the words it names:
 
 ```sh
 cat > /tmp/answer.json <<'JSON'
 {"say": "Two more things break at this width.",
  "marks": [{"kind": "circle", "words": "Share", "label": "Share cut off"},
-           {"kind": "arrow", "words": "20 km", "label": "Map cropped"}],
- "actions": ["Fix both", {"title": "Header only", "marks": [0]}]}
+           {"kind": "arrow", "words": "20 km", "label": "Map cropped"}]}
 JSON
 sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --answer /tmp/answer.json
 ```
@@ -162,30 +159,19 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --answe
   that show in full and appear once on the screen. For something cut off at the window's edge,
   name the nearest whole words. A mark whose words are not found is left out, unless it has a box.
 - `kind` is `circle` for one thing and `arrow` for a place or an edge. A `label` is one to four
-  words, and a label with no room beside its mark is left out. At most four marks.
-- `focus` pulls their eye to one thing while they read: the rest of the window goes soft and grey
-  for a few seconds, and it stays sharp. When they ask to be walked through something, give a
-  `focus` mark for each stop, in the order `say` talks about them, one sentence each. The focus
-  moves from one to the next as they read. Add `"zoom": true` to
-  magnify something too small to see, such as a 1 px gap or fine print. A focus lets go on its
-  own, so use `circle` for what they should still see after reading.
+  words. At most four marks.
 - `box` is `[x, y, w, h]` as fractions of the image you were sent. Give it as well as `words` for a
   number, a price or a table cell, which the capture can misread: Vignette uses the box when it
   cannot find the words, so put it where they will be after your change. For something with no
   text, give `box` alone.
-- `actions` are up to three buttons under your words, one to three words each, for what they will
-  most likely want next. Match them to the marks: "Fix both" and "Header only" for two findings.
-  The first is the one you recommend. An action that acts on some of the marks, not all, is
-  `{"title": …, "marks": [indexes into marks, from 0]}`: pointing at its button shows those marks
-  and fades the others. A click sends the button's words back to you as their reply,
-  with a fresh picture of the window. Offer them when you found something to do and have not done
-  it yet, and leave them out otherwise.
 - `--answer` comes alone, without `--marks` or `--image`. The exit codes are the same. A mark
   Vignette could not draw, such as an unknown `kind`, a fifth mark or a box outside the picture,
-  is not sent: the helper exits 1 and `error` names the mark. Accepted waits until the answer is
-  drawn, about a second. When the line has `notDrawn`, those marks are not on the window, since
-  their words were not found: say those findings in your words in your session.
-- If the ink is gone by the time your answer arrives, Vignette shows it as a card instead.
+  is not sent: the helper exits 1 and `error` names the mark. Accepted waits until the card is
+  made, about a second. When the line has `notDrawn`, those marks are not on the card, since their
+  words were not found: say those findings in your words in your session.
+- If Vignette cannot capture the window when your answer arrives, because it was closed or
+  minimized or Vignette restarted, the card is the picture you were sent, with your words in its
+  corner and the marks that have a box.
 
 ## Read back what they drew
 

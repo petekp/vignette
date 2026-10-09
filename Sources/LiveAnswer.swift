@@ -143,6 +143,32 @@ struct LiveAnswer: Equatable {
         }.prefix(maxActions).map { $0 }
     }
 
+    /// The answer as a card draws it: its words in the top-left corner, and for each mark with a
+    /// place in `targets`, in fractions of the card's picture, a ring round that place, or for an
+    /// arrow, an arrow at it from the side with more room, with the mark's label beside it.
+    func cardMarks(targets: [CGRect?]) -> [AgentMark] {
+        var drawn = [AgentMark(type: .text, x: 0.03, y: 0.03, w: 0.5, text: say)]
+        for (mark, target) in zip(marks, targets) {
+            guard let box = target else { continue }
+            if mark.kind == .arrow {
+                let fromLeft = box.minX > 1 - box.maxX
+                let head = CGPoint(x: fromLeft ? box.minX - 0.01 : box.maxX + 0.01, y: box.midY)
+                let tail = CGPoint(x: min(max(head.x + (fromLeft ? -0.12 : 0.12), 0.02), 0.98),
+                                   y: box.maxY < 0.85 ? min(head.y + 0.08, 0.95) : max(head.y - 0.08, 0.05))
+                drawn.append(AgentMark(type: .arrow, x: tail.x, y: tail.y, x2: head.x, y2: head.y))
+                if let label = mark.label {
+                    drawn.append(AgentMark(type: .text, x: fromLeft ? max(tail.x - 0.1, 0.02) : tail.x, y: min(tail.y + 0.01, 0.95), text: label))
+                }
+            } else {
+                drawn.append(AgentMark(type: .ellipse, x: box.minX, y: box.minY, w: box.width, h: box.height))
+                if let label = mark.label {
+                    drawn.append(AgentMark(type: .text, x: box.minX, y: min(box.maxY + 0.01, 0.95), text: label))
+                }
+            }
+        }
+        return drawn
+    }
+
     /// `text` no longer than `limit` characters, cut after the last whole word, with an ellipsis.
     static func cut(_ text: String, to limit: Int) -> String {
         guard text.count > limit else { return text }

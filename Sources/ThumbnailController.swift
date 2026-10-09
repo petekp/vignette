@@ -372,6 +372,33 @@ final class ThumbnailController: NSObject {
         leaveCorner(after: ui.thumbnailSeconds * (card.agent == nil ? 1 : 2))
     }
 
+    /// A fresh screenshot whose picture is on the screen at `origin`, in AppKit screen points, as a
+    /// live ink note's window is: its card flies from there into the corner with `drawing` over it,
+    /// looking like the screen as it leaves, and its slot draws nothing until the flight lands. A
+    /// card whose origin is on another screen than the corner's comes in as any card does.
+    func show(_ shot: Screenshot, flyingFrom origin: NSRect, image: NSImage, drawing: Drawing) {
+        guard var card = makeCard(shot) else { return }
+        card.marks = marks(drawing, on: card)
+        send(.newShot(shot.url.path))
+        if visible { insert(card) } else { present(cards: [card], stack: false, entrance: .inPlace) }
+        leaveCorner(after: ui.thumbnailSeconds)
+        guard model.cards.contains(where: { $0.id == card.id }), screen.frame.contains(CGPoint(x: origin.midX, y: origin.midY)) else { return }
+        model.forming.insert(card.id)
+        model.offscreen.remove(card.id)
+        let scale = max(annotatorTextScale(origin, drawing.pixels), cardTextScale(card.size, drawing.pixels))
+        flights.fly(id: card.id, image: image, marks: flightMarks(drawing, scale: scale, adopting: [card.marks]),
+                    from: origin, to: cardFrame(of: card), lookFrom: .screen, lookTo: .card(ui), on: screen, arrived: { [weak self] in
+            guard let self else { return }
+            self.model.forming.remove(card.id)
+            self.flights.dropShadow(id: card.id)   // the card draws it now, in this same commit
+            // The card view comes back on SwiftUI's next commit; lift the flight image after it.
+            DispatchQueue.main.async { self.flights.lift(id: card.id) }
+        }, dropped: { [weak self] in
+            self?.model.forming.remove(card.id)
+        })
+        Log.write("[stack] flying in \(shot.url.lastPathComponent) from \(StateReport.topLeft(origin, primaryHeight: StateReport.primaryHeight))")
+    }
+
     enum StackToggle: Equatable { case shown(Int), dismissed, empty }
 
     var stackShowing: Bool { visible && model.isStack }
@@ -705,6 +732,12 @@ final class ThumbnailController: NSObject {
     /// nothing more about a delivery that worked, and comes back as a lone thumbnail about any other.
     func delivered(_ shot: Screenshot, request: String, _ state: SendNotice.State, reason: String?) {
         post(.answered(request: request, state: state, reason: reason), on: shot)
+    }
+
+    /// The session's turn on the live ink note `shot` ended with nothing to show as a result card.
+    /// A card not on screen comes up as the lone thumbnail to say it, as a result card would.
+    func finished(_ shot: Screenshot, request: String, in destination: AgentDestination) {
+        post(.finished(request: request, client: destination.client, project: destination.project), on: shot)
     }
 
     /// A reply to a send could not be made a card, so the card that was sent says so, as it says a

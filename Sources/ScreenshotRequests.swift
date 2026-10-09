@@ -22,9 +22,9 @@ final class ScreenshotRequests {
         }
         /// Shows a published reply's card. Managed replies never reach the watcher's capture path.
         var present: (Screenshot) -> Void = { _ in }
-        /// Draws an answer on the window the request's live ink was drawn on, then answers the indexes
-        /// of the marks it could not draw, or nil when it could not draw there at all and the answer
-        /// becomes a card.
+        /// Makes an answer to live ink its result card, from a fresh capture of the window the ink was
+        /// on, then answers the indexes of the marks it could not find there, or nil when it could not
+        /// capture that window and the reply is published on the request's own picture instead.
         var presentLive: (Record, LiveAnswer, @escaping ([Int]?) -> Void) -> Void = { _, _, done in done(nil) }
         var watchFolder: () -> URL = { FileManager.default.temporaryDirectory }
         /// What the client answered for a request, which the card that was sent shows.
@@ -131,7 +131,8 @@ final class ScreenshotRequests {
             case reserved
             /// The card exists and is ordinary. The one publication point.
             case published
-            /// An answer drawn on the window its request's live ink was on. There is no file.
+            /// An answer live ink made a result card of itself, from a fresh capture of its window.
+            /// That card is an ordinary file, so the reply has no file of its own.
             case shown
             /// The import stopped; the payload is kept and the name stays excluded.
             case failed
@@ -139,20 +140,12 @@ final class ScreenshotRequests {
             case cancelled
         }
 
-        /// What a card of this reply draws: its marks, or, for an answer that could not be drawn on its
-        /// window, the answer's words in a corner and a ring round each mark's box. A mark that names
+        /// What a card of this reply draws: its marks, or, for an answer whose window could not be
+        /// captured, the answer's words in a corner and a ring round each mark's box. A mark that names
         /// only words is left out, since nothing finds words in the request's picture.
         var cardMarks: [AgentMark] {
             guard let answer else { return marks }
-            var marks = [AgentMark(type: .text, x: 0.03, y: 0.03, w: 0.5, text: answer.say)]
-            for mark in answer.marks {
-                guard let box = mark.box else { continue }
-                marks.append(AgentMark(type: .ellipse, x: box.minX, y: box.minY, w: box.width, h: box.height))
-                if let label = mark.label {
-                    marks.append(AgentMark(type: .text, x: box.minX, y: min(box.maxY + 0.01, 0.95), text: label))
-                }
-            }
-            return marks
+            return answer.cardMarks(targets: answer.marks.map(\.box))
         }
 
         /// The answer's marks a card leaves out: those that name only words.
@@ -260,6 +253,11 @@ final class ScreenshotRequests {
               let reply = replies[id], reply.destination == nil || reply.outputURL == url.standardizedFileURL,
               let request = requests[reply.requestID] else { return nil }
         return AgentDestination(id: request.destinationID, name: request.destinationName, address: request.address)
+    }
+
+    /// The agent answered `request` with a reply Vignette kept, whether or not its card is up yet.
+    func hasReply(to request: String) -> Bool {
+        replies.values.contains { $0.requestID == request && $0.stage != .failed && $0.stage != .cancelled }
     }
 
     /// Every session that can be addressed right now, the one used last first. A client whose list
@@ -610,7 +608,7 @@ final class ScreenshotRequests {
                 shownReply.notDrawn = notDrawn
                 replies[reply.id] = shownReply
                 if (try? write(shownReply)) == nil { Log.write("[reply] error write-failed \(reply.id) shown") }
-                Log.write("[reply] shown \(reply.id) on the window marks=\(answer.marks.count)")
+                Log.write("[reply] shown \(reply.id) as a live ink result marks=\(answer.marks.count)")
                 done()
             }
         }
