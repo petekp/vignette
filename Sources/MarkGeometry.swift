@@ -612,6 +612,14 @@ struct TextLayout {
     /// The tag's outline.
     var tagPath: CGPath { Self.tagPath(box, radius: radius) }
 
+    /// What the note draws, in the layout's px: the tag grown by `edge` on every side, with the agent's
+    /// badge across its top. The badge itself is not grown.
+    func drawnBox(edge: CGFloat = 0) -> CGRect {
+        let tag = box.insetBy(dx: -edge, dy: -edge)
+        guard let badge else { return tag }
+        return tag.union(badge.frame(on: box))
+    }
+
     /// A tag's outline at `box`, with corners of `radius` or as round as its size allows.
     static func tagPath(_ box: CGRect, radius: CGFloat) -> CGPath {
         let corner = min(radius, box.width / 2, box.height / 2)

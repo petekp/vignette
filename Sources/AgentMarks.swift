@@ -64,6 +64,12 @@ extension AgentMark {
         }
     }
 
+    /// A picture of `size` less the margin a text keeps from its edges. The margin is a fraction of the
+    /// width on all four sides, so the inset is the same all round, in px or points.
+    static func textRoom(_ size: CGSize) -> CGRect {
+        CGRect(origin: .zero, size: size).insetBy(dx: TextLayout.margin * size.width, dy: TextLayout.margin * size.width)
+    }
+
     /// `text` widened until its lines fit the image's height, then moved inside the image. The box is
     /// measured once it exists rather than predicted, because where the words wrap is not something
     /// the agent could know. `tooLong` when it is still wider or taller than the image. `style` is the
@@ -72,10 +78,8 @@ extension AgentMark {
                             style: TextStyle) -> (text: Mark.Text, tooLong: Bool) {
         let width = CGFloat(pixels.width), height = CGFloat(pixels.height)
         func box(_ text: Mark.Text) -> CGRect { TextLayout(text, imageWidth: width, pointScale: pointScale, style: style).box }
-        // The image less the margin on every side. The margin is a fraction of the width on all four,
-        // so the inset is the same number of px all round.
         let margin = TextLayout.margin * width
-        let room = CGRect(x: 0, y: 0, width: width, height: height).insetBy(dx: margin, dy: margin)
+        let room = textRoom(CGSize(width: width, height: height))
         var text = text
         // The box's area is about what the words need at their size, so the width the height wants
         // is about `w * h / room height`. It stops at the room's width, the widest a box can be and
@@ -98,5 +102,32 @@ extension AgentMark {
         text.origin = CGPoint(x: within(fitted.minX, insetX, width - insetX - fitted.width),
                               y: within(fitted.minY, insetY, height - insetY - fitted.height))
         return (text, fitted.width > width || fitted.height > height)
+    }
+}
+
+extension AgentMark {
+    /// An agent's note of `text`, set as `marks` sets it on a picture of `pixels` at `pointScale` (its
+    /// wrap, its fit), and placed by `LiveAnswerLayout.place` beside `near`, inside `room` and the
+    /// picture's `textRoom`, covering as little of `obstacles` as it can; all three in the picture's
+    /// points. Answers the note, which `marks` leaves where it was placed when it fits that room, and
+    /// the rect it covers there, badge included. Nil when `marks` makes no text of it.
+    static func note(_ text: String, from agent: String?, near: CGRect, room: CGRect, obstacles: [CGRect],
+                     in pixels: PixelSize, pointScale: CGFloat, style: TextStyle) -> (mark: AgentMark, covers: CGRect)? {
+        let width = CGFloat(pixels.width), height = CGFloat(pixels.height), scale = pointScale
+        // Inside the margin `marks` keeps from the edges, so its fit leaves the note where it is put.
+        let picture = textRoom(CGSize(width: width / scale, height: height / scale))
+        let inside = room.intersection(picture)
+        let room = inside.isNull || inside.isEmpty ? picture : inside
+        // Set as the card will set it, at the wrap it chooses, with the badge above the tag.
+        guard let set = marks([AgentMark(type: .text, x: 0, y: 0, text: text)], from: agent, in: pixels,
+                              pointScale: scale, style: style).marks.first,
+              case .text(let words) = set.geometry, let wrap = words.wrap else { return nil }
+        let layout = TextLayout(words, imageWidth: width, pointScale: scale, style: style.forMark(set))
+        let drawn = layout.drawnBox()
+        let spot = LiveAnswerLayout.place(CGSize(width: drawn.width / scale, height: drawn.height / scale), near: near,
+                                          room: room, obstacles: obstacles)
+        let mark = AgentMark(type: .text, x: (spot.minX * scale + words.origin.x - drawn.minX) / width,
+                             y: (spot.minY * scale + words.origin.y - drawn.minY) / height, w: wrap / width, text: text)
+        return (mark, spot)
     }
 }

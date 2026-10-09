@@ -484,8 +484,8 @@ enum LiveAnswerLayout {
     private static func moved(_ mark: Mark, box: CGRect, to origin: CGPoint, sizes: Sizes) -> Mark {
         guard case .text(let text) = mark.geometry else { return mark }
         var moved = mark
-        // The box starts above the text's origin by the badge's overlap. The wrap stays the widest a
-        // note may be, so a reply that streams in wraps where the whole reply will.
+        // The box starts above the text's origin by as far as the badge rises. The wrap stays the
+        // widest a note may be, so a reply that streams in wraps where the whole reply will.
         moved.geometry = .text(Mark.Text(origin: CGPoint(x: origin.x - box.minX, y: origin.y - box.minY), text: text.text,
                                          wrap: sizes.textWidth, size: sizes.textSize))
         return moved
@@ -535,9 +535,7 @@ enum LiveAnswerLayout {
     static func noteBox(_ mark: Mark, sizes: Sizes) -> CGRect? {
         if let body = mark.popover?.body { return body }
         guard case .text(let text) = mark.geometry else { return nil }
-        let layout = TextLayout(text, imageWidth: .greatestFiniteMagnitude, pointScale: 1, style: sizes.style.forMark(mark))
-        let badge = layout.badge == nil ? 0 : sizes.textSize * sizes.style.badgeOverlap
-        return CGRect(x: layout.box.minX, y: layout.box.minY - badge, width: layout.box.width, height: layout.box.height + badge)
+        return TextLayout(text, imageWidth: .greatestFiniteMagnitude, pointScale: 1, style: sizes.style.forMark(mark)).drawnBox()
     }
 
     /// Where a box of `size` goes: beside `near`, inside `room`, covering as little of `obstacles` as

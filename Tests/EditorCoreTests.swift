@@ -1141,6 +1141,16 @@ final class EditorCoreTests: XCTestCase {
         let note = Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 100), text: "agent words", wrap: nil, size: 17)),
                         agent: true, agentName: "claude")
         var core = core([note])
+        // What the editor redraws and outlines for the note is its tag with the white edge, and the badge.
+        let geometry = core.geometry, opened = core.drawing.marks[0]
+        guard case .text(let text) = opened.geometry else { return XCTFail("not a note") }
+        let layout = geometry.layout(text, of: opened), ink = geometry.inkExtent(of: opened)
+        let badge = try XCTUnwrap(layout.badge, "an agent's note carries its badge")
+        let edge = geometry.markStyle.edgeWidth * geometry.pointScale
+        XCTAssertGreaterThan(edge, 0)
+        XCTAssertTrue(ink.contains(layout.box.insetBy(dx: -edge, dy: -edge)), "\(ink) holds the tag and its edge")
+        XCTAssertTrue(ink.contains(badge.frame(on: layout.box)), "\(ink) holds the badge")
+
         core.press(150, 115)
         core.dragTo(170, 135)
         core.release(170, 135)
