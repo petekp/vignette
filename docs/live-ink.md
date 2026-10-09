@@ -16,6 +16,7 @@ The names in brackets are `// MARK:` sections.
 | How the person's ink looks | `LiveInkHand.swift` |
 | How an agent's shapes look | `LiveInkLight.swift` |
 | The note: opening, placing, sending | `LiveInk.swift` (Asking), `LiveNotePanel.swift` |
+| The ask: its phase, what it takes when it comes late, the answer put back after a failure, and each mark's role | `LiveAsks.swift`, `LiveInk.swift` (Asking, Answering) |
 | A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking), `LiveNoteCards.swift`, `LiveNoteCardWait.swift` |
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
 | What an ask sends | `LivePacket.swift` |
@@ -33,6 +34,7 @@ The names in brackets are `// MARK:` sections.
 
 - `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement, result cards and anchoring.
   `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery.
+  `Tests/LiveAsksTests.swift` holds the ask's sequences: late answers, follow-ups, dismiss, finish and clear.
 - A script reaches the note without a hand on the keys: `live-ink-chord-down`, then
   `live-ink-stroke` for each stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot
   press ⌃⌥, so this is the only way a VM check opens the note.
@@ -133,9 +135,9 @@ The names in brackets are `// MARK:` sections.
   panel that takes the keys as the stack's does. It is drawn as the note it becomes, and its target
   is a chip under it. Return asks about the ink drawn since the last ask, or, with none, about the
   ink asked about last. Esc, or a click elsewhere, closes the note and keeps the ink. ⌘⌫ closes it
-  and takes back the ink drawn for it (`noteInk`): the ink since the chord went down with no note
-  open, so a press while the note is open adds to that note's ink. Ink an earlier note kept stays.
-  ⌘⌫ is the text field's delete-the-line key, and the note handles its command
+  and takes back the ink drawn for it (`LiveAsks.noteInk`): the ink since the chord went down with
+  no note open, so a press while the note is open adds to that note's ink. Ink an earlier note kept
+  stays. ⌘⌫ is the text field's delete-the-line key, and the note handles its command
   (`deleteToBeginningOfLine:`) as it does Esc's. Its target starts on the one picked last, else the
   responder, and lists the sessions Send lists after it. For the responder the words stay beside the
   ink as the person's own note: the chip fades and the panel hands over to the drawn note without the
@@ -294,14 +296,14 @@ The names in brackets are `// MARK:` sections.
   gives the row's place to a field and Cancel in the same panel, which takes the keys only while the
   field is up, as the note does. Return sends what was typed; Cancel, Esc, Return with nothing typed
   or a click elsewhere puts the buttons back. The field keeps its words when it closes, and the next
-  Reply opens with them; a send clears them. The words belong to the answer (`AskState.draft`), not
-  the panel, since the panel goes whenever the reply is out of sight, as when its window is
+  Reply opens with them; a send clears them. The words belong to the answer (`LiveAsks.Ask.draft`),
+  not the panel, since the panel goes whenever the reply is out of sight, as when its window is
   minimized, and comes back with it. An action's click and a typed reply are one follow-up (`LiveInk.respond`):
   every button is disabled, the one used gains a checkmark (`LiveAnswerActions.pick`), and the reply
   quotes the person's words and carries the thinking light with the answer's marks. The responder
   takes them as a follow-up ask. The next answer takes the reply's place where it hangs, with
   buttons of its own, and the earlier answer stays until it is drawn. A follow-up that fails leaves the answer as it was
-  (`LiveInk.restoreFollowed`): the buttons come back, typed words wait in Reply again, and the
+  (`LiveAsks.Effect.restore`, `LiveInk.restoreAnswer`): the buttons come back, typed words wait in Reply again, and the
   reply's header gives the reason where it quoted them (`Mark.notice`), wrapped so all of it shows.
   Once the next answer has started to come in, it has replaced the earlier one, so a failure after
   that is a note beside the ink, as for any ask. Closing the field lets go of the keys with
