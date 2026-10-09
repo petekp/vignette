@@ -395,8 +395,8 @@ only reading, and the value of an image is in a real screenshot, which shows Pet
 
 ### 9. Host or author
 
-**The files each session edited named the author, in 150 ms. Whole repositories and session names
-did not.** This is one case.
+**The files each session edited ranked the author first, in 150 ms. Whole repositories and session
+names did not.** This is one case.
 
 - **The case.** At 20:29 Pete circled the inbox plugin's panel in the terminal of the session
   building Vignette, the host. He expected the session building the inbox plugin, the author. Two
@@ -407,7 +407,7 @@ did not.** This is one case.
   - The ink's frame is not kept, so the terminal's window was captured about 10 minutes later. Vision
     read it on the Mac. The panel's region came from where its lines sit: 12 lines, 10 long enough to
     search.
-  - The candidates were 28 sessions: the 12 live Claude Code sessions, 14 Codex threads written to in
+  - The candidates were 28 sessions: the 13 live Claude Code sessions, 14 Codex threads written to in
     the last 12 hours, and b39e954a.
   - Each line was searched ignoring case and punctuation, whole and in runs of two and three words.
     A line weighs 1 divided by the number of sessions that hold it.
@@ -416,20 +416,23 @@ did not.** This is one case.
 
   | Signal | Inbox sessions | Best other | Cost |
   |---|---|---|---|
-  | Files the session edited | 1.38, first | 0.63 | 150 ms for 41 MB |
+  | Files the session edited | 1.38, first | 0.88 | 150 ms for 41 MB |
   | Its whole conversation | 1.46, first | 0.46 | 12.5 s for 1 GB |
   | The last 256 KB of its conversation | 0.50, fourth | 0.61 | 160 ms |
-  | The repositories it started in or edited | 0.51, fifth | 0.58 | about 20 s |
+  | The repositories it started in or edited | 0.51, below three others | 0.58 | about 20 s |
   | Its name | no shared word | one | none |
 
-  The edited files are Claude Code's backups, `~/.claude/file-history/<session id>/`, one for each
-  file a session changes. The last-256 KB row was measured with be4e71f4 alone.
+  The edited files are Claude Code's backups, `~/.claude/file-history/<session id>/`. They held the
+  current text of all 31 files be4e71f4 had edited that still exist. The last-256 KB row was measured
+  with be4e71f4 alone. The two sessions next on edited files, at 0.88, work on evercars and on
+  munari, and the munari one had also edited the inbox repository.
 - **What decided it.** Two of the panel's lines, 8 characters each, occur in the two inbox sessions'
   conversations and in no other. One of them is also in files that only those two edited. Both are
   common words: 15 to 17 sessions' repositories hold them. That is why searching repositories does
   not separate the sessions. The two longest lines occur nowhere whole.
-- **The host gained nothing.** The Vignette session, whose terminal drew the panel, ranked fifth on
-  every signal.
+- **The host gained nothing.** The Vignette session, whose terminal drew the panel, scored like the
+  unrelated sessions. On its conversation and its edited files it was level with two evercars
+  sessions, below both inbox sessions.
 - **Names are a negative.** 24 of the 28 sessions had a name, and the panel had 10 words of four
   letters or more. No name shared one, except one Codex thread's, by one word.
 - **Limits.**
@@ -443,7 +446,7 @@ did not.** This is one case.
   - When ink lands on a terminal or an agent's app, the sessions whose edited files hold the text
     under it are candidates for the author. Live ink already reads the window's text before the
     chord is let go, so this adds about 150 ms to that.
-  - It ranks; it does not decide. The margin was about 2 to 1, on one case.
+  - It ranks; it does not decide. On edited files the margin was about 3 to 2, on one case.
   - An index of each conversation, kept up as it grows, could make the conversation signal fast
     enough. That was not measured.
 
@@ -476,7 +479,8 @@ the plan.
      screenshots were not looked at.
    - **One such case, met directly.** Pete circled the inbox plugin's panel in the Vignette
      session's terminal, and expected the inbox session. The text under the ink, found in the files
-     each session edited, ranked the inbox sessions first at about twice the next score (question 9).
+     each session edited, ranked the inbox sessions first, at about 1.6 times the next score
+     (question 9).
    - **The general rule.** A window that shows an agent's own interface, such as a terminal or the
      Codex app, may be about the tool being built rather than the session running in it. The same
      goes for step 2's folder when the window is a terminal. The sessions whose edited files hold
