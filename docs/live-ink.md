@@ -187,8 +187,8 @@ The names in brackets are `// MARK:` sections.
   (`LiveInk.result`): the window captured afresh, since the session has usually changed what it
   shows, with each mark at the words it names in that capture (`LiveAnswer.cardMarks`). The labels
   go beside their marks and the words beside the first mark, or beside the ink when no mark was
-  found, each measured as the card sets it and placed where it covers the least of the rest
-  (`LiveAnswerLayout.place`). How many marks there are
+  found, each measured as the card sets it and placed where it covers the least of the rest and of
+  the text Vision read in the capture (`LiveAnswerLayout.place`). How many marks there are
   never depends on that measuring, since a reply's stored drawing is checked against the count after
   a relaunch. The card is from the session: `AppDelegate.addLiveResult` records the
   agent and the session on it as an `add` does, so it wears the agent's tab and Reply on it goes
