@@ -1502,7 +1502,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             let name = url.lastPathComponent
             let agent = destination.client.rawValue
             Agent.record(agent, on: url)
-            if case .claudeSession(let session) = destination.address { Agent.record(session: session, on: url) }
+            switch destination.address {
+            case .claudeSession(let session): Agent.record(session: session, on: url)
+            case .codexThread(let uuid): Agent.record(thread: uuid, on: url)
+            }
             let show = { [weak self] in
                 guard let self else { return }
                 Log.write("[live-ink] result card \(name) agent=\(agent) marks=\(marks.count)")

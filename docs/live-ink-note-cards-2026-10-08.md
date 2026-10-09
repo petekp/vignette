@@ -82,7 +82,8 @@ when the turn ends.
 
 A result card that Vignette makes, with no reply behind it, carries the agent and the session as a
 card pushed with `add` does. So it shows the "From Claude" tab, and Reply on it goes back to that
-session. It is named `Live ink result <date> at <time>.png`. A note card that is not on screen when
+session. A Codex thread is recorded in an attribute of its own, `<bundle id>.thread`, which `add`
+never writes, so a push's `session=` still names a Claude Code session only. It is named `Live ink result <date> at <time>.png`. A note card that is not on screen when
 it says Done comes up as the lone thumbnail, as a result card would.
 
 ## What goes away
@@ -135,8 +136,9 @@ ink's handover by the log: VNC frames come 7 s apart, too far apart to show a si
 
 ## Known limits
 
-- **A Codex thread's result card has no Reply target.** A card names its session for Reply only for
-  Claude Code (`Agent.origin`), so Reply on a Codex result card asks where to send.
+- **A Codex result card's Reply target may read only "Codex".** The target takes its thread's name
+  and project from the session list, which holds the five threads used last, so an older thread
+  shows the client's name. Reply still goes to that thread.
 - **An answer's words sit in the card's top-left corner,** which on a window capture is the title
   bar or the browser's toolbar.
 
