@@ -1443,7 +1443,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             let pointScale = min(max(note.pointScale, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
             let style = settings.data.ui.textStyle
             let marks = note.marks.compactMap { $0.placed(in: pixels, pointScale: pointScale, style: style) }
-            drawings.write(Drawing(key: url.path, pixels: pixels, pointScale: pointScale, marks: marks), reason: "built")
+            let drawing = Drawing(key: url.path, pixels: pixels, pointScale: pointScale, marks: marks)
+            drawings.write(drawing, reason: "built")
             let record: ScreenshotRequests.Record
             do {
                 record = try requests.send(png: note.picture, source: url, to: destination, message: message,
@@ -1457,6 +1458,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             let shot = Screenshot(url: url)
             sentShots[record.id] = shot
             liveNotes[record.id] = (shot, destination)
+            // The card flies from the window as the ink leaves it, ahead of the watcher's report,
+            // which then finds the card there.
+            let origin = NSRect(x: note.frame.minX, y: StateReport.primaryHeight - note.frame.maxY,
+                                width: note.frame.width, height: note.frame.height)
+            thumbnail.show(shot, flyingFrom: origin, image: NSImage(cgImage: note.capture, size: note.frame.size), drawing: drawing)
             pendingAdds[name]?.addingMarks = false
             presentAdd(name)
             thumbnail.showSending(shot, request: record.id, to: destination)

@@ -133,6 +133,8 @@ final class LiveInk {
     struct NoteCard {
         let picture: Data
         let capture: CGImage
+        /// Where the window is, in global top-left points, which the card flies from.
+        let frame: CGRect
         /// In `capture`'s pixels, with sizes in points of `pointScale`.
         let marks: [Mark]
         let pointScale: CGFloat
@@ -796,7 +798,7 @@ final class LiveInk {
         // The same ink the picture has, so the card holds what the session sees and what leaves the window.
         let person = ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
         let note = noteMark(words, about: about, packet: packet, at: spot)
-        let card = NoteCard(picture: packet.picture, capture: packet.capture,
+        let card = NoteCard(picture: packet.picture, capture: packet.capture, frame: packet.frame,
                             marks: packet.drawingMarks(person + (note.map { [$0] } ?? [])), pointScale: packet.scale)
         let shapes = person.filter { about.contains($0.id) && $0.kind != .text }.compactMap(\.shapeExtent)
         let inkBox = (shapes.isEmpty ? person.compactMap(\.shapeExtent) : shapes).reduce(CGRect.null) { $0.union($1) }
