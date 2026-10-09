@@ -51,18 +51,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         })
     private let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
-    /// What `add` still owes a file it put in the watch folder, by file name. The watcher reports
-    /// the file like a capture; this is what makes that report skip the capture toggles.
-    private struct PendingAdd {
-        var annotate = false
-        /// The push's marks are still joining the screenshot's drawing. The presentation waits for
-        /// it, so the annotator opens with them.
-        var addingMarks = false
-        /// The file, once there is something to present: the watcher's report, or the file itself
-        /// when it was already in the folder and no report is coming.
-        var waiting: Screenshot?
-    }
-    private var pendingAdds: [String: PendingAdd] = [:]
     /// One map, so Send submits through the same connections it lists.
     private static let connections: [AgentClient: any AgentConnection] = [.claude: ClaudeCodeConnection(), .codex: CodexConnection()]
     /// Sending drawings to agent sessions and taking their drawings back. See ScreenshotRequests.
@@ -73,8 +61,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// The screenshot each request sent this launch was made from, until its client answers.
     private var sentShots: [String: Screenshot] = [:]
     private var watcherGeneration = 0
-    private var screenshotWrittenAt: TimeInterval = 0
-    private var deferredRemovals: Set<URL> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         replaceOlderInstances()
@@ -424,7 +410,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
         let out = watchFolder.appendingPathComponent("Stitch \(stamp.string(from: Date())).png")
-        do { try composed.png.write(to: out) } catch { Commands.error("stitch", .writeFailed, "\(out.path): \(error.localizedDescription)"); return }
+        do { try folderWrites.writeStitch(composed.png, to: out) } catch { Commands.error("stitch", .writeFailed, "\(out.path): \(error.localizedDescription)"); return }
         Clipboard.copyFiles([out])
         // readerScale is what a vision model's resize leaves of the composition; see Stitch.swift.
         Commands.ok("stitch", "\(out.path) from \(composed.pieces) images, \(Int(composed.size.width))x\(Int(composed.size.height)) columns=\(composed.columns) readerScale=\(String(format: "%.2f", composed.readerScale)) \(composed.png.count) bytes, copied")
@@ -436,6 +422,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     // MARK: Drawings
 
     private lazy var drawings = Drawings(store: DrawingStore(directory: Identity.applicationSupportURL.appendingPathComponent("drawings")))
+
+    /// What Vignette puts into the screenshots folder and takes out of it. See FolderWrites.
+    private lazy var folderWrites: FolderWrites = {
+        let writes = FolderWrites()
+        writes.callbacks = FolderWrites.Callbacks(
+            folder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
+            present: { [weak self] shot, annotate in self?.present(shot, annotate: annotate) },
+            showCard: { [weak self] in self?.thumbnail.show($0) },
+            joinMarks: { [weak self] marks, agent, url, done in self?.addMarks(marks, from: agent, to: url, done: done) },
+            removeCards: { [weak self] in self?.thumbnail.remove($0) },
+            removeDrawings: { [weak self] urls, observedAt in self?.drawings.remove(urls, observedAt: observedAt) },
+            removeReply: { [weak self] in self?.requests.fileRemoved($0) },
+            sweepDrawings: { [weak self] in self?.drawings.sweep($0) },
+            reconcileRequests: { [weak self] in self?.requests.reconcile($0) },
+            rescan: { [weak self] in self?.watcher?.rescan(reason: $0) })
+        return writes
+    }()
 
     /// Connects stored drawings before request recovery or the watcher can update cards.
     private func startDrawings() {
@@ -475,23 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     func moveToTrash(_ shots: [Screenshot]) {
-        var trashed: [Screenshot] = []
-        var failed: [String] = []
-        for shot in shots {
-            do {
-                try FileManager.default.trashItem(at: shot.url, resultingItemURL: nil)
-                trashed.append(shot)
-            } catch {
-                failed.append("\(shot.url.lastPathComponent): \(error.localizedDescription)")
-            }
-        }
-        if !trashed.isEmpty {
-            thumbnail.remove(trashed)
-            drawings.remove(trashed.map(\.url))
-            for shot in trashed { requests.fileRemoved(shot.url) }
-        }
-        if failed.isEmpty { Commands.ok("trash", trashed.map(\.url.lastPathComponent).joined(separator: ", ")) }
-        else { Commands.error("trash", .writeFailed, "\(failed.joined(separator: "; ")); trashed \(trashed.count) of \(shots.count)") }
+        folderWrites.trash(shots)
     }
 
     /// Copy Drawing: each card's drawing as it is now, rendered and written beside its screenshot,
@@ -629,7 +616,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             for line in Commands.helpLines() { Log.write("[help] \(line)") }
             Commands.ok("help", "\(Commands.fixed.count + Config.actions.count) commands; errors end with one of: \(CommandError.allCases.map(\.rawValue).joined(separator: " "))")
         case "last": openLast()
-        case "add": addImage(request)
+        case "add": folderWrites.add(request)
         case "recent": toggleRecent()
         case "state": dumpState(tag: request.tag)
         case "settings": settingsWindow.show(); Commands.ok("settings", "window opened")
@@ -1078,85 +1065,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Commands.ok("last", url.lastPathComponent)
     }
 
-    /// `add?file=<path>[&annotate][&agent=<name>][&session=<id>][&marks=<json>]`: a copy of an image
-    /// from anywhere lands in the watch folder, where the watcher reports it like a capture;
-    /// `pendingAdds` makes that report skip the capture toggles. `agent=` is recorded on the copy,
-    /// which is what puts the badge on its card, and `session=` beside it, which is where Reply goes. `marks=` joins the screenshot's drawing before the card appears, so the
-    /// user opens the agent's drawing and edits it like their own.
-    private func addImage(_ request: CommandRequest) {
-        guard let source = request.files.first else { Commands.error("add", .missingFile, "no file given"); return }
-        guard FileManager.default.fileExists(atPath: source.path) else { Commands.error("add", .missingFile, source.path); return }
-        guard Commands.isReadableImage(source) else { Commands.error("add", .unreadableImage, source.path); return }
-        var marks: [AgentMark] = []
-        if let value = request.marks {
-            // Checked before anything is copied: a push with bad marks is one error line and no file.
-            do { marks = try AgentMark.parse(value) } catch { Commands.error("add", .invalidMarks, "\(error)"); return }
-        }
-        let inFolder = Commands.policyError(for: source, watchFolder: watchFolder, debug: false) == nil
-        var destination = source
-        if !inFolder {
-            guard ScreenshotWatcher.isCandidate(source.lastPathComponent) else {
-                Commands.error("add", .unsupportedType, "\(source.lastPathComponent): needs a png, jpg, jpeg, or heic name without \(Config.annotatedSuffix)"); return
-            }
-            // `Agent reply <uuid>.png` is the one name Vignette writes itself. A copy landing on it
-            // would have no reply record, and `isVisible` fails closed, so it would never be shown.
-            guard ReplyProtocol.replyID(fromFileName: source.lastPathComponent) == nil else {
-                Commands.error("add", .unsupportedType, "\(source.lastPathComponent): that name belongs to an agent reply"); return
-            }
-            destination = Commands.destination(for: source, in: watchFolder) { FileManager.default.fileExists(atPath: $0.path) }
-        }
-        let name = destination.lastPathComponent
-        // Already in the folder means no watcher report is coming, so the file itself waits here.
-        pendingAdds[name] = PendingAdd(annotate: request.annotate, addingMarks: !marks.isEmpty,
-                                       waiting: inFolder ? Screenshot(url: destination) : nil)
-        if !inFolder {
-            do {
-                try FileManager.default.copyItem(at: source, to: destination)
-            } catch {
-                pendingAdds[name] = nil
-                Commands.error("add", .writeFailed, "\(destination.path): \(error.localizedDescription)"); return
-            }
-        }
-        screenshotWrittenAt = ProcessInfo.processInfo.systemUptime
-        if let agent = request.agent { Agent.record(agent, on: destination) }
-        if let session = Agent.cleanSession(request.session) {
-            Agent.record(session: session, on: destination)
-        } else if !(request.session ?? "").isEmpty {
-            // Not quoted: the value is the caller's, and the log is not a place for it.
-            Log.write("[add] warning \(name): session= is not a session id; Reply on its card will ask where to send")
-        }
-        guard !marks.isEmpty else {
-            presentAdd(name)
-            Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request))")
-            return
-        }
-        addMarks(marks, from: request.agent, to: destination) { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let joined):
-                Commands.ok("add", "\(name)\(detail(request)) marks=\(joined)")
-            case .failure(let failure):
-                Commands.error("add", failure.code, "\(name): the image is in the folder, its marks are not: \(failure)")
-            }
-            pendingAdds[name]?.addingMarks = false
-            presentAdd(name)
-        }
-    }
-
-    /// Shows the added file once nothing is owed on it: the watcher has reported it and its marks,
-    /// if any, are in its stored drawing.
-    private func presentAdd(_ name: String) {
-        guard let pending = pendingAdds[name], !pending.addingMarks, let shot = pending.waiting else { return }
-        pendingAdds[name] = nil
-        present(shot, annotate: pending.annotate)
-    }
-
-    /// What an `[add] ok` line says about the request beyond the file name.
-    private func detail(_ request: CommandRequest) -> String {
-        (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "")
-            + (Agent.cleanSession(request.session).map { " session=\($0)" } ?? "")
-    }
-
     // MARK: Screenshot requests: Send, replies, and which files a reply owns. See ScreenshotRequests.
 
     /// Wires the coordinator and reads what is already on disk. Runs before the watcher starts and
@@ -1178,10 +1086,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                     }
                 }
             },
-            present: { [weak self] shot in
-                self?.screenshotWrittenAt = ProcessInfo.processInfo.systemUptime
-                self?.thumbnail.show(shot)
-            },
+            present: { [weak self] shot in self?.folderWrites.published(shot) },
             watchFolder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
             delivered: { [weak self] record, outcome in
                 guard let self, let shot = sentShots.removeValue(forKey: record.id) else { return }
@@ -1359,12 +1264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self, self.watcherGeneration == generation else { return }
             Log.write("[watcher] new \(url.lastPathComponent)")
             let shot = Screenshot(url: url)
-            let name = url.lastPathComponent
-            if self.pendingAdds[name] != nil {
-                self.pendingAdds[name]?.waiting = shot
-                self.presentAdd(name)   // waits when the push's marks are still joining its drawing
-                return
-            }
+            if self.folderWrites.arrived(url) { return }
             // An agent's reply is shown once by its own import, when every byte and its drawing are
             // stored. A watcher report for one — the copy that made it, or a later rescan — is
             // never a capture, so it neither goes to the clipboard nor opens the editor.
@@ -1377,36 +1277,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             self.present(shot, annotate: self.settings.data.annotateOnCapture)
         }, onRemoved: { [weak self] urls, inventory in
             guard let self, self.watcherGeneration == generation else { return }
-            guard self.screenshotWrittenAt <= inventory.observedAt else {
-                self.deferredRemovals.formUnion(urls)
-                return
-            }
-            let removed = urls.filter { inventory.confirmsAbsence(of: $0) }
-            if removed.count != urls.count {
-                // The watcher already advanced its inventory. Keep suppressed removals until a
-                // later listing observes their presence or confirms their absence.
-                self.deferredRemovals.formUnion(Set(urls).subtracting(removed))
-                self.watcher?.rescan(reason: "after an unconfirmed removal")
-            }
-            guard !removed.isEmpty else { return }
-            Log.write("[watcher] removed \(removed.map(\.lastPathComponent).joined(separator: ", "))")
-            self.thumbnail.remove(removed.map(Screenshot.init))
-            self.drawings.remove(removed, observedAt: inventory.observedAt)
-            for url in removed { self.requests.fileRemoved(url) }
+            self.folderWrites.removed(urls, in: inventory)
         }, onInventory: { [weak self] inventory in
             guard let self, self.watcherGeneration == generation else { return }
-            guard self.screenshotWrittenAt <= inventory.observedAt else {
-                self.watcher?.rescan(reason: "after an app write")
-                return
-            }
-            self.drawings.sweep(inventory)
-            self.requests.reconcile(inventory)
-            let deferred = self.deferredRemovals.filter { inventory.confirmsAbsence(of: $0) }
-            if !deferred.isEmpty { self.thumbnail.remove(deferred.map(Screenshot.init)) }
-            self.deferredRemovals = self.deferredRemovals.filter {
-                $0.deletingLastPathComponent().standardizedFileURL != inventory.folder.standardizedFileURL
-                    || (!inventory.names.contains($0.lastPathComponent) && !deferred.contains($0))
-            }
+            self.folderWrites.listed(inventory)
         })
         warmThumbnails()
         if wakeObserver == nil {

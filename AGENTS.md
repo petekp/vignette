@@ -141,7 +141,7 @@ The steps below have the details.
    (`Commands.inWatchFolder`), so `/tmp/x.png` and `/private/tmp/x.png` reach one drawing.
    `add` is the exception, and it takes two paths the folder rule does not cover.
    `add?file=` copies an image in from anywhere and the watcher then reports it like a capture,
-   minus the copy and annotate toggles (`&annotate` opens the editor). `&agent=<name>` says which
+   minus the copy and annotate toggles (`&annotate` opens the editor; `FolderWrites.add`). `&agent=<name>` says which
    agent is pushing it: the name is recorded on the copy as the `com.petepetrash.vignette.agent`
    extended attribute (`Agent.swift`, `xattr -l` shows it) and the card gets a white "From <Name>" tab
    with the vendor's logo when `Resources/agents/<name>.svg` has one (`Agent.logo(for:)`). A logo
@@ -939,7 +939,8 @@ screenshot location for such a launch is written with the same variable:
   callback applies the same check to cards, drawings, and reply records. Suppressed removals stay
   pending until a listing enumerates their presence or confirms their absence. Writes newer
   than the observation wait for another scan. Trash removes drawings only for files it successfully
-  trashed. `docs/system-design-work-2026-10-02.md` records the verification. The launch also
+  trashed. `FolderWrites` holds these removals back and tells the cards, drawings and requests.
+  `docs/system-design-work-2026-10-02.md` records the verification. The launch also
   removes what the web editor left, its drafts and WebKit's data, where they are still there
   (`Drawings.removeWebEditorData`, one `[app] removed web editor data <path>` line each); drafts are
   not carried over.
