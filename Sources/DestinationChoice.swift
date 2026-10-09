@@ -1,7 +1,9 @@
 import Foundation
 
 /// Which agent session Send starts on before the person picks one, and the order its menu lists the
-/// sessions in. Every rule for that pick is here, so a new one changes this file and its tests.
+/// sessions in. Every rule for that pick is here, so a new one changes this file and its tests. It
+/// takes facts, the sessions listed so far, herdr's focus and the agent's app that was in front, and
+/// marks the session you came from.
 enum DestinationChoice {
     /// One answer from the listing, and the pick made from it.
     struct Answer: Equatable {
@@ -16,19 +18,47 @@ enum DestinationChoice {
         let pick: AgentDestination?
     }
 
-    /// The pick from the sessions found so far. `found` is in Send's order; `complete` says every
-    /// client has answered and `fresh` that every answer is fresh rather than kept. `cameFrom` is the
-    /// agent's own app that was in front before Vignette, such as the Codex app, and the thread it
-    /// shows.
-    static func choose(_ found: [AgentDestination], complete: Bool, fresh: Bool,
-                       cameFrom: (client: AgentClient, shown: String?)?) -> Answer {
-        var list = found
-        var complete = complete
+    /// What a listing has found so far: the candidate destinations and the facts that came with them.
+    struct Candidates {
+        /// In Send's order (`newestFirst`). A `focus` on them is ignored: only `choose` marks.
+        let destinations: [AgentDestination]
+        /// Every client has answered, from a kept list or a fresh one.
+        let complete: Bool
+        /// Every answer is fresh.
+        let fresh: Bool
+        /// herdr's focus, read with `markedByHerdr`'s answer. Nil before it, without herdr, or when
+        /// that client listed no destination (`readsHerdr`).
+        var herdr: HerdrFocus? = nil
+    }
+
+    /// The one client whose sessions herdr's focus marks. A focused Codex pane marks nothing, even
+    /// when herdr names its thread.
+    static let markedByHerdr: AgentClient = .claude
+
+    /// Whether herdr's focus is worth reading beside `client`'s answer: it can mark only
+    /// `markedByHerdr`'s destinations, and only when there are some. `SessionListing` reads it in
+    /// that client's job, so the focus comes with the answer that can settle the pick.
+    static func readsHerdr(beside client: AgentClient, listed: [AgentDestination]) -> Bool {
+        client == markedByHerdr && !listed.isEmpty
+    }
+
+    /// The pick from the candidates found so far. `cameFrom` is the agent's own app that was in
+    /// front before Vignette, such as the Codex app, and the thread it shows.
+    static func choose(_ candidates: Candidates, cameFrom: (client: AgentClient, shown: String?)?) -> Answer {
+        let unmarked = candidates.destinations.map { destination -> AgentDestination in
+            var cleared = destination
+            cleared.focus = nil
+            return cleared
+        }
+        var complete = candidates.complete
+        let list: [AgentDestination]
         if let cameFrom {
-            list = marked(cameFrom.client, shown: cameFrom.shown, in: found, fresh: fresh)
+            list = marked(cameFrom.client, shown: cameFrom.shown, in: unmarked, fresh: candidates.fresh)
             // Nothing marked from a kept list means the shown thread may be newer than it, so the
             // pick waits for the fresh one rather than settling on the thread used last.
-            if !fresh && !list.contains(where: { $0.focus == .app }) { complete = false }
+            if !candidates.fresh && !list.contains(where: { $0.focus == .app }) { complete = false }
+        } else {
+            list = marked(unmarked, herdr: candidates.herdr)
         }
         let decided = complete || list.contains { $0.focus != nil }
         return Answer(list: list, complete: complete, decided: decided, pick: decided ? pick(in: list) : nil)
@@ -44,22 +74,38 @@ enum DestinationChoice {
     }
 
     /// The sessions as they stand when you came from `client`'s own app, such as the Codex app.
-    /// herdr keeps a focused pane while its terminal is behind, so its focus says nothing then and is
-    /// cleared. The app's session is `shown`, the id of the thread it shows, or else that client's
-    /// session used last. When a list that is not `fresh` lacks `shown`, nothing is marked: the
-    /// thread may have started since the list was kept, and the fresh list will say. `list` is in
-    /// Send's order.
+    /// herdr keeps a focused pane while its terminal is behind, so its focus says nothing then. The
+    /// app's session is `shown`, the id of the thread it shows, or else that client's session used
+    /// last. When a list that is not `fresh` lacks `shown`, nothing is marked: the thread may have
+    /// started since the list was kept, and the fresh list will say. `list` is in Send's order.
     private static func marked(_ client: AgentClient, shown: String?, in list: [AgentDestination], fresh: Bool) -> [AgentDestination] {
-        var marked = list.map { destination -> AgentDestination in
-            var cleared = destination
-            cleared.focus = nil
-            return cleared
-        }
+        var marked = list
         let ofClient = marked.indices.filter { marked[$0].client == client }
         let match = shown.flatMap { id in ofClient.first { marked[$0].id == id } }
         guard match != nil || shown == nil || fresh else { return marked }
         if let index = match ?? ofClient.first { marked[index].focus = .app }
         return marked
+    }
+
+    /// Marks where herdr's focus is. `herdr.agents` is every agent herdr runs, of any kind. A focused
+    /// pane running an agent is that agent's, whether or not it is a destination. One running none,
+    /// such as a browser or a shell beside the session you are working with (observed 2026-09-24),
+    /// passes the focus to the one agent in its tab; a tab with two says nothing about which one.
+    /// Only `markedByHerdr`'s sessions are marked.
+    private static func marked(_ list: [AgentDestination], herdr: HerdrFocus?) -> [AgentDestination] {
+        guard let herdr else { return list }
+        let focusedAgent = herdr.agents.first { $0.pane == herdr.pane }
+        let inTab = herdr.agents.filter { !herdr.tab.isEmpty && $0.tab == herdr.tab }
+        return list.map { destination in
+            guard destination.client == markedByHerdr else { return destination }
+            var marked = destination
+            if let focusedAgent {
+                if focusedAgent.session == destination.id { marked.focus = .pane }
+            } else if inTab.count == 1, inTab[0].session == destination.id {
+                marked.focus = .tab
+            }
+            return marked
+        }
     }
 
     /// Send's menu: the sessions used last among the active ones, at most `count`, with `target`

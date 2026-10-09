@@ -69,7 +69,8 @@ makes such a decision, and mark the old one superseded when a change reverses it
   A take takes over the screen for 5 to 8 minutes. `docs/trailer-pipeline-2026-09-26.md` says how.
 - `Sources/AgentConnection.swift`, `Sources/ScreenshotRequests.swift`, `Sources/ReplyProtocol.swift`,
   `Sources/ReplyCommand.swift` and `skills/vignette/scripts/reply` are the closed loop: a drawing
-  sent to an agent session and that agent's drawing sent back. See the rules below and
+  sent to an agent session and that agent's drawing sent back. `Sources/SessionListing.swift` lists
+  the sessions Send can go to, and `Sources/HerdrFocus.swift` reads herdr's focus. See the rules below and
   `docs/closed-agent-loop-implementation-2026-09-20.md`. `agent-plugin/` is the plugin Claude Code
   and Codex install, which carries the skill and, for Claude Code, delivers what Send sends, and
   `Sources/AgentPlugin.swift` installs it (`docs/claude-code-without-herdr-2026-09-27.md`).
@@ -812,7 +813,8 @@ screenshot location for such a launch is written with the same variable:
   read by its id (`thread/read`). A Codex thread is named the way the app names it
   (`CodexConnection.name(of:)`).
   Otherwise, when herdr runs, it is the session in herdr's focused pane, or the one session in that
-  pane's tab when the pane runs none. Else it is the session used last.
+  pane's tab when the pane runs none. `DestinationChoice` applies herdr's focus to Claude Code
+  sessions only (`DestinationChoice.markedByHerdr`). Else it is the session used last.
   The target shows the agent's logo and the project, cut in the middle past 132 pt with the whole
   name in its tooltip. Its width is set rather than left to the text, so it springs with the bar. A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
@@ -821,11 +823,12 @@ screenshot location for such a launch is written with the same variable:
   and a Codex thread when it was used in the last day, since nothing says which threads the Codex
   app has open. The target settles once, from the first answer that names a focus (herdr's comes in
   about 60 ms, before the bar is up), or else from the whole list (`Model.answered`). After that it
-  changes only when its session is gone, so it never changes under the pointer. Codex's list is kept (`AgentConnection.keepsList`): an opening editor answers
+  changes only when its session is gone, so it never changes under the pointer. Codex's list is kept (`AgentConnection.keepsList`, `SessionListing`): an opening editor answers
   from the last one at once and asks for a fresh one, which comes in about 0.1 s for the five
   threads used last (`AppServer.listLimit`), and it is asked for again at launch, on a capture and
-  when the stack opens. Claude Code's list is always asked afresh, because it carries herdr's
-  focus, which moves. Coming from the Codex
+  when the stack opens. Claude Code's list is always asked afresh, and herdr's focus, which
+  moves whenever you change panes, is read in the same job right after it (`HerdrFocus`), so the
+  focus comes with Claude Code's first answer. Coming from the Codex
   app, a kept list that holds the shown thread settles the target at once; one that does not waits
   for the fresh list, since the thread may be newer. Return copies and replies only on a card that names its session; Cmd+Return
   sends or replies (`EditorCore.finishes`). On the image, Return never sends to a session Vignette
@@ -1110,7 +1113,8 @@ screenshot location for such a launch is written with the same variable:
   labels. The distinction it guards most is that an agent session is a conversation and a pane is
   a place.
 - Sending a drawing to an agent session and taking its drawing back is one object,
-  `ScreenshotRequests`, and one small boundary, `AgentConnection`. Two things are durable and
+  `ScreenshotRequests`, and one small boundary, `AgentConnection`. Listing the sessions is
+  `SessionListing`, which uses the same connections (`AppDelegate.connections`). Two things are durable and
   different: **acceptance** means Vignette owns every byte of a reply, and is what the receipt a
   helper waits for acknowledges; **publication** means the reply is a card. Between them the reply's
   watch-folder name is reserved and excluded from every listing, so an interrupted import leaves
@@ -1170,7 +1174,7 @@ screenshot location for such a launch is written with the same variable:
   `timestamp` is when it was last used. That entry's `cwd` follows the session's shell, so it is the
   project only when the inbox gives none. The file's modification time is
   not the last use: Claude Code writes entries with no message in them to transcripts it is not
-  using (measured 2026-09-24). herdr, when it runs, only says which session has the focus. `/clear`
+  using (measured 2026-09-24). herdr, when it runs, only says which session has the focus (`HerdrFocus`). `/clear`
   and `/resume` give the same process another session, so Vignette checks that the inbox still
   holds that exact session immediately before writing the line (`AddressGuard.preflight`). A
   session in no inbox is an error, "closed" or "cleared", and never another session. The line is

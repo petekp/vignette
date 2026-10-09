@@ -32,8 +32,8 @@ final class ScreenshotRequests {
     }
 
     var callbacks = Callbacks()
-    /// The connections, by client. Injected so a test never runs herdr or codex.
-    var connections: [AgentClient: any AgentConnection] = [:]
+    /// The connections, by client, which `send` submits through. Injected so a test never runs codex.
+    let connections: [AgentClient: any AgentConnection]
 
     /// The most requests kept open at once, each with its PNG and a ticket its agent can still reply
     /// with. A send past it clears the oldest: a limit that refused the send stopped Send working
@@ -61,8 +61,9 @@ final class ScreenshotRequests {
     /// Cancellation takes effect in memory even when its record cannot yet be written.
     private var pendingCleanupWrites: Set<String> = []
 
-    init(root: URL) {
+    init(root: URL, connections: [AgentClient: any AgentConnection] = [:]) {
         self.root = root
+        self.connections = connections
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
@@ -228,78 +229,6 @@ final class ScreenshotRequests {
               let reply = replies[id], reply.destination == nil || reply.outputURL == url.standardizedFileURL,
               let request = requests[reply.requestID] else { return nil }
         return AgentDestination(id: request.destinationID, name: request.destinationName, address: request.address)
-    }
-
-    /// Every session that can be addressed right now, the one used last first. A client whose list
-    /// is kept (`AgentConnection.keepsList`) answers from its last list at once. Every client is
-    /// also asked afresh, off the main thread, and the list is answered on the main thread again as
-    /// each fresh answer arrives. `complete` means every client has answered, from a kept list or a
-    /// fresh one, and `fresh` that every answer is fresh. herdr answers in about 70 ms. `shown` asks
-    /// that client for the session with that id too, such as the thread the Codex app shows.
-    func destinations(shown: (client: AgentClient, id: String)? = nil,
-                      _ completion: @escaping @MainActor (_ found: [AgentDestination], _ complete: Bool, _ fresh: Bool) -> Void) {
-        let clients = Array(connections.keys)
-        guard !clients.isEmpty else { return completion([], true, true) }
-        let answers = Answers()
-        func deliver() {
-            let found = answers.lists.values.flatMap { $0 }.sorted(by: DestinationChoice.newestFirst)
-            completion(found, answers.lists.count == clients.count, answers.fresh.count == clients.count)
-        }
-        for client in clients {
-            if let list = kept[client] { answers.lists[client] = list }
-        }
-        if !answers.lists.isEmpty { deliver() }
-        for client in clients {
-            ask(client, including: shown?.client == client ? shown?.id : nil) { list in
-                answers.lists[client] = list
-                answers.fresh.insert(client)
-                deliver()
-            }
-        }
-    }
-
-    /// Asks again every client whose list is kept, so the next editor opens on a current one. Run
-    /// when an editor is likely to open soon: at launch, on a capture, and when the stack opens.
-    func refreshKeptLists() {
-        for (client, connection) in connections where connection.keepsList { ask(client) { _ in } }
-    }
-
-    /// The answers one listing has so far, by client.
-    private final class Answers {
-        var lists: [AgentClient: [AgentDestination]] = [:]
-        var fresh: Set<AgentClient> = []
-    }
-
-    /// The last list of each client whose list is kept.
-    private var kept: [AgentClient: [AgentDestination]] = [:]
-    /// The clients being asked right now, and who is waiting for each answer. A second ask joins
-    /// the one on its way instead of starting another.
-    private var asking: [AgentClient: [@MainActor ([AgentDestination]) -> Void]] = [:]
-
-    /// Asks one client for its sessions off the main thread. An ask that includes a session runs on
-    /// its own, and its answer is not kept: it holds a session found for one editor.
-    private func ask(_ client: AgentClient, including id: String? = nil, then answer: @escaping @MainActor ([AgentDestination]) -> Void) {
-        guard let connection = connections[client] else { return }
-        if let id {
-            DispatchQueue.global(qos: .userInitiated).async {
-                let list = connection.destinations(including: id)
-                DispatchQueue.main.async { MainActor.assumeIsolated { answer(list) } }
-            }
-            return
-        }
-        if asking[client] != nil { asking[client]?.append(answer); return }
-        asking[client] = [answer]
-        DispatchQueue.global(qos: .userInitiated).async {
-            let list = connection.destinations()
-            DispatchQueue.main.async { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    if connection.keepsList { self.kept[client] = list }
-                    let waiting = self.asking.removeValue(forKey: client) ?? []
-                    waiting.forEach { $0(list) }
-                }
-            }
-        }
     }
 
     // MARK: Sending

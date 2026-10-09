@@ -371,9 +371,12 @@ final class ScreenshotRequestsTests: XCTestCase {
             .notSubmitted(code: .sendFailed, detail: "refused", reason: "refused"),
             .destinationChanged(detail: "changed", reason: "changed"),
         ]
+        let connection = HeldSubmission()
+        let callbacks = requests.callbacks
+        requests = ScreenshotRequests(root: root, connections: [.claude: connection])
+        requests.callbacks = callbacks
         for outcome in outcomes {
-            let connection = HeldSubmission(outcome)
-            requests.connections = [.claude: connection]
+            connection.outcome = outcome
             let answered = expectation(description: "delayed submission answers")
             requests.callbacks.delivered = { _, delivered in
                 XCTAssertEqual(delivered.detail, outcome.detail)
@@ -791,9 +794,15 @@ private final class HeldSubmission: AgentConnection, @unchecked Sendable {
     let client = AgentClient.claude
     let entered = DispatchSemaphore(value: 0)
     let resume = DispatchSemaphore(value: 0)
-    private let outcome: SubmissionOutcome
+    private let lock = NSLock()
+    private var answer: SubmissionOutcome = .accepted(detail: "")
 
-    init(_ outcome: SubmissionOutcome) { self.outcome = outcome }
+    /// What the next submission answers once resumed.
+    var outcome: SubmissionOutcome {
+        get { lock.lock(); defer { lock.unlock() }; return answer }
+        set { lock.lock(); answer = newValue; lock.unlock() }
+    }
+
     func destinations() -> [AgentDestination] { [] }
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
         entered.signal()

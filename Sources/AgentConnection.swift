@@ -71,15 +71,17 @@ struct AgentDestination: Equatable, Identifiable {
     /// client could not say.
     var lastUsed: Date? = nil
     /// Why this is the session you came from, when it is: its agent's own app was in front, or
-    /// herdr's focus is on its pane or beside it. Nil for every other session.
+    /// herdr's focus is on its pane or beside it. Set only by `DestinationChoice` on the list it
+    /// answers. Nil for every other session.
     var focus: Focus? = nil
 
     enum Focus: String, Equatable {
         /// Its agent's own app was the app in front, showing this session (`DestinationChoice`).
         case app
-        /// herdr's focused pane runs this session.
+        /// herdr's focused pane runs this session (`DestinationChoice`, from `HerdrFocus`).
         case pane
-        /// herdr's focused pane runs no agent, and this is the one session in that pane's tab.
+        /// herdr's focused pane runs no agent, and this is the one session in that pane's tab
+        /// (`DestinationChoice`, from `HerdrFocus`).
         case tab
     }
 
@@ -154,8 +156,9 @@ enum SubmissionOutcome {
 /// Both calls block on a subprocess, so they never run on the main thread.
 protocol AgentConnection: Sendable {
     var client: AgentClient { get }
-    /// Whether this route's last list may stand in while a fresh one is asked for. A list that says
-    /// where herdr's focus is may not: the focus moves whenever you change panes.
+    /// Whether this route's last list may stand in while a fresh one is asked for. Claude Code's may
+    /// not: herdr's focus is read in the same job as its list, so a kept list would let the pick
+    /// settle on the session used last before the focus arrives.
     var keepsList: Bool { get }
     /// The sessions this route can address right now. Empty when the route cannot enumerate.
     func destinations() -> [AgentDestination]
@@ -230,7 +233,7 @@ enum Subprocess {
 /// the person's message (agent-plugin/, docs/claude-code-without-herdr-2026-09-27.md). Vignette
 /// addresses the session, and checks just before writing that the inbox still holds it: `/clear`
 /// and `/resume` give the same process another session. What the menu says about a session comes
-/// from its own transcript. herdr, when it is there, only says which session has the focus.
+/// from its own transcript. herdr's focus is read beside this list (`SessionListing`, `HerdrFocus`).
 struct ClaudeCodeConnection: AgentConnection {
     let client = AgentClient.claude
     /// The inboxes, one folder per Claude Code process. Injected so a test never reads the real ones.
@@ -240,13 +243,7 @@ struct ClaudeCodeConnection: AgentConnection {
     var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
     var isRunning: @Sendable (Int32) -> Bool = { kill($0, 0) == 0 }
     var now: @Sendable () -> Date = { Date() }
-    /// herdr's binary and its runner, for the focus hint. Injected so tests never run herdr.
-    var herdr: @Sendable () -> String? = { AgentTools.forSessions("VIGNETTE_HERDR") { ClaudeCodeConnection.herdrBinary() } }
-    var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
-        Subprocess.run($0, $1, timeout: $2)
-    }
 
-    static let listTimeout: TimeInterval = 10
     /// The monitor touches `alive` every 3 s. An inbox older than this has no monitor reading it.
     static let aliveWindow: TimeInterval = 10
 
@@ -310,11 +307,7 @@ struct ClaudeCodeConnection: AgentConnection {
             let transcript = file.flatMap { Self.tail(of: $0) }.map(Self.transcript(tail:)) ?? Transcript()
             return Self.destination(session: session, cwd: inbox.cwd, transcript: transcript)
         }
-        guard !listed.isEmpty, let herdr = herdr(), let panes = run(herdr, ["pane", "list"], Self.listTimeout), panes.status == 0 else {
-            return listed
-        }
-        let data = Data(panes.output.utf8)
-        return Self.markFocus(listed, agents: Self.agents(in: data), focus: Self.focus(fromPaneList: data))
+        return listed
     }
 
     /// One session as a destination. The transcript names it and says when it was last used. A
@@ -357,67 +350,6 @@ struct ClaudeCodeConnection: AgentConnection {
                                  reason: SubmissionOutcome.internalReason)
         }
         return .accepted(detail: "inbox=\(inbox.pid) session=\(session)")
-    }
-
-    // MARK: herdr's focus
-
-    /// One agent herdr is running, of any kind, as `herdr pane list` reports it.
-    struct HerdrAgent: Equatable {
-        let pane: String
-        /// The agent session herdr says this pane is running, when it knows one.
-        var session: String? = nil
-        /// The tab the pane is in.
-        var tab: String = ""
-    }
-
-    /// Where herdr may be. The app is launched by LaunchServices, so it inherits no shell PATH.
-    private static let herdrPaths = ["\(NSHomeDirectory())/.local/bin/herdr", "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr"]
-
-    static func herdrBinary() -> String? {
-        herdrPaths.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
-
-    /// herdr's focused pane and its tab, from a `herdr pane list` answer, which lists every pane,
-    /// agent or not. Nil when no pane is focused or the answer does not parse.
-    static func focus(fromPaneList data: Data) -> (pane: String, tab: String)? {
-        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let panes = ((root?["result"] as? [String: Any])?["panes"] as? [[String: Any]]) ?? []
-        guard let pane = panes.first(where: { $0["focused"] as? Bool == true }),
-              let id = pane["pane_id"] as? String else { return nil }
-        return (id, pane["tab_id"] as? String ?? "")
-    }
-
-    /// The agents in a `herdr pane list` answer. A pane running no agent is left out, and an
-    /// unparseable answer is no agents.
-    static func agents(in data: Data) -> [HerdrAgent] {
-        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let panes = ((root?["result"] as? [String: Any])?["panes"] as? [[String: Any]]) ?? []
-        return panes.compactMap { pane in
-            guard let id = pane["pane_id"] as? String, pane["agent"] is String else { return nil }
-            let session = (pane["agent_session"] as? [String: Any])?["value"] as? String
-            return HerdrAgent(pane: id, session: (session?.isEmpty ?? true) ? nil : session,
-                              tab: pane["tab_id"] as? String ?? "")
-        }
-    }
-
-    /// Marks where herdr's focus is. `agents` is every agent herdr runs, of any kind. A focused pane
-    /// running an agent is that agent's, whether or not it is a destination. One running none, such
-    /// as a browser or a shell beside the session you are working with (observed 2026-09-24), passes
-    /// the focus to the one agent in its tab; a tab with two says nothing about which one.
-    static func markFocus(_ destinations: [AgentDestination], agents: [HerdrAgent],
-                          focus: (pane: String, tab: String)?) -> [AgentDestination] {
-        guard let focus else { return destinations }
-        let focusedAgent = agents.first { $0.pane == focus.pane }
-        let inTab = agents.filter { !focus.tab.isEmpty && $0.tab == focus.tab }
-        return destinations.map { destination in
-            var marked = destination
-            if let focusedAgent {
-                if focusedAgent.session == destination.id { marked.focus = .pane }
-            } else if inTab.count == 1, inTab[0].session == destination.id {
-                marked.focus = .tab
-            }
-            return marked
-        }
     }
 
     // MARK: Transcripts

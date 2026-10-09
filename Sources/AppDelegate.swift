@@ -63,8 +63,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         var waiting: Screenshot?
     }
     private var pendingAdds: [String: PendingAdd] = [:]
+    /// One map, so Send submits through the same connections it lists.
+    private static let connections: [AgentClient: any AgentConnection] = [.claude: ClaudeCodeConnection(), .codex: CodexConnection()]
     /// Sending drawings to agent sessions and taking their drawings back. See ScreenshotRequests.
-    private let requests = ScreenshotRequests(root: ScreenshotRequests.defaultRoot)
+    private let requests = ScreenshotRequests(root: ScreenshotRequests.defaultRoot, connections: AppDelegate.connections)
+    /// The agent sessions Send can go to. See SessionListing.
+    private let sessions = SessionListing(connections: AppDelegate.connections)
     private let agentPlugins = AgentPlugins()
     /// The screenshot each request sent this launch was made from, until its client answers.
     private var sentShots: [String: Screenshot] = [:]
@@ -168,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
             startAgentPlugin()
         }
-        requests.refreshKeptLists()
+        sessions.refreshKeptLists()
         // The contract for agents: after this line every command answers.
         Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) watching=\(watchFolder.path)")
     }
@@ -337,7 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             let focused = thumbnail.focusedShot
             pressDismissed = pressRecent() == .dismissed
             holdTarget = pressDismissed ? focused : nil
-            if !pressDismissed { requests.refreshKeptLists() }   // a card from the stack may open next
+            if !pressDismissed { sessions.refreshKeptLists() }   // a card from the stack may open next
         }
         let hold = { [weak self] in
             guard let self else { return }
@@ -1159,8 +1163,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// before anything warms the stack: until the reply records are loaded nothing knows which
     /// managed files are unfinished, and an unfinished one must never read as an ordinary capture.
     private func startRequests() {
-        requests.connections = [.claude: ClaudeCodeConnection(),
-                                .codex: CodexConnection()]
         requests.callbacks = ScreenshotRequests.Callbacks(
             installDrawing: { [weak self] shot, marks, agent, done in
                 guard let self else { return done(Drawings.Failure(code: .writeFailed, description: "the app is gone")) }
@@ -1244,12 +1246,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     private func listDestinations(for shot: Screenshot, session: Int, asked: CFTimeInterval, cameFrom: (client: AgentClient, shown: String?)?) {
         let shown = cameFrom.flatMap { from in from.shown.map { (from.client, $0) } }
-        requests.destinations(shown: shown) { [weak self] found, complete, fresh in
+        sessions.list(shown: shown) { [weak self] candidates in
             guard let self else { return }
-            Log.write("[send] sessions \(found.count)\(complete ? " complete" : "")\(fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
+            Log.write("[send] sessions \(candidates.destinations.count)\(candidates.complete ? " complete" : "")\(candidates.fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
             // A file can reopen while its earlier destination listing is still running.
             guard self.annotator.session == session else { return }
-            self.annotator.destinationsAnswered(DestinationChoice.choose(found, complete: complete, fresh: fresh, cameFrom: cameFrom))
+            self.annotator.destinationsAnswered(DestinationChoice.choose(candidates, cameFrom: cameFrom))
         }
     }
 
@@ -1367,7 +1369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             // stored. A watcher report for one — the copy that made it, or a later rescan — is
             // never a capture, so it neither goes to the clipboard nor opens the editor.
             guard self.requests.isCapture(url) else { return }
-            self.requests.refreshKeptLists()   // so Send's list is current if this opens in the editor
+            self.sessions.refreshKeptLists()   // so Send's list is current if this opens in the editor
             if self.settings.data.copyOnCapture {
                 Clipboard.copyFiles([url])
                 Log.write("[watcher] copied \(url.lastPathComponent)")

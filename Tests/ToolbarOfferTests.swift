@@ -5,14 +5,23 @@ import XCTest
 /// pointer when a slower client answers.
 @MainActor
 final class ToolbarOfferTests: XCTestCase {
-    private func session(_ id: String, _ client: AgentClient = .claude, used: TimeInterval = 0,
-                         focus: AgentDestination.Focus? = nil) -> AgentDestination {
+    private func session(_ id: String, _ client: AgentClient = .claude, used: TimeInterval = 0) -> AgentDestination {
         AgentDestination(id: id, name: id, address: client == .claude ? .claudeSession(id) : .codexThread(uuid: id),
-                         lastUsed: Date(timeIntervalSince1970: used), focus: focus)
+                         lastUsed: Date(timeIntervalSince1970: used))
     }
 
-    private func answer(_ list: [AgentDestination], complete: Bool) -> DestinationChoice.Answer {
-        DestinationChoice.choose(list, complete: complete, fresh: true, cameFrom: nil)
+    private func answer(_ list: [AgentDestination], complete: Bool, herdr: HerdrFocus? = nil) -> DestinationChoice.Answer {
+        DestinationChoice.choose(.init(destinations: list, complete: complete, fresh: true, herdr: herdr), cameFrom: nil)
+    }
+
+    /// herdr's focus on the pane running session `id`.
+    private func inPane(_ id: String) -> HerdrFocus {
+        HerdrFocus(pane: "p", tab: "t", agents: [.init(pane: "p", session: id, tab: "t")])
+    }
+
+    /// herdr's focus on a pane running no agent, in the tab where session `id` runs.
+    private func besideFocus(_ id: String) -> HerdrFocus {
+        HerdrFocus(pane: "b", tab: "t", agents: [.init(pane: "p", session: id, tab: "t")])
     }
 
     func testEachOfferSaysWhatReturnAndCmdReturnDo() {
@@ -31,9 +40,9 @@ final class ToolbarOfferTests: XCTestCase {
     /// and Esc there are the image's, so opening and pressing Return copies rather than sending.
     func testAFieldThatTookTheKeysOnItsOwnSendsOnlyOnceSomethingIsTyped() {
         let model = AnnotatorToolbar.Model()
-        let mew = session("mew", focus: .pane)
+        let mew = session("mew")
         model.begin(replyTo: nil, carryingTarget: false)
-        model.answered(answer([mew], complete: true))
+        model.answered(answer([mew], complete: true, herdr: inPane("mew")))
         model.tookKeysOnOpen = true
         XCTAssertEqual(model.fieldReturn, .done, "Return copies: the target is Vignette's pick")
         XCTAssertTrue(model.fieldEscCloses)
@@ -70,10 +79,11 @@ final class ToolbarOfferTests: XCTestCase {
         let codex = session("codex", .codex, used: 200), unfocused = session("other", used: 150)
         model.answered(answer([codex], complete: false))
         XCTAssertNil(model.target, "no focus yet, and the session used last needs every client's answer")
-        let beside = session("mew", used: 100, focus: .tab)
-        model.answered(answer([codex, unfocused, beside], complete: false))
+        let beside = session("mew", used: 100)
+        model.answered(answer([codex, unfocused, beside], complete: false, herdr: besideFocus("mew")))
         XCTAssertEqual(model.target?.id, "mew")
-        model.answered(answer([session("new codex", .codex, used: 300), codex, unfocused, beside], complete: true))
+        model.answered(answer([session("new codex", .codex, used: 300), codex, unfocused, beside], complete: true,
+                              herdr: besideFocus("mew")))
         XCTAssertEqual(model.target?.id, "mew", "a later answer does not move a target that is still there")
         model.pick(codex)
         model.answered(answer([beside], complete: true))
@@ -97,25 +107,27 @@ final class ToolbarOfferTests: XCTestCase {
     func testASwapKeepsTheTargetOnTheBarUntilTheNextImagesSettles() {
         let model = AnnotatorToolbar.Model()
         model.begin(replyTo: nil, carryingTarget: false)
-        let mew = session("mew", focus: .pane), codex = session("codex", .codex, used: 200)
-        model.answered(answer([mew], complete: true))
+        let mew = session("mew"), codex = session("codex", .codex, used: 200)
+        let inMewsPane = answer([mew], complete: true, herdr: inPane("mew"))
+        let focusedMew = inMewsPane.list[0]
+        model.answered(inMewsPane)
         model.begin(replyTo: nil, carryingTarget: true)
-        XCTAssertEqual(model.offer, .send(mew))
+        XCTAssertEqual(model.offer, .send(focusedMew))
         model.answered(answer([codex], complete: false))
         XCTAssertEqual(model.target?.id, "mew", "an answer that settles nothing leaves it")
-        model.answered(answer([codex, session("other", focus: .pane)], complete: false))
+        model.answered(answer([codex, session("other")], complete: false, herdr: inPane("other")))
         XCTAssertEqual(model.target?.id, "other", "this image's own focus replaces it")
 
         // A reply to a Claude Code session the image before's whole list did not have: that session
         // has closed, so the bar stays Send rather than narrowing to Reply until this list answers.
-        model.answered(answer([mew], complete: true))
+        model.answered(inMewsPane)
         let gone = session("gone")
         model.begin(replyTo: gone, carryingTarget: true)
-        XCTAssertEqual(model.offer, .send(mew))
+        XCTAssertEqual(model.offer, .send(focusedMew))
         model.answered(answer([codex], complete: false))
-        XCTAssertEqual(model.offer, .send(mew), "a partial answer does not bring Reply back")
-        model.begin(replyTo: mew, carryingTarget: true)
-        XCTAssertEqual(model.offer, .reply(mew), "a session the list has is still there")
+        XCTAssertEqual(model.offer, .send(focusedMew), "a partial answer does not bring Reply back")
+        model.begin(replyTo: focusedMew, carryingTarget: true)
+        XCTAssertEqual(model.offer, .reply(focusedMew), "a session the list has is still there")
         model.begin(replyTo: gone, carryingTarget: false)
         XCTAssertEqual(model.offer, .reply(gone), "a new bar has no list yet, so the session may only be late")
     }
