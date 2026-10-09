@@ -1,5 +1,7 @@
 # A session's answer to live ink is drawn on the window
 
+Superseded by ADR 0022: a session's result now comes back as a card.
+
 Live ink sent to a working session, such as "move these under the title", is answered on the window
 the ink is on. The session's words appear beside the ink, and its marks point at what it changed.
 The person drew on that window and is looking at it, so an answer there needs no trip to the stack.
