@@ -295,7 +295,9 @@ final class LiveInkTests: XCTestCase {
             ["kind": "circle", "box": [0.42, 0.40, 0.14, 0.06], "label": "Now green"],
             ["kind": "arrow", "box": [0.10, 0.70, 0.22, 0.05], "label": "Field moved"]]])
         let pixels = PixelSize(width: 2400, height: 1600), scale: CGFloat = 2, style = UITweaks().textStyle
-        let canvas = LiveAnswer.Canvas(pixels: pixels, pointScale: scale, style: style, agent: "claude")
+        // A browser's page, below its toolbar.
+        let page = CGRect(x: 0, y: 0.08, width: 1, height: 0.92)
+        let canvas = LiveAnswer.Canvas(pixels: pixels, pointScale: scale, style: style, agent: "claude", page: page)
         // A field's placeholder left of the button, where the words would otherwise go, and the word
         // after the arrow's, which an arrow from the right would cross.
         let line = CGRect(x: 0.16, y: 0.41, width: 0.22, height: 0.04)
@@ -313,6 +315,7 @@ final class LiveInkTests: XCTestCase {
             return CGRect(x: layout.box.minX, y: layout.box.minY - above, width: layout.box.width, height: layout.box.height + above)
         }
         let extents = marks.map(extent)
+        XCTAssertTrue(extents.allSatisfy { $0.minY >= page.minY * CGFloat(pixels.height) }, "everything keeps off the toolbar")
         for (i, a) in extents.enumerated() {
             guard case .text = marks[i].geometry else { continue }
             for (j, b) in extents.enumerated() where j != i {
