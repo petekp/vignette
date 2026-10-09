@@ -463,6 +463,10 @@ and is removed before live ink reaches main.
   - `built`: the checkout an app being built runs from.
   - `titleNames` and `titleFolders`: the sessions whose name, or folder's last part, the window's
     title contains.
+  - `titleWords` and `titleOverlap`: how many words the title has that could name some work, and
+    for each session, how many of them its name and folder's last part share. Words under three
+    letters, a plural's "s" and common words such as app names are left out first. These are
+    counts only. They show how often a title gives anything to match on.
   - `sessions`: each live Claude Code session's id, folder, herdr `focus` and seconds `idle`.
   - `readMs`: how long the window's reads took.
 - **`send`, at each send from the editor:** `file` (the digest), `request`, `to`, `client`, and `offered`, where
@@ -473,7 +477,9 @@ and is removed before live ink reaches main.
   the `send` and `note` lines before.
 - **Checked in the macOS 26 VM:** a window capture of Safari gave the page's folder; an odd-sized
   image gave a selection; a Reply card's send recorded `offered` and `reply: true`; a note sent to
-  a fake session recorded its window and both targets.
+  a fake session recorded its window and both targets. A Safari window titled "Newsletter" counted
+  one shared word for a session named "Tighten the newsletter signup form" and one for a session in
+  a `newsletters` folder, and none for two sessions in a folder named `project`.
 - **One fix came first,** on main (886322e): the `[send] target` line logged herdr's focus even for a
   Reply card, whose bar offers the card's own session. It now logs where the filled button sends,
   marked `reply` for the card's own session.

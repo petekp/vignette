@@ -185,10 +185,37 @@ enum SendContext {
             }.map(\.id)
             if !named.isEmpty { out["titleNames"] = named }
             if !foldered.isEmpty { out["titleFolders"] = foldered }
+            // How often a title gives a reader anything to go on: its own words counted, and each
+            // session sharing some with it, by how many. Never the words themselves.
+            let titleWords = words(title)
+            out["titleWords"] = titleWords.count
+            var overlap: [String: Int] = [:]
+            for session in sessions {
+                let shared = titleWords.intersection(words(session.name + " " + (session.folder as NSString).lastPathComponent)).count
+                if shared > 0 { overlap[session.id] = shared }
+            }
+            if !overlap.isEmpty { out["titleOverlap"] = overlap }
         }
         out["readMs"] = Int(Date().timeIntervalSince(started) * 1000)
         return out
     }
+
+    /// The words in a title or a session's name and folder that could tie the two together:
+    /// lowercased, three letters or more, a plural's "s" dropped, without the words most titles or
+    /// session names carry whatever they are about.
+    static func words(_ text: String) -> Set<String> {
+        Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.compactMap { part -> String? in
+            var word = String(part)
+            if word.count > 4, word.hasSuffix("s"), !word.hasSuffix("ss") { word.removeLast() }
+            return word.count >= 3 && !commonWords.contains(word) ? word : nil
+        })
+    }
+
+    private static let commonWords: Set<String> = [
+        "the", "and", "for", "with", "from", "into", "this", "that", "new", "session", "project", "untitled",
+        "google", "chrome", "safari", "dia", "figma", "slack", "notion", "linear", "github", "app", "www", "com",
+        "http", "https", "html", "index", "home", "page", "tab", "window", "add", "fix", "make", "use", "code",
+    ]
 
     private static func kind(of bundle: String) -> String {
         switch bundle {
