@@ -204,7 +204,8 @@ The names in brackets are `// MARK:` sections.
   shows, with the words in a corner and each mark at the words it names in that capture
   (`LiveAnswer.cardMarks`). The card is from the session: `AppDelegate.addLiveResult` records the
   agent and the session on it as an `add` does, so it wears the agent's tab and Reply on it goes
-  back there. The reply's stage is then `shown`, with no file of its own. A window off the screen,
+  back there (`Agent.origin`). A Codex thread goes in `Agent.threadAttribute`, which `add` never
+  writes. The reply's stage is then `shown`, with no file of its own. A window off the screen,
   or a relaunch since the note went, makes the reply a card on the picture the session was sent,
   with a ring or an arrow for each mark that gave a box (`Reply.cardMarks`).
 - When a session's turn ends with no reply, Vignette looks at the window again (`LiveInk.endTurn`,
