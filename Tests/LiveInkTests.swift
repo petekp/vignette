@@ -40,6 +40,69 @@ final class LiveInkTests: XCTestCase {
         XCTAssertTrue(end.isOver(at: ListeningEnd.longest), "but never past the longest listening")
     }
 
+    // MARK: How long a note card's turn is waited on
+
+    private let t0 = Date(timeIntervalSinceReferenceDate: 0)
+
+    private func readings(_ watch: inout TurnWatch, _ turns: [(SessionTurn?, TimeInterval)]) -> [TurnWatch.Verdict] {
+        turns.map { watch.read($0.0, at: t0 + $0.1) }
+    }
+
+    func testATurnSeenToStartEndsOnceItHasBeenIdleTwoSeconds() {
+        var watch = TurnWatch(asked: t0)
+        XCTAssertEqual(readings(&watch, [(.busy, 0), (.idle, 10), (.idle, 11.5)]), [.stillWaiting, .stillWaiting, .stillWaiting])
+        XCTAssertEqual(watch.read(.idle, at: t0 + 12), .ended, "idle for two seconds from the first idle reading")
+    }
+
+    func testABusyMomentBetweenTurnsStartsTheIdleSpellOver() {
+        var watch = TurnWatch(asked: t0)
+        XCTAssertEqual(readings(&watch, [(.busy, 0), (.idle, 10), (.busy, 11), (.idle, 12), (.idle, 13.5)]),
+                       Array(repeating: .stillWaiting, count: 5))
+        XCTAssertEqual(watch.read(.idle, at: t0 + 14), .ended)
+    }
+
+    func testATurnEndingWhileTheRequestStillWaitsIsAnotherRequests() {
+        var watch = TurnWatch(asked: t0)
+        let verdicts = readings(&watch, [(.busy, 0), (.waiting, 1)] + (2...20).map { (.idle, TimeInterval($0)) })
+        XCTAssertFalse(verdicts.contains(.ended), "the busy turn before the request left the inbox was another one's")
+    }
+
+    func testWithNoTurnSeenToStartVignetteStopsWaitingThreeMinutesAfterTheSessionTookTheRequest() {
+        var watch = TurnWatch(asked: t0)
+        XCTAssertEqual(watch.read(nil, at: t0 + 180), .stillWaiting)
+        XCTAssertEqual(watch.read(nil, at: t0 + 180.5), .stoppedWaiting)
+
+        var taken = TurnWatch(asked: t0)
+        XCTAssertEqual(taken.read(.waiting, at: t0 + 100), .stillWaiting)
+        XCTAssertEqual(taken.read(nil, at: t0 + 280), .stillWaiting, "counted from when the session took it, not the ask")
+        XCTAssertEqual(taken.read(nil, at: t0 + 280.5), .stoppedWaiting)
+    }
+
+    func testATurnUnderWayIsWaitedOnForThirtyMinutes() {
+        var watch = TurnWatch(asked: t0)
+        let busy = readings(&watch, [(.waiting, 50)] + stride(from: 60, through: 1850, by: 60).map { (.busy, TimeInterval($0)) } + [(.busy, 1850)])
+        XCTAssertFalse(busy.contains(.stoppedWaiting))
+        XCTAssertEqual(watch.read(.busy, at: t0 + 1850.5), .stoppedWaiting, "thirty minutes from when the session took the request")
+
+        var unknown = TurnWatch(asked: t0)
+        XCTAssertEqual(unknown.read(.busy, at: t0), .stillWaiting)
+        XCTAssertEqual(unknown.read(nil, at: t0 + 180), .stillWaiting)
+        XCTAssertEqual(unknown.read(nil, at: t0 + 180.5), .stoppedWaiting, "a reading that cannot tell gets the shorter limit")
+    }
+
+    func testARequestStillQueuedCountsFromTheAsk() {
+        var watch = TurnWatch(asked: t0)
+        let queued = readings(&watch, stride(from: 60, through: 1800, by: 60).map { (.waiting, TimeInterval($0)) })
+        XCTAssertFalse(queued.contains(.stoppedWaiting))
+        XCTAssertEqual(watch.read(.waiting, at: t0 + 1800.5), .stoppedWaiting)
+    }
+
+    func testAnIdleSpellSettlingIsNotCutShortByTheLimit() {
+        var watch = TurnWatch(asked: t0)
+        XCTAssertEqual(readings(&watch, [(.busy, 0), (.idle, 1799), (.idle, 1800.5)]), [.stillWaiting, .stillWaiting, .stillWaiting])
+        XCTAssertEqual(watch.read(.idle, at: t0 + 1801), .ended)
+    }
+
     // MARK: Tying spoken words to strokes
 
     private func words(_ spoken: [(String, TimeInterval)]) -> [SpokenWord] {

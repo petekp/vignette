@@ -16,7 +16,7 @@ The names in brackets are `// MARK:` sections.
 | How the person's ink looks | `LiveInkHand.swift` |
 | How an agent's shapes look | `LiveInkLight.swift` |
 | The note: opening, placing, sending | `LiveInk.swift` (Asking), `LiveNotePanel.swift` |
-| A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking, Whether it landed), `AppDelegate.swift` (Live ink notes sent to a session) |
+| A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking), `LiveNoteCards.swift`, `LiveNoteCardWait.swift` |
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
 | What an ask sends | `LivePacket.swift` |
 | Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
@@ -27,11 +27,12 @@ The names in brackets are `// MARK:` sections.
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
 | Marks following their window, holding still, hiding | `LiveWindows.swift`, `LiveAnchor.swift` (Accessibility), `LivePatch.swift` (pixels) |
-| Whether a session's turn changed what the ink was on | `LiveChange.swift`, `LiveInk.swift` (Whether it landed) |
+| Whether a session's turn changed what the ink was on | `LiveChange.swift`, `LiveNoteCards.swift` (`look(again:)`, `before`) |
 
 ## Checking a change
 
 - `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement, result cards and anchoring.
+  `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery.
 - A script reaches the note without a hand on the keys: `live-ink-chord-down`, then
   `live-ink-stroke` for each stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot
   press ⌃⌥, so this is the only way a VM check opens the note.
@@ -167,7 +168,7 @@ The names in brackets are `// MARK:` sections.
   ADR 0022). Send gets one line that names the app, the window and its URL, with the picture the
   responder would get: the window with the ink drawn in and its strokes numbered. The card is the
   window without the ink, written to the watch folder as `Live ink note <date> at <time>.png`
-  (`AppDelegate.sendLiveNote`), with the person's ink and words as its drawing
+  (`LiveNoteCards.send`), with the person's ink and words as its drawing
   (`LivePacket.drawingMarks`), so it opens, copies and sends again like any drawn-on screenshot.
   Copy on capture and Draw on capture leave it alone, as they leave an `add`, and the card shows the
   send as a send from the editor does. Once the request is stored the card flies from the window
@@ -176,16 +177,19 @@ The names in brackets are `// MARK:` sections.
   it away (`LiveInk.share`, `Finish.carried`). A window on another screen than the corner's sends
   no flight, and its ink undraws. A send refused before that takes the file back, and the ink
   stays, with the reason beside it.
-- Each note's turn is watched on its own (`LiveInk.watch`), twice a second, from the `turn` file the
+- Each note's turn is watched on its own (`LiveNoteCards`), twice a second, from the `turn` file the
   plugin's hooks write in the session's inbox (`ClaudeCodeConnection.turn(of:)`). Nothing on the
   screen waits on it, so clearing the ink or drawing a new note leaves it running. The request
   waits in the inbox while another turn runs. Vignette stops waiting 3 minutes after the session
   takes the request when it sees no turn start, 30 minutes into a turn it saw start, or 30 minutes
-  after the ask while the request is still queued. Codex reports no turns. `[state]
-  liveInk.watching` counts the notes watched.
+  after the ask while the request is still queued (`TurnWatch`). Codex reports no turns, so a note
+  to a Codex thread is not watched: Vignette stops waiting as it sends, and a reply within 3 minutes
+  is still drawn on a fresh capture. `[state] liveInk.watching` counts the notes watched. One pure
+  value, `NoteCardWait`, decides how a note card's wait ends, in any order of its reply, its turn's
+  end and its delivery.
 - A session's answer with `scripts/reply --answer`, words and up to four marks that each name words
   on the window (`LiveAnswer`, in the reply's bundle), becomes the note's result card
-  (`LiveInk.result`): the window captured afresh, since the session has usually changed what it
+  (`LiveNoteCards.answer`): the window captured afresh, since the session has usually changed what it
   shows, with each mark at the words it names in that capture (`ResultCard.marks`). It finds them by
   the rule the screen uses for an answer's marks (`AnswerMark.target`). A ring keeps room round the
   words, and an arrow is the one the screen would draw (`LiveAnswerLayout.arrows`), ending at the
@@ -197,17 +201,17 @@ The names in brackets are `// MARK:` sections.
   found, each measured as the card sets it and placed where it covers the least of the rest and of the
   text Vision read in the capture (`AgentMark.note`). How many marks there are
   never depends on that measuring, since a reply's stored drawing is checked against the count after
-  a relaunch. The card is from the session: `AppDelegate.addLiveResult` records the
+  a relaunch. The card is from the session: `LiveNoteCards` records the
   agent and the session on it as an `add` does, so it wears the agent's tab and Reply on it goes
   back there (`Agent.origin`). A Codex thread goes in `Agent.threadAttribute`, which `add` never
   writes. The reply's stage is then `shown`, with no file of its own. A window off the screen,
   or a relaunch since the note went, makes the reply a card on the picture the session was sent,
   with a ring or an arrow for each mark that gave a box (`Reply.cardMarks`), laid out the same way
   on that picture (`ScreenshotRequests.Callbacks.cardCanvas`).
-- When a session's turn ends with no reply, Vignette looks at the window again (`LiveInk.endTurn`,
+- When a session's turn ends with no reply, Vignette looks at the window again (`LiveNoteCards`,
   `LiveChange`).
   - **The before picture.** The note's own capture gives the part of the window round the ink: the
-    ink's shapes with 64 pt round them, inside the web page when there is one (`LiveInk.before`).
+    ink's shapes with 64 pt round them, inside the web page when there is one (`LiveNoteCards.before`).
   - **The comparison.** At the turn's end it captures the window twice, half a second apart, and
     compares that same part of the window on a grid of 3 pt cells of colour. A cell counts when its
     red, green or blue moved more than 24 of 255 and did not move between the two later captures.

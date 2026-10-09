@@ -42,13 +42,6 @@ final class LiveInk {
     /// refused.
     var sendNote: ((NoteCard, AgentDestination, String,
                     @escaping (Result<(request: String, carried: Bool), ScreenshotRequests.Refusal>) -> Void) -> Void)?
-    /// A note's session finished its turn, with what Vignette saw of the window then.
-    var turnEnded: ((String, TurnEnd) -> Void)?
-    /// Where a session is in its turns, or nil when that cannot be told.
-    var turn: ((AgentDestination) -> SessionTurn?)?
-    /// Each note sent to a session, by request id, watched until its turn ends.
-    private var watches: [String: Watch] = [:]
-    private var watchTimer: Timer?
     /// The marks leaving, and how, removed once they have gone.
     private var finishing: [Mark.ID: LiveMarksLayer.Finish] = [:]
     /// The × that dismisses the answer, shown while the pointer is over its note.
@@ -61,17 +54,6 @@ final class LiveInk {
     /// The packet for the ink the note is open on, captured when it opened, so its text can move
     /// the note clear of the window's text and the ask need not capture again.
     private var prepared: (ink: Set<Mark.ID>, packet: Task<LivePacket, Error>, glance: Task<LivePacket.Glance?, Never>)?
-    /// How the window looked round a note's ink as it went, which `look(again:)` compares with the
-    /// window when the session's turn ends.
-    private struct Before {
-        /// The part of the window compared, `region`, in points from the window's top-left corner;
-        /// `ink`, the part under the ink, which decides; and the window's size then.
-        let picture: CGImage
-        let region: CGRect
-        let ink: CGRect
-        let windowSize: CGSize
-        let windowID: CGWindowID
-    }
     /// The person's marks some ask has been about. The rest are new, and the next ask is about them.
     private var asked = Set<Mark.ID>()
     /// A mark was drawn since the chord went down, so letting it go opens the note.
@@ -140,31 +122,12 @@ final class LiveInk {
         /// In `capture`'s pixels, with sizes in points of `pointScale`.
         let marks: [Mark]
         let pointScale: CGFloat
-    }
-
-    /// What Vignette saw when a note's session finished its turn.
-    enum TurnEnd {
-        /// The window changed under the ink: the window as it is now, at `pointScale` pixels per point.
-        case changed(CGImage, pointScale: CGFloat)
-        /// Nothing changed under the ink, or the window could not be compared: it closed, or changed size.
-        case unchanged
-        /// Vignette stopped waiting on the turn, which may still be under way.
-        case stoppedWaiting
-    }
-
-    /// A note sent to a session, watched until its turn ends: the window it was on, where its ink
-    /// was, in global top-left points, how the window looked round it, whether the turn was seen to
-    /// start, since when it has been idle, since when the session has had the request, and when it
-    /// was sent.
-    private struct Watch {
-        let session: AgentDestination
-        let windowID: CGWindowID?
+        /// The window the note was on, nil for a note of no one window, and where its ink was, in
+        /// global top-left points, which a result card is captured round.
+        let window: CGWindowID?
         let ink: CGRect
-        let before: Before?
-        var seenBusy = false
-        var idleSince: Date?
-        var since = Date()
-        let asked = Date()
+        /// How the window looked round the ink, which the window is compared with when the turn ends.
+        let before: LiveNoteCards.Before?
     }
 
     /// What `[state]` says about the ask under way, or the last one.
@@ -417,7 +380,6 @@ final class LiveInk {
             },
             "windows": windows.stateJSON,
             "new": newInk.count,
-            "watching": watches.count,
             "steps": stepClicks == nil ? 0 : steps.count + 1,
             "focus": focusRun.map { run -> Any in
                 ["stop": run.index + 1, "stops": run.stops.count, "zoom": run.stops.indices.contains(run.index) && run.stops[run.index].first?.focus?.zoom == true]
@@ -785,7 +747,7 @@ final class LiveInk {
     /// Sends the note to a working session through Send, with the words and where the ink is in the
     /// message, as a card: the window without the ink, with the person's ink on it and their words as
     /// a note, which is what the session is sent. Once the request is stored the ink and the note leave
-    /// the window, and the session's turn is watched for its result card.
+    /// the window, and `LiveNoteCards` waits on the session's turn.
     private func share(_ packet: LivePacket, words: String, spoken: (words: [SpokenWord], began: Date)?, with session: AgentDestination,
                        from spot: CGRect?) {
         guard asking?.phase == .looking, let about = asking?.about, let sendNote else { return letGoOfNote(into: nil) }
@@ -801,17 +763,16 @@ final class LiveInk {
         // The same ink the picture has, so the card holds what the session sees and what leaves the window.
         let person = ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
         let note = noteMark(words, about: about, packet: packet, at: spot)
-        let card = NoteCard(picture: packet.picture, capture: packet.capture, frame: packet.frame,
-                            marks: packet.drawingMarks(person + (note.map { [$0] } ?? [])), pointScale: packet.scale)
         let shapes = person.filter { about.contains($0.id) && $0.kind != .text }.compactMap(\.shapeExtent)
         let inkBox = (shapes.isEmpty ? person.compactMap(\.shapeExtent) : shapes).reduce(CGRect.null) { $0.union($1) }
-        let before = Self.before(packet, ink: inkBox)
+        let card = NoteCard(picture: packet.picture, capture: packet.capture, frame: packet.frame,
+                            marks: packet.drawingMarks(person + (note.map { [$0] } ?? [])), pointScale: packet.scale,
+                            window: packet.windowID, ink: inkBox, before: LiveNoteCards.before(packet, ink: inkBox))
         sendNote(card, session, message) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let sent):
                 Log.write("[live-ink] sent to a session request=\(sent.request) marks=\(card.marks.count)")
-                self.watch(sent.request, Watch(session: session, windowID: packet.windowID, ink: inkBox, before: before))
                 guard self.asking?.about == about else { return }
                 self.letGoOfNote(into: nil)
                 let ids = about.union(person.map(\.id))
@@ -864,133 +825,6 @@ final class LiveInk {
         return spot.map { LiveAnswerLayout.note(words, at: $0, sizes: answerSizes) }
             ?? LiveAnswerLayout.note(words, near: near, scene: scene, obstacles: LiveAnswerLayout.obstacles(in: scene), sizes: answerSizes,
                                      byPerson: true)
-    }
-
-    /// How long a note's turn is waited on once the session has the request, with no word that its
-    /// turn started, as from a route that cannot tell.
-    private static let workingLimit: TimeInterval = 180
-    /// How long a turn the session said it started may run, and how long after the ask a request
-    /// may still wait in the inbox, before Vignette stops waiting on it.
-    private static let turnLimit: TimeInterval = 30 * 60
-    /// How long the turn must stay idle to count as over: requests handed over together can run as
-    /// turns one after another, idle for a moment between them.
-    private static let idleSettle: TimeInterval = 2
-
-    /// Reads the session's turn on each note twice a second, until it ends. Nothing on the screen
-    /// waits on it, so clearing the ink or a new note leaves it running.
-    private func watch(_ request: String, _ watched: Watch) {
-        watches[request] = watched
-        guard watchTimer == nil else { return }
-        watchTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.checkTurns() }
-        }
-    }
-
-    /// Stops waiting on a note's turn: its send did not go.
-    func stopWatching(_ request: String) {
-        watches[request] = nil
-    }
-
-    private func checkTurns() {
-        for request in Array(watches.keys) { checkTurn(request) }
-        if watches.isEmpty {
-            watchTimer?.invalidate()
-            watchTimer = nil
-        }
-    }
-
-    private func checkTurn(_ request: String) {
-        guard let watched = watches[request] else { return }
-        let turn = self.turn?(watched.session)
-        switch turn {
-        case .waiting:
-            // The request is still in the inbox, so a turn under way is another one's.
-            watches[request]?.seenBusy = false
-            watches[request]?.idleSince = nil
-            watches[request]?.since = Date()
-        case .busy:
-            watches[request]?.seenBusy = true
-            watches[request]?.idleSince = nil
-        case .idle where watched.seenBusy:
-            let since = watched.idleSince ?? Date()
-            watches[request]?.idleSince = since
-            guard Date().timeIntervalSince(since) >= Self.idleSettle else { return }
-            Log.write("[live-ink] session's turn ended request=\(request)")
-            return endTurn(request, seenToEnd: true)
-        case .idle, nil:
-            break
-        }
-        // A request still in the inbox counts from the ask, and anything else from when the session took it.
-        let waited = Date().timeIntervalSince(turn == .waiting ? watched.asked : watched.since)
-        if waited > (turn == .busy || turn == .waiting ? Self.turnLimit : Self.workingLimit) {
-            Log.write("[live-ink] stopped waiting on the session request=\(request)")
-            endTurn(request, seenToEnd: false)
-        }
-    }
-
-    /// The note's turn is over, or Vignette stopped waiting on it. A turn seen to end is looked at
-    /// again first: the window round the ink against how it was as the note went.
-    private func endTurn(_ request: String, seenToEnd: Bool) {
-        guard let watched = watches.removeValue(forKey: request) else { return }
-        guard seenToEnd, let before = watched.before else {
-            turnEnded?(request, seenToEnd ? .unchanged : .stoppedWaiting)
-            return
-        }
-        Task { @MainActor [weak self] in
-            let seen = await Self.look(again: before)
-            switch seen {
-            case .some((.changed(let share, _), let after, let scale)):
-                Log.write("[live-ink] landed changed=\(String(format: "%.3f", share))")
-                self?.turnEnded?(request, .changed(after, pointScale: scale))
-            case .some((.unchanged(let share), _, _)):
-                Log.write("[live-ink] nothing changed under the ink changed=\(String(format: "%.3f", share))")
-                self?.turnEnded?(request, .unchanged)
-            case .none:
-                self?.turnEnded?(request, .unchanged)
-            }
-        }
-    }
-
-    // MARK: Whether it landed
-
-    /// The window round `ink`, a rect in global top-left points, as the packet captured it: the
-    /// ink's shapes with `LiveChange.reach` round them, inside the web page when there is one. Nil
-    /// for a packet of no one window.
-    private static func before(_ packet: LivePacket, ink: CGRect) -> Before? {
-        guard let window = packet.windowID, !ink.isNull else { return nil }
-        let room = packet.page.map { $0.intersection(packet.frame) } ?? packet.frame
-        guard let under = LiveChange.region(around: ink, in: room),
-              let region = LiveChange.region(around: ink, in: room, margin: LiveChange.reach),
-              let picture = LiveChange.crop(packet.capture, frame: packet.frame, to: region) else { return nil }
-        let origin = CGVector(dx: -packet.frame.minX, dy: -packet.frame.minY)
-        return Before(picture: picture, region: region.offsetBy(dx: origin.dx, dy: origin.dy),
-                      ink: under.offsetBy(dx: origin.dx, dy: origin.dy), windowSize: packet.frame.size, windowID: window)
-    }
-
-    /// The window round the ink now, twice `LiveChange.settle` apart, against `before`, with the
-    /// window as it is now and its pixels per point. Nil when the window is gone or changed size.
-    private static func look(again before: Before) async -> (LiveChange.Outcome, CGImage, CGFloat)? {
-        do {
-            let after = try await LivePacket.capture(window: before.windowID)
-            try await Task.sleep(nanoseconds: UInt64(LiveChange.settle * 1_000_000_000))
-            let again = try await LivePacket.capture(window: before.windowID)
-            guard abs(after.frame.width - before.windowSize.width) < 1, abs(after.frame.height - before.windowSize.height) < 1 else {
-                Log.write("[live-ink] can't tell whether it landed: the window changed size")
-                return nil
-            }
-            let region = before.region.offsetBy(dx: after.frame.minX, dy: after.frame.minY)
-            let regionAgain = before.region.offsetBy(dx: again.frame.minX, dy: again.frame.minY)
-            let ink = before.ink.offsetBy(dx: -before.region.minX, dy: -before.region.minY)
-            return await Task.detached(priority: .userInitiated) { () -> (LiveChange.Outcome, CGImage, CGFloat)? in
-                guard let now = LiveChange.crop(after.image, frame: after.frame, to: region) else { return nil }
-                let later = LiveChange.crop(again.image, frame: again.frame, to: regionAgain)
-                return (LiveChange.compare(before: before.picture, after: now, again: later, size: region.size, ink: ink),
-                        again.image, CGFloat(again.image.width) / again.frame.width)
-            }.value
-        } catch {
-            Log.write("[live-ink] can't tell whether it landed: \(error)")
-            return nil
-        }
     }
 
     /// How long marks take to leave before they are removed.
@@ -1205,37 +1039,6 @@ final class LiveInk {
     }
 
     // MARK: Answering
-
-    /// A session's answer to a note, as its result card: the note's window captured afresh, with the
-    /// answer drawn on it as a card draws one, each mark at the words it names in that capture, since
-    /// the session has likely changed what the window shows. Answers nil when the window cannot be
-    /// captured, or Vignette relaunched since the note went, and the reply then becomes a card on
-    /// the picture the session was sent.
-    func result(for request: String, _ answer: LiveAnswer,
-                done: @escaping (_ result: (capture: CGImage, pointScale: CGFloat, marks: [AgentMark], notDrawn: [Int])?) -> Void) {
-        guard let watched = watches[request], let window = watched.windowID else { return done(nil) }
-        let ui = Settings.shared.data.ui
-        Task { @MainActor in
-            do {
-                let packet = try await LivePacket.build(at: CGPoint(x: watched.ink.midX, y: watched.ink.midY), window: window, ink: [],
-                                                        style: ui.textStyle, markStyle: ui.markStyle)
-                // A window off the screen, minimized or closed, is not captured: `build` takes the
-                // window under the point then, which is another app's.
-                guard packet.windowID == window else {
-                    Log.write("[live-ink] no result capture for request=\(request): its window is not on the screen")
-                    return done(nil)
-                }
-                let card = ResultCard(frame: packet.frame, pixels: PixelSize(width: packet.capture.width, height: packet.capture.height),
-                                      pointScale: packet.scale, page: packet.page, lines: packet.lines)
-                let drawn = card.marks(for: answer, about: watched.ink, style: ui.textStyle, agent: watched.session.client.rawValue)
-                Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(drawn.notDrawn.count)")
-                done((packet.capture, packet.scale, drawn.marks, drawn.notDrawn))
-            } catch {
-                Log.write("[live-ink] no result capture for request=\(request): \(error)")
-                done(nil)
-            }
-        }
-    }
 
     /// Vignette's own note beside the ink asked about, in the person's colour, replacing the last.
     private func say(_ words: String) {
