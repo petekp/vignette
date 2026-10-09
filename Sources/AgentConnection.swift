@@ -168,6 +168,8 @@ protocol AgentConnection: Sendable {
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome
     /// Where the session is in its turns, or nil when the route cannot tell.
     func turn(of destination: AgentDestination) -> SessionTurn?
+    /// Whether `turn(of:)` can tell a turn's start and end; a note card to a route that cannot is not watched.
+    var reportsTurns: Bool { get }
 }
 
 /// Where a session is in its turns, as far as a request sent to it is concerned.
@@ -182,6 +184,7 @@ extension AgentConnection {
     var keepsList: Bool { false }
     func destinations(including id: String) -> [AgentDestination] { destinations() }
     func turn(of destination: AgentDestination) -> SessionTurn? { nil }
+    var reportsTurns: Bool { false }
 }
 
 // MARK: Running a command
@@ -247,6 +250,7 @@ enum Subprocess {
 /// from its own transcript. herdr's focus is read beside this list (`SessionListing`, `HerdrFocus`).
 struct ClaudeCodeConnection: AgentConnection {
     let client = AgentClient.claude
+    let reportsTurns = true
     /// The inboxes, one folder per Claude Code process. Injected so a test never reads the real ones.
     var inboxes = AgentPlugin.inboxRoot
     /// Where Claude Code keeps its transcripts, one folder per project, for a session whose inbox

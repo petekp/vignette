@@ -264,12 +264,6 @@ final class ScreenshotRequests {
         replies.values.contains { $0.requestID == request && $0.stage != .failed && $0.stage != .cancelled }
     }
 
-    /// Where the session is in its turns, or nil when its route cannot tell. Reads a few small
-    /// files in its inbox.
-    func turn(of destination: AgentDestination) -> SessionTurn? {
-        connections[destination.address.client]?.turn(of: destination)
-    }
-
     // MARK: Sending
 
     /// A send refused before the client was invoked, with what the person reads about it.
