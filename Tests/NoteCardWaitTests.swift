@@ -94,14 +94,18 @@ final class NoteCardWaitTests: XCTestCase {
         XCTAssertEqual(wait.handle(.lookedAgain(changed: true, replied: true), at: t0 + 5), [.replyIsTheResult])
     }
 
-    /// Pins today's behaviour for Pete's decision: an answer accepted after a changed result card was
-    /// made goes on the sent picture, and ScreenshotRequests then publishes it as a second card
-    /// (`ScreenshotRequestsTests.testAnAnswerBecomesLiveInksResultOrElseACard`). A fix changes this on purpose.
-    func testAnAnswerAfterAChangedResultCardBecomesASecondCardOnTheSentPicture() {
+    /// Catches an answer that comes after the turn's result card becoming a second card: it goes on
+    /// the result card for as long as a turn may run, and on the sent picture after that.
+    func testAnAnswerAfterAChangedResultCardGoesOnTheResultCard() {
         var wait = claude()
         XCTAssertEqual(endTurn(&wait), [.turnEnded, .lookAgain])
         XCTAssertEqual(wait.handle(.lookedAgain(changed: true, replied: false), at: t0 + 5), [.makeResultCard])
-        XCTAssertEqual(wait.handle(.answer, at: t0 + 10), [.drawReplyOnSentPicture])
+        XCTAssertEqual(wait.handle(.answer, at: t0 + 10), [.drawReplyOnResultCard])
+        XCTAssertEqual(wait.handle(.answer, at: t0 + 20), [.drawReplyOnResultCard])
+        _ = wait.handle(.delivered(failed: false), at: t0 + 21)
+        XCTAssertFalse(wait.isFinished(at: t0 + 5 + TurnWatch.turnLimit))
+        XCTAssertTrue(wait.isFinished(at: t0 + 5 + TurnWatch.turnLimit + 1))
+        XCTAssertEqual(wait.handle(.answer, at: t0 + 5 + TurnWatch.turnLimit + 1), [.drawReplyOnSentPicture])
     }
 
     func testAnAnswerAfterDoneOrForANoteOfNoOneWindowGoesOnTheSentPicture() {
@@ -152,7 +156,7 @@ final class NoteCardWaitTests: XCTestCase {
             var now = t0
             var trace: [String] = ["reportsTurns=\(wait.reportsTurns) hasWindow=\(window) canLookAgain=\(wait.canLookAgain)"]
             func fail(_ message: String) -> String { "\(message) (seed \(seed))\n" + trace.joined(separator: "\n") }
-            var ended = 0, looks = 0, wasOver = false
+            var ended = 0, looks = 0, wasOver = false, madeCard = false
             for step in 0..<Int.random(in: 1...60, using: &rng) {
                 now += [0.5, 0.5, 1, 2, 30, 200, 1000].randomElement(using: &rng)!
                 let event: NoteCardWait.Event
@@ -167,6 +171,8 @@ final class NoteCardWaitTests: XCTestCase {
                 trace.append("\(now.timeIntervalSince(t0)) \(event) -> \(effects) [\(wait.phase)]")
                 ended += effects.filter(endings.contains).count
                 looks += effects.filter { $0 == .lookAgain }.count
+                if effects.contains(.drawReplyOnResultCard) { XCTAssertTrue(madeCard, fail("no result card to draw on")) }
+                madeCard = madeCard || effects.contains(.makeResultCard)
                 XCTAssertLessThanOrEqual(ended, 1, fail("a note ends with one result card, Done or reply"))
                 XCTAssertLessThanOrEqual(looks, 1, fail("the window is looked at again once"))
                 if effects.contains(.watchTurn) { XCTAssertEqual(event, .sent, fail("only a send starts the watch")) }

@@ -10,6 +10,8 @@ struct NoteCardWait: Equatable {
         case unwatched(sent: Date)
         /// The turn ended and the window round the ink is being looked at again.
         case lookingAgain
+        /// The window changed, so a result card was made. An answer that comes later goes on it.
+        case resultCard(made: Date)
         case over
     }
 
@@ -39,6 +41,8 @@ struct NoteCardWait: Equatable {
         case sayDone
         /// Capture the note's window afresh and draw the answer on it.
         case drawReplyOnFreshCapture
+        /// Draw the answer on the note's result card, made from the window when the turn ended.
+        case drawReplyOnResultCard
         /// The reply becomes a card on the picture the session was sent.
         case drawReplyOnSentPicture
     }
@@ -71,6 +75,7 @@ struct NoteCardWait: Equatable {
         switch phase {
         case .over: return true
         case .unwatched(let sent): return now.timeIntervalSince(sent) > TurnWatch.workingLimit
+        case .resultCard(let made): return now.timeIntervalSince(made) > TurnWatch.turnLimit
         case .unsent, .watching, .lookingAgain: return false
         }
     }
@@ -104,19 +109,27 @@ struct NoteCardWait: Equatable {
             }
 
         case (.lookingAgain, .lookedAgain(let changed, let replied)):
-            phase = .over
-            return end(changed: changed, replied: replied)
+            let effects = end(changed: changed, replied: replied)
+            phase = effects == [.makeResultCard] ? .resultCard(made: now) : .over
+            return effects
 
         case (_, .delivered(let failed)):
             delivered = true
             switch phase {
-            case .watching, .unwatched, .lookingAgain: if failed { phase = .over }
+            case .watching, .unwatched, .lookingAgain, .resultCard: if failed { phase = .over }
             case .unsent, .over: break
             }
             return []
 
         case (.watching, .answer) where hasWindow:
             return [.drawReplyOnFreshCapture]
+        case (.resultCard(let made), .answer):
+            // As long as a turn may run, so the note is let go once no answer can still come.
+            guard now.timeIntervalSince(made) <= TurnWatch.turnLimit else {
+                phase = .over
+                return [.drawReplyOnSentPicture]
+            }
+            return [.drawReplyOnResultCard]
         case (.unwatched(let sent), .answer):
             guard now.timeIntervalSince(sent) <= TurnWatch.workingLimit else {
                 phase = .over
