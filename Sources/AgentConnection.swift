@@ -75,7 +75,7 @@ struct AgentDestination: Equatable, Identifiable {
     var focus: Focus? = nil
 
     enum Focus: String, Equatable {
-        /// Its agent's own app was the app in front, showing this session (`cameFrom`).
+        /// Its agent's own app was the app in front, showing this session (`DestinationChoice`).
         case app
         /// herdr's focused pane runs this session.
         case pane
@@ -86,34 +86,6 @@ struct AgentDestination: Equatable, Identifiable {
     var client: AgentClient { address.client }
     /// What the toolbar's target and the sent card call it: its project, or the client's name.
     var project: String { detail.isEmpty ? client.label : detail }
-
-    /// Where Send goes when nobody has chosen: the session you came from, which is where a paste
-    /// would have gone. The session an agent's app showed first, then herdr's focused pane, then the
-    /// one session beside it, then the session used last. `list` is in Send's order, the session used
-    /// last first.
-    static func defaultTarget(in list: [AgentDestination]) -> AgentDestination? {
-        list.first { $0.focus == .app } ?? list.first { $0.focus == .pane } ?? list.first { $0.focus == .tab }
-            ?? list.first
-    }
-
-    /// The sessions as they stand when you came from `client`'s own app, such as the Codex app.
-    /// herdr keeps a focused pane while its terminal is behind, so its focus says nothing then and is
-    /// cleared. The app's session is `shown`, the id of the thread it shows, or else that client's
-    /// session used last. When a list that is not `fresh` lacks `shown`, nothing is marked: the
-    /// thread may have started since the list was kept, and the fresh list will say. `list` is in
-    /// Send's order.
-    static func cameFrom(_ client: AgentClient, shown: String?, in list: [AgentDestination], fresh: Bool = true) -> [AgentDestination] {
-        var marked = list.map { destination -> AgentDestination in
-            var cleared = destination
-            cleared.focus = nil
-            return cleared
-        }
-        let ofClient = marked.indices.filter { marked[$0].client == client }
-        let match = shown.flatMap { id in ofClient.first { marked[$0].id == id } }
-        guard match != nil || shown == nil || fresh else { return marked }
-        if let index = match ?? ofClient.first { marked[index].focus = .app }
-        return marked
-    }
 
     /// Whether this session is known to be in use, which is what Send's menu lists. A Claude Code
     /// session is listed only while the Vignette plugin's monitor runs in it. Nothing says which threads the Codex
@@ -127,25 +99,6 @@ struct AgentDestination: Equatable, Identifiable {
     }
 
     static let activeWindow: TimeInterval = 24 * 60 * 60
-
-    /// Send's menu: the sessions used last among the active ones, at most `count`, with `target`
-    /// always among them so its check is seen. `list` is in Send's order.
-    static func menu(_ list: [AgentDestination], target: AgentDestination, count: Int = 5, now: Date = Date()) -> [AgentDestination] {
-        let active = Array(list.filter { $0.isActive(now: now) }.prefix(count))
-        guard !active.contains(where: { $0.id == target.id }) else { return active }
-        return Array(active.prefix(count - 1)) + [target]
-    }
-
-    /// Send's order: the session used last first. A session with no time comes after every one
-    /// with a time, and a tie goes by name.
-    static func newestFirst(_ a: AgentDestination, _ b: AgentDestination) -> Bool {
-        switch (a.lastUsed, b.lastUsed) {
-        case let (x?, y?) where x != y: return x > y
-        case (_?, nil): return true
-        case (nil, _?): return false
-        default: return a.name < b.name
-        }
-    }
 }
 
 /// What happened when a request was handed to a client. The four cases are different on purpose:

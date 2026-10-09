@@ -275,7 +275,7 @@ final class ScreenshotRequests {
         guard !clients.isEmpty else { return completion([], true, true) }
         let answers = Answers()
         func deliver() {
-            let found = answers.lists.values.flatMap { $0 }.sorted(by: AgentDestination.newestFirst)
+            let found = answers.lists.values.flatMap { $0 }.sorted(by: DestinationChoice.newestFirst)
             completion(found, answers.lists.count == clients.count, answers.fresh.count == clients.count)
         }
         for client in clients {

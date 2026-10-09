@@ -1,7 +1,7 @@
 import AppKit
 
 /// An agent client's own app. When it was the app in front before Vignette, it is where you came
-/// from, and the session it shows is where Send starts (`AgentDestination.cameFrom`).
+/// from, and the session it shows is where Send starts (`DestinationChoice`).
 enum AgentApp {
     /// The Codex app. Its process and its window are both named ChatGPT.
     static let codexBundleID = "com.openai.codex"

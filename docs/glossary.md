@@ -146,6 +146,11 @@ The agent session a person means to send a screenshot to. Its display name helps
 choose it but is not its identity.
 _Avoid_: Target
 
+**Destination choice**:
+Vignette's pick of the destination Send starts on, before the person picks one, and the order
+Send's menu lists the sessions in.
+_Avoid_: Default target
+
 **Delivery route**:
 The way a screenshot request reaches a destination. Each agent client has exactly one, and the
 routes differ in how firmly they pin the destination.

@@ -116,6 +116,12 @@ Each question names the result that would change the design, and a budget.
    uncertain middle. *Method:* primary-source research first, then synthetic cases only, then real
    cases only with Pete's approval. *Budget:* 1 hour of research; any API calls need a key from
    Pete.
+9. **Host or author.** A window that shows an agent's interface names the session that runs in it,
+   the host. The drawing may be about another session's work, the author: the inbox plugin draws
+   its panel inside every session's terminal. Can the text under the ink name the author? The
+   candidates are the session whose repository, conversation or edited files hold that text, or
+   whose name shares its words. *Changes the design if* one of them ranks the author above the
+   host: then step 3 of "Where this stands" has a way to offer the author. *Budget:* 1 hour.
 
 ## Rules for the spikes
 
@@ -387,6 +393,63 @@ wrong, zero retention available, and about 420 ms.
 OpenRouter key. They were not tested on images. A mock screenshot that repeats the title would test
 only reading, and the value of an image is in a real screenshot, which shows Pete's screen.
 
+### 9. Host or author
+
+**The files each session edited ranked the author first, in 150 ms. Whole repositories and session
+names did not.** This is one case.
+
+- **The case.** At 20:29 Pete circled the inbox plugin's panel in the terminal of the session
+  building Vignette, the host. He expected the session building the inbox plugin, the author. Two
+  sessions build it: be4e71f4, live in `~/Code/inbox`, and b39e954a. b39e954a received 49 of Pete's
+  sends, did most of its file work in `~/Code/inbox`, last wrote at 20:03, and has no live inbox now.
+  Both are Claude Code sessions.
+- **How it ran.**
+  - The ink's frame is not kept, so the terminal's window was captured about 10 minutes later. Vision
+    read it on the Mac. The panel's region came from where its lines sit: 12 lines, 10 long enough to
+    search.
+  - The candidates were 28 sessions: the 13 live Claude Code sessions, 14 Codex threads written to in
+    the last 12 hours, and b39e954a.
+  - Each line was searched ignoring case and punctuation, whole and in runs of two and three words.
+    A line weighs 1 divided by the number of sessions that hold it.
+  - Nothing left the Mac. The scripts printed counts and ids only, and the capture was deleted.
+- **Results.** Both inbox sessions scored the same.
+
+  | Signal | Inbox sessions | Best other | Cost |
+  |---|---|---|---|
+  | Files the session edited | 1.38, first | 0.88 | 150 ms for 41 MB |
+  | Its whole conversation | 1.46, first | 0.46 | 12.5 s for 1 GB |
+  | The last 256 KB of its conversation | 0.50, fourth | 0.61 | 160 ms |
+  | The repositories it started in or edited | 0.51, below three others | 0.58 | about 20 s |
+  | Its name | no shared word | one | none |
+
+  The edited files are Claude Code's backups, `~/.claude/file-history/<session id>/`. They held the
+  current text of all 31 files be4e71f4 had edited that still exist. The last-256 KB row was measured
+  with be4e71f4 alone. The two sessions next on edited files, at 0.88, work on evercars and on
+  munari, and the munari one had also edited the inbox repository.
+- **What decided it.** Two of the panel's lines, 8 characters each, occur in the two inbox sessions'
+  conversations and in no other. One of them is also in files that only those two edited. Both are
+  common words: 15 to 17 sessions' repositories hold them. That is why searching repositories does
+  not separate the sessions. The two longest lines occur nowhere whole.
+- **The host gained nothing.** The Vignette session, whose terminal drew the panel, scored like the
+  unrelated sessions. On its conversation and its edited files it was level with two evercars
+  sessions, below both inbox sessions.
+- **Names are a negative.** 24 of the 28 sessions had a name, and the panel had 10 words of four
+  letters or more. No name shared one, except one Codex thread's, by one word.
+- **Limits.**
+  - One ink on one window. The author talks about its own interface all day, which favours searching
+    conversations.
+  - The region was chosen from the layout, not the ink, 10 minutes after it.
+  - Edited files exist for Claude Code only. Codex keeps its edits inside its conversation file, so a
+    Codex author needs the slow search.
+  - Whether b39e954a was still live at 20:29 is unknown.
+- **What it implies.**
+  - When ink lands on a terminal or an agent's app, the sessions whose edited files hold the text
+    under it are candidates for the author. Live ink already reads the window's text before the
+    chord is let go, so this adds about 150 ms to that.
+  - It ranks; it does not decide. On edited files the margin was about 3 to 2, on one case.
+  - An index of each conversation, kept up as it grows, could make the conversation signal fast
+    enough. That was not measured.
+
 ## Where this stands
 
 The spikes point to one shape. The order below is what the evidence supports so far. It is not yet
@@ -414,9 +477,14 @@ the plan.
      plugin draws inside other sessions' terminals. So those were likely captures of an evercars
      terminal showing the inbox's UI, sent to the session building it. This is a hypothesis: the
      screenshots were not looked at.
+   - **One such case, met directly.** Pete circled the inbox plugin's panel in the Vignette
+     session's terminal, and expected the inbox session. The text under the ink, found in the files
+     each session edited, ranked the inbox sessions first, at about 1.6 times the next score
+     (question 9).
    - **The general rule.** A window that shows an agent's own interface, such as a terminal or the
      Codex app, may be about the tool being built rather than the session running in it. The same
-     goes for step 2's folder when the window is a terminal.
+     goes for step 2's folder when the window is a terminal. The sessions whose edited files hold
+     the text under the ink are then candidates beside the host.
 4. **Pete's own last pick holds for a while. This step is tentative.**
    - "Sent last within about 2 hours" beat herdr's focus 34 to 26 of 47.
    - The 2 hours was chosen by trying 5, 30, 60 and 120 minutes on those same 47 sends.

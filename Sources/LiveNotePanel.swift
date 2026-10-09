@@ -301,7 +301,7 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
         responder.target = self
         responder.tag = -1
         menu.addItem(responder)
-        let shown = sessions.isEmpty ? [] : AgentDestination.menu(sessions, target: currentSession ?? sessions[0])
+        let shown = sessions.isEmpty ? [] : DestinationChoice.menu(sessions, target: currentSession ?? sessions[0])
         if !shown.isEmpty {
             menu.addItem(.separator())
             menu.addItem(.sectionHeader(title: "Send to a session"))
