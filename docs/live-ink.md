@@ -185,9 +185,12 @@ The names in brackets are `// MARK:` sections.
   (`AppDelegate.sendLiveNote`), with the person's ink and words as its drawing
   (`LivePacket.drawingMarks`), so it opens, copies and sends again like any drawn-on screenshot.
   Copy on capture and Draw on capture leave it alone, as they leave an `add`, and the card shows the
-  send as a send from the editor does. Once the request is stored the ink and the note leave the
-  window (`LiveInk.share`). A send refused before that takes the file back, and the ink stays, with
-  the reason beside it.
+  send as a send from the editor does. Once the request is stored the card flies from the window
+  into the corner (`ThumbnailController.show(_:flyingFrom:image:drawing:)`), starting over the ink
+  in the screen's look, and the ink goes in the commit that starts it moving, so the card carries
+  it away (`LiveInk.share`, `Finish.carried`). A window on another screen than the corner's sends
+  no flight, and its ink undraws. A send refused before that takes the file back, and the ink
+  stays, with the reason beside it.
 - Each note's turn is watched on its own (`LiveInk.watch`), twice a second, from the `turn` file the
   plugin's hooks write in the session's inbox (`ClaudeCodeConnection.turn(of:)`). Nothing on the
   screen waits on it, so clearing the ink or drawing a new note leaves it running. The request

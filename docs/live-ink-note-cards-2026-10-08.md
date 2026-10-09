@@ -106,7 +106,8 @@ The responder's answers, follow-ups, tours and buttons on the window do not chan
 
 Each step is checked in the macOS 26 VM before the next. All six are built and were checked on
 2026-10-08: a changed page, an unchanged one, an `--answer`, and two notes in a row, with Copy on
-capture and Draw on capture on, and the flight in frames taken with the motion slowed.
+capture and Draw on capture on. The flight was checked in frames taken with it slowed, and the
+ink's handover by the log: VNC frames come 7 s apart, too far apart to show a single commit.
 
 1. The note card: the file, its drawing, the send naming it, the ink leaving, a turn watch for each
    request.
@@ -120,8 +121,8 @@ capture and Draw on capture on, and the flight in frames taken with the motion s
 
 - A note sent to a fake session writes one note card with the ink as marks and the words as a note.
   The ink leaves the window, and the card shows Sending to, then Sent to.
-- The note card flies from the window to the corner with the ink and the note drawn on it, and the
-  ink is gone from the window from the first frame.
+- The note card flies from the window to the corner with the ink and the note drawn on it. The ink
+  on the window goes on the turn the card starts moving, so the card carries it away.
 - Copy on capture and Draw on capture are on, and neither acts on the note card.
 - Two notes sent one after the other each get their own card and their own turn watch.
 - A turn that ends with the page changed under the ink makes one result card, from the session,

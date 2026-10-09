@@ -1444,7 +1444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// card shows the send as a send from the editor does. A send refused before it is stored takes
     /// the file and its drawing back, and the ink stays on the window, saying why.
     private func sendLiveNote(_ note: LiveInk.NoteCard, to destination: AgentDestination, message: String,
-                              done: @escaping (Result<String, ScreenshotRequests.Refusal>) -> Void) {
+                              done: @escaping (Result<(request: String, carried: Bool), ScreenshotRequests.Refusal>) -> Void) {
         let refused = ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason)
         writeLiveCard(note.capture, pointScale: note.pointScale, named: "Live ink note") { [weak self] url in
             guard let self, let url else { return done(.failure(refused)) }
@@ -1468,15 +1468,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             let shot = Screenshot(url: url)
             sentShots[record.id] = shot
             liveNotes[record.id] = (shot, destination)
-            // The card flies from the window as the ink leaves it, ahead of the watcher's report,
-            // which then finds the card there.
+            // The card flies from the window, carrying the ink, ahead of the watcher's report, which
+            // then finds the card there.
             let origin = NSRect(x: note.frame.minX, y: StateReport.primaryHeight - note.frame.maxY,
                                 width: note.frame.width, height: note.frame.height)
-            thumbnail.show(shot, flyingFrom: origin, image: NSImage(cgImage: note.capture, size: note.frame.size), drawing: drawing)
+            let carried = thumbnail.show(shot, flyingFrom: origin, image: NSImage(cgImage: note.capture, size: note.frame.size),
+                                         drawing: drawing)
             pendingAdds[name]?.addingMarks = false
             presentAdd(name)
             thumbnail.showSending(shot, request: record.id, to: destination)
-            done(.success(record.id))
+            done(.success((record.id, carried)))
         }
     }
 

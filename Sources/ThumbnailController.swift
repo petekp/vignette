@@ -375,14 +375,16 @@ final class ThumbnailController: NSObject {
     /// A fresh screenshot whose picture is on the screen at `origin`, in AppKit screen points, as a
     /// live ink note's window is: its card flies from there into the corner with `drawing` over it,
     /// looking like the screen as it leaves, and its slot draws nothing until the flight lands. A
-    /// card whose origin is on another screen than the corner's comes in as any card does.
-    func show(_ shot: Screenshot, flyingFrom origin: NSRect, image: NSImage, drawing: Drawing) {
-        guard var card = makeCard(shot) else { return }
+    /// card whose origin is on another screen than the corner's comes in as any card does. Answers
+    /// whether the card flies.
+    @discardableResult
+    func show(_ shot: Screenshot, flyingFrom origin: NSRect, image: NSImage, drawing: Drawing) -> Bool {
+        guard var card = makeCard(shot) else { return false }
         card.marks = marks(drawing, on: card)
         send(.newShot(shot.url.path))
         if visible { insert(card) } else { present(cards: [card], stack: false, entrance: .inPlace) }
         leaveCorner(after: ui.thumbnailSeconds)
-        guard model.cards.contains(where: { $0.id == card.id }), screen.frame.contains(CGPoint(x: origin.midX, y: origin.midY)) else { return }
+        guard model.cards.contains(where: { $0.id == card.id }), screen.frame.contains(CGPoint(x: origin.midX, y: origin.midY)) else { return false }
         model.forming.insert(card.id)
         model.offscreen.remove(card.id)
         let scale = max(annotatorTextScale(origin, drawing.pixels), cardTextScale(card.size, drawing.pixels))
@@ -397,6 +399,7 @@ final class ThumbnailController: NSObject {
             self?.model.forming.remove(card.id)
         })
         Log.write("[stack] flying in \(shot.url.lastPathComponent) from \(StateReport.topLeft(origin, primaryHeight: StateReport.primaryHeight))")
+        return true
     }
 
     enum StackToggle: Equatable { case shown(Int), dismissed, empty }
