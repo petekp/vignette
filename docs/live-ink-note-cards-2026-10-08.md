@@ -68,7 +68,7 @@ Vignette reads each request's turn twice a second, as it does today.
 | What happened | What Vignette shows |
 | --- | --- |
 | The session answered with `scripts/reply --answer` | A result card: the window captured afresh, with the answer's words and its marks found in that picture, drawn as the agent's. |
-| That window cannot be captured: closed, minimized, or Vignette relaunched | A result card: the picture that was sent, with the answer's words in its corner. This is today's fallback. |
+| That window cannot be captured: closed, minimized, or Vignette relaunched | A result card: the picture that was sent, with the answer's words beside its first mark. |
 | The session replied with `--marks` or `--image` | That reply is the result card, as today. |
 | No reply, and the window changed under the ink | A result card: the window as it is now, from the session. |
 | No reply, and nothing changed under the ink | No result card. The note card says Done in *project*. |
@@ -139,8 +139,8 @@ ink's handover by the log: VNC frames come 7 s apart, too far apart to show a si
 - **A Codex result card's Reply target may read only "Codex".** The target takes its thread's name
   and project from the session list, which holds the five threads used last, so an older thread
   shows the client's name. Reply still goes to that thread.
-- **An answer's words sit in the card's top-left corner,** which on a window capture is the title
-  bar or the browser's toolbar.
+- **An answer with no mark found, on the picture that was sent, keeps its words in the top-left
+  corner.** With no mark and no ink box to go beside, nothing says where the words belong.
 
 ## Not in this change
 

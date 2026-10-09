@@ -20,6 +20,9 @@ final class ScreenshotRequests {
         var installDrawing: (Screenshot, [AgentMark], _ agent: String?, @escaping (Drawings.Failure?) -> Void) -> Void = { _, _, _, done in
             done(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings"))
         }
+        /// The picture at a URL as `installDrawing` will draw an agent's answer on it, so the answer's
+        /// words and labels are measured and placed there; nil leaves them in the corner and under their marks.
+        var cardCanvas: (URL, _ agent: String?) -> LiveAnswer.Canvas? = { _, _ in nil }
         /// Shows a published reply's card. Managed replies never reach the watcher's capture path.
         var present: (Screenshot) -> Void = { _ in }
         /// Makes an answer to live ink its result card, from a fresh capture of the window the ink was
@@ -140,12 +143,12 @@ final class ScreenshotRequests {
             case cancelled
         }
 
-        /// What a card of this reply draws: its marks, or, for an answer whose window could not be
-        /// captured, the answer's words in a corner and a ring round each mark's box. A mark that names
-        /// only words is left out, since nothing finds words in the request's picture.
-        var cardMarks: [AgentMark] {
+        /// What a card of this reply draws on `canvas`: its marks, or, for an answer whose window could
+        /// not be captured, the answer's words beside its first mark and a ring round each mark's box.
+        /// A mark that names only words is left out, since nothing finds words in the request's picture.
+        func cardMarks(on canvas: LiveAnswer.Canvas?) -> [AgentMark] {
             guard let answer else { return marks }
-            return answer.cardMarks(targets: answer.marks.map(\.box))
+            return answer.cardMarks(targets: answer.marks.map(\.box), on: canvas)
         }
 
         /// The answer's marks a card leaves out: those that name only words.
@@ -647,9 +650,10 @@ final class ScreenshotRequests {
         catch { fail(reply.id, stage: .failed, code: "copy-failed"); return done() }
 
         // 3. The marks, in a drawing the person edits like their own. An image-only reply needs none.
-        guard !reply.cardMarks.isEmpty else { return commit(reply, at: destination, done: done) }
         let agent = requests[reply.requestID]?.address.client.rawValue
-        callbacks.installDrawing(Screenshot(url: destination), reply.cardMarks, agent) { [weak self] failure in
+        let marks = reply.cardMarks(on: reply.answer == nil ? nil : callbacks.cardCanvas(destination, agent))
+        guard !marks.isEmpty else { return commit(reply, at: destination, done: done) }
+        callbacks.installDrawing(Screenshot(url: destination), marks, agent) { [weak self] failure in
             guard let self else { return }
             // Clearing can remove the reserved file while installation is pending. The request
             // remains cancelled even when that installation later reports a failure.
@@ -677,7 +681,7 @@ final class ScreenshotRequests {
         replies[reply.id] = reply
         publishedAt[reply.id] = ProcessInfo.processInfo.systemUptime
         if let client = requests[reply.requestID]?.address.client { Agent.record(client.rawValue, on: url) }
-        Log.write("[reply] published \(reply.fileName) marks=\(reply.cardMarks.count)")
+        Log.write("[reply] published \(reply.fileName) marks=\(reply.cardMarks(on: nil).count)")
         callbacks.present(Screenshot(url: url))
         done()
     }

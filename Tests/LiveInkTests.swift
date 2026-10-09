@@ -287,6 +287,40 @@ final class LiveInkTests: XCTestCase {
         XCTAssertFalse(box.intersects(text[0]) || box.intersects(ink), "left of it is text")
     }
 
+    /// A result card's words go beside the first mark rather than over the window's title bar, and
+    /// no text on the card covers a mark or another text. How many marks there are is the same with
+    /// or without a picture to measure on, since a reply's stored drawing is checked against it.
+    func testAnAnswersWordsOnACardGoBesideItsFirstMarkAndCoverNothing() throws {
+        let answer = try LiveAnswer(json: ["say": "Made the button green and moved the email field under it.", "marks": [
+            ["kind": "circle", "box": [0.42, 0.40, 0.14, 0.06], "label": "Now green"],
+            ["kind": "arrow", "box": [0.10, 0.70, 0.22, 0.05], "label": "Field moved"]]])
+        let pixels = PixelSize(width: 2400, height: 1600), scale: CGFloat = 2, style = UITweaks().textStyle
+        let canvas = LiveAnswer.Canvas(pixels: pixels, pointScale: scale, style: style, agent: "claude")
+        let laidOut = answer.cardMarks(targets: answer.marks.map(\.box), on: canvas)
+        XCTAssertEqual(laidOut.map(\.type), answer.cardMarks(targets: answer.marks.map(\.box), on: nil).map(\.type))
+        XCTAssertEqual(laidOut.first?.text, answer.say)
+
+        let marks = AgentMark.marks(laidOut, from: "claude", in: pixels, pointScale: scale, style: style).marks
+        XCTAssertEqual(marks.count, laidOut.count)
+        func extent(_ mark: Mark) -> CGRect {
+            guard case .text(let text) = mark.geometry else { return mark.shapeExtent ?? .null }
+            let layout = TextLayout(text, imageWidth: CGFloat(pixels.width), pointScale: scale, style: style.forMark(mark))
+            let above = layout.badge?.above ?? 0
+            return CGRect(x: layout.box.minX, y: layout.box.minY - above, width: layout.box.width, height: layout.box.height + above)
+        }
+        let extents = marks.map(extent)
+        for (i, a) in extents.enumerated() {
+            guard case .text = marks[i].geometry else { continue }
+            for (j, b) in extents.enumerated() where j != i {
+                XCTAssertFalse(a.intersects(b), "text \(i) covers mark \(j)")
+            }
+        }
+        let words = extents[0], ring = extents[1]
+        XCTAssertGreaterThan(words.minY, CGFloat(pixels.height) * 0.1, "off the title bar")
+        let gap = max(ring.minX - words.maxX, words.minX - ring.maxX, ring.minY - words.maxY, words.minY - ring.maxY)
+        XCTAssertLessThanOrEqual(gap, 12 * scale, "beside the first mark")
+    }
+
     func testACircleRoundAPersonsLoopBecomesAnArrowAndALongLineABox() {
         let total = CGRect(x: 536, y: 452, width: 104, height: 30)
         let loop = Mark(geometry: .ellipse(total.insetBy(dx: -20, dy: -6)))

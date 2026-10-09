@@ -544,7 +544,7 @@ enum LiveAnswerLayout {
     /// it can. The spots beside it are tried first, then the rest of the room, nearest first; the
     /// first that covers nothing wins, and failing one, the one covering least, with its distance
     /// as a small cost. Ported from the first spike's tag placement.
-    private static func place(_ size: CGSize, near: CGRect, room: CGRect, obstacles: [CGRect]) -> CGRect {
+    static func place(_ size: CGSize, near: CGRect, room: CGRect, obstacles: [CGRect]) -> CGRect {
         let gap: CGFloat = 10
         var spots = [
             CGPoint(x: near.maxX + gap, y: near.midY - size.height / 2),
