@@ -204,7 +204,9 @@ The names in brackets are `// MARK:` sections.
   shows, with each mark at the words it names in that capture (`LiveAnswer.cardMarks`). A ring keeps
   room round the words, and an arrow is the one the screen would draw (`LiveAnswerLayout.arrows`),
   ending at the words themselves and covering as little of the capture's text as it can. In a
-  browser everything keeps to the page (`LiveAnswer.Canvas.page`), off the toolbar and tabs. The labels
+  browser the labels and words keep to the page (`LiveAnswer.Canvas.page`), off the toolbar and
+  tabs. An arrow may cross the toolbar, as on the screen, since above a word in the page's first
+  line is often the one way to it that crosses no other text. The labels
   go beside their marks and the words beside the first mark, or beside the ink when no mark was
   found, each measured as the card sets it and placed where it covers the least of the rest and of
   the text Vision read in the capture (`LiveAnswerLayout.place`). How many marks there are

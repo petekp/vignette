@@ -150,7 +150,7 @@ struct LiveAnswer: Equatable {
         let pointScale: CGFloat
         let style: TextStyle
         let agent: String?
-        /// A browser's page, in fractions, which the marks and texts keep to, off its toolbar and tabs.
+        /// A browser's page, in fractions, which the texts keep to, off its toolbar and tabs.
         var page: CGRect? = nil
     }
 
@@ -175,6 +175,8 @@ struct LiveAnswer: Equatable {
         // Inside the margin `AgentMark.marks` keeps a text from the edges, so it leaves the text where it is put.
         let margin = TextLayout.margin * size.width
         let picture = CGRect(origin: .zero, size: size).insetBy(dx: margin, dy: margin)
+        // The texts keep to a browser's page. An arrow may cross the toolbar, as on the screen: above
+        // a word in a page's first line is often the one way to it that crosses no other text.
         let page = canvas?.page.map { points($0).intersection(picture) }
         let room = page.flatMap { $0.isNull || $0.isEmpty ? nil : $0 } ?? picture
         let lines = text.map(points)
@@ -183,7 +185,7 @@ struct LiveAnswer: Equatable {
             guard let box = target else { continue }
             if mark.kind == .arrow {
                 let others = targets.compactMap { $0 }.filter { $0 != box }.map(points)
-                let best = canvas == nil ? nil : LiveAnswerLayout.arrows(to: points(box), room: room, obstacles: lines + others).first
+                let best = canvas == nil ? nil : LiveAnswerLayout.arrows(to: points(box), room: picture, obstacles: lines + others).first
                 let (tail, head) = best.map { (fraction($0.start), fraction($0.end)) } ?? Self.sideArrow(to: box)
                 let span = CGRect(x: min(tail.x, head.x), y: min(tail.y, head.y), width: abs(head.x - tail.x), height: abs(head.y - tail.y))
                 shapes.append((AgentMark(type: .arrow, x: tail.x, y: tail.y, x2: head.x, y2: head.y), span,
