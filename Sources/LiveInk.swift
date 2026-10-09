@@ -1251,7 +1251,8 @@ final class LiveInk {
                                                       width: ink.width / frame.width, height: ink.height / frame.height)
                 let canvas = LiveAnswer.Canvas(pixels: PixelSize(width: packet.capture.width, height: packet.capture.height),
                                                pointScale: packet.scale, style: ui.textStyle, agent: watched.session.client.rawValue)
-                done((packet.capture, packet.scale, answer.cardMarks(targets: targets, about: about, on: canvas), notDrawn))
+                done((packet.capture, packet.scale, answer.cardMarks(targets: targets, about: about, text: packet.lines.map(\.box), on: canvas),
+                      notDrawn))
             } catch {
                 Log.write("[live-ink] no result capture for request=\(request): \(error)")
                 done(nil)

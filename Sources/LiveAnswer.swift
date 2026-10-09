@@ -156,11 +156,12 @@ struct LiveAnswer: Equatable {
     /// card's picture, a ring round that place, or for an arrow, an arrow at it from the side with
     /// more room. Then each mark's label beside it, and the words beside the first mark drawn, or
     /// beside `about`, the ink the note was about, when none is. Each text covers as little of the
-    /// marks and the texts placed before it as it can. The words come first in the list. How many
+    /// marks, the texts placed before it and the picture's own `text`, its lines in fractions, as it
+    /// can. The words come first in the list. How many
     /// marks there are never depends on `canvas`, since a reply's card is checked against its stored
     /// drawing after a relaunch. With nothing to measure on or to place the words beside, the words
     /// go in the top-left corner, and without a canvas each label goes under its mark.
-    func cardMarks(targets: [CGRect?], about: CGRect? = nil, on canvas: Canvas?) -> [AgentMark] {
+    func cardMarks(targets: [CGRect?], about: CGRect? = nil, text: [CGRect] = [], on canvas: Canvas?) -> [AgentMark] {
         var shapes: [(mark: AgentMark, extent: CGRect, label: (text: String, near: CGRect, corner: CGPoint)?)] = []
         for (mark, target) in zip(marks, targets) {
             guard let box = target else { continue }
@@ -193,7 +194,7 @@ struct LiveAnswer: Equatable {
         // Inside the margin `AgentMark.marks` keeps a text from the edges, so it leaves the text where it is put.
         let margin = TextLayout.margin * width / scale
         let room = CGRect(x: 0, y: 0, width: width / scale, height: height / scale).insetBy(dx: margin, dy: margin)
-        var obstacles = shapes.map { points($0.extent).insetBy(dx: -4, dy: -4) }
+        var obstacles = shapes.map { points($0.extent).insetBy(dx: -4, dy: -4) } + text.map(points)
         func note(_ text: String, near: CGRect) -> AgentMark? {
             // Set as the card will set it, at the wrap it chooses, with the badge above the tag.
             guard let set = AgentMark.marks([AgentMark(type: .text, x: 0, y: 0, text: text)], from: canvas.agent, in: canvas.pixels,

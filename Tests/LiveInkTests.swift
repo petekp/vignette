@@ -296,7 +296,9 @@ final class LiveInkTests: XCTestCase {
             ["kind": "arrow", "box": [0.10, 0.70, 0.22, 0.05], "label": "Field moved"]]])
         let pixels = PixelSize(width: 2400, height: 1600), scale: CGFloat = 2, style = UITweaks().textStyle
         let canvas = LiveAnswer.Canvas(pixels: pixels, pointScale: scale, style: style, agent: "claude")
-        let laidOut = answer.cardMarks(targets: answer.marks.map(\.box), on: canvas)
+        // A field's placeholder left of the button, where the words would otherwise go.
+        let line = CGRect(x: 0.16, y: 0.41, width: 0.22, height: 0.04)
+        let laidOut = answer.cardMarks(targets: answer.marks.map(\.box), text: [line], on: canvas)
         XCTAssertEqual(laidOut.map(\.type), answer.cardMarks(targets: answer.marks.map(\.box), on: nil).map(\.type))
         XCTAssertEqual(laidOut.first?.text, answer.say)
 
@@ -317,6 +319,9 @@ final class LiveInkTests: XCTestCase {
         }
         let words = extents[0], ring = extents[1]
         XCTAssertGreaterThan(words.minY, CGFloat(pixels.height) * 0.1, "off the title bar")
+        let page = CGRect(x: line.minX * CGFloat(pixels.width), y: line.minY * CGFloat(pixels.height),
+                          width: line.width * CGFloat(pixels.width), height: line.height * CGFloat(pixels.height))
+        XCTAssertFalse(words.intersects(page), "off the page's own text")
         let gap = max(ring.minX - words.maxX, words.minX - ring.maxX, ring.minY - words.maxY, words.minY - ring.maxY)
         XCTAssertLessThanOrEqual(gap, 12 * scale, "beside the first mark")
     }
