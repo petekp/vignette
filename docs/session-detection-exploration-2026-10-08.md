@@ -315,6 +315,78 @@ lookalike cases. This comes from desk research only: no model was called.
   Pete's M4 Max it might take about 50 ms, but it needs 0.7 to 2 GB of memory and a separate
   download.
 
+#### The synthetic test (Pete's OpenRouter key, 2026-10-08)
+
+Every case is invented: no project, session or title from Pete's Mac is sent. The scripts are in
+`.scratch/session-detection/decision-models/synth/`.
+
+**The bar, fixed before the full run.** A model earns a place in step 5 of "Where this stands" only
+if, on the 200 held-out cases that the name rule leaves open, with a threshold fitted on the 100
+fit cases:
+
+- it picks the right session for at least 30% of the open cases that have one;
+- it makes at most 1 wrong pick in all, where picking any session on a "none" case counts as wrong;
+- and it clears both in the title-only group, which is what Chrome, Dia and Figma give now.
+
+Below that, models leave the plan, and step 5 shows a guess by rule or says it isn't sure.
+
+**How it is built:**
+
+- **Window facts as the Mac reads them now,** in three groups reported apart: title only (Chromium
+  browsers, Figma, Slack); title and URL (Safari, or an Electron app once asked); and nothing
+  useful.
+- **The name rule:** picks a session when exactly one session's folder or repository name appears
+  as a word in the window's title, host or path. Models are scored mainly where it says not sure.
+- **"None" means no session works on the window's subject.** A lookalike shares surface words only.
+  A Stripe docs page while a session builds Stripe checkout belongs to that session.
+- **Each case is asked twice,** with the candidates in one order and then reversed, and the two
+  probabilities averaged. The right answer's position is spread evenly. A "none of these" option is
+  always offered.
+- **Frozen before the full run:** the cases (fixed seed, `cases.json` SHA-256 `5d9937d67f866c6d…`)
+  and the instructions. The splits came to 104 fit cases and 196 held out.
+- **Baselines:** the name rule, the session used last, and Haiku 5.5 with a stated confidence.
+
+**Results: every model clears the bar, Haiku included.** So a window whose title is about a
+session's work can be matched to it, but the test cannot tell the models apart. It also says nothing
+about Pete's real windows, which are messier than these. It is an optimistic, necessary check, not
+evidence for building.
+
+- **The baselines.** The name rule decides 45 cases: the 30 windows that name a repository, all
+  right, and the 15 hostile titles, all wrong. The session used last is right for 36 of 216. That
+  leaves 167 held-out cases open, 123 of them with a right session.
+- **On the open held-out cases:**
+
+  | Model | Threshold | Right, of 123 | Wrong picks | Title only, of 66 | Title and URL, of 49 | Order flips, of 300 | Median / p95 from this Mac |
+  |---|---|---|---|---|---|---|---|
+  | pplx-decider 1.1 | 0.95 | 98 | 0 | 59 | 39 | 5 | 419 / 676 ms |
+  | Clef Flash | 0.7 | 94 | 1 | 51 | 43, 1 wrong | 0 | 409 / 1,174 ms |
+  | Haiku 5.5, stated confidence | 0.7 | 79 | 1 | 46 | 33, 1 wrong | asked once | 1,180 / 1,556 ms, 4 at a time |
+  | OpenAI's Luna Decisions | 0.85 | 67 | 0 | 36 | 31 | 25 | 264 / 442 ms |
+  | Jev 1.13 | 0.93 | 66 | 0 | 36 | 30 | 13 | 251 / 389 ms |
+  | Clef | 0.9 | 59 | 0 | 35 | 24 | 0 | 475 / 1,667 ms |
+
+- **"None" held.** No model gave a session to a "none" case at 0.9 or more (0 of 44 each).
+  Lookalikes came back "none" 21 to 23 times in 23.
+- **Hostile titles move every reader of titles.** Asked alone, the models' top answer followed the
+  planted session name in 1 (Clef) to 7 (Clef Flash) of the 9 held-out hostile cases, mostly below
+  the threshold. The name rule followed it in all 15. Any website writes its own title, so a rule
+  that reads names should match a URL's host or path, not a title's free text.
+- **Order matters for Luna and Jev.** Reversing the candidates changed the top answer in 25 and 13
+  of 300 cases. Averaging both orders costs a second call.
+- **Privacy.** pplx-decider and Clef are on OpenRouter's zero-retention list. Jev and Luna were not
+  found there.
+- **Haiku** answered in prose instead of JSON 14 times in 300, counted as not sure.
+- **Cost:** $0.11 for 3,300 calls on Pete's key, about twice the estimate, which was for one model.
+
+**What it changes.** Models stay in the plan as a candidate for step 5, nothing more. Real windows
+would decide it. That needs titles kept on the Mac (still Pete's call), and his decision on sending
+them. If it gets that far, pplx-decider is the one to try first: the most right picks with none
+wrong, zero retention available, and about 420 ms.
+
+**Images.** Jev reads text only. Luna Decisions, Clef and pplx-decider take images through the same
+OpenRouter key. They were not tested on images. A mock screenshot that repeats the title would test
+only reading, and the value of an image is in a real screenshot, which shows Pete's screen.
+
 ## Where this stands
 
 The spikes point to one shape. The order below is what the evidence supports so far. It is not yet
@@ -351,7 +423,8 @@ the plan.
    - On the first send after a break it gains just one: 17 against 16.
    - The note already starts on the target picked last, so this is new only for Send.
 5. **Otherwise the target shows its guess, or says it isn't sure.** The guess may be herdr's focus
-   or the session used last. A model could earn this middle only by passing the test in question 8.
+   or the session used last. Every model passed question 8's made-up cases, which shows a model can
+   do this, not that it will on real windows.
 
 **What is still unknown:**
 
