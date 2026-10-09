@@ -150,6 +150,8 @@ struct LiveAnswer: Equatable {
         let pointScale: CGFloat
         let style: TextStyle
         let agent: String?
+        /// A browser's page, in fractions, which the marks and texts keep to, off its toolbar and tabs.
+        var page: CGRect? = nil
     }
 
     /// The answer as a card draws it. For each mark with a place in `targets`, in fractions of the
@@ -172,7 +174,9 @@ struct LiveAnswer: Equatable {
         func fraction(_ point: CGPoint) -> CGPoint { CGPoint(x: point.x / size.width, y: point.y / size.height) }
         // Inside the margin `AgentMark.marks` keeps a text from the edges, so it leaves the text where it is put.
         let margin = TextLayout.margin * size.width
-        let room = CGRect(origin: .zero, size: size).insetBy(dx: margin, dy: margin)
+        let picture = CGRect(origin: .zero, size: size).insetBy(dx: margin, dy: margin)
+        let page = canvas?.page.map { points($0).intersection(picture) }
+        let room = page.flatMap { $0.isNull || $0.isEmpty ? nil : $0 } ?? picture
         let lines = text.map(points)
         var shapes: [(mark: AgentMark, extent: CGRect, label: (text: String, near: CGRect, corner: CGPoint)?)] = []
         for (mark, target) in zip(marks, targets) {

@@ -1233,6 +1233,13 @@ final class LiveInk {
                 }
                 let lines = Set(packet.lines.map(\.id))
                 let frame = packet.frame
+                // A rect in global top-left points as fractions of the capture, or nil when none of it is on it.
+                func fraction(_ rect: CGRect) -> CGRect? {
+                    let inside = rect.intersection(frame)
+                    guard !inside.isNull else { return nil }
+                    return CGRect(x: (inside.minX - frame.minX) / frame.width, y: (inside.minY - frame.minY) / frame.height,
+                                  width: inside.width / frame.width, height: inside.height / frame.height)
+                }
                 let targets = answer.marks.map { mark -> CGRect? in
                     guard var found = self.target(of: mark, in: packet, sent: lines) else { return nil }
                     // A box from the words is tight round their letters, so a ring round it needs room.
@@ -1240,20 +1247,15 @@ final class LiveInk {
                     if mark.kind != .arrow, mark.words != nil || mark.line != nil {
                         found = found.insetBy(dx: -(found.width * 0.2 + 8), dy: -(found.height * 0.45 + 6))
                     }
-                    found = found.intersection(frame)
-                    guard !found.isNull else { return nil }
-                    return CGRect(x: (found.minX - frame.minX) / frame.width, y: (found.minY - frame.minY) / frame.height,
-                                  width: found.width / frame.width, height: found.height / frame.height)
+                    return fraction(found)
                 }
                 let notDrawn = targets.indices.filter { targets[$0] == nil }
                 Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(notDrawn.count)")
-                let ink = watched.ink.intersection(frame)
-                let about = ink.isNull ? nil : CGRect(x: (ink.minX - frame.minX) / frame.width, y: (ink.minY - frame.minY) / frame.height,
-                                                      width: ink.width / frame.width, height: ink.height / frame.height)
                 let canvas = LiveAnswer.Canvas(pixels: PixelSize(width: packet.capture.width, height: packet.capture.height),
-                                               pointScale: packet.scale, style: ui.textStyle, agent: watched.session.client.rawValue)
-                done((packet.capture, packet.scale, answer.cardMarks(targets: targets, about: about, text: packet.lines.map(\.box), on: canvas),
-                      notDrawn))
+                                               pointScale: packet.scale, style: ui.textStyle, agent: watched.session.client.rawValue,
+                                               page: packet.page.flatMap(fraction))
+                done((packet.capture, packet.scale, answer.cardMarks(targets: targets, about: fraction(watched.ink),
+                                                                     text: packet.lines.map(\.box), on: canvas), notDrawn))
             } catch {
                 Log.write("[live-ink] no result capture for request=\(request): \(error)")
                 done(nil)
