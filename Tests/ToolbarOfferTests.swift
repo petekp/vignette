@@ -11,6 +11,10 @@ final class ToolbarOfferTests: XCTestCase {
                          lastUsed: Date(timeIntervalSince1970: used), focus: focus)
     }
 
+    private func answer(_ list: [AgentDestination], complete: Bool) -> DestinationChoice.Answer {
+        DestinationChoice.choose(list, complete: complete, fresh: true, cameFrom: nil)
+    }
+
     func testEachOfferSaysWhatReturnAndCmdReturnDo() {
         let mew = session("mew")
         XCTAssertEqual(ToolbarOffer(replyTo: nil, destinations: [], listed: true, target: nil), .copy)
@@ -29,7 +33,7 @@ final class ToolbarOfferTests: XCTestCase {
         let model = AnnotatorToolbar.Model()
         let mew = session("mew", focus: .pane)
         model.begin(replyTo: nil, carryingTarget: false)
-        model.answered([mew], complete: true)
+        model.answered(answer([mew], complete: true))
         model.tookKeysOnOpen = true
         XCTAssertEqual(model.fieldReturn, .done, "Return copies: the target is Vignette's pick")
         XCTAssertTrue(model.fieldEscCloses)
@@ -64,15 +68,15 @@ final class ToolbarOfferTests: XCTestCase {
         let model = AnnotatorToolbar.Model()
         model.begin(replyTo: nil, carryingTarget: false)
         let codex = session("codex", .codex, used: 200), unfocused = session("other", used: 150)
-        model.answered([codex], complete: false)
+        model.answered(answer([codex], complete: false))
         XCTAssertNil(model.target, "no focus yet, and the session used last needs every client's answer")
         let beside = session("mew", used: 100, focus: .tab)
-        model.answered([codex, unfocused, beside], complete: false)
+        model.answered(answer([codex, unfocused, beside], complete: false))
         XCTAssertEqual(model.target?.id, "mew")
-        model.answered([session("new codex", .codex, used: 300), codex, unfocused, beside], complete: true)
+        model.answered(answer([session("new codex", .codex, used: 300), codex, unfocused, beside], complete: true))
         XCTAssertEqual(model.target?.id, "mew", "a later answer does not move a target that is still there")
         model.pick(codex)
-        model.answered([beside], complete: true)
+        model.answered(answer([beside], complete: true))
         XCTAssertEqual(model.target?.id, "codex", "a pick stays, even when the list no longer has it")
     }
 
@@ -80,9 +84,9 @@ final class ToolbarOfferTests: XCTestCase {
         let model = AnnotatorToolbar.Model()
         model.begin(replyTo: nil, carryingTarget: false)
         let old = session("old", used: 100), new = session("new", .codex, used: 200)
-        model.answered([new, old], complete: true)
+        model.answered(answer([new, old], complete: true))
         XCTAssertEqual(model.target?.id, "new")
-        model.answered([old], complete: true)
+        model.answered(answer([old], complete: true))
         XCTAssertEqual(model.target?.id, "old")
         model.begin(replyTo: nil, carryingTarget: false)
         XCTAssertNil(model.target, "each image starts over")
@@ -94,21 +98,21 @@ final class ToolbarOfferTests: XCTestCase {
         let model = AnnotatorToolbar.Model()
         model.begin(replyTo: nil, carryingTarget: false)
         let mew = session("mew", focus: .pane), codex = session("codex", .codex, used: 200)
-        model.answered([mew], complete: true)
+        model.answered(answer([mew], complete: true))
         model.begin(replyTo: nil, carryingTarget: true)
         XCTAssertEqual(model.offer, .send(mew))
-        model.answered([codex], complete: false)
+        model.answered(answer([codex], complete: false))
         XCTAssertEqual(model.target?.id, "mew", "an answer that settles nothing leaves it")
-        model.answered([codex, session("other", focus: .pane)], complete: false)
+        model.answered(answer([codex, session("other", focus: .pane)], complete: false))
         XCTAssertEqual(model.target?.id, "other", "this image's own focus replaces it")
 
         // A reply to a Claude Code session the image before's whole list did not have: that session
         // has closed, so the bar stays Send rather than narrowing to Reply until this list answers.
-        model.answered([mew], complete: true)
+        model.answered(answer([mew], complete: true))
         let gone = session("gone")
         model.begin(replyTo: gone, carryingTarget: true)
         XCTAssertEqual(model.offer, .send(mew))
-        model.answered([codex], complete: false)
+        model.answered(answer([codex], complete: false))
         XCTAssertEqual(model.offer, .send(mew), "a partial answer does not bring Reply back")
         model.begin(replyTo: mew, carryingTarget: true)
         XCTAssertEqual(model.offer, .reply(mew), "a session the list has is still there")

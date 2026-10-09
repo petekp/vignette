@@ -193,9 +193,16 @@ final class AgentConnectionTests: XCTestCase {
         let new = AgentDestination(id: "2", name: "b", address: .codexThread(uuid: "2"), lastUsed: Date(timeIntervalSince1970: 200))
         var beside = old
         beside.focus = .tab
-        XCTAssertEqual(AgentDestination.defaultTarget(in: [new, beside])?.id, "1", "focus comes before the session used last")
-        XCTAssertEqual(AgentDestination.defaultTarget(in: [new, old])?.id, "2")
-        XCTAssertNil(AgentDestination.defaultTarget(in: []))
+        func pick(_ list: [AgentDestination]) -> String? {
+            DestinationChoice.choose(list, complete: true, fresh: true, cameFrom: nil).pick?.id
+        }
+        XCTAssertEqual(pick([new, beside]), "1", "focus comes before the session used last")
+        XCTAssertEqual(pick([new, old]), "2")
+        XCTAssertNil(pick([]))
+        let partial = DestinationChoice.choose([new, beside], complete: false, fresh: true, cameFrom: nil)
+        XCTAssertEqual(partial.pick?.id, "1", "a focus decides before every client has answered")
+        XCTAssertFalse(DestinationChoice.choose([new, old], complete: false, fresh: true, cameFrom: nil).decided,
+                       "without a focus, the session used last waits for every client")
     }
 
     /// Coming from the Codex app, Send starts on the thread it shows, whatever herdr's focus says,
@@ -206,18 +213,20 @@ final class AgentConnectionTests: XCTestCase {
         let recent = AgentDestination(id: "t1", name: "Review codebase", address: .codexThread(uuid: "t1"))
         let shown = AgentDestination(id: "t2", name: "Build showroom MCP App PoC", address: .codexThread(uuid: "t2"))
         let list = [focused, recent, shown]
-        func target(_ id: String?) -> String? {
-            AgentDestination.defaultTarget(in: AgentDestination.cameFrom(.codex, shown: id, in: list))?.id
+        func choose(_ id: String?, in list: [AgentDestination] = list, fresh: Bool = true) -> DestinationChoice.Answer {
+            DestinationChoice.choose(list, complete: true, fresh: fresh, cameFrom: (.codex, id))
         }
-        XCTAssertEqual(target("t2"), "t2")
-        XCTAssertEqual(target(nil), "t1", "an app showing no thread gives the Codex thread used last")
-        XCTAssertEqual(target("t9"), "t1", "a thread the fresh list lacks")
-        XCTAssertEqual(AgentDestination.cameFrom(.codex, shown: nil, in: [focused]).map(\.focus), [nil],
+        XCTAssertEqual(choose("t2").pick?.id, "t2")
+        XCTAssertEqual(choose(nil).pick?.id, "t1", "an app showing no thread gives the Codex thread used last")
+        XCTAssertEqual(choose("t9").pick?.id, "t1", "a thread the fresh list lacks")
+        XCTAssertEqual(choose(nil, in: [focused]).list.map(\.focus), [nil],
                        "no Codex thread listed: herdr's focus still says nothing")
-        XCTAssertEqual(AgentDestination.cameFrom(.codex, shown: "t9", in: list, fresh: false).map(\.focus),
-                       [nil, nil, nil], "a kept list may predate the shown thread, so the fresh list decides")
-        XCTAssertEqual(AgentDestination.cameFrom(.codex, shown: "t2", in: list, fresh: false)
-            .first { $0.focus == .app }?.id, "t2", "a thread the kept list has settles at once")
+        let kept = choose("t9", fresh: false)
+        XCTAssertEqual(kept.list.map(\.focus), [nil, nil, nil], "a kept list may predate the shown thread")
+        XCTAssertFalse(kept.complete, "so the fresh list decides, not the thread used last")
+        XCTAssertFalse(kept.decided)
+        XCTAssertNil(kept.pick)
+        XCTAssertEqual(choose("t2", fresh: false).pick?.id, "t2", "a thread the kept list has settles at once")
     }
 
     /// A thread is named as the Codex app names it: the app's rule, read from its bundle and checked
@@ -304,10 +313,10 @@ final class AgentConnectionTests: XCTestCase {
         }
         let list = [codex("a", hoursAgo: 1), claude("b", hoursAgo: 2), codex("c", hoursAgo: 30),
                     claude("d", hoursAgo: 40), claude("e", hoursAgo: 50), claude("f", hoursAgo: 60), claude("g", hoursAgo: 70)]
-        XCTAssertEqual(AgentDestination.menu(list, target: list[0], now: now).map(\.id), ["a", "b", "d", "e", "f"],
+        XCTAssertEqual(DestinationChoice.menu(list, target: list[0], now: now).map(\.id), ["a", "b", "d", "e", "f"],
                        "a Codex thread from yesterday is left out")
-        XCTAssertEqual(AgentDestination.menu(list, target: list[6], now: now).map(\.id), ["a", "b", "d", "e", "g"])
-        XCTAssertEqual(AgentDestination.menu(list, target: list[2], now: now).map(\.id), ["a", "b", "d", "e", "c"],
+        XCTAssertEqual(DestinationChoice.menu(list, target: list[6], now: now).map(\.id), ["a", "b", "d", "e", "g"])
+        XCTAssertEqual(DestinationChoice.menu(list, target: list[2], now: now).map(\.id), ["a", "b", "d", "e", "c"],
                        "the target is shown even when it is not active")
     }
 
@@ -316,7 +325,7 @@ final class AgentConnectionTests: XCTestCase {
         let old = AgentDestination(id: "1", name: "a", address: .claudeSession("1"), lastUsed: Date(timeIntervalSince1970: 100))
         let new = AgentDestination(id: "2", name: "b", address: .codexThread(uuid: "2"), lastUsed: Date(timeIntervalSince1970: 200))
         let unknown = AgentDestination(id: "3", name: "0", address: .claudeSession("3"))
-        XCTAssertEqual([unknown, old, new].sorted(by: AgentDestination.newestFirst).map(\.id), ["2", "1", "3"])
+        XCTAssertEqual([unknown, old, new].sorted(by: DestinationChoice.newestFirst).map(\.id), ["2", "1", "3"])
     }
 
     /// The request lands in the inbox holding the session, and in no other.

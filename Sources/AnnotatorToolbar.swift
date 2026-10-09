@@ -132,25 +132,25 @@ final class AnnotatorToolbar {
             whole = nil
         }
 
-        /// Another client answered. The target settles as soon as a focus names a session (herdr's,
-        /// or the agent app you came from), and otherwise once every client has answered, since the
-        /// session used last is a comparison across all of them. Once settled it changes only when
-        /// its session is gone from the whole list, so it never changes under the pointer.
-        func answered(_ list: [AgentDestination], complete: Bool) {
+        /// Another client answered. The target settles on the first answer that decides a pick
+        /// (`DestinationChoice`). Once settled it changes only when its session is gone from the whole
+        /// list, so it never changes under the pointer.
+        func answered(_ answer: DestinationChoice.Answer) {
+            let list = answer.list
             destinations = list
-            listed = complete
-            if complete { whole = list }
+            listed = answer.complete
+            if answer.complete { whole = list }
             if let current = target, let fresh = list.first(where: { $0.id == current.id }) { target = fresh }
             guard !picked else { return }
             if carried {
-                guard list.contains(where: { $0.focus != nil }) || complete else { return }
+                guard answer.decided else { return }
                 carried = false
-                target = AgentDestination.defaultTarget(in: list)
+                target = answer.pick
                 return
             }
-            let gone = complete && target.map { current in !list.contains { $0.id == current.id } } == true
-            guard target == nil || gone else { return }
-            if list.contains(where: { $0.focus != nil }) || complete { target = AgentDestination.defaultTarget(in: list) }
+            let gone = answer.complete && target.map { current in !list.contains { $0.id == current.id } } == true
+            guard target == nil || gone, answer.decided else { return }
+            target = answer.pick
         }
 
         func pick(_ destination: AgentDestination) {
@@ -328,14 +328,14 @@ final class AnnotatorToolbar {
     }
 
     /// The target's menu, under it: the active sessions used last, the target among them with a check
-    /// (`AgentDestination.menu`). AppKit's own menu, so Space on the focused target opens it as a
+    /// (`DestinationChoice.menu`). AppKit's own menu, so Space on the focused target opens it as a
     /// click does.
     private func showTargetMenu() {
         guard case .send(let target) = model.offer, let frame = targetFrame else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.addItem(.sectionHeader(title: "Send to"))
-        for destination in AgentDestination.menu(model.destinations, target: target) {
+        for destination in DestinationChoice.menu(model.destinations, target: target) {
             let item = NSMenuItem(title: destination.project, action: #selector(TargetMenuActions.pick(_:)), keyEquivalent: "")
             item.target = targetMenuActions
             item.representedObject = destination
