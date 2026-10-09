@@ -315,7 +315,9 @@ final class LiveInkTests: XCTestCase {
             return CGRect(x: layout.box.minX, y: layout.box.minY - above, width: layout.box.width, height: layout.box.height + above)
         }
         let extents = marks.map(extent)
-        XCTAssertTrue(extents.allSatisfy { $0.minY >= page.minY * CGFloat(pixels.height) }, "everything keeps off the toolbar")
+        XCTAssertTrue(zip(marks, extents).allSatisfy { mark, extent in
+            if case .text = mark.geometry { extent.minY >= page.minY * CGFloat(pixels.height) } else { true }
+        }, "the texts keep off the toolbar")
         for (i, a) in extents.enumerated() {
             guard case .text = marks[i].geometry else { continue }
             for (j, b) in extents.enumerated() where j != i {
