@@ -182,16 +182,12 @@ struct EditorGeometry {
     /// outline's width on screen, so all of it lies outside the mark.
     var outlineOffset: CGFloat { screen(metrics.selectionOutlineWidth) / 2 }
 
-    /// The rect a mark's ink covers, in px: a stroke's whole width, an arrowhead, and a text's tag
-    /// with the part of an agent's badge above it, all with their edge (`MarkStyle.edgeWidth`).
+    /// The rect a mark's ink covers, in px: a stroke's whole width and an arrowhead with their edge
+    /// (`MarkStyle.edgeWidth`), and a text's `TextLayout.drawnBox(edge:)`, its tag with that edge and
+    /// an agent's badge.
     func inkExtent(of mark: Mark) -> CGRect {
         let edge = markStyle.edgeWidth * pointScale
-        if case .text(let text) = mark.geometry {
-            let layout = layout(text, of: mark)
-            let tag = layout.box.insetBy(dx: -edge, dy: -edge)
-            guard let badge = layout.badge else { return tag }
-            return tag.union(badge.frame(on: layout.box))
-        }
+        if case .text(let text) = mark.geometry { return layout(text, of: mark).drawnBox(edge: edge) }
         guard let shape = mark.shape(pointScale: pointScale, markStyle: markStyle) else { return extent(of: mark) }
         var ink = CGRect.null
         if let stroked = shape.stroked { ink = ink.union(stroked.boundingBoxOfPath.insetBy(dx: -shape.lineWidth / 2, dy: -shape.lineWidth / 2)) }

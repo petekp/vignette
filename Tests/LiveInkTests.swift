@@ -287,6 +287,19 @@ final class LiveInkTests: XCTestCase {
         XCTAssertFalse(box.intersects(text[0]) || box.intersects(ink), "left of it is text")
     }
 
+    /// A note is placed and hit by the box it draws, so an agent's note keeps the mark above it clear
+    /// of its badge, which rises more than an em above the tag.
+    func testABadgedAgentNotesBoxHoldsItsBadge() throws {
+        let ink = CGRect(x: 510, y: 435, width: 156, height: 64)
+        let scene = LiveAnswerLayout.Scene(room: room, ink: [Mark(geometry: .ellipse(ink))], text: [])
+        let note = LiveAnswerLayout.note("Should be $194.24", near: ink, scene: scene, obstacles: [], sizes: sizes)
+        guard case .text(let text) = note.geometry else { return XCTFail("not a note") }
+        let layout = TextLayout(text, imageWidth: .greatestFiniteMagnitude, pointScale: 1, style: sizes.style.forMark(note))
+        let badge = try XCTUnwrap(layout.badge, "an agent's note carries its badge")
+        let box = try XCTUnwrap(LiveAnswerLayout.noteBox(note, sizes: sizes))
+        XCTAssertTrue(box.contains(badge.frame(on: layout.box)), "\(box) holds \(badge.frame(on: layout.box))")
+    }
+
     /// A result card's words go beside the first mark rather than over the window's title bar, and
     /// no text on the card covers a mark or another text. How many marks there are is the same with
     /// or without a picture to measure on, since a reply's stored drawing is checked against it.
@@ -310,9 +323,7 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(marks.count, laidOut.count)
         func extent(_ mark: Mark) -> CGRect {
             guard case .text(let text) = mark.geometry else { return mark.shapeExtent ?? .null }
-            let layout = TextLayout(text, imageWidth: CGFloat(pixels.width), pointScale: scale, style: style.forMark(mark))
-            let above = layout.badge?.above ?? 0
-            return CGRect(x: layout.box.minX, y: layout.box.minY - above, width: layout.box.width, height: layout.box.height + above)
+            return TextLayout(text, imageWidth: CGFloat(pixels.width), pointScale: scale, style: style.forMark(mark)).drawnBox()
         }
         let extents = marks.map(extent)
         XCTAssertTrue(zip(marks, extents).allSatisfy { mark, extent in
@@ -584,6 +595,243 @@ final class LiveInkTests: XCTestCase {
         let away = LiveAnswerLayout.leaving(Mark.Arrow(start: CGPoint(x: 100, y: 300), end: CGPoint(x: 240, y: 240), via: via))
         XCTAssertEqual(away.dx, -1, accuracy: 0.01)
         XCTAssertEqual(away.dy, 0, accuracy: 0.01)
+    }
+
+    // MARK: A result card
+
+    /// A line of a window's text at `box`, in fractions of the picture, whose characters each take an
+    /// equal part of its width, as a monospaced reading would.
+    private func line(_ id: String, _ read: String, _ box: CGRect) -> LivePacket.Line {
+        LivePacket.Line(id: id, read: read, box: box) { range in
+            let total = CGFloat(read.count)
+            let offset = CGFloat(read.distance(from: read.startIndex, to: range.lowerBound))
+            let count = CGFloat(read.distance(from: range.lowerBound, to: range.upperBound))
+            return CGRect(x: box.minX + box.width * offset / total, y: box.minY, width: box.width * count / total, height: box.height)
+        }
+    }
+
+    /// A line whose reading gives no box for any part of it.
+    private func unboxedLine(_ id: String, _ read: String, _ box: CGRect) -> LivePacket.Line {
+        LivePacket.Line(id: id, read: read, box: box) { _ in nil }
+    }
+
+    /// The box `line` gives for the first `words` in it, as it reads them.
+    @MainActor private func box(of words: String, in line: LivePacket.Line) throws -> CGRect {
+        try XCTUnwrap(line.box(of: try XCTUnwrap(line.read.range(of: words))))
+    }
+
+    /// The screen and a result card find what an answer's mark names by this one rule.
+    @MainActor func testAMarkFindsItsWordsAsTheWindowReadThem() throws {
+        let title = line("t1", "Subscribe to Field Notes newsletter", CGRect(x: 0.1, y: 0.1, width: 0.5, height: 0.04))
+        let field = line("t2", "Email address", CGRect(x: 0.1, y: 0.3, width: 0.3, height: 0.04))
+        let again = line("t3", "Field Notes, every Friday", CGRect(x: 0.1, y: 0.5, width: 0.4, height: 0.04))
+        let lines = [title, field, again]
+        let all = Set(lines.map(\.id))
+        func target(_ mark: AnswerMark, in lines: [LivePacket.Line] = lines, sent: Set<String> = all) -> CGRect? {
+            mark.target(in: lines, sent: sent)
+        }
+
+        XCTAssertEqual(target(AnswerMark(kind: .arrow, words: "field notes")), try box(of: "Field Notes", in: title),
+                       "words in another case are the first line's that has them, of the two that do")
+        XCTAssertEqual(target(AnswerMark(kind: .circle, words: "Email-Address")), field.box,
+                       "with other punctuation, the line whose letters hold them, all of it")
+        let twice = line("t1", "Total: $12, then Total again", CGRect(x: 0.2, y: 0.6, width: 0.6, height: 0.05))
+        XCTAssertEqual(target(AnswerMark(kind: .circle, words: "total"), in: [twice], sent: ["t1"]), try box(of: "Total", in: twice),
+                       "the first time a line says them")
+        let loosely = line("t1", "Field-Notes archive", CGRect(x: 0.1, y: 0.05, width: 0.3, height: 0.03))
+        XCTAssertEqual(target(AnswerMark(kind: .arrow, words: "Field Notes"), in: [loosely, title], sent: ["t1", "t2"]),
+                       try box(of: "Field Notes", in: title), "a line that has the words as they are wins over an earlier loose one")
+
+        XCTAssertEqual(target(AnswerMark(kind: .circle, line: "t2", words: "Field Notes"), sent: ["t1"]), try box(of: "Field Notes", in: title),
+                       "a line the answer was not sent is not taken, and the words are looked for")
+        XCTAssertEqual(target(AnswerMark(kind: .circle, line: "t2", words: "Field Notes")), field.box,
+                       "a line sent that lacks the words is the place, whole, and no other line is searched")
+        XCTAssertEqual(target(AnswerMark(kind: .circle, line: "t3", words: "field notes")), try box(of: "Field Notes", in: again),
+                       "a sent line that has the words gives their box there, though an earlier line has them too")
+
+        let long = String(repeating: "lorem ipsum ", count: 18) + "Unsubscribe here " + String(repeating: "dolor sit ", count: 5)
+        let wide = line("t1", long, CGRect(x: 0, y: 0.9, width: 1, height: 0.02))
+        XCTAssertEqual(wide.text.count, LivePacket.maxLineLength, "an ask sends the line cut short")
+        XCTAssertEqual(target(AnswerMark(kind: .circle, words: "unsubscribe"), in: [wide], sent: ["t1"]), try box(of: "Unsubscribe", in: wide),
+                       "words past the part an ask sends are still found")
+
+        let blank = unboxedLine("t1", "Save changes", CGRect(x: 0.7, y: 0.8, width: 0.2, height: 0.04))
+        XCTAssertEqual(target(AnswerMark(kind: .circle, words: "changes"), in: [blank], sent: ["t1"]), blank.box,
+                       "words the reading gives no box for are the whole line")
+        let place = CGRect(x: 0.6, y: 0.6, width: 0.1, height: 0.1)
+        XCTAssertEqual(target(AnswerMark(kind: .circle, box: place)), place)
+        XCTAssertEqual(target(AnswerMark(kind: .circle, words: "Unsubscribe", box: place)), place, "words found nowhere fall back to the box")
+        XCTAssertNil(target(AnswerMark(kind: .arrow, words: "Unsubscribe")), "words found nowhere with no box point at nothing")
+    }
+
+    /// A card's note is placed by the box it draws, then set again by `AgentMark.marks` on the card, so
+    /// the two must agree on its wrap, its fit, the margin and its badge.
+    func testACardNoteStaysWhereAgentMarksPlacedIt() throws {
+        let pixels = PixelSize(width: 2400, height: 1600), scale: CGFloat = 2, style = UITweaks().textStyle
+        // A browser's page below its toolbar, in the picture's points.
+        let page = CGRect(x: 0, y: 60, width: 1200, height: 740)
+        let room = AgentMark.textRoom(CGSize(width: 1200, height: 800)).intersection(page)
+        // At the room's right edge with text on its left, so the note goes under it, flush with that edge,
+        // where a fit that kept another margin would move it.
+        let near = CGRect(x: room.maxX - 100, y: 300, width: 100, height: 30)
+        let obstacle = CGRect(x: 700, y: 280, width: near.minX - 10 - 700, height: 55)
+        // Given the page alone, the note keeps the margin itself.
+        let placed = try XCTUnwrap(AgentMark.note("Made the button green and moved the email field under it.", from: "claude", near: near,
+                                                  room: page, obstacles: [obstacle], in: pixels, pointScale: scale, style: style))
+        XCTAssertEqual(placed.covers.maxX, room.maxX, accuracy: 0.5)
+
+        let set = try XCTUnwrap(AgentMark.marks([placed.mark], from: "claude", in: pixels, pointScale: scale, style: style).marks.first)
+        guard case .text(let text) = set.geometry else { return XCTFail("not a note") }
+        let drawn = TextLayout(text, imageWidth: CGFloat(pixels.width), pointScale: scale, style: style.forMark(set)).drawnBox()
+        XCTAssertNotNil(style.forMark(set).badge, "an agent's note, with its badge")
+        XCTAssertEqual(drawn.minX / scale, placed.covers.minX, accuracy: 0.5)
+        XCTAssertEqual(drawn.minY / scale, placed.covers.minY, accuracy: 0.5)
+        XCTAssertEqual(drawn.maxX / scale, placed.covers.maxX, accuracy: 0.5)
+        XCTAssertEqual(drawn.maxY / scale, placed.covers.maxY, accuracy: 0.5)
+        XCTAssertTrue(room.insetBy(dx: -0.5, dy: -0.5).contains(placed.covers), "off the toolbar and inside the margin")
+        XCTAssertFalse(placed.covers.intersects(obstacle))
+
+        // Beside something at the page's own edge, where the page alone would let the note reach
+        // into the margin and the fit then move it.
+        let atEdge = CGRect(x: page.maxX - 100, y: 300, width: 100, height: 30)
+        let left = CGRect(x: 700, y: 280, width: atEdge.minX - 10 - 700, height: 55)
+        let edged = try XCTUnwrap(AgentMark.note("Made the button green and moved the email field under it.", from: "claude", near: atEdge,
+                                                 room: page, obstacles: [left], in: pixels, pointScale: scale, style: style))
+        let setAtEdge = try XCTUnwrap(AgentMark.marks([edged.mark], from: "claude", in: pixels, pointScale: scale, style: style).marks.first)
+        guard case .text(let edgeText) = setAtEdge.geometry else { return XCTFail("not a note") }
+        let drawnAtEdge = TextLayout(edgeText, imageWidth: CGFloat(pixels.width), pointScale: scale, style: style.forMark(setAtEdge)).drawnBox()
+        XCTAssertEqual(drawnAtEdge.minX / scale, edged.covers.minX, accuracy: 0.5, "the fit leaves it where it was placed")
+        XCTAssertEqual(drawnAtEdge.minY / scale, edged.covers.minY, accuracy: 0.5)
+        XCTAssertTrue(room.insetBy(dx: -0.5, dy: -0.5).contains(edged.covers), "inside the margin")
+    }
+
+    /// The window a result card is made from, in global top-left points, captured at 2 px a point.
+    private let cardFrame = CGRect(x: 200, y: 100, width: 1200, height: 800)
+    private let cardPixels = PixelSize(width: 2400, height: 1600)
+
+    /// `answer` on a result card of the window at `cardFrame` with `lines`, and the card's marks set
+    /// as the card sets them.
+    @MainActor private func resultCard(_ answer: LiveAnswer, lines: [LivePacket.Line], page: CGRect? = nil,
+                            about ink: CGRect = CGRect(x: 600, y: 400, width: 80, height: 40))
+    -> (marks: [AgentMark], notDrawn: [Int], set: [Mark]) {
+        let style = UITweaks().textStyle
+        let card = ResultCard(frame: cardFrame, pixels: cardPixels, pointScale: 2, page: page, lines: lines)
+        let made = card.marks(for: answer, about: ink, style: style, agent: "claude")
+        let set = AgentMark.marks(made.marks, from: "claude", in: cardPixels, pointScale: 2, style: style).marks
+        XCTAssertEqual(set.count, made.marks.count, "the card draws every mark")
+        return (made.marks, made.notDrawn, set)
+    }
+
+    /// A rect in global top-left points in the card's px.
+    private func cardPx(_ rect: CGRect) -> CGRect {
+        CGRect(x: (rect.minX - cardFrame.minX) * 2, y: (rect.minY - cardFrame.minY) * 2, width: rect.width * 2, height: rect.height * 2)
+    }
+
+    /// What a text on the card draws, in its px.
+    private func drawnBox(_ mark: Mark) -> CGRect? {
+        guard case .text(let text) = mark.geometry else { return nil }
+        let style = UITweaks().textStyle
+        return TextLayout(text, imageWidth: CGFloat(cardPixels.width), pointScale: 2, style: style.forMark(mark)).drawnBox()
+    }
+
+    /// A ring round words has room round them; an arrow ends at them, since a ring's room would put
+    /// its head in the next word.
+    @MainActor func testAResultCardsArrowEndsAtTheWordsItNamesAndARingHasRoomRoundThem() throws {
+        let title = line("t1", "Subscribe to Field Notes newsletter", CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.04))
+        let field = line("t2", "Email address", CGRect(x: 0.3, y: 0.5, width: 0.2, height: 0.04))
+        let alone = CGRect(x: 0.7, y: 0.75, width: 0.1, height: 0.08)
+        let answer = LiveAnswer(say: "Renamed the list.", marks: [AnswerMark(kind: .arrow, words: "field notes"),
+                                                                  AnswerMark(kind: .circle, words: "Email address"),
+                                                                  AnswerMark(kind: .circle, box: alone),
+                                                                  AnswerMark(kind: .circle, line: "t2")])
+        let card = resultCard(answer, lines: [title, field])
+        XCTAssertEqual(card.notDrawn, [])
+        XCTAssertEqual(card.marks.map(\.type), [.text, .arrow, .ellipse, .ellipse, .ellipse])
+
+        guard case .arrow(let arrow) = card.set[1].geometry else { return XCTFail("no arrow") }
+        let words = cardPx(LivePacket.global(try box(of: "Field Notes", in: title), in: cardFrame))
+        let reach = max(words.minX - arrow.end.x, arrow.end.x - words.maxX, words.minY - arrow.end.y, arrow.end.y - words.maxY)
+        XCTAssertLessThanOrEqual(reach, 8 * 2, "the head stops at the words it names")
+
+        func assertRoom(_ ring: Mark, round place: CGRect, _ what: String) {
+            guard case .ellipse(let ring) = ring.geometry else { return XCTFail("no ring") }
+            let clear = place.insetBy(dx: -4 * 2, dy: -3 * 2)
+            for corner in [CGPoint(x: clear.minX, y: clear.minY), CGPoint(x: clear.maxX, y: clear.minY),
+                           CGPoint(x: clear.minX, y: clear.maxY), CGPoint(x: clear.maxX, y: clear.maxY)] {
+                XCTAssertTrue(EditorGeometry.ellipse(ring, contains: corner), "the ring goes round \(what) with room: \(corner) in \(ring)")
+            }
+        }
+        assertRoom(card.set[2], round: cardPx(LivePacket.global(try box(of: "Email address", in: field), in: cardFrame)), "the words")
+        assertRoom(card.set[4], round: cardPx(LivePacket.global(field.box, in: cardFrame)), "a line named by its id")
+
+        let boxed = card.marks[3]
+        XCTAssertEqual(boxed.x, alone.minX, accuracy: 1e-9, "a box the answer gave is already what it means")
+        XCTAssertEqual(boxed.y, alone.minY, accuracy: 1e-9)
+        XCTAssertEqual(boxed.w ?? 0, alone.width, accuracy: 1e-9)
+        XCTAssertEqual(boxed.h ?? 0, alone.height, accuracy: 1e-9)
+    }
+
+    /// In a browser the card's words keep to the page, off its toolbar, but an arrow at a word in the
+    /// page's first line may come down across the toolbar, the one way to it that crosses no text.
+    @MainActor func testAResultCardsTextsKeepToThePageWhileItsArrowMayCrossTheToolbar() throws {
+        // The page starts 100 pt down. Its title is one line Vision reads across the page, with a
+        // line of text right under it.
+        let page = CGRect(x: cardFrame.minX, y: cardFrame.minY + 100, width: cardFrame.width, height: cardFrame.height - 100)
+        let title = line("t1", "The weekly Field Notes for people who build small useful things", CGRect(x: 0.02, y: 0.13, width: 0.96, height: 0.035))
+        let under = line("t2", String(repeating: "Every Friday, a short letter about tools and craft. ", count: 2),
+                         CGRect(x: 0.02, y: 0.17, width: 0.96, height: 0.03))
+        let answer = LiveAnswer(say: "Renamed it Field Notes.", marks: [AnswerMark(kind: .arrow, words: "Field Notes", label: "New name")])
+        let card = resultCard(answer, lines: [title, under], page: page)
+        let pageTop = cardPx(page).minY
+
+        guard case .arrow(let arrow) = try XCTUnwrap(card.set.first { $0.kind == .arrow }).geometry else { return XCTFail("no arrow") }
+        XCTAssertLessThan(arrow.start.y, pageTop, "the arrow comes down across the toolbar")
+        let texts = card.set.compactMap(drawnBox)
+        XCTAssertEqual(texts.count, 2, "the words and the label")
+        for text in texts { XCTAssertGreaterThanOrEqual(text.minY, pageTop - 0.01, "a text keeps off the toolbar") }
+    }
+
+    /// Words the window no longer shows are reported, not drawn somewhere else.
+    @MainActor func testAResultCardReportsTheMarksItCouldNotFind() throws {
+        let field = line("t1", "Email address", CGRect(x: 0.3, y: 0.5, width: 0.2, height: 0.04))
+        let edge = line("t2", "Sign in", CGRect(x: 0.92, y: 0.2, width: 0.08, height: 0.04))
+        // Right of the field, where the words would go first beside its ring.
+        let hint = line("t3", "Required field", CGRect(x: 0.56, y: 0.5, width: 0.24, height: 0.04))
+        let fallback = CGRect(x: 0.6, y: 0.6, width: 0.1, height: 0.05)
+        let answer = LiveAnswer(say: "Two of these are gone.", marks: [AnswerMark(kind: .circle, words: "email address"),
+                                                                       AnswerMark(kind: .arrow, words: "Unsubscribe"),
+                                                                       AnswerMark(kind: .circle, line: "t9"),
+                                                                       AnswerMark(kind: .circle, words: "Plans", box: fallback),
+                                                                       AnswerMark(kind: .circle, words: "Sign in")])
+        let card = resultCard(answer, lines: [field, edge, hint])
+        XCTAssertEqual(card.notDrawn, [1, 2])
+        XCTAssertEqual(card.marks.map(\.type), [.text, .ellipse, .ellipse, .ellipse], "the words, then a ring for each mark found")
+
+        guard case .ellipse(let standIn) = card.set[2].geometry else { return XCTFail("no ring") }
+        XCTAssertTrue(standIn.insetBy(dx: -0.5, dy: -0.5).contains(cardPx(LivePacket.global(fallback, in: cardFrame))),
+                      "words not found are ringed at the box the answer gave")
+        let atEdge = card.marks[3]
+        XCTAssertEqual(atEdge.x + (atEdge.w ?? 0), 1, accuracy: 1e-9, "a ring at the window's edge is cut at the card's")
+
+        guard case .ellipse(let first) = card.set[1].geometry else { return XCTFail("no ring") }
+        let said = try XCTUnwrap(drawnBox(card.set[0]))
+        let gap = max(first.minX - said.maxX, said.minX - first.maxX, first.minY - said.maxY, said.minY - first.maxY)
+        XCTAssertLessThanOrEqual(gap, 12 * 2, "the words go beside the first mark drawn")
+        for line in [field, edge, hint] {
+            XCTAssertFalse(said.intersects(cardPx(LivePacket.global(line.box, in: cardFrame))), "the words keep off the window's \(line.read)")
+        }
+
+        // With no mark found, the words go beside the ink the note was about.
+        let ink = CGRect(x: 1000, y: 300, width: 80, height: 40)
+        let lost = LiveAnswer(say: "Both are gone.", marks: [AnswerMark(kind: .arrow, words: "Unsubscribe"),
+                                                             AnswerMark(kind: .circle, line: "t9", label: "Was here")])
+        let alone = resultCard(lost, lines: [field, edge], about: ink)
+        XCTAssertEqual(alone.notDrawn, [0, 1])
+        XCTAssertEqual(alone.marks.map(\.type), [.text], "no mark, and no label for one")
+        let words = try XCTUnwrap(drawnBox(alone.set[0]))
+        let about = cardPx(ink)
+        XCTAssertLessThanOrEqual(max(about.minX - words.maxX, words.minX - about.maxX, about.minY - words.maxY, words.minY - about.maxY),
+                                 12 * 2, "the words go beside the ink")
     }
 
     // MARK: Whether a change landed

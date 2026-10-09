@@ -21,22 +21,15 @@ final class AgentConnectionTests: XCTestCase {
         """
     }
 
-    /// A connection over inboxes in a temporary folder, with herdr answering `panes` when given.
-    /// Every process id in `running` is taken to be alive.
-    private func claude(inboxes root: URL, running: Set<Int32> = [101, 102], panes: String? = nil,
-                        now: Date = Date()) -> (ClaudeCodeConnection, () -> [[String]]) {
-        let calls = Recorder()
+    /// A connection over inboxes in a temporary folder. Every process id in `running` is taken to
+    /// be alive.
+    private func claude(inboxes root: URL, running: Set<Int32> = [101, 102], now: Date = Date()) -> ClaudeCodeConnection {
         var connection = ClaudeCodeConnection()
         connection.inboxes = root
         connection.transcripts = URL(fileURLWithPath: "/nonexistent/projects")
         connection.isRunning = { running.contains($0) }
         connection.now = { now }
-        connection.herdr = { panes == nil ? nil : "/bin/herdr" }
-        connection.run = { _, arguments, _ in
-            calls.record(arguments)
-            return panes.map { (0, $0, false) }
-        }
-        return (connection, { calls.all() })
+        return connection
     }
 
     /// An inbox as the plugin's scripts leave it.
@@ -63,19 +56,27 @@ final class AgentConnectionTests: XCTestCase {
         return url
     }
 
-    /// Collects argv across threads; the connection's runner is `@Sendable`.
-    private final class Recorder: @unchecked Sendable {
-        private let lock = NSLock()
-        private var calls: [[String]] = []
-        func record(_ arguments: [String]) { lock.lock(); calls.append(arguments); lock.unlock() }
-        func all() -> [[String]] { lock.lock(); defer { lock.unlock() }; return calls }
-    }
-
     // MARK: Claude Code, by session rather than by pane
 
     func testAnswerThatIsNotAPaneListIsNoAgents() {
-        XCTAssertEqual(ClaudeCodeConnection.agents(in: Data("not json".utf8)), [])
-        XCTAssertEqual(ClaudeCodeConnection.agents(in: Data(#"{"error":{"code":"no_server"}}"#.utf8)), [])
+        XCTAssertEqual(HerdrFocus.agents(in: Data("not json".utf8)), [])
+        XCTAssertEqual(HerdrFocus.agents(in: Data(#"{"error":{"code":"no_server"}}"#.utf8)), [])
+        XCTAssertNil(HerdrFocus(paneList: Data("not json".utf8)))
+    }
+
+    /// herdr's focus comes from `herdr pane list` when it succeeds. A failed herdr's output, or no
+    /// herdr at all, is no focus.
+    func testHerdrsFocusIsReadFromItsPaneList() {
+        let panes = paneList(session: session)
+        func read(binary: String? = "/bin/herdr", status: Int32 = 0) -> HerdrFocus? {
+            HerdrFocus.read(binary: { binary }, run: { _, arguments, _ in
+                (status, arguments == ["pane", "list"] ? panes : "", false)
+            })
+        }
+        XCTAssertEqual(read(), HerdrFocus(paneList: Data(panes.utf8)))
+        XCTAssertEqual(read()?.pane, "w9:p6")
+        XCTAssertNil(read(status: 1), "a failed herdr says nothing about the focus")
+        XCTAssertNil(read(binary: nil))
     }
 
     /// A test launch reaches sessions only through a tool the environment names: any other codex or
@@ -99,7 +100,7 @@ final class AgentConnectionTests: XCTestCase {
         try inbox(root, pid: 102, session: "0f0f0f0f-0000-4000-8000-000000000000", alive: now.addingTimeInterval(-60))
         let gone = try inbox(root, pid: 103, session: "1f0f0f0f-0000-4000-8000-000000000000")
         try inbox(root, pid: 1010, session: nil)
-        let (connection, _) = claude(inboxes: root, running: [101, 102, 1010], now: now)
+        let connection = claude(inboxes: root, running: [101, 102, 1010], now: now)
         let found = connection.destinations()
         XCTAssertEqual(found.map(\.id), [session])
         XCTAssertEqual(found.first?.name, "New session in vignette", "no transcript yet")
@@ -150,7 +151,7 @@ final class AgentConnectionTests: XCTestCase {
         let inboxes = root.appendingPathComponent("inboxes")
         try inbox(inboxes, pid: 101, session: session)
 
-        var (connection, _) = claude(inboxes: inboxes)
+        var connection = claude(inboxes: inboxes)
         connection.transcripts = projects
         let found = connection.destinations()
         XCTAssertEqual(found.map(\.name), ["Closed agent loop, whole"])
@@ -166,55 +167,64 @@ final class AgentConnectionTests: XCTestCase {
     /// Send starts on the session you came from: herdr's focused pane, or the one session in the
     /// focused pane's tab when that pane runs no agent. A tab with two sessions says nothing.
     func testSendStartsOnTheSessionInHerdrsFocus() {
-        let root = temporaryFolder()
-        XCTAssertNoThrow(try inbox(root, pid: 101, session: session))
+        let mew = ClaudeCodeConnection.destination(session: session, cwd: "/Users/p/Code/vignette", transcript: .init())
+        func choose(_ sessions: [AgentDestination], complete: Bool = false, herdr: HerdrFocus?) -> DestinationChoice.Answer {
+            DestinationChoice.choose(.init(destinations: sessions, complete: complete, fresh: true, herdr: herdr), cameFrom: nil)
+        }
         func focus(_ pane: String) -> AgentDestination.Focus? {
-            let (connection, _) = claude(inboxes: root, panes: paneList(session: session, focused: pane))
-            return connection.destinations().first?.focus
+            choose([mew], herdr: HerdrFocus(paneList: Data(paneList(session: session, focused: pane).utf8))).list.first?.focus
         }
         XCTAssertEqual(focus("w9:p6"), .pane)
         XCTAssertEqual(focus("w9:pC"), .tab, "the browser beside the session")
         XCTAssertNil(focus("w9:pA"), "another session's pane, even one herdr cannot name")
         XCTAssertNil(focus("w9:pB"), "a Codex pane")
 
-        let listed = ClaudeCodeConnection.agents(in: Data(paneList(session: session).utf8))
-        let destinations = listed.compactMap { agent in
-            agent.session.map { ClaudeCodeConnection.destination(session: $0, cwd: "", transcript: .init()) }
+        let listed = HerdrFocus.agents(in: Data(paneList(session: session).utf8))
+        func marked(_ extra: HerdrFocus.AgentPane, focus: String) -> [AgentDestination.Focus?] {
+            choose([mew], herdr: HerdrFocus(pane: focus, tab: "w9:t1", agents: listed + [extra])).list.map(\.focus)
         }
-        func marked(_ extra: ClaudeCodeConnection.HerdrAgent, focus: String) -> [AgentDestination.Focus?] {
-            ClaudeCodeConnection.markFocus(destinations, agents: listed + [extra], focus: (focus, "w9:t1")).map(\.focus)
-        }
-        let second = ClaudeCodeConnection.HerdrAgent(pane: "w9:pD", session: "second", tab: "w9:t1")
+        let second = HerdrFocus.AgentPane(pane: "w9:pD", session: "second", tab: "w9:t1")
         XCTAssertEqual(marked(second, focus: "w9:pC"), [nil], "two sessions beside the browser")
-        let codex = ClaudeCodeConnection.HerdrAgent(pane: "w9:pE", tab: "w9:t1")
+        let codex = HerdrFocus.AgentPane(pane: "w9:pE", tab: "w9:t1")
         XCTAssertEqual(marked(codex, focus: "w9:pE"), [nil], "you are talking to the Codex beside it")
 
         let old = AgentDestination(id: "1", name: "a", address: .claudeSession("1"), lastUsed: Date(timeIntervalSince1970: 100))
         let new = AgentDestination(id: "2", name: "b", address: .codexThread(uuid: "2"), lastUsed: Date(timeIntervalSince1970: 200))
-        var beside = old
-        beside.focus = .tab
-        func pick(_ list: [AgentDestination]) -> String? {
-            DestinationChoice.choose(list, complete: true, fresh: true, cameFrom: nil).pick?.id
+        let besideOld = HerdrFocus(pane: "w9:pC", tab: "w9:t1", agents: [.init(pane: "w9:p6", session: "1", tab: "w9:t1")])
+        func pick(_ list: [AgentDestination], herdr: HerdrFocus? = nil) -> String? {
+            choose(list, complete: true, herdr: herdr).pick?.id
         }
-        XCTAssertEqual(pick([new, beside]), "1", "focus comes before the session used last")
+        XCTAssertEqual(pick([new, old], herdr: besideOld), "1", "focus comes before the session used last")
         XCTAssertEqual(pick([new, old]), "2")
         XCTAssertNil(pick([]))
-        let partial = DestinationChoice.choose([new, beside], complete: false, fresh: true, cameFrom: nil)
-        XCTAssertEqual(partial.pick?.id, "1", "a focus decides before every client has answered")
-        XCTAssertFalse(DestinationChoice.choose([new, old], complete: false, fresh: true, cameFrom: nil).decided,
-                       "without a focus, the session used last waits for every client")
+        XCTAssertEqual(choose([new, old], herdr: besideOld).pick?.id, "1", "a focus decides before every client has answered")
+        XCTAssertFalse(choose([new, old], herdr: nil).decided, "without a focus, the session used last waits for every client")
+
+        let thread = AgentDestination(id: "t1", name: "x", address: .codexThread(uuid: "t1"), lastUsed: Date(timeIntervalSince1970: 50))
+        let onCodex = HerdrFocus(pane: "w9:pB", tab: "w9:t3", agents: [.init(pane: "w9:pB", session: "t1", tab: "w9:t3")])
+        let whole = choose([old, thread], complete: true, herdr: onCodex)
+        XCTAssertEqual(whole.list.map(\.focus), [nil, nil],
+                       "herdr's focus on a Codex pane marks nothing, even when herdr names its thread")
+        XCTAssertEqual(whole.pick?.id, "1", "so the whole list picks the session used last")
+        XCTAssertFalse(choose([old, thread], herdr: onCodex).decided, "and a partial list waits")
+
+        var claimed = old
+        claimed.focus = .pane
+        let ignored = choose([claimed], herdr: nil)
+        XCTAssertNil(ignored.list.first?.focus, "only choose marks: a focus on what it is given is ignored")
+        XCTAssertFalse(ignored.decided)
     }
 
     /// Coming from the Codex app, Send starts on the thread it shows, whatever herdr's focus says,
     /// since herdr keeps a focused pane while its terminal is behind (observed 2026-09-25).
     func testSendStartsOnTheThreadTheCodexAppShows() {
-        var focused = AgentDestination(id: "c", name: "vignette", address: .claudeSession("c"))
-        focused.focus = .pane
+        let focused = AgentDestination(id: "c", name: "vignette", address: .claudeSession("c"))
+        let herdr = HerdrFocus(pane: "p", tab: "t", agents: [.init(pane: "p", session: "c", tab: "t")])
         let recent = AgentDestination(id: "t1", name: "Review codebase", address: .codexThread(uuid: "t1"))
         let shown = AgentDestination(id: "t2", name: "Build showroom MCP App PoC", address: .codexThread(uuid: "t2"))
         let list = [focused, recent, shown]
         func choose(_ id: String?, in list: [AgentDestination] = list, fresh: Bool = true) -> DestinationChoice.Answer {
-            DestinationChoice.choose(list, complete: true, fresh: fresh, cameFrom: (.codex, id))
+            DestinationChoice.choose(.init(destinations: list, complete: true, fresh: fresh, herdr: herdr), cameFrom: (.codex, id))
         }
         XCTAssertEqual(choose("t2").pick?.id, "t2")
         XCTAssertEqual(choose(nil).pick?.id, "t1", "an app showing no thread gives the Codex thread used last")
@@ -333,7 +343,7 @@ final class AgentConnectionTests: XCTestCase {
         let root = temporaryFolder()
         let folder = try inbox(root, pid: 102, session: session)
         try inbox(root, pid: 101, session: "0f0f0f0f-0000-4000-8000-000000000000")
-        let (connection, calls) = claude(inboxes: root)
+        let connection = claude(inboxes: root)
         let destination = AgentDestination(id: session, name: "x", address: .claudeSession(session))
         guard case .accepted(let detail) = connection.submit("look here [From Vignette]", to: destination) else {
             return XCTFail("a session with a live inbox is submittable")
@@ -343,7 +353,6 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(lines.count, 1)
         XCTAssertEqual(try String(contentsOf: folder.appendingPathComponent(lines[0]), encoding: .utf8),
                        "look here [From Vignette]\n")
-        XCTAssertEqual(calls(), [], "herdr sends nothing")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("101").path).filter { $0.hasSuffix(".line") }, [])
     }
 
@@ -352,7 +361,7 @@ final class AgentConnectionTests: XCTestCase {
     func testASessionInNoInboxIsAnErrorAndNeverAnother() throws {
         let root = temporaryFolder()
         let folder = try inbox(root, pid: 101, session: "0f0f0f0f-0000-4000-8000-000000000000")
-        let (connection, _) = claude(inboxes: root)
+        let connection = claude(inboxes: root)
         let destination = AgentDestination(id: session, name: "x", address: .claudeSession(session))
         guard case .destinationChanged(_, let reason) = connection.submit("hello", to: destination) else {
             return XCTFail("a missing session must not fall back to another")
@@ -458,4 +467,261 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertTrue(connection.destinations().isEmpty)
         XCTAssertFalse(asked, "nothing is spawned when there is no binary to spawn")
     }
+
+    // MARK: Listing
+
+    private func thread(_ id: String, used: TimeInterval) -> AgentDestination {
+        AgentDestination(id: id, name: id, address: .codexThread(uuid: id), lastUsed: Date(timeIntervalSince1970: used))
+    }
+
+    private func claudeSession(_ id: String, used: TimeInterval) -> AgentDestination {
+        AgentDestination(id: id, name: id, address: .claudeSession(id), lastUsed: Date(timeIntervalSince1970: used))
+    }
+
+    /// Starts one listing, collecting what it delivers, and an expectation met by the first delivery
+    /// `done` accepts.
+    @MainActor
+    private func collect(_ listing: SessionListing, shown: (client: AgentClient, id: String)? = nil,
+                         until done: @escaping (DestinationChoice.Candidates) -> Bool) -> (Delivered, XCTestExpectation) {
+        let delivered = Delivered()
+        let finished = expectation(description: "the listing delivers")
+        finished.assertForOverFulfill = false
+        listing.list(shown: shown) { candidates in
+            delivered.all.append(candidates)
+            if done(candidates) { finished.fulfill() }
+        }
+        return (delivered, finished)
+    }
+
+    /// The editor opens on Codex's kept threads at once, and every client is still asked afresh, so
+    /// a thread started since the list was kept still arrives.
+    @MainActor
+    func testAKeptListAnswersAtOnceAndEveryClientIsAskedAfresh() async throws {
+        let codex = ListedSessions(.codex, keepsList: true, sessions: [thread("t1", used: 200)])
+        let claude = ListedSessions(.claude, keepsList: false, sessions: [claudeSession("mew", used: 100)])
+        let listing = SessionListing(connections: [.codex: codex, .claude: claude], readHerdr: { nil })
+        let (_, primed) = collect(listing) { $0.complete && $0.fresh }
+        await fulfillment(of: [primed], timeout: 5)
+        let asked = codex.plain
+
+        let (delivered, fresh) = collect(listing) { $0.complete && $0.fresh }
+        XCTAssertEqual(delivered.all.count, 1, "the kept list answers inside the call")
+        XCTAssertEqual(delivered.all.first?.destinations.map(\.id), ["t1"])
+        XCTAssertEqual(delivered.all.first?.complete, false, "Claude Code's list is never kept")
+        XCTAssertEqual(delivered.all.first?.fresh, false)
+        await fulfillment(of: [fresh], timeout: 5)
+        XCTAssertEqual(delivered.all.last?.destinations.map(\.id), ["t1", "mew"])
+        XCTAssertEqual(codex.plain, asked + 1, "a kept list is still asked afresh")
+        withExtendedLifetime(listing) {}
+    }
+
+    /// An editor opening while a refresh is on its way waits for that answer rather than starting a
+    /// second `codex app-server`, and the answer is kept before the waiters hear it.
+    @MainActor
+    func testASecondAskJoinsTheOneOnItsWay() async throws {
+        let codex = ListedSessions(.codex, keepsList: true, sessions: [thread("t1", used: 200)])
+        let gate = DispatchSemaphore(value: 0)
+        codex.gate = gate
+        let listing = SessionListing(connections: [.codex: codex], readHerdr: { nil })
+        listing.refreshKeptLists()
+        let delivered = Delivered(), again = Delivered()
+        let answered = expectation(description: "the joined ask answers")
+        listing.list { candidates in
+            delivered.all.append(candidates)
+            guard candidates.fresh else { return }
+            XCTAssertEqual(codex.plain, 1, "the listing joined the refresh's ask")
+            codex.gate = nil
+            listing.list { again.all.append($0) }
+            XCTAssertEqual(again.all.first?.destinations.map(\.id), ["t1"], "kept before the waiters heard it")
+            XCTAssertEqual(again.all.first?.fresh, false)
+            answered.fulfill()
+        }
+        XCTAssertTrue(delivered.all.isEmpty, "nothing is kept yet")
+        gate.signal()
+        await fulfillment(of: [answered], timeout: 5)
+        XCTAssertEqual(delivered.all.last?.destinations.map(\.id), ["t1"])
+
+        let settled = expectation(description: "the second listing answers afresh")
+        settled.assertForOverFulfill = false
+        listing.list { if $0.fresh { settled.fulfill() } }
+        await fulfillment(of: [settled], timeout: 5)
+        withExtendedLifetime(listing) {}
+    }
+
+    /// The thread the Codex app shows is found for that one editor. Its ask does not wait on a plain
+    /// one, and an old thread it finds never joins the kept list the next editor opens on.
+    @MainActor
+    func testAnAskIncludingAShownThreadRunsAloneAndIsNotKept() async throws {
+        let codex = ListedSessions(.codex, keepsList: true, sessions: [thread("t1", used: 200)], extra: thread("old", used: 1))
+        let gate = DispatchSemaphore(value: 0)
+        codex.gate = gate
+        let listing = SessionListing(connections: [.codex: codex], readHerdr: { nil })
+        listing.refreshKeptLists()
+        let (shown, shownAnswered) = collect(listing, shown: (.codex, "old")) { $0.fresh }
+        await fulfillment(of: [shownAnswered], timeout: 5)
+        XCTAssertEqual(codex.including, 1, "it did not join the plain ask on its way")
+        XCTAssertEqual(shown.all.last?.destinations.map(\.id), ["t1", "old"])
+
+        let (next, nextAnswered) = collect(listing) { $0.fresh }
+        XCTAssertFalse(next.all.contains { $0.destinations.contains { $0.id == "old" } }, "the shown thread was not kept")
+        gate.signal()
+        codex.gate = nil
+        await fulfillment(of: [nextAnswered], timeout: 5)
+        XCTAssertEqual(next.all.last?.destinations.map(\.id), ["t1"])
+        let (later, laterAnswered) = collect(listing) { $0.fresh }
+        XCTAssertEqual(later.all.first?.destinations.map(\.id), ["t1"])
+        await fulfillment(of: [laterAnswered], timeout: 5)
+        withExtendedLifetime(listing) {}
+    }
+
+    /// herdr's focus comes with Claude Code's answer, so the target settles on the focused session
+    /// then, before a complete list could settle it on the Codex thread used last, and the focus
+    /// stays on every later answer of that listing. herdr runs only beside a Claude Code list that
+    /// has sessions, never on a refresh.
+    @MainActor
+    func testHerdrsFocusDecidesThePickWithClaudeCodesFirstAnswer() async throws {
+        let codex = ListedSessions(.codex, keepsList: true, sessions: [thread("t1", used: 200)])
+        let claude = ListedSessions(.claude, keepsList: false, sessions: [claudeSession("mew", used: 100)])
+        let focus = HerdrFocus(pane: "p", tab: "t", agents: [.init(pane: "p", session: "mew", tab: "t")])
+        let reads = HerdrReads(focus)
+        let listing = SessionListing(connections: [.codex: codex, .claude: claude], readHerdr: { reads.read() })
+        let (_, primed) = collect(listing) { $0.complete && $0.fresh }
+        await fulfillment(of: [primed], timeout: 5)
+        let readsBefore = reads.count
+
+        let gate = DispatchSemaphore(value: 0)
+        codex.gate = gate
+        let delivered = Delivered()
+        let claudeAnswered = expectation(description: "Claude Code answers")
+        let allFresh = expectation(description: "Codex answers afresh")
+        listing.list { candidates in
+            delivered.all.append(candidates)
+            if candidates.complete && !candidates.fresh { claudeAnswered.fulfill() }
+            if candidates.fresh { allFresh.fulfill() }
+        }
+        XCTAssertEqual(delivered.all.count, 1)
+        XCTAssertFalse(delivered.all.first.map { DestinationChoice.choose($0, cameFrom: nil).decided } ?? true,
+                       "the kept threads alone decide nothing: Claude Code has not answered")
+        await fulfillment(of: [claudeAnswered], timeout: 5)
+        // Every delivery from the first that holds Claude Code's sessions carries the focus and
+        // picks the focused session, not the Codex thread used last.
+        func checkFromClaudesAnswer(_ when: String) {
+            guard let first = delivered.all.firstIndex(where: { $0.destinations.contains { $0.id == "mew" } }) else {
+                return XCTFail("Claude Code answered")
+            }
+            for candidates in delivered.all[first...] {
+                XCTAssertEqual(candidates.herdr, focus, "the focus comes with Claude Code's answer, \(when)")
+                let answer = DestinationChoice.choose(candidates, cameFrom: nil)
+                XCTAssertTrue(answer.decided)
+                XCTAssertEqual(answer.pick?.id, "mew", when)
+                XCTAssertEqual(answer.list.first { $0.id == "mew" }?.focus, .pane, when)
+            }
+        }
+        checkFromClaudesAnswer("before Codex answers afresh")
+
+        gate.signal()
+        await fulfillment(of: [allFresh], timeout: 5)
+        checkFromClaudesAnswer("after Codex answers afresh")
+        XCTAssertEqual(reads.count, readsBefore + 1, "herdr is read once, in Claude Code's job")
+
+        codex.gate = nil
+        let claudeAsked = claude.plain
+        let codexRefreshed = expectation(description: "the refresh asks Codex")
+        let claudeRefreshed = expectation(description: "the refresh asks Claude Code")
+        claudeRefreshed.isInverted = true
+        codex.onAsk = { codexRefreshed.fulfill() }
+        claude.onAsk = { claudeRefreshed.fulfill() }
+        listing.refreshKeptLists()
+        await fulfillment(of: [codexRefreshed, claudeRefreshed], timeout: 0.5)
+        codex.onAsk = nil
+        claude.onAsk = nil
+        XCTAssertEqual(claude.plain, claudeAsked, "a refresh does not ask Claude Code")
+        XCTAssertEqual(reads.count, readsBefore + 1, "a refresh never reads herdr")
+
+        let (_, listed) = collect(listing) { $0.complete && $0.fresh }
+        await fulfillment(of: [listed], timeout: 5)
+        XCTAssertEqual(reads.count, readsBefore + 2, "a listing's Claude Code job reads herdr")
+
+        claude.sessions = []
+        let (_, empty) = collect(listing) { $0.complete && $0.fresh }
+        await fulfillment(of: [empty], timeout: 5)
+        XCTAssertEqual(reads.count, readsBefore + 2, "no Claude Code session, no herdr")
+        withExtendedLifetime(listing) {}
+    }
+}
+
+@MainActor
+private final class Delivered {
+    var all: [DestinationChoice.Candidates] = []
+}
+
+/// An agent client whose listing a test controls: what it lists, whether a plain listing is held,
+/// and how often each kind of listing was asked for.
+private final class ListedSessions: AgentConnection, @unchecked Sendable {
+    let client: AgentClient
+    let keepsList: Bool
+    private let lock = NSLock()
+    private var listed: [AgentDestination]
+    private let extra: AgentDestination?
+    private var held: DispatchSemaphore?
+    private var asked: (@Sendable () -> Void)?
+    private var plainCount = 0, includingCount = 0
+
+    init(_ client: AgentClient, keepsList: Bool, sessions: [AgentDestination], extra: AgentDestination? = nil) {
+        self.client = client
+        self.keepsList = keepsList
+        self.listed = sessions
+        self.extra = extra
+    }
+
+    private func locked<T>(_ body: () -> T) -> T { lock.lock(); defer { lock.unlock() }; return body() }
+
+    var sessions: [AgentDestination] {
+        get { locked { listed } }
+        set { locked { listed = newValue } }
+    }
+    /// Holds every plain listing until signalled.
+    var gate: DispatchSemaphore? {
+        get { locked { held } }
+        set { locked { held = newValue } }
+    }
+    /// Runs when a plain listing starts, off the main thread.
+    var onAsk: (@Sendable () -> Void)? {
+        get { locked { asked } }
+        set { locked { asked = newValue } }
+    }
+    var plain: Int { locked { plainCount } }
+    var including: Int { locked { includingCount } }
+
+    func destinations() -> [AgentDestination] {
+        let (gate, onAsk) = locked { () -> (DispatchSemaphore?, (@Sendable () -> Void)?) in plainCount += 1; return (held, asked) }
+        onAsk?()
+        _ = gate?.wait(timeout: .now() + 5)
+        return sessions
+    }
+
+    func destinations(including id: String) -> [AgentDestination] {
+        locked {
+            includingCount += 1
+            return listed + (extra.map { $0.id == id ? [$0] : [] } ?? [])
+        }
+    }
+
+    func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome { .accepted(detail: "") }
+}
+
+/// A herdr reading that answers `focus` and counts how often it ran.
+private final class HerdrReads: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reads = 0
+    let focus: HerdrFocus?
+
+    init(_ focus: HerdrFocus?) { self.focus = focus }
+
+    func read() -> HerdrFocus? {
+        lock.lock(); reads += 1; lock.unlock()
+        return focus
+    }
+
+    var count: Int { lock.lock(); defer { lock.unlock() }; return reads }
 }

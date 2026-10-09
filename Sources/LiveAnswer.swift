@@ -172,13 +172,12 @@ struct LiveAnswer: Equatable {
             CGRect(x: fraction.minX * size.width, y: fraction.minY * size.height, width: fraction.width * size.width, height: fraction.height * size.height)
         }
         func fraction(_ point: CGPoint) -> CGPoint { CGPoint(x: point.x / size.width, y: point.y / size.height) }
-        // Inside the margin `AgentMark.marks` keeps a text from the edges, so it leaves the text where it is put.
-        let margin = TextLayout.margin * size.width
-        let picture = CGRect(origin: .zero, size: size).insetBy(dx: margin, dy: margin)
-        // The texts keep to a browser's page. An arrow may cross the toolbar, as on the screen: above
-        // a word in a page's first line is often the one way to it that crosses no other text.
-        let page = canvas?.page.map { points($0).intersection(picture) }
-        let room = page.flatMap { $0.isNull || $0.isEmpty ? nil : $0 } ?? picture
+        // The arrows' room: the picture less the margin a text keeps from its edges.
+        let picture = AgentMark.textRoom(size)
+        // The texts keep to a browser's page, and `AgentMark.note` to that margin. An arrow may cross
+        // the toolbar, as on the screen: above a word in a page's first line is often the one way to it
+        // that crosses no other text.
+        let room = canvas?.page.map(points) ?? picture
         let lines = text.map(points)
         var shapes: [(mark: AgentMark, extent: CGRect, label: (text: String, near: CGRect, corner: CGPoint)?)] = []
         for (mark, target) in zip(marks, targets) {
@@ -202,21 +201,12 @@ struct LiveAnswer: Equatable {
                 [shape.mark] + (shape.label.map { [AgentMark(type: .text, x: $0.corner.x, y: $0.corner.y, text: $0.text)] } ?? [])
             }
         }
-        let width = CGFloat(canvas.pixels.width), height = CGFloat(canvas.pixels.height), scale = canvas.pointScale
         var obstacles = shapes.map { points($0.extent).insetBy(dx: -4, dy: -4) } + lines
         func note(_ text: String, near: CGRect) -> AgentMark? {
-            // Set as the card will set it, at the wrap it chooses, with the badge above the tag.
-            guard let set = AgentMark.marks([AgentMark(type: .text, x: 0, y: 0, text: text)], from: canvas.agent, in: canvas.pixels,
-                                            pointScale: scale, style: canvas.style).marks.first,
-                  case .text(let words) = set.geometry, let wrap = words.wrap else { return nil }
-            let layout = TextLayout(words, imageWidth: width, pointScale: scale, style: canvas.style.forMark(set))
-            let above = layout.badge?.above ?? 0
-            let drawn = CGRect(x: layout.box.minX, y: layout.box.minY - above, width: layout.box.width, height: layout.box.height + above)
-            let spot = LiveAnswerLayout.place(CGSize(width: drawn.width / scale, height: drawn.height / scale), near: points(near),
-                                              room: room, obstacles: obstacles)
-            obstacles.append(spot)
-            return AgentMark(type: .text, x: (spot.minX * scale + words.origin.x - drawn.minX) / width,
-                             y: (spot.minY * scale + words.origin.y - drawn.minY) / height, w: wrap / width, text: text)
+            guard let placed = AgentMark.note(text, from: canvas.agent, near: points(near), room: room, obstacles: obstacles,
+                                              in: canvas.pixels, pointScale: canvas.pointScale, style: canvas.style) else { return nil }
+            obstacles.append(placed.covers)
+            return placed.mark
         }
         let labelled = shapes.map { shape in
             [shape.mark] + (shape.label.map { label in
@@ -351,6 +341,35 @@ struct AnswerMark: Equatable {
             return "box must be [x, y, w, h] in fractions of the picture, and inside it"
         }
         return mark == nil ? "it needs words, or a box" : nil
+    }
+}
+
+extension AnswerMark {
+    /// Where the mark points, in fractions of the picture from its top-left corner: a line, the words
+    /// within it that the mark names, or its box. Words Vision gives no box for fall back to the line.
+    /// Words with no line in `sent`, as a session names them or the responder names text it was not
+    /// sent, are looked for in every line, the first that has them all winning. Ids run in reading
+    /// order over every line, so a guessed id would name a line the answer never saw.
+    @MainActor func target(in lines: [LivePacket.Line], sent: Set<String>) -> CGRect? {
+        let named = line.flatMap { id in sent.contains(id) ? lines.first { $0.id == id } : nil }
+        let found = named ?? words.flatMap { words in
+            lines.first { $0.read.range(of: words, options: [.caseInsensitive]) != nil }
+                ?? Self.loose(words).flatMap { key in lines.first { Self.loose($0.read)?.contains(key) == true } }
+        }
+        if let found {
+            if let words, let range = found.read.range(of: words, options: [.caseInsensitive]), let box = found.box(of: range) {
+                return box
+            }
+            return found.box
+        }
+        return box
+    }
+
+    /// Letters and digits only, lowercased, so words still match a line Vision read with other
+    /// punctuation or spacing.
+    private static func loose(_ text: String) -> String? {
+        let kept = String(text.lowercased().unicodeScalars.filter(CharacterSet.alphanumerics.contains).map(Character.init))
+        return kept.isEmpty ? nil : kept
     }
 }
 

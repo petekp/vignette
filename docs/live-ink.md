@@ -17,6 +17,7 @@ The names in brackets are `// MARK:` sections.
 | How an agent's shapes look | `LiveInkLight.swift` |
 | The note: opening, placing, sending | `LiveInk.swift` (Asking), `LiveNotePanel.swift` |
 | A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking, Whether it landed), `AppDelegate.swift` (Live ink notes sent to a session) |
+| Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
 | What an ask sends | `LivePacket.swift` |
 | Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
 | Claude on the screen, the `claude` process | `LiveResponder.swift` |
@@ -31,7 +32,7 @@ The names in brackets are `// MARK:` sections.
 
 ## Checking a change
 
-- `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement and anchoring.
+- `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement, result cards and anchoring.
 - A script reaches the note without a hand on the keys: `live-ink-chord-down`, then
   `live-ink-stroke` for each stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot
   press ⌃⌥, so this is the only way a VM check opens the note.
@@ -201,15 +202,16 @@ The names in brackets are `// MARK:` sections.
 - A session's answer with `scripts/reply --answer`, words and up to four marks that each name words
   on the window (`LiveAnswer`, in the reply's bundle), becomes the note's result card
   (`LiveInk.result`): the window captured afresh, since the session has usually changed what it
-  shows, with each mark at the words it names in that capture (`LiveAnswer.cardMarks`). A ring keeps
-  room round the words, and an arrow is the one the screen would draw (`LiveAnswerLayout.arrows`),
-  ending at the words themselves and covering as little of the capture's text as it can. In a
+  shows, with each mark at the words it names in that capture (`ResultCard.marks`). It finds them by
+  the rule the screen uses for an answer's marks (`AnswerMark.target`). A ring keeps room round the
+  words, and an arrow is the one the screen would draw (`LiveAnswerLayout.arrows`), ending at the
+  words themselves and covering as little of the capture's text as it can. In a
   browser the labels and words keep to the page (`LiveAnswer.Canvas.page`), off the toolbar and
   tabs. An arrow may cross the toolbar, as on the screen, since above a word in the page's first
   line is often the one way to it that crosses no other text. The labels
   go beside their marks and the words beside the first mark, or beside the ink when no mark was
-  found, each measured as the card sets it and placed where it covers the least of the rest and of
-  the text Vision read in the capture (`LiveAnswerLayout.place`). How many marks there are
+  found, each measured as the card sets it and placed where it covers the least of the rest and of the
+  text Vision read in the capture (`AgentMark.note`). How many marks there are
   never depends on that measuring, since a reply's stored drawing is checked against the count after
   a relaunch. The card is from the session: `AppDelegate.addLiveResult` records the
   agent and the session on it as an `add` does, so it wears the agent's tab and Reply on it goes
@@ -256,7 +258,7 @@ The names in brackets are `// MARK:` sections.
   rather than thousandths. They are thrown out as the answer is read, before `drew answer` counts.
   A session's answer is read strictly instead (`LiveAnswer(json:strict:)`): the reply helper
   refuses one with a mark it would throw out and names the mark, since the session can fix it. A
-  mark whose words are not found on the window falls back to its box (`LiveInk.target`), and is
+  mark whose words are not found on the window falls back to its box (`AnswerMark.target`), and is
   left out without one, counted in `drew answer … dropped=<n>`. Once the answer is drawn, on the
   window or as a card, Vignette writes its receipt again with `notDrawn`, the indexes of the marks
   left out, and the helper, which waits up to 5 s for that, prints them with their words.

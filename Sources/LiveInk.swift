@@ -386,7 +386,8 @@ final class LiveInk {
 
     /// The index of the mark a tap at `point` erases: the topmost note it is on, or whose stroke it is
     /// near, or else the smallest ellipse it is inside, since a circled thing is where a hand goes to
-    /// take the circle off. `noteBox` gives a note's tag.
+    /// take the circle off. `noteBox` gives what a note draws, an agent's badge included, so a tap on
+    /// the badge or beside it erases the note, as generous as `eraseReach`.
     nonisolated static func markToErase(at point: CGPoint, in marks: [Mark], markStyle: MarkStyle,
                                         noteBox: (Mark) -> CGRect? = { _ in nil }) -> Int? {
         let near = marks.lastIndex { mark in
@@ -1221,41 +1222,21 @@ final class LiveInk {
                 done: @escaping (_ result: (capture: CGImage, pointScale: CGFloat, marks: [AgentMark], notDrawn: [Int])?) -> Void) {
         guard let watched = watches[request], let window = watched.windowID else { return done(nil) }
         let ui = Settings.shared.data.ui
-        Task { @MainActor [weak self] in
+        Task { @MainActor in
             do {
                 let packet = try await LivePacket.build(at: CGPoint(x: watched.ink.midX, y: watched.ink.midY), window: window, ink: [],
                                                         style: ui.textStyle, markStyle: ui.markStyle)
                 // A window off the screen, minimized or closed, is not captured: `build` takes the
                 // window under the point then, which is another app's.
-                guard let self, packet.windowID == window else {
+                guard packet.windowID == window else {
                     Log.write("[live-ink] no result capture for request=\(request): its window is not on the screen")
                     return done(nil)
                 }
-                let lines = Set(packet.lines.map(\.id))
-                let frame = packet.frame
-                // A rect in global top-left points as fractions of the capture, or nil when none of it is on it.
-                func fraction(_ rect: CGRect) -> CGRect? {
-                    let inside = rect.intersection(frame)
-                    guard !inside.isNull else { return nil }
-                    return CGRect(x: (inside.minX - frame.minX) / frame.width, y: (inside.minY - frame.minY) / frame.height,
-                                  width: inside.width / frame.width, height: inside.height / frame.height)
-                }
-                let targets = answer.marks.map { mark -> CGRect? in
-                    guard var found = self.target(of: mark, in: packet, sent: lines) else { return nil }
-                    // A box from the words is tight round their letters, so a ring round it needs room.
-                    // An arrow points at the words themselves.
-                    if mark.kind != .arrow, mark.words != nil || mark.line != nil {
-                        found = found.insetBy(dx: -(found.width * 0.2 + 8), dy: -(found.height * 0.45 + 6))
-                    }
-                    return fraction(found)
-                }
-                let notDrawn = targets.indices.filter { targets[$0] == nil }
-                Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(notDrawn.count)")
-                let canvas = LiveAnswer.Canvas(pixels: PixelSize(width: packet.capture.width, height: packet.capture.height),
-                                               pointScale: packet.scale, style: ui.textStyle, agent: watched.session.client.rawValue,
-                                               page: packet.page.flatMap(fraction))
-                done((packet.capture, packet.scale, answer.cardMarks(targets: targets, about: fraction(watched.ink),
-                                                                     text: packet.lines.map(\.box), on: canvas), notDrawn))
+                let card = ResultCard(frame: packet.frame, pixels: PixelSize(width: packet.capture.width, height: packet.capture.height),
+                                      pointScale: packet.scale, page: packet.page, lines: packet.lines)
+                let drawn = card.marks(for: answer, about: watched.ink, style: ui.textStyle, agent: watched.session.client.rawValue)
+                Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(drawn.notDrawn.count)")
+                done((packet.capture, packet.scale, drawn.marks, drawn.notDrawn))
             } catch {
                 Log.write("[live-ink] no result capture for request=\(request): \(error)")
                 done(nil)
@@ -1347,7 +1328,7 @@ final class LiveInk {
     private func answered(_ answer: LiveAnswer, packet: LivePacket, sent: Set<String>, near asked: CGRect, question: Mark?) -> [Int]? {
         guard asking != nil else { return nil }
         clearEarlierAnswer()
-        let targets = answer.marks.map { target(of: $0, in: packet, sent: sent) }
+        let targets = answer.marks.map { $0.target(in: packet.lines, sent: sent).map(packet.global) }
         let layout = LiveAnswerLayout.placed(for: answer, targets: targets, asked: asked,
                                              quote: words(of: question), scene: scene(for: packet, leaving: question), sizes: answerSizes, streamed: asking?.say,
                                              below: LiveAnswerActions.room(for: answer.actions), focusable: packet.windowID != nil)
@@ -1640,34 +1621,6 @@ final class LiveInk {
         case .scrollWheel: letGoOfFocus(because: "scroll")
         default: letGoOfFocus(because: "click")
         }
-    }
-
-    /// Where an answer's mark points, in global top-left points: a line, the words within it that the
-    /// mark names, or its box. Words Vision gives no box for fall back to the line. Words with no line
-    /// in `sent`, as a session names them or the responder names text it was not sent, are looked for
-    /// in every line, the first that has them all winning. Ids run in reading order over every line,
-    /// so a guessed id would name a line the answer never saw.
-    private func target(of mark: AnswerMark, in packet: LivePacket, sent: Set<String>) -> CGRect? {
-        let named = mark.line.flatMap { id in sent.contains(id) ? packet.lines.first { $0.id == id } : nil }
-        let line = named ?? mark.words.flatMap { words in
-            packet.lines.first { $0.recognized.string.range(of: words, options: [.caseInsensitive]) != nil }
-                ?? Self.loose(words).flatMap { key in packet.lines.first { Self.loose($0.recognized.string)?.contains(key) == true } }
-        }
-        if let line {
-            if let words = mark.words, let range = line.recognized.string.range(of: words, options: [.caseInsensitive]),
-               let box = try? line.recognized.boundingBox(for: range)?.boundingBox {
-                return packet.global(CGRect(x: box.minX, y: 1 - box.maxY, width: box.width, height: box.height))
-            }
-            return packet.global(line.box)
-        }
-        return mark.box.map(packet.global)
-    }
-
-    /// Letters and digits only, lowercased, so words still match a line Vision read with other
-    /// punctuation or spacing.
-    private static func loose(_ text: String) -> String? {
-        let kept = String(text.lowercased().unicodeScalars.filter(CharacterSet.alphanumerics.contains).map(Character.init))
-        return kept.isEmpty ? nil : kept
     }
 
     /// The note says why beside the ink, in the person's colour, since Vignette says it, not the agent.

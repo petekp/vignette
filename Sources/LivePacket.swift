@@ -13,12 +13,26 @@ struct LivePacket: @unchecked Sendable {
     /// One line of the window's text, with the box it was read in.
     struct Line {
         let id: String
+        /// What an ask sends: `read` cut at `LivePacket.maxLineLength`.
         let text: String
         /// In fractions of the picture, from its top-left corner.
         let box: CGRect
-        /// Vision's reading, which gives the box of a part of the line. Only read on the main thread
-        /// after the packet is built.
-        let recognized: VNRecognizedText
+        /// Every character read on the line. A mark's words are found in this, not in `text`.
+        let read: String
+        private let rangeBox: (Range<String.Index>) -> CGRect?
+
+        init(id: String, read: String, box: CGRect, rangeBox: @escaping (Range<String.Index>) -> CGRect?) {
+            self.id = id
+            text = String(read.prefix(LivePacket.maxLineLength))
+            self.box = box
+            self.read = read
+            self.rangeBox = rangeBox
+        }
+
+        /// The box of `range`, a range of `read`, in fractions of the picture from its top-left corner,
+        /// or nil where the reading gives none. On the main actor, because Vision's reading behind it is
+        /// only read on the main thread once the packet is built.
+        @MainActor func box(of range: Range<String.Index>) -> CGRect? { rangeBox(range) }
     }
 
     /// The window the ink is on, in global top-left points, when it was captured.
@@ -315,7 +329,10 @@ struct LivePacket: @unchecked Sendable {
     }
 
     /// A rect in fractions of the picture, in global top-left points.
-    func global(_ fractions: CGRect) -> CGRect {
+    func global(_ fractions: CGRect) -> CGRect { Self.global(fractions, in: frame) }
+
+    /// A rect in fractions of a picture of the window at `frame`, in global top-left points.
+    static func global(_ fractions: CGRect, in frame: CGRect) -> CGRect {
         CGRect(x: frame.minX + fractions.minX * frame.width, y: frame.minY + fractions.minY * frame.height,
                width: fractions.width * frame.width, height: fractions.height * frame.height)
     }
@@ -369,7 +386,10 @@ struct LivePacket: @unchecked Sendable {
             return rowA == rowB ? a.1.minX < b.1.minX : rowA < rowB
         }
         return ordered.enumerated().map { index, item in
-            Line(id: "t\(index + 1)", text: String(item.0.string.prefix(maxLineLength)), box: item.1, recognized: item.0)
+            let text = item.0
+            return Line(id: "t\(index + 1)", read: text.string, box: item.1) { range in
+                (try? text.boundingBox(for: range)?.boundingBox).map { CGRect(x: $0.minX, y: 1 - $0.maxY, width: $0.width, height: $0.height) }
+            }
         }
     }
 
