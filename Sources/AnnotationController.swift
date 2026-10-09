@@ -547,10 +547,10 @@ final class AnnotationController {
         offerChanged()
     }
 
-    /// Another client answered with its sessions; `complete` on the last.
-    func destinationsAnswered(_ list: [AgentDestination], complete: Bool) {
+    /// Another client answered with its sessions, and the pick made from them.
+    func destinationsAnswered(_ answer: DestinationChoice.Answer) {
         let before = toolbar.model.offer.destination?.id
-        toolbar.model.answered(list, complete: complete)
+        toolbar.model.answered(answer)
         logOffer(was: before)
         offerChanged()
     }

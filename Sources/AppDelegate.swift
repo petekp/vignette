@@ -1374,12 +1374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[send] sessions \(found.count)\(complete ? " complete" : "")\(fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
             // A file can reopen while its earlier destination listing is still running.
             guard self.annotator.session == session else { return }
-            guard let cameFrom else { return self.annotator.destinationsAnswered(found, complete: complete) }
-            let marked = AgentDestination.cameFrom(cameFrom.client, shown: cameFrom.shown, in: found, fresh: fresh)
-            // Nothing marked from a kept list means the shown thread may be newer than it, so the
-            // target waits for the fresh one rather than settling on the thread used last.
-            let waits = !fresh && !marked.contains { $0.focus == .app }
-            self.annotator.destinationsAnswered(marked, complete: complete && !waits)
+            self.annotator.destinationsAnswered(DestinationChoice.choose(found, complete: complete, fresh: fresh, cameFrom: cameFrom))
         }
     }
 
