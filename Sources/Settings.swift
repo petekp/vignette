@@ -499,16 +499,13 @@ final class Settings: ObservableObject {
         var title: String
         var detail: String
     }
-    /// True when the file was written by a newer Vignette, whose keys a write would drop, or when it
-    /// cannot be written at all. Nothing is written then, and `readOnlyReason` says why.
-    private(set) var readOnly = false
-    private(set) var readOnlyReason = ""
+    private var sync: SettingsSync
+    private let hold = EventHold<SettingsSync.Event>()
+    /// True when nothing is written to the file (`SettingsSync.readOnly`).
+    var readOnly: Bool { sync.readOnly }
 
     private var directorySource: DispatchSourceFileSystemObject?
     private var fileSource: DispatchSourceFileSystemObject?
-    /// The file as this app last wrote or read it: the state the file and the app last agreed on.
-    private var syncedBytes: Data?
-    private var syncedData: SettingsData?
     private var reloadWork: DispatchWorkItem?
     private var writeWork: DispatchWorkItem?
     private var appleLocation: AppleScreencapture.Observer?
@@ -518,11 +515,9 @@ final class Settings: ObservableObject {
         let boot = Settings.bootstrap(at: Settings.fileURL)
         data = boot.data
         startupNotice = boot.notice
-        readOnly = boot.readOnly
-        readOnlyReason = boot.readOnlyReason
         for line in boot.log { Log.write("[settings] \(line)") }
-        syncedBytes = boot.written ?? (try? Data(contentsOf: Settings.fileURL))
-        syncedData = boot.data
+        sync = SettingsSync(bytes: boot.written ?? (try? Data(contentsOf: Settings.fileURL)), data: boot.data,
+                            readOnly: boot.readOnly, readOnlyReason: boot.readOnlyReason)
         watch()
         motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
@@ -643,6 +638,11 @@ final class Settings: ObservableObject {
     /// defaults. Distinguishes a missing file from one that does not parse.
     static func load(_ url: URL) -> Load {
         guard let raw = try? Data(contentsOf: url) else { return .missing }
+        return parse(raw)
+    }
+
+    /// Reads the file's bytes over the defaults, as `load` does once it has them. Never answers `.missing`.
+    nonisolated static func parse(_ raw: Data) -> Load {
         do {
             guard let fromFile = try JSONSerialization.jsonObject(with: raw) as? [String: Any] else {
                 return .invalid("top level is not an object")
@@ -663,7 +663,7 @@ final class Settings: ObservableObject {
     /// A file from a newer version is returned unchanged. A bump that changes a key rewrites it
     /// here, between the guard and the stamp, one step per version. Version 1 introduced the
     /// version field. Version 2 writes only the `ui` values that differ from the defaults.
-    static func migrate(_ raw: [String: Any]) -> (json: [String: Any], from: Int) {
+    nonisolated static func migrate(_ raw: [String: Any]) -> (json: [String: Any], from: Int) {
         var json = raw
         let from = (json["version"] as? NSNumber)?.intValue ?? 0
         guard from < currentVersion else { return (json, from) }
@@ -682,7 +682,7 @@ final class Settings: ObservableObject {
     /// Every `ui` default of 0.1.0 and 0.1.1, which are the same, taken from v0.1.1's source. All of
     /// them, not only those that differ from today's, so a default changed later cannot turn one
     /// into a choice.
-    static let uiDefaultsBeforeVersion2: [String: Any] = [
+    nonisolated static let uiDefaultsBeforeVersion2: [String: any Sendable] = [
         "slideInCurve": "spring",
         "cardMaxWidth": 208, "cardMaxHeight": 86, "cardMinSide": 114, "cardSpacing": 10, "panelInset": 19,
         "screenMargin": 17, "stackMinScale": 0.5, "stackGap": 24, "cardCornerRadius": 12,
@@ -710,7 +710,7 @@ final class Settings: ObservableObject {
         var next = data
         change(&next)
         apply(next, source: "app")
-        scheduleWrite()
+        send(.appChanged)
     }
 
     /// Puts Apple's screencapture defaults back to the recorded originals and mirrors them in the
@@ -732,29 +732,13 @@ final class Settings: ObservableObject {
         next.windowShadow = !(original.disableShadow ?? false)
         next.format = original.type ?? "png"
         apply(next, source: "restore", pushApple: false)
-        scheduleWrite()
+        send(.appChanged)
         return restored
     }
 
     /// Writes a pending change now. Called on quit so a slider drag's last value is not lost.
     func flush() {
-        guard let work = writeWork, !work.isCancelled else { return }
-        work.cancel()
-        writeAppChanges()
-    }
-
-    private func scheduleWrite() {
-        writeWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.writeAppChanges() }
-        writeWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
-    }
-
-    /// Writes this app's settings. The file may have been edited since the app last read it, with
-    /// the watcher's reload still to come, so that edit is taken in first and the write keeps it.
-    private func writeAppChanges() {
-        takeInFileChanges()
-        writeNow(data)
+        send(.quit)
     }
 
     private func apply(_ next: SettingsData, source: String, pushApple: Bool = true) {
@@ -812,7 +796,7 @@ final class Settings: ObservableObject {
             .standardizedFileURL.path as NSString).abbreviatingWithTildeInPath
         Log.write("[settings] following apple location=\(next.screenshotsFolder)")
         apply(next, source: "apple", pushApple: false)
-        scheduleWrite()
+        send(.appChanged)
     }
 
     /// Keep macOS's screenshot behavior in line with the file. Only touched keys are written.
@@ -827,7 +811,7 @@ final class Settings: ObservableObject {
 
     // MARK: File
 
-    private static func encoder() -> JSONEncoder {
+    nonisolated static func encoder() -> JSONEncoder {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         enc.userInfo[UITweaks.differencesOnly] = true
@@ -844,7 +828,7 @@ final class Settings: ObservableObject {
         try raw.write(to: url, options: .atomic)
     }
 
-    private static func deepMerge(_ base: [String: Any], _ over: [String: Any]) -> [String: Any] {
+    private nonisolated static func deepMerge(_ base: [String: Any], _ over: [String: Any]) -> [String: Any] {
         var out = base
         for (k, v) in over {
             if let b = base[k] as? [String: Any], let o = v as? [String: Any] { out[k] = deepMerge(b, o) } else { out[k] = v }
@@ -855,7 +839,7 @@ final class Settings: ObservableObject {
     /// Three-way merge from `base`, what the file and the app last agreed on: a key the app changed
     /// takes the app's value, and every other key the file's. Where both changed a key, the file's
     /// value stands, and the key is listed in `conflicts`. nil when one of them does not encode.
-    static func merged(base: SettingsData, app: SettingsData, file: SettingsData) -> (data: SettingsData, conflicts: [String])? {
+    nonisolated static func merged(base: SettingsData, app: SettingsData, file: SettingsData) -> (data: SettingsData, conflicts: [String])? {
         func object(_ d: SettingsData) -> [String: Any]? {
             (try? JSONEncoder().encode(d)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         }
@@ -883,30 +867,45 @@ final class Settings: ObservableObject {
         return (data, conflicts.sorted())
     }
 
-    private func writeNow(_ d: SettingsData) {
-        if readOnly { Log.write("[settings] warning not written: \(readOnlyReason)"); return }
-        guard let raw = try? Settings.encoder().encode(d) else { return }
-        // Tweak-panel changes are not logged as they happen (a drag is many of them); the write is.
-        if let previous = syncedData {
-            let changed = Settings.uiChanges(from: previous.ui, to: d.ui)
-            if !changed.isEmpty { Log.write("[settings] wrote \(changed.joined(separator: " "))") }
+    private func send(_ event: SettingsSync.Event) {
+        // An event sent while effects run (an `onChange` handler's `update`, or the answer to
+        // `.writeAppData` or `.readFileAndFlush`) is reduced after the current event's effects.
+        hold.send(event) { event in
+            let effects = sync.reduce(event)
+            for effect in effects { run(effect) }
         }
-        syncedBytes = raw
-        syncedData = d
-        Settings.write(raw, to: Settings.fileURL)
-        watchFile()   // atomic write replaced the inode
     }
 
-    /// `ui.key=value` for every UI number that differs, in key order.
-    static func uiChanges(from old: UITweaks, to new: UITweaks) -> [String] {
-        func dict(_ u: UITweaks) -> [String: Any] {
-            (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(u))) as? [String: Any] ?? [:]
-        }
-        let a = dict(old), b = dict(new)
-        return b.keys.sorted().compactMap { key in
-            let value = b[key].map { "\($0)" } ?? "null"
-            let before = a[key].map { "\($0)" } ?? "null"
-            return value == before ? nil : "ui.\(key)=\(value)"
+    /// Reads the file when a timer fires or at quit, not when the timer is set.
+    private func sendReadingFile(_ event: (Data?, SettingsData) -> SettingsSync.Event) {
+        send(event(try? Data(contentsOf: Settings.fileURL), data))
+    }
+
+    private func run(_ effect: SettingsSync.Effect) {
+        switch effect {
+        case .log(let line):
+            Log.write("[settings] \(line)")
+        case .apply(let next, let source):
+            apply(next, source: source)
+        case .write(let raw):
+            Settings.write(raw, to: Settings.fileURL)
+            watchFile()   // atomic write replaced the inode
+        case .writeAppData:
+            send(.appData(data))
+        case .readFileAndFlush:
+            sendReadingFile(SettingsSync.Event.flush(file:app:))
+        case .scheduleWrite(let delay):
+            writeWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.sendReadingFile(SettingsSync.Event.writeDue(file:app:)) }
+            writeWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        case .cancelWrite:
+            writeWork?.cancel()
+        case .scheduleReload(let delay):
+            reloadWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.sendReadingFile(SettingsSync.Event.reloadDue(file:app:)) }
+            reloadWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
     }
 
@@ -915,7 +914,7 @@ final class Settings: ObservableObject {
     private func watch() {
         try? FileManager.default.createDirectory(at: Settings.directory, withIntermediateDirectories: true)
         directorySource = makeSource(path: Settings.directory.path, mask: .write) { [weak self] in
-            self?.scheduleReload()
+            self?.send(.fileChanged)
             self?.watchFile()
         }
         watchFile()
@@ -924,7 +923,7 @@ final class Settings: ObservableObject {
     private func watchFile() {
         fileSource?.cancel()
         fileSource = makeSource(path: Settings.fileURL.path, mask: [.write, .extend, .delete, .rename]) { [weak self] in
-            self?.scheduleReload()
+            self?.send(.fileChanged)
         }
     }
 
@@ -936,46 +935,6 @@ final class Settings: ObservableObject {
         src.setCancelHandler { close(fd) }
         src.resume()
         return src
-    }
-
-    private func scheduleReload() {
-        reloadWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.takeInFileChanges() }
-        reloadWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
-    }
-
-    private func takeInFileChanges() {
-        guard let raw = try? Data(contentsOf: Settings.fileURL), raw != syncedBytes else { return }
-        switch Settings.load(Settings.fileURL) {
-        case .missing:
-            return
-        case .invalid(let reason):
-            Log.write("[settings] error settings-invalid file changed but does not parse; keeping current settings: \(reason)")
-        case .loaded(var loaded):
-            for line in loaded.log { Log.write("[settings] \(line)") }
-            if loaded.fileVersion > Settings.currentVersion, !readOnly {
-                readOnly = true
-                readOnlyReason = "the file is from a newer version"
-                Log.write("[settings] warning file version \(loaded.fileVersion) is newer than this build's \(Settings.currentVersion); not writing to it")
-            }
-            // The app owns this record; a pasted or older file must not erase it.
-            if loaded.data.appleOriginal == nil { loaded.data.appleOriginal = data.appleOriginal }
-            let validated = loaded.data.validated()
-            for note in validated.corrections { Log.write("[settings] warning clamped \(note)") }
-            // A change made in the app since the last write is not in the file yet. Merging from
-            // what the two last agreed on keeps it beside the file's edit.
-            var next = validated.data
-            if let base = syncedData, base != data, let merged = Settings.merged(base: base, app: data, file: validated.data) {
-                next = merged.data
-                for key in merged.conflicts { Log.write("[settings] kept the file's \(key) over this app's change") }
-            }
-            apply(next, source: "file")
-            syncedBytes = raw
-            syncedData = validated.data   // the next tweak-panel write logs only what it changed
-            // Stamp a pre-version file once so the migration does not repeat on every reload.
-            if loaded.fileVersion < Settings.currentVersion { writeNow(loaded.data) }
-        }
     }
 }
 
