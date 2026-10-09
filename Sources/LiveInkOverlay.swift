@@ -268,10 +268,11 @@ final class LiveMarksLayer: CALayer {
         }
     }
 
-    /// How marks leave: done, when the session's turn ended, which turns them green with a check,
-    /// or dismissed by the person, which takes them away at once.
+    /// How marks leave: done, when the session's turn ended, which turns them green with a check;
+    /// dismissed, which undraws them; or carried, when the card a note became flies over them, which
+    /// hides them in that commit.
     enum Finish {
-        case done, dismissed
+        case done, dismissed, carried
     }
 
     private var drawn: [Mark.ID: Drawn] = [:]
@@ -589,6 +590,7 @@ final class LiveMarksLayer: CALayer {
     /// small green check, and then the mark leaves. Dismissed: it leaves at once. The layers stay at
     /// the end state, invisible, until the mark is removed (`LiveInk.finishDuration`).
     private func finish(_ record: Drawn, _ how: Finish, check: Bool, markStyle: MarkStyle, textStyle: TextStyle) {
+        guard how != .carried else { record.previewed.opacity = 0; return }
         let motion = Settings.shared.motionScale
         let now = record.previewed.convertTime(CACurrentMediaTime(), from: nil)
         // A reply's popover stays while the marks it answered turn green, and leaves with them.

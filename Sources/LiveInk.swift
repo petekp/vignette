@@ -38,8 +38,10 @@ final class LiveInk {
     /// then a fresh one.
     var listSessions: ((@escaping ([AgentDestination]) -> Void) -> Void)?
     /// Sends a note to a session through today's Send, as the card it becomes, and answers on the
-    /// main thread with the request's id, or why it was refused.
-    var sendNote: ((NoteCard, AgentDestination, String, @escaping (Result<String, ScreenshotRequests.Refusal>) -> Void) -> Void)?
+    /// main thread with the request's id and whether the card flies from the window, or why it was
+    /// refused.
+    var sendNote: ((NoteCard, AgentDestination, String,
+                    @escaping (Result<(request: String, carried: Bool), ScreenshotRequests.Refusal>) -> Void) -> Void)?
     /// A note's session finished its turn, with what Vignette saw of the window then.
     var turnEnded: ((String, TurnEnd) -> Void)?
     /// Where a session is in its turns, or nil when that cannot be told.
@@ -806,12 +808,16 @@ final class LiveInk {
         sendNote(card, session, message) { [weak self] result in
             guard let self else { return }
             switch result {
-            case .success(let request):
-                Log.write("[live-ink] sent to a session request=\(request) marks=\(card.marks.count)")
-                self.watch(request, Watch(session: session, windowID: packet.windowID, ink: inkBox, before: before))
+            case .success(let sent):
+                Log.write("[live-ink] sent to a session request=\(sent.request) marks=\(card.marks.count)")
+                self.watch(sent.request, Watch(session: session, windowID: packet.windowID, ink: inkBox, before: before))
                 guard self.asking?.about == about else { return }
                 self.letGoOfNote(into: nil)
-                self.finish(about.union(person.map(\.id)), .dismissed)
+                let ids = about.union(person.map(\.id))
+                guard sent.carried else { return self.finish(ids, .dismissed) }
+                // The card starts moving from over the ink on the next turn (`TransitionLayer.fly`), and
+                // the ink goes in that same commit, as the annotator's frame does behind the flight home.
+                DispatchQueue.main.async { [weak self] in self?.finish(ids, .carried) }
             case .failure(let refusal):
                 guard self.asking?.about == about else { return }
                 self.failed(LiveResponder.Failure(reason: "Not sent. " + refusal.reason, detail: "send refused"))
@@ -988,6 +994,7 @@ final class LiveInk {
 
     /// How long marks take to leave before they are removed.
     private func finishDuration(_ how: LiveMarksLayer.Finish) -> TimeInterval {
+        guard how != .carried else { return 0 }
         let motion = Settings.shared.motionScale
         guard motion > 0 else { return LiveMarksLayer.doneFade + 0.05 }
         return ((how == .done ? LiveMarksLayer.doneHold : 0) + LiveMarksLayer.doneAway) * motion + 0.15
@@ -995,7 +1002,7 @@ final class LiveInk {
 
     private func finish(_ ids: Set<Mark.ID>, _ how: LiveMarksLayer.Finish) {
         for id in ids { finishing[id] = how }
-        Log.write("[live-ink] \(how == .done ? "done" : "dismissed") marks=\(ids.count)")
+        Log.write("[live-ink] \(how) marks=\(ids.count)")
         showMarks()
         DispatchQueue.main.asyncAfter(deadline: .now() + finishDuration(how)) { [weak self] in
             guard let self, ids.contains(where: { self.finishing[$0] != nil }) else { return }
