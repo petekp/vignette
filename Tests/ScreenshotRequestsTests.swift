@@ -195,10 +195,11 @@ final class ScreenshotRequestsTests: XCTestCase {
 
     // MARK: Acceptance
 
-    /// An answer to live ink is drawn on the window and makes no file; one the window cannot take,
-    /// because the ink was cleared or the app relaunched, still reaches the person as a card. Either
-    /// way the receipt is written again once it is drawn, naming the marks that were not.
-    func testAnAnswerIsDrawnOnTheWindowOrElseBecomesACard() throws {
+    /// An answer to live ink becomes live ink's own result card, and the reply makes no file; one
+    /// whose window cannot be captured, or that comes after a relaunch, still reaches the person as a
+    /// card on the request's picture. Either way the receipt is written again once it is drawn,
+    /// naming the marks that were not.
+    func testAnAnswerBecomesLiveInksResultOrElseACard() throws {
         var shown: [LiveAnswer] = []
         var drawsLive = true
         requests.callbacks.presentLive = { _, answer, done in
@@ -228,8 +229,8 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(presented.count, 1)
         let marks = try XCTUnwrap(added.last)
         XCTAssertEqual(marks.first?.text, "Moved the dates under the title.")
-        // The words-only mark has nothing to find on the request's picture; the boxed one is ringed.
-        XCTAssertEqual(marks.map(\.type), [.text, .ellipse])
+        // The words-only mark has nothing to find on the request's picture; the boxed arrow points at its box.
+        XCTAssertEqual(marks.map(\.type), [.text, .arrow])
         XCTAssertEqual(receipt(card, cardAttempt)?.notDrawn, [0])
     }
 

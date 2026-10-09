@@ -42,8 +42,40 @@ struct LivePacket: @unchecked Sendable {
     let detail: (png: Data, box: CGRect)?
     /// How light the capture is, coarsely, before the ink was drawn in.
     let luminance: Luminance?
+    /// The window as captured, without the ink, at the display's scale.
+    let capture: CGImage
     /// Says whether the window's text is what it was in an earlier packet.
     var textSignature: String { lines.map(\.text).joined(separator: "\n") }
+
+    /// The capture's pixels per point.
+    var scale: CGFloat { CGFloat(capture.width) / frame.width }
+
+    /// `marks`, in global top-left points, as a drawing of `capture` holds them: in its pixels, with
+    /// sizes in points of `scale`. Each is a new mark with the same geometry and author, so what
+    /// only live ink keeps on a mark, such as its notice or its popover, stays behind.
+    func drawingMarks(_ marks: [Mark]) -> [Mark] {
+        let scale = scale
+        func point(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - frame.minX) * scale, y: (p.y - frame.minY) * scale) }
+        func rect(_ r: CGRect) -> CGRect { CGRect(origin: point(r.origin), size: CGSize(width: r.width * scale, height: r.height * scale)) }
+        return marks.map { mark in
+            let geometry: Mark.Geometry
+            switch mark.geometry {
+            case .rectangle(let box): geometry = .rectangle(rect(box))
+            case .ellipse(let box): geometry = .ellipse(rect(box))
+            case .arrow(var arrow):
+                arrow.start = point(arrow.start)
+                arrow.end = point(arrow.end)
+                arrow.bend *= scale
+                arrow.via = arrow.via.map(point)
+                geometry = .arrow(arrow)
+            case .text(var text):
+                text.origin = point(text.origin)
+                text.wrap = text.wrap.map { $0 * scale }
+                geometry = .text(text)
+            }
+            return Mark(geometry: geometry, agent: mark.agent, agentName: mark.agentName)
+        }
+    }
 
     /// Where a window's text is, found before its text is read, in global top-left points: what a
     /// note keeps clear of. Vision finds the boxes in a tenth of the time it takes to read them well.
@@ -125,7 +157,7 @@ struct LivePacket: @unchecked Sendable {
         Log.write("[live-ink] looked ms capture=\(ms(captured)) page=\(ms(page.at)) read=\(ms(assembled.at))")
         return LivePacket(frame: frame, windowID: target?.id, app: app, title: title, location: page.page?.location, page: page.page?.area,
                           lines: assembled.lines, picture: assembled.picture, numbers: assembled.numbers, detail: assembled.detail,
-                          luminance: assembled.luminance)
+                          luminance: assembled.luminance, capture: capture)
     }
 
     /// The window `id` as it is now, alone, so none of Vignette's overlays are in it, with its frame in
@@ -440,6 +472,16 @@ struct LivePacket: @unchecked Sendable {
         context.scaleBy(x: 1, y: -1)
         CTLineDraw(line, context)
         context.restoreGState()
+    }
+
+    /// `image` as a PNG whose DPI says `pointScale` pixels per point, as a macOS screenshot's does,
+    /// so its card and its copies show it at the window's size.
+    static func screenshotPNG(_ image: CGImage, pointScale: CGFloat) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { return nil }
+        let dpi = 72 * pointScale
+        CGImageDestinationAddImage(destination, image, [kCGImagePropertyDPIWidth: dpi, kCGImagePropertyDPIHeight: dpi] as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 
     private static func png(_ image: CGImage, scale: CGFloat) -> Data? {

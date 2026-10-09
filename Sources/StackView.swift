@@ -579,6 +579,7 @@ private struct SendOverlay: View {
         case .uncertain: return "Check \(notice.project)"
         case .failed: return "Not sent"
         case .replyFailed: return "Reply not shown"
+        case .done: return "Done in \(notice.project)"
         }
     }
 
@@ -662,7 +663,7 @@ private struct SendOverlay: View {
                         Circle().fill(Color(white: 0.18)).frame(width: 15, height: 15)
                         ProgressView().controlSize(.mini).environment(\.colorScheme, .dark).scaleEffect(0.8)
                     }
-                case .sent:
+                case .sent, .done:
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 15, weight: .bold))
                         .symbolRenderingMode(.palette).foregroundStyle(.white, .green)
                 case .queued:

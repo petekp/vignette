@@ -707,6 +707,12 @@ final class ThumbnailController: NSObject {
         post(.answered(request: request, state: state, reason: reason), on: shot)
     }
 
+    /// The session's turn on the live ink note `shot` ended with nothing to show as a result card.
+    /// A card not on screen comes up as the lone thumbnail to say it, as a result card would.
+    func finished(_ shot: Screenshot, request: String, in destination: AgentDestination) {
+        post(.finished(request: request, client: destination.client, project: destination.project), on: shot)
+    }
+
     /// A reply to a send could not be made a card, so the card that was sent says so, as it says a
     /// failed send.
     func replyFailed(_ shot: Screenshot, request: String, client: AgentClient, reason: String) {

@@ -15,7 +15,8 @@ The names in brackets are `// MARK:` sections.
 | What a stroke becomes, and erasing | `InkStroke.swift`, `LiveInk.swift` (Strokes) |
 | How the person's ink looks | `LiveInkHand.swift` |
 | How an agent's shapes look | `LiveInkLight.swift` |
-| The note: opening, placing, sending, waiting on a session | `LiveInk.swift` (Asking), `LiveNotePanel.swift` |
+| The note: opening, placing, sending | `LiveInk.swift` (Asking), `LiveNotePanel.swift` |
+| A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking, Whether it landed), `AppDelegate.swift` (Live ink notes sent to a session) |
 | What an ask sends | `LivePacket.swift` |
 | Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
 | Claude on the screen, the `claude` process | `LiveResponder.swift` |
@@ -25,7 +26,7 @@ The names in brackets are `// MARK:` sections.
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
 | Marks following their window, holding still, hiding | `LiveWindows.swift`, `LiveAnchor.swift` (Accessibility), `LivePatch.swift` (pixels) |
-| Whether a session's turn changed what the ink is on, and the before played back | `LiveChange.swift`, `LiveInk.swift` (Whether it landed) |
+| Whether a session's turn changed what the ink was on | `LiveChange.swift`, `LiveInk.swift` (Whether it landed) |
 
 ## Checking a change
 
@@ -134,9 +135,10 @@ The names in brackets are `// MARK:` sections.
   open, so a press while the note is open adds to that note's ink. Ink an earlier note kept stays.
   ⌘⌫ is the text field's delete-the-line key, and the note handles its command
   (`deleteToBeginningOfLine:`) as it does Esc's. Its target starts on the one picked last, else the
-  responder, and lists the sessions Send lists after it. The words stay beside the ink as the person's own note, whichever
-  target answers: the chip fades and the panel hands over to the drawn note without the words
-  moving (`settle`). The note opens against its ink, where a hand writes one
+  responder, and lists the sessions Send lists after it. For the responder the words stay beside the
+  ink as the person's own note: the chip fades and the panel hands over to the drawn note without the
+  words moving (`settle`). For a session the note leaves with the ink, as a card (below). The note
+  opens against its ink, where a hand writes one
   (`LiveAnswerLayout.noteSpot`): touching an arrow's tail on the side away from its head, or beside a
   loop's edge. It may cover the window's text there, and never moves elsewhere, since a note away from
   its ink reads as being about something else. Left of the ink it grows to the left. Placing it needs
@@ -160,41 +162,48 @@ The names in brackets are `// MARK:` sections.
   (`LivePacket.numbers`), and the responder's ink carries the same `n`. A spoken note sent as it was
   said gets `[n]` after the word said as stroke `n` was drawn (`SpokenNote.marked`, from
   `strokeTimes`), for the agent only; the note on screen keeps the person's words.
-- An ask sent to a session goes through Send, as one line that names the app, the window and its
-  URL. The person's words stay beside their ink as their own note, and both carry the thinking
-  light until the session's turn ends (`LiveInk.watchWorking`, `ClaudeCodeConnection.turn(of:)`).
-  The request waits in the session's inbox while another turn runs, and the `turn` file the
-  plugin's hooks write there says when its own turn starts and ends. Vignette stops waiting 3
-  minutes after the session takes the request when it sees no turn start, as with Codex. It stops
-  30 minutes into a turn it saw start, or 30 minutes after the ask while the request is still
-  queued. A send that went says nothing more. The
-  session sees its own change land, so the skill asks it to answer on the window only when pointing
-  helps. It does that with `scripts/reply --answer`: words, and up to four marks that each
-  name words on the window (`LiveAnswer`, in the reply's bundle). `LiveInk.showAnswer` captures the
-  window the ink is on afresh (`LivePacket.build(window:)`), finds each mark's words in its text,
-  since the session has usually changed what it shows, and draws the answer beside the ink as the
-  responder's are drawn. The reply's stage is then `shown`, with no file. An answer that cannot be
-  drawn there, because the ink was cleared, a newer ask is under way or the app relaunched, becomes
-  a card with the words in its corner (`Reply.cardMarks`). `docs/adr/0021-a-sessions-answer-to-live-ink-is-drawn-on-the-window.md`
-  has the reasons.
-- When a session's turn ends with no answer drawn, Vignette looks at the window again before the
-  ink goes (`LiveInk.resolve`, `LiveChange`).
-  - **The before picture.** As the ask goes, Vignette keeps the part of the window round the ink:
-    the ink's shapes with 64 pt round them, inside the web page when there is one (`keepBefore`).
+- A note sent to a session leaves the window as a card (`docs/live-ink-note-cards-2026-10-08.md`,
+  ADR 0022). Send gets one line that names the app, the window and its URL, with the picture the
+  responder would get: the window with the ink drawn in and its strokes numbered. The card is the
+  window without the ink, written to the watch folder as `Live ink note <date> at <time>.png`
+  (`AppDelegate.sendLiveNote`), with the person's ink and words as its drawing
+  (`LivePacket.drawingMarks`), so it opens, copies and sends again like any drawn-on screenshot.
+  Copy on capture and Draw on capture leave it alone, as they leave an `add`, and the card shows the
+  send as a send from the editor does. Once the request is stored the ink and the note leave the
+  window (`LiveInk.share`). A send refused before that takes the file back, and the ink stays, with
+  the reason beside it.
+- Each note's turn is watched on its own (`LiveInk.watch`), twice a second, from the `turn` file the
+  plugin's hooks write in the session's inbox (`ClaudeCodeConnection.turn(of:)`). Nothing on the
+  screen waits on it, so clearing the ink or drawing a new note leaves it running. The request
+  waits in the inbox while another turn runs. Vignette stops waiting 3 minutes after the session
+  takes the request when it sees no turn start, 30 minutes into a turn it saw start, or 30 minutes
+  after the ask while the request is still queued. Codex reports no turns. `[state]
+  liveInk.watching` counts the notes watched.
+- A session's answer with `scripts/reply --answer`, words and up to four marks that each name words
+  on the window (`LiveAnswer`, in the reply's bundle), becomes the note's result card
+  (`LiveInk.result`): the window captured afresh, since the session has usually changed what it
+  shows, with the words in a corner and each mark at the words it names in that capture
+  (`LiveAnswer.cardMarks`). The card is from the session: `AppDelegate.addLiveResult` records the
+  agent and the session on it as an `add` does, so it wears the agent's tab and Reply on it goes
+  back there. The reply's stage is then `shown`, with no file of its own. A window off the screen,
+  or a relaunch since the note went, makes the reply a card on the picture the session was sent,
+  with a ring or an arrow for each mark that gave a box (`Reply.cardMarks`).
+- When a session's turn ends with no reply, Vignette looks at the window again (`LiveInk.endTurn`,
+  `LiveChange`).
+  - **The before picture.** The note's own capture gives the part of the window round the ink: the
+    ink's shapes with 64 pt round them, inside the web page when there is one (`LiveInk.before`).
   - **The comparison.** At the turn's end it captures the window twice, half a second apart, and
     compares that same part of the window on a grid of 3 pt cells of colour. A cell counts when its
     red, green or blue moved more than 24 of 255 and did not move between the two later captures.
     That leaves out a caret or a spinner. Grey alone missed a green button turned red, since the
     two are about as bright. Only the cells under the ink, its shapes with a 12 pt margin, decide.
     The ink's part changed when at least 2% of those cells counted, and at least 4.
-  - **Changed.** The window as it was plays back over the ink's part and every cell round it that
-    changed, so a button that grew past the ink plays back whole. It comes in with a "Before" tag,
-    then wipes away from left to right (`BeforeLayer`, drawn for a `Mark.before` pinned to the
-    window). Then the done animation plays.
-  - **Unchanged.** The done animation plays alone, and Vignette adds no note. After a question
-    nothing changes, and after a change the session says in its own words what it did.
-  - **Can't tell.** A window that closed or changed size, or a turn Vignette stopped waiting on,
-    plays the done animation as before. With motion off, a change plays the done animation alone.
+  - **Changed.** The window as it is now becomes the result card, from the session
+    (`[live-ink] result card`).
+  - **Unchanged, or can't tell.** No result card. The note's card says Done in *project*
+    (`[live-ink] done with no result card`). A window that closed, was minimized or changed size
+    can't be told.
+  - **Vignette stopped waiting.** Nothing more. The card already said Sent to.
   - **One known gap.** The part compared stays at its place in the window. So content the session
     moved away counts as a change there, and so does content the person scrolled.
   - **The log.** `[live-ink] landed changed=` or `[live-ink] nothing changed under the ink` gives
@@ -267,19 +276,13 @@ The names in brackets are `// MARK:` sections.
   the panel, since the panel goes whenever the reply is out of sight, as when its window is
   minimized, and comes back with it. An action's click and a typed reply are one follow-up (`LiveInk.respond`):
   every button is disabled, the one used gains a checkmark (`LiveAnswerActions.pick`), and the reply
-  quotes the person's words and carries the thinking light with the answer's marks. A session gets
-  the words with a fresh picture, as "… Picked under your answer on …" or "… Replied under your
-  answer on …"; the responder takes them as a follow-up ask. The next answer takes the reply's
-  place where it hangs, with buttons of its own, and the earlier answer stays until it is drawn. With no answer drawn, they
-  go when the session's turn ends. A follow-up that fails leaves the answer as it was
+  quotes the person's words and carries the thinking light with the answer's marks. The responder
+  takes them as a follow-up ask. The next answer takes the reply's place where it hangs, with
+  buttons of its own, and the earlier answer stays until it is drawn. A follow-up that fails leaves the answer as it was
   (`LiveInk.restoreFollowed`): the buttons come back, typed words wait in Reply again, and the
   reply's header gives the reason where it quoted them (`Mark.notice`), wrapped so all of it shows.
   Once the next answer has started to come in, it has replaced the earlier one, so a failure after
-  that is a note beside the ink, as for any ask. A follow-up whose send to a Codex thread is queued
-  or not confirmed may still arrive, so the answer stays as the follow-up left it, with the button
-  checked and the thinking light on, and the header says so (`LiveInk.noteOnFollowUp`). Its ×
-  shows, unlike a follow-up's still under way, since its answer may not come until someone opens
-  the thread (`LiveInk.offersDismiss`). Closing the field lets go of the keys with
+  that is a note beside the ink, as for any ask. Closing the field lets go of the keys with
   `NSApp.deactivate()`: the app the person was in never stopped being the active one, so activating
   it does nothing. A popover's window can be key, and macOS makes the reply's key when a panel that
   held Vignette's keys closes, even after Vignette let go; the keys would stay with Vignette and the
@@ -296,9 +299,8 @@ The names in brackets are `// MARK:` sections.
   the agent's badge, so only the reply names the agent. The reply follows the mark it hangs from or
   the ink it was about, a pointing mark is anchored to what it points at, and a label follows its
   mark: marks that all
-  followed the ink drifted off their targets when the session's edit moved the content under the
-  ink. The person's ink counts as its strokes, not its bounding box (`LiveAnswerLayout.strokes`),
-  so a loop round a whole page leaves room inside it. While the session works, and while the done
+  followed the ink drifted off their targets when an edit moved the content under the ink. The person's ink counts as its strokes, not its bounding box (`LiveAnswerLayout.strokes`),
+  so a loop round a whole page leaves room inside it. While the responder answers, and while the done
   animation plays, the marks hold still whatever the content under them does
   (`LiveWindows.holding`): following it read as the answer shifting around. An action
   may name the marks it acts on (`LiveAnswer.Action`, `{"title", "marks"}`, by index), and pointing
@@ -336,13 +338,12 @@ The names in brackets are `// MARK:` sections.
   never written to a file. A mark pinned to a window moves into the window's coordinates with its
   focus (`LiveWindows.translated`). `[state] liveInk.focus` names the stop shown and whether it
   zooms, and `[live-ink] focus` lines log each stop and why the focus let go.
-- Vignette's own words about an ask (sending, sent, failed, why) are a note beside the ink in the
-  person's colour without a badge, not an agent mark, and are not ink: the next ask is not about them.
-  The exception is a follow-up, whose failure, queued send or unconfirmed send is said in its
-  answer's header.
+- Vignette's own words about an ask (a failure and why) are a note beside the ink in the person's
+  colour without a badge, not an agent mark, and are not ink: the next ask is not about them. The
+  exception is a follow-up, whose failure is said in its answer's header.
 - A session picked in the note's target gets the picture through `ScreenshotRequests.send`, as Send
   sends a drawing, with the words and where the ink is in the line. The client's answer goes to the
-  ink (`LiveInk.delivered`) rather than a card.
+  note's card, as a send's does.
 - `live-ink-ask?message=` (debug) asks as Return does, and `&session=<id>` sends to that session.
   `[state] liveInk` adds `new` (ink not yet asked about), `note`, `actions` (each button's words,
   frame, and whether it is enabled and picked), `replyField` and `replyCancel` (the field's and Cancel's frames while they are up),

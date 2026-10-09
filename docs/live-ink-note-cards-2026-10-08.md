@@ -87,9 +87,9 @@ it says Done comes up as the lone thumbnail, as a result card would.
 
 ## What goes away
 
-- **Session answers drawn on the window.** `LiveInk.showAnswer` makes the result card instead, and
-  new replies never reach the `shown` stage. Old records in that stage still load. ADR 0022
-  supersedes ADR 0021.
+- **Session answers drawn on the window.** `LiveInk.result` makes the result card instead. The
+  reply's stage is `shown` then, as it was for an answer drawn on the window, since the card is an
+  ordinary file and the reply has none of its own. ADR 0022 supersedes ADR 0021.
 - **The thinking light while a session works,** and Vignette's notes beside the ink about a send.
   The note card says these now.
 - **The before-and-after playback on the window:** `replay`, `BeforeLayer` and `Mark.before`. The
@@ -104,7 +104,9 @@ The responder's answers, follow-ups, tours and buttons on the window do not chan
 
 ## Steps
 
-Each step is checked in the macOS 26 VM before the next.
+Each step is checked in the macOS 26 VM before the next. Steps 1 to 5 are built and were checked on
+2026-10-08: a changed page, an unchanged one, an `--answer`, and two notes in a row, with Copy on
+capture and Draw on capture on.
 
 1. The note card: the file, its drawing, the send naming it, the ink leaving, a turn watch for each
    request.
@@ -127,6 +129,13 @@ Each step is checked in the macOS 26 VM before the next.
   makes no second card.
 - With the window minimized at the turn's end, the note card says Done in. An answer then arrives
   on the sent picture.
+
+## Known limits
+
+- **A Codex thread's result card has no Reply target.** A card names its session for Reply only for
+  Claude Code (`Agent.origin`), so Reply on a Codex result card asks where to send.
+- **An answer's words sit in the card's top-left corner,** which on a window capture is the title
+  bar or the browser's toolbar.
 
 ## Not in this change
 

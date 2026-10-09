@@ -4,7 +4,8 @@ import Foundation
 struct SendNotice: Equatable {
     /// `replyFailed`: the agent's reply to this send arrived and could not be made a card.
     /// `queued`: the client holds the send, but nothing reads it until the session is opened.
-    enum State: Equatable { case sending, sent, queued, uncertain, failed, replyFailed }
+    /// `done`: the session's turn on a live ink note ended with nothing to show as a result card.
+    enum State: Equatable { case sending, sent, queued, uncertain, failed, replyFailed, done }
     let request: String   // the request's id, so an answer to an earlier send is never taken for this one's
     let client: AgentClient
     let project: String
@@ -45,6 +46,8 @@ struct CardNotices {
         case answered(request: String, state: SendNotice.State, reason: String?)
         /// The agent's reply to `request` arrived and could not be made a card.
         case replyFailed(request: String, client: AgentClient, reason: String)
+        /// The session's turn on `request`, a live ink note, ended with no result card.
+        case finished(request: String, client: AgentClient, project: String)
     }
 
     /// A notice the card now shows. `hold`: when to call `expire(_:on:)`, nil while a send waits for
@@ -88,6 +91,9 @@ struct CardNotices {
         case .replyFailed(let request, let client, let reason):
             if let later = waiting[file], later.request != request { return nil }
             notice = .send(SendNotice(request: request, client: client, project: client.label, state: .replyFailed, reason: reason))
+        case .finished(let request, let client, let project):
+            if let later = waiting[file], later.request != request { return nil }
+            notice = .send(SendNotice(request: request, client: client, project: project, state: .done))
         }
         return show(notice, on: file, hold: noticeHold * (Self.explains(notice) ? 3 : 1))
     }
@@ -119,5 +125,5 @@ struct CardNotices {
         }
     }
 
-    private static func explains(_ state: SendNotice.State) -> Bool { state != .sending && state != .sent }
+    private static func explains(_ state: SendNotice.State) -> Bool { state != .sending && state != .sent && state != .done }
 }
