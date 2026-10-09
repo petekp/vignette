@@ -296,9 +296,11 @@ final class LiveInkTests: XCTestCase {
             ["kind": "arrow", "box": [0.10, 0.70, 0.22, 0.05], "label": "Field moved"]]])
         let pixels = PixelSize(width: 2400, height: 1600), scale: CGFloat = 2, style = UITweaks().textStyle
         let canvas = LiveAnswer.Canvas(pixels: pixels, pointScale: scale, style: style, agent: "claude")
-        // A field's placeholder left of the button, where the words would otherwise go.
+        // A field's placeholder left of the button, where the words would otherwise go, and the word
+        // after the arrow's, which an arrow from the right would cross.
         let line = CGRect(x: 0.16, y: 0.41, width: 0.22, height: 0.04)
-        let laidOut = answer.cardMarks(targets: answer.marks.map(\.box), text: [line], on: canvas)
+        let next = CGRect(x: 0.33, y: 0.70, width: 0.2, height: 0.05)
+        let laidOut = answer.cardMarks(targets: answer.marks.map(\.box), text: [line, next], on: canvas)
         XCTAssertEqual(laidOut.map(\.type), answer.cardMarks(targets: answer.marks.map(\.box), on: nil).map(\.type))
         XCTAssertEqual(laidOut.first?.text, answer.say)
 
@@ -319,9 +321,18 @@ final class LiveInkTests: XCTestCase {
         }
         let words = extents[0], ring = extents[1]
         XCTAssertGreaterThan(words.minY, CGFloat(pixels.height) * 0.1, "off the title bar")
-        let page = CGRect(x: line.minX * CGFloat(pixels.width), y: line.minY * CGFloat(pixels.height),
-                          width: line.width * CGFloat(pixels.width), height: line.height * CGFloat(pixels.height))
-        XCTAssertFalse(words.intersects(page), "off the page's own text")
+        func px(_ fraction: CGRect) -> CGRect {
+            CGRect(x: fraction.minX * CGFloat(pixels.width), y: fraction.minY * CGFloat(pixels.height),
+                   width: fraction.width * CGFloat(pixels.width), height: fraction.height * CGFloat(pixels.height))
+        }
+        XCTAssertFalse(words.intersects(px(line)), "off the page's own text")
+
+        let index = try XCTUnwrap(marks.firstIndex { if case .arrow = $0.geometry { true } else { false } })
+        guard case .arrow(let arrow) = marks[index].geometry else { return XCTFail("no arrow") }
+        let target = px(try XCTUnwrap(answer.marks[1].box))
+        let reach = max(target.minX - arrow.end.x, arrow.end.x - target.maxX, target.minY - arrow.end.y, arrow.end.y - target.maxY)
+        XCTAssertLessThanOrEqual(reach, 8 * scale, "the head stops at the words it names")
+        XCTAssertFalse(extents[index].intersects(px(next)), "the arrow keeps off the next word")
         let gap = max(ring.minX - words.maxX, words.minX - ring.maxX, ring.minY - words.maxY, words.minY - ring.maxY)
         XCTAssertLessThanOrEqual(gap, 12 * scale, "beside the first mark")
     }
