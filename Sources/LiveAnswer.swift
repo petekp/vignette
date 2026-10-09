@@ -153,27 +153,38 @@ struct LiveAnswer: Equatable {
     }
 
     /// The answer as a card draws it. For each mark with a place in `targets`, in fractions of the
-    /// card's picture, a ring round that place, or for an arrow, an arrow at it from the side with
-    /// more room. Then each mark's label beside it, and the words beside the first mark drawn, or
-    /// beside `about`, the ink the note was about, when none is. Each text covers as little of the
-    /// marks, the texts placed before it and the picture's own `text`, its lines in fractions, as it
-    /// can. The words come first in the list. How many
+    /// card's picture, a ring round that place, or an arrow at it: on a canvas, the arrow the screen
+    /// would draw (`LiveAnswerLayout.arrows`), covering as little of the picture's own `text`, its
+    /// lines in fractions, and the other places as it can, and without one, from the side with more
+    /// room. Then each mark's label beside it, and the words beside the first mark drawn, or beside
+    /// `about`, the ink the note was about, when none is. Each text covers as little of the marks,
+    /// the texts placed before it and `text` as it can. The words come first in the list. How many
     /// marks there are never depends on `canvas`, since a reply's card is checked against its stored
     /// drawing after a relaunch. With nothing to measure on or to place the words beside, the words
     /// go in the top-left corner, and without a canvas each label goes under its mark.
     func cardMarks(targets: [CGRect?], about: CGRect? = nil, text: [CGRect] = [], on canvas: Canvas?) -> [AgentMark] {
+        // Laid out in the picture's points, the unit `LiveAnswerLayout` keeps its lengths and gaps in.
+        let size = canvas.map { CGSize(width: CGFloat($0.pixels.width) / $0.pointScale, height: CGFloat($0.pixels.height) / $0.pointScale) }
+            ?? CGSize(width: 1, height: 1)
+        func points(_ fraction: CGRect) -> CGRect {
+            CGRect(x: fraction.minX * size.width, y: fraction.minY * size.height, width: fraction.width * size.width, height: fraction.height * size.height)
+        }
+        func fraction(_ point: CGPoint) -> CGPoint { CGPoint(x: point.x / size.width, y: point.y / size.height) }
+        // Inside the margin `AgentMark.marks` keeps a text from the edges, so it leaves the text where it is put.
+        let margin = TextLayout.margin * size.width
+        let room = CGRect(origin: .zero, size: size).insetBy(dx: margin, dy: margin)
+        let lines = text.map(points)
         var shapes: [(mark: AgentMark, extent: CGRect, label: (text: String, near: CGRect, corner: CGPoint)?)] = []
         for (mark, target) in zip(marks, targets) {
             guard let box = target else { continue }
             if mark.kind == .arrow {
-                let fromLeft = box.minX > 1 - box.maxX
-                let head = CGPoint(x: fromLeft ? box.minX - 0.01 : box.maxX + 0.01, y: box.midY)
-                let tail = CGPoint(x: min(max(head.x + (fromLeft ? -0.12 : 0.12), 0.02), 0.98),
-                                   y: box.maxY < 0.85 ? min(head.y + 0.08, 0.95) : max(head.y - 0.08, 0.05))
+                let others = targets.compactMap { $0 }.filter { $0 != box }.map(points)
+                let best = canvas == nil ? nil : LiveAnswerLayout.arrows(to: points(box), room: room, obstacles: lines + others).first
+                let (tail, head) = best.map { (fraction($0.start), fraction($0.end)) } ?? Self.sideArrow(to: box)
                 let span = CGRect(x: min(tail.x, head.x), y: min(tail.y, head.y), width: abs(head.x - tail.x), height: abs(head.y - tail.y))
                 shapes.append((AgentMark(type: .arrow, x: tail.x, y: tail.y, x2: head.x, y2: head.y), span,
                                mark.label.map { ($0, CGRect(origin: tail, size: .zero),
-                                                 CGPoint(x: fromLeft ? max(tail.x - 0.1, 0.02) : tail.x, y: min(tail.y + 0.01, 0.95))) }))
+                                                 CGPoint(x: tail.x < head.x ? max(tail.x - 0.1, 0.02) : tail.x, y: min(tail.y + 0.01, 0.95))) }))
             } else {
                 shapes.append((AgentMark(type: .ellipse, x: box.minX, y: box.minY, w: box.width, h: box.height), box,
                                mark.label.map { ($0, box, CGPoint(x: box.minX, y: min(box.maxY + 0.01, 0.95))) }))
@@ -185,16 +196,8 @@ struct LiveAnswer: Equatable {
                 [shape.mark] + (shape.label.map { [AgentMark(type: .text, x: $0.corner.x, y: $0.corner.y, text: $0.text)] } ?? [])
             }
         }
-        // Laid out in the picture's points, the unit `LiveAnswerLayout.place` keeps its gaps in.
         let width = CGFloat(canvas.pixels.width), height = CGFloat(canvas.pixels.height), scale = canvas.pointScale
-        func points(_ fraction: CGRect) -> CGRect {
-            CGRect(x: fraction.minX * width / scale, y: fraction.minY * height / scale,
-                   width: fraction.width * width / scale, height: fraction.height * height / scale)
-        }
-        // Inside the margin `AgentMark.marks` keeps a text from the edges, so it leaves the text where it is put.
-        let margin = TextLayout.margin * width / scale
-        let room = CGRect(x: 0, y: 0, width: width / scale, height: height / scale).insetBy(dx: margin, dy: margin)
-        var obstacles = shapes.map { points($0.extent).insetBy(dx: -4, dy: -4) } + text.map(points)
+        var obstacles = shapes.map { points($0.extent).insetBy(dx: -4, dy: -4) } + lines
         func note(_ text: String, near: CGRect) -> AgentMark? {
             // Set as the card will set it, at the wrap it chooses, with the badge above the tag.
             guard let set = AgentMark.marks([AgentMark(type: .text, x: 0, y: 0, text: text)], from: canvas.agent, in: canvas.pixels,
@@ -216,6 +219,16 @@ struct LiveAnswer: Equatable {
         }
         let said = (shapes.first.map(\.extent) ?? about).flatMap { note(say, near: $0) } ?? corner
         return [said] + labelled.flatMap { $0 }
+    }
+
+    /// An arrow at `box`, in fractions of the picture, from the side with more room and from below,
+    /// or from above near the bottom, for a card with no canvas to lay one out on.
+    private static func sideArrow(to box: CGRect) -> (tail: CGPoint, head: CGPoint) {
+        let fromLeft = box.minX > 1 - box.maxX
+        let head = CGPoint(x: fromLeft ? box.minX - 0.01 : box.maxX + 0.01, y: box.midY)
+        let tail = CGPoint(x: min(max(head.x + (fromLeft ? -0.12 : 0.12), 0.02), 0.98),
+                           y: box.maxY < 0.85 ? min(head.y + 0.08, 0.95) : max(head.y - 0.08, 0.05))
+        return (tail, head)
     }
 
     /// `text` no longer than `limit` characters, cut after the last whole word, with an ellipsis.

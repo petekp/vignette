@@ -1236,7 +1236,8 @@ final class LiveInk {
                 let targets = answer.marks.map { mark -> CGRect? in
                     guard var found = self.target(of: mark, in: packet, sent: lines) else { return nil }
                     // A box from the words is tight round their letters, so a ring round it needs room.
-                    if mark.words != nil || mark.line != nil {
+                    // An arrow points at the words themselves.
+                    if mark.kind != .arrow, mark.words != nil || mark.line != nil {
                         found = found.insetBy(dx: -(found.width * 0.2 + 8), dy: -(found.height * 0.45 + 6))
                     }
                     found = found.intersection(frame)
