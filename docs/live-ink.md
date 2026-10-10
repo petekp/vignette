@@ -134,11 +134,11 @@ The names in brackets are `// MARK:` sections.
 - Letting go of the chord after drawing opens `LiveNotePanel` beside the new ink, a non-activating
   panel that takes the keys as the stack's does. It is drawn as the note it becomes, and its target
   is a chip under it. Return asks about the ink drawn since the last ask, or, with none, about the
-  ink asked about last. Esc, or a click elsewhere, closes the note and keeps the ink. ⌘⌫ closes it
-  and takes back the ink drawn for it (`LiveAsks.noteInk`): the ink since the chord went down with
-  no note open, so a press while the note is open adds to that note's ink. Ink an earlier note kept
-  stays. ⌘⌫ is the text field's delete-the-line key, and the note handles its command
-  (`deleteToBeginningOfLine:`) as it does Esc's. Its target starts on the one picked last, else the
+  ink asked about last. Esc or ⌘⌫ cancels the note: it closes, and the ink drawn for it goes
+  (`LiveAsks.noteInk`). That ink is the ink since the chord went down with no note open, so a press
+  while the note is open adds to that note's ink. Ink an earlier note kept stays. A click elsewhere
+  closes the note and keeps the ink. ⌘⌫ is the text field's delete-the-line key, and the note handles its command
+  (`deleteToBeginningOfLine:`) as it does Esc's (`cancelOperation:`). Its target starts on the one picked last, else the
   responder, and lists the sessions Send lists after it. For the responder the words stay beside the
   ink as the person's own note: the chip fades and the panel hands over to the drawn note without the
   words moving (`settle`). For a session the note leaves with the ink, as a card (below). The note
