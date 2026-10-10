@@ -552,6 +552,18 @@ and is removed before live ink reaches main.
   Reply card, whose bar offers the card's own session. It now logs where the filled button sends,
   marked `reply` for the card's own session.
 
+**The first day (to 2026-10-09 23:47 UTC): 20 captures, 4 sends and 3 notes.** Too few to score a
+rule, but they show where the captures are:
+
+- **13 of 20 captures were of a terminal or an agent's app.** 6 were of a browser and 1 of nothing.
+  So step 3, a window that shows an agent, is the common case, not the exception.
+- **1 of 20 yielded a folder.** No capture found a dev server or an app being built. 5 browser
+  captures were `unread`, the cost of not asking Chromium for its tree.
+- **The target offered was kept 3 times of 7.** The session sent to last was never the one sent to:
+  each send went to a different session from the one before.
+- **The log cannot yet score step 3.** It records herdr's focus for each session, but not which
+  session a captured terminal window shows, or which sessions' edited files hold the text under it.
+
 **Decided by Pete (2026-10-08):**
 
 - **The shadow log:** approved, ids and folders only.
