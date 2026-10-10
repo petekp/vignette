@@ -2,8 +2,8 @@ import AppKit
 import Darwin
 
 /// The agent session a captured window shows, when it can be known for certain
-/// (docs/session-detection-exploration-2026-10-08.md, Result 5). Written as `host`, or as
-/// `hostWhyNot` with the first link that failed.
+/// (docs/session-detection-exploration-2026-10-08.md, Result 5). Written as `shown`, or as
+/// `shownWhyNot` with the first link that failed.
 extension SendContext {
     /// One process on the Mac.
     struct ProcessEntry: Sendable {
@@ -56,7 +56,7 @@ extension SendContext {
         AgentTools.forSessions("VIGNETTE_HERDR") { HerdrFocus.binary() }
     }
 
-    /// `HerdrFocus.read`, keeping herdr's raw answer for the host rule, so herdr runs once per record.
+    /// `HerdrFocus.read`, keeping herdr's raw answer for the `shown` rule, so herdr runs once per record.
     static func readHerdr(binary: () -> String? = { SendContext.herdrBinary() },
                           run: (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
                               Subprocess.run($0, $1, timeout: $2)
@@ -206,25 +206,25 @@ extension SendContext {
         return .session(client: client.rawValue, id: id, how: "herdr", live: client == .claude ? live.contains(id) : nil)
     }
 
-    /// The fields a decision writes: `host` or `hostWhyNot`, `hostMs`, and `hostLagMs`, how long after
+    /// The fields a decision writes: `shown` or `shownWhyNot`, `shownMs`, and `shownLagMs`, how long after
     /// `at` the answer was read: when herdr answered or the Codex app's log named a thread (`readAt`).
-    static func hostRecord(_ shown: Shown, hostMs: Int, readAt: Date?, at: Date) -> [String: Any] {
-        var out: [String: Any] = ["hostMs": hostMs]
+    static func shownRecord(_ shown: Shown, shownMs: Int, readAt: Date?, at: Date) -> [String: Any] {
+        var out: [String: Any] = ["shownMs": shownMs]
         switch shown {
         case .session(let client, let id, let how, let live):
-            var host: [String: Any] = ["client": client, "id": id, "how": how]
-            if let live { host["live"] = live }
-            out["host"] = host
+            var session: [String: Any] = ["client": client, "id": id, "how": how]
+            if let live { session["live"] = live }
+            out["shown"] = session
         case .unknown(let why):
-            out["hostWhyNot"] = why.rawValue
+            out["shownWhyNot"] = why.rawValue
         }
-        if let readAt { out["hostLagMs"] = Int(readAt.timeIntervalSince(at) * 1000) }
+        if let readAt { out["shownLagMs"] = Int(readAt.timeIntervalSince(at) * 1000) }
         return out
     }
 
     /// Reads what the decision needs and writes its fields. Runs on the log's queue: it reads
     /// processes and files, and runs herdr when the listing did not and its answer would decide.
-    static func hostFields(capture: String?, seen: Seen, at: Date) -> [String: Any] {
+    static func shownFields(capture: String?, seen: Seen, at: Date) -> [String: Any] {
         let started = Date()
         var thread: String?
         var clients: HerdrClients?
@@ -245,6 +245,6 @@ extension SendContext {
         }
         let decided = shown(hasWindow: seen.pid != nil, capture: capture, bundle: seen.bundle, kind: seen.kind,
                             clients: clients, herdr: herdr?.read, codexThread: thread, live: seen.live)
-        return hostRecord(decided, hostMs: Int(Date().timeIntervalSince(started) * 1000), readAt: readAt, at: at)
+        return shownRecord(decided, shownMs: Int(Date().timeIntervalSince(started) * 1000), readAt: readAt, at: at)
     }
 }

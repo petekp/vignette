@@ -544,16 +544,15 @@ and is removed before live ink reaches main.
     counts only. They show how often a title gives anything to match on.
   - `sessions`: each live Claude Code session's id, folder, herdr `focus` and seconds `idle`.
   - `readMs`: how long the window's reads took.
-  - `host`: the agent session the captured window shows, as `{client, id, how}`. It is written only
-    when every link holds. This is the session shown in the window. It is not herdr, the glossary's
-    terminal host.
+  - `shown`: the agent session the captured window shows, as `{client, id, how}`. It is written only
+    when every link holds.
     - `how: herdr`: the window's terminal app runs herdr's one client, and herdr's focused pane is
       alone in its tab. The id is that pane's session. For a Claude Code session, `live` says whether
       it has a live Claude Code inbox. A Codex session has no `live`.
     - `how: codex-app`: the thread the Codex app's log names last. That is the thread shown unless
       the app stopped logging its page changes. With two Codex windows on different threads, it may
       be the other window's. That case was not checked.
-  - `hostWhyNot`, when there is no `host`: the first link that did not hold. A surface is a window,
+  - `shownWhyNot`, when there is no `shown`: the first link that did not hold. A surface is a window,
     tab or split the terminal draws, counted as the terminal app's children on a terminal. That
     count was checked only in Ghostty.
     - `no-window`: no window was found.
@@ -573,8 +572,8 @@ and is removed before live ink reaches main.
     - `split-tab`: the focused pane shares its tab.
     - `no-session`: the focused pane runs no agent, or herdr names no session for it.
     - `other-agent`: the pane runs an agent that is neither Claude Code nor Codex.
-  - `hostMs`: how long the host's reads took.
-  - `hostLagMs`: how long after `t` herdr answered, or the Codex app's log was read. It is written
+  - `shownMs`: how long the reads for `shown` took.
+  - `shownLagMs`: how long after `t` herdr answered, or the Codex app's log was read. It is written
     only when herdr answered or that log named a thread. A capture's `t` is when the watcher reported the
     file. A note's `t` is when the note was sent. Its window was captured before that, so the real
     lag is longer. The window may have changed in between. A person who captures one pane and
@@ -593,7 +592,7 @@ and is removed before live ink reaches main.
 - **`send`, at each send from the editor:** `file` (the digest), `request`, `to`, `client`, and `offered`, where
   the bar's filled button sent before the person changed it, with `reply` when that was a Reply.
 - **`note`, at each live ink note sent:** `to` (a session id, or `responder` for the built-in
-  Claude), `offered` (the target the note started on), and the window's facts, host and authors as
+  Claude), `offered` (the target the note started on), and the window's facts, `shown` and `authors` as
   for a capture. Its text is read from the window the note captured, without the ink.
 - **Not recorded, since the log itself gives them:** the session sent to last and how long ago, from
   the `send` and `note` lines before it, ordered by `t` and then `seq`.
@@ -602,12 +601,12 @@ and is removed before live ink reaches main.
   a fake session recorded its window and both targets. A Safari window titled "Newsletter" counted
   one shared word for a session named "Tighten the newsletter signup form" and one for a session in
   a `newsletters` folder, and none for two sessions in a folder named `project`.
-- **The host and authors, checked in the same VM** with Terminal, a fake herdr and a scratch
-  `.claude`. Each case recorded its own code, or the right `host` with `live` true or false:
+- **`shown` and `authors`, checked in the same VM** with Terminal, a fake herdr and a scratch
+  `.claude`. Each case recorded its own code, or the right `shown` with `live` true or false:
   no client, one client, a split tab, a pane with no agent, two windows, a display capture and a
   browser window. The session whose file-history held the picture's five lines ranked first on
   all 13 lines with authors, at 4.5. A live session sharing one line scored 0.5. An unrelated
-  session was not listed. `authorMs` was 0.7 to 0.9 s in a Debug build, and `hostMs` 0 to 1 ms.
+  session was not listed. `authorMs` was 0.7 to 0.9 s in a Debug build, and `shownMs` 0 to 1 ms.
   Of six captures in one second, three were written as `busy`. No recognised word reached the log
   or Vignette.log.
 - **The process table is the whole Mac's, not the user's.** Terminal and Ghostty start each shell

@@ -61,7 +61,7 @@ enum SendContext {
             var record: [String: Any] = ["event": "capture", "file": digest(name), "capture": how]
             let seen = facts(of: window, location: nil)
             record.merge(seen.record) { $1 }
-            record.merge(hostFields(capture: how, seen: seen, at: at)) { $1 }
+            record.merge(shownFields(capture: how, seen: seen, at: at)) { $1 }
             let listed = seen.sessionIDs
             finish(record, at: at, seq: seq, skip: isRecording ? "recording" : nil) { claude in
                 guard let image = decoded(shot, maxPixels: maxPixels) else { return ["authorsWhyNot": "unreadable-image"] }
@@ -106,7 +106,7 @@ enum SendContext {
             if let offered { record["offered"] = offered }
             let seen = facts(of: window, location: location ?? "")
             record.merge(seen.record) { $1 }
-            record.merge(hostFields(capture: nil, seen: seen, at: at)) { $1 }
+            record.merge(shownFields(capture: nil, seen: seen, at: at)) { $1 }
             let listed = seen.sessionIDs
             finish(record, at: at, seq: seq, skip: nil) { claude in
                 authorFields(lines: recognisedLines(image), listed: listed, claudeRoot: claude, now: Date(), limits: AuthorLimits())
@@ -207,7 +207,7 @@ enum SendContext {
 
     // MARK: What the window says
 
-    /// What `facts` wrote, and what it read on the way that the host and author fields use.
+    /// What `facts` wrote, and what it read on the way that the `shown` and author fields use.
     struct Seen {
         /// The record's fields.
         let record: [String: Any]
