@@ -602,6 +602,18 @@ and is removed before live ink reaches main.
   a fake session recorded its window and both targets. A Safari window titled "Newsletter" counted
   one shared word for a session named "Tighten the newsletter signup form" and one for a session in
   a `newsletters` folder, and none for two sessions in a folder named `project`.
+- **The host and authors, checked in the same VM** with Terminal, a fake herdr and a scratch
+  `.claude`. Each case recorded its own code, or the right `host` with `live` true or false:
+  no client, one client, a split tab, a pane with no agent, two windows, a display capture and a
+  browser window. The session whose file-history held the picture's five lines ranked first on
+  all 13 lines with authors, at 4.5. A live session sharing one line scored 0.5. An unrelated
+  session was not listed. `authorMs` was 0.7 to 0.9 s in a Debug build, and `hostMs` 0 to 1 ms.
+  Of six captures in one second, three were written as `busy`. No recognised word reached the log
+  or Vignette.log.
+- **The process table is the whole Mac's, not the user's.** Terminal and Ghostty start each shell
+  under `/usr/bin/login`, which runs as root. When the log read only the user's processes, the walk
+  from herdr's client up to the terminal stopped at `login`. Every terminal capture then read
+  `no-herdr-client`.
 - **One fix came first,** on main (886322e): the `[send] target` line logged herdr's focus even for a
   Reply card, whose bar offers the card's own session. It now logs where the filled button sends,
   marked `reply` for the card's own session.
