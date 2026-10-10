@@ -299,7 +299,7 @@ final class SendContextTests: XCTestCase {
         XCTAssertEqual(shown(hasWindow: false), .unknown(.noWindow))
     }
 
-    /// `hostFields` runs herdr only when `terminalWhyNot` passes, so `shown` must need herdr's answer
+    /// `shownFields` runs herdr only when `terminalWhyNot` passes, so `shown` must need herdr's answer
     /// exactly then. Otherwise a record reads `herdr-unread` where another link failed.
     func testHerdrIsAskedExactlyWhenItsAnswerDecides() {
         var counts: [SendContext.HerdrClients?] = [nil]
@@ -311,27 +311,27 @@ final class SendContextTests: XCTestCase {
         }
     }
 
-    func testHostRecordWritesTheDocumentedFields() throws {
+    func testShownRecordWritesTheDocumentedFields() throws {
         let at = Date(), id = UUID().uuidString
         func written(_ shown: SendContext.Shown, readAt: Date?) throws -> [String: Any] {
-            let line = try XCTUnwrap(SendContext.line(SendContext.hostRecord(shown, hostMs: 4, readAt: readAt, at: at), at: at, seq: 0))
+            let line = try XCTUnwrap(SendContext.line(SendContext.shownRecord(shown, shownMs: 4, readAt: readAt, at: at), at: at, seq: 0))
             return try XCTUnwrap(JSONSerialization.jsonObject(with: line) as? [String: Any])
         }
 
         let herdr = try written(.session(client: "claude", id: id, how: "herdr", live: true), readAt: at.addingTimeInterval(0.2504))
-        XCTAssertEqual(Set(herdr.keys), ["host", "hostMs", "hostLagMs", "seq", "t"])
-        let host = try XCTUnwrap(herdr["host"] as? [String: Any])
-        XCTAssertEqual(Set(host.keys), ["client", "id", "how", "live"])
-        XCTAssertEqual([host["client"], host["id"], host["how"]].map { $0 as? String }, ["claude", id, "herdr"])
-        XCTAssertEqual(host["live"] as? Bool, true)
-        XCTAssertEqual(herdr["hostMs"] as? Int, 4)
-        XCTAssertEqual(herdr["hostLagMs"] as? Int, 250)
+        XCTAssertEqual(Set(herdr.keys), ["shown", "shownMs", "shownLagMs", "seq", "t"])
+        let session = try XCTUnwrap(herdr["shown"] as? [String: Any])
+        XCTAssertEqual(Set(session.keys), ["client", "id", "how", "live"])
+        XCTAssertEqual([session["client"], session["id"], session["how"]].map { $0 as? String }, ["claude", id, "herdr"])
+        XCTAssertEqual(session["live"] as? Bool, true)
+        XCTAssertEqual(herdr["shownMs"] as? Int, 4)
+        XCTAssertEqual(herdr["shownLagMs"] as? Int, 250)
 
         let codex = try written(.session(client: "codex", id: id, how: "codex-app", live: nil), readAt: at)
-        XCTAssertEqual(codex["host"] as? [String: String], ["client": "codex", "id": id, "how": "codex-app"])
+        XCTAssertEqual(codex["shown"] as? [String: String], ["client": "codex", "id": id, "how": "codex-app"])
 
         let unknown = try written(.unknown(.splitTab), readAt: nil)
-        XCTAssertEqual(Set(unknown.keys), ["hostWhyNot", "hostMs", "seq", "t"])
-        XCTAssertEqual(unknown["hostWhyNot"] as? String, "split-tab")
+        XCTAssertEqual(Set(unknown.keys), ["shownWhyNot", "shownMs", "seq", "t"])
+        XCTAssertEqual(unknown["shownWhyNot"] as? String, "split-tab")
     }
 }

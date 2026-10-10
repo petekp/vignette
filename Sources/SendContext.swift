@@ -61,7 +61,7 @@ enum SendContext {
             var record: [String: Any] = ["event": "capture", "file": digest(name), "capture": how]
             let seen = facts(of: window, location: nil)
             record.merge(seen.record) { $1 }
-            record.merge(hostFields(capture: how, seen: seen, at: at)) { $1 }
+            record.merge(shownFields(capture: how, seen: seen, at: at)) { $1 }
             let listed = seen.sessionIDs
             finish(record, at: at, seq: seq, skip: isRecording ? "recording" : nil) { claude in
                 guard let image = decoded(shot, maxPixels: maxPixels) else { return ["authorsWhyNot": "unreadable-image"] }
@@ -106,7 +106,7 @@ enum SendContext {
             if let offered { record["offered"] = offered }
             let seen = facts(of: window, location: location ?? "")
             record.merge(seen.record) { $1 }
-            record.merge(hostFields(capture: nil, seen: seen, at: at)) { $1 }
+            record.merge(shownFields(capture: nil, seen: seen, at: at)) { $1 }
             let listed = seen.sessionIDs
             finish(record, at: at, seq: seq, skip: nil) { claude in
                 authorFields(lines: recognisedLines(image), listed: listed, claudeRoot: claude, now: Date(), limits: AuthorLimits())
@@ -116,6 +116,32 @@ enum SendContext {
 
     private static func digest(_ name: String) -> String {
         SHA256.hash(data: Data(name.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Live ink's own reads of a window (`LivePacket.build` and `LivePacket.read`). An author search
+    /// waits until none has run for `quiet` seconds: started beside a note's look, it made the look
+    /// about 0.75 s slower in the VM.
+    enum LiveReads {
+        private static let lock = NSLock()
+        nonisolated(unsafe) private static var running = 0
+        nonisolated(unsafe) private static var lastEnd = Date.distantPast
+        static let quiet: TimeInterval = 5
+        /// A wait longer than this gives up, so a read that never ends cannot hold every search.
+        static let longest: TimeInterval = 120
+
+        static func began() { lock.withLock { running += 1 } }
+        static func ended() { lock.withLock { running -= 1; lastEnd = Date() } }
+
+        /// Blocks until live ink has been quiet for `quiet` seconds. Answers the ms it waited.
+        static func waitForQuiet() -> Int {
+            let started = Date()
+            while Date().timeIntervalSince(started) < longest {
+                let busy = lock.withLock { running > 0 || Date().timeIntervalSince(lastEnd) < quiet }
+                guard busy else { break }
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            return Int(Date().timeIntervalSince(started) * 1000)
+        }
     }
 
     /// A record on its way between the two queues.
@@ -135,9 +161,11 @@ enum SendContext {
         searching += 1
         let pending = Pending(record: record)
         authorQueue.async {
+            let waited = LiveReads.waitForQuiet()
             let started = Date()
             var found = authors(claude)
             found["authorMs"] = Int(Date().timeIntervalSince(started) * 1000)
+            if waited > 0 { found["authorWaitMs"] = waited }
             let done = Pending(record: pending.record.merging(found) { $1 })
             queue.async {
                 searching -= 1
@@ -207,7 +235,7 @@ enum SendContext {
 
     // MARK: What the window says
 
-    /// What `facts` wrote, and what it read on the way that the host and author fields use.
+    /// What `facts` wrote, and what it read on the way that the `shown` and author fields use.
     struct Seen {
         /// The record's fields.
         let record: [String: Any]
