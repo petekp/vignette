@@ -480,7 +480,6 @@ final class LiveInk {
         if preview != .pick(mark.id) { drawingOn.insert(own.id) }
         justPicked = own.id
         place(own, on: surface, among: among, markStyle: Settings.shared.data.ui.markStyle)
-        _ = asks.reduce(.picked(mark.id))
         remove([mark.id])
     }
 
@@ -491,8 +490,14 @@ final class LiveInk {
         return windows.marks.filter { $0.shown && $0.window == top }.map(\.mark) + surface.marks
     }
 
-    /// Takes marks off every surface and window.
+    /// Takes marks off every surface and window, and they lose their part in the asks.
     private func remove(_ ids: Set<Mark.ID>) {
+        takeOff(ids)
+        _ = asks.reduce(.removed(ids))
+    }
+
+    /// Takes marks off every surface and window, without a word to the asks.
+    private func takeOff(_ ids: Set<Mark.ID>) {
         for surface in surfaces { surface.marks.removeAll { ids.contains($0.id) } }
         windows.remove(ids)
     }
@@ -596,6 +601,12 @@ final class LiveInk {
         handing = nil
     }
 
+    /// For a callback the asks dropped. With an ask current, the note handed over is that ask's, so it
+    /// stays.
+    private func letGoOfNoteOfEndedAsk() {
+        if asks.ask == nil { letGoOfNote(into: nil) }
+    }
+
     /// Asks the responder about the new ink, with `words` as its note, or about the ink asked about
     /// last when there is none new, as a follow-up. With `session`, sends the picture and the words to
     /// that working session instead, as a card (`share`). `following` is the reply the
@@ -612,15 +623,20 @@ final class LiveInk {
         spoken = nil
         let person = ink
         let fresh = newInk
-        let about = asks.about(among: shownMarks)
-        guard let point = about.last?.shapeExtent.map({ CGPoint(x: $0.midX, y: $0.midY) }) else {
-            return .failure(LiveResponder.Failure(reason: "There's no ink to ask about.", detail: "no ink"))
+        let following = reply.map { LiveAsks.Following(reply: $0, pick: picked ?? .reply, words: words) }
+        let id: LiveAsks.Ask.ID
+        let about: [Mark]
+        let point: CGPoint
+        switch asks.begin(among: shownMarks, following: following, shift: windows.shift(of:)) {
+        case .refused(let refusal, let effects):
+            for case .restore(let reply, let reason) in effects { restoreAnswer(reply, saying: reason) }
+            return .failure(LiveResponder.Failure(reason: refusal.rawValue, detail: refusal.detail))
+        case .began(let began, let asked, let centre, let effects):
+            id = began
+            about = asked
+            point = centre
+            for case .removeAnswer(let gone) in effects { removeAnswer(gone) }
         }
-        if asks.isUnderWay { return .failure(LiveResponder.Failure(reason: "An ask is under way.", detail: "busy")) }
-        if reply == nil { removeAnswer() }
-        let leader = LiveAsks.leader(of: about)
-        let id = asks.begin(about: Set(about.map(\.id)), leader: leader, leaderShift: leader.flatMap(windows.shift(of:)),
-                            following: reply, picked: picked)
         if let reply { put([reply], window: windows.window(of: reply.id)) }
         showMarks()
         let started = Date()
@@ -662,12 +678,12 @@ final class LiveInk {
 
     private func send(_ packet: LivePacket, words: String, spoken: (words: [SpokenWord], began: Date)?, about: [Mark],
                       new: Set<Mark.ID>, started: Date, from spot: CGRect?, for id: LiveAsks.Ask.ID) {
-        guard asks.reduce(.packetCame(for: id, toSession: false)).contains(.send) else { return letGoOfNote(into: nil) }
+        guard asks.reduce(.arrived(.packetCame(toSession: false), for: id)).contains(.send) else { return letGoOfNoteOfEndedAsk() }
         let note = numberedNote(spoken, packet: packet) ?? words
         // The words stay beside the ink as the person's note, which the reply hangs under, unless
         // the reply is up already, quoting them.
         let question = asks.ask?.say == nil ? promptNote(words, about: Set(about.map(\.id)), packet: packet, at: spot) : nil
-        if let question { _ = asks.reduce(.noted(question.id, for: id)) }
+        if let question { _ = asks.reduce(.noted(question.id)) }
         letGoOfNote(into: question.flatMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) })
         if question != nil { showMarks() }
         let person = ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
@@ -708,8 +724,9 @@ final class LiveInk {
     private func share(_ packet: LivePacket, words: String, spoken: (words: [SpokenWord], began: Date)?, with session: AgentDestination,
                        from spot: CGRect?, for id: LiveAsks.Ask.ID) {
         var shared: Set<Mark.ID>?
-        for case .share(let about) in asks.reduce(.packetCame(for: id, toSession: true)) { shared = about }
-        guard let about = shared, let sendNote else { return letGoOfNote(into: nil) }
+        for case .share(let about) in asks.reduce(.arrived(.packetCame(toSession: true), for: id)) { shared = about }
+        guard let about = shared else { return letGoOfNoteOfEndedAsk() }
+        guard let sendNote else { return letGoOfNote(into: nil) }
         let numbered = numberedNote(spoken, packet: packet)
         var place = [packet.app, packet.title.map { "\"\($0)\"" }, packet.location].compactMap { $0 }.joined(separator: ", ")
         if place.isEmpty { place = "the screen" }
@@ -732,8 +749,8 @@ final class LiveInk {
             switch result {
             case .success(let sent):
                 Log.write("[live-ink] sent to a session request=\(sent.request) marks=\(card.marks.count)")
-                let effects = self.asks.reduce(.sentToSession(about: about, ink: Set(person.map(\.id)), carried: sent.carried, for: id))
-                guard !effects.isEmpty else { return }
+                let effects = self.asks.reduce(.arrived(.sentToSession(ink: Set(person.map(\.id)), carried: sent.carried), for: id))
+                guard !effects.isEmpty else { return self.letGoOfNoteOfEndedAsk() }
                 self.letGoOfNote(into: nil)
                 for effect in effects {
                     switch effect {
@@ -749,12 +766,7 @@ final class LiveInk {
                     }
                 }
             case .failure(let refusal):
-                let failure = LiveResponder.Failure(reason: "Not sent. " + refusal.reason, detail: "send refused")
-                let effects = self.asks.reduce(.notSentToSession(about: about, reason: failure.reason, shown: Set(self.marks.map(\.id)),
-                                                                 for: id))
-                guard !effects.isEmpty else { return }
-                self.letGoOfNote(into: nil)
-                self.failed(failure, as: effects)
+                self.failed(LiveResponder.Failure(reason: "Not sent. " + refusal.reason, detail: "send refused"), for: id)
             }
         }
     }
@@ -989,17 +1001,13 @@ final class LiveInk {
         Log.write("[live-ink] \(pick == .reply ? "reply typed" : "action picked") words=\(words.count)")
         hideDismissButton()
         point(at: nil)
-        guard let answer = asks.ask, let said = answer.say, shownSay != nil else { return }
+        guard let said = asks.ask?.say, shownSay != nil else { return }
         actionsPanel?.pick(pick)
-        _ = asks.reduce(.buttonPicked(words: words, pick: pick))
-        // A new ask starts from the reply where it is now.
+        // A new ask starts from the reply where it is now. Refused, it puts the answer back.
         guard var reply = marks.first(where: { $0.id == said.id }) else { return }
         reply.quote = words
         reply.notice = nil
-        guard case .failure(let failure) = ask(words, following: reply, picked: pick) else { return }
-        for case .restore(let id, let reason) in asks.reduce(.askRefused(reason: failure.reason, shown: Set(marks.map(\.id)))) {
-            restoreAnswer(id, saying: reason)
-        }
+        ask(words, following: reply, picked: pick)
     }
 
     // MARK: Answering
@@ -1007,7 +1015,6 @@ final class LiveInk {
     /// Vignette's own note beside the ink asked about, in the person's colour, replacing the last.
     private func say(_ words: String) {
         guard let about = asks.ask?.about else { return }
-        removeAnswer()
         let near = shownMarks.filter { about.contains($0.id) }.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
         guard !near.isNull else { showMarks(); return }
         let screen = activeSurfaces().map(\.overlay.globalFrame).first { $0.intersects(near) } ?? near
@@ -1066,9 +1073,9 @@ final class LiveInk {
     /// The reply so far, as a popover hung from the ink, quoting the question. It keeps where it hangs,
     /// so it grows rather than jumping as words arrive.
     private func showSay(_ say: String, near asked: CGRect, question: Mark?, packet: LivePacket, for id: LiveAsks.Ask.ID) {
-        let effects = asks.reduce(.replyCame(for: id))
+        let effects = asks.reduce(.arrived(.replyCame, for: id))
         guard effects.contains(.showReply) else { return }
-        for case .removeAnswer(let kept) in effects { removeAnswer(keeping: kept) }
+        for case .removeAnswer(let gone) in effects { removeAnswer(gone) }
         let scene = scene(for: packet, leaving: question)
         let note: Mark
         if let shown = asks.ask?.say {
@@ -1087,9 +1094,9 @@ final class LiveInk {
     @discardableResult
     private func answered(_ answer: LiveAnswer, packet: LivePacket, sent: Set<String>, near asked: CGRect, question: Mark?,
                           for id: LiveAsks.Ask.ID) -> [Int]? {
-        let effects = asks.reduce(.answerCame(for: id))
+        let effects = asks.reduce(.arrived(.answerCame, for: id))
         guard effects.contains(.drawAnswer) else { return nil }
-        for case .removeAnswer(let kept) in effects { removeAnswer(keeping: kept) }
+        for case .removeAnswer(let gone) in effects { removeAnswer(gone) }
         let targets = answer.marks.map { $0.target(in: packet.lines, sent: sent).map(packet.global) }
         let layout = LiveAnswerLayout.placed(for: answer, targets: targets, asked: asked,
                                              quote: words(of: question), scene: scene(for: packet, leaving: question), sizes: answerSizes, streamed: asks.ask?.say,
@@ -1179,7 +1186,6 @@ final class LiveInk {
         Log.write("[live-ink] step done; \(next.isEmpty ? 0 : steps.count + 1) to go")
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.stepPause) { [weak self] in
             guard let self, self.asks.isAnswer(current.id) else { return }
-            _ = self.asks.reduce(.answerGone(Set(done)))
             self.remove(Set(done))
             self.showMarks()
             guard !next.isEmpty else { return }
@@ -1351,7 +1357,6 @@ final class LiveInk {
     private func dropFocus(_ stop: [Mark]) {
         let ids = Set(stop.map(\.id)).intersection(asks.answerMarks)
         guard !ids.isEmpty else { return }
-        _ = asks.reduce(.answerGone(ids))
         remove(ids)
         showMarks()
     }
@@ -1382,17 +1387,19 @@ final class LiveInk {
 
     /// The note says why beside the ink, in the person's colour, since Vignette says it, not the agent.
     private func failed(_ failure: LiveResponder.Failure, for id: LiveAsks.Ask.ID) {
+        let effects = asks.reduce(.arrived(.failed(reason: failure.reason, shown: Set(marks.map(\.id))), for: id))
+        guard !effects.isEmpty else { return letGoOfNoteOfEndedAsk() }
         letGoOfNote(into: nil)
-        failed(failure, as: asks.reduce(.failed(reason: failure.reason, for: id, shown: Set(marks.map(\.id)))))
+        failed(failure, as: effects)
     }
 
-    /// Runs what the ask answered to its failure: nothing when it no longer takes it, the answer a
-    /// button was picked under put back, or a note saying why.
+    /// Runs what the ask answered to its failure: the answer a button was picked under put back, or
+    /// the answer taken off and a note saying why.
     private func failed(_ failure: LiveResponder.Failure, as effects: [LiveAsks.Effect]) {
-        guard !effects.isEmpty else { return }
         Log.write("[live-ink] error ask \(failure.detail)")
         for effect in effects {
             switch effect {
+            case .removeAnswer(let gone): removeAnswer(gone)
             case .restore(let reply, let reason): restoreAnswer(reply, saying: reason)
             case .say(let reason): say(reason)
             default: break
@@ -1443,7 +1450,8 @@ final class LiveInk {
         // The mark a label names comes just before it.
         var labelled: Mark.ID?
         for mark in placed.filter({ !hangs($0) }) + placed.filter(hangs) {
-            remove([mark.id])
+            // The same mark goes back on, so it keeps its part in the asks.
+            takeOff([mark.id])
             if let target {
                 let mark = LiveWindows.translated(mark, by: moved)
                 let anchor: LiveWindows.Anchor
@@ -1468,12 +1476,15 @@ final class LiveInk {
         closeEmpty(fade: LiveMarksLayer.removalFade)
     }
 
-    /// Takes the last answer's marks, or the last failure's note, off the screen, all but `kept`.
-    private func removeAnswer(keeping kept: Mark.ID? = nil) {
+    /// Takes the last answer's marks, or the last failure's note, off the screen
+    /// (`LiveAsks.Effect.removeAnswer`), once the steps, the focus and the buttons are let go. The asks
+    /// have already taken the answer role from `gone`, so letting go of the focus removes nothing and
+    /// the focus stop leaves with `gone`.
+    private func removeAnswer(_ gone: Set<Mark.ID>) {
         stopSteps()
         letGoOfFocus(because: "replaced")
         hideActions()
-        for case .remove(let gone) in asks.reduce(.answerRemoved(keeping: kept)) { remove(gone) }
+        if !gone.isEmpty { remove(gone) }
     }
 
     /// Ends the responder's conversation and forgets what was asked, as clearing the screen does.
@@ -1794,9 +1805,18 @@ final class LiveInk {
         if isInking { stopInking() }
         let screens = Dictionary(NSScreen.screens.compactMap { screen in Self.display(of: screen).map { ($0, screen) } },
                                  uniquingKeysWith: { first, _ in first })
+        var dropped = Set<Mark.ID>()
         for surface in surfaces {
-            if let screen = screens[surface.overlay.display] { surface.overlay.fit(to: screen) } else { surface.marks = [] }
+            if let screen = screens[surface.overlay.display] {
+                surface.overlay.fit(to: screen)
+            } else {
+                dropped.formUnion(surface.marks.map(\.id))
+                surface.marks = []
+            }
         }
+        // A mark that reaches onto a screen still here stays, with its part in the asks.
+        let gone = dropped.subtracting(marks.map(\.id))
+        if !gone.isEmpty { _ = asks.reduce(.removed(gone)) }
         closeEmpty(fade: 0)
         showMarks()
     }
