@@ -585,6 +585,8 @@ and is removed before live ink reaches main.
     and phrases that overlap are all found. So a score can be a little higher than Result 9's.
   - `authorLines`: the lines long enough to search. `authorMs`: how long the reading and the search
     took. It is written only when a search ran.
+  - `authorWaitMs`: how long the search waited for live ink. A search starts only once live ink has
+    read no window for 5 s, since one run beside a note's look slowed that look.
   - `authorCapped`: a limit left files unread. Files over 1 MB are skipped. The search reads at most
     50 MB, shared fairly among the sessions.
   - `authorsWhyNot`, in place of `authors`: `recording`, `unreadable-image`, `no-claude-folder`, or
@@ -609,6 +611,9 @@ and is removed before live ink reaches main.
   session was not listed. `authorMs` was 0.7 to 0.9 s in a Debug build, and `shownMs` 0 to 1 ms.
   Of six captures in one second, three were written as `busy`. No recognised word reached the log
   or Vignette.log.
+- **A search slowed the next note.** In the VM, a second note sent right after a first took 2.14 s
+  to read its window while the first note's search ran (median of 8), and 1.37 s with no search.
+  The search now waits for live ink to be quiet.
 - **The process table is the whole Mac's, not the user's.** Terminal and Ghostty start each shell
   under `/usr/bin/login`, which runs as root. When the log read only the user's processes, the walk
   from herdr's client up to the terminal stopped at `login`. Every terminal capture then read

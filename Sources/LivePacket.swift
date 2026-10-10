@@ -120,6 +120,8 @@ struct LivePacket: @unchecked Sendable {
     @MainActor
     static func build(at point: CGPoint, window id: CGWindowID? = nil, ink: [Mark], style: TextStyle,
                       markStyle: MarkStyle, glanced: (@Sendable (Glance) -> Void)? = nil) async throws -> LivePacket {
+        SendContext.LiveReads.began()
+        defer { SendContext.LiveReads.ended() }
         let started = Date()
         let content = try await shareableContent()
         let named = id.flatMap { id in content.windows.contains { $0.windowID == id } ? (id: id, frame: CGRect.null) : nil }
@@ -371,6 +373,8 @@ struct LivePacket: @unchecked Sendable {
 
     /// Vision's lines, in reading order: top to bottom, and left to right within a row.
     static func read(_ image: CGImage) -> [Line] {
+        SendContext.LiveReads.began()
+        defer { SendContext.LiveReads.ended() }
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         let handler = VNImageRequestHandler(cgImage: image)

@@ -118,6 +118,32 @@ enum SendContext {
         SHA256.hash(data: Data(name.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Live ink's own reads of a window (`LivePacket.build` and `LivePacket.read`). An author search
+    /// waits until none has run for `quiet` seconds: started beside a note's look, it made the look
+    /// about 0.75 s slower in the VM.
+    enum LiveReads {
+        private static let lock = NSLock()
+        nonisolated(unsafe) private static var running = 0
+        nonisolated(unsafe) private static var lastEnd = Date.distantPast
+        static let quiet: TimeInterval = 5
+        /// A wait longer than this gives up, so a read that never ends cannot hold every search.
+        static let longest: TimeInterval = 120
+
+        static func began() { lock.withLock { running += 1 } }
+        static func ended() { lock.withLock { running -= 1; lastEnd = Date() } }
+
+        /// Blocks until live ink has been quiet for `quiet` seconds. Answers the ms it waited.
+        static func waitForQuiet() -> Int {
+            let started = Date()
+            while Date().timeIntervalSince(started) < longest {
+                let busy = lock.withLock { running > 0 || Date().timeIntervalSince(lastEnd) < quiet }
+                guard busy else { break }
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            return Int(Date().timeIntervalSince(started) * 1000)
+        }
+    }
+
     /// A record on its way between the two queues.
     private struct Pending: @unchecked Sendable { let record: [String: Any] }
 
@@ -135,9 +161,11 @@ enum SendContext {
         searching += 1
         let pending = Pending(record: record)
         authorQueue.async {
+            let waited = LiveReads.waitForQuiet()
             let started = Date()
             var found = authors(claude)
             found["authorMs"] = Int(Date().timeIntervalSince(started) * 1000)
+            if waited > 0 { found["authorWaitMs"] = waited }
             let done = Pending(record: pending.record.merging(found) { $1 })
             queue.async {
                 searching -= 1
