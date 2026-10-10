@@ -290,13 +290,15 @@ final class NoteCardWaitTests: XCTestCase {
         for id in ids { XCTAssertNil(waits[id], "\(id) is let go once no answer can still come") }
     }
 
-    /// Catches a result card made when nothing changed, which Pete's rule forbids.
-    func testNothingChangedSaysDoneOnEveryNoteAndMakesNoCard() {
+    /// Catches a result card made when nothing changed, which Pete's rule forbids, and a Done on every
+    /// note, which brings a lone thumbnail for each note card that is off screen.
+    func testNothingChangedMakesNoCardAndOnlyTheNewestNoteSaysDoneAloud() {
         let ids = ["r1", "r2", "r3"]
         var waits = NoteCardGroups()
         sendAll(&waits, ids, to: onWindow(1), delivered: false)
         _ = endAll(&waits, ids)
-        XCTAssertEqual(waits.handle(.looked(ids, changed: [], replied: []), at: t0 + 5), each(ids, .sayDone))
+        XCTAssertEqual(waits.handle(.looked(ids, changed: [], replied: []), at: t0 + 5),
+                       each(["r1", "r2"], .sayDoneQuietly) + [.note("r3", .sayDone)])
         XCTAssertEqual(waits.handle(.answer("r2"), at: t0 + 10), [.note("r2", .drawReplyOnSentPicture)])
     }
 
@@ -423,34 +425,57 @@ final class NoteCardWaitTests: XCTestCase {
         sendAll(&waits, ids, to: onWindow(1))
         _ = endAll(&waits, ids)
         XCTAssertEqual(waits.handle(.looked(ids, changed: ["r1"], replied: ["r1"]), at: t0 + 5),
-                       [.note("r1", .replyIsTheResult), .note("r2", .sayDone), .note("r3", .sayDone)])
+                       [.note("r1", .replyIsTheResult), .note("r2", .sayDoneQuietly), .note("r3", .sayDone)])
     }
 
     /// Catches a note whose part of the window could not be compared being answered by a card that
-    /// another note made, or making it: its picture is of a window it was not drawn on.
-    func testANoteWhoseRegionCouldNotBeComparedSaysDoneAndIsNotPartOfTheCard() {
+    /// another note made, or making it: its picture is of a window it was not drawn on. It says Done
+    /// in place, since the card that comes up is already the turn's news.
+    func testANoteWhoseRegionCouldNotBeComparedSaysDoneQuietlyAndIsNotPartOfTheCard() {
         let ids = ["r1", "r2", "r3"]
         var waits = NoteCardGroups()
         sendAll(&waits, ids, to: onWindow(1), delivered: false)
         _ = endAll(&waits, ids)
         XCTAssertEqual(waits.handle(.looked(ids, changed: ["r1", "r3"], replied: [], uncompared: ["r1"]), at: t0 + 5),
-                       [.makeResultCard(for: ["r3", "r2"]), .note("r1", .sayDone)])
+                       [.makeResultCard(for: ["r3", "r2"]), .note("r1", .sayDoneQuietly)])
         XCTAssertEqual(waits.handle(.answer("r1"), at: t0 + 10), [.note("r1", .drawReplyOnSentPicture)])
         XCTAssertEqual(waits.handle(.answer("r2"), at: t0 + 10), [.note("r2", .drawReplyOnResultCard)])
     }
 
     /// Catches a card that cannot be written leaving every note it was to answer with no end: none
-    /// says Done and none has a card.
-    func testWhenTheSharedCardCannotBeWrittenEveryNoteItAnsweredSaysDone() {
+    /// says Done and none has a card. Only the newest says it aloud.
+    func testWhenTheSharedCardCannotBeWrittenTheNewestNoteItAnsweredSaysDoneAloudAndTheRestInPlace() {
         let ids = ["r1", "r2", "r3"]
         var waits = NoteCardGroups()
         sendAll(&waits, ids, to: onWindow(1), delivered: false)
         _ = endAll(&waits, ids)
         XCTAssertEqual(waits.handle(.looked(ids, changed: ["r2"], replied: ["r1"]), at: t0 + 5),
                        [.makeResultCard(for: ["r2", "r3"]), .note("r1", .replyIsTheResult)])
-        XCTAssertEqual(waits.handle(.cardFailed(["r3", "r2"]), at: t0 + 6), [.note("r2", .sayDone), .note("r3", .sayDone)])
+        XCTAssertEqual(waits.handle(.cardFailed(["r3", "r2"]), at: t0 + 6), [.note("r2", .sayDoneQuietly), .note("r3", .sayDone)])
         XCTAssertEqual(waits.handle(.answer("r3"), at: t0 + 7), [.note("r3", .drawReplyOnSentPicture)])
         XCTAssertEqual(waits.handle(.cardFailed(["r2"]), at: t0 + 8), [], "a note says Done once")
+    }
+
+    /// Catches a card that cannot be written for a group of three bringing up three thumbnails.
+    func testACardThatCannotBeWrittenForThreeNotesSaysDoneAloudOnce() {
+        let ids = ["r1", "r2", "r3"]
+        var waits = NoteCardGroups()
+        sendAll(&waits, ids, to: onWindow(1))
+        _ = endAll(&waits, ids)
+        XCTAssertEqual(waits.handle(.looked(ids, changed: ["r1"], replied: []), at: t0 + 5), [.makeResultCard(for: ids)])
+        XCTAssertEqual(waits.handle(.cardFailed(["r1", "r2", "r3"]), at: t0 + 6),
+                       each(["r1", "r2"], .sayDoneQuietly) + [.note("r3", .sayDone)])
+    }
+
+    /// Catches the newest note being the one that could not be compared: the card that is made is
+    /// then the turn's news, and no note says Done aloud.
+    func testAResizedWindowNoteSaysDoneQuietlyWhateverItsPlaceInTheGroup() {
+        let ids = ["r1", "r2", "r3"]
+        var waits = NoteCardGroups()
+        sendAll(&waits, ids, to: onWindow(1))
+        _ = endAll(&waits, ids)
+        XCTAssertEqual(waits.handle(.looked(ids, changed: ["r1"], replied: [], uncompared: ["r3"]), at: t0 + 5),
+                       [.makeResultCard(for: ["r1", "r2"]), .note("r3", .sayDoneQuietly)])
     }
 
     /// Catches the group path changing what one note does.
@@ -464,12 +489,19 @@ final class NoteCardWaitTests: XCTestCase {
         sendAll(&unchanged, ["r"], to: onWindow(1))
         _ = endAll(&unchanged, ["r"])
         XCTAssertEqual(unchanged.handle(.looked(["r"], changed: [], replied: []), at: t0 + 5), [.note("r", .sayDone)])
+
+        var failed = NoteCardGroups()
+        sendAll(&failed, ["r"], to: onWindow(1))
+        _ = endAll(&failed, ["r"])
+        _ = failed.handle(.looked(["r"], changed: ["r"], replied: []), at: t0 + 5)
+        XCTAssertEqual(failed.handle(.cardFailed(["r"]), at: t0 + 6), [.note("r", .sayDone)])
     }
 
     /// Catches a group that makes two cards from one look, a card when no note that may be answered
     /// changed or none when one did, the first note to change not making it, a card with no note
-    /// behind a late answer, a note that a card answers saying Done while the card stands, or a note
-    /// ending twice, whatever order the events come in.
+    /// behind a late answer, a note that a card answers saying Done while the card stands, more than one
+    /// Done aloud for the notes one look or one failed card ends, or a note ending twice, whatever
+    /// order the events come in.
     func testAnyOrderOfGroupEventsMakesAtMostOneCardPerLook() {
         let turns: [SessionTurn?] = [.busy, .busy, .idle, .idle, .idle, .idle, .idle, .waiting, nil]
         // A session mostly runs a turn through: its request waits, the turn runs, then it is idle.
@@ -507,7 +539,7 @@ final class NoteCardWaitTests: XCTestCase {
                 trace.append("\(now.timeIntervalSince(t0)) \(input) -> \(actions)")
                 if let look, !answered.insert(look).inserted { XCTAssertEqual(actions, [], fail("a look is answered once")) }
                 var made: [[String]] = []
-                var doneNow = 0
+                var doneNow = 0, loudNow = 0
                 for action in actions {
                     switch action {
                     case .watchTurn:
@@ -515,8 +547,9 @@ final class NoteCardWaitTests: XCTestCase {
                     case .note(let id, let effect):
                         XCTAssertFalse([.watchTurn, .lookAgain].contains(effect), fail("a wish is merged"))
                         if effect == .replyIsTheResult { replies[id, default: 0] += 1 }
-                        if effect == .sayDone {
+                        if effect == .sayDone || effect == .sayDoneQuietly {
                             dones[id, default: 0] += 1
+                            if effect == .sayDone { loudNow += 1 }
                             if !skipped.contains(id) { doneNow += 1 }
                             XCTAssertFalse(changed.contains(id), fail("a note whose region changed says nothing more"))
                         }
@@ -544,7 +577,14 @@ final class NoteCardWaitTests: XCTestCase {
                     XCTAssertEqual(made.first?.first, expected.maker, fail("the first note to change makes the card, and none changed otherwise"))
                     XCTAssertEqual(Set(made.first ?? []), expected.maker == nil ? [] : expected.members, fail("the card answers every note not replied to"))
                 }
-                if !made.isEmpty { XCTAssertEqual(doneNow, 0, fail("a note a card answers says no Done")) }
+                if !made.isEmpty {
+                    XCTAssertEqual(doneNow, 0, fail("a note a card answers says no Done"))
+                    XCTAssertEqual(loudNow, 0, fail("a card that comes up needs no Done aloud"))
+                }
+                switch input {
+                case .looked, .cardFailed: XCTAssertLessThanOrEqual(loudNow, 1, fail("one Done aloud for the notes a look or a failed card ends"))
+                default: break
+                }
                 for id in ids {
                     XCTAssertLessThanOrEqual(replies[id, default: 0] + dones[id, default: 0], 1, fail("\(id) ends once"))
                     if replies[id] != nil { XCTAssertNil(cardOf[id], fail("a reply is not part of a card")) }

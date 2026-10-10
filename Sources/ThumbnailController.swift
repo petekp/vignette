@@ -738,9 +738,10 @@ final class ThumbnailController: NSObject {
     }
 
     /// The session's turn on the live ink note `shot` ended with nothing to show as a result card.
-    /// A card not on screen comes up as the lone thumbnail to say it, as a result card would.
-    func finished(_ shot: Screenshot, request: String, in destination: AgentDestination) {
-        post(.finished(request: request, client: destination.client, project: destination.project), on: shot)
+    /// A card not on screen comes up as the lone thumbnail to say it, as a result card would, unless
+    /// `quietly`: it then says it in place, and a card off screen stays off.
+    func finished(_ shot: Screenshot, request: String, in destination: AgentDestination, quietly: Bool = false) {
+        post(.finished(request: request, client: destination.client, project: destination.project), on: shot, comesUp: !quietly)
     }
 
     /// A reply to a send could not be made a card, so the card that was sent says so, as it says a
@@ -764,14 +765,16 @@ final class ThumbnailController: NSObject {
     }
 
     /// Puts the notice on `shot`'s card, brings the card up when nobody would see it otherwise, and
-    /// takes the notice down after its hold. The notice's hold sets the corner's time.
-    private func post(_ event: CardNotices.Event, on shot: Screenshot) {
+    /// takes the notice down after its hold. The notice's hold sets the corner's time. With `comesUp`
+    /// false a card off screen stays off: the notice is still posted and expires on time, and does not
+    /// hold the corner for a card nobody sees.
+    private func post(_ event: CardNotices.Event, on shot: Screenshot, comesUp: Bool = true) {
         let file = shot.url.path, seen = isSeen(shot)
         guard let posted = model.notices.post(event, on: file, seen: seen, noticeHold: ui.markSeconds + ui.expandDuration) else { return }
-        if !seen { show(shot) }
+        if !seen && comesUp { show(shot) }
         guard let hold = posted.hold else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.notices.expire(posted.id, on: file) }
-        leaveCorner(after: hold)
+        if seen || comesUp { leaveCorner(after: hold) }
     }
 
     /// `byHand` when the person closed it, as quick Done does: the focus goes back to their app

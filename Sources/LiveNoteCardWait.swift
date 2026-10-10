@@ -50,6 +50,9 @@ struct NoteCardWait: Equatable {
         case replyIsTheResult
         /// The note card says the session is done, while its file is there.
         case sayDone
+        /// `sayDone` without bringing the card up if it is off screen. `NoteCardGroups` answers a note's
+        /// `.sayDone` as this when other notes of its group say Done or a result card comes up.
+        case sayDoneQuietly
         /// Capture the note's window afresh and draw the answer on it.
         case drawReplyOnFreshCapture
         /// Draw the answer on the note's result card, made from the window when the turn ended.
