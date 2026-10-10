@@ -16,7 +16,7 @@ The names in brackets are `// MARK:` sections.
 | How the person's ink looks | `LiveInkHand.swift` |
 | How an agent's shapes look | `LiveInkLight.swift` |
 | The note: opening, placing, sending | `LiveInk.swift` (Asking), `LiveNotePanel.swift` |
-| The ask: its phase, what it takes when it comes late, the answer put back after a failure, and each mark's role | `LiveAsks.swift`, `LiveInk.swift` (Asking, Answering) |
+| The ask: its phase, which late callbacks it drops, the answer put back after a failure, and each mark's role, which erasing takes away | `LiveAsks.swift`, `LiveInk.swift` (Asking, Answering) |
 | A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking), `LiveNoteCards.swift`, `LiveNoteCardWait.swift` |
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
 | What an ask sends | `LivePacket.swift` |
@@ -34,7 +34,7 @@ The names in brackets are `// MARK:` sections.
 
 - `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement, result cards and anchoring.
   `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery.
-  `Tests/LiveAsksTests.swift` holds the ask's sequences: late answers, follow-ups, dismiss, finish and clear.
+  `Tests/LiveAsksTests.swift` holds the ask's sequences: late callbacks, erasing, follow-ups, dismiss, finish and clear.
 - A script reaches the note without a hand on the keys: `live-ink-chord-down`, then
   `live-ink-stroke` for each stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot
   press ⌃⌥, so this is the only way a VM check opens the note.

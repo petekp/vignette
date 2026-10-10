@@ -1,11 +1,11 @@
 # State machines are pure reducers, and the AppKit side only runs their effects
 
-The editor, the moves into and out of the annotator, the annotation run, the zoom, card notices and
-the settings file's sync are each a pure value that takes an event and returns the effects to run.
-The AppKit side runs those effects and decides nothing. Sequence and random-sequence tests can then
-drive each machine with no window. Before the annotation run became one, seven call sites had to
-empty the queue before an event whose answer could come in the same turn, and that is where the
-last four queue bugs came from.
+The editor, the moves into and out of the annotator, the annotation run, the zoom, card notices, the
+live ink ask and the settings file's sync are each a pure value that takes an event and returns the
+effects to run. The AppKit side runs those effects and decides nothing. Sequence and random-sequence
+tests can then drive each machine with no window. Before the annotation run became one, seven call
+sites had to empty the queue before an event whose answer could come in the same turn, and that is
+where the last four queue bugs came from.
 
 ## Consequences
 
