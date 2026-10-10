@@ -5,7 +5,7 @@ import Darwin
 /// (docs/session-detection-exploration-2026-10-08.md, Result 5). Written as `host`, or as
 /// `hostWhyNot` with the first link that failed.
 extension SendContext {
-    /// One of this user's processes.
+    /// One process on the Mac.
     struct ProcessEntry: Sendable {
         let pid: pid_t
         let parent: pid_t
@@ -14,17 +14,19 @@ extension SendContext {
         let hasTerminal: Bool
     }
 
-    /// This user's processes, from one `sysctl`. Nil when the table could not be read.
+    /// Every process, from one `sysctl`. Nil when the table could not be read. Not only this user's:
+    /// a terminal starts each shell under `login`, which runs as root, and the path from a herdr client
+    /// up to its terminal app goes through it.
     static func processes() -> [ProcessEntry]? {
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_UID, Int32(bitPattern: getuid())]
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL]
         let stride = MemoryLayout<kinfo_proc>.stride
         for _ in 0..<3 {
             var size = 0
-            guard sysctl(&mib, 4, nil, &size, nil, 0) == 0 else { return nil }
+            guard sysctl(&mib, 3, nil, &size, nil, 0) == 0 else { return nil }
             // Room for the processes that start between the two calls.
             var table = [kinfo_proc](repeating: kinfo_proc(), count: size / stride + 64)
             size = table.count * stride
-            let status = table.withUnsafeMutableBytes { sysctl(&mib, 4, $0.baseAddress, &size, nil, 0) }
+            let status = table.withUnsafeMutableBytes { sysctl(&mib, 3, $0.baseAddress, &size, nil, 0) }
             guard status == 0 else {
                 if errno == ENOMEM { continue }
                 return nil
