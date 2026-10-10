@@ -10,7 +10,7 @@ struct NoteCardWait: Equatable {
         case unwatched(sent: Date)
         /// The turn ended and the window round the ink is being looked at again.
         case lookingAgain
-        /// The window changed, so a result card was made. An answer that comes later goes on it.
+        /// A result card answers the note. An answer that comes later goes on it.
         case resultCard(made: Date)
         case over
     }
@@ -21,10 +21,22 @@ struct NoteCardWait: Equatable {
         case delivered(failed: Bool)
         /// One reading of the session's turn, and whether the session has replied to the note by now.
         case turn(SessionTurn?, replied: Bool)
-        /// The look at the window answered: `changed` when the window changed under the ink.
-        case lookedAgain(changed: Bool, replied: Bool)
+        /// The look at the window answered, and `NoteCardGroups` decided how it ends for this note.
+        case lookedAgain(LookOutcome)
+        /// The result card the note was waiting on, its own or another note's, could not be written.
+        case cardFailed
         /// The session's reply has an answer for live ink, which asks for its result card.
         case answer
+    }
+
+    /// How the look at the window ends for one note, as the notes on its window decide it together.
+    enum LookOutcome: Equatable {
+        /// The session replied to the note, and that reply is its result.
+        case replied
+        /// A result card answers the note: its own change made it, or another note's on the window.
+        case cardMade
+        /// Nothing changed under the ink of any note that the session has not replied to.
+        case noCard
     }
 
     enum Effect: Hashable {
@@ -32,11 +44,10 @@ struct NoteCardWait: Equatable {
         case watchTurn
         case turnEnded
         case stopWaiting
-        /// Look at the window round the ink again, and answer `lookedAgain`.
+        /// Look at the window round the ink again, and answer `lookedAgain`. `NoteCardGroups` merges
+        /// it across the notes one turn end answers.
         case lookAgain
         case replyIsTheResult
-        /// A result card of the window as the look found it, with no marks.
-        case makeResultCard
         /// The note card says the session is done, while its file is there.
         case sayDone
         /// Capture the note's window afresh and draw the answer on it.
@@ -67,6 +78,8 @@ struct NoteCardWait: Equatable {
         if case .watching = phase { return true }
         return false
     }
+
+    var isLookingAgain: Bool { phase == .lookingAgain }
 
     /// Nothing can come of the note any more, so its owner can let it go: its send notice has gone
     /// on its card, and no answer can be drawn afresh.
@@ -99,7 +112,7 @@ struct NoteCardWait: Equatable {
             case .ended:
                 guard canLookAgain else {
                     phase = .over
-                    return [.turnEnded] + end(changed: false, replied: replied)
+                    return [.turnEnded, replied ? .replyIsTheResult : .sayDone]
                 }
                 phase = .lookingAgain
                 return [.turnEnded, .lookAgain]
@@ -108,10 +121,23 @@ struct NoteCardWait: Equatable {
                 return [.stopWaiting] + (replied ? [.replyIsTheResult] : [])
             }
 
-        case (.lookingAgain, .lookedAgain(let changed, let replied)):
-            let effects = end(changed: changed, replied: replied)
-            phase = effects == [.makeResultCard] ? .resultCard(made: now) : .over
-            return effects
+        case (.lookingAgain, .lookedAgain(let look)):
+            switch look {
+            case .replied:
+                phase = .over
+                return [.replyIsTheResult]
+            case .cardMade:
+                phase = .resultCard(made: now)
+                return []
+            case .noCard:
+                phase = .over
+                return [.sayDone]
+            }
+
+        case (.resultCard, .cardFailed):
+            // The card that answered the note is not there, so the note says what it would have said.
+            phase = .over
+            return [.sayDone]
 
         case (_, .delivered(let failed)):
             delivered = true
@@ -142,12 +168,6 @@ struct NoteCardWait: Equatable {
         default:
             return []
         }
-    }
-
-    /// A reply from the session is its result already. Otherwise a change under the ink makes a
-    /// result card, and anything else has the note card say the session is done.
-    private func end(changed: Bool, replied: Bool) -> [Effect] {
-        replied ? [.replyIsTheResult] : changed ? [.makeResultCard] : [.sayDone]
     }
 }
 

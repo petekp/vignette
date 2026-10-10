@@ -81,8 +81,9 @@ The card a live ink note sent to an agent session becomes: the window without th
 screenshots folder, with the ink and the words as its drawing.
 
 **Result card**:
-The card from an agent session once its turn on a note card is over: the window as it was then, with
-the session's answer drawn on it when it gave one.
+The card from an agent session once its turn on one or more note cards is over: the window as it was
+then, with the session's answer drawn on it when it gave one. One turn that answers several note
+cards on a window makes one result card.
 
 **Responder**:
 The `claude` process Vignette keeps running to answer live ink: the person's own Claude Code, with

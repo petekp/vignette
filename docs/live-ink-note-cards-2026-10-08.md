@@ -59,11 +59,12 @@ it. Over Pete's 43 asks they arrived after 3.3 s at the median, 5.2 s at the 90t
 5. The ink and the note leave the window at once, and the card comes into the corner. Step 6 below
    makes the card fly there from the window.
 6. Nothing on the screen waits on the session, so the person can draw and send another note right
-   away. Each request's turn is watched on its own.
+   away. Each note waits on its own turn. Notes whose turns end together are answered together
+   (below).
 
 ### When the session's turn ends
 
-Vignette reads each request's turn twice a second, as it does today.
+Vignette reads the turn of each session twice a second, as it does today.
 
 | What happened | What Vignette shows |
 | --- | --- |
@@ -71,8 +72,8 @@ Vignette reads each request's turn twice a second, as it does today.
 | That window cannot be captured: closed, minimized, or Vignette relaunched | A result card: the picture that was sent, with the answer's words beside its first mark. |
 | The session replied with `--marks` or `--image` | That reply is the result card, as today. |
 | No reply, and the window changed under the ink | A result card: the window as it is now, from the session. |
-| No reply, and nothing changed under the ink | No result card. The note card says Done in *project*. |
-| The window closed, was minimized or changed size | No result card. The note card says Done in *project*. |
+| No reply, and nothing changed under the ink | No result card. The note card says Done in *project*, unless another note on the window made the card (below). |
+| The window closed, was minimized or changed size | No result card. The note card says Done in *project*, whatever the other notes on the window did. |
 | Vignette stopped waiting on the turn | Nothing more. The note card already said Sent to. |
 | The session is a Codex thread | Codex reports no turns, so only a reply from the agent makes a result card. |
 
@@ -85,6 +86,31 @@ card pushed with `add` does. So it shows the "From Claude" tab, and Reply on it 
 session. A Codex thread is recorded in an attribute of its own, `<bundle id>.thread`, which `add`
 never writes, so a push's `session=` still names a Claude Code session only. It is named `Live ink result <date> at <time>.png`. A note card that is not on screen when
 it says Done comes up as the lone thumbnail, as a result card would.
+
+### When one turn answers several notes
+
+One turn can answer several notes. Notes sent to one session that end in the same reading of its
+turn, on one window, share one look at the window and at most one result card. Vignette captures
+the window once and compares it with the part round each note's ink.
+
+- **The card:** it is made when any of those notes changed and the session has not replied to it.
+  Seven notes on one window and one turn make one card, not seven.
+- **Each note card:** when a card is made, no note card says more. The card is the answer to the
+  turn. A Done on each unchanged note would bring a lone thumbnail for every note card that is off
+  screen, which is the flood this rule removes. When no card is made, every note card says Done in
+  *project*, as a single note does. So does a note whose window changed size since it was sent: its
+  part of the window cannot be compared, so the card is not its answer.
+- **A card that cannot be written:** every note it was to answer says Done in *project*.
+- **A reply:** a note the session replied to with `--marks` or `--image` has its own result and is
+  not part of the card.
+- **A late `--answer`:** for any other note in the group it goes on the one result card. Several
+  answers all add their marks to it.
+- **Separate cards:** notes on different windows, or sent to different sessions, keep separate
+  cards. So does a note whose turn ends in a later reading than the others'.
+- **The log:** `[live-ink] result card <name> agent=<agent> marks=<n> notes=<k>` says how many notes
+  the card answers.
+
+Several `--answer`s sent during the turn still each make a card from a fresh capture.
 
 ## What goes away
 
@@ -129,6 +155,8 @@ ink's handover by the log: VNC frames come 7 s apart, too far apart to show a si
 - A turn that ends with the page changed under the ink makes one result card, from the session,
   whose Reply goes to that session.
 - A turn that ends with nothing changed makes no result card, and the note card says Done in.
+- Three notes on one window and one turn end after the page changed make one result card, with
+  `notes=3`. Notes on two windows make two cards.
 - An `--answer` makes one result card with its marks on the fresh capture. Its turn's end then
   makes no second card.
 - With the window minimized at the turn's end, the note card says Done in. An answer then arrives

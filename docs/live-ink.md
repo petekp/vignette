@@ -17,7 +17,7 @@ The names in brackets are `// MARK:` sections.
 | How an agent's shapes look | `LiveInkLight.swift` |
 | The note: opening, placing, sending | `LiveInk.swift` (Asking), `LiveNotePanel.swift` |
 | The ask: its phase, which late callbacks it drops, the answer put back after a failure, and each mark's role, which erasing takes away | `LiveAsks.swift`, `LiveInk.swift` (Asking, Answering) |
-| A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking), `LiveNoteCards.swift`, `LiveNoteCardWait.swift` |
+| A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking), `LiveNoteCards.swift`, `LiveNoteCardWait.swift`, `LiveNoteCardGroups.swift` |
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
 | What an ask sends | `LivePacket.swift` |
 | Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
@@ -28,12 +28,12 @@ The names in brackets are `// MARK:` sections.
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
 | Marks following their window, holding still, hiding | `LiveWindows.swift`, `LiveAnchor.swift` (Accessibility), `LivePatch.swift` (pixels) |
-| Whether a session's turn changed what the ink was on | `LiveChange.swift`, `LiveNoteCards.swift` (`look(again:)`, `before`) |
+| Whether a session's turn changed what the ink was on | `LiveChange.swift`, `LiveNoteCards.swift` (`look(again:)`, which compares the notes on one window; `before`) |
 
 ## Checking a change
 
 - `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement, result cards and anchoring.
-  `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery.
+  `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery. It also covers a turn end that answers several notes.
   `Tests/LiveAsksTests.swift` holds the ask's sequences: late callbacks, erasing, follow-ups, dismiss, finish and clear.
 - A script reaches the note without a hand on the keys: `live-ink-chord-down`, then
   `live-ink-stroke` for each stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot
@@ -179,7 +179,7 @@ The names in brackets are `// MARK:` sections.
   it away (`LiveInk.share`, `Finish.carried`). A window on another screen than the corner's sends
   no flight, and its ink undraws. A send refused before that takes the file back, and the ink
   stays, with the reason beside it.
-- Each note's turn is watched on its own (`LiveNoteCards`), twice a second, from the `turn` file the
+- Each note's turn is read twice a second, once per session per tick (`LiveNoteCards`), from the `turn` file the
   plugin's hooks write in the session's inbox (`ClaudeCodeConnection.turn(of:)`). Nothing on the
   screen waits on it, so clearing the ink or drawing a new note leaves it running. The request
   waits in the inbox while another turn runs. Vignette stops waiting 3 minutes after the session
@@ -187,8 +187,9 @@ The names in brackets are `// MARK:` sections.
   after the ask while the request is still queued (`TurnWatch`). Codex reports no turns, so a note
   to a Codex thread is not watched: Vignette stops waiting as it sends, and a reply within 3 minutes
   is still drawn on a fresh capture. `[state] liveInk.watching` counts the notes watched. One pure
-  value, `NoteCardWait`, decides how a note card's wait ends, in any order of its reply, its turn's
-  end and its delivery.
+  value, `NoteCardGroups`, holds every wait and groups the notes that end in one reading on one
+  window. `NoteCardWait` decides each note, in any order of its reply, its turn's end and its
+  delivery.
 - A session's answer with `scripts/reply --answer`, words and up to four marks that each name words
   on the window (`LiveAnswer`, in the reply's bundle), becomes the note's result card
   (`LiveNoteCards.answer`): the window captured afresh, since the session has usually changed what it
@@ -221,8 +222,10 @@ The names in brackets are `// MARK:` sections.
     two are about as bright. Only the cells under the ink, its shapes with a 12 pt margin, decide.
     The ink's part changed when at least 2% of those cells counted, and at least 4.
   - **Changed.** The window as it is now becomes the result card, from the session
-    (`[live-ink] result card`). An answer that comes after it, for as long as a turn may run
-    (30 minutes), is drawn on that card, each mark at the words it names in the card's picture,
+    (`[live-ink] result card`, with `notes=` for the notes on that window it answers). The notes it
+    answers say nothing more, whether or not their own part changed, and each takes a late answer
+    on the card. An answer that comes after it, for as long as a turn may run (30 minutes), is
+    drawn on that card, each mark at the words it names in the card's picture,
     with no page to keep the words to. It joins the card's drawing rather than making a second card.
   - **Unchanged, or can't tell.** No result card. The note's card says Done in *project*
     (`[live-ink] done with no result card`). A window that closed, was minimized or changed size
