@@ -18,8 +18,12 @@ Six changes are recommended, in the order below.
   stop 180 s later without a word. An answer that comes after a note's result card was made goes
   on that card instead of becoming a second card.
 - **4, result card placement:** done on live-ink as `3fd6de9`, with the badge fix below.
+- **5, the live ink ask as a reducer:** done on live-ink. `d81deb7` moved the ask's state into
+  `LiveAsks` with the same transitions, and `b4a49eb` simplified it. A callback for an ask that is
+  no longer current now changes nothing. Before, it landed on whichever ask was in the right
+  phase, so a cleared ask's packet could be sent as the next ask's question. A mark taken off the
+  screen loses its roles. The steps and the focus tour are still in `LiveInk`, for a later pass.
 - **6, settings file sync:** done on main as `880ec84`.
-- **5, the live ink ask as a reducer:** not started.
 
 Open questions the changes left as they were:
 
@@ -30,6 +34,12 @@ Open questions the changes left as they were:
   shows has not been checked.
 - A remembered session can be picked from a kept list before the fresh one arrives, and then move
   if the fresh one says otherwise. That is today's behaviour, kept.
+- Erased ink stays in what its ask is about, so the × and a session's card still finish it and
+  count it in `dismissed marks=`. Taking it out would also need another way to end an ask, since
+  `.finished` ends one when every mark it is about has finished.
+- `pictureSent` is recorded on whichever ask is current, not matched by id, so a cleared ask's
+  picture flag can land on the next ask in `[state]`. `testAPictureIsRecordedOnWhicheverAskIsCurrent`
+  pins this.
 
 This review covers the live-ink branch, which holds main and live ink. Symbols are cited rather
 than line numbers, because the two branches number lines differently.
