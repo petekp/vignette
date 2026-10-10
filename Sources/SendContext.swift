@@ -5,11 +5,19 @@ import Darwin
 /// A few days' record of what Vignette could see at each capture and each send, to score ways of
 /// choosing the session a drawing goes to against where it went
 /// (docs/session-detection-exploration-2026-10-08.md, "The shadow log"). It keeps session ids,
-/// folders, bundle ids and port numbers, and a digest of the screenshot's file name to join a capture
-/// to its send; never a window's title, a page's URL or a file's name, since an agent's push is named
-/// for what it shows. Temporary: it is removed before live ink reaches main.
+/// folders, bundle ids, port numbers, scores, counts, codes and times, and a digest of the
+/// screenshot's file name to join a capture to its send; never a window's title, a page's URL, a
+/// file's name or the text in a picture, since an agent's push is named for what it shows.
+/// Temporary: it is removed before live ink reaches main.
 enum SendContext {
     private static let queue = DispatchQueue(label: "send-context", qos: .utility)
+    /// Serial, so one Vision reading and one search of edited files run at a time.
+    private static let authorQueue = DispatchQueue(label: "send-context.authors", qos: .utility)
+    /// Capture and note lines waiting for, or in, the author search. Only `queue` touches it.
+    nonisolated(unsafe) private static var searching = 0
+    /// A search takes seconds, and a quit loses every line still waiting for one.
+    private static let maxSearching = 2
+    @MainActor private static var nextSeq = 0
     /// A test launch writes beside its scratch settings file, never into the person's folder.
     static let url: URL = {
         if let path = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"], !path.isEmpty {
@@ -36,19 +44,30 @@ enum SendContext {
     static func capture(_ shot: URL) {
         let at = Date()
         guard case .read(let header) = Thumbnailer.lookUp(shot), let pixels = header.pixels else { return }
+        let seq = nextSeq
+        nextSeq += 1
         let mouse = NSEvent.mouseLocation
         let primary = StateReport.primaryHeight
         let cursor = CGPoint(x: mouse.x, y: primary - mouse.y)
         let scale = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }?.backingScaleFactor ?? 2
         let size = CGSize(width: pixels.width / scale, height: pixels.height / scale)
         let displays = NSScreen.screens.map(\.frame.size)
+        let maxPixels = NSScreen.screens.map { max($0.frame.width, $0.frame.height) * $0.backingScaleFactor }.max() ?? 0
+        let isRecording = Screenshot(url: shot).kind == .recording
         let windows = onScreenWindows()
         let name = shot.lastPathComponent
         queue.async {
             let (how, window) = captured(size: size, cursor: cursor, windows: windows, displays: displays)
             var record: [String: Any] = ["event": "capture", "file": digest(name), "capture": how]
-            record.merge(facts(of: window, location: nil)) { $1 }
-            append(record, at: at)
+            let seen = facts(of: window, location: nil)
+            record.merge(seen.record) { $1 }
+            record.merge(hostFields(capture: how, seen: seen, at: at)) { $1 }
+            let listed = seen.sessionIDs
+            finish(record, at: at, seq: seq, skip: isRecording ? "recording" : nil) { claude in
+                guard let image = decoded(shot, maxPixels: maxPixels) else { return ["authorsWhyNot": "unreadable-image"] }
+                return authorFields(lines: recognisedLines(image), listed: listed, claudeRoot: claude, now: Date(),
+                                    limits: AuthorLimits())
+            }
         }
     }
 
@@ -57,11 +76,13 @@ enum SendContext {
     @MainActor
     static func sent(file: String, request: String, to destination: AgentDestination, offered: (id: String, reply: Bool)?) {
         let at = Date()
+        let seq = nextSeq
+        nextSeq += 1
         let to = destination.id, client = destination.client.rawValue
         queue.async {
             var record: [String: Any] = ["event": "send", "file": digest(file), "request": request, "to": to, "client": client]
             if let offered { record["offered"] = offered.id; record["reply"] = offered.reply }
-            append(record, at: at)
+            append(record, at: at, seq: seq)
         }
     }
 
@@ -70,16 +91,26 @@ enum SendContext {
     @MainActor
     static func note(_ packet: LivePacket, to: String, offered: String?) {
         let at = Date()
+        let seq = nextSeq
+        nextSeq += 1
         let window = packet.windowID.flatMap { id -> Window? in
             let info = (CGWindowListCopyWindowInfo([.optionIncludingWindow], id) as? [[String: Any]])?.first
             return (info?[kCGWindowOwnerPID as String] as? pid_t).map { Window(id: id, pid: $0, frame: packet.frame) }
         }
         let location = packet.location
+        // The window as captured, without the ink: `picture` has the ink drawn in, and `lines` were
+        // read with language correction and a confidence floor, unlike Result 9's.
+        let image = packet.capture
         queue.async {
             var record: [String: Any] = ["event": "note", "to": to]
             if let offered { record["offered"] = offered }
-            record.merge(facts(of: window, location: location ?? "")) { $1 }
-            append(record, at: at)
+            let seen = facts(of: window, location: location ?? "")
+            record.merge(seen.record) { $1 }
+            record.merge(hostFields(capture: nil, seen: seen, at: at)) { $1 }
+            let listed = seen.sessionIDs
+            finish(record, at: at, seq: seq, skip: nil) { claude in
+                authorFields(lines: recognisedLines(image), listed: listed, claudeRoot: claude, now: Date(), limits: AuthorLimits())
+            }
         }
     }
 
@@ -87,17 +118,54 @@ enum SendContext {
         SHA256.hash(data: Data(name.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func append(_ record: [String: Any], at: Date) {
+    /// A record on its way between the two queues.
+    private struct Pending: @unchecked Sendable { let record: [String: Any] }
+
+    /// Adds what `authors` finds under Claude Code's folder, and how long it took, on `authorQueue`,
+    /// then appends the record. Runs on `queue`. A `skip` reason, a missing folder, or `maxSearching`
+    /// records already waiting (`busy`) write the record at once with `authorsWhyNot`.
+    private static func finish(_ record: [String: Any], at: Date, seq: Int, skip: String?,
+                               authors: @escaping @Sendable (URL) -> [String: Any]) {
+        let claude = skip == nil ? claudeRoot() : nil
+        guard let claude, searching < maxSearching else {
+            let why = skip ?? (claude == nil ? "no-claude-folder" : "busy")
+            append(record.merging(["authorsWhyNot": why]) { $1 }, at: at, seq: seq)
+            return
+        }
+        searching += 1
+        let pending = Pending(record: record)
+        authorQueue.async {
+            let started = Date()
+            var found = authors(claude)
+            found["authorMs"] = Int(Date().timeIntervalSince(started) * 1000)
+            let done = Pending(record: pending.record.merging(found) { $1 })
+            queue.async {
+                searching -= 1
+                append(done.record, at: at, seq: seq)
+            }
+        }
+    }
+
+    /// One line of the file: the record with its time and its place in this launch's order.
+    static func line(_ record: [String: Any], at: Date, seq: Int) -> Data? {
         var record = record
         record["t"] = ISO8601DateFormatter().string(from: at)
-        guard let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) else { return }
+        record["seq"] = seq
+        guard let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) else { return nil }
+        return data + Data("\n".utf8)
+    }
+
+    /// A capture's or a note's line is written once its text search ends, so it can follow a later
+    /// line, and a quit before then loses it. Readers order the lines by `t`, then `seq`.
+    private static func append(_ record: [String: Any], at: Date, seq: Int) {
+        guard let data = line(record, at: at, seq: seq) else { return }
         let manager = FileManager.default
         if let size = (try? manager.attributesOfItem(atPath: url.path))?[.size] as? Int, size > maxBytes { return }
         if !manager.fileExists(atPath: url.path) { manager.createFile(atPath: url.path, contents: nil) }
         guard let handle = try? FileHandle(forWritingTo: url) else { return }
         defer { try? handle.close() }
         _ = try? handle.seekToEnd()
-        try? handle.write(contentsOf: data + Data("\n".utf8))
+        try? handle.write(contentsOf: data)
     }
 
     // MARK: Which window
@@ -139,14 +207,34 @@ enum SendContext {
 
     // MARK: What the window says
 
+    /// What `facts` wrote, and what it read on the way that the host and author fields use.
+    struct Seen {
+        /// The record's fields.
+        let record: [String: Any]
+        /// The sessions listed, in Send's order.
+        let sessionIDs: [String]
+        /// The sessions with a live Claude Code inbox.
+        let live: Set<String>
+        /// herdr's answer to the listing's read; nil when the listing did not read it.
+        let herdr: HerdrAnswer?
+        /// The window's app.
+        let pid: pid_t?
+        let bundle: String
+        /// As written to the record.
+        let kind: String
+        let launched: Date?
+    }
+
     /// What the window gives about where its content lives, and the live sessions beside it.
     /// `location` is the page or document the note already read, "" for none; nil reads it here.
-    private static func facts(of window: Window?, location given: String?) -> [String: Any] {
-        let sessions = liveSessions()
+    private static func facts(of window: Window?, location given: String?) -> Seen {
+        let listing = liveSessions()
+        let sessions = listing.sessions
         var out: [String: Any] = ["sessions": sessions.map(\.record)]
         guard let window, let app = NSRunningApplication(processIdentifier: window.pid) else {
             out["kind"] = "none"
-            return out
+            return Seen(record: out, sessionIDs: sessions.map(\.id), live: listing.live, herdr: listing.herdr,
+                        pid: nil, bundle: "", kind: "none", launched: nil)
         }
         let bundle = app.bundleIdentifier ?? ""
         let kind = kind(of: bundle)
@@ -197,7 +285,8 @@ enum SendContext {
             if !overlap.isEmpty { out["titleOverlap"] = overlap }
         }
         out["readMs"] = Int(Date().timeIntervalSince(started) * 1000)
-        return out
+        return Seen(record: out, sessionIDs: sessions.map(\.id), live: listing.live, herdr: listing.herdr,
+                    pid: window.pid, bundle: bundle, kind: kind, launched: app.launchDate)
     }
 
     /// The words in a title or a session's name and folder that could tie the two together:
@@ -261,19 +350,21 @@ enum SendContext {
         }
     }
 
-    /// The Claude Code sessions Send would list now, with herdr's focus, and each one's folder.
-    private static func liveSessions() -> [Session] {
+    /// The Claude Code sessions Send would list now, with herdr's focus, and each one's folder; the
+    /// sessions with a live inbox; and herdr's answer, when it was read.
+    private static func liveSessions() -> (sessions: [Session], live: Set<String>, herdr: HerdrAnswer?) {
         let claude = ClaudeCodeConnection()
         var folders: [String: String] = [:]
         for inbox in claude.liveInboxes() {
             if let session = inbox.session, folders[session] == nil { folders[session] = inbox.cwd ?? "" }
         }
         let listed = claude.destinations()
-        let herdr = DestinationChoice.readsHerdr(beside: .claude, listed: listed) ? HerdrFocus.read() : nil
-        let candidates = DestinationChoice.Candidates(destinations: listed, complete: true, fresh: true, herdr: herdr)
-        return DestinationChoice.choose(candidates, for: .send(cameFrom: nil)).list.map {
+        let herdr = DestinationChoice.readsHerdr(beside: .claude, listed: listed) ? readHerdr() : nil
+        let candidates = DestinationChoice.Candidates(destinations: listed, complete: true, fresh: true, herdr: herdr?.focus)
+        let sessions = DestinationChoice.choose(candidates, for: .send(cameFrom: nil)).list.map {
             Session(id: $0.id, name: $0.name, folder: folders[$0.id] ?? "", focus: $0.focus?.rawValue, lastUsed: $0.lastUsed)
         }
+        return (sessions, Set(folders.keys), herdr?.answer)
     }
 
     // MARK: Accessibility

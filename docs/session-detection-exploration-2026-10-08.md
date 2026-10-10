@@ -514,11 +514,18 @@ and is removed before live ink reaches main.
   the main thread. A test launch writes it beside its scratch settings file instead. It stops at
   20 MB. It is a file of its own because `Vignette.log` rotates at 5 MB and would lose the first
   days.
-- **What it keeps:** session ids, folders, bundle ids, port numbers, and a digest of the
-  screenshot's file name, which joins a capture to its send. Never a window's title, a page's URL or
-  a file's name: an agent names the image it pushes for what it shows.
-  Titles are only compared, in memory, with each session's name and folder. No model inputs are
-  kept unless Pete chooses that (question 8).
+  - A line is written when its record is complete. A capture's or a note's line waits for the text
+    search, so lines can be out of order.
+  - A reader orders lines by `t`, then `seq`. `seq` is a count that restarts at each launch. A
+    missing number means the app quit while the line waited for its search, the file reached 20 MB,
+    or the line could not be serialised.
+  - At most two lines wait for a search. A third is written at once with `authorsWhyNot: busy`.
+- **What it keeps:** session ids, folders, bundle ids, port numbers, scores, counts, codes, and a
+  digest of the screenshot's file name, which joins a capture to its send. Never a window's title, a
+  page's URL or a file's name: an agent names the image it pushes for what it shows.
+  Titles are only compared, in memory, with each session's name and folder. The text in a picture
+  is read on the Mac, used in memory, and never kept. No model inputs are kept unless Pete chooses
+  that (question 8).
 - **`capture`, at each new screenshot** (the watcher's report, whatever "draw on capture" says):
   - `capture`: `window` when its size is one window's, with or without Apple's shadow; `display`
     when it is a display's; otherwise `selection`, of the window under the pointer.
@@ -537,20 +544,91 @@ and is removed before live ink reaches main.
     counts only. They show how often a title gives anything to match on.
   - `sessions`: each live Claude Code session's id, folder, herdr `focus` and seconds `idle`.
   - `readMs`: how long the window's reads took.
+  - `host`: the agent session the captured window shows, as `{client, id, how}`. It is written only
+    when every link holds. This is the session shown in the window. It is not herdr, the glossary's
+    terminal host.
+    - `how: herdr`: the window's terminal app runs herdr's one client, and herdr's focused pane is
+      alone in its tab. The id is that pane's session. For a Claude Code session, `live` says whether
+      it has a live Claude Code inbox. A Codex session has no `live`.
+    - `how: codex-app`: the thread the Codex app's log names last. That is the thread shown unless
+      the app stopped logging its page changes. With two Codex windows on different threads, it may
+      be the other window's. That case was not checked.
+  - `hostWhyNot`, when there is no `host`: the first link that did not hold. A surface is a window,
+    tab or split the terminal draws, counted as the terminal app's children on a terminal. That
+    count was checked only in Ghostty.
+    - `no-window`: no window was found.
+    - `display`: a display capture.
+    - `codex-no-thread`: the Codex app showed no thread.
+    - `agent-app-unread`: another agent's app, such as the Claude app, which says nothing.
+    - `not-agent-window`: neither a terminal nor an agent's app.
+    - `processes-unread`: the list of processes could not be read.
+    - `no-herdr-client`: the terminal runs no herdr client.
+    - `unknown-surfaces`: herdr's client runs under the terminal app, but no surface was counted, as
+      for a terminal that runs its shells under a helper process.
+    - `several-surfaces`: the terminal draws more than one surface.
+    - `several-clients`: more than one herdr client is attached.
+    - `no-herdr`: no herdr to run: not installed, or a test launch that names none.
+    - `herdr-unread`: herdr did not answer, or its answer did not parse.
+    - `no-focus` and `several-focused`: herdr reported no focused pane, or more than one.
+    - `split-tab`: the focused pane shares its tab.
+    - `no-session`: the focused pane runs no agent, or herdr names no session for it.
+    - `other-agent`: the pane runs an agent that is neither Claude Code nor Codex.
+  - `hostMs`: how long the host's reads took.
+  - `hostLagMs`: how long after `t` herdr answered, or the Codex app's log was read. It is written
+    only when herdr answered or that log named a thread. A capture's `t` is when the watcher reported the
+    file. A note's `t` is when the note was sent. Its window was captured before that, so the real
+    lag is longer. The window may have changed in between. A person who captures one pane and
+    moves to another within a second can be recorded with the second pane's session.
+  - `authors`: up to 5 `{id, score}`, by Result 9's method over the whole picture. The candidates are
+    the Claude Code sessions listed, and those whose file-history changed in the last 12 hours.
+    Codex keeps no file-history, so its threads are never candidates. The search differs from
+    Result 9's `rg` in two small ways: a non-ASCII letter next to a phrase does not stop a match,
+    and phrases that overlap are all found. So a score can be a little higher than Result 9's.
+  - `authorLines`: the lines long enough to search. `authorMs`: how long the reading and the search
+    took. It is written only when a search ran.
+  - `authorCapped`: a limit left files unread. Files over 1 MB are skipped. The search reads at most
+    50 MB, shared fairly among the sessions.
+  - `authorsWhyNot`, in place of `authors`: `recording`, `unreadable-image`, `no-claude-folder`, or
+    `busy` when two other lines were already waiting for a search.
 - **`send`, at each send from the editor:** `file` (the digest), `request`, `to`, `client`, and `offered`, where
   the bar's filled button sent before the person changed it, with `reply` when that was a Reply.
 - **`note`, at each live ink note sent:** `to` (a session id, or `responder` for the built-in
-  Claude), `offered` (the target the note started on), and the window's facts as for a capture.
+  Claude), `offered` (the target the note started on), and the window's facts, host and authors as
+  for a capture. Its text is read from the window the note captured, without the ink.
 - **Not recorded, since the log itself gives them:** the session sent to last and how long ago, from
-  the `send` and `note` lines before.
+  the `send` and `note` lines before it, ordered by `t` and then `seq`.
 - **Checked in the macOS 26 VM:** a window capture of Safari gave the page's folder; an odd-sized
   image gave a selection; a Reply card's send recorded `offered` and `reply: true`; a note sent to
   a fake session recorded its window and both targets. A Safari window titled "Newsletter" counted
   one shared word for a session named "Tighten the newsletter signup form" and one for a session in
   a `newsletters` folder, and none for two sessions in a folder named `project`.
+- **The host and authors, checked in the same VM** with Terminal, a fake herdr and a scratch
+  `.claude`. Each case recorded its own code, or the right `host` with `live` true or false:
+  no client, one client, a split tab, a pane with no agent, two windows, a display capture and a
+  browser window. The session whose file-history held the picture's five lines ranked first on
+  all 13 lines with authors, at 4.5. A live session sharing one line scored 0.5. An unrelated
+  session was not listed. `authorMs` was 0.7 to 0.9 s in a Debug build, and `hostMs` 0 to 1 ms.
+  Of six captures in one second, three were written as `busy`. No recognised word reached the log
+  or Vignette.log.
+- **The process table is the whole Mac's, not the user's.** Terminal and Ghostty start each shell
+  under `/usr/bin/login`, which runs as root. When the log read only the user's processes, the walk
+  from herdr's client up to the terminal stopped at `login`. Every terminal capture then read
+  `no-herdr-client`.
 - **One fix came first,** on main (886322e): the `[send] target` line logged herdr's focus even for a
   Reply card, whose bar offers the card's own session. It now logs where the filled button sends,
   marked `reply` for the card's own session.
+
+**The first day (to 2026-10-09 23:47 UTC): 20 captures, 4 sends and 3 notes.** Too few to score a
+rule, but they show where the captures are:
+
+- **13 of 20 captures were of a terminal or an agent's app.** 6 were of a browser and 1 of nothing.
+  So step 3, a window that shows an agent, is the common case, not the exception.
+- **1 of 20 yielded a folder.** No capture found a dev server or an app being built. 5 browser
+  captures were `unread`, the cost of not asking Chromium for its tree.
+- **The target offered was kept 3 times of 7.** The session sent to last was never the one sent to:
+  each send went to a different session from the one before.
+- **The log cannot yet score step 3.** It records herdr's focus for each session, but not which
+  session a captured terminal window shows, or which sessions' edited files hold the text under it.
 
 **Decided by Pete (2026-10-08):**
 
