@@ -95,12 +95,19 @@ the window once and compares it with the part round each note's ink.
 
 - **The card:** it is made when any of those notes changed and the session has not replied to it.
   Seven notes on one window and one turn make one card, not seven.
-- **Each note card:** when a card is made, no note card says more. The card is the answer to the
-  turn. A Done on each unchanged note would bring a lone thumbnail for every note card that is off
-  screen, which is the flood this rule removes. When no card is made, every note card says Done in
-  *project*, as a single note does. So does a note whose window changed size since it was sent: its
-  part of the window cannot be compared, so the card is not its answer.
-- **A card that cannot be written:** every note it was to answer says Done in *project*.
+- **Done, once:** one note card in a group comes up saying Done: the newest, the last one sent.
+  The others say Done in place. A card that is off screen stays off screen. A Done on each would
+  bring a lone thumbnail for every off-screen note card, which is the flood the grouping removes.
+- **When a card is made:** the card is the answer to the turn, so the notes it answers say nothing
+  more. A note whose window changed size since it was sent is not part of the card, because its part
+  of the window cannot be compared. That note says Done in place.
+- **When no card is made:** nothing changed, so the newest note card says Done in *project* and the
+  rest say it in place. A single note says Done in *project*, as before.
+- **A card that cannot be written:** the notes it was to answer say Done. The newest says it in
+  *project* and the rest say it in place.
+- **When a quiet Done is seen:** the notice is the same as the loud one. It holds for the same time,
+  and a card that is on screen shows it. On a card that is off screen it expires unseen. The note
+  card opened from the stack later shows only its ink and words.
 - **A reply:** a note the session replied to with `--marks` or `--image` has its own result and is
   not part of the card.
 - **A late `--answer`:** for any other note in the group it goes on the one result card. Several
@@ -108,7 +115,8 @@ the window once and compares it with the part round each note's ink.
 - **Separate cards:** notes on different windows, or sent to different sessions, keep separate
   cards. So does a note whose turn ends in a later reading than the others'.
 - **The log:** `[live-ink] result card <name> agent=<agent> marks=<n> notes=<k>` says how many notes
-  the card answers.
+  the card answers. `[live-ink] done with no result card request=<id>` is a Done that comes up, and
+  the same line ending in `quiet` is a Done in place.
 
 Several `--answer`s sent during the turn still each make a card from a fresh capture.
 

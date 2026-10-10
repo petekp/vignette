@@ -196,10 +196,11 @@ final class LiveNoteCards {
             Log.write("[live-ink] stopped waiting on the session request=\(id)")
         case .replyIsTheResult:
             Log.write("[live-ink] the session's reply is the result request=\(id)")
-        case .sayDone:
+        case .sayDone, .sayDoneQuietly:
             guard FileManager.default.fileExists(atPath: note.shot.url.path) else { return }
-            Log.write("[live-ink] done with no result card request=\(id)")
-            cards.finished(note.shot, request: id, in: note.destination)
+            let quietly = effect == .sayDoneQuietly
+            Log.write("[live-ink] done with no result card request=\(id)" + (quietly ? " quiet" : ""))
+            cards.finished(note.shot, request: id, in: note.destination, quietly: quietly)
         case .drawReplyOnFreshCapture:
             guard case .answer(let record, let answer, _, let done) = input else { return }
             drawFresh(answer, for: record, on: note, done: done)

@@ -34,7 +34,8 @@ struct NoteCardGroups: Equatable {
 
     enum Action: Equatable {
         case watchTurn
-        /// One note's effect. `NoteCardGroups` answers a note's `.watchTurn` and `.lookAgain` as `.watchTurn` and `.look`.
+        /// One note's effect. `NoteCardGroups` answers a note's `.watchTurn` and `.lookAgain` as `.watchTurn` and `.look`,
+        /// and its `.sayDone` as `.sayDoneQuietly` unless it is the newest of the notes ended together without a result card.
         case note(String, NoteCardWait.Effect)
         /// Capture the window once and compare each request's region, in send order.
         case look([String])
@@ -110,15 +111,27 @@ struct NoteCardGroups: Equatable {
             }
             // The card is asked for before any Done notice.
             if let maker { actions.append(.makeResultCard(for: [maker] + members.filter { $0 != maker })) }
-            actions += done
+            // A card that comes up says it for every note it answers, so those say Done in place.
+            actions += Self.sayingDoneOnce(done, quietlyAll: maker != nil)
 
         case .cardFailed(let requests):
             let sequenced = requests.compactMap { id in entries[id].map { (id, $0.sequence) } }
             for (id, _) in sequenced.sorted(by: { $0.1 < $1.1 }) { actions += step(id, .cardFailed, at: now) }
+            actions = Self.sayingDoneOnce(actions, quietlyAll: false)
         }
         // A Codex note's wait ends with no input of its own, so every input lets the finished ones go.
         entries = entries.filter { !$0.value.wait.isFinished(at: now) }
         return actions
+    }
+
+    /// Only the newest note, the last in `actions`, says Done aloud: a loud Done brings a card that is
+    /// off screen back as a lone thumbnail, and one per note is the flood the grouping removes.
+    private static func sayingDoneOnce(_ actions: [Action], quietlyAll: Bool) -> [Action] {
+        let newest = actions.lastIndex { if case .note(_, .sayDone) = $0 { return true } else { return false } }
+        return actions.enumerated().map { index, action in
+            guard case .note(let id, .sayDone) = action, quietlyAll || index != newest else { return action }
+            return .note(id, .sayDoneQuietly)
+        }
     }
 
     private mutating func step(_ request: String, _ event: NoteCardWait.Event, at now: Date) -> [Action] {
