@@ -429,12 +429,9 @@ final class LiveNotePanel: NSPanel, NSTextFieldDelegate {
         case #selector(NSResponder.insertNewline(_:)):
             send()
             return true
-        case #selector(NSResponder.cancelOperation(_:)):
-            dismiss()
-            onClose?()
-            return true
-        // ⌘⌫, which in a text field deletes the line: here it deletes the whole note, ink and all.
-        case #selector(NSResponder.deleteToBeginningOfLine(_:)):
+        // Esc, and ⌘⌫, which in a text field deletes the line: here both delete the whole note, ink and
+        // all. A click elsewhere is the way to close it and keep the ink.
+        case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.deleteToBeginningOfLine(_:)):
             dismiss()
             onDiscard?()
             return true
