@@ -985,6 +985,27 @@ final class LiveInkTests: XCTestCase {
         }
     }
 
+    /// Catches the notes of one window being judged by one another's part of it: a change under one
+    /// note's ink making every note on the window read as changed, or a note whose window has
+    /// changed size being compared against a picture of another shape.
+    @MainActor func testEachNoteOfAWindowIsComparedOnItsOwnPart() throws {
+        let frame = CGRect(x: 100, y: 50, width: 400, height: 300)
+        func before(region: CGRect, ink: CGRect, windowSize: CGSize = CGSize(width: 400, height: 300)) throws -> LiveNoteCards.Before {
+            LiveNoteCards.Before(picture: try Self.region(blocks: [], size: region.size), region: region, ink: ink, windowSize: windowSize, windowID: 7)
+        }
+        // A block has appeared under the first note's ink, and nowhere near the second's.
+        let now = try Self.region(blocks: [CGRect(x: 50, y: 40, width: 40, height: 20)], size: frame.size)
+        let first = try before(region: CGRect(x: 20, y: 20, width: 200, height: 80), ink: CGRect(x: 40, y: 30, width: 60, height: 30))
+        let second = try before(region: CGRect(x: 220, y: 150, width: 150, height: 100), ink: CGRect(x: 240, y: 170, width: 50, height: 40))
+        let resized = try before(region: CGRect(x: 20, y: 20, width: 200, height: 80), ink: CGRect(x: 40, y: 30, width: 60, height: 30),
+                                 windowSize: CGSize(width: 300, height: 300))
+        let outside = try before(region: CGRect(x: 500, y: 400, width: 50, height: 50), ink: CGRect(x: 510, y: 410, width: 20, height: 20))
+        let result = LiveNoteCards.compare([("a", first), ("b", second), ("c", resized), ("d", outside)],
+                                           after: (now, frame), again: (now, frame))
+        XCTAssertEqual(result.changed, ["a"])
+        XCTAssertEqual(result.uncompared, ["c", "d"])
+    }
+
     /// A white picture of `size` points at 1 px per pt with `blocks` in `colour`, from its top-left corner.
     private static func region(blocks: [CGRect], size: CGSize = CGSize(width: 200, height: 80),
                                colour: CGColor = CGColor(gray: 0, alpha: 1)) throws -> CGImage {

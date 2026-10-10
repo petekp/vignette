@@ -2,11 +2,11 @@ import AppKit
 
 /// Live ink notes sent to a session this launch, by request id: writing the note card, storing the
 /// request, waiting on the session's turn and making the result card
-/// (docs/live-ink-note-cards-2026-10-08.md). `NoteCardWait` decides how each wait ends; this runs it.
+/// (docs/live-ink-note-cards-2026-10-08.md). `NoteCardGroups` decides how the waits end; this runs it.
 @MainActor
 final class LiveNoteCards {
-    /// How the window looked round a note's ink as it went, which `look(again:)` compares with the
-    /// window when the session's turn ends.
+    /// How the window looked round a note's ink as it went, which `look(again:)` compares, with the
+    /// others on its window, when the session's turn ends.
     struct Before {
         /// The part of the window compared, `region`, in points from the window's top-left corner;
         /// `ink`, the part under the ink, which decides; and the window's size then.
@@ -25,7 +25,6 @@ final class LiveNoteCards {
         let window: CGWindowID?
         let ink: CGRect
         var before: Before?
-        var wait: NoteCardWait
         /// The result card made when the turn ended, which an answer that comes later is drawn on.
         var resultCard: Capture?
     }
@@ -40,8 +39,8 @@ final class LiveNoteCards {
     }
 
     private enum Input {
-        case event(String, NoteCardWait.Event, at: Date)
-        case looked(String, after: Capture?, replied: Bool, at: Date)
+        case event(NoteCardGroups.Input, at: Date)
+        case looked([String], seen: (changed: Set<String>, uncompared: Set<String>, capture: Capture)?, at: Date)
         case answer(ScreenshotRequests.Record, LiveAnswer, at: Date, done: ([Int]?) -> Void)
     }
 
@@ -52,6 +51,7 @@ final class LiveNoteCards {
     private let connections: [AgentClient: any AgentConnection]
     private let addMarks: ([AgentMark], String?, URL, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void
     private var notes: [String: Note] = [:]
+    private var waits = NoteCardGroups()
     private var timer: Timer?
     /// An effect can answer inside the input that asked for it, as a reply's card does.
     private let hold = EventHold<Input>()
@@ -68,7 +68,7 @@ final class LiveNoteCards {
     }
 
     /// The notes whose session's turn is being read: `[state] liveInk.watching`.
-    var watching: Int { notes.values.filter { $0.wait.isWatching }.count }
+    var watching: Int { notes.keys.filter { waits[$0]?.isWatching == true }.count }
 
     /// A live ink note sent to a session (`LiveInk.share`): the window without the ink lands in the
     /// watch folder with the ink and the words as its drawing, the request names that file, and its
@@ -95,10 +95,7 @@ final class LiveNoteCards {
                 return done(.failure((error as? ScreenshotRequests.Refusal) ?? refused))
             }
             let shot = Screenshot(url: url)
-            let wait = NoteCardWait(reportsTurns: connections[destination.address.client]?.reportsTurns ?? false,
-                                    hasWindow: note.window != nil, canLookAgain: note.before != nil)
-            notes[record.id] = Note(shot: shot, destination: destination, window: note.window, ink: note.ink,
-                                    before: note.before, wait: wait)
+            notes[record.id] = Note(shot: shot, destination: destination, window: note.window, ink: note.ink, before: note.before)
             // The card flies from the window, carrying the ink, ahead of the watcher's report, which
             // then finds the card there.
             let origin = NSRect(x: note.frame.minX, y: StateReport.primaryHeight - note.frame.maxY,
@@ -108,7 +105,11 @@ final class LiveNoteCards {
             folder.ready(url)
             cards.showSending(shot, request: record.id, to: destination)
             done(.success((record.id, carried)))
-            hold.send(.event(record.id, .sent, at: Date())) { self.handle($0) }
+            let window = NoteCardGroups.SessionWindow(session: destination.id, window: note.window)
+            let reportsTurns = connections[destination.address.client]?.reportsTurns ?? false
+            hold.send(.event(.sent(record.id, window, reportsTurns: reportsTurns, canLookAgain: note.before != nil), at: Date())) {
+                self.handle($0)
+            }
         }
     }
 
@@ -116,8 +117,10 @@ final class LiveNoteCards {
     /// not a note card's or its client has answered already.
     func delivered(_ request: String, failed: Bool) -> Screenshot? {
         guard let note = notes[request] else { return nil }
-        hold.send(.event(request, .delivered(failed: failed), at: Date())) { handle($0) }
-        return note.wait.delivered ? nil : note.shot
+        // A wait not registered yet has a `.sent` ahead of this answer in `hold`, so it is not answered.
+        let alreadyAnswered = waits[request]?.delivered ?? false
+        hold.send(.event(.delivered(request, failed: failed), at: Date())) { handle($0) }
+        return alreadyAnswered ? nil : note.shot
     }
 
     /// `ScreenshotRequests.Callbacks.presentLive`: a session's answer to a note, as its result card.
@@ -130,65 +133,69 @@ final class LiveNoteCards {
     // MARK: Running the waits
 
     private func handle(_ input: Input) {
-        let id: String, event: NoteCardWait.Event, now: Date
+        let event: NoteCardGroups.Input, now: Date
         switch input {
-        case .event(let request, let happened, let at): (id, event, now) = (request, happened, at)
-        case .looked(let request, let after, let replied, let at):
-            (id, event, now) = (request, .lookedAgain(changed: after != nil, replied: replied), at)
+        case .event(let happened, let at): (event, now) = (happened, at)
+        case .looked(let ids, let seen, let at):
+            let replied = Set(ids.filter { requests.hasReply(to: $0) })
+            (event, now) = (.looked(ids, changed: seen?.changed ?? [], replied: replied, uncompared: seen?.uncompared ?? []), at)
         case .answer(let record, _, let at, let done):
-            guard notes[record.id] != nil else { return done(nil) }
-            (id, event, now) = (record.id, .answer, at)
+            guard waits[record.id] != nil, notes[record.id] != nil else { return done(nil) }
+            (event, now) = (.answer(record.id), at)
         }
-        guard var note = notes[id] else { return }
-        let effects = note.wait.handle(event, at: now)
-        switch note.wait.phase {
-        case .watching, .lookingAgain: break
-        default: note.before = nil
+        let registered = Set(notes.keys.filter { waits[$0] != nil })
+        for action in waits.handle(event, at: now) { run(action, input) }
+        // Only a note whose wait just ended goes: one sent but not yet registered has its `.sent` held.
+        notes = notes.filter { !registered.contains($0.key) || waits[$0.key] != nil }
+        for id in notes.keys {
+            guard let wait = waits[id], !wait.isWatching, !wait.isLookingAgain else { continue }
+            notes[id]?.before = nil
         }
-        notes[id] = note
-        // A Codex note's wait ends with no input of its own, so every input lets the finished ones go.
-        notes = notes.filter { !$0.value.wait.isFinished(at: now) }
-        for effect in effects { run(effect, id, note, input) }
     }
 
-    private func run(_ effect: NoteCardWait.Effect, _ id: String, _ note: Note, _ input: Input) {
-        switch effect {
+    private func run(_ action: NoteCardGroups.Action, _ input: Input) {
+        switch action {
         case .watchTurn:
             guard timer == nil else { return }
             timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.tick() }
             }
+        case .note(let id, let effect):
+            runNote(effect, id, input)
+        case .look(let ids):
+            // Always answers `looked`, even with no picture, or these notes stay in the look for good.
+            let members = ids.compactMap { id in notes[id]?.before.map { (request: id, before: $0) } }
+            Task { @MainActor [weak self] in
+                let seen = members.isEmpty ? nil : await Self.look(again: members)
+                guard let self else { return }
+                hold.send(.looked(ids, seen: seen, at: Date())) { self.handle($0) }
+            }
+        case .makeResultCard(let ids):
+            guard case .looked(_, let seen?, _) = input, let lead = notes[ids[0]] else { return }
+            addResult(seen.capture.image, pointScale: seen.capture.pointScale, marks: [], answering: ids.count, from: lead.destination) { [weak self] url in
+                guard let self else { return }
+                guard let url else {
+                    Log.write("[live-ink] result card not made notes=\(ids.count)")
+                    return hold.send(.event(.cardFailed(ids), at: Date())) { self.handle($0) }
+                }
+                var card = seen.capture
+                card.file = url
+                for id in ids { notes[id]?.resultCard = card }
+            }
+        }
+    }
+
+    private func runNote(_ effect: NoteCardWait.Effect, _ id: String, _ input: Input) {
+        guard let note = notes[id] else { return }
+        switch effect {
+        case .watchTurn, .lookAgain:
+            break
         case .turnEnded:
             Log.write("[live-ink] session's turn ended request=\(id)")
         case .stopWaiting:
             Log.write("[live-ink] stopped waiting on the session request=\(id)")
         case .replyIsTheResult:
             Log.write("[live-ink] the session's reply is the result request=\(id)")
-        case .lookAgain:
-            guard let before = note.before else { return }
-            Task { @MainActor [weak self] in
-                let seen = await Self.look(again: before)
-                var after: Capture?
-                switch seen {
-                case .some((.changed(let share, _), let window)):
-                    Log.write("[live-ink] landed changed=\(String(format: "%.3f", share))")
-                    after = window
-                case .some((.unchanged(let share), _)):
-                    Log.write("[live-ink] nothing changed under the ink changed=\(String(format: "%.3f", share))")
-                case .none:
-                    break
-                }
-                guard let self else { return }
-                hold.send(.looked(id, after: after, replied: requests.hasReply(to: id), at: Date())) { self.handle($0) }
-            }
-        case .makeResultCard:
-            guard case .looked(_, let after?, _, _) = input else { return }
-            addResult(after.image, pointScale: after.pointScale, marks: [], from: note.destination) { [weak self] url in
-                guard let url else { return }
-                var card = after
-                card.file = url
-                self?.notes[id]?.resultCard = card
-            }
         case .sayDone:
             guard FileManager.default.fileExists(atPath: note.shot.url.path) else { return }
             Log.write("[live-ink] done with no result card request=\(id)")
@@ -209,13 +216,22 @@ final class LiveNoteCards {
     /// screen waits on it, so clearing the ink or a new note leaves it running.
     private func tick() {
         let now = Date()
-        for id in Array(notes.keys) {
-            guard let note = notes[id], note.wait.isWatching else { continue }
-            let turn = connections[note.destination.address.client]?.turn(of: note.destination)
-            hold.send(.event(id, .turn(turn, replied: requests.hasReply(to: id)), at: now)) { handle($0) }
+        var turns: [String: SessionTurn?] = [:]
+        var readings: [NoteCardGroups.Reading] = []
+        for (id, note) in notes where waits[id]?.isWatching == true {
+            let session = note.destination.id
+            let turn: SessionTurn?
+            if let read = turns[session] {
+                turn = read
+            } else {
+                turn = connections[note.destination.address.client]?.turn(of: note.destination)
+                turns[session] = .some(turn)
+            }
+            readings.append(NoteCardGroups.Reading(request: id, turn: turn, replied: requests.hasReply(to: id)))
         }
-        notes = notes.filter { !$0.value.wait.isFinished(at: now) }
-        if !notes.values.contains(where: { $0.wait.isWatching }) {
+        // `.turn` readings come only from here, so notes ended by one reading of a session's turn arrive in one input.
+        if !readings.isEmpty { hold.send(.event(.turns(readings), at: now)) { handle($0) } }
+        if !waits.isWatchingAny {
             timer?.invalidate()
             timer = nil
         }
@@ -237,30 +253,53 @@ final class LiveNoteCards {
                       ink: under.offsetBy(dx: origin.dx, dy: origin.dy), windowSize: packet.frame.size, windowID: window)
     }
 
-    /// The window round the ink now, twice `LiveChange.settle` apart, against `before`, with the
-    /// window as it is now. Nil when the window is gone or changed size.
-    private static func look(again before: Before) async -> (LiveChange.Outcome, Capture)? {
+    /// The window now, twice `LiveChange.settle` apart, against what each note's `before` kept of
+    /// it: the notes of one window, each compared on its own part (`compare`). `capture` is the window
+    /// as it is now. Nil when the window is gone.
+    private static func look(again members: [(request: String, before: Before)]) async -> (changed: Set<String>, uncompared: Set<String>, capture: Capture)? {
+        guard let window = members.first?.before.windowID else { return nil }
         do {
-            let after = try await LivePacket.capture(window: before.windowID)
+            let after = try await LivePacket.capture(window: window)
             try await Task.sleep(nanoseconds: UInt64(LiveChange.settle * 1_000_000_000))
-            let again = try await LivePacket.capture(window: before.windowID)
-            guard abs(after.frame.width - before.windowSize.width) < 1, abs(after.frame.height - before.windowSize.height) < 1 else {
-                Log.write("[live-ink] can't tell whether it landed: the window changed size")
-                return nil
-            }
-            let region = before.region.offsetBy(dx: after.frame.minX, dy: after.frame.minY)
-            let regionAgain = before.region.offsetBy(dx: again.frame.minX, dy: again.frame.minY)
-            let ink = before.ink.offsetBy(dx: -before.region.minX, dy: -before.region.minY)
-            return await Task.detached(priority: .userInitiated) { () -> (LiveChange.Outcome, Capture)? in
-                guard let now = LiveChange.crop(after.image, frame: after.frame, to: region) else { return nil }
-                let later = LiveChange.crop(again.image, frame: again.frame, to: regionAgain)
-                return (LiveChange.compare(before: before.picture, after: now, again: later, size: region.size, ink: ink),
-                        Capture(image: again.image, frame: again.frame, pointScale: CGFloat(again.image.width) / again.frame.width))
-            }.value
+            let again = try await LivePacket.capture(window: window)
+            let capture = Capture(image: again.image, frame: again.frame, pointScale: CGFloat(again.image.width) / again.frame.width)
+            let compared = await Task.detached(priority: .userInitiated) { compare(members, after: after, again: again) }.value
+            return (compared.changed, compared.uncompared, capture)
         } catch {
             Log.write("[live-ink] can't tell whether it landed: \(error)")
             return nil
         }
+    }
+
+    /// Which of the notes of one window changed under their ink, from the window as `after` and
+    /// `again`, a moment later, captured it; `again` rules out what moves on its own. A note whose
+    /// window has changed size since is `uncompared`, as is one whose part the capture lacks.
+    nonisolated static func compare(_ members: [(request: String, before: Before)], after: (image: CGImage, frame: CGRect),
+                                    again: (image: CGImage, frame: CGRect)) -> (changed: Set<String>, uncompared: Set<String>) {
+        var changed = Set<String>(), uncompared = Set<String>()
+        for (request, before) in members {
+            guard abs(after.frame.width - before.windowSize.width) < 1, abs(after.frame.height - before.windowSize.height) < 1 else {
+                Log.write("[live-ink] can't tell whether it landed: the window changed size")
+                uncompared.insert(request)
+                continue
+            }
+            let region = before.region.offsetBy(dx: after.frame.minX, dy: after.frame.minY)
+            let regionAgain = before.region.offsetBy(dx: again.frame.minX, dy: again.frame.minY)
+            let ink = before.ink.offsetBy(dx: -before.region.minX, dy: -before.region.minY)
+            guard let now = LiveChange.crop(after.image, frame: after.frame, to: region) else {
+                uncompared.insert(request)
+                continue
+            }
+            let later = LiveChange.crop(again.image, frame: again.frame, to: regionAgain)
+            switch LiveChange.compare(before: before.picture, after: now, again: later, size: region.size, ink: ink) {
+            case .changed(let share, _):
+                Log.write("[live-ink] landed changed=\(String(format: "%.3f", share))")
+                changed.insert(request)
+            case .unchanged(let share):
+                Log.write("[live-ink] nothing changed under the ink changed=\(String(format: "%.3f", share))")
+            }
+        }
+        return (changed, uncompared)
     }
 
     // MARK: Result cards
@@ -290,7 +329,7 @@ final class LiveNoteCards {
                 let drawn = card.marks(for: answer, about: note.ink, style: ui.textStyle, agent: note.destination.client.rawValue)
                 Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(drawn.notDrawn.count)")
                 guard let self else { return done(nil) }
-                addResult(packet.capture, pointScale: packet.scale, marks: drawn.marks, from: destination) { url in
+                addResult(packet.capture, pointScale: packet.scale, marks: drawn.marks, answering: 1, from: destination) { url in
                     done(url == nil ? nil : drawn.notDrawn)
                 }
             } catch {
@@ -330,8 +369,9 @@ final class LiveNoteCards {
     /// A live ink note's result, as a card from the session it went to: `window`, the note's window
     /// as it was when the result came, with `marks` from the session's answer. It carries the agent
     /// and the session as a push with `add` does, so it wears the agent's tab and Reply on it goes
-    /// back to that session. Answers the card's file, or nil when it was not made.
-    private func addResult(_ window: CGImage, pointScale: CGFloat, marks: [AgentMark], from destination: AgentDestination,
+    /// back to that session. `answering`, how many notes the card answers. Answers the card's file, or nil
+    /// when it was not made.
+    private func addResult(_ window: CGImage, pointScale: CGFloat, marks: [AgentMark], answering: Int, from destination: AgentDestination,
                            done: @escaping (URL?) -> Void) {
         folder.writeCard(named: "Live ink result", png: { LivePacket.screenshotPNG(window, pointScale: pointScale) },
                          from: destination) { [weak self] url in
@@ -340,7 +380,7 @@ final class LiveNoteCards {
             let agent = destination.client.rawValue
             let show = { [weak self] in
                 guard let self else { return }
-                Log.write("[live-ink] result card \(name) agent=\(agent) marks=\(marks.count)")
+                Log.write("[live-ink] result card \(name) agent=\(agent) marks=\(marks.count) notes=\(answering)")
                 folder.ready(url)
                 done(url)
             }
