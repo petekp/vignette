@@ -146,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             startWatching()
         }
         registerHotKey()
-        liveInk.setOn(settings.data.liveInk)
+        liveInk.setOn(settings.data.usesLiveInk)
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
         // Setup comes first and has the launch to itself: two windows competing for a first-time
         // user is worse than the plugin offer waiting until the next launch.
@@ -236,7 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
-        if new.liveInk != old.liveInk { liveInk.setOn(new.liveInk) }
+        if new.usesLiveInk != old.usesLiveInk { liveInk.setOn(new.usesLiveInk) }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
         if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
     }
@@ -656,20 +656,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case "requests": requests.run(clear: request.clear)
         case "restore-apple-defaults": restoreAppleDefaults()
         case "live-ink-clear":
-            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\": true in settings.json"); return }
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" and \"debug\" to true in settings.json"); return }
             Commands.ok(cmd, "cleared \(liveInk.clear())")
         case "live-ink-stroke":
-            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\": true in settings.json"); return }
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" and \"debug\" to true in settings.json"); return }
             guard let points = request.points.flatMap(Commands.points) else {
                 Commands.error(cmd, .invalidPoints, "give &points=x,y;x,y in global top-left points"); return
             }
             Commands.ok(cmd, "\(liveInk.take(points).description) marks=\(liveInk.marks.count)")
         case "live-ink-chord-down", "live-ink-chord-up":
-            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\": true in settings.json"); return }
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" and \"debug\" to true in settings.json"); return }
             liveInk.chordChanged(cmd == "live-ink-chord-down" ? .began : .ended)
             Commands.ok(cmd, "inking=\(liveInk.isInking)")
         case "live-ink-ask":
-            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\": true in settings.json"); return }
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" and \"debug\" to true in settings.json"); return }
             let words = request.message ?? ""
             guard let id = request.session else {
                 switch liveInk.ask(words) {
@@ -900,7 +900,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         var missing: [Blocker] = []
         if watcher?.isDenied == true { missing.append(.folderAccess) }
         if settings.appleTarget != "file" { missing.append(.saveTarget(AppleScreencapture.targetName(settings.appleTarget))) }
-        let shortcut = settings.data.usesDoubleTap, liveInk = settings.data.liveInk
+        let shortcut = settings.data.usesDoubleTap, liveInk = settings.data.usesLiveInk
         if shortcut || liveInk, !ModifierTap.trusted(prompt: false) { missing.append(.accessibility(shortcut: shortcut, liveInk: liveInk)) }
         if liveInk, !ScreenRecording.granted { missing.append(.screenRecording) }
         return missing
@@ -966,13 +966,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if let shortcut { drawItem.badge = NSMenuItemBadge(string: shortcut.holdLabel) }
         menu.addItem(drawItem)
 
-        menu.addItem(.separator())
-        let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
-        liveInkItem.state = settings.data.liveInk ? .on : .off
-        liveInkItem.badge = NSMenuItemBadge(string: "Hold ⌃⌥")
-        menu.addItem(liveInkItem)
-        if settings.data.liveInk {
-            menu.addItem(NSMenuItem(title: "Clear Live Ink", action: #selector(clearLiveInk), keyEquivalent: ""))
+        if settings.data.debug {
+            menu.addItem(.separator())
+            let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
+            liveInkItem.state = settings.data.liveInk ? .on : .off
+            liveInkItem.badge = NSMenuItemBadge(string: "Hold ⌃⌥")
+            menu.addItem(liveInkItem)
+            if settings.data.liveInk {
+                menu.addItem(NSMenuItem(title: "Clear Live Ink", action: #selector(clearLiveInk), keyEquivalent: ""))
+            }
         }
 
         // The same two switches, under the same heading, as the Settings window's Screenshots tab.
