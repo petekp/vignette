@@ -394,7 +394,7 @@ final class ScreenshotRequests {
     /// Hands one prepared request to its client and records what came back.
     private func submit(_ record: Record, line: String) {
         let id = record.id
-        let noClient = handOver(record, line: line) { outcome in
+        let noClient = handOver(record, line: line, detail: "Vignette handed the line over and has no answer yet") { outcome in
             DispatchQueue.main.async { MainActor.assumeIsolated { self.finishSubmission(id, outcome) } }
         }
         if let noClient { finishSubmission(id, noClient) }
@@ -402,11 +402,20 @@ final class ScreenshotRequests {
 
     /// Asks the record's client to take `line`, off the main thread, and answers `completion` there.
     /// Answers the outcome at once, and never calls `completion`, when the record has no client to ask.
-    private func handOver(_ record: Record, line: String, completion: @escaping @Sendable (SubmissionOutcome) -> Void) -> SubmissionOutcome? {
+    private func handOver(_ record: Record, line: String, detail: String,
+                          completion: @escaping @Sendable (SubmissionOutcome) -> Void) -> SubmissionOutcome? {
         guard let connection = connections[record.address.client] else {
             return .notSubmitted(code: .noAgent, detail: "no connection for \(record.address.client.rawValue)",
                                  reason: SubmissionOutcome.internalReason)
         }
+        // Stored as uncertain before the line leaves: `load` clears a request still prepared as one whose
+        // line never went, and this one's client may have it, with a call that can run 25 s.
+        var going = record
+        going.status = .uncertain
+        going.detail = detail
+        requests[record.id] = going
+        do { try write(going) }
+        catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not store \(record.id): \(error.localizedDescription)") }
         let destination = AgentDestination(id: record.destinationID, name: record.destinationName, address: record.address)
         DispatchQueue.global(qos: .userInitiated).async { completion(connection.submit(line, to: destination)) }
         return nil
@@ -475,17 +484,11 @@ final class ScreenshotRequests {
         let group = DispatchGroup()
         var handedOver: [String] = []
         for case .submit(let id, let line, _) in sendGrace.handle(.quit) {
-            guard var record = requests[id], record.status == .prepared else { continue }
-            // Stored before the line leaves, so a launch that finds this process gone does not take
-            // a line that may have arrived for one that never went.
-            record.status = .uncertain
-            record.detail = "Vignette quit while the line was going"
-            requests[id] = record
-            do { try write(record) }
-            catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not store \(id): \(error.localizedDescription)") }
+            guard let record = requests[id], record.status == .prepared else { continue }
             handedOver.append(id)
             group.enter()
-            if let noClient = handOver(record, line: line, completion: { outcomes.set(id, $0); group.leave() }) {
+            if let noClient = handOver(record, line: line, detail: "Vignette quit while the line was going",
+                                       completion: { outcomes.set(id, $0); group.leave() }) {
                 outcomes.set(id, noClient)
                 group.leave()
             } else {

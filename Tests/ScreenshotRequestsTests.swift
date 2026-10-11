@@ -621,6 +621,21 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: image.path))
     }
 
+    /// A line handed to a client that has not answered yet may arrive: a launch must not clear its request
+    /// as one whose line never went, or the image the line names is deleted under the agent.
+    func testALaunchLeavesALineTheClientHasNotAnsweredAlone() throws {
+        let slow = HeldSubmission()
+        requests = ScreenshotRequests(root: root, connections: [.claude: slow])
+        let (record, _) = try send("Shot.png", grace: 0)
+        XCTAssertEqual(slow.entered.wait(timeout: .now() + 3), .success)
+        let reopened = ScreenshotRequests(root: root)
+        reopened.load()
+        slow.resume.signal()
+        XCTAssertEqual(try stored(record).status, .uncertain)
+        let image = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("image.png")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: image.path), "the image the line names stays")
+    }
+
     /// A client that answers after quit's wait must not hold the quit up, and its late answer must not crash.
     func testQuitDoesNotWaitLongerThanItsLimitForASlowClient() throws {
         let slow = HeldSubmission()
