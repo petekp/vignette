@@ -276,16 +276,17 @@ struct UITweaks: Codable, Equatable {
     var arrowheadWidth = 4.0
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
+    // The pointer field, which says the screen is taking ink while the chord is held: the ring round
+    // the pointer and the wake behind the pen. The keys named Field set the whole field, or the ring.
+    var liveInkFieldDelay = 0.25     // how long the chord is held before it shows, unless a press shows it sooner
+    var liveInkFieldFade = 0.5       // how long it fades in and out, and the ring grows in
+    var liveInkFieldOpacity = 1.0    // the ring and the wake
     // The wake: rings that spread behind the pen while drawing and bend the screen under them. 0 is off.
     var liveInkWakeStrength = 0.95   // 0 to 1: how far the rings move the screen
     var liveInkWakeSize = 36.0       // points a ring spreads before it is gone
     var liveInkWakeDuration = 0.85   // how long a ring lasts
-    // The pointer field: a ring round the pointer while the chord is held, which says the screen is
-    // taking ink. It bends the screen under it and glows in the ink colour, with a still middle so
-    // what the pointer is on stays put.
-    var liveInkFieldDelay = 0.25     // how long the chord is held before it shows, unless a press shows it sooner
-    var liveInkFieldFade = 0.5       // how long it fades in and out, and the ring grows in
-    var liveInkFieldOpacity = 1.0    // the whole field and the wake
+    // The ring: it bends the screen under it and glows in the ink colour, with a still middle so what
+    // the pointer is on stays put.
     var liveInkFieldSize = 30.0      // the ring's radius in points; 0 turns it off
     var liveInkFieldBend = 0.8       // 0 to 2: how far the ring moves what is under it
     var liveInkFieldSplit = 0.4      // 0 to 1: how far red and blue part where the ring moves the picture

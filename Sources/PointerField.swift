@@ -1,105 +1,10 @@
 import AppKit
-import CoreMedia
 import CoreVideo
 import Metal
 import QuartzCore
-import ScreenCaptureKit
 
-/// A live picture of one display without live ink's overlay, for the pointer field and the wake,
-/// which bend the screen's own pixels. ScreenCaptureKit sends a frame only when something on the display changed,
-/// so a still screen costs nothing after the first. Frames are kept, not announced: whoever draws
-/// takes the newest one at its own pace.
-final class ScreenFeed: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
-    enum Failure: Error { case noPermission, noDisplay }
-
-    private let queue = DispatchQueue(label: "vignette.screen-feed", qos: .userInteractive)
-    private let lock = NSLock()
-    private var stream: SCStream?
-    private var latest: CVPixelBuffer?
-    private var fresh = false
-    private var frames = 0
-    /// Runs on the main thread when the stream stops on its own.
-    var onStopped: ((Error) -> Void)?
-
-    /// Starts the stream of `display` at `pixels`, leaving out the windows `excluding` names.
-    func start(display: CGDirectDisplayID, pixels: CGSize, excluding: [CGWindowID]) async throws {
-        guard CGPreflightScreenCaptureAccess() else { throw Failure.noPermission }
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let screen = content.displays.first(where: { $0.displayID == display }) else { throw Failure.noDisplay }
-        let left = content.windows.filter { excluding.contains($0.windowID) }
-        let filter = SCContentFilter(display: screen, excludingWindows: left)
-        let configuration = SCStreamConfiguration()
-        configuration.width = Int(pixels.width)
-        configuration.height = Int(pixels.height)
-        configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.colorSpaceName = CGColorSpace.displayP3
-        configuration.showsCursor = false
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-        configuration.queueDepth = 4
-        let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
-        // A new stream starts with no picture, and only its own frames are kept, so a frame of an
-        // earlier stream, still on its way when that one stopped, is never drawn as the screen now.
-        lock.withLock { self.stream = stream; latest = nil; fresh = false; frames = 0 }
-        do {
-            try await stream.startCapture()
-        } catch {
-            detach(stream)
-            throw error
-        }
-    }
-
-    func stop() {
-        detach()?.stopCapture { _ in }
-    }
-
-    /// Forgets the stream and its last picture, about 24 MB on a 3024 by 1964 display, and answers
-    /// the stream it forgot. Given a stream, forgets only that one, so a stream this feed already
-    /// stopped or replaced changes nothing.
-    @discardableResult
-    private func detach(_ stream: SCStream? = nil) -> SCStream? {
-        lock.withLock {
-            guard let current = self.stream, stream.map({ $0 === current }) ?? true else { return nil }
-            self.stream = nil
-            latest = nil
-            fresh = false
-            return current
-        }
-    }
-
-    /// The newest frame, and whether it arrived since the last time this was asked.
-    func take() -> (frame: CVPixelBuffer, fresh: Bool)? {
-        lock.withLock {
-            guard let latest else { return nil }
-            defer { fresh = false }
-            return (latest, fresh)
-        }
-    }
-
-    var frameCount: Int { lock.withLock { frames } }
-
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, sampleBuffer.isValid,
-              let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-              let status = attachments.first?[.status] as? Int, SCFrameStatus(rawValue: status) == .complete,
-              let buffer = sampleBuffer.imageBuffer else { return }
-        lock.withLock {
-            guard stream === self.stream else { return }
-            latest = buffer
-            fresh = true
-            frames += 1
-        }
-    }
-
-    func stream(_ stream: SCStream, didStopWithError error: Error) {
-        // A stream this feed already stopped or replaced says nothing.
-        guard detach(stream) != nil else { return }
-        DispatchQueue.main.async { [weak self] in self?.onStopped?(error) }
-    }
-}
-
-/// The GPU time of each drawing, added from Metal's completion threads, so the log can say whether a
-/// look keeps up with the display.
+/// The GPU time of each drawing, added from Metal's completion threads, so the log can say whether
+/// the field keeps up with the display.
 final class GPUTimes: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
@@ -123,17 +28,18 @@ final class GPUTimes: @unchecked Sendable {
     }
 }
 
-/// Live ink's pointer field and wake, drawn by a Metal shader over a live picture of the screen
-/// (docs/live-ink-cursor-2026-10-10.md): a ring round the pointer while the chord is held, and rings
-/// that spread behind the pen while it draws. It fades in once the first frame is drawn, so it never
-/// shows the screen as it was before the chord went down. Without a picture of the screen, because
+/// Live ink's pointer field (docs/live-ink-cursor-2026-10-10.md): the ring round the pointer while
+/// the chord is held, and the wake, rings that spread behind the pen while it draws. A Metal shader
+/// draws both over a live picture of the screen, which they bend. Without that picture, because
 /// Screen Recording is refused or the stream stopped, the ring still glows and nothing bends.
 ///
-/// It draws only from its display link, at most once a refresh. Drawing from each frame's arrival
-/// queued a main-thread block per frame: the run loop never got back to commit the layer, so every
-/// `nextDrawable()` waited out its one-second timeout and the app stopped answering.
+/// It is hidden until its holder shows it, and fades in once its first frame is drawn, so it never
+/// shows the screen as it was before the chord went down. It reads the pointer and the button
+/// itself, once a refresh, from its display link, and draws only from there. Drawing from each
+/// frame's arrival queued a main-thread block per frame: the run loop never got back to commit the
+/// layer, so every `nextDrawable()` waited out its one-second timeout and the app stopped answering.
 @MainActor
-final class PointerFieldLayer: CAMetalLayer {
+final class PointerField: NSObject {
     private static let metal: (device: MTLDevice, queue: MTLCommandQueue, pipeline: MTLRenderPipelineState, blank: MTLTexture)? = {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
               let library = device.makeDefaultLibrary() else { return nil }
@@ -148,58 +54,62 @@ final class PointerFieldLayer: CAMetalLayer {
         return (device, queue, pipeline, blank)
     }()
 
-    /// Whether this Mac can draw it at all.
-    static var isAvailable: Bool { metal != nil }
-
+    /// What the overlay hosts, under the marks so the ink stays sharp.
+    let layer = CAMetalLayer()
     private let feed = ScreenFeed()
     /// How long the GPU took over each drawing since the field came up, logged with the feed's frames.
     private let gpuTimes = GPUTimes()
     private var textures: CVMetalTextureCache?
+    /// The texture made from the newest frame, kept while that frame is the newest.
+    private var texture: (frame: CVPixelBuffer, texture: CVMetalTexture)?
     private var link: CADisplayLink?
     private var ui = UITweaks()
-    private var color = SIMD4<Float>(1, 1, 1, 1)
-    private var wanted = false
-    private var shown = false
-    private var started: CFTimeInterval = 0
-    private var asked: CFTimeInterval = 0
+    private var ink = SIMD4<Float>(1, 1, 1, 1)
+    private var motion = PointerFieldMotion()
+
+    /// The screen it covers, in AppKit's global points, which the pointer is read against; its size
+    /// in pixels, which the picture is taken at; its display; and the window the picture leaves out.
+    private var screenFrame = CGRect.zero
+    private var pixels = CGSize.zero
+    private var display: CGDirectDisplayID?
+    private var excluding: CGWindowID = 0
+
+    /// Its holder wants it up.
+    private var held = false
+    /// The chord went down: the picture starts now, so it is there by the time the field shows.
+    private var prepared = false
+    /// Held or prepared at the last update, so a new chord tries the picture again.
+    private var readied = false
+    /// Ticking and drawing. It fades in at its first drawing.
+    private var isUp = false
+    /// Its opacity is on, or on its way there.
+    private var faded = false
+    /// Fading out; a fade-out that ends after the field came up again changes nothing.
+    private var fadeOut: Int?
+    private var fades = 0
+    private var hidden: [() -> Void] = []
     private var streaming = false
     /// The screen's picture could not be had since the chord went down, so nothing bends: Screen
     /// Recording is refused, or the stream stopped.
     private var pictureFailed = false
-    /// The settings or the colour changed since the last drawing.
+    /// The settings changed since the last drawing.
     private var dirty = false
-    /// The points the pen passed while drawing, oldest first, each the centre of one of the wake's
-    /// rings. Weight is less where points crowd, so slow drawing does not stack rings.
-    private var trail: [(point: CGPoint, born: CFTimeInterval, weight: Float)] = []
-    /// The most points the shader takes, which fits `setFragmentBytes`' 4 KB.
-    private static let trailLimit = 96
-    /// The screen's frame in AppKit's global points, which the pointer is read against.
-    private var screenFrame = CGRect.zero
-    /// The ring round the pointer: where its centre is and how fast it moves, in the layer's points,
-    /// its radius, and the last refresh that moved them. It is sprung once a refresh from where the
-    /// pointer is then, not from the last event.
-    private var fieldAt = CGPoint.zero
-    private var fieldVelocity = CGVector.zero
-    private var fieldRadius: CGFloat = 0
-    private var fieldRadiusVelocity: CGFloat = 0
-    private var fieldTick: CFTimeInterval = 0
-    private var pressing = false
-    /// From the arrow's tip, its hotspot, to about the middle of the arrow, so the ring sits round
-    /// the arrow rather than round its tip.
-    private static let fieldOffset = CGPoint(x: 4, y: 6)
+    /// When the field came up, and when its picture was asked for, for the first frame's log line.
+    private var started: CFTimeInterval = 0
+    private var asked: CFTimeInterval = 0
 
     init(scale: CGFloat) {
         super.init()
-        contentsScale = scale
-        anchorPoint = .zero
-        isOpaque = false
-        framebufferOnly = true
-        pixelFormat = .bgra8Unorm
-        colorspace = CGColorSpace(name: CGColorSpace.displayP3)
-        maximumDrawableCount = 3
-        opacity = 0
+        layer.contentsScale = scale
+        layer.anchorPoint = .zero
+        layer.isOpaque = false
+        layer.framebufferOnly = true
+        layer.pixelFormat = .bgra8Unorm
+        layer.colorspace = CGColorSpace(name: CGColorSpace.displayP3)
+        layer.maximumDrawableCount = 3
+        layer.opacity = 0
         if let metal = Self.metal {
-            device = metal.device
+            layer.device = metal.device
             CVMetalTextureCacheCreate(nil, nil, metal.device, nil, &textures)
         }
         feed.onStopped = { [weak self] error in
@@ -208,28 +118,111 @@ final class PointerFieldLayer: CAMetalLayer {
         }
     }
 
-    override init(layer: Any) { super.init(layer: layer) }
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    /// Readies the field on `screen` as the chord goes down. With `capture` it starts the screen's
-    /// picture now, so the first frame is there by the time the field shows. Each chord tries the
-    /// picture again: a refusal or a stream error may be over by now.
-    func prepare(display: CGDirectDisplayID, screen: NSScreen, excluding window: CGWindowID, capture: Bool) {
-        guard Self.metal != nil else { return }
+    /// Covers `screen`, whose picture leaves out the window `excluding`. Again when the screens change.
+    func place(on screen: NSScreen, display: CGDirectDisplayID, excluding window: CGWindowID) {
         screenFrame = screen.frame
-        pictureFailed = false
-        if link == nil {
-            link = screen.displayLink(target: self, selector: #selector(tick))
-            link?.add(to: .main, forMode: .common)
-            link?.isPaused = true
+        pixels = CGSize(width: screen.frame.width * screen.backingScaleFactor, height: screen.frame.height * screen.backingScaleFactor)
+        self.display = display
+        excluding = window
+        guard Self.metal != nil else { return }
+        link?.invalidate()
+        link = screen.displayLink(target: self, selector: #selector(tick))
+        link?.add(to: .main, forMode: .common)
+        link?.isPaused = !isUp
+    }
+
+    /// The settings it draws with. It starts or stops the screen's picture as they now need it.
+    func apply(_ ui: UITweaks) {
+        self.ui = ui
+        let color = ui.markStyle.color(.person).mixed(with: .white, 0.3)
+        if let c = color.converted(to: CGColorSpace(name: CGColorSpace.displayP3)!, intent: .defaultIntent, options: nil)?.components, c.count >= 3 {
+            ink = SIMD4(Float(c[0]), Float(c[1]), Float(c[2]), 1)
         }
-        guard capture, !streaming else { return }
+        dirty = true
+        update()
+    }
+
+    /// Readies it as the chord goes down, so its picture is there by the time it shows.
+    func prepare() {
+        prepared = true
+        update()
+    }
+
+    /// Holds it up, or lets it go: it fades out, and the picture stops once it has.
+    func show(_ on: Bool) {
+        held = on
+        if !on { prepared = false }
+        update()
+    }
+
+    /// Runs `run` once the field is hidden: at once when it is, else when its fade-out ends.
+    func whenHidden(_ run: @escaping () -> Void) {
+        if isUp || fadeOut != nil { hidden.append(run) } else { run() }
+    }
+
+    /// Stops for good, at once: the overlay is closing.
+    func tearDown() {
+        held = false
+        prepared = false
+        isUp = false
+        fadeOut = nil
+        link?.invalidate()
+        link = nil
+        update()
+        settled()
+    }
+
+    private func update() {
+        let readying = held || prepared
+        // Each chord tries the picture again: a refusal or a stream error may be over by now.
+        if readying, !readied { pictureFailed = false }
+        readied = readying
+        let wanted = held && Self.metal != nil && ui.drawsField
+        if wanted, !isUp { comeUp() } else if !wanted, isUp { goDown() }
+        let wantsPicture = (readying || fadeOut != nil) && Self.metal != nil && ui.capturesScreen && !pictureFailed
+        if wantsPicture, !streaming { startFeed() } else if !wantsPicture, streaming { stopFeed() }
+    }
+
+    /// Up from the pointer, with the ring growing in from nothing.
+    private func comeUp() {
+        isUp = true
+        fadeOut = nil
+        started = CACurrentMediaTime()
+        gpuTimes.reset()
+        motion.reset(at: pointer, now: started)
+        dirty = true
+        link?.isPaused = false
+    }
+
+    private func goDown() {
+        isUp = false
+        link?.isPaused = true
+        guard faded else { settled(); return }
+        fades += 1
+        let generation = fades
+        fadeOut = generation
+        fade(in: false) { [weak self] in
+            guard let self, self.fadeOut == generation else { return }
+            self.fadeOut = nil
+            self.update()
+            self.settled()
+        }
+    }
+
+    /// Hidden: whoever waited for that goes on.
+    private func settled() {
+        let waiting = hidden
+        hidden = []
+        waiting.forEach { $0() }
+    }
+
+    private func startFeed() {
+        guard let display else { return }
         streaming = true
         asked = CACurrentMediaTime()
-        let pixels = CGSize(width: screen.frame.width * screen.backingScaleFactor, height: screen.frame.height * screen.backingScaleFactor)
-        Task { @MainActor [weak self, feed] in
+        Task { @MainActor [weak self, feed, pixels, excluding] in
             do {
-                try await feed.start(display: display, pixels: pixels, excluding: [window])
+                try await feed.start(display: display, pixels: pixels, excluding: [excluding])
             } catch {
                 Log.write("[live-ink] field feed could not start: \(error)")
                 self?.lostPicture()
@@ -237,83 +230,44 @@ final class PointerFieldLayer: CAMetalLayer {
         }
     }
 
+    private func stopFeed() {
+        streaming = false
+        feed.stop()
+        texture = nil
+        if let textures { CVMetalTextureCacheFlush(textures, 0) }
+        Log.write("[live-ink] field feed stopped frames=\(feed.frameCount) \(gpuTimes.take())")
+    }
+
     /// Draws on without the screen's picture: the ring glows and nothing bends.
     private func lostPicture() {
         streaming = false
+        texture = nil
         pictureFailed = true
         dirty = true
     }
 
-    /// Stops the screen's picture. The field is gone by then.
-    func stopFeed() {
-        guard streaming else { return }
-        streaming = false
-        feed.stop()
-        link?.isPaused = true
-        Log.write("[live-ink] field feed stopped frames=\(feed.frameCount) \(gpuTimes.take())")
-    }
-
-    func show(_ on: Bool, ui: UITweaks, color: CGColor) {
-        self.ui = ui
-        if let components = color.converted(to: CGColorSpace(name: CGColorSpace.displayP3)!, intent: .defaultIntent, options: nil)?.components,
-           components.count >= 3 {
-            self.color = SIMD4(Float(components[0]), Float(components[1]), Float(components[2]), 1)
-        }
-        wanted = on
-        dirty = true
-        if !on { trail = [] }
-        if on {
-            if started == 0 {
-                started = CACurrentMediaTime()
-                gpuTimes.reset()
-                // The ring grows in from the pointer each time the field comes up.
-                fieldAt = pointer
-                fieldVelocity = .zero
-                (fieldRadius, fieldRadiusVelocity, fieldTick) = (0, 0, started)
-            }
-            link?.isPaused = false
-        } else {
-            started = 0
-            fade(in: false)
-            // The feed stops once the fade is over, unless the field was asked for again by then.
-            DispatchQueue.main.asyncAfter(deadline: .now() + ui.liveInkFieldFade + 0.05) { [weak self] in
-                guard let self, !self.wanted else { return }
-                self.stopFeed()
-            }
-        }
-    }
-
-    /// The button went down or up: the ring tightens and brightens while it is down.
-    func press(_ down: Bool) {
-        pressing = down
-    }
-
-    /// Starts one of the wake's rings where the pen is drawing, unless the last one is under 6 pt away.
-    func wake(_ point: CGPoint) {
-        guard wanted, ui.wakes else { return }
-        let spacing = trail.last.map { hypot(point.x - $0.point.x, point.y - $0.point.y) } ?? 12
-        guard spacing >= 6 else { return }
-        trail.append((point, CACurrentMediaTime(), Float(min(spacing / 12, 1))))
-        if trail.count > Self.trailLimit { trail.removeFirst(trail.count - Self.trailLimit) }
+    /// The pointer now, in the layer's points.
+    private var pointer: CGPoint {
+        let mouse = NSEvent.mouseLocation
+        return CGPoint(x: mouse.x - screenFrame.minX, y: screenFrame.maxY - mouse.y)
     }
 
     @objc private func tick() {
-        guard wanted else { link?.isPaused = true; return }
+        guard isUp else { link?.isPaused = true; return }
         let now = CACurrentMediaTime()
-        let rippling = !trail.isEmpty
-        trail.removeAll { now - $0.born >= ui.liveInkWakeDuration }
-        // One more drawing once the last ring is gone, so none of it stays.
-        if rippling, trail.isEmpty { dirty = true }
-        let fieldMoved = stepField(at: now)
-        let needsPicture = (ui.wakes || ui.pointerFieldBends) && !pictureFailed
+        let pointer = self.pointer
+        // The button is global, so only the screen the pointer is on draws a wake.
+        let pressed = NSEvent.pressedMouseButtons & 1 != 0 && CGRect(origin: .zero, size: screenFrame.size).contains(pointer)
+        let moved = motion.step(to: now, pointer: pointer, pressed: pressed, ui: ui)
+        let needsPicture = ui.capturesScreen && !pictureFailed
         let picture = needsPicture ? feed.take() : nil
         // Bending waits for the first frame of the screen.
         if needsPicture, picture == nil { return }
-        // Draws only when the screen, the ring or the settings changed, or while rings spread.
-        guard dirty || fieldMoved || picture?.fresh == true || !trail.isEmpty else { return }
+        // Draws only when the screen, the motion or the settings changed.
+        guard dirty || moved || picture?.fresh == true else { return }
         dirty = false
         draw(picture?.frame, at: now)
-        if !shown {
+        if !faded {
             // `ms` is how long the field waited for the picture once it was wanted, `stream-ms` how long
             // since the picture was asked for, as the chord went down.
             if needsPicture { Log.write("[live-ink] field first frame ms=\(Int((now - started) * 1000)) stream-ms=\(Int((now - asked) * 1000))") }
@@ -321,84 +275,53 @@ final class PointerFieldLayer: CAMetalLayer {
         }
     }
 
-    /// The pointer now, in the layer's points, moved from the arrow's tip to its middle.
-    private var pointer: CGPoint {
-        let mouse = NSEvent.mouseLocation
-        return CGPoint(x: mouse.x - screenFrame.minX + Self.fieldOffset.x, y: screenFrame.maxY - mouse.y + Self.fieldOffset.y)
-    }
-
-    /// Moves the ring round the pointer on its springs to `now`: its centre after the pointer, over
-    /// `ui.liveInkFieldFollow`, and its radius to its size, smaller while pressing, over the field's
-    /// fade. Answers whether it moved.
-    private func stepField(at now: CFTimeInterval) -> Bool {
-        let dt = now - fieldTick
-        fieldTick = now
-        guard ui.pointerField else { return false }
-        let before = (fieldAt, fieldRadius)
-        let target = pointer
-        if ui.liveInkFieldFollow > 0 {
-            let omega = 6.6 / ui.liveInkFieldFollow
-            let x = Tween.spring(value: fieldAt.x, velocity: fieldVelocity.dx, target: target.x, omega: omega, dt: dt)
-            let y = Tween.spring(value: fieldAt.y, velocity: fieldVelocity.dy, target: target.y, omega: omega, dt: dt)
-            fieldAt = CGPoint(x: x.value, y: y.value)
-            fieldVelocity = CGVector(dx: x.velocity, dy: y.velocity)
-        } else {
-            fieldAt = target
-            fieldVelocity = .zero
-        }
-        let size = CGFloat(ui.liveInkFieldSize) * (pressing ? 0.8 : 1)
-        if ui.liveInkFieldFade > 0 {
-            let r = Tween.spring(value: fieldRadius, velocity: fieldRadiusVelocity, target: size, omega: 6.6 / ui.liveInkFieldFade, dt: dt)
-            (fieldRadius, fieldRadiusVelocity) = (r.value, r.velocity)
-        } else {
-            (fieldRadius, fieldRadiusVelocity) = (size, 0)
-        }
-        return hypot(fieldAt.x - before.0.x, fieldAt.y - before.0.y) > 0.01 || abs(fieldRadius - before.1) > 0.01
-    }
-
-    private func fade(in on: Bool) {
-        guard on != shown else { return }
-        shown = on
+    private func fade(in on: Bool, then done: (() -> Void)? = nil) {
+        faded = on
         let target: Float = on ? Float(ui.liveInkFieldOpacity) : 0
-        let from = presentation()?.opacity ?? opacity
+        let from = layer.presentation()?.opacity ?? layer.opacity
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        opacity = target
+        CATransaction.setCompletionBlock(done)
+        layer.opacity = target
+        if ui.liveInkFieldFade > 0 {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = from
+            fade.toValue = target
+            fade.duration = ui.liveInkFieldFade
+            layer.add(fade, forKey: "opacity")
+        } else {
+            layer.removeAnimation(forKey: "opacity")
+        }
         CATransaction.commit()
-        guard ui.liveInkFieldFade > 0 else { removeAnimation(forKey: "opacity"); return }
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = from
-        fade.toValue = target
-        fade.duration = ui.liveInkFieldFade
-        add(fade, forKey: "opacity")
     }
 
     private func draw(_ frame: CVPixelBuffer?, at now: CFTimeInterval) {
         guard let metal = Self.metal, let textures else { return }
-        let size = bounds.size
+        let size = layer.bounds.size
         guard size.width > 0, size.height > 0 else { return }
-        var picture: (texture: CVMetalTexture, frame: CVPixelBuffer)?
         var screen = metal.blank
         if let frame {
-            var texture: CVMetalTexture?
-            CVMetalTextureCacheCreateTextureFromImage(nil, textures, frame, nil, .bgra8Unorm,
-                                                      CVPixelBufferGetWidth(frame), CVPixelBufferGetHeight(frame), 0, &texture)
-            guard let texture, let read = CVMetalTextureGetTexture(texture) else { return }
-            picture = (texture, frame)
+            if texture?.frame !== frame {
+                var made: CVMetalTexture?
+                CVMetalTextureCacheCreateTextureFromImage(nil, textures, frame, nil, .bgra8Unorm,
+                                                          CVPixelBufferGetWidth(frame), CVPixelBufferGetHeight(frame), 0, &made)
+                texture = made.map { (frame, $0) }
+            }
+            guard let read = texture.flatMap({ CVMetalTextureGetTexture($0.texture) }) else { return }
             screen = read
         }
-        drawableSize = CGSize(width: size.width * contentsScale, height: size.height * contentsScale)
-        guard let drawable = nextDrawable(), let commands = metal.queue.makeCommandBuffer() else { return }
+        layer.drawableSize = CGSize(width: size.width * layer.contentsScale, height: size.height * layer.contentsScale)
+        guard let drawable = layer.nextDrawable(), let commands = metal.queue.makeCommandBuffer() else { return }
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = drawable.texture
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         pass.colorAttachments[0].storeAction = .store
         guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
-        var uniforms = uniforms(size: size, at: now, hasPicture: frame != nil)
+        var uniforms = uniforms(size: size, hasPicture: frame != nil)
         // Each point: where, its age in seconds, its weight. The shader reads none when the count is 0,
         // but Metal wants a buffer bound.
-        var points = trail.map { SIMD4<Float>(Float($0.point.x), Float($0.point.y), Float(now - $0.born), $0.weight) }
+        var points = motion.trail.map { SIMD4<Float>(Float($0.point.x), Float($0.point.y), Float(now - $0.born), $0.weight) }
         if points.isEmpty { points = [SIMD4(repeating: 0)] }
         encoder.setRenderPipelineState(metal.pipeline)
         encoder.setFragmentTexture(screen, index: 0)
@@ -407,79 +330,147 @@ final class PointerFieldLayer: CAMetalLayer {
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         // The capture's buffer must outlive the GPU's read of it.
-        commands.addCompletedHandler { [gpuTimes] buffer in
-            withExtendedLifetime(picture) {}
+        commands.addCompletedHandler { [gpuTimes, texture] buffer in
+            withExtendedLifetime(texture) {}
             gpuTimes.add(buffer.gpuEndTime - buffer.gpuStartTime)
         }
         commands.present(drawable)
         commands.commit()
     }
 
-    private func uniforms(size: CGSize, at now: CFTimeInterval, hasPicture: Bool) -> FieldUniforms {
+    private func uniforms(size: CGSize, hasPicture: Bool) -> FieldUniforms {
         var uniforms = FieldUniforms()
-        uniforms.color = color
+        uniforms.color = ink
         uniforms.size = SIMD2(Float(size.width), Float(size.height))
         // Without a picture of the screen there is nothing to bend, only light to draw.
-        if hasPicture, !trail.isEmpty {
-            uniforms.wakeCount = Float(trail.count)
+        let trail = motion.trail
+        if hasPicture, let first = trail.first {
+            uniforms.wakeCount = UInt32(trail.count)
             uniforms.wakeStrength = Float(ui.liveInkWakeStrength)
             uniforms.wakeSize = Float(ui.liveInkWakeSize)
             uniforms.wakeLife = Float(ui.liveInkWakeDuration)
+            var box = (min: first.point, max: first.point)
+            for point in trail.dropFirst().map(\.point) {
+                box = (CGPoint(x: min(box.min.x, point.x), y: min(box.min.y, point.y)), CGPoint(x: max(box.max.x, point.x), y: max(box.max.y, point.y)))
+            }
             // A ring reaches its size, and its packet of waves 24 pt past it.
             let reach = ui.liveInkWakeSize + 24
-            uniforms.wakeLeft = Float(trail.map(\.point.x).min()! - reach)
-            uniforms.wakeTop = Float(trail.map(\.point.y).min()! - reach)
-            uniforms.wakeRight = Float(trail.map(\.point.x).max()! + reach)
-            uniforms.wakeBottom = Float(trail.map(\.point.y).max()! + reach)
+            uniforms.wakeBox = SIMD4(Float(box.min.x - reach), Float(box.min.y - reach), Float(box.max.x + reach), Float(box.max.y + reach))
         }
-        if ui.pointerField {
-            uniforms.fieldX = Float(fieldAt.x)
-            uniforms.fieldY = Float(fieldAt.y)
-            uniforms.fieldRadius = Float(fieldRadius)
-            uniforms.fieldBend = hasPicture ? Float(ui.liveInkFieldBend) : 0
-            uniforms.fieldSplit = hasPicture ? Float(ui.liveInkFieldSplit) : 0
-            uniforms.fieldGlow = Float(ui.liveInkFieldGlow)
-            uniforms.fieldVX = Float(fieldVelocity.dx)
-            uniforms.fieldVY = Float(fieldVelocity.dy)
-            uniforms.fieldStretch = Float(ui.liveInkFieldStretch)
+        if ui.ringShows {
+            uniforms.ringCentre = SIMD2(Float(motion.centre.x), Float(motion.centre.y))
+            uniforms.ringVelocity = SIMD2(Float(motion.velocity.dx), Float(motion.velocity.dy))
+            uniforms.ringRadius = Float(motion.radius)
+            uniforms.ringBend = hasPicture ? Float(ui.liveInkFieldBend) : 0
+            uniforms.ringSplit = hasPicture ? Float(ui.liveInkFieldSplit) : 0
+            uniforms.ringGlow = Float(ui.liveInkFieldGlow)
+            uniforms.ringStretch = Float(ui.liveInkFieldStretch)
             // Brighter while the ring is smaller than its size: as it grows in, and while pressing.
-            let size = max(CGFloat(ui.liveInkFieldSize), 1)
-            uniforms.fieldPress = Float(min(max((size - fieldRadius) / (size * 0.2), 0), 1))
+            let ringSize = max(CGFloat(ui.liveInkFieldSize), 1)
+            uniforms.ringPress = Float(min(max((ringSize - motion.radius) / (ringSize * 0.2), 0), 1))
         }
         return uniforms
+    }
+}
+
+/// How the ring round the pointer and the wake's rings move, stepped once a refresh. Lengths are in
+/// the screen's points, y down from its top-left corner.
+struct PointerFieldMotion {
+    struct WakePoint: Equatable {
+        var point: CGPoint
+        var born: CFTimeInterval
+        /// Less where points crowd, so slow drawing does not stack rings.
+        var weight: Float
+    }
+
+    /// From the arrow's tip, its hotspot, to about the middle of the arrow, so the ring sits round
+    /// the arrow rather than round its tip.
+    static let ringOffset = CGVector(dx: 4, dy: 6)
+    /// The most wake points the shader takes, which fits `setFragmentBytes`' 4 KB.
+    static let trailLimit = 96
+
+    /// The ring's centre, how fast it moves in points a second, and its radius.
+    private(set) var centre = CGPoint.zero
+    private(set) var velocity = CGVector.zero
+    private(set) var radius: CGFloat = 0
+    private var radiusVelocity: CGFloat = 0
+    /// The points the pen passed while drawing, oldest first, each the centre of one of the wake's rings.
+    private(set) var trail: [WakePoint] = []
+    private var last: CFTimeInterval = 0
+
+    /// Starts over round `pointer` at `now`, with no ring, so the ring grows in.
+    mutating func reset(at pointer: CGPoint, now: CFTimeInterval) {
+        centre = Self.ring(at: pointer)
+        velocity = .zero
+        (radius, radiusVelocity) = (0, 0)
+        trail = []
+        last = now
+    }
+
+    /// Moves everything on to `now`, with the pointer at `pointer` and the button down there or not.
+    /// The ring follows the pointer over `liveInkFieldFollow` and springs to its size, smaller while
+    /// pressed, over `liveInkFieldFade`. The wake gains a point where the pen is, unless the last one
+    /// is under 6 pt away, and loses those whose ring has spread. Answers whether anything drawn
+    /// changed: also while rings spread, and once more when the last is gone, so none of it stays.
+    mutating func step(to now: CFTimeInterval, pointer: CGPoint, pressed: Bool, ui: UITweaks) -> Bool {
+        let dt = now - last
+        last = now
+        var moved = false
+        if ui.ringShows {
+            let before = (centre, radius)
+            let target = Self.ring(at: pointer)
+            let x = Tween.spring(value: centre.x, velocity: velocity.dx, target: target.x, settling: ui.liveInkFieldFollow, dt: dt)
+            let y = Tween.spring(value: centre.y, velocity: velocity.dy, target: target.y, settling: ui.liveInkFieldFollow, dt: dt)
+            centre = CGPoint(x: x.value, y: y.value)
+            velocity = CGVector(dx: x.velocity, dy: y.velocity)
+            let size = CGFloat(ui.liveInkFieldSize) * (pressed ? 0.8 : 1)
+            (radius, radiusVelocity) = Tween.spring(value: radius, velocity: radiusVelocity, target: size, settling: ui.liveInkFieldFade, dt: dt)
+            moved = hypot(centre.x - before.0.x, centre.y - before.0.y) > 0.01 || abs(radius - before.1) > 0.01
+        }
+        let rippling = !trail.isEmpty
+        trail.removeAll { now - $0.born >= ui.liveInkWakeDuration }
+        if pressed, ui.wakes { wake(at: pointer, now: now) }
+        return moved || rippling || !trail.isEmpty
+    }
+
+    private mutating func wake(at point: CGPoint, now: CFTimeInterval) {
+        let spacing = trail.last.map { hypot(point.x - $0.point.x, point.y - $0.point.y) } ?? 12
+        guard spacing >= 6 else { return }
+        trail.append(WakePoint(point: point, born: now, weight: Float(min(spacing / 12, 1))))
+        if trail.count > Self.trailLimit { trail.removeFirst(trail.count - Self.trailLimit) }
+    }
+
+    private static func ring(at pointer: CGPoint) -> CGPoint {
+        CGPoint(x: pointer.x + ringOffset.dx, y: pointer.y + ringOffset.dy)
     }
 }
 
 /// The shader's uniforms, in the order and alignment of `FieldUniforms` in PointerField.metal.
 struct FieldUniforms {
     var color = SIMD4<Float>(repeating: 0)
+    var wakeBox = SIMD4<Float>(repeating: 0)
     var size = SIMD2<Float>(repeating: 0)
-    var wakeCount: Float = 0
+    var ringCentre = SIMD2<Float>(repeating: 0)
+    var ringVelocity = SIMD2<Float>(repeating: 0)
+    var wakeCount: UInt32 = 0
     var wakeStrength: Float = 0
     var wakeSize: Float = 0
     var wakeLife: Float = 0
-    var wakeLeft: Float = 0
-    var wakeTop: Float = 0
-    var wakeRight: Float = 0
-    var wakeBottom: Float = 0
-    var fieldX: Float = 0
-    var fieldY: Float = 0
-    var fieldRadius: Float = 0
-    var fieldBend: Float = 0
-    var fieldSplit: Float = 0
-    var fieldGlow: Float = 0
-    var fieldVX: Float = 0
-    var fieldVY: Float = 0
-    var fieldStretch: Float = 0
-    var fieldPress: Float = 0
+    var ringRadius: Float = 0
+    var ringBend: Float = 0
+    var ringSplit: Float = 0
+    var ringGlow: Float = 0
+    var ringStretch: Float = 0
+    var ringPress: Float = 0
 }
 
 extension UITweaks {
-    /// Whether the wake follows the pen while drawing. Reduce Motion turns it off, since its
-    /// duration is motion.
-    var wakes: Bool { liveInkWakeStrength > 0 && liveInkWakeDuration > 0 && liveInkWakeSize > 0 }
-    /// Whether the ring round the pointer shows while the chord is held.
-    var pointerField: Bool { liveInkFieldSize > 0 && (liveInkFieldBend > 0 || liveInkFieldSplit > 0 || liveInkFieldGlow > 0) }
-    /// Whether that ring bends the screen, which needs a live picture of it.
-    var pointerFieldBends: Bool { liveInkFieldSize > 0 && (liveInkFieldBend > 0 || liveInkFieldSplit > 0) }
+    /// The wake follows the pen while drawing. Reduce Motion turns it off, since its duration is motion.
+    fileprivate var wakes: Bool { liveInkWakeStrength > 0 && liveInkWakeDuration > 0 && liveInkWakeSize > 0 }
+    /// The ring shows round the pointer while the chord is held.
+    fileprivate var ringShows: Bool { liveInkFieldSize > 0 && (liveInkFieldBend > 0 || liveInkFieldSplit > 0 || liveInkFieldGlow > 0) }
+    /// The ring bends the screen, which needs a live picture of it.
+    fileprivate var ringBends: Bool { liveInkFieldSize > 0 && (liveInkFieldBend > 0 || liveInkFieldSplit > 0) }
+    fileprivate var drawsField: Bool { wakes || ringShows }
+    fileprivate var capturesScreen: Bool { wakes || ringBends }
 }

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// A debug window for trying and tuning live ink's pointer field and wake
+/// A debug window for trying and tuning live ink's pointer field, the ring and the wake
 /// (docs/live-ink-cursor-2026-10-10.md). The sliders are the `ui` settings live ink draws with, so a
 /// value chosen here is the one inking shows. Hold on Screen keeps the field up at the inking level
 /// while every press passes through. Opened from the tweak panel or `vignette://pointer-lab` (needs
@@ -82,9 +82,9 @@ private struct PointerLabView: View {
                 Tweak("Follow", \.liveInkFieldFollow, 0...0.5, step: 0.01, unit: "s")
                 Tweak("Stretch", \.liveInkFieldStretch, 0...1, step: 0.05)
             } header: {
-                Text("Pointer field")
+                Text("Ring")
             } footer: {
-                Text("A ring round the pointer while Control and Option are held. It bends the screen and glows in the ink colour, and what the pointer is on stays still. Size 0 turns it off, and Follow 0 holds it on the pointer.")
+                Text("A ring round the pointer while Control and Option are held. It bends the screen and glows in the ink colour, and what the pointer is on stays still. It tightens while the button is down. Size 0 turns it off, and Follow 0 holds it on the pointer.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
@@ -94,7 +94,7 @@ private struct PointerLabView: View {
             } header: {
                 Text("Showing")
             } footer: {
-                Text("The field waits for the delay, or for a press, so the chord on its way to a shortcut does not flash it. It fades in and out, and grows in, over the fade.")
+                Text("The field waits for the delay, or for a press, so the chord on its way to a shortcut does not flash it. It fades in and out, and the ring grows in, over the fade.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {

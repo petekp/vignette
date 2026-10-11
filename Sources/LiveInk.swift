@@ -17,8 +17,10 @@ final class LiveInk {
     private var inking: [Surface] = []
     private var chord: ModifierChord?
     private var observers: [(NotificationCenter, Any)] = []
+    /// Runs out the pointer field's delay after the chord goes down.
     private var fieldTimer: Timer?
-    private var fieldShown = false
+    /// The chord shows the pointer field on the surfaces taking ink: its delay passed, or a press came.
+    private var chordShowsField = false
     /// Runs while a stroke outlives the chord, until the button is up: inking ends then.
     private var releaseWatch: Timer?
     /// Runs after ⌘⇧ while there are marks, looking for macOS's window picker.
@@ -291,14 +293,7 @@ final class LiveInk {
     /// The marks and the pointer field drawn again in the current settings.
     func applyTweaks() {
         showMarks()
-        if fieldShown { showField(true) }
-        if !previewing.isEmpty {
-            let ui = Settings.shared.motionUI
-            previewing.forEach { surface in
-                surface.overlay.prepareField(ui: ui)
-                surface.overlay.showField(true, ui: ui, color: ui.markStyle.color(.person))
-            }
-        }
+        holdField()
     }
 
     /// How far past a stroke's edge a tap still erases it. Wider than the editor's hit margin: nothing
@@ -1527,7 +1522,7 @@ final class LiveInk {
         // Control-Option-arrow, does not flash it. A press shows it at once.
         fieldTimer?.invalidate()
         fieldTimer = Timer.scheduledTimer(withTimeInterval: Settings.shared.data.ui.liveInkFieldDelay, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.showField(true) }
+            MainActor.assumeIsolated { self?.showFieldForChord() }
         }
         Log.write("[live-ink] inking")
     }
@@ -1537,16 +1532,17 @@ final class LiveInk {
         isInking = false
         releaseWatch?.invalidate()
         releaseWatch = nil
-        showField(false)
+        fieldTimer?.invalidate()
+        chordShowsField = false
+        holdField()
         inking.forEach { $0.overlay.setInking(false) }
-        previewing.forEach { $0.overlay.raise(true) }
         inking = []
-        closeEmpty(fade: Settings.shared.motionUI.liveInkFieldFade)
+        closeEmpty(fade: 0)
         Log.write("[live-ink] stopped")
     }
 
     private func strokeMoved(_ points: [CGPoint]) {
-        if !points.isEmpty, !fieldShown { showField(true) }
+        if !points.isEmpty { showFieldForChord() }
         if !points.isEmpty, strokeBegan == nil { strokeBegan = Date() }
         // A press that moves is drawing, not tapping.
         if let first = points.first, let last = points.last, hypot(last.x - first.x, last.y - first.y) > 4 { hover(at: nil) }
@@ -1589,65 +1585,41 @@ final class LiveInk {
         }
     }
 
-    // MARK: The pointer lab's preview
+    // MARK: The pointer field
 
-    /// The surfaces holding the pointer field for the pointer lab, and the monitors that start the wake's
-    /// rings on a drag, since those surfaces pass every press and move through.
-    private var previewing: [Surface] = []
-    private var previewMonitors: [Any] = []
+    /// The surfaces the pointer lab holds the pointer field on, at the inking level, passing every
+    /// press through.
+    private var labSurfaces: [Surface] = []
 
-    /// Holds the pointer field on every screen at the inking level, passing every press through, so
-    /// what the lab tunes is what inking shows.
+    /// Holds the pointer field on every screen for the pointer lab, or lets it go, so what the lab tunes
+    /// is what inking shows.
     func previewField(_ on: Bool) {
-        guard on != !previewing.isEmpty else { return }
-        let ui = Settings.shared.motionUI
-        let color = ui.markStyle.color(.person)
-        if on {
-            previewing = activeSurfaces()
-            previewing.forEach { surface in
-                surface.overlay.raise(true)
-                surface.overlay.prepareField(ui: ui)
-                surface.overlay.showField(true, ui: ui, color: color)
-            }
-            // Any drag stands in for drawing, so the wake can be tuned while the presses pass through.
-            let drag: (NSEvent) -> Void = { [weak self] _ in
-                let mouse = NSEvent.mouseLocation
-                let point = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
-                self?.previewing.forEach { $0.overlay.wake(point) }
-            }
-            let drags: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged]
-            previewMonitors = [NSEvent.addGlobalMonitorForEvents(matching: drags, handler: drag),
-                               NSEvent.addLocalMonitorForEvents(matching: drags) { drag($0); return $0 }]
-                .compactMap { $0 }
-            Log.write("[live-ink] field preview on")
-        } else {
-            previewMonitors.forEach(NSEvent.removeMonitor)
-            previewMonitors = []
-            let shown = previewing
-            previewing = []
-            shown.forEach { surface in
-                guard !inking.contains(where: { $0 === surface }) else { return }
-                surface.overlay.showField(false, ui: ui, color: color)
-                surface.overlay.raise(false)
-            }
-            closeEmpty(fade: ui.liveInkFieldFade)
-            Log.write("[live-ink] field preview off")
-        }
+        guard on != !labSurfaces.isEmpty else { return }
+        labSurfaces = on ? activeSurfaces() : []
+        holdField()
+        if !on { closeEmpty(fade: 0) }
+        Log.write("[live-ink] field preview \(on ? "on" : "off")")
     }
 
-    private func showField(_ on: Bool) {
+    /// The pointer field's delay passed, or a press came first: the field shows, and listening starts.
+    private func showFieldForChord() {
         fieldTimer?.invalidate()
-        // The pointer lab's preview keeps the field when inking ends.
-        if !on, !previewing.isEmpty { return }
-        if !on && !fieldShown { return }
-        fieldShown = on
-        let ui = Settings.shared.motionUI
-        let color = ui.markStyle.color(.person)
-        inking.forEach { $0.overlay.showField(on, ui: ui, color: color) }
-        guard on else { return }
+        guard !chordShowsField else { return }
+        chordShowsField = true
+        holdField()
         // The field goes to the screen first, so making the recognizer on this thread never holds it back.
         CATransaction.flush()
         listen()
+    }
+
+    /// Holds the pointer field up, in the current settings, on the surfaces taking ink while the chord
+    /// shows it and on the pointer lab's, and lets it go on every other surface.
+    private func holdField() {
+        let ui = Settings.shared.motionUI
+        let held = (chordShowsField ? inking : []) + labSurfaces
+        for surface in surfaces {
+            surface.overlay.holdField(held.contains { $0 === surface }, ui: ui)
+        }
     }
 
     // MARK: Listening
@@ -1740,7 +1712,7 @@ final class LiveInk {
     /// full-screen window over every app.
     private func closeEmpty(fade: TimeInterval) {
         let empty = surfaces.filter { surface in
-            surface.marks.isEmpty && !inking.contains { $0 === surface } && !previewing.contains { $0 === surface }
+            surface.marks.isEmpty && !inking.contains { $0 === surface } && !labSurfaces.contains { $0 === surface }
         }
         empty.forEach { $0.overlay.close(after: fade) }
         surfaces.removeAll { surface in empty.contains { $0 === surface } }

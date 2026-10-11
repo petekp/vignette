@@ -185,6 +185,64 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(chord.flagsChanged([.control, .option]), .began)
     }
 
+    // MARK: The pointer field
+
+    func testTheRingGrowsInAndSettlesRoundThePointer() {
+        let ui = UITweaks()
+        var motion = PointerFieldMotion()
+        motion.reset(at: .zero, now: 0)
+        XCTAssertEqual(motion.radius, 0, "it grows in from nothing")
+        let pointer = CGPoint(x: 200, y: 100)
+        var now = 0.0
+        for _ in 0..<120 {
+            now += 1.0 / 60
+            _ = motion.step(to: now, pointer: pointer, pressed: false, ui: ui)
+        }
+        XCTAssertEqual(motion.centre.x, pointer.x + PointerFieldMotion.ringOffset.dx, accuracy: 0.01)
+        XCTAssertEqual(motion.centre.y, pointer.y + PointerFieldMotion.ringOffset.dy, accuracy: 0.01)
+        XCTAssertEqual(motion.radius, CGFloat(ui.liveInkFieldSize), accuracy: 0.01)
+        XCTAssertFalse(motion.step(to: now + 1.0 / 60, pointer: pointer, pressed: false, ui: ui), "settled, so nothing is drawn again")
+    }
+
+    func testAFollowAndAFadeOfZeroPutTheRingInPlaceAtOnce() {
+        var ui = UITweaks()
+        ui.liveInkFieldFollow = 0
+        ui.liveInkFieldFade = 0
+        var motion = PointerFieldMotion()
+        motion.reset(at: .zero, now: 0)
+        _ = motion.step(to: 1.0 / 60, pointer: CGPoint(x: 50, y: 40), pressed: true, ui: ui)
+        XCTAssertEqual(motion.centre, CGPoint(x: 50 + PointerFieldMotion.ringOffset.dx, y: 40 + PointerFieldMotion.ringOffset.dy))
+        XCTAssertEqual(motion.velocity, .zero)
+        XCTAssertEqual(motion.radius, CGFloat(ui.liveInkFieldSize) * 0.8, "smaller while pressed")
+    }
+
+    func testTheWakeSpacesItsPointsKeepsTheNewestAndLetsThemGo() {
+        var ui = UITweaks()
+        ui.liveInkFieldSize = 0
+        var motion = PointerFieldMotion()
+        motion.reset(at: .zero, now: 0)
+        _ = motion.step(to: 0.01, pointer: .zero, pressed: false, ui: ui)
+        XCTAssertTrue(motion.trail.isEmpty, "no wake without a press")
+        _ = motion.step(to: 0.02, pointer: .zero, pressed: true, ui: ui)
+        _ = motion.step(to: 0.03, pointer: CGPoint(x: 3, y: 0), pressed: true, ui: ui)
+        XCTAssertEqual(motion.trail.map(\.point), [.zero], "a point under 6 pt from the last adds no ring")
+        _ = motion.step(to: 0.04, pointer: CGPoint(x: 9, y: 0), pressed: true, ui: ui)
+        XCTAssertEqual(motion.trail.count, 2)
+
+        var now = 0.04
+        for i in 2..<200 {
+            now += 0.001
+            _ = motion.step(to: now, pointer: CGPoint(x: Double(i) * 10, y: 0), pressed: true, ui: ui)
+        }
+        XCTAssertEqual(motion.trail.count, PointerFieldMotion.trailLimit)
+        XCTAssertEqual(motion.trail.last?.point, CGPoint(x: 1990, y: 0), "the oldest go first")
+
+        now += ui.liveInkWakeDuration + 0.001
+        XCTAssertTrue(motion.step(to: now, pointer: .zero, pressed: false, ui: ui), "drawn once more as the last ring goes")
+        XCTAssertTrue(motion.trail.isEmpty)
+        XCTAssertFalse(motion.step(to: now + 0.01, pointer: .zero, pressed: false, ui: ui))
+    }
+
     // MARK: Strokes
 
     func testAPressThatBarelyMovesIsATap() {
