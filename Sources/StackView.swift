@@ -759,31 +759,75 @@ private struct SendOverlay: View {
         }
     }
 
-    /// On a white ring, which parts it from the disc it sits on.
+    /// On a white ring, which parts it from the disc it sits on. The spinner is always there under
+    /// what the delivery came to, and goes once that has covered it: removed instead, as the
+    /// delivery's badge came in, it was gone in one frame and the ring showed white until the next
+    /// one had grown over it.
     private var badge: some View {
         ZStack {
             Circle().fill(.white).frame(width: 18, height: 18)
-            Group {
-                switch state {
-                case .inGrace, .sending:
-                    ZStack {
-                        Circle().fill(Color(white: 0.18)).frame(width: 15, height: 15)
-                        ProgressView().controlSize(.mini).environment(\.colorScheme, .dark).scaleEffect(0.8)
-                    }
-                case .sent, .done:
-                    MetalCheck()
-                case .queued:
-                    // One layer, its hands cut out, so they show the white ring beneath.
-                    Image(systemName: "clock.fill").font(.system(size: 15, weight: .bold)).foregroundStyle(Color.orange)
-                case .uncertain, .failed, .replyFailed:
-                    Image(systemName: "exclamationmark.circle.fill").font(.system(size: 15, weight: .bold))
-                        .symbolRenderingMode(.palette).foregroundStyle(.white, state == .uncertain ? Color.orange : Color.red)
-                }
+            ZStack {
+                Circle().fill(Color(white: 0.18)).frame(width: 15, height: 15)
+                ProgressView().controlSize(.mini).environment(\.colorScheme, .dark).scaleEffect(0.8)
             }
-            .id(state)
-            // The next state pops in while the last one only fades, so the ring is never empty.
-            .transition(.asymmetric(insertion: .scale(scale: 0.3).combined(with: .opacity), removal: .opacity))
+            .modifier(LeavesWhenCovered(shown: state == .sending ? 1 : 0))
+            if let outcome = BadgeOutcome(state) {
+                Group {
+                    switch outcome {
+                    case .check:
+                        MetalCheck()
+                    case .clock:
+                        // One layer, its hands cut out, so they show the white ring beneath.
+                        Image(systemName: "clock.fill").font(.system(size: 15, weight: .bold)).foregroundStyle(Color.orange)
+                    case .warning(let colour):
+                        Image(systemName: "exclamationmark.circle.fill").font(.system(size: 15, weight: .bold))
+                            .symbolRenderingMode(.palette).foregroundStyle(.white, colour)
+                    }
+                }
+                .id(outcome)
+                // States only move on, so a later outcome draws over the one it replaces.
+                .zIndex(outcome.rank)
+                .transition(.asymmetric(insertion: .scale(scale: 0.3).combined(with: .opacity),
+                                        removal: .modifier(active: LeavesWhenCovered(shown: 0), identity: LeavesWhenCovered(shown: 1))))
+            }
         }
+    }
+}
+
+/// What a delivery's badge shows once it answered. Sent and Done are both the check, so the check
+/// stays put when a sent note's turn ends.
+private enum BadgeOutcome: Hashable {
+    case check, clock, warning(Color)
+
+    init?(_ state: SendNotice.State) {
+        switch state {
+        case .inGrace, .sending: return nil
+        case .sent, .done: self = .check
+        case .queued: self = .clock
+        case .uncertain: self = .warning(.orange)
+        case .failed, .replyFailed: self = .warning(.red)
+        }
+    }
+
+    var rank: Double {
+        switch self {
+        case .check, .clock: return 0
+        case .warning: return 1
+        }
+    }
+}
+
+/// A badge going stays opaque until its spring first reaches the end, which is when the badge
+/// coming in on the same spring has reached its full size and opacity over it.
+private struct LeavesWhenCovered: ViewModifier, Animatable {
+    var shown: Double
+    var animatableData: Double {
+        get { shown }
+        set { shown = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.opacity(shown > 0 ? 1 : 0)
     }
 }
 
