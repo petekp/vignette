@@ -107,7 +107,7 @@ annotator window's limits, the drawing editor's sizes, and a stitch's largest si
 the behaviour those numbers drive: how far a card bows and swells on its way to the annotator, how
 narrow the stack goes to make room for it and how far it stays from it, how deep the drag-select's
 edge band is and how fast it scrolls there, how near an edge of the image a zoom holds that
-edge, the glow live ink shows along the screen's edges while Control and Option are held, and how an
+edge, the ring live ink shows round the pointer while Control and Option are held, and how an
 answer to live ink is drawn: how long its marks take to draw on, and the size and widest wrap of its
 notes.
 

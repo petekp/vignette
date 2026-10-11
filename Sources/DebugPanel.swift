@@ -10,7 +10,7 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
         var stack: () -> Void
         var annotator: () -> Void
         var intro: () -> Void
-        var edge: () -> Void
+        var pointer: () -> Void
     }
 
     private var panel: NSPanel?
@@ -67,7 +67,7 @@ struct DebugPanelView: View {
                 Button("Stack", action: previews.stack)
                 Button("Annotator", action: previews.annotator)
                 Button("Intro", action: previews.intro)
-                Button("Edge", action: previews.edge)
+                Button("Pointer", action: previews.pointer)
             }
             .padding(10)
             // Which file the sliders write to: a test launch points at another file, and a

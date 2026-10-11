@@ -28,7 +28,7 @@ The names in brackets are `// MARK:` sections.
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
 | Marks following their window, holding still, hiding | `LiveWindows.swift`, `LiveAnchor.swift` (Accessibility), `LivePatch.swift` (pixels) |
-| The edge while inking: the glow, the looks that bend the screen, the Edge Lab | `LiveInkOverlay.swift` (`EdgeGlow`), `EdgeLens.swift`, `EdgeLens.metal`, `EdgeLab.swift`, `LiveInk.swift` (The edge lab's preview) |
+| The pointer field and the wake while inking, the Pointer Lab | `PointerField.swift`, `PointerField.metal`, `PointerLab.swift`, `LiveInk.swift` (The pointer lab's preview) |
 | Whether a session's turn changed what the ink was on | `LiveChange.swift`, `LiveNoteCards.swift` (`look(again:)`, which compares the notes on one window; `before`) |
 
 ## Checking a change
@@ -84,31 +84,29 @@ The names in brackets are `// MARK:` sections.
   modifier, and not begun again until its modifiers are let go, so a window manager's ⌃⌥-arrow
   never inks, and neither does letting go of ⌘ out of ⌘⌃⌥. A key another app takes as a shortcut
   reaches no event monitor (measured with a Carbon hotkey), so `ModifierChord` reads keys from the
-  HID state, every 50 ms while the chord is held. It has no hold threshold; the glow waits
-  `ui.liveInkGlowDelay` instead, or shows at the first press. An overlay never becomes key. Erasing
+  HID state, every 50 ms while the chord is held. It has no hold threshold; the pointer field
+  waits `ui.liveInkFieldDelay` instead, or shows at the first press. An overlay never becomes key. Erasing
   is a tap on a mark with the chord held, not a key: Vignette sees a key but cannot keep it from the
   frontmost app, where ⌃⌥⌫ deletes a word.
-- While inking, the edge glow (`EdgeGlow`) says the screen takes ink: a thin line on each edge in a
-  lighter shade of the person's colour, with a soft falloff inward that is a third as strong
-  `ui.liveInkGlowWidth` points in. It is brightest near the pointer and a third as bright far from
-  it. Each edge is a strip with its own radial mask that follows the pointer, so a move composites
-  four thin strips again rather than the whole screen. The strips' pictures are drawn once for each
-  screen size, width and colour.
-- `ui.liveInkEdgeStyle` picks the edge's look (`docs/live-ink-edge-lab-2026-10-08.md`). The default
-  is aurora ripple, and 0 is the glow above. Every look but the glow is `EdgeLensLayer`, a Metal
-  layer under the marks. Every look but the glow and aurora draws from a live picture of the
-  display (`ScreenFeed`). The picture starts when the chord goes down, leaves out the overlay by its
-  window id, and stops once the look has faded out. While it runs, macOS shows its recording
-  indicator. The layer fades in from its first frame, so it never shows the screen as it was. It
-  draws only from its display link: drawing on each frame's arrival starved the main thread until
-  the app hung. With no Metal, no Screen Recording or a stream error, the glow shows instead, and
-  the next chord tries again. The band follows the display's shape (`DisplayShape`): it goes round
-  the notch, and a display with a notch gets rounded top corners of `ui.liveInkEdgeCorner`, since
-  macOS reports the notch but not the corners. The wake (`ui.liveInkWake*`, on by default, off at
-  0 strength) bends the screen in rings behind the pen while drawing, with any look, from the same
-  picture. The Edge Lab (`vignette://edge-lab`, needs `debug`) tunes both. Its "Hold on screen"
-  keeps the look up at the inking level while presses pass through, and any drag then makes the
-  wake.
+- While inking, the pointer field says the screen takes ink (`PointerFieldLayer`, a Metal layer
+  under the marks; `docs/live-ink-cursor-2026-10-10.md`). It is a ring round the pointer that bends
+  the screen under it towards its crest, parts red from blue there, and glows in a lighter shade of
+  the person's colour. Inside the ring nothing moves, so what the pointer is on stays where it is.
+  It is centred a little below and right of the arrow's tip, round the arrow's middle, and macOS
+  draws the real arrow above it. It grows in as it shows, tightens and brightens while the button
+  is down, and stretches along the way it moves. Each refresh it is sprung towards where the
+  pointer is then (`NSEvent.mouseLocation`, read from the display link), not where the last event
+  put it. The wake (`ui.liveInkWake*`, off at 0 strength) bends the screen in rings behind the pen
+  while drawing.
+- The field and the wake draw from a live picture of the display (`ScreenFeed`). The picture starts
+  when the chord goes down, leaves out the overlay by its window id, and stops once the field has
+  faded out. While it runs, macOS shows its recording indicator. The layer fades in from its first
+  frame, so it never shows the screen as it was. It draws only from its display link: drawing on
+  each frame's arrival starved the main thread until the app hung. With no Screen Recording or a
+  stream error, the ring glows and nothing bends, and the next chord tries the picture again. The
+  Pointer Lab (`vignette://pointer-lab`, needs `debug`) tunes the field (`ui.liveInkField*`) and
+  the wake. Its "Hold on screen" keeps the field up at the inking level while presses pass
+  through, and any drag then makes the wake.
 - Marks are `Mark`s in global top-left points at a `pointScale` of 1. `InkStroke` reads a stroke: a loop is the ellipse round it, and any other stroke the editor's freehand arrow
   (`Mark.Arrow.freehand`, at the editor's tolerances). A stroke under `ui.shortestArrow` is a tap,
   which erases the topmost mark whose stroke it is within `LiveInk.eraseReach` of, measured as the
@@ -166,7 +164,7 @@ The names in brackets are `// MARK:` sections.
   the window's frame and text, which `LivePacket.Glance` gives in about 20 ms after the capture:
   Vision's fast level, for where the lines are, not what they say.
 - With `liveInkSpeech` on, live ink listens while the person draws
-  (`docs/live-ink-speech-input-2026-10-06.md`). Listening starts when the glow shows, so the chord on
+  (`docs/live-ink-speech-input-2026-10-06.md`). Listening starts when the pointer field shows, so the chord on
   its way to a shortcut never turns the microphone on, and a press of the chord while it listens goes
   on with the same listening, so "this" and "that" drawn in two strokes are one note. The note opens
   on release with what was said so far and fills as the person talks. A key typed in it ends

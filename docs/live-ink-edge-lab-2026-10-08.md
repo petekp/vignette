@@ -1,5 +1,9 @@
 # Live ink: the edge lab (2026-10-08)
 
+Status 2026-10-10: the edge looks, the edge glow and the Edge Lab are gone. Live ink shows the
+pointer field round the pointer instead, tuned in the Pointer Lab (docs/live-ink-cursor-2026-10-10.md,
+docs/live-ink.md). The wake stays. What follows records the edge lab as it was.
+
 While Control and Option are held, live ink draws a glow along the screen's edges. It says the
 screen is taking ink. Pete asked to try other looks for it, lens distortion and refractive glass
 among them, with a panel to tune them.

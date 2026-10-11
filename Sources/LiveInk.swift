@@ -17,8 +17,8 @@ final class LiveInk {
     private var inking: [Surface] = []
     private var chord: ModifierChord?
     private var observers: [(NotificationCenter, Any)] = []
-    private var glowTimer: Timer?
-    private var glowing = false
+    private var fieldTimer: Timer?
+    private var fieldShown = false
     /// Runs while a stroke outlives the chord, until the button is up: inking ends then.
     private var releaseWatch: Timer?
     /// Runs after ⌘⇧ while there are marks, looking for macOS's window picker.
@@ -288,15 +288,15 @@ final class LiveInk {
         pickerUp = false
     }
 
-    /// The marks and the glow drawn again in the current settings.
+    /// The marks and the pointer field drawn again in the current settings.
     func applyTweaks() {
         showMarks()
-        if glowing { showGlow(true) }
+        if fieldShown { showField(true) }
         if !previewing.isEmpty {
             let ui = Settings.shared.motionUI
             previewing.forEach { surface in
-                surface.overlay.prepareEdge(ui: ui)
-                surface.overlay.showGlow(true, ui: ui, color: ui.markStyle.color(.person))
+                surface.overlay.prepareField(ui: ui)
+                surface.overlay.showField(true, ui: ui, color: ui.markStyle.color(.person))
             }
         }
     }
@@ -1520,14 +1520,14 @@ final class LiveInk {
         inking = activeSurfaces()
         inking.forEach { $0.overlay.setInking(true) }
         let ui = Settings.shared.motionUI
-        inking.forEach { $0.overlay.prepareEdge(ui: ui) }
+        inking.forEach { $0.overlay.prepareField(ui: ui) }
         let mouse = NSEvent.mouseLocation
         hover(at: CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y))
-        // The glow waits, so holding the chord on the way to a key, as in a window manager's
+        // The field waits, so holding the chord on the way to a key, as in a window manager's
         // Control-Option-arrow, does not flash it. A press shows it at once.
-        glowTimer?.invalidate()
-        glowTimer = Timer.scheduledTimer(withTimeInterval: Settings.shared.data.ui.liveInkGlowDelay, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.showGlow(true) }
+        fieldTimer?.invalidate()
+        fieldTimer = Timer.scheduledTimer(withTimeInterval: Settings.shared.data.ui.liveInkFieldDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showField(true) }
         }
         Log.write("[live-ink] inking")
     }
@@ -1537,16 +1537,16 @@ final class LiveInk {
         isInking = false
         releaseWatch?.invalidate()
         releaseWatch = nil
-        showGlow(false)
+        showField(false)
         inking.forEach { $0.overlay.setInking(false) }
         previewing.forEach { $0.overlay.raise(true) }
         inking = []
-        closeEmpty(fade: Settings.shared.motionUI.liveInkGlowFade)
+        closeEmpty(fade: Settings.shared.motionUI.liveInkFieldFade)
         Log.write("[live-ink] stopped")
     }
 
     private func strokeMoved(_ points: [CGPoint]) {
-        if !points.isEmpty, !glowing { showGlow(true) }
+        if !points.isEmpty, !fieldShown { showField(true) }
         if !points.isEmpty, strokeBegan == nil { strokeBegan = Date() }
         // A press that moves is drawing, not tapping.
         if let first = points.first, let last = points.last, hypot(last.x - first.x, last.y - first.y) > 4 { hover(at: nil) }
@@ -1589,16 +1589,16 @@ final class LiveInk {
         }
     }
 
-    // MARK: The edge lab's preview
+    // MARK: The pointer lab's preview
 
-    /// The surfaces holding the pointer field for the edge lab, and the monitors that start the wake's
+    /// The surfaces holding the pointer field for the pointer lab, and the monitors that start the wake's
     /// rings on a drag, since those surfaces pass every press and move through.
     private var previewing: [Surface] = []
     private var previewMonitors: [Any] = []
 
     /// Holds the pointer field on every screen at the inking level, passing every press through, so
     /// what the lab tunes is what inking shows.
-    func previewEdge(_ on: Bool) {
+    func previewField(_ on: Bool) {
         guard on != !previewing.isEmpty else { return }
         let ui = Settings.shared.motionUI
         let color = ui.markStyle.color(.person)
@@ -1606,8 +1606,8 @@ final class LiveInk {
             previewing = activeSurfaces()
             previewing.forEach { surface in
                 surface.overlay.raise(true)
-                surface.overlay.prepareEdge(ui: ui)
-                surface.overlay.showGlow(true, ui: ui, color: color)
+                surface.overlay.prepareField(ui: ui)
+                surface.overlay.showField(true, ui: ui, color: color)
             }
             // Any drag stands in for drawing, so the wake can be tuned while the presses pass through.
             let drag: (NSEvent) -> Void = { [weak self] _ in
@@ -1619,7 +1619,7 @@ final class LiveInk {
             previewMonitors = [NSEvent.addGlobalMonitorForEvents(matching: drags, handler: drag),
                                NSEvent.addLocalMonitorForEvents(matching: drags) { drag($0); return $0 }]
                 .compactMap { $0 }
-            Log.write("[live-ink] edge preview on")
+            Log.write("[live-ink] field preview on")
         } else {
             previewMonitors.forEach(NSEvent.removeMonitor)
             previewMonitors = []
@@ -1627,33 +1627,33 @@ final class LiveInk {
             previewing = []
             shown.forEach { surface in
                 guard !inking.contains(where: { $0 === surface }) else { return }
-                surface.overlay.showGlow(false, ui: ui, color: color)
+                surface.overlay.showField(false, ui: ui, color: color)
                 surface.overlay.raise(false)
             }
-            closeEmpty(fade: ui.liveInkGlowFade)
-            Log.write("[live-ink] edge preview off")
+            closeEmpty(fade: ui.liveInkFieldFade)
+            Log.write("[live-ink] field preview off")
         }
     }
 
-    private func showGlow(_ on: Bool) {
-        glowTimer?.invalidate()
-        // The edge lab's preview keeps its look when inking ends.
+    private func showField(_ on: Bool) {
+        fieldTimer?.invalidate()
+        // The pointer lab's preview keeps the field when inking ends.
         if !on, !previewing.isEmpty { return }
-        if !on && !glowing { return }
-        glowing = on
+        if !on && !fieldShown { return }
+        fieldShown = on
         let ui = Settings.shared.motionUI
         let color = ui.markStyle.color(.person)
-        inking.forEach { $0.overlay.showGlow(on, ui: ui, color: color) }
+        inking.forEach { $0.overlay.showField(on, ui: ui, color: color) }
         guard on else { return }
-        // The glow goes to the screen first, so making the recognizer on this thread never holds it back.
+        // The field goes to the screen first, so making the recognizer on this thread never holds it back.
         CATransaction.flush()
         listen()
     }
 
     // MARK: Listening
 
-    /// Starts listening, with speech on, as the glow shows: the chord on its way to a shortcut shows no
-    /// glow, so it never turns the microphone on either.
+    /// Starts listening, with speech on, as the pointer field shows: the chord on its way to a shortcut
+    /// shows no field, so it never turns the microphone on either.
     private func listen() {
         guard listening == nil else { return }
         let settings = Settings.shared.data

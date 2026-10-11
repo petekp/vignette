@@ -76,7 +76,7 @@ final class LiveInkOverlay: NSPanel {
     /// A press is down here and its stroke is not finished.
     var isTracking: Bool { canvas.isTracking }
 
-    /// Closes the overlay once `fade` has passed, so a glow fading out finishes first. Ordering it
+    /// Closes the overlay once `fade` has passed, so the pointer field fading out finishes first. Ordering it
     /// out instead would lose its Space: ordered in again, it comes up on the active one.
     func close(after fade: TimeInterval) {
         guard fade > 0 else { close(); return }
@@ -107,11 +107,11 @@ final class LiveInkOverlay: NSPanel {
         canvas.showPen(points, markStyle: markStyle)
     }
 
-    func showGlow(_ on: Bool, ui: UITweaks, color: CGColor) {
-        canvas.showGlow(on, ui: ui, color: color)
+    func showField(_ on: Bool, ui: UITweaks, color: CGColor) {
+        canvas.showField(on, ui: ui, color: color)
     }
 
-    /// Raises it to the inking level, or puts it back, without taking presses: the edge lab's
+    /// Raises it to the inking level, or puts it back, without taking presses: the pointer lab's
     /// preview shows the field where inking shows it.
     func raise(_ up: Bool) {
         level = up ? .screenSaver : Self.restingLevel
@@ -123,17 +123,17 @@ final class LiveInkOverlay: NSPanel {
     /// Readies the pointer field and the wake ahead of showing them, with the live picture of the
     /// screen when either bends it, so its first frame is there by the time they show. When neither
     /// does, it stops the picture, so macOS stops showing that the screen is being recorded.
-    func prepareEdge(ui: UITweaks) {
+    func prepareField(ui: UITweaks) {
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         let capture = ui.wakes || ui.pointerFieldBends
-        if !capture { canvas.lens.stopFeed() }
+        if !capture { canvas.field.stopFeed() }
         guard ui.wakes || ui.pointerField,
               let screen = NSScreen.screens.first(where: { ($0.deviceDescription[key] as? NSNumber)?.uint32Value == display }) else { return }
-        canvas.lens.prepare(display: display, screen: screen, excluding: CGWindowID(windowNumber), capture: capture)
+        canvas.field.prepare(display: display, screen: screen, excluding: CGWindowID(windowNumber), capture: capture)
     }
 
     override func close() {
-        canvas.lens.stopFeed()
+        canvas.field.stopFeed()
         super.close()
     }
 
@@ -148,7 +148,7 @@ final class LiveInkOverlay: NSPanel {
         var onStrokeMoved: (([CGPoint]) -> Void)?
         var onHover: ((CGPoint) -> Void)?
         /// The pointer field and the wake, under the marks so the ink stays sharp.
-        let lens: EdgeLensLayer
+        let field: PointerFieldLayer
         /// The screen's top-left corner in global top-left points, the coordinates marks are in.
         private(set) var origin: CGPoint = .zero
         private let host = CALayer()
@@ -163,14 +163,14 @@ final class LiveInkOverlay: NSPanel {
 
         init(frame: CGRect, scale: CGFloat) {
             self.scale = scale
-            lens = EdgeLensLayer(scale: scale)
+            field = PointerFieldLayer(scale: scale)
             pen = InkMarkLayer(scale: scale)
             marksLayer = LiveMarksLayer(scale: scale)
             super.init(frame: frame)
             layer = host
             wantsLayer = true
             host.contentsScale = scale
-            host.addSublayer(lens)
+            host.addSublayer(field)
             for layer in [marksLayer, pen] {
                 layer.anchorPoint = .zero
                 host.addSublayer(layer)
@@ -186,7 +186,7 @@ final class LiveInkOverlay: NSPanel {
             for layer in [marksLayer, pen] {
                 layer.setAffineTransform(CGAffineTransform(translationX: -origin.x, y: -origin.y))
             }
-            lens.frame = bounds
+            field.frame = bounds
             CATransaction.commit()
         }
 
@@ -208,16 +208,16 @@ final class LiveInkOverlay: NSPanel {
             pen.showPen(stroke, markStyle: markStyle)
         }
 
-        func showGlow(_ on: Bool, ui: UITweaks, color: CGColor) {
-            lens.show(on && EdgeLensLayer.isAvailable && (ui.wakes || ui.pointerField), ui: ui, color: color.mixed(with: .white, 0.3))
+        func showField(_ on: Bool, ui: UITweaks, color: CGColor) {
+            field.show(on && PointerFieldLayer.isAvailable && (ui.wakes || ui.pointerField), ui: ui, color: color.mixed(with: .white, 0.3))
         }
 
         /// Starts a ring of the wake where the pen is drawing.
         private func wake(at event: NSEvent) {
-            lens.wake(convert(event.locationInWindow, from: nil))
+            field.wake(convert(event.locationInWindow, from: nil))
         }
 
-        func wake(_ global: CGPoint) { lens.wake(CGPoint(x: global.x - origin.x, y: global.y - origin.y)) }
+        func wake(_ global: CGPoint) { field.wake(CGPoint(x: global.x - origin.x, y: global.y - origin.y)) }
 
         override func mouseMoved(with event: NSEvent) {
             guard !isTracking else { return }
@@ -225,7 +225,7 @@ final class LiveInkOverlay: NSPanel {
         }
 
         override func mouseDown(with event: NSEvent) {
-            lens.press(true)
+            field.press(true)
             wake(at: event)
             stroke = [location(of: event)]
             onStrokeMoved?(stroke)
@@ -239,7 +239,7 @@ final class LiveInkOverlay: NSPanel {
         }
 
         override func mouseUp(with event: NSEvent) {
-            lens.press(false)
+            field.press(false)
             guard isTracking else { return }
             stroke.append(location(of: event))
             endStroke()
@@ -253,7 +253,7 @@ final class LiveInkOverlay: NSPanel {
         }
 
         func cancelStroke() {
-            lens.press(false)
+            field.press(false)
             guard isTracking else { return }
             stroke = []
             onStrokeMoved?([])

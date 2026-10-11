@@ -12,7 +12,7 @@ import ScreenCaptureKit
 final class ScreenFeed: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     enum Failure: Error { case noPermission, noDisplay }
 
-    private let queue = DispatchQueue(label: "vignette.edge-feed", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "vignette.screen-feed", qos: .userInteractive)
     private let lock = NSLock()
     private var stream: SCStream?
     private var latest: CVPixelBuffer?
@@ -133,13 +133,13 @@ final class GPUTimes: @unchecked Sendable {
 /// queued a main-thread block per frame: the run loop never got back to commit the layer, so every
 /// `nextDrawable()` waited out its one-second timeout and the app stopped answering.
 @MainActor
-final class EdgeLensLayer: CAMetalLayer {
+final class PointerFieldLayer: CAMetalLayer {
     private static let metal: (device: MTLDevice, queue: MTLCommandQueue, pipeline: MTLRenderPipelineState, blank: MTLTexture)? = {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
               let library = device.makeDefaultLibrary() else { return nil }
         let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.vertexFunction = library.makeFunction(name: "edgeVertex")
-        descriptor.fragmentFunction = library.makeFunction(name: "edgeFragment")
+        descriptor.vertexFunction = library.makeFunction(name: "fieldVertex")
+        descriptor.fragmentFunction = library.makeFunction(name: "fieldFragment")
         descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
         // Drawing with no picture of the screen still binds one; the shader reads none of it.
         let blankDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 1, height: 1, mipmapped: false)
@@ -203,7 +203,7 @@ final class EdgeLensLayer: CAMetalLayer {
             CVMetalTextureCacheCreate(nil, nil, metal.device, nil, &textures)
         }
         feed.onStopped = { [weak self] error in
-            Log.write("[live-ink] edge feed stopped: \(error)")
+            Log.write("[live-ink] field feed stopped: \(error)")
             self?.lostPicture()
         }
     }
@@ -231,7 +231,7 @@ final class EdgeLensLayer: CAMetalLayer {
             do {
                 try await feed.start(display: display, pixels: pixels, excluding: [window])
             } catch {
-                Log.write("[live-ink] edge feed could not start: \(error)")
+                Log.write("[live-ink] field feed could not start: \(error)")
                 self?.lostPicture()
             }
         }
@@ -250,7 +250,7 @@ final class EdgeLensLayer: CAMetalLayer {
         streaming = false
         feed.stop()
         link?.isPaused = true
-        Log.write("[live-ink] edge feed stopped frames=\(feed.frameCount) \(gpuTimes.take())")
+        Log.write("[live-ink] field feed stopped frames=\(feed.frameCount) \(gpuTimes.take())")
     }
 
     func show(_ on: Bool, ui: UITweaks, color: CGColor) {
@@ -276,7 +276,7 @@ final class EdgeLensLayer: CAMetalLayer {
             started = 0
             fade(in: false)
             // The feed stops once the fade is over, unless the field was asked for again by then.
-            DispatchQueue.main.asyncAfter(deadline: .now() + ui.liveInkGlowFade + 0.05) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + ui.liveInkFieldFade + 0.05) { [weak self] in
                 guard let self, !self.wanted else { return }
                 self.stopFeed()
             }
@@ -316,7 +316,7 @@ final class EdgeLensLayer: CAMetalLayer {
         if !shown {
             // `ms` is how long the field waited for the picture once it was wanted, `stream-ms` how long
             // since the picture was asked for, as the chord went down.
-            if needsPicture { Log.write("[live-ink] edge first frame ms=\(Int((now - started) * 1000)) stream-ms=\(Int((now - asked) * 1000))") }
+            if needsPicture { Log.write("[live-ink] field first frame ms=\(Int((now - started) * 1000)) stream-ms=\(Int((now - asked) * 1000))") }
             fade(in: true)
         }
     }
@@ -347,8 +347,8 @@ final class EdgeLensLayer: CAMetalLayer {
             fieldVelocity = .zero
         }
         let size = CGFloat(ui.liveInkFieldSize) * (pressing ? 0.8 : 1)
-        if ui.liveInkGlowFade > 0 {
-            let r = Tween.spring(value: fieldRadius, velocity: fieldRadiusVelocity, target: size, omega: 6.6 / ui.liveInkGlowFade, dt: dt)
+        if ui.liveInkFieldFade > 0 {
+            let r = Tween.spring(value: fieldRadius, velocity: fieldRadiusVelocity, target: size, omega: 6.6 / ui.liveInkFieldFade, dt: dt)
             (fieldRadius, fieldRadiusVelocity) = (r.value, r.velocity)
         } else {
             (fieldRadius, fieldRadiusVelocity) = (size, 0)
@@ -359,17 +359,17 @@ final class EdgeLensLayer: CAMetalLayer {
     private func fade(in on: Bool) {
         guard on != shown else { return }
         shown = on
-        let target: Float = on ? Float(ui.liveInkGlowOpacity) : 0
+        let target: Float = on ? Float(ui.liveInkFieldOpacity) : 0
         let from = presentation()?.opacity ?? opacity
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         opacity = target
         CATransaction.commit()
-        guard ui.liveInkGlowFade > 0 else { removeAnimation(forKey: "opacity"); return }
+        guard ui.liveInkFieldFade > 0 else { removeAnimation(forKey: "opacity"); return }
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = from
         fade.toValue = target
-        fade.duration = ui.liveInkGlowFade
+        fade.duration = ui.liveInkFieldFade
         add(fade, forKey: "opacity")
     }
 
@@ -402,7 +402,7 @@ final class EdgeLensLayer: CAMetalLayer {
         if points.isEmpty { points = [SIMD4(repeating: 0)] }
         encoder.setRenderPipelineState(metal.pipeline)
         encoder.setFragmentTexture(screen, index: 0)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<EdgeUniforms>.stride, index: 0)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<FieldUniforms>.stride, index: 0)
         encoder.setFragmentBytes(&points, length: MemoryLayout<SIMD4<Float>>.stride * points.count, index: 1)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
@@ -415,8 +415,8 @@ final class EdgeLensLayer: CAMetalLayer {
         commands.commit()
     }
 
-    private func uniforms(size: CGSize, at now: CFTimeInterval, hasPicture: Bool) -> EdgeUniforms {
-        var uniforms = EdgeUniforms()
+    private func uniforms(size: CGSize, at now: CFTimeInterval, hasPicture: Bool) -> FieldUniforms {
+        var uniforms = FieldUniforms()
         uniforms.color = color
         uniforms.size = SIMD2(Float(size.width), Float(size.height))
         // Without a picture of the screen there is nothing to bend, only light to draw.
@@ -450,8 +450,8 @@ final class EdgeLensLayer: CAMetalLayer {
     }
 }
 
-/// The shader's uniforms, in the order and alignment of `EdgeUniforms` in EdgeLens.metal.
-struct EdgeUniforms {
+/// The shader's uniforms, in the order and alignment of `FieldUniforms` in PointerField.metal.
+struct FieldUniforms {
     var color = SIMD4<Float>(repeating: 0)
     var size = SIMD2<Float>(repeating: 0)
     var wakeCount: Float = 0

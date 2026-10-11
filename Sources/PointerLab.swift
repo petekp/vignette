@@ -4,13 +4,13 @@ import SwiftUI
 /// A debug window for trying and tuning live ink's pointer field and wake
 /// (docs/live-ink-cursor-2026-10-10.md). The sliders are the `ui` settings live ink draws with, so a
 /// value chosen here is the one inking shows. Hold on Screen keeps the field up at the inking level
-/// while every press passes through. Opened from the tweak panel or `vignette://edge-lab` (needs
+/// while every press passes through. Opened from the tweak panel or `vignette://pointer-lab` (needs
 /// `debug`).
 @MainActor
-final class EdgeLabController: NSObject, NSWindowDelegate {
+final class PointerLabController: NSObject, NSWindowDelegate {
     private let preview: (Bool) -> Void
     private var panel: NSPanel?
-    private let model = EdgeLabModel()
+    private let model = PointerLabModel()
 
     init(preview: @escaping (Bool) -> Void) {
         self.preview = preview
@@ -33,13 +33,13 @@ final class EdgeLabController: NSObject, NSWindowDelegate {
     private func make() -> NSPanel {
         let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 760),
                         styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
-        p.title = "Edge Lab"
+        p.title = "Pointer Lab"
         p.isFloatingPanel = true
         p.level = .floating
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false
         p.delegate = self
-        p.contentView = NSHostingView(rootView: EdgeLabView(model: model, hold: { [weak self] on in self?.hold(on) }))
+        p.contentView = NSHostingView(rootView: PointerLabView(model: model, hold: { [weak self] on in self?.hold(on) }))
         if let v = NSScreen.main?.visibleFrame {
             p.setFrameOrigin(NSPoint(x: v.midX - 280, y: v.midY - 380))
         }
@@ -50,18 +50,18 @@ final class EdgeLabController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if model.holding { preview(false) }
         model.holding = false
-        DispatchQueue.main.async { FocusReturn.shared.restore(reason: "edge lab closed") }
+        DispatchQueue.main.async { FocusReturn.shared.restore(reason: "pointer lab closed") }
     }
 }
 
 @MainActor
-final class EdgeLabModel: ObservableObject {
+final class PointerLabModel: ObservableObject {
     @Published var holding = false
     @Published var canCapture = true
 }
 
-private struct EdgeLabView: View {
-    @ObservedObject var model: EdgeLabModel
+private struct PointerLabView: View {
+    @ObservedObject var model: PointerLabModel
     let hold: (Bool) -> Void
     @ObservedObject private var settings = Settings.shared
 
@@ -88,9 +88,9 @@ private struct EdgeLabView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
-                Tweak("Delay", \.liveInkGlowDelay, 0...1, step: 0.05, unit: "s")
-                Tweak("Fade", \.liveInkGlowFade, 0...1, step: 0.05, unit: "s")
-                Tweak("Opacity", \.liveInkGlowOpacity, 0...1, step: 0.05)
+                Tweak("Delay", \.liveInkFieldDelay, 0...1, step: 0.05, unit: "s")
+                Tweak("Fade", \.liveInkFieldFade, 0...1, step: 0.05, unit: "s")
+                Tweak("Opacity", \.liveInkFieldOpacity, 0...1, step: 0.05)
             } header: {
                 Text("Showing")
             } footer: {

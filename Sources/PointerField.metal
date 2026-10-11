@@ -6,7 +6,7 @@ using namespace metal;
 // from its top-left corner. `screen` is a live capture of the display without the overlay, the same
 // size as the layer, or a blank texture when there is none, and then nothing reads it.
 
-struct EdgeUniforms {
+struct FieldUniforms {
     float4 color;        // the person's ink colour, lightened, in the layer's colour space
     float2 size;         // the layer, in points
     float wakeCount;     // how many points of the pen's path are in `trail`
@@ -34,7 +34,7 @@ struct Varyings {
     float2 uv;
 };
 
-vertex Varyings edgeVertex(uint id [[vertex_id]]) {
+vertex Varyings fieldVertex(uint id [[vertex_id]]) {
     // One triangle that covers the layer.
     float2 corners[3] = { float2(-1, -1), float2(3, -1), float2(-1, 3) };
     Varyings out;
@@ -54,7 +54,7 @@ static float4 premultiplied(float3 color, float alpha) { return float4(min(color
 // The wake: a ring spreads from each point the pen passed. A ring is a short packet of waves that
 // moves the picture out and back as it passes, and it fades as it spreads. `trail` holds each
 // point's place in xy, its age in seconds in z, and in w its weight, less where points crowd.
-static float2 wakeShift(float2 p, constant EdgeUniforms &u, constant float4 *trail) {
+static float2 wakeShift(float2 p, constant FieldUniforms &u, constant float4 *trail) {
     int count = int(u.wakeCount + 0.5);
     if (count == 0 || u.wakeStrength <= 0.0) return float2(0);
     if (p.x < u.wakeLeft || p.x > u.wakeRight || p.y < u.wakeTop || p.y > u.wakeBottom) return float2(0);
@@ -83,7 +83,7 @@ static float2 wakeShift(float2 p, constant EdgeUniforms &u, constant float4 *tra
 // so the crest is magnified; the slope of that map is 1 + k h (2x^2 - 1), which stays positive for k
 // under 1, so nothing folds back. Moving, it stretches along the way it goes and narrows across it,
 // keeping its area. Premultiplied, and clear wherever it shows nothing.
-static float4 pointerField(float2 p, texture2d<float> screen, constant EdgeUniforms &u) {
+static float4 pointerField(float2 p, texture2d<float> screen, constant FieldUniforms &u) {
     float big = u.fieldRadius;
     if (big < 0.5) return float4(0);
     float2 c = float2(u.fieldX, u.fieldY);
@@ -124,9 +124,9 @@ static float4 pointerField(float2 p, texture2d<float> screen, constant EdgeUnifo
     return float4(float3(shine), shine) + out * (1.0 - shine);
 }
 
-fragment float4 edgeFragment(Varyings in [[stage_in]],
+fragment float4 fieldFragment(Varyings in [[stage_in]],
                              texture2d<float> screen [[texture(0)]],
-                             constant EdgeUniforms &u [[buffer(0)]],
+                             constant FieldUniforms &u [[buffer(0)]],
                              constant float4 *trail [[buffer(1)]]) {
     float2 p = in.uv * u.size;
     float4 field = pointerField(p, screen, u);

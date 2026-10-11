@@ -193,7 +193,7 @@ covers changing it.
 Live ink lets you draw straight on your screen, over any app, without taking a screenshot. Turn it
 on in Settings → General, or with Live Ink in the menu bar menu.
 
-Hold Control and Option and draw. The screen's edges glow while you hold the keys. A loop becomes
+Hold Control and Option and draw. A glowing ring follows the pointer while you hold the keys. A loop becomes
 an ellipse round what you circled, and any other stroke becomes an arrow, in your red. To erase a
 mark, click on it or inside its circle with the keys held. Clear Live Ink in the menu erases them all, and so does turning
 live ink off.
