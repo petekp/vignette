@@ -114,6 +114,14 @@ until its line goes. `.released` turns it to `.sending` without changing the car
 dropped. An `inGrace` send has no hold, and the corner stays for it as for any send awaiting an
 answer. When a notice that covered a send in its grace expires, the countdown comes back.
 
+On the card, the agent's logo is one view in every state (`SendOverlay`). When the grace ends, the
+ring and Don't send fade, and the logo glides to its place above the words on the same spring.
+Only then does the badge come in: the spinner, then the check. The sending hold of 0.45 s counts
+from the badge appearing, so the spinner always shows for that long. A card too short for the logo
+above Don't send puts a round × beside the logo instead, and the logo glides between those two
+layouts too. The sent check is drawn as polished green metal, lit from the top left. One band of
+light crosses it as it appears, and with no motion the band is left out.
+
 ## Log lines
 
 - `[send] prepared …`, then `[send] waiting <ms>ms request=<id>` when there is a grace period.
