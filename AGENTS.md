@@ -1255,8 +1255,8 @@ screenshot location for such a launch is written with the same variable:
   before the client gets it (`SendGrace`, run by `ScreenshotRequests`). The wait is time, not
   motion: the scale and Reduce Motion never shorten it. When it ends the line goes through the
   same `submit` as before, so nothing written changes. Quitting hands every waiting line over at
-  once and waits up to 2 s for the clients (`releaseHeld`), recording each request uncertain
-  before its line leaves, and a clear of the request, by
+  once and waits up to 2 s for the clients (`releaseHeld`). Every hand-over records its request
+  uncertain before the line leaves, so `prepared` means the line never went. And a clear of the request, by
   `requests?clear=` or by the 50-request limit, stops its waiting send. So does a file leaving
   the watch folder, which is how deleting a card during the wait cancels its send
   (`ScreenshotRequests.fileRemoved`). A crash during the wait loses the send, and the next launch

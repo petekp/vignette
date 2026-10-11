@@ -5,8 +5,9 @@ Status: built 2026-10-10. The pure part is `Sources/SendGrace.swift`, run by
 Claude Code session: the line arrived 3.1 s after the send; `unsend` at 1 s left no line, and the
 note card and its file went; of two notes, cancelling the second left the first to go; SIGTERM
 during the wait sent the line and the app quit. VNC captures show the ring emptying, then Sending,
-then Sent. Not yet checked: a click on Don't send, the editor path, and the `send_grace` e2e
-scenario.
+then Sent. A VNC click on Don't send cancelled a live ink note and an editor Send to a Codex
+thread; the screenshot stayed. Not yet run: the `send_grace` e2e scenario, which posts keys and
+clicks and needs python3, which the VM lacks.
 
 ## What Pete asked for
 
@@ -86,7 +87,9 @@ editor. The wait is 3 seconds.
 - **A crash or force quit loses the line, and the next launch clears the request.** The line waits
   in memory. A relaunch cannot send it, so `load` clears any request still `prepared` and logs it
   (`[requests] cleared <id>: its line never went, Vignette quit first`). The person cannot be told,
-  since the card is gone.
+  since the card is gone. Only a request whose line never left is still `prepared`: every hand-over
+  to a client stores the request as `uncertain` first, since the client may have the line while
+  its call runs, for up to 25 s with `codex queue`.
 - **A launch that replaces a running copy does not clear.** The older copy may still be handing its
   waiting lines over as it quits, and clearing then deletes the image a line names. That launch
   calls `load(clearingUnsent: false)`, and a later launch clears what a crash left.
