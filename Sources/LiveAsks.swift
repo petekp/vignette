@@ -232,8 +232,6 @@ struct LiveAsks: Equatable {
         case answerShown(Set<Mark.ID>)
         /// The answer's ×. It finishes the answer's marks and the marks the ask is about, erased or not.
         case dismissed
-        /// The turn after a session's card took the ink, as the card starts to move.
-        case carrying(Set<Mark.ID>)
         /// The time for marks to leave is up. It ends the ask when the ask was about only these marks.
         case finished(Set<Mark.ID>)
         /// The screen was cleared, or live ink turned off.
@@ -250,9 +248,8 @@ struct LiveAsks: Equatable {
         /// The packet could not be captured, the responder failed, or a session refused the note.
         /// `shown` is every mark on the screen, among which an answer to put back must be.
         case failed(reason: String, shown: Set<Mark.ID>)
-        /// A session took the note, with `ink` in its picture, and `carried` when its card carries the
-        /// ink away.
-        case sentToSession(ink: Set<Mark.ID>, carried: Bool)
+        /// A session took the note, with `ink` in its picture.
+        case sentToSession(ink: Set<Mark.ID>)
     }
 
     enum Effect: Equatable {
@@ -276,8 +273,6 @@ struct LiveAsks: Equatable {
         case removeAnswer(Set<Mark.ID>)
         /// These marks are leaving: show them going, and send `finished` once they have.
         case finish(Set<Mark.ID>, LiveMarksLayer.Finish)
-        /// On the next turn, send `carrying`.
-        case carry(Set<Mark.ID>)
     }
 
     mutating func reduce(_ event: Event) -> [Effect] {
@@ -312,9 +307,8 @@ struct LiveAsks: Equatable {
                 return clearEarlierAnswer() + [.drawAnswer]
             case .failed(let reason, let shown):
                 return fail(saying: reason, shown: shown)
-            case .sentToSession(let ink, let carried):
-                let ids = current.about.union(ink)
-                return carried ? [.carry(ids)] : finish(ids, .dismissed)
+            case .sentToSession(let ink):
+                return finish(current.about.union(ink), .dismissed)
             }
 
         case .noted(let note):
@@ -345,8 +339,6 @@ struct LiveAsks: Equatable {
         case .dismissed:
             let ids = answerMarks.union(ask?.about ?? [])
             return ids.isEmpty ? [] : finish(ids, .dismissed)
-        case .carrying(let ids):
-            return finish(ids, .carried)
         case .finished(let ids):
             // A clear, or an earlier timer for the same marks, has ended it already. Marks erased while
             // leaving have lost their finish, but the ask about them still ends.

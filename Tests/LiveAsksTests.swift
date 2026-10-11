@@ -398,15 +398,14 @@ final class LiveAsksTests: XCTestCase {
         var a = A()
         let first = ink(), second = ink(50)
         begin(&a, on: [first, second])
-        XCTAssertEqual(reduce(&a, .carrying([first.id])), [.finish([first.id], .carried)])
+        XCTAssertEqual(reduce(&a, .dismissed), [.finish([first.id, second.id], .dismissed)])
         XCTAssertEqual(reduce(&a, .finished([first.id])), [.remove([first.id])])
         XCTAssertNotNil(a.ask, "the ask keeps the ink it was about that is still there")
         XCTAssertTrue(a.isUnderWay)
 
-        _ = reduce(&a, .carrying([first.id, second.id]))
         XCTAssertEqual(reduce(&a, .finished([first.id, second.id])), [.remove([first.id, second.id])])
         XCTAssertNil(a.ask)
-        XCTAssertFalse(a.isUnderWay, "a note carried off to a session leaves nothing under way")
+        XCTAssertFalse(a.isUnderWay, "a dismissed note leaves nothing under way")
         XCTAssertEqual(a.newInk(among: [second]), [second], "the ink it took is no longer asked about")
     }
 
@@ -414,7 +413,7 @@ final class LiveAsksTests: XCTestCase {
         var a = A()
         let first = ink()
         begin(&a, on: [first])
-        _ = reduce(&a, .carrying([first.id]))
+        _ = reduce(&a, .dismissed)
         _ = reduce(&a, .removed([first.id]))
         XCTAssertEqual(a.finishing, [:])
         XCTAssertEqual(reduce(&a, .finished([first.id])), [.remove([first.id])])
@@ -439,8 +438,8 @@ final class LiveAsksTests: XCTestCase {
         let first = ink(), second = ink(50)
         begin(&a, on: [first, second])
         _ = reduce(&a, .dismissed)
-        _ = reduce(&a, .carrying([second.id]))
-        XCTAssertEqual(a.finishing, [first.id: .dismissed, second.id: .carried])
+        _ = reduce(&a, .dismissed)
+        XCTAssertEqual(a.finishing, [first.id: .dismissed, second.id: .dismissed])
         XCTAssertEqual(reduce(&a, .finished([first.id, second.id])), [.remove([first.id, second.id])],
                        "the first timer takes the mark a later finish had started on")
         XCTAssertEqual(a.finishing, [:])
@@ -469,16 +468,16 @@ final class LiveAsksTests: XCTestCase {
         let gone = ink(), stays = ink(50), reply = text("It's a button.", agent: true)
         _ = reduce(&a, .drew(gone.id))
         answer(&a, on: [gone, stays], reply: reply)
-        _ = reduce(&a, .carrying([gone.id]))
+        _ = reduce(&a, .dismissed)
         _ = reduce(&a, .windowGone([gone.id, reply.id]))
         XCTAssertEqual(a.newInk(among: [gone, stays]), [gone], "only the marks that went are new again")
         XCTAssertFalse(a.isAnswer(reply.id))
         XCTAssertEqual(a.noteInk, [gone.id], "the note's ink is kept")
-        XCTAssertEqual(a.finishing, [gone.id: .carried], "and so is its finish")
+        XCTAssertEqual(a.finishing[gone.id], .dismissed, "and so is its finish")
 
         var only = A()
         begin(&only, on: [gone])
-        _ = reduce(&only, .carrying([gone.id]))
+        _ = reduce(&only, .dismissed)
         _ = reduce(&only, .windowGone([gone.id]))
         XCTAssertEqual(reduce(&only, .finished([gone.id])), [.remove([gone.id])])
         XCTAssertNil(only.ask, "the timer of marks that left with their window still ends the ask")
@@ -555,22 +554,19 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertEqual(reduce(&a, .arrived(.packetCame(toSession: true), for: id)), [.share(about: [first.id])])
         let shared = a
 
-        XCTAssertEqual(reduce(&a, .arrived(.sentToSession(ink: [beside.id], carried: false), for: id)),
+        XCTAssertEqual(reduce(&a, .arrived(.sentToSession(ink: [beside.id]), for: id)),
                        [.finish([first.id, beside.id], .dismissed)], "the ink in the card's picture leaves with the ink asked about")
         XCTAssertEqual(a.finishing, [first.id: .dismissed, beside.id: .dismissed])
-        a = shared
-        XCTAssertEqual(reduce(&a, .arrived(.sentToSession(ink: [beside.id], carried: true), for: id)), [.carry([first.id, beside.id])])
-        XCTAssertEqual(a.finishing, [:], "carried ink starts to leave on the next turn, with the card")
         a = shared
         XCTAssertEqual(reduce(&a, .arrived(.failed(reason: "Not sent.", shown: [first.id]), for: id)), [.removeAnswer([]), .say("Not sent.")])
         XCTAssertEqual(a.ask?.phase, .failed)
 
         a = shared
         _ = reduce(&a, .cleared)
-        XCTAssertEqual(reduce(&a, .arrived(.sentToSession(ink: [], carried: false), for: id)), [], "not after a clear")
+        XCTAssertEqual(reduce(&a, .arrived(.sentToSession(ink: []), for: id)), [], "not after a clear")
         let next = begin(&a, on: [second])
         XCTAssertEqual(reduce(&a, .arrived(.failed(reason: "Not sent.", shown: []), for: id)), [], "not by another ask")
-        XCTAssertEqual(reduce(&a, .arrived(.sentToSession(ink: [], carried: false), for: next)), [.finish([second.id], .dismissed)])
+        XCTAssertEqual(reduce(&a, .arrived(.sentToSession(ink: []), for: next)), [.finish([second.id], .dismissed)])
     }
 
     func testAPickedAnswerMarkIsNoLongerTheAnswers() {
@@ -764,21 +760,19 @@ final class LiveAsksTests: XCTestCase {
                 case .arrived(.failed(let reason, _), let id):
                     checkFailure(reason)
                     if reason == LiveAsksEnvironment.couldNotSee, id != before.ask?.id { staleCapture += 1 }
-                case .arrived(.sentToSession(let ink, let carried), _) where !effects.isEmpty:
+                case .arrived(.sentToSession(let ink), _) where !effects.isEmpty:
                     let ids = (before.ask?.about ?? []).union(ink)
-                    XCTAssertEqual(effects, carried ? [.carry(ids)] : [.finish(ids, .dismissed)], fail("a session's card takes the ink"))
+                    XCTAssertEqual(effects, [.finish(ids, .dismissed)], fail("a session's card takes the ink"))
                     checkFinishes()
                 case .streamed:
                     XCTAssertEqual(after.ask?.phase, before.ask?.phase, fail("streaming never changes the phase"))
                 case .answered:
                     XCTAssertEqual(after.ask?.phase, .answered, fail("a drawn answer answers the ask"))
                     if let id = after.ask?.id { answeredAsks.insert(id) }
-                case .carrying, .dismissed:
+                case .dismissed:
                     checkFinishes()
-                    if case .dismissed = event {
-                        let ids = before.answerMarks.union(before.ask?.about ?? [])
-                        XCTAssertEqual(effects, ids.isEmpty ? [] : [.finish(ids, .dismissed)], fail("the × finishes the answer and the ink it was about"))
-                    }
+                    let ids = before.answerMarks.union(before.ask?.about ?? [])
+                    XCTAssertEqual(effects, ids.isEmpty ? [] : [.finish(ids, .dismissed)], fail("the × finishes the answer and the ink it was about"))
                 case .noteDiscarded:
                     XCTAssertEqual(effects, before.noteInk.isEmpty ? [] : [.remove(before.noteInk)], fail("⌘⌫ takes back the note's ink"))
                     XCTAssertEqual(after.noteInk, [], fail("and the note has no ink left"))
@@ -862,8 +856,7 @@ private final class LiveAsksEnvironment {
         case say(LiveAsks.Ask.ID)
         case answer(LiveAsks.Ask.ID)
         case failure(LiveAsks.Ask.ID)
-        case sent(LiveAsks.Ask.ID, ink: Set<Mark.ID>, refused: Bool, carried: Bool)
-        case carry(Set<Mark.ID>)
+        case sent(LiveAsks.Ask.ID, ink: Set<Mark.ID>, refused: Bool)
         case timer(Set<Mark.ID>)
         case focus([Mark])
 
@@ -942,9 +935,7 @@ private final class LiveAsksEnvironment {
             case .say(let id): showSay(for: id)
             case .answer(let id): answered(for: id)
             case .failure(let id): failed("Claude stopped.", for: id)
-            case .sent(let id, let ink, let refused, let carried): sessionAnswered(for: id, ink: ink, refused: refused, carried: carried)
-            case .carry(let ids):
-                for case .finish(let ids, let how) in send(.carrying(ids)) { finish(ids, how) }
+            case .sent(let id, let ink, let refused): sessionAnswered(for: id, ink: ink, refused: refused)
             case .timer(let ids): finished(ids)
             case .focus(let stop): nextFocus(stop)
             }
@@ -1075,7 +1066,7 @@ private final class LiveAsksEnvironment {
         let effects = send(.arrived(.packetCame(toSession: toSession), for: id))
         if effects.contains(where: { if case .share = $0 { true } else { false } }) {
             let ink = Set(asks.ink(among: screen).filter { _ in chance(2) }.map(\.id))
-            owe(.sent(id, ink: ink, refused: chance(4), carried: chance(2)))
+            owe(.sent(id, ink: ink, refused: chance(4)))
         }
         guard effects.contains(.send) else { return }
         if asks.ask?.say == nil, chance(2) {
@@ -1092,15 +1083,9 @@ private final class LiveAsksEnvironment {
         owe(chance(4) ? .failure(id) : .answer(id), in: (says + 1)...(says + 3))
     }
 
-    private func sessionAnswered(for id: LiveAsks.Ask.ID, ink: Set<Mark.ID>, refused: Bool, carried: Bool) {
+    private func sessionAnswered(for id: LiveAsks.Ask.ID, ink: Set<Mark.ID>, refused: Bool) {
         if refused { return failed("Not sent.", for: id) }
-        for effect in send(.arrived(.sentToSession(ink: ink, carried: carried), for: id)) {
-            switch effect {
-            case .finish(let ids, let how): finish(ids, how)
-            case .carry(let ids): owe(.carry(ids), in: 1...1)
-            default: break
-            }
-        }
+        for case .finish(let ids, let how) in send(.arrived(.sentToSession(ink: ink), for: id)) { finish(ids, how) }
     }
 
     /// A press on the answer's panel. Its buttons are enabled only on an answer, and the panel shows
@@ -1243,7 +1228,7 @@ private final class LiveAsksEnvironment {
     }
 
     private func finish(_ ids: Set<Mark.ID>, _ how: LiveMarksLayer.Finish) {
-        owe(.timer(ids), in: how == .carried ? 1...1 : 1...3)
+        owe(.timer(ids), in: 1...3)
     }
 
     private func finished(_ ids: Set<Mark.ID>) {
@@ -1291,7 +1276,6 @@ private final class LiveAsksEnvironment {
         case .replyRedrawn(let reply): "replyRedrawn \(name(reply.id))"
         case .answerShown(let ids): "answerShown \(list(ids))"
         case .dismissed: "dismissed"
-        case .carrying(let ids): "carrying \(list(ids))"
         case .finished(let ids): "finished \(list(ids))"
         case .cleared: "cleared"
         }
@@ -1303,7 +1287,7 @@ private final class LiveAsksEnvironment {
         case .replyCame: "replyCame"
         case .answerCame: "answerCame"
         case .failed(let reason, _): "failed \"\(reason)\""
-        case .sentToSession(let ink, let carried): "sentToSession ink=\(list(ink))\(carried ? " carried" : "")"
+        case .sentToSession(let ink): "sentToSession ink=\(list(ink))"
         }
     }
 
@@ -1318,7 +1302,6 @@ private final class LiveAsksEnvironment {
         case .remove(let ids): "remove \(list(ids))"
         case .removeAnswer(let gone): "removeAnswer \(list(gone))"
         case .finish(let ids, let how): "finish \(list(ids)) \(how)"
-        case .carry(let ids): "carry \(list(ids))"
         }
     }
 }
