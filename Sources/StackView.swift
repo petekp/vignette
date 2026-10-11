@@ -272,7 +272,10 @@ private struct CardView: View {
                     switch notice {
                     case .copied(let label): CopiedOverlay(corner: ui.cardCornerRadius, label: label)
                     case .notCopied(let reason): CopiedOverlay(corner: ui.cardCornerRadius, label: "Not copied", failure: reason)
-                    case .send(let send): SendOverlay(notice: send, corner: ui.cardCornerRadius)
+                    case .send(let send):
+                        SendOverlay(notice: send, corner: ui.cardCornerRadius,
+                                    onUnsend: { if let unsend = Config.action(id: "unsend") { model.onAction(unsend, [card]) } },
+                                    onOverControl: { model.overControl = $0 })
                     }
                 }
                 .transition(.opacity)
@@ -561,9 +564,13 @@ private struct CopiedOverlay: View {
 /// delivery, and where it went. The words go on a card too narrow for them, the project name last.
 /// A delivery usually answers about as the card lands, so the sending state, once on screen, holds
 /// `sendingHold` before it gives way: two steps rather than one state flickering into the next.
+/// While the send waits out its grace the logo wears a ring that empties, and a Don't send button
+/// is the one part of the overlay that takes presses.
 private struct SendOverlay: View {
     let notice: SendNotice
     let corner: CGFloat
+    let onUnsend: () -> Void
+    let onOverControl: (Bool) -> Void
     @State private var landed = false
     @State private var shown: SendNotice.State?
     @State private var since = Date()
@@ -573,7 +580,7 @@ private struct SendOverlay: View {
 
     private var words: String {
         switch state {
-        case .sending: return "Sending to \(notice.project)"
+        case .inGrace, .sending: return "Sending to \(notice.project)"
         case .sent: return "Sent to \(notice.project)"
         case .queued: return "Queued for \(notice.project)"
         case .uncertain: return "Check \(notice.project)"
@@ -587,40 +594,98 @@ private struct SendOverlay: View {
         let motion = Settings.shared.motionScale
         ZStack {
             RoundedRectangle(cornerRadius: corner, style: .continuous).fill(.black.opacity(0.55))
-            VStack(spacing: 5) {
-                logo
-                // A failure's reason goes first when the card is too short for it, then the words.
-                ViewThatFits(in: .vertical) {
-                    if let reason = notice.reason, state != .sending && state != .sent {
-                        VStack(spacing: 3) {
+                .allowsHitTesting(false)
+            Group {
+                if state == .inGrace, let grace = notice.grace {
+                    waitingContent(grace)
+                } else {
+                    VStack(spacing: 5) {
+                        logo
+                        // A failure's reason goes first when the card is too short for it, then the words.
+                        ViewThatFits(in: .vertical) {
+                            if let reason = notice.reason, state != .inGrace && state != .sending && state != .sent {
+                                VStack(spacing: 3) {
+                                    headline
+                                    Text(reason).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
+                                        .multilineTextAlignment(.center).lineLimit(3)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
                             headline
-                            Text(reason).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
-                                .multilineTextAlignment(.center).lineLimit(3)
-                                .fixedSize(horizontal: false, vertical: true)
+                            Color.clear.frame(width: 1, height: 1)
                         }
+                        .id(words)
+                        .transition(.blurReplace)
+                        .padding(.horizontal, 8)
                     }
-                    headline
-                    Color.clear.frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
                 }
-                .id(words)
-                .transition(.blurReplace)
-                .padding(.horizontal, 8)
             }
             .scaleEffect(landed ? 1 : 0.3)
             .opacity(landed ? 1 : 0)
+            .allowsHitTesting(landed)
         }
         .onAppear {
             shown = notice.state
             since = Date()
             withAnimation(Anim.spring(0.4 * motion, bounce: 0.45)) { landed = true }
         }
-        .onChange(of: notice.state) { _, next in
-            let wait = shown == .sending ? max(0, Self.sendingHold - Date().timeIntervalSince(since)) : 0
-            DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
-                withAnimation(Anim.spring(0.35 * motion, bounce: 0.35)) { shown = next }
+        .onChange(of: notice.state) { previous, next in
+            let steps = SendNotice.steps(from: previous, to: next)
+            var wait = shown == .sending ? max(0, Self.sendingHold - Date().timeIntervalSince(since)) : 0
+            for step in steps {
+                DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
+                    // The grace is not the sending state: the hold counts from when the line went.
+                    if step == .sending { since = Date() }
+                    withAnimation(Anim.spring(0.35 * motion, bounce: 0.35)) { shown = step }
+                }
+                wait += Self.sendingHold
             }
         }
-        .allowsHitTesting(false)
+    }
+
+    /// The logo with its ring and Don't send. The card gives up the words, then the button's label,
+    /// before it gives up the button: whatever the size, a send in its grace can be cancelled.
+    private func waitingContent(_ grace: SendNotice.Grace) -> some View {
+        ViewThatFits {
+            VStack(spacing: 5) {
+                countdownLogo(grace)
+                label(words).allowsHitTesting(false)
+                unsendButton
+            }
+            VStack(spacing: 5) {
+                countdownLogo(grace)
+                unsendButton
+            }
+            HStack(spacing: 6) {
+                countdownLogo(grace)
+                Button(action: onUnsend) {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                        .frame(width: 22, height: 22).background(Circle().fill(.white.opacity(0.18)))
+                }
+                .buttonStyle(TactileButtonStyle(shape: .circle))
+                .accessibilityLabel("Don't send")
+                .onHover(perform: onOverControl)
+            }
+        }
+        .padding(.horizontal, 8)
+    }
+
+    private func countdownLogo(_ grace: SendNotice.Grace) -> some View {
+        logoDisc
+            .overlay { GraceRing(grace: grace).padding(-4) }
+            .allowsHitTesting(false)
+    }
+
+    private var unsendButton: some View {
+        Button(action: onUnsend) {
+            Text("Don't send").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Capsule().fill(.white.opacity(0.18)))
+                .fixedSize()
+        }
+        .buttonStyle(TactileButtonStyle(shape: .capsule))
+        .onHover(perform: onOverControl)
     }
 
     /// The words, or the project alone on a card too narrow for them, or nothing.
@@ -639,6 +704,10 @@ private struct SendOverlay: View {
 
     /// The agent's logo on a white disc, as on a card an agent sent, with the delivery at its corner.
     private var logo: some View {
+        logoDisc.overlay(alignment: .bottomTrailing) { badge.offset(x: 5, y: 4) }
+    }
+
+    private var logoDisc: some View {
         ZStack {
             Circle().fill(.white).frame(width: 30, height: 30)
             if let image = Agent.logo(for: notice.client.rawValue) {
@@ -649,7 +718,6 @@ private struct SendOverlay: View {
                 Image(systemName: Agent.fallbackSymbol).font(.system(size: 14, weight: .bold)).foregroundStyle(.black.opacity(0.8))
             }
         }
-        .overlay(alignment: .bottomTrailing) { badge.offset(x: 5, y: 4) }
     }
 
     /// On a white ring, which parts it from the disc it sits on.
@@ -658,7 +726,7 @@ private struct SendOverlay: View {
             Circle().fill(.white).frame(width: 18, height: 18)
             Group {
                 switch state {
-                case .sending:
+                case .inGrace, .sending:
                     ZStack {
                         Circle().fill(Color(white: 0.18)).frame(width: 15, height: 15)
                         ProgressView().controlSize(.mini).environment(\.colorScheme, .dark).scaleEffect(0.8)
@@ -677,6 +745,24 @@ private struct SendOverlay: View {
             .id(state)
             // The next state pops in while the last one only fades, so the ring is never empty.
             .transition(.asymmetric(insertion: .scale(scale: 0.3).combined(with: .opacity), removal: .opacity))
+        }
+    }
+}
+
+/// A ring round the logo that empties as a send's grace runs out. It is drawn from the clock, linearly,
+/// to the absolute deadline: the motion scale does not shorten it, and a card shown late, or a
+/// second send of the same file, starts at what is left.
+private struct GraceRing: View {
+    let grace: SendNotice.Grace
+
+    var body: some View {
+        TimelineView(.animation) { _ in
+            ZStack {
+                Circle().stroke(.white.opacity(0.25), lineWidth: 2.5)
+                Circle().trim(from: 0, to: grace.remaining(at: ProcessInfo.processInfo.systemUptime))
+                    .stroke(.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
         }
     }
 }

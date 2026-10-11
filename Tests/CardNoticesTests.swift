@@ -117,4 +117,86 @@ final class CardNoticesTests: XCTestCase {
         XCTAssertEqual(notices.notice(on: file), .copied(label: "Copied"))
         XCTAssertFalse(notices.awaitsAnswer(on: ["/tmp/other.png"]))
     }
+
+    // MARK: A send in its grace
+
+    private let grace = SendNotice.Grace(deadline: 13, length: 3)
+
+    private func waiting(_ request: String) -> CardNotices.Event {
+        .sending(request: request, client: .claude, project: "vignette", grace: grace)
+    }
+
+    /// A card stuck on the countdown would offer Don't send for a line that has gone.
+    func testASendInItsGraceWaitsAndReleaseMovesItOnToSending() {
+        var notices = CardNotices()
+        post(&notices, waiting("a"))
+        XCTAssertEqual(sendState(notices), .inGrace)
+        XCTAssertTrue(notices.awaitsAnswer(on: [file]))
+        XCTAssertNil(post(&notices, .released(request: "b")), "another request's release")
+        XCTAssertEqual(sendState(notices), .inGrace)
+        XCTAssertNil(post(&notices, .released(request: "a")))
+        XCTAssertEqual(sendState(notices), .sending)
+        guard case .send(let send)? = notices.notice(on: file) else { return XCTFail("the send's notice is gone") }
+        XCTAssertNil(send.grace)
+        XCTAssertNotNil(post(&notices, .answered(request: "a", state: .sent, reason: nil)))
+        XCTAssertEqual(sendState(notices), .sent)
+    }
+
+    /// A card that kept saying Sending after Don't send would claim a line that never went.
+    func testACancelledSendLosesItsNoticeAndTheWaitForAnAnswer() {
+        var notices = CardNotices()
+        post(&notices, waiting("a"))
+        XCTAssertNil(post(&notices, .cancelled(request: "a")))
+        XCTAssertNil(notices.notice(on: file))
+        XCTAssertFalse(notices.awaitsAnswer(on: [file]))
+        XCTAssertNil(post(&notices, .answered(request: "a", state: .sent, reason: nil)))
+        XCTAssertNil(notices.notice(on: file))
+    }
+
+    /// Cancelling an earlier send must not clear the ring of a later one on the same file.
+    func testCancellingAnEarlierSendLeavesALaterOneInItsGrace() {
+        var notices = CardNotices()
+        post(&notices, waiting("a"))
+        post(&notices, waiting("b"))
+        post(&notices, .cancelled(request: "a"))
+        XCTAssertEqual(sendState(notices), .inGrace)
+        XCTAssertTrue(notices.awaitsAnswer(on: [file]))
+    }
+
+    /// A Copied notice that covered the countdown must not hide Don't send for the rest of the grace.
+    func testACopiedNoticeGivesTheCountdownBackWhenItExpires() throws {
+        var notices = CardNotices()
+        post(&notices, waiting("a"))
+        let copied = try XCTUnwrap(post(&notices, .copied(label: "Copied")))
+        XCTAssertEqual(notices.notice(on: file), .copied(label: "Copied"))
+        notices.expire(copied.id, on: file)
+        XCTAssertEqual(sendState(notices), .inGrace)
+    }
+
+    /// Only the countdown comes back: a line already released gives its card the answer, as a send with no
+    /// grace does, so a Copied that expires after the release must not bring back a Sending nobody ends.
+    func testAReleaseUnderACopiedLeavesNothingToShowWhenTheCopiedExpires() throws {
+        var notices = CardNotices()
+        post(&notices, waiting("a"))
+        let copied = try XCTUnwrap(post(&notices, .copied(label: "Copied")))
+        post(&notices, .released(request: "a"))
+        notices.expire(copied.id, on: file)
+        XCTAssertNil(notices.notice(on: file))
+        post(&notices, .answered(request: "a", state: .sent, reason: nil))
+        XCTAssertEqual(sendState(notices), .sent)
+    }
+
+    /// A ring that restarted when its card landed late would show more time than the send has.
+    func testTheGraceRemainingIsClampedToTheSendsOwnLength() {
+        XCTAssertEqual(grace.remaining(at: 20), 0, "after the deadline")
+        XCTAssertEqual(grace.remaining(at: 5), 1, "before the start")
+    }
+
+    /// A line released and answered in one turn must still show Sending, or the card jumps from the
+    /// countdown to the answer.
+    func testALineReleasedAndAnsweredTogetherStillShowsSending() {
+        XCTAssertEqual(SendNotice.steps(from: .inGrace, to: .sent), [.sending, .sent])
+        XCTAssertEqual(SendNotice.steps(from: .inGrace, to: .sending), [.sending])
+        XCTAssertEqual(SendNotice.steps(from: .sending, to: .failed), [.failed])
+    }
 }

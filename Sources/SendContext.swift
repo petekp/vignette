@@ -86,6 +86,24 @@ enum SendContext {
         }
     }
 
+    /// `request` was cancelled in its grace period, so the `send` event of the editor's send, or the
+    /// `note` event of a live ink note to the session `note`, never reached a session. A note's
+    /// event carries no request id, so its cancel names the session: exact only while one note to
+    /// that session is waiting.
+    @MainActor
+    static func cancelled(request: String, note: String? = nil) {
+        let at = Date()
+        let seq = nextSeq
+        nextSeq += 1
+        queue.async { append(cancelledRecord(request: request, note: note), at: at, seq: seq) }
+    }
+
+    static func cancelledRecord(request: String, note: String?) -> [String: Any] {
+        var record: [String: Any] = ["event": "send-cancelled", "request": request]
+        if let note { record["note"] = note }
+        return record
+    }
+
     /// A live ink note was sent: to `to`, a session id or "responder", where the note started on
     /// `offered`. The packet already holds the window and its page.
     @MainActor

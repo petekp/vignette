@@ -30,6 +30,9 @@ enum Config {
                    placement: .strip, minimumCount: 2, kinds: [.image, .recording]) { shots, app in app.stitch(shots) },
         ShotAction(id: "trash", symbol: "trash", label: "Delete", key: .init("\u{7f}", [.command]),
                    placement: .everywhere, kinds: [.image, .recording]) { shots, app in app.moveToTrash(shots) },
+        // A send's card draws its own button for this (`SendOverlay`), so it has no symbol or key.
+        ShotAction(id: "unsend", label: "Don't send", placement: .shortcut,
+                   help: "cancels a send of the file still in its grace period") { shots, app in app.unsend(shots) },
     ]
 
     static func action(id: String) -> ShotAction? { actions.first { $0.id == id } }
@@ -74,7 +77,7 @@ enum Config {
 }
 
 struct ShotAction: Sendable {
-    enum Placement { case strip, everywhere, shortcut }   // shortcut: keyboard and URL only; everywhere: the card's corners too
+    enum Placement { case strip, everywhere, shortcut }   // shortcut: keyboard, when it has a key, and URL only; everywhere: the card's corners too
     struct Key: Equatable, Sendable {
         let character: String
         let modifiers: NSEvent.ModifierFlags
@@ -107,6 +110,8 @@ struct ShotAction: Sendable {
     /// The kinds of file it can act on. Images only unless it says otherwise, so an action added
     /// later is never offered on a recording it was not written for.
     var kinds: Set<Screenshot.Kind> = [.image]
+    /// What `vignette://help` adds when the label alone does not say what the URL does.
+    var help: String? = nil
     let run: @MainActor @Sendable ([Screenshot], Actions) -> Void
 
     var showsInStrip: Bool { placement == .strip || placement == .everywhere }
@@ -137,6 +142,9 @@ protocol Actions: AnyObject {
     func copyAnnotated(_ shots: [Screenshot])
     func stitch(_ shots: [Screenshot])
     func moveToTrash(_ shots: [Screenshot])
+    /// Cancels every send of these screenshots still in its grace, as the Don't send button on a
+    /// send's card does.
+    func unsend(_ shots: [Screenshot])
     /// Hands each recording to the app macOS opens it with, QuickTime Player unless the user chose another.
     func open(_ shots: [Screenshot])
 }

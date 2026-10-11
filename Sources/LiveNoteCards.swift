@@ -89,7 +89,8 @@ final class LiveNoteCards {
             let record: ScreenshotRequests.Record
             do {
                 record = try requests.send(png: note.picture, source: url, to: destination, message: message,
-                                           instructions: Settings.shared.data.sendInstructions)
+                                           instructions: Settings.shared.data.sendInstructions,
+                                           grace: Settings.shared.data.ui.sendGraceSeconds)
             } catch {
                 folder.takeBack(url)
                 return done(.failure((error as? ScreenshotRequests.Refusal) ?? refused))
@@ -103,14 +104,46 @@ final class LiveNoteCards {
             let carried = cards.show(shot, flyingFrom: origin, image: NSImage(cgImage: note.capture, size: note.frame.size),
                                      drawing: drawing)
             folder.ready(url)
-            cards.showSending(shot, request: record.id, to: destination)
+            let grace = requests.grace(of: record.id)
+            cards.showSending(shot, request: record.id, to: destination, grace: grace)
             done(.success((record.id, carried)))
-            let window = NoteCardGroups.SessionWindow(session: destination.id, window: note.window)
-            let reportsTurns = connections[destination.address.client]?.reportsTurns ?? false
-            hold.send(.event(.sent(record.id, window, reportsTurns: reportsTurns, canLookAgain: note.before != nil), at: Date())) {
-                self.handle($0)
-            }
+            registerWait(record.id, held: grace != nil)
         }
+    }
+
+    /// Starts the note's wait on its session's turn, or holds it until the line is handed over: a
+    /// turn that ends during the grace is not this note's.
+    private func registerWait(_ request: String, held: Bool) {
+        guard let note = notes[request] else { return }
+        let window = NoteCardGroups.SessionWindow(session: note.destination.id, window: note.window)
+        let reportsTurns = connections[note.destination.address.client]?.reportsTurns ?? false
+        let canLookAgain = note.before != nil
+        let input: NoteCardGroups.Input = held
+            ? .held(request, window, reportsTurns: reportsTurns, canLookAgain: canLookAgain)
+            : .sent(request, window, reportsTurns: reportsTurns, canLookAgain: canLookAgain)
+        hold.send(.event(input, at: Date())) { self.handle($0) }
+    }
+
+    /// `ScreenshotRequests.Callbacks.released`: the note's grace ended and its line is going to the
+    /// session. Answers the note card the send notice is on, or nil when the request is not a note card's.
+    func released(_ request: String) -> Screenshot? {
+        guard let note = notes[request] else { return nil }
+        hold.send(.event(.released(request), at: Date())) { handle($0) }
+        return note.shot
+    }
+
+    /// `ScreenshotRequests.Callbacks.cancelled`: Don't send on a note card. The note card is Vignette's
+    /// own, so it goes with its drawing; its ink left the window when the note was sent. Answers the
+    /// note card, or nil when the request is not a note card's.
+    @discardableResult
+    func cancelled(_ request: String) -> Screenshot? {
+        guard let note = notes.removeValue(forKey: request) else { return nil }
+        Log.write("[live-ink] note card cancelled request=\(request) before it was sent")
+        SendContext.cancelled(request: request, note: note.destination.id)
+        hold.send(.event(.cancelled(request), at: Date())) { handle($0) }
+        cards.cancelled(note.shot, request: request)
+        folder.discard(note.shot)
+        return note.shot
     }
 
     /// The client answered. Answers the note card the send notice goes on, or nil when the request is

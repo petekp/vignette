@@ -71,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var watcherGeneration = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        replaceOlderInstances()
+        let replacing = replaceOlderInstances()
         captureOrigin = CaptureOrigin()
         captureOrigin?.onCaptureKeys = { [weak self] in self?.liveInk.watchForWindowPicker() }
         // `kill` and `killall` send SIGTERM, which would end the process without
@@ -136,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // Before the watcher, so a capture taken during launch already lands the way Vignette needs.
         settings.reconcileApple()
         startDrawings()
-        startRequests()
+        startRequests(clearingUnsent: !replacing)
         // A first launch leaves a folder macOS protects alone until setup has said why Vignette
         // needs it: the watcher's first read is what raises macOS's prompt.
         watcherWaitsForSetup = setupWindow.isUnasked && ScreenshotWatcher.protectedArea(of: watchFolder) != nil
@@ -196,14 +196,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             .contains { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
         if !replaced { settings.handBackAppleThumbnail() }
         Log.write("[app] terminating pid=\(ProcessInfo.processInfo.processIdentifier)")
+        // Last, and for at most 2 s: a newer launch forces this copy out after 3 s.
+        requests.releaseHeld()
     }
 
     /// The newer launch wins: any running copy of this bundle id is asked to quit, and forced after
     /// a grace period. Two copies would both watch the folder, write settings, and register the hotkey.
-    private func replaceOlderInstances() {
+    /// Answers whether there was one.
+    @discardableResult
+    private func replaceOlderInstances() -> Bool {
         let me = ProcessInfo.processInfo.processIdentifier
         let older = NSRunningApplication.runningApplications(withBundleIdentifier: Identity.bundleID).filter { $0.processIdentifier != me }
-        guard !older.isEmpty else { return }
+        guard !older.isEmpty else { return false }
         for app in older {
             Log.write("[app] replacing older instance pid=\(app.processIdentifier)")
             app.terminate()
@@ -214,6 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 app.forceTerminate()
             }
         }
+        return true
     }
 
     private func settingsChanged(_ old: SettingsData, _ new: SettingsData) {
@@ -496,6 +501,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     func moveToTrash(_ shots: [Screenshot]) {
         folderWrites.trash(shots)
+    }
+
+    func unsend(_ shots: [Screenshot]) {
+        let cancelled = shots.flatMap { requests.unsend(file: $0.url) }
+        let what = shots.count == 1 ? shots[0].url.lastPathComponent : "\(shots.count) files"
+        if cancelled.isEmpty { Commands.error("unsend", .nothingToUnsend, "\(what): no send of it is waiting") }
+        else { Commands.ok("unsend", "request=\(cancelled.map(\.id).joined(separator: ",")) \(what)") }
     }
 
     /// Copy Drawing: each card's drawing as it is now, rendered and written beside its screenshot,
@@ -1186,7 +1198,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// annotator open.
     private static var replyPointScale: CGFloat { (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor }
 
-    private func startRequests() {
+    /// `clearingUnsent` is false when this launch replaces a copy that may still be handing its waiting
+    /// sends over as it quits (`ScreenshotRequests.load`).
+    private func startRequests(clearingUnsent: Bool) {
         requests.callbacks = ScreenshotRequests.Callbacks(
             installDrawing: { [weak self] shot, marks, agent, done in
                 guard let self else { return done(Drawings.Failure(code: .writeFailed, description: "the app is gone")) }
@@ -1232,8 +1246,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 let shot = Screenshot(url: watchFolder.appendingPathComponent(record.source))
                 guard FileManager.default.fileExists(atPath: shot.url.path) else { return }
                 thumbnail.replyFailed(shot, request: record.id, client: record.address.client, reason: reason)
+            },
+            released: { [weak self] record in
+                guard let self, let shot = noteCards.released(record.id) ?? sentShots[record.id] else { return }
+                thumbnail.released(shot, request: record.id)
+            },
+            cancelled: { [weak self] record in
+                guard let self else { return }
+                if let shot = sentShots.removeValue(forKey: record.id) {
+                    SendContext.cancelled(request: record.id)
+                    thumbnail.cancelled(shot, request: record.id)
+                }
+                else { _ = noteCards.cancelled(record.id) }
             })
-        requests.load()
+        requests.load(clearingUnsent: clearingUnsent)
     }
 
     /// The newest screenshots a person may act on: the folder's, less any agent reply whose import
@@ -1325,7 +1351,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let record: ScreenshotRequests.Record
         do {
             record = try requests.send(png: png, source: shot.url, to: destination, message: message,
-                                       instructions: settings.data.sendInstructions)
+                                       instructions: settings.data.sendInstructions,
+                                       grace: settings.data.ui.sendGraceSeconds)
         } catch {
             annotator.sendFailed((error as? ScreenshotRequests.Refusal)?.reason ?? "Vignette couldn't send the drawing. The log has details.")
             return
@@ -1336,7 +1363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // the next `prepare` resets it.
         sentShots[record.id] = shot
         SendContext.sent(file: shot.url.lastPathComponent, request: record.id, to: destination, offered: annotator.offered)
-        thumbnail.showSending(shot, request: record.id, to: destination)
+        thumbnail.showSending(shot, request: record.id, to: destination, grace: requests.grace(of: record.id))
         thumbnail.annotationSent()
     }
 

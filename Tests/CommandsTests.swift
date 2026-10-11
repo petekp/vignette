@@ -198,6 +198,17 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(lines.count, Commands.fixed.count + Config.actions.count)
     }
 
+    /// A script cancels a send only by this URL, so it must be in the list `help` prints, say what it does,
+    /// and sit in no strip row or key where a card's own button is the only other way to it.
+    func testUnsendIsListedWithItsHelpAndHasNoKeyOrStripRow() throws {
+        let line = try XCTUnwrap(Commands.helpLines().first { $0.hasPrefix("unsend:") })
+        XCTAssertTrue(line.contains("grace period"), line)
+        let action = try XCTUnwrap(Config.action(id: "unsend"))
+        XCTAssertNil(action.key)
+        XCTAssertFalse(Config.stripRows.joined().contains { $0.id == "unsend" })
+        XCTAssertEqual(CommandError.nothingToUnsend.rawValue, "nothing-to-unsend")
+    }
+
     /// A recording in the selection turns off everything that only works on images, rather than
     /// running it on the part it can take, and Return opens a recording where it draws on an image.
     func testActionsRunOnlyOnKindsTheyTake() {

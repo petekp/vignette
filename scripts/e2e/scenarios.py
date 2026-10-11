@@ -33,8 +33,10 @@ def rendering_path(detail):
 # ---- Shared steps ------------------------------------------------------------------------------
 
 
-def start(app, **env):
-    app.prepare()
+def start(app, grace=0, **env):
+    """Launches the test copy. Send's grace period is 0 unless a scenario is about it, so the
+    scenarios that send do not wait for their line."""
+    app.prepare(ui={'sendGraceSeconds': grace})
     line = app.launch(**env)
     app.report.step('launched', detail=line.split('] ', 1)[1])
 
@@ -662,6 +664,46 @@ def send_message(app):
     app.wait_state(lambda s: not s['annotator']['windowVisible'], 'the editor closing after the send')
 
 
+@needs_input
+def send_grace(app):
+    """Send's line waits out its grace period: nothing is in the inbox for the first seconds, then
+    exactly one line. A send cancelled with `unsend` in that time never reaches the inbox, and the
+    screenshot stays."""
+    session, inbox = app.fake_session('e2e-project')
+    start(app, grace=3)
+    for step in ('release', 'cancel'):
+        before = app.lines_in(inbox)
+        path = app.image(f'Screenshot grace {step}.png', folder=app.watch)
+        time.sleep(1)
+        app.touch_alive(inbox)
+        click_to_open(app, path)
+        app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == session, 'Send to the fake session')
+        draw_box(app, app.state())
+        app.touch_alive(inbox)
+        offset = app.log_size()
+        app.keys('annotator', 'key', KEY_RETURN, 'cmd')
+        app.wait_log('[send] waiting 3000ms', offset, timeout=20)
+        time.sleep(1)
+        if app.lines_in(inbox) != before:
+            raise Failed(f'a line reached the inbox during the grace period: {app.lines_in(inbox)}')
+        app.report.step('no line in the inbox one second in')
+        app.touch_alive(inbox)
+        if step == 'cancel':
+            app.command('unsend', app.file_query(path))
+            app.wait_log('[send] cancelled', offset, timeout=5)
+            time.sleep(4)
+            if app.lines_in(inbox) != before:
+                raise Failed(f'a cancelled send reached the inbox: {app.lines_in(inbox)}')
+            if not os.path.exists(path):
+                raise Failed('Don\'t send deleted the screenshot')
+            app.report.step('Don\'t send: no line, and the screenshot is still there')
+        else:
+            app.wait_log('[send] ok', offset, timeout=10)
+            if len(app.lines_in(inbox)) != len(before) + 1:
+                raise Failed(f'the inbox has {app.lines_in(inbox)}')
+            app.report.step('one line in the inbox once the grace period ended')
+
+
 def capture_sent_card(app, path, name):
     """The card that was sent, with its mark, into the report: the lone thumbnail comes back to say
     what happened, and its mark is up once it has landed."""
@@ -888,5 +930,5 @@ def agent_marks_editable(app):
 
 
 ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, send_target_codex, copy_types, stitch,
-       instant_draw, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_message,
+       instant_draw, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_message, send_grace,
        send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select, capture_origin]

@@ -188,6 +188,14 @@ final class FolderWrites {
         callbacks.removeDrawings([url], .infinity)
     }
 
+    /// A card from `writeCard` that was shown and is taken back: its file, its drawing and its card
+    /// go now. `takeBack` is for a card not shown yet.
+    func discard(_ shot: Screenshot) {
+        pendingAdds[shot.url.lastPathComponent] = nil
+        try? FileManager.default.removeItem(at: shot.url)
+        left([shot], observedAt: .infinity)
+    }
+
     private static let cardTime: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

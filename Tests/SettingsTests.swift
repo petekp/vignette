@@ -38,6 +38,18 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(loaded.data.recentHotkey, SettingsData().recentHotkey)
     }
 
+    /// 0 is how a person turns the wait off, so loading must not read it as a bad number and put the 3 back.
+    @MainActor
+    func testTheSendGraceDefaultsToThreeSecondsAndZeroSurvivesLoading() throws {
+        try write(#"{"ui": {"cardMaxWidth": 300}}"#)
+        guard case .loaded(let missing) = Settings.load(file) else { return XCTFail("expected .loaded") }
+        XCTAssertEqual(missing.data.ui.sendGraceSeconds, 3)
+        try write(#"{"ui": {"sendGraceSeconds": 0}}"#)
+        let boot = Settings.bootstrap(at: file)
+        XCTAssertEqual(boot.data.ui.sendGraceSeconds, 0)
+        XCTAssertTrue(boot.log.filter { $0.hasPrefix("warning clamped") }.isEmpty)
+    }
+
     @MainActor
     func testAgentSkillStartsUnaskedAndOnlyRecordsThatTheOfferWasMade() throws {
         XCTAssertEqual(SettingsData().agentSkillChoice, .unasked)

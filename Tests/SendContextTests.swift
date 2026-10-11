@@ -334,4 +334,20 @@ final class SendContextTests: XCTestCase {
         XCTAssertEqual(Set(unknown.keys), ["shownWhyNot", "shownMs", "seq", "t"])
         XCTAssertEqual(unknown["shownWhyNot"] as? String, "split-tab")
     }
+
+    /// A cancelled send must say so in the log, or the shadow log counts a send that never reached a
+    /// session; a note's record has no request id, so its cancel names the session to match it by.
+    func testCancelledRecordNamesTheRequestAndForANoteTheSession() throws {
+        func written(note: String?) throws -> [String: Any] {
+            let at = Date()
+            let line = try XCTUnwrap(SendContext.line(SendContext.cancelledRecord(request: "r1", note: note), at: at, seq: 0))
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: line) as? [String: Any])
+        }
+        let editor = try written(note: nil)
+        XCTAssertEqual(Set(editor.keys), ["event", "request", "seq", "t"])
+        XCTAssertEqual(editor["event"] as? String, "send-cancelled")
+        XCTAssertEqual(editor["request"] as? String, "r1")
+        let note = try written(note: "session-1")
+        XCTAssertEqual(note["note"] as? String, "session-1")
+    }
 }

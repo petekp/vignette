@@ -16,6 +16,7 @@ open -g vignette://copy-annotated             # copy with the drawing rendered i
 open -g vignette://paths                      # copy the path as text
 open -g vignette://open                       # open the newest recording in the app that plays movies
 open -g "vignette://trash?file=~/Dropbox/Screenshots/x.png"
+open -g "vignette://unsend?file=~/Dropbox/Screenshots/x.png"  # cancel a send still in its grace period, as Don't send on its card does: [unsend] ok request=<ids> <name>, or error nothing-to-unsend. Without file= it acts on the newest screenshot
 open -g "vignette://stitch?file=~/Dropbox/Screenshots/a.png&file=~/Dropbox/Screenshots/b.png"
 open -g vignette://last                       # show the newest screenshot or recording as a lone thumbnail
 open -g "vignette://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
@@ -95,7 +96,7 @@ Every command answers with one line in `~/Library/Logs/Vignette.log`:
 menu bar opens it. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`, `unreadable-image`,
 `debug-disabled`, `no-apple-original`, `write-failed`, `unsupported-type`, `invalid-marks`,
-`no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`. The log has one event per line,
+`no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`, `nothing-to-unsend`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
 ## Input events

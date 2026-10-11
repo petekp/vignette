@@ -55,11 +55,16 @@ it. Over Pete's 43 asks they arrived after 3.3 s at the median, 5.2 s at the 90t
 3. The file arrives like a capture but skips the capture switches, as a file from `add` does. Copy
    on capture and Draw on capture leave it alone.
 4. The request names that file, so the card shows the send as a send from the editor does:
-   Sending to, then Sent to, Queued for, Check or Not sent.
+   Sending to, then Sent to, Queued for, Check or Not sent. The line waits `ui.sendGraceSeconds`
+   first (`docs/send-grace-2026-10-10.md`), with a ring on the card and a Don't send button. Don't
+   send discards the note card, its file and its drawing, and clears the request. The ink does not
+   come back.
 5. The ink and the note leave the window at once, and the card comes into the corner. Step 6 below
    makes the card fly there from the window.
 6. Nothing on the screen waits on the session, so the person can draw and send another note right
-   away. Each note waits on its own turn. Notes whose turns end together are answered together
+   away. Each note waits on its own turn, which Vignette starts watching when the note's line is
+   handed to the session, after the grace period. A turn that ends during the grace period is not
+   the note's. Notes whose turns end together are answered together
    (below).
 
 ### When the session's turn ends
@@ -160,6 +165,8 @@ ink's handover by the log: VNC frames come 7 s apart, too far apart to show a si
   on the window goes on the turn the card starts moving, so the card carries it away.
 - Copy on capture and Draw on capture are on, and neither acts on the note card.
 - Two notes sent one after the other each get their own card and their own turn watch.
+- With a grace period, no line reaches the session until it ends, and then exactly one does. Don't
+  send before then removes the card and its file, and no line ever reaches the session.
 - A turn that ends with the page changed under the ink makes one result card, from the session,
   whose Reply goes to that session.
 - A turn that ends with nothing changed makes no result card, and the note card says Done in.

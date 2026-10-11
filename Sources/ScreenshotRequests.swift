@@ -36,6 +36,12 @@ final class ScreenshotRequests {
         /// was sent shows, since there is no card of the reply's own to show it on. The reason is
         /// what the person can do about it.
         var replyFailed: (Record, String) -> Void = { _, _ in }
+        /// A send that waited out its grace is going to its client now. Called on the timer's turn,
+        /// before the client is asked, so before `delivered`. Never called for a send with no grace.
+        var released: (Record) -> Void = { _ in }
+        /// A send that was waiting ended without reaching its client: Don't send, or a clear took
+        /// its request.
+        var cancelled: (Record) -> Void = { _ in }
     }
 
     var callbacks = Callbacks()
@@ -67,10 +73,23 @@ final class ScreenshotRequests {
     private var publicationReady = false
     /// Cancellation takes effect in memory even when its record cannot yet be written.
     private var pendingCleanupWrites: Set<String> = []
+    /// The sends between Send and their line reaching the client.
+    private var sendGrace = SendGrace()
+    private let now: () -> TimeInterval
+    private let schedule: (TimeInterval, @escaping @MainActor @Sendable () -> Void) -> Void
 
-    init(root: URL, connections: [AgentClient: any AgentConnection] = [:]) {
+    /// `now` and `schedule` are the clock and the timer a grace period runs on: a test sets both.
+    /// The clock is `systemUptime`, which stops during sleep as the timer does, so a deadline and its
+    /// timer stay in step.
+    init(root: URL, connections: [AgentClient: any AgentConnection] = [:],
+         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         schedule: @escaping (TimeInterval, @escaping @MainActor @Sendable () -> Void) -> Void = { seconds, work in
+             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { MainActor.assumeIsolated { work() } }
+         }) {
         self.root = root
         self.connections = connections
+        self.now = now
+        self.schedule = schedule
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
@@ -94,7 +113,7 @@ final class ScreenshotRequests {
         var detail: String
 
         enum Status: String, Codable {
-            /// Stored and ready to submit; nothing has reached the client yet.
+            /// Stored and not yet handed to the client: in its grace, or about to be.
             case prepared
             /// The client took it. Not proof that a model has read the image.
             case submitted
@@ -185,7 +204,10 @@ final class ScreenshotRequests {
     /// A record that will not decode is dropped from memory and left on disk, which keeps its file
     /// name excluded (an unknown managed name is hidden) rather than turning it into a capture.
     /// Replies an earlier launch accepted and did not publish are imported from here.
-    func load() {
+    /// A request still prepared lost its line with the process that held it, so `clearingUnsent`
+    /// clears it. A launch that replaces a running copy passes false: that copy may still be handing
+    /// its waiting lines over as it quits, and clearing would delete the image they name.
+    func load(clearingUnsent: Bool = true) {
         let fm = FileManager.default
         var loadedRequests = 0, loadedReplies = 0, unreadable = 0
         for directory in (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
@@ -204,6 +226,11 @@ final class ScreenshotRequests {
             }
         }
         for record in requests.values where record.status == .cleared { cleanup(record.id) }
+        for record in requests.values where clearingUnsent && record.status == .prepared {
+            Log.write("[requests] cleared \(record.id): its line never went, Vignette quit first")
+            do { try clear(record.id) }
+            catch { Log.write("[requests] error cleanup \(record.id): \(error.localizedDescription)") }
+        }
         prune()
         Log.write("[requests] loaded \(loadedRequests) requests \(loadedReplies) replies pending=\(pendingImports.count)\(unreadable > 0 ? " unreadable=\(unreadable)" : "") dir=\(root.path)")
         importNext()
@@ -228,9 +255,11 @@ final class ScreenshotRequests {
         ReplyProtocol.replyID(fromFileName: url.lastPathComponent) == nil
     }
 
-    /// The person deleted a published reply. Publication happened; the recovery copy is not used
-    /// to put the file back.
+    /// A file left the watch folder. A send of it still in its grace is cancelled, since deleting the
+    /// card is a way of not sending it. A deleted published reply stays deleted: publication happened,
+    /// and the recovery copy is not used to put the file back.
     func fileRemoved(_ url: URL) {
+        unsend(file: url)
         guard let id = ReplyProtocol.replyID(fromFileName: url.lastPathComponent), var reply = replies[id],
               reply.stage == .published, reply.outputURL == url.standardizedFileURL, !reply.deleted else { return }
         reply.deleted = true
@@ -271,11 +300,12 @@ final class ScreenshotRequests {
 
     /// Stores the drawing and the request, then hands it to the client. The store happens first and
     /// on the main thread: once this answers, the request exists whatever the client does next, and
-    /// the annotator may close. The submission follows off the main thread and reports through
-    /// `[send]` and `callbacks.delivered`. Throws a `Refusal` when no live request was admitted.
+    /// the annotator may close. The client gets the line `grace` seconds later, or at once when that
+    /// is 0 (`SendGrace`); the submission then runs off the main thread and reports through `[send]`
+    /// and `callbacks.delivered`. Throws a `Refusal` when no live request was admitted.
     @discardableResult
     func send(png: Data, source: URL, to destination: AgentDestination, message: String? = nil,
-              instructions: String = SettingsData.defaultSendInstructions) throws -> Record {
+              instructions: String = SettingsData.defaultSendInstructions, grace: TimeInterval = 0) throws -> Record {
         let open = requests.values.filter { $0.status != .cleared }.sorted { $0.created < $1.created }
         guard open.count <= Self.maxLiveRequests else {
             Log.write("[send] error \(CommandError.writeFailed.rawValue) too many open requests: \(open.count)")
@@ -325,28 +355,71 @@ final class ScreenshotRequests {
         }
         prune()
         Log.write("[send] prepared \(id) to \(destination.name) (\(destination.address.description)) \(png.count) bytes")
-        submit(record, message: message, instructions: instructions)
+        if grace > 0 { Log.write("[send] waiting \(Int(grace * 1000))ms request=\(id)") }
+        // The message travels in the line only: it is the person's words, so neither the record
+        // nor the log keeps it.
+        let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions)
+        run(sendGrace.handle(.sent(request: id, file: source.standardizedFileURL.path, line: line, grace: grace, at: now())))
         return record
     }
 
-    /// Hands one prepared request to its client and records what came back. The message travels in
-    /// the line only: it is the person's words, so neither the record nor the log keeps it.
-    private func submit(_ record: Record, message: String?, instructions: String) {
-        guard let connection = connections[record.address.client] else {
-            finishSubmission(record.id, .notSubmitted(code: .noAgent, detail: "no connection for \(record.address.client.rawValue)",
-                                                      reason: SubmissionOutcome.internalReason))
-            return
-        }
-        let destination = AgentDestination(id: record.destinationID, name: record.destinationName, address: record.address)
-        let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let outcome = connection.submit(line, to: destination)
-            DispatchQueue.main.async { MainActor.assumeIsolated { self.finishSubmission(record.id, outcome) } }
+    /// Carries out what `SendGrace` decided.
+    private func run(_ effects: [SendGrace.Effect]) {
+        for effect in effects {
+            switch effect {
+            case .arm(let id, let seconds):
+                schedule(seconds) { [weak self] in
+                    guard let self else { return }
+                    run(sendGrace.handle(.due(request: id, at: now())))
+                }
+            case .submit(let id, let line, let waited):
+                guard let record = requests[id], record.status == .prepared else { continue }
+                if let waited {
+                    Log.write("[send] released request=\(id) after=\(Int(waited * 1000))ms")
+                    callbacks.released(record)
+                }
+                submit(record, line: line)
+            case .discard(let id):
+                do { try clear(id) }
+                catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not clear \(id): \(error.localizedDescription)") }
+                Log.write("[send] cancelled request=\(id) before it was sent")
+                if let record = requests[id] { callbacks.cancelled(record) }
+            case .dropped(let id):
+                Log.write("[send] cancelled request=\(id) before it was sent: its request was cleared")
+                if let record = requests[id] { callbacks.cancelled(record) }
+            }
         }
     }
 
+    /// Hands one prepared request to its client and records what came back.
+    private func submit(_ record: Record, line: String) {
+        let id = record.id
+        let noClient = handOver(record, line: line) { outcome in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self.finishSubmission(id, outcome) } }
+        }
+        if let noClient { finishSubmission(id, noClient) }
+    }
+
+    /// Asks the record's client to take `line`, off the main thread, and answers `completion` there.
+    /// Answers the outcome at once, and never calls `completion`, when the record has no client to ask.
+    private func handOver(_ record: Record, line: String, completion: @escaping @Sendable (SubmissionOutcome) -> Void) -> SubmissionOutcome? {
+        guard let connection = connections[record.address.client] else {
+            return .notSubmitted(code: .noAgent, detail: "no connection for \(record.address.client.rawValue)",
+                                 reason: SubmissionOutcome.internalReason)
+        }
+        let destination = AgentDestination(id: record.destinationID, name: record.destinationName, address: record.address)
+        DispatchQueue.global(qos: .userInitiated).async { completion(connection.submit(line, to: destination)) }
+        return nil
+    }
+
     private func finishSubmission(_ id: String, _ outcome: SubmissionOutcome) {
-        guard var record = requests[id] else { return }
+        guard let record = recordOutcome(outcome, for: id) else { return }
+        callbacks.delivered(record, outcome)
+    }
+
+    /// Writes what the client answered into the request's record and logs it. Answers the record.
+    private func recordOutcome(_ outcome: SubmissionOutcome, for id: String) -> Record? {
+        guard var record = requests[id] else { return nil }
         if record.status != .cleared {
             switch outcome {
             case .accepted, .queued: record.status = .submitted
@@ -370,7 +443,68 @@ final class ScreenshotRequests {
         case .notSubmitted(let code, let detail, _):
             Log.write("[send] error \(code.rawValue) \(id) \(detail)")
         }
-        callbacks.delivered(record, outcome)
+        return record
+    }
+
+    /// Don't send: cancels every send of `file` still in its grace, clears their requests and tells
+    /// the cards. Answers the requests it cancelled, and nothing when none was waiting: the line was
+    /// handed over already, or there was no send.
+    @discardableResult
+    func unsend(file: URL) -> [Record] {
+        let effects = sendGrace.handle(.cancelled(file: file.standardizedFileURL.path))
+        let cancelled = effects.compactMap { effect -> Record? in
+            if case .discard(let id) = effect { return requests[id] }
+            return nil
+        }
+        run(effects)
+        return cancelled
+    }
+
+    /// The deadline, in `now`'s clock, and length of a send still in its grace; nil once it was
+    /// handed over, cancelled, or had none.
+    func grace(of request: String) -> SendNotice.Grace? {
+        sendGrace.wait(of: request).map { SendNotice.Grace(deadline: $0.deadline, length: $0.length) }
+    }
+
+    /// Quit: hands every waiting send to its client now and waits up to `limit` for the answers,
+    /// since quitting is not a retraction and the process ends right after. Records what came back
+    /// and calls no callbacks: the cards are going too. A send with no answer by then stays
+    /// uncertain, as a call that did not answer always is.
+    func releaseHeld(waitingUpTo limit: TimeInterval = 2) {
+        let outcomes = Outcomes()
+        let group = DispatchGroup()
+        var handedOver: [String] = []
+        for case .submit(let id, let line, _) in sendGrace.handle(.quit) {
+            guard var record = requests[id], record.status == .prepared else { continue }
+            // Stored before the line leaves, so a launch that finds this process gone does not take
+            // a line that may have arrived for one that never went.
+            record.status = .uncertain
+            record.detail = "Vignette quit while the line was going"
+            requests[id] = record
+            do { try write(record) }
+            catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not store \(id): \(error.localizedDescription)") }
+            handedOver.append(id)
+            group.enter()
+            if let noClient = handOver(record, line: line, completion: { outcomes.set(id, $0); group.leave() }) {
+                outcomes.set(id, noClient)
+                group.leave()
+            } else {
+                Log.write("[send] released at quit request=\(id)")
+            }
+        }
+        if group.wait(timeout: .now() + limit) == .timedOut {
+            let missing = handedOver.filter { outcomes.all[$0] == nil }
+            Log.write("[send] error uncertain released at quit: no answer in \(Int(limit * 1000))ms for \(missing.joined(separator: ","))")
+        }
+        for (id, outcome) in outcomes.all { _ = recordOutcome(outcome, for: id) }
+    }
+
+    /// The answers that came back from `releaseHeld`'s submissions, written by their queues.
+    private final class Outcomes: @unchecked Sendable {
+        private let lock = NSLock()
+        private var answers: [String: SubmissionOutcome] = [:]
+        func set(_ id: String, _ outcome: SubmissionOutcome) { lock.lock(); answers[id] = outcome; lock.unlock() }
+        var all: [String: SubmissionOutcome] { lock.lock(); defer { lock.unlock() }; return answers }
     }
 
     /// The one line the agent receives, which arrives in the person's session as their own message.
@@ -700,6 +834,10 @@ final class ScreenshotRequests {
     /// Terminal state commits before any owned payload is removed.
     @discardableResult
     private func clear(_ id: String) throws -> Bool {
+        // The one place a request is cleared, so a clear by URL or by admission stops a waiting send
+        // too. The cards hear of it once the clear has been tried: the line is not going either way.
+        let stopped = sendGrace.handle(.cleared(request: id))
+        defer { run(stopped) }
         guard var record = requests[id] else { return false }
         if record.status != .cleared {
             record.status = .cleared
@@ -759,8 +897,10 @@ final class ScreenshotRequests {
         [
             "directory": root.path,
             "requests": requests.values.sorted { $0.created < $1.created }.map { record -> [String: Any] in
-                ["id": record.id, "status": record.status.rawValue, "destination": record.destinationName,
-                 "address": record.address.description, "guard": record.addressGuard.rawValue, "source": record.source]
+                var json: [String: Any] = ["id": record.id, "status": record.status.rawValue, "destination": record.destinationName,
+                                           "address": record.address.description, "guard": record.addressGuard.rawValue, "source": record.source]
+                if let grace = self.grace(of: record.id) { json["graceMs"] = Int(max(0, grace.deadline - self.now()) * 1000) }
+                return json
             },
             "replies": replies.values.sorted { $0.id < $1.id }.map { reply -> [String: Any] in
                 var json: [String: Any] = ["id": reply.id, "request": reply.requestID, "stage": reply.stage.rawValue,

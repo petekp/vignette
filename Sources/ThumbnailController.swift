@@ -727,8 +727,20 @@ final class ThumbnailController: NSObject {
 
     /// The request for `shot` is stored and its card is going home: the card shows where it is going
     /// from the moment it lands.
-    func showSending(_ shot: Screenshot, request: String, to destination: AgentDestination) {
-        post(.sending(request: request, client: destination.client, project: destination.project), on: shot)
+    func showSending(_ shot: Screenshot, request: String, to destination: AgentDestination, grace: SendNotice.Grace? = nil) {
+        post(.sending(request: request, client: destination.client, project: destination.project, grace: grace), on: shot)
+    }
+
+    /// The grace of the send `request` ended and its line is going to the client.
+    func released(_ shot: Screenshot, request: String) {
+        post(.released(request: request), on: shot)
+    }
+
+    /// The send `request` was cancelled before its line went. Its notice goes and the card is as it
+    /// was; a lone thumbnail that stayed for the grace leaves after the usual hold.
+    func cancelled(_ shot: Screenshot, request: String) {
+        post(.cancelled(request: request), on: shot)
+        if isSeen(shot) { leaveCorner(after: ui.markSeconds + ui.expandDuration) }
     }
 
     /// The client answered for the request `request` about `shot`. A card no longer on screen says
