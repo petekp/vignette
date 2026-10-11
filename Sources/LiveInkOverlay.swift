@@ -130,9 +130,9 @@ final class LiveInkOverlay: NSPanel {
     func prepareEdge(ui: UITweaks) {
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         let look = EdgeLensLayer.Style(rawValue: Int(ui.liveInkEdgeStyle.rounded())) ?? .glow
-        let capture = look.drawsFromScreen || ui.wakes
+        let capture = look.drawsFromScreen || ui.wakes || ui.pointerFieldBends
         if !capture { canvas.lens.stopFeed() }
-        guard look != .glow || ui.wakes,
+        guard look != .glow || ui.wakes || ui.pointerField,
               let screen = NSScreen.screens.first(where: { ($0.deviceDescription[key] as? NSNumber)?.uint32Value == display }) else { return }
         // Each chord tries the picture again: a refusal or a stream error may be over by now.
         canvas.lensFailed = false
@@ -233,8 +233,8 @@ final class LiveInkOverlay: NSPanel {
             let available = EdgeLensLayer.isAvailable && !lensFailed
             let shader = ui.liveInkEdgeStyle >= 1 && available
             glow.show(on && !shader, ui: ui, color: color, pen: local)
-            // With the glow, the lens layer draws only the wake.
-            lens.show(on && (shader || (available && ui.wakes)), ui: ui, color: color.mixed(with: .white, 0.3), pen: local)
+            // With the glow, the lens layer draws only the wake and the ring round the pointer.
+            lens.show(on && (shader || (available && (ui.wakes || ui.pointerField))), ui: ui, color: color.mixed(with: .white, 0.3), pen: local)
         }
 
         /// Moves the edge's brightest part to the pen, and with `drawing`, starts a ring of the wake there.
@@ -260,6 +260,7 @@ final class LiveInkOverlay: NSPanel {
         }
 
         override func mouseDown(with event: NSEvent) {
+            lens.press(true)
             follow(event, drawing: true)
             stroke = [location(of: event)]
             onStrokeMoved?(stroke)
@@ -273,6 +274,7 @@ final class LiveInkOverlay: NSPanel {
         }
 
         override func mouseUp(with event: NSEvent) {
+            lens.press(false)
             guard isTracking else { return }
             stroke.append(location(of: event))
             endStroke()
@@ -286,6 +288,7 @@ final class LiveInkOverlay: NSPanel {
         }
 
         func cancelStroke() {
+            lens.press(false)
             guard isTracking else { return }
             stroke = []
             onStrokeMoved?([])

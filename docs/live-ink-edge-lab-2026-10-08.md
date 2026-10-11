@@ -106,8 +106,9 @@ at 60, so the band may trail fast-moving content there by a frame.
 
 ## What is in the build
 
-- **Seven looks,** picked by `ui.liveInkEdgeStyle`: glow, glass, lens, aurora, ripple, frost, and
-  aurora ripple, where ripple's waves bend the screen and aurora's light rides on their crests.
+- **Eight looks,** picked by `ui.liveInkEdgeStyle`: glow, glass, lens, aurora, ripple, frost,
+  aurora ripple, where ripple's waves bend the screen and aurora's light rides on their crests, and
+  none, which leaves the edges alone so the pointer field can be tried on its own.
   Glow is `EdgeGlow`. The others are one Metal shader, `Sources/EdgeLens.metal`, drawn by
   `EdgeLensLayer` under the marks, so ink near the edge stays sharp.
 - **The aurora's colours,** in aurora and aurora ripple. The light takes the ink colour, a
@@ -129,6 +130,19 @@ at 60, so the band may trail fast-moving content there by a frame.
   and spreads `ui.liveInkWakeSize` points. `ui.liveInkWakeStrength` at 0 turns it off. It reads the same live picture as the looks, so it shows the recording indicator too.
   The ink is drawn above it and stays sharp. In the VM, 0.3 reads as a slight waver of the lines
   behind the pen, and 0.6 as a clear ripple.
+- **The pointer field,** with any look (2026-10-10, docs/live-ink-cursor-2026-10-10.md). While
+  the chord is held, a ring round the pointer bends the screen under it towards its crest, parts red
+  from blue there, and glows in the ink colour. Inside the ring nothing moves, so what the pointer
+  is on stays where it is. The ring is a ridge, so the map from screen to picture keeps its order
+  and nothing folds back. It is centred a little below and right of the arrow's tip, round the
+  arrow's middle. It grows in as the look comes up, tightens and brightens while the button is
+  down, and stretches along the way it moves. Each refresh it is sprung towards where the pointer
+  is then (`NSEvent.mouseLocation` from the display link), not where the last event put it. The
+  real arrow is drawn above it, by macOS. Its settings are `ui.liveInkField*`: size, where 0 turns
+  it off, bend, colour split, glow, follow, the spring's time, where 0 holds it on the pointer and
+  which the motion setting scales, and stretch. It reads the screen's live picture only when it
+  bends. In the VM it draws as meant over text, with a still middle and a mean GPU time of about
+  1 ms a frame with aurora ripple.
 - **The Edge Lab,** `vignette://edge-lab` or the tweak panel's Edge button (needs `debug`). It picks
   a look, starts it from that look's own values, and shows the sliders that change it. "Hold on
   screen" keeps the look up at the inking level and passes every press through.
@@ -156,6 +170,10 @@ the wake at strength 0.95, size 36 and duration 0.85. The glow's own width is 29
   with this build.
 - Whether the wake makes the ink lag behind a long, fast stroke on Pete's Mac.
 - Whether the look now shows about 250 ms after the chord on Pete's Mac, with speech on.
+- How far the pointer field trails the arrow on Pete's Mac, at 120 Hz. VNC draws the VM's cursor
+  itself, so the VM cannot show it.
+- The pointer field crossing between displays. Each screen's layer reads the pointer itself, so a
+  ring follows it onto another screen, but it grows in afresh there only when the look comes up.
 - Ripple at its highest waves can still fold the picture back. It was left, since its waves are
   meant to distort.
 - Whether 10 pt matches the real top corners of Pete's display, and 8 pt the notch's.

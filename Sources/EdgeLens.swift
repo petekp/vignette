@@ -170,6 +170,20 @@ final class EdgeLensLayer: CAMetalLayer {
     private var trail: [(point: CGPoint, born: CFTimeInterval, weight: Float)] = []
     /// The display's corners and notch, taken when the look is readied on it.
     private var shape = DisplayShape()
+    /// The screen's frame in AppKit's global points, which the pointer field reads the pointer against.
+    private var screenFrame = CGRect.zero
+    /// The ring round the pointer: where its centre is and how fast it moves, in the layer's points,
+    /// its radius, and the last refresh that moved them. It is sprung once a refresh from where the
+    /// pointer is then, not from the last event.
+    private var fieldAt = CGPoint.zero
+    private var fieldVelocity = CGVector.zero
+    private var fieldRadius: CGFloat = 0
+    private var fieldRadiusVelocity: CGFloat = 0
+    private var fieldTick: CFTimeInterval = 0
+    private var pressing = false
+    /// From the arrow's tip, its hotspot, to about the middle of the arrow, so the ring sits round
+    /// the arrow rather than round its tip.
+    private static let fieldOffset = CGPoint(x: 4, y: 6)
     /// The most points the shader takes, which fits `setFragmentBytes`' 4 KB.
     private static let trailLimit = 96
     /// Runs when the look cannot be drawn, so the plain glow can show in its place.
@@ -204,6 +218,7 @@ final class EdgeLensLayer: CAMetalLayer {
     func prepare(display: CGDirectDisplayID, screen: NSScreen, excluding window: CGWindowID, capture: Bool) {
         guard Self.metal != nil else { return }
         shape = DisplayShape(of: screen)
+        screenFrame = screen.frame
         if link == nil {
             link = screen.displayLink(target: self, selector: #selector(tick))
             link?.add(to: .main, forMode: .common)
@@ -244,7 +259,14 @@ final class EdgeLensLayer: CAMetalLayer {
         dirty = true
         if !on { trail = [] }
         if on {
-            if started == 0 { started = CACurrentMediaTime(); gpuTimes.reset() }
+            if started == 0 {
+                started = CACurrentMediaTime()
+                gpuTimes.reset()
+                // The ring grows in from the pointer each time the look comes up.
+                fieldAt = pointer
+                fieldVelocity = .zero
+                (fieldRadius, fieldRadiusVelocity, fieldTick) = (0, 0, started)
+            }
             link?.isPaused = false
         } else {
             started = 0
@@ -263,6 +285,11 @@ final class EdgeLensLayer: CAMetalLayer {
         dirty = true
     }
 
+    /// The button went down or up: the ring tightens and brightens while it is down.
+    func press(_ down: Bool) {
+        pressing = down
+    }
+
     /// Starts one of the wake's rings where the pen is drawing, unless the last one is under 6 pt away.
     func wake(_ point: CGPoint) {
         guard wanted, ui.wakes else { return }
@@ -279,13 +306,14 @@ final class EdgeLensLayer: CAMetalLayer {
         trail.removeAll { now - $0.born >= ui.liveInkWakeDuration }
         // One more drawing once the last ring is gone, so none of it stays.
         if rippling, trail.isEmpty { dirty = true }
-        let needsPicture = look.drawsFromScreen || ui.wakes
+        let fieldMoved = stepField(at: now)
+        let needsPicture = look.drawsFromScreen || ui.wakes || ui.pointerFieldBends
         let picture = needsPicture ? feed.take() : nil
         // A look that draws from the screen waits for its first frame.
         if needsPicture, picture == nil { return }
-        // A still look draws only when the screen, the pen or the settings changed; a moving look,
-        // or a wake with rings, every refresh.
-        guard dirty || picture?.fresh == true || (look.moves && ui.liveInkEdgeSpeed > 0) || !trail.isEmpty else { return }
+        // A still look draws only when the screen, the pen, the ring round the pointer or the settings
+        // changed; a moving look, or a wake with rings, every refresh.
+        guard dirty || fieldMoved || picture?.fresh == true || (look.moves && ui.liveInkEdgeSpeed > 0) || !trail.isEmpty else { return }
         dirty = false
         draw(picture?.frame, at: now)
         if !shown {
@@ -297,6 +325,41 @@ final class EdgeLensLayer: CAMetalLayer {
     }
 
     private var look: Style { Style(rawValue: Int(ui.liveInkEdgeStyle.rounded())) ?? .glass }
+
+    /// The pointer now, in the layer's points, moved from the arrow's tip to its middle.
+    private var pointer: CGPoint {
+        let mouse = NSEvent.mouseLocation
+        return CGPoint(x: mouse.x - screenFrame.minX + Self.fieldOffset.x, y: screenFrame.maxY - mouse.y + Self.fieldOffset.y)
+    }
+
+    /// Moves the ring round the pointer on its springs to `now`: its centre after the pointer, over
+    /// `ui.liveInkFieldFollow`, and its radius to its size, smaller while pressing, over the look's
+    /// fade. Answers whether it moved.
+    private func stepField(at now: CFTimeInterval) -> Bool {
+        let dt = now - fieldTick
+        fieldTick = now
+        guard ui.pointerField else { return false }
+        let before = (fieldAt, fieldRadius)
+        let target = pointer
+        if ui.liveInkFieldFollow > 0 {
+            let omega = 6.6 / ui.liveInkFieldFollow
+            let x = Tween.spring(value: fieldAt.x, velocity: fieldVelocity.dx, target: target.x, omega: omega, dt: dt)
+            let y = Tween.spring(value: fieldAt.y, velocity: fieldVelocity.dy, target: target.y, omega: omega, dt: dt)
+            fieldAt = CGPoint(x: x.value, y: y.value)
+            fieldVelocity = CGVector(dx: x.velocity, dy: y.velocity)
+        } else {
+            fieldAt = target
+            fieldVelocity = .zero
+        }
+        let size = CGFloat(ui.liveInkFieldSize) * (pressing ? 0.8 : 1)
+        if ui.liveInkGlowFade > 0 {
+            let r = Tween.spring(value: fieldRadius, velocity: fieldRadiusVelocity, target: size, omega: 6.6 / ui.liveInkGlowFade, dt: dt)
+            (fieldRadius, fieldRadiusVelocity) = (r.value, r.velocity)
+        } else {
+            (fieldRadius, fieldRadiusVelocity) = (size, 0)
+        }
+        return hypot(fieldAt.x - before.0.x, fieldAt.y - before.0.y) > 0.01 || abs(fieldRadius - before.1) > 0.01
+    }
 
     private func fade(in on: Bool) {
         guard on != shown else { return }
@@ -337,7 +400,7 @@ final class EdgeLensLayer: CAMetalLayer {
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         pass.colorAttachments[0].storeAction = .store
         guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
-        var uniforms = uniforms(size: size, at: now)
+        var uniforms = uniforms(size: size, at: now, hasPicture: frame != nil)
         // Each point: where, its age in seconds, its weight. The shader reads none when the count is 0,
         // but Metal wants a buffer bound.
         var points = trail.map { SIMD4<Float>(Float($0.point.x), Float($0.point.y), Float(now - $0.born), $0.weight) }
@@ -364,7 +427,7 @@ final class EdgeLensLayer: CAMetalLayer {
         return SIMD3(Float(components[0]), Float(components[1]), Float(components[2]))
     }
 
-    private func uniforms(size: CGSize, at now: CFTimeInterval) -> EdgeUniforms {
+    private func uniforms(size: CGSize, at now: CFTimeInterval, hasPicture: Bool) -> EdgeUniforms {
         var uniforms = EdgeUniforms()
         uniforms.color = color
         uniforms.size = SIMD2(Float(size.width), Float(size.height))
@@ -400,6 +463,21 @@ final class EdgeLensLayer: CAMetalLayer {
         let first = Self.layerColor(ui.liveInkEdgeColor1), second = Self.layerColor(ui.liveInkEdgeColor2)
         (uniforms.color1R, uniforms.color1G, uniforms.color1B) = (first.x, first.y, first.z)
         (uniforms.color2R, uniforms.color2G, uniforms.color2B) = (second.x, second.y, second.z)
+        if ui.pointerField {
+            uniforms.fieldX = Float(fieldAt.x)
+            uniforms.fieldY = Float(fieldAt.y)
+            uniforms.fieldRadius = Float(fieldRadius)
+            // Without a picture of the screen there is nothing to bend, only light to draw.
+            uniforms.fieldBend = hasPicture ? Float(ui.liveInkFieldBend) : 0
+            uniforms.fieldSplit = hasPicture ? Float(ui.liveInkFieldSplit) : 0
+            uniforms.fieldGlow = Float(ui.liveInkFieldGlow)
+            uniforms.fieldVX = Float(fieldVelocity.dx)
+            uniforms.fieldVY = Float(fieldVelocity.dy)
+            uniforms.fieldStretch = Float(ui.liveInkFieldStretch)
+            // Brighter while the ring is smaller than its size: as it grows in, and while pressing.
+            let size = max(CGFloat(ui.liveInkFieldSize), 1)
+            uniforms.fieldPress = Float(min(max((size - fieldRadius) / (size * 0.2), 0), 1))
+        }
         uniforms.wakeCount = Float(trail.count)
         uniforms.wakeStrength = Float(ui.liveInkWakeStrength)
         uniforms.wakeSize = Float(ui.liveInkWakeSize)
@@ -463,6 +541,16 @@ struct EdgeUniforms {
     var notchRight: Float = 0
     var notchHeight: Float = 0
     var notchRadius: Float = 0
+    var fieldX: Float = 0
+    var fieldY: Float = 0
+    var fieldRadius: Float = 0
+    var fieldBend: Float = 0
+    var fieldSplit: Float = 0
+    var fieldGlow: Float = 0
+    var fieldVX: Float = 0
+    var fieldVY: Float = 0
+    var fieldStretch: Float = 0
+    var fieldPress: Float = 0
 }
 
 /// The display's own shape, which the band follows: its notch, and whether its top corners are
@@ -491,13 +579,17 @@ extension UITweaks {
     /// Whether the wake follows the pen while drawing. Reduce Motion turns it off, since its
     /// duration is motion.
     var wakes: Bool { liveInkWakeStrength > 0 && liveInkWakeDuration > 0 && liveInkWakeSize > 0 }
+    /// Whether the ring round the pointer shows while the chord is held.
+    var pointerField: Bool { liveInkFieldSize > 0 && (liveInkFieldBend > 0 || liveInkFieldSplit > 0 || liveInkFieldGlow > 0) }
+    /// Whether that ring bends the screen, which needs a live picture of it.
+    var pointerFieldBends: Bool { liveInkFieldSize > 0 && (liveInkFieldBend > 0 || liveInkFieldSplit > 0) }
 }
 
 extension EdgeLensLayer {
     /// The edge looks the lab tries, as `ui.liveInkEdgeStyle`. Glow is drawn by `EdgeGlow`; the rest
     /// are this layer's.
     enum Style: Int, CaseIterable {
-        case glow, glass, lens, aurora, ripple, frost, auroraRipple
+        case glow, glass, lens, aurora, ripple, frost, auroraRipple, none
 
         var name: String {
             switch self {
@@ -508,6 +600,7 @@ extension EdgeLensLayer {
             case .ripple: "Ripple"
             case .frost: "Frost"
             case .auroraRipple: "Aurora ripple"
+            case .none: "None"
             }
         }
 
@@ -520,11 +613,12 @@ extension EdgeLensLayer {
             case .ripple: "Waves run along the edges and bend what is under them. Rings spread from the pointer."
             case .frost: "A band of frosted glass along the edges, with a bright rim."
             case .auroraRipple: "Ripple's waves bend the screen, and aurora's coloured light rides on their crests."
+            case .none: "Nothing along the edges: only the wake and the pointer field show."
             }
         }
 
         /// Whether it draws from a live picture of the screen, which needs Screen Recording.
-        var drawsFromScreen: Bool { self != .glow && self != .aurora }
+        var drawsFromScreen: Bool { self != .glow && self != .aurora && self != .none }
         /// Whether it moves on its own, at `ui.liveInkEdgeSpeed`.
         var moves: Bool { self == .aurora || self == .ripple || self == .auroraRipple }
 
@@ -557,6 +651,7 @@ extension EdgeLensLayer {
                                  (\.liveInkEdgeFocus, 0.5), (\.liveInkEdgeColors, 0), (\.liveInkEdgeRepeats, 2),
                                  (\.liveInkEdgeVariation, 0), (\.liveInkEdgeHue, 0), (\.liveInkEdgeSaturation, 1), (\.liveInkEdgeBrightness, 1),
                                  (\.liveInkEdgeDrift, 0.05), (\.liveInkEdgeBlend, 0)]
+            case .none: []
             }
         }
 
@@ -572,7 +667,7 @@ extension EdgeLensLayer {
             let speed = Slider(label: "Speed", path: \.liveInkEdgeSpeed, range: 0...3)
             let focus = Slider(label: "Pointer focus", path: \.liveInkEdgeFocus, range: 0...1)
             switch self {
-            case .glow: return []
+            case .glow, .none: return []
             case .glass: return [bend, split, shine, frost, tint, focus]
             case .lens: return [bend, split, shine, tint, focus]
             case .aurora: return [shine, speed, focus]

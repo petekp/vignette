@@ -283,7 +283,8 @@ struct UITweaks: Codable, Equatable {
     var liveInkGlowDelay = 0.25      // how long the chord is held before the glow shows, unless a press shows it sooner
     var liveInkGlowFade = 0.5
     // The edge lab's looks (docs/live-ink-edge-lab-2026-10-08.md), as `EdgeLensLayer.Style`. 0 is the
-    // glow above; `EdgeLensLayer` draws the rest. The default is aurora ripple, as Pete tuned it.
+    // glow above, 7 is nothing along the edges; `EdgeLensLayer` draws the rest. The default is aurora
+    // ripple, as Pete tuned it.
     var liveInkEdgeStyle = 6.0
     var liveInkEdgeWidth = 38.0      // points into the screen that the look reaches
     var liveInkEdgeBend = 2.0        // 0 to 2: how far the look moves what is under it
@@ -310,6 +311,14 @@ struct UITweaks: Codable, Equatable {
     var liveInkWakeStrength = 0.95   // 0 to 1: how far the rings move the screen
     var liveInkWakeSize = 36.0       // points a ring spreads before it is gone
     var liveInkWakeDuration = 0.85   // how long a ring lasts
+    // The pointer field: a ring round the pointer while the chord is held, which bends the screen
+    // under it and glows in the ink colour, with a still middle so what the pointer is on stays put.
+    var liveInkFieldSize = 30.0      // the ring's radius in points; 0 turns it off
+    var liveInkFieldBend = 0.8       // 0 to 2: how far the ring moves what is under it
+    var liveInkFieldSplit = 0.4      // 0 to 1: how far red and blue part where the ring moves the picture
+    var liveInkFieldGlow = 0.5       // 0 to 1: the ink-coloured light on and round the ring
+    var liveInkFieldFollow = 0.12    // how long the ring takes to catch up with the pointer; 0 holds it on it
+    var liveInkFieldStretch = 0.5    // 0 to 1: how far the ring stretches along the way the pointer moves
     // Live ink's answers
     var liveInkDrawOn = 0.5          // how long an answer's mark takes to draw itself on
     var liveInkHideFade = 0.12       // a mark fading out as the content under it starts to move
@@ -343,7 +352,7 @@ struct UITweaks: Codable, Equatable {
         u.introDuration *= scale
         u.noteSettleDuration *= scale
         u.liveInkGlowFade *= scale; u.liveInkDrawOn *= scale
-        u.liveInkEdgeSpeed *= scale; u.liveInkWakeDuration *= scale
+        u.liveInkEdgeSpeed *= scale; u.liveInkWakeDuration *= scale; u.liveInkFieldFollow *= scale
         u.liveInkHideFade *= scale; u.liveInkShowFade *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
@@ -410,7 +419,7 @@ struct UITweaks: Codable, Equatable {
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
         Bound("liveInkGlowWidth", \.liveInkGlowWidth, 0...1000), Bound("liveInkGlowOpacity", \.liveInkGlowOpacity, 0...1),
         Bound("liveInkGlowDelay", \.liveInkGlowDelay, 0...60), Bound("liveInkGlowFade", \.liveInkGlowFade, 0...60),
-        Bound("liveInkEdgeStyle", \.liveInkEdgeStyle, 0...6), Bound("liveInkEdgeWidth", \.liveInkEdgeWidth, 1...400),
+        Bound("liveInkEdgeStyle", \.liveInkEdgeStyle, 0...7), Bound("liveInkEdgeWidth", \.liveInkEdgeWidth, 1...400),
         Bound("liveInkEdgeBend", \.liveInkEdgeBend, 0...2), Bound("liveInkEdgeSplit", \.liveInkEdgeSplit, 0...1),
         Bound("liveInkEdgeShine", \.liveInkEdgeShine, 0...1), Bound("liveInkEdgeFrost", \.liveInkEdgeFrost, 0...1),
         Bound("liveInkEdgeTint", \.liveInkEdgeTint, 0...1), Bound("liveInkEdgeSpeed", \.liveInkEdgeSpeed, 0...10),
@@ -421,6 +430,9 @@ struct UITweaks: Codable, Equatable {
         Bound("liveInkEdgeSaturation", \.liveInkEdgeSaturation, 0...2), Bound("liveInkEdgeBrightness", \.liveInkEdgeBrightness, 0...3),
         Bound("liveInkEdgeDrift", \.liveInkEdgeDrift, 0...2), Bound("liveInkEdgeBlend", \.liveInkEdgeBlend, 0...8),
         Bound("liveInkWakeSize", \.liveInkWakeSize, 0...1000), Bound("liveInkWakeDuration", \.liveInkWakeDuration, 0...10),
+        Bound("liveInkFieldSize", \.liveInkFieldSize, 0...200), Bound("liveInkFieldBend", \.liveInkFieldBend, 0...2),
+        Bound("liveInkFieldSplit", \.liveInkFieldSplit, 0...1), Bound("liveInkFieldGlow", \.liveInkFieldGlow, 0...1),
+        Bound("liveInkFieldFollow", \.liveInkFieldFollow, 0...1), Bound("liveInkFieldStretch", \.liveInkFieldStretch, 0...1),
         Bound("liveInkDrawOn", \.liveInkDrawOn, 0...60),
         Bound("liveInkHideFade", \.liveInkHideFade, 0...10), Bound("liveInkShowFade", \.liveInkShowFade, 0...10), Bound("liveInkTextSize", \.liveInkTextSize, 4...200),
         Bound("liveInkTextWidth", \.liveInkTextWidth, 40...2000),

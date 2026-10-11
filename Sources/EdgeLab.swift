@@ -94,13 +94,13 @@ private struct EdgeLabView: View {
             Section("Tuning") {
                 if style == .glow {
                     Tweak("Width", \.liveInkGlowWidth, 0...80, unit: "pt")
-                } else {
+                } else if style != .none {
                     Tweak("Width", \.liveInkEdgeWidth, 4...160, unit: "pt")
                 }
                 ForEach(style.sliders, id: \.label) { slider in
                     Tweak(slider.label, slider.path, slider.range, step: slider.step, unit: slider.unit)
                 }
-                if style != .glow {
+                if style != .glow && style != .none {
                     Tweak("Screen corners", \.liveInkEdgeCorner, 0...30, unit: "pt")
                 }
                 Tweak("Opacity", \.liveInkGlowOpacity, 0...1, step: 0.05)
@@ -144,6 +144,19 @@ private struct EdgeLabView: View {
                 Text("Wake")
             } footer: {
                 Text("Rings spread behind the pen as you draw and bend the screen under them, with any look. Strength 0 turns it off. While the look is held, any drag makes rings.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                Tweak("Size", \.liveInkFieldSize, 0...120, unit: "pt")
+                Tweak("Bend", \.liveInkFieldBend, 0...2, step: 0.05)
+                Tweak("Colour split", \.liveInkFieldSplit, 0...1, step: 0.05)
+                Tweak("Glow", \.liveInkFieldGlow, 0...1, step: 0.05)
+                Tweak("Follow", \.liveInkFieldFollow, 0...0.5, step: 0.01, unit: "s")
+                Tweak("Stretch", \.liveInkFieldStretch, 0...1, step: 0.05)
+            } header: {
+                Text("Pointer field")
+            } footer: {
+                Text("A ring round the pointer that bends the screen and glows in the ink colour, with any look. What the pointer is on stays still. Size 0 turns it off, and Follow 0 holds it on the pointer.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

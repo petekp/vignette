@@ -10,7 +10,7 @@ struct EdgeUniforms {
     float2 size;        // the layer, in points
     float2 pen;         // the pointer, in points
     float scale;        // pixels per point
-    float style;        // EdgeLensLayer.Style's raw value
+    float style;        // EdgeLensLayer.Style's raw value; 0 and 7 draw nothing along the edges
     float width;        // how far the look reaches into the screen
     float bend;         // 0 to 2: how far the look moves what is under it
     float split;        // 0 to 1: how far red and blue part at the bend
@@ -51,6 +51,16 @@ struct EdgeUniforms {
     float notchRight;
     float notchHeight;
     float notchRadius;       // the notch's bottom corners
+    float fieldX;            // the ring round the pointer: its centre
+    float fieldY;
+    float fieldRadius;       // its radius now; nothing shows at 0
+    float fieldBend;         // 0 to 2: how far it moves what is under it
+    float fieldSplit;        // 0 to 1: how far red and blue part there
+    float fieldGlow;         // 0 to 1: its light
+    float fieldVX;           // how fast it moves, in points a second
+    float fieldVY;
+    float fieldStretch;      // 0 to 1: how far it stretches along the way it moves
+    float fieldPress;        // 0 to 1: brighter while it is smaller than its size
 };
 
 struct Varyings {
@@ -257,6 +267,53 @@ struct Band {
 
 static float4 premultiplied(float3 color, float alpha) { return float4(min(color, 1.0) * alpha, alpha); }
 
+// The ring round the pointer: a soft ridge of glass on a circle `fieldRadius` out, with ink-coloured
+// light on and round it. Inside the ridge nothing moves, so what the pointer is on stays put. A point
+// on the ridge's slopes shows what lies k (R - r) h(r) further towards its crest, h the ridge's height,
+// so the crest is magnified; the slope of that map is 1 + k h (2x^2 - 1), which stays positive for k
+// under 1, so nothing folds back. Moving, it stretches along the way it goes and narrows across it,
+// keeping its area. Premultiplied, and clear wherever it shows nothing.
+static float4 pointerField(float2 p, texture2d<float> screen, constant EdgeUniforms &u) {
+    float big = u.fieldRadius;
+    if (big < 0.5) return float4(0);
+    float2 c = float2(u.fieldX, u.fieldY);
+    float2 v = float2(u.fieldVX, u.fieldVY);
+    float speed = length(v);
+    float s = 1.0 + u.fieldStretch * min(speed / 1200.0, 1.5);
+    float2 q = p - c;
+    if (length(q) > (big * 1.8 + 24.0) * s) return float4(0);
+    if (speed > 1.0) {
+        float2 dir = v / speed;
+        float along = dot(q, dir);
+        q = (q - along * dir) * sqrt(s) + dir * along / s;
+    }
+    float r = length(q);
+    float w = 0.3 * big;
+    float x = (r - big) / w;
+    float h = exp(-x * x);
+    float2 n = r > 0.001 ? normalize(p - c) : float2(0.0, 1.0);
+
+    float4 out = float4(0);
+    if (u.fieldBend > 0.0 || u.fieldSplit > 0.0) {
+        float reach = 0.5 * min(u.fieldBend, 2.0) * (big - r) * h;
+        float apart = u.fieldSplit * h * w * 0.25;
+        float3 color;
+        color.r = sampleScreen(screen, p + n * (reach + apart), u.size).r;
+        color.g = sampleScreen(screen, p + n * reach, u.size).g;
+        color.b = sampleScreen(screen, p + n * (reach - apart), u.size).b;
+        // Fades in with how far the picture moved, so it meets the screen without a seam.
+        out = premultiplied(color, clamp(max(abs(reach), apart) * 4.0, 0.0, 1.0));
+    }
+    float glow = u.fieldGlow * (1.0 + 0.6 * u.fieldPress);
+    float halo = clamp(glow * (0.55 * h + 0.25 * exp(-pow((r - big) / (2.5 * w), 2.0))), 0.0, 1.0);
+    float3 light = mix(u.color.rgb, float3(1.0), 0.25);
+    out = float4(light * halo, halo) + out * (1.0 - halo);
+    // Light from the top left catching the crest where it faces it.
+    float facing = max(dot(-n, normalize(float2(-0.6, -0.8))), 0.0);
+    float shine = clamp(glow * 0.8 * facing * facing * smoothstep(0.3, 1.0, h), 0.0, 1.0);
+    return float4(float3(shine), shine) + out * (1.0 - shine);
+}
+
 // Light in the aurora's colours flowing round the edges, swelling and thinning, `amount` as strong:
 // its colour, not premultiplied, and how much it covers.
 static float4 auroraLight(Band b, constant EdgeUniforms &u, float x, float t, float swell, float amount) {
@@ -355,14 +412,15 @@ fragment float4 edgeFragment(Varyings in [[stage_in]],
     float d = inside(p, u);
     float w = max(u.width, 1.0);
     int style = int(u.style + 0.5);
-    // Glow is drawn by EdgeGlow, so with it this layer draws only the wake.
-    bool inBand = style != 0 && d <= w && d >= -1.0;
-    if (!inBand && moved < 0.01) return float4(0);
+    // Glow is drawn by EdgeGlow, so with it this layer draws only the wake and the pointer's ring.
+    bool inBand = style != 0 && style != 7 && d <= w && d >= -1.0;
+    float4 field = pointerField(p, screen, u);
+    if (!inBand && moved < 0.01) return field;
 
     // The wake shows the picture moved, and fades in with how far it moved, so the layer is clear
     // wherever nothing moved and meets the screen without a seam.
     float4 wake = premultiplied(sampleScreen(screen, p - shift, u.size), clamp(moved * 4.0, 0.0, 1.0));
-    if (!inBand) return wake;
+    if (!inBand) return field + wake * (1.0 - field.a);
 
     Band b;
     b.p = p;
@@ -383,5 +441,5 @@ fragment float4 edgeFragment(Varyings in [[stage_in]],
         case 6: look = auroraRipple(b, screen, u); break;
         default: look = glass(b, screen, u); break;
     }
-    return look + wake * (1.0 - look.a);
+    return field + (look + wake * (1.0 - look.a)) * (1.0 - field.a);
 }
