@@ -590,6 +590,10 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
   gives the tool keys back. Until something is typed in a field that took the keys this way, Return
   and Esc there do what they do on the image: Return copies, or replies on a card that names its
   session, and Esc closes the editor.
+- A tool's letter typed first into that field picks the tool and waits, as one does after a box is
+  drawn. A press next keeps the tool, so R and then a drag draws a rectangle. A letter next puts
+  both in the field with the tool back as it was, so a message that starts with a tool's letter
+  types as usual. Any other key keeps the tool.
 - M or P in the editor puts the keys in the message field. Return and Cmd+Return in it send, or
   reply on a card that names its session, since typing a message is the intent to send it. Esc, or a
   click on the image, hands the keys back to the editor, and the field shrinks back to one line.
