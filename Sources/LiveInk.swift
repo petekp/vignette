@@ -38,10 +38,9 @@ final class LiveInk {
     /// the kept lists, then again as each client's fresh answer arrives.
     var listSessions: ((@escaping (DestinationChoice.Candidates) -> Void) -> Void)?
     /// Sends a note to a session through today's Send, as the card it becomes, and answers on the
-    /// main thread with the request's id and whether the card flies from the window, or why it was
-    /// refused.
+    /// main thread with the request's id, or why it was refused.
     var sendNote: ((NoteCard, AgentDestination, String,
-                    @escaping (Result<(request: String, carried: Bool), ScreenshotRequests.Refusal>) -> Void) -> Void)?
+                    @escaping (Result<String, ScreenshotRequests.Refusal>) -> Void) -> Void)?
     /// The × that dismisses the answer, shown while the pointer is over its note.
     private var dismissButton: LiveDismissButton?
     /// The answer's actions, under its reply while it is on the screen.
@@ -105,8 +104,6 @@ final class LiveInk {
     struct NoteCard {
         let picture: Data
         let capture: CGImage
-        /// Where the window is, in global top-left points, which the card flies from.
-        let frame: CGRect
         /// In `capture`'s pixels, with sizes in points of `pointScale`.
         let marks: [Mark]
         let pointScale: CGFloat
@@ -734,30 +731,18 @@ final class LiveInk {
         let note = noteMark(words, about: about, packet: packet, at: spot)
         let shapes = person.filter { about.contains($0.id) && $0.kind != .text }.compactMap(\.shapeExtent)
         let inkBox = (shapes.isEmpty ? person.compactMap(\.shapeExtent) : shapes).reduce(CGRect.null) { $0.union($1) }
-        let card = NoteCard(picture: packet.picture, capture: packet.capture, frame: packet.frame,
+        let card = NoteCard(picture: packet.picture, capture: packet.capture,
                             marks: packet.drawingMarks(person + (note.map { [$0] } ?? [])), pointScale: packet.scale,
                             window: packet.windowID, ink: inkBox, before: LiveNoteCards.before(packet, ink: inkBox))
         sendNote(card, session, message) { [weak self] result in
             guard let self else { return }
             switch result {
-            case .success(let sent):
-                Log.write("[live-ink] sent to a session request=\(sent.request) marks=\(card.marks.count)")
-                let effects = self.asks.reduce(.arrived(.sentToSession(ink: Set(person.map(\.id)), carried: sent.carried), for: id))
+            case .success(let request):
+                Log.write("[live-ink] sent to a session request=\(request) marks=\(card.marks.count)")
+                let effects = self.asks.reduce(.arrived(.sentToSession(ink: Set(person.map(\.id))), for: id))
                 guard !effects.isEmpty else { return self.letGoOfNoteOfEndedAsk() }
                 self.letGoOfNote(into: nil)
-                for effect in effects {
-                    switch effect {
-                    case .finish(let ids, let how): self.finish(ids, how)
-                    case .carry(let ids):
-                        // The card starts moving from over the ink on the next turn (`TransitionLayer.fly`), and
-                        // the ink goes in that same commit, as the annotator's frame does behind the flight home.
-                        DispatchQueue.main.async { [weak self] in
-                            guard let self else { return }
-                            for case .finish(let ids, let how) in self.asks.reduce(.carrying(ids)) { self.finish(ids, how) }
-                        }
-                    default: break
-                    }
-                }
+                for case .finish(let ids, let how) in effects { self.finish(ids, how) }
             case .failure(let refusal):
                 self.failed(LiveResponder.Failure(reason: "Not sent. " + refusal.reason, detail: "send refused"), for: id)
             }
@@ -805,7 +790,6 @@ final class LiveInk {
 
     /// How long marks take to leave before they are removed.
     private func finishDuration(_ how: LiveMarksLayer.Finish) -> TimeInterval {
-        guard how != .carried else { return 0 }
         let motion = Settings.shared.motionScale
         guard motion > 0 else { return LiveMarksLayer.doneFade + 0.05 }
         return ((how == .done ? LiveMarksLayer.doneHold : 0) + LiveMarksLayer.doneAway) * motion + 0.15

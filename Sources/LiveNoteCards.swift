@@ -75,7 +75,7 @@ final class LiveNoteCards {
     /// card shows the send as a send from the editor does. A send refused before it is stored takes
     /// the file and its drawing back, and the ink stays on the window, saying why.
     func send(_ note: LiveInk.NoteCard, to destination: AgentDestination, message: String,
-              done: @escaping (Result<(request: String, carried: Bool), ScreenshotRequests.Refusal>) -> Void) {
+              done: @escaping (Result<String, ScreenshotRequests.Refusal>) -> Void) {
         let refused = ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason)
         let (capture, scale) = (note.capture, note.pointScale)
         folder.writeCard(named: "Live ink note", png: { LivePacket.screenshotPNG(capture, pointScale: scale) }, from: nil) { [weak self] url in
@@ -97,16 +97,12 @@ final class LiveNoteCards {
             }
             let shot = Screenshot(url: url)
             notes[record.id] = Note(shot: shot, destination: destination, window: note.window, ink: note.ink, before: note.before)
-            // The card flies from the window, carrying the ink, ahead of the watcher's report, which
-            // then finds the card there.
-            let origin = NSRect(x: note.frame.minX, y: StateReport.primaryHeight - note.frame.maxY,
-                                width: note.frame.width, height: note.frame.height)
-            let carried = cards.show(shot, flyingFrom: origin, image: NSImage(cgImage: note.capture, size: note.frame.size),
-                                     drawing: drawing)
+            // The card comes ahead of the watcher's report, which then finds it there.
+            cards.show(shot, drawing: drawing)
             folder.ready(url)
             let grace = requests.grace(of: record.id)
             cards.showSending(shot, request: record.id, to: destination, grace: grace)
-            done(.success((record.id, carried)))
+            done(.success(record.id))
             registerWait(record.id, held: grace != nil)
         }
     }

@@ -362,44 +362,16 @@ final class ThumbnailController: NSObject {
     // MARK: Public
 
     /// A fresh screenshot. Joins the bottom of whatever is showing; on its own it leaves after a
-    /// few seconds unless hovered.
-    func show(_ shot: Screenshot) {
-        guard let card = makeCard(shot) else { return }
+    /// few seconds unless hovered. A `drawing` already known, as a live ink note's is, is on the card
+    /// from its first frame rather than after the drawings are read.
+    func show(_ shot: Screenshot, drawing: Drawing? = nil) {
+        guard var card = makeCard(shot) else { return }
+        if let drawing { card.marks = marks(drawing, on: card) }
         // A new shot never closes an open annotator: the reducer answers `join` and the card joins the panel.
         send(.newShot(shot.url.path))
         if visible { insert(card) } else { present(cards: [card], stack: false) }
         // An agent's card is something to read, not the echo of a capture the person just made.
         leaveCorner(after: ui.thumbnailSeconds * (card.agent == nil ? 1 : 2))
-    }
-
-    /// A fresh screenshot whose picture is on the screen at `origin`, in AppKit screen points, as a
-    /// live ink note's window is: its card flies from there into the corner with `drawing` over it,
-    /// looking like the screen as it leaves, and its slot draws nothing until the flight lands. A
-    /// card whose origin is on another screen than the corner's comes in as any card does. Answers
-    /// whether the card flies.
-    @discardableResult
-    func show(_ shot: Screenshot, flyingFrom origin: NSRect, image: NSImage, drawing: Drawing) -> Bool {
-        guard var card = makeCard(shot) else { return false }
-        card.marks = marks(drawing, on: card)
-        send(.newShot(shot.url.path))
-        if visible { insert(card) } else { present(cards: [card], stack: false, entrance: .inPlace) }
-        leaveCorner(after: ui.thumbnailSeconds)
-        guard model.cards.contains(where: { $0.id == card.id }), screen.frame.contains(CGPoint(x: origin.midX, y: origin.midY)) else { return false }
-        model.forming.insert(card.id)
-        model.offscreen.remove(card.id)
-        let scale = max(annotatorTextScale(origin, drawing.pixels), cardTextScale(card.size, drawing.pixels))
-        flights.fly(id: card.id, image: image, marks: flightMarks(drawing, scale: scale, adopting: [card.marks]),
-                    from: origin, to: cardFrame(of: card), lookFrom: .screen, lookTo: .card(ui), on: screen, arrived: { [weak self] in
-            guard let self else { return }
-            self.model.forming.remove(card.id)
-            self.flights.dropShadow(id: card.id)   // the card draws it now, in this same commit
-            // The card view comes back on SwiftUI's next commit; lift the flight image after it.
-            DispatchQueue.main.async { self.flights.lift(id: card.id) }
-        }, dropped: { [weak self] in
-            self?.model.forming.remove(card.id)
-        })
-        Log.write("[stack] flying in \(shot.url.lastPathComponent) from \(StateReport.topLeft(origin, primaryHeight: StateReport.primaryHeight))")
-        return true
     }
 
     enum StackToggle: Equatable { case shown(Int), dismissed, empty }
