@@ -11,7 +11,7 @@ import urllib.parse
 
 from e2e import AGENT, PERSON, PROBE, Failed, color_near, pixels
 
-KEY_R, KEY_RETURN = 15, 36
+KEY_A, KEY_R, KEY_RETURN = 0, 15, 36
 KEY_EQUALS, KEY_MINUS, KEY_ZERO = 24, 27, 29
 
 
@@ -481,17 +481,22 @@ def upgrade(app):
 # ---- With input --------------------------------------------------------------------------------
 
 
-def draw_box(app, s):
+def draw_box(app, s, arrow=False):
     """Draws a rectangle in the middle of the open editor's frame. With the keys in the editor it
     picks the rectangle tool first. With them in the message field, which took them as the image
     opened, the drag is the first press, as a person's would be: it draws with the rectangle, the
-    tool an image opens with, and takes the keys back to the image."""
+    tool an image opens with, and takes the keys back to the image. `arrow` types A in the field
+    first, which picks the arrow rather than starting the message, so the drag draws an arrow."""
     x, y, w, h = s['annotator']['frame']
     from_field = s['annotator']['toolbarKey']
     if from_field:
         app.require_key(s, 'toolbar')
         if s['annotator'].get('tool') != 'rectangle':
             raise Failed(f"the image opened with the {s['annotator'].get('tool')} tool, not the rectangle")
+        if arrow:
+            app.keys('toolbar', 'key', KEY_A)
+            s = app.wait_state(lambda s: s['annotator'].get('tool') == 'arrow', 'A in the message field picking the arrow', timeout=3)
+            app.require_key(s, 'toolbar')
     else:
         app.require_key(s, 'annotator')
         app.keys('annotator', 'key', KEY_R)
@@ -502,7 +507,10 @@ def draw_box(app, s):
     s = app.wait_state(lambda s: len(s['editor']['marks']) == 1, 'the box being drawn')
     if from_field:
         s = app.wait_state(lambda s: s['annotator']['key'] and not s['annotator']['toolbarKey'], 'the image taking the keys')
-        app.report.step('the first press drew a box and took the keys from the message field')
+        drawn = s['editor']['marks'][0]['type']
+        if drawn != ('arrow' if arrow else 'rectangle'):
+            raise Failed(f'the first press drew a {drawn}')
+        app.report.step(f'the first press drew a {drawn} and took the keys from the message field')
     else:
         app.report.step('drew a box')
     return s
@@ -642,7 +650,7 @@ def send_codex_queued(app):
     path = app.image('Screenshot queued.png', folder=app.watch)
     time.sleep(1)
     click_to_open(app, path)
-    draw_box(app, field_has_keys(app, thread))
+    draw_box(app, field_has_keys(app, thread), arrow=True)
     offset = app.log_size()
     app.keys('annotator', 'key', KEY_RETURN, 'cmd')
     line = app.wait_log('[send] queued', offset, timeout=20)
@@ -655,7 +663,8 @@ def send_codex_queued(app):
 @needs_input
 def send_message(app):
     """The message field beside Send takes the keys as the image opens, and Return there sends the
-    image with the typed message ahead of Vignette's own line."""
+    image with the typed message ahead of Vignette's own line. The message starts with a tool's
+    letter, which the field holds until the next letter shows it began a word."""
     session, inbox = app.fake_session('e2e-project')
     start(app)
     path = app.image('Screenshot message.png', folder=app.watch)
@@ -663,7 +672,7 @@ def send_message(app):
     app.touch_alive(inbox)
     click_to_open(app, path)
     field_has_keys(app, session)
-    message = 'check the footer'
+    message = 'add a border'
     app.keys('toolbar', 'type', message, 40)
     app.touch_alive(inbox)
     offset = app.log_size()

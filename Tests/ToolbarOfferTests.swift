@@ -131,4 +131,26 @@ final class ToolbarOfferTests: XCTestCase {
         model.begin(replyTo: gone, carryingTarget: false)
         XCTAssertEqual(model.offer, .reply(gone), "a new bar has no list yet, so the session may only be late")
     }
+
+    func testAToolLetterTypedFirstPicksItsToolUntilAWordShowsItBeganOne() {
+        var held = HeldToolLetter()
+        XCTAssertEqual(held.key("a", isRepeat: false, fieldUntouched: true, tool: .rectangle), .hold(.arrow))
+        XCTAssertEqual(held.key("a", isRepeat: true, fieldUntouched: true, tool: .arrow), .swallow)
+        XCTAssertEqual(held.key("d", isRepeat: false, fieldUntouched: true, tool: .arrow), .type(restoring: .rectangle))
+        XCTAssertEqual(held.key("d", isRepeat: false, fieldUntouched: false, tool: .rectangle), .pass)
+
+        held = HeldToolLetter()
+        XCTAssertEqual(held.key("r", isRepeat: false, fieldUntouched: true, tool: .select), .hold(.rectangle))
+        held.keepTool()
+        XCTAssertEqual(held.key("e", isRepeat: false, fieldUntouched: true, tool: .rectangle), .pass)
+
+        held = HeldToolLetter()
+        XCTAssertEqual(held.key("t", isRepeat: false, fieldUntouched: true, tool: .rectangle), .hold(.text))
+        XCTAssertEqual(held.key(nil, isRepeat: false, fieldUntouched: true, tool: .text), .pass)
+        XCTAssertEqual(held.toolBefore, nil)
+
+        held = HeldToolLetter()
+        XCTAssertEqual(held.key("h", isRepeat: false, fieldUntouched: true, tool: .rectangle), .pass)
+        XCTAssertEqual(held.key("a", isRepeat: false, fieldUntouched: false, tool: .rectangle), .pass)
+    }
 }

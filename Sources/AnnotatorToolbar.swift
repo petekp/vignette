@@ -57,6 +57,8 @@ final class AnnotatorToolbar {
         @Published var keyed = false
         /// The message field took the keys on its own as the image opened, and has kept them since.
         var tookKeysOnOpen = false
+        /// A tool letter typed first into that field, waiting to learn whether it began a word.
+        var toolLetter = HeldToolLetter()
 
         /// What Return in the message field does. A field that took the keys on its own and is still
         /// empty has nothing that asks to send, so Return there does what it does on the image, which
@@ -123,6 +125,7 @@ final class AnnotatorToolbar {
             message = ""
             focus = nil
             tookKeysOnOpen = false
+            toolLetter = HeldToolLetter()
             listed = false
             picked = false
             carried = carryingTarget && target != nil
@@ -177,6 +180,8 @@ final class AnnotatorToolbar {
     private let targetMenuActions = TargetMenuActions()
     private var hosting: NSHostingView<ToolbarView>!
     private var keyObservers: [NSObjectProtocol] = []
+    /// The key `model.toolLetter` holds, replayed into the field when a character follows it.
+    private var heldLetter: NSEvent?
     /// Where `place` last put the bar, so a bar whose contents change width can centre again.
     private var placedBelow: (frame: NSRect, gap: CGFloat)?
 
@@ -231,9 +236,11 @@ final class AnnotatorToolbar {
             }
         }
         panel.onTab = { [weak self] backward in self?.move(backward: backward) }
+        panel.onKey = { [weak self] event in self?.keyDown(event) ?? false }
         panel.onPress = { [weak self] onField in
             guard let self else { return }
             model.pressed()
+            keepHeldTool()
             guard !onField, model.focus != .message else { return }
             model.focus = nil
         }
@@ -254,6 +261,7 @@ final class AnnotatorToolbar {
             NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.model.keyed = false
+                    self?.keepHeldTool()
                     self?.model.tookKeysOnOpen = false
                     if self?.model.focus == .message { self?.model.focus = nil }
                     _ = self?.panel.makeFirstResponder(nil)
@@ -313,7 +321,42 @@ final class AnnotatorToolbar {
     /// A press on the image takes the focus back from a control. The message field loses it when the
     /// panel gives up the keys.
     func clearFocus() {
+        keepHeldTool()
         if model.focus != .message { model.focus = nil }
+    }
+
+    /// A key in the message field, before the field sees it: a tool letter typed first is held
+    /// (`HeldToolLetter`). True when it was taken.
+    private func keyDown(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        var character: Character?
+        if case .character(let typed)? = EditorCore.Key(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers),
+           modifiers.isSubset(of: [.shift, .capsLock, .numericPad, .function]) {
+            character = typed
+        }
+        let composing = (panel.firstResponder as? NSTextView)?.hasMarkedText() == true
+        let untouched = model.tookKeysOnOpen && model.message.isEmpty && !composing
+        switch model.toolLetter.key(character, isRepeat: event.isARepeat, fieldUntouched: untouched, tool: model.tool) {
+        case .hold(let tool):
+            heldLetter = event
+            onTool?(tool)
+            return true
+        case .type(let before):
+            onTool?(before)
+            if let held = heldLetter { panel.replay(held) }
+            heldLetter = nil
+            return false
+        case .pass:
+            heldLetter = nil
+            return false
+        case .swallow:
+            return true
+        }
+    }
+
+    private func keepHeldTool() {
+        model.toolLetter.keepTool()
+        heldLetter = nil
     }
 
     private func focus(on control: Model.Control?) {
@@ -474,6 +517,45 @@ final class AnnotatorToolbar {
 /// Key only for the message field: a press on it takes the keys, and a press anywhere else in the
 /// bar leaves them, and so the tool keys and shortcuts, with the editor window. SwiftUI's buttons
 /// ask for the keys as a text field does, so `becomesKeyOnlyIfNeeded` cannot tell them apart.
+/// A tool letter typed first into a message field that took the keys on its own, which picks its
+/// tool and waits, as a tool key does after a box is drawn (`EditorCore.startsNote`): a press next
+/// keeps the tool, and a character next makes both keys the message's first two, with the tool
+/// back as it was. Any other key keeps the tool and does what it does in the empty field.
+struct HeldToolLetter: Equatable {
+    /// The tool before the held letter picked its own. Nil while nothing is held.
+    private(set) var toolBefore: EditorCore.Tool?
+
+    enum Answer: Equatable {
+        /// Take the key and pick this tool.
+        case hold(EditorCore.Tool)
+        /// Put the held key, then this one, in the field, and pick this tool again.
+        case type(restoring: EditorCore.Tool)
+        /// Let the key do what it does, and drop the held key, whose tool stays.
+        case pass
+        /// Take the key and do nothing: a held letter repeating.
+        case swallow
+    }
+
+    /// A key down in the message field. `character` is what it types with no modifier but Shift,
+    /// lowercased, and nil for any other key. `fieldUntouched`: the field took the keys on its own
+    /// and nothing is typed in it.
+    mutating func key(_ character: Character?, isRepeat: Bool, fieldUntouched: Bool, tool: EditorCore.Tool?) -> Answer {
+        if let before = toolBefore {
+            guard character != nil else { toolBefore = nil; return .pass }
+            if isRepeat { return .swallow }
+            toolBefore = nil
+            return .type(restoring: before)
+        }
+        guard fieldUntouched, !isRepeat, let character, let tool,
+              let picked = EditorCore.Tool.allCases.first(where: { $0.key == character }) else { return .pass }
+        toolBefore = tool
+        return .hold(picked)
+    }
+
+    /// A press, or the field losing the keys: a held letter was the tool.
+    mutating func keepTool() { toolBefore = nil }
+}
+
 @MainActor
 final class ToolbarPanel: NSPanel {
     private var pressOnField = false
@@ -484,7 +566,12 @@ final class ToolbarPanel: NSPanel {
     var onTab: ((_ backward: Bool) -> Void)?
     /// A press on the bar, and whether it is on the message field.
     var onPress: ((_ onField: Bool) -> Void)?
+    /// A key down, before the field sees it. True when it was taken.
+    var onKey: ((NSEvent) -> Bool)?
     override var canBecomeKey: Bool { pressOnField || wantsKeys || isKeyWindow }
+
+    /// Delivers a key that `onKey` held, past `onKey`.
+    func replay(_ event: NSEvent) { super.sendEvent(event) }
 
     /// Takes the keys for the message field without a press on it: Tab onto it, M or P, or the image
     /// opening (`AnnotatorToolbar.typeOnOpen`).
@@ -511,6 +598,7 @@ final class ToolbarPanel: NSPanel {
             pressOnField = view != nil
             onPress?(pressOnField)
         }
+        if event.type == .keyDown, onKey?(event) == true { return }
         // Tab leaves the field for the next control rather than the key view loop, unless an input
         // method is composing.
         if event.type == .keyDown, event.keyCode == 48, event.modifierFlags.isDisjoint(with: [.command, .control, .option]),
