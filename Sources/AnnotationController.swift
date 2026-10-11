@@ -87,6 +87,9 @@ final class AnnotationController {
         editor.onPress = { [weak self] in
             self?.editorUntouched = false
             self?.toolbar.clearFocus()
+            // AppKit leaves the keys with the bar's panel when the image is pressed (observed
+            // 2026-10-11), so the press takes them back; the panel's resign ends the field's focus.
+            if let window = self?.window, !window.isKeyWindow { window.makeKey() }
         }
         editor.onKey = { [weak self] in self?.editorUntouched = false }
         toolbar.onClose = { [weak self] in self?.cancel() }
