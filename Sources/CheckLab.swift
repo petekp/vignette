@@ -47,7 +47,10 @@ final class CheckLabModel: ObservableObject {
     /// crosses over and over at `speed`. `hold`: it stays at `place`.
     enum Glare: Hashable { case once, loop, hold }
 
-    @Published var glare = Glare.once
+    /// Each change replays, so going back to Once shows a glare again.
+    @Published var glare = Glare.once {
+        didSet { if glare != oldValue { replay() } }
+    }
     /// The loop's speed, as a fraction of the glare's own.
     @Published var speed = 0.25
     @Published var place = 0.5
@@ -102,7 +105,7 @@ private struct CheckLabView: View {
                     Tweak("Depth", \.checkDepth, 0...1, step: 0.01)
                     Tweak("Light angle", \.checkLightAngle, -180...180, unit: "°")
                     Tweak("Rim", \.checkRim, 0...1, step: 0.01)
-                    Tweak("Rim width", \.checkRimWidth, 0...0.2, step: 0.005)
+                    Tweak("Rim width", \.checkRimWidth, 0...0.2, step: 0.01)
                     Tweak("Highlight", \.checkHighlight, 0...1, step: 0.01)
                     Tweak("Highlight size", \.checkHighlightSize, 0...1.2, step: 0.01)
                 } header: {
@@ -168,7 +171,7 @@ private struct CheckLabView: View {
             }
             switch model.glare {
             case .once:
-                row("", Text(settings.motionScale > 0 ? "Replay shows the notices as a card does." : "Motion is off, so there is no glare.")
+                row("", Text(settings.motionScale > 0 ? "Replay shows the notices as a card does." : "Motion is off, so cards show no glare. Hold still shows it here.")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading))
             case .loop:
                 row("Speed", Slider(value: $model.speed, in: 0.05...1), value: String(format: "%.2f×", model.speed))

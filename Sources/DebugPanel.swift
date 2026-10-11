@@ -281,7 +281,7 @@ struct Tweak: View {
     }
 }
 
-/// A colour setting, `#rrggbb`, picked in the system colour panel. The Check Lab uses it too.
+/// A colour setting, `#rrggbb`, picked in the system colour panel.
 @MainActor
 struct ColorTweak: View {
     let label: String

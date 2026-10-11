@@ -20,7 +20,8 @@ struct MetalCheck: View {
             .frame(width: diameter, height: diameter)
             .clipShape(Circle())
             .overlay {
-                if ui.checkGlare > 0, settings.motionScale > 0, heldPlace != nil || !crossed {
+                // A held place is a still, so the lab shows it with motion off too.
+                if ui.checkGlare > 0, heldPlace != nil || (settings.motionScale > 0 && !crossed) {
                     TimelineView(.animation(paused: heldPlace != nil)) { context in
                         glare(ui, at: heldPlace ?? Self.place(at: context.date.timeIntervalSince(appeared), ui))
                     }

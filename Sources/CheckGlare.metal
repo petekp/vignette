@@ -41,8 +41,8 @@ static float light(float2 p, Band b) {
 
     float glow = 0.0;
     if (bloom > 0.0 && bloomRadius > 0.0) {
-        const int rings = 4;
-        const int spokes = 12;
+        const int rings = 6;
+        const int spokes = 16;
         float scale = 1.0 / max(1.0 - threshold, 0.05);
         float total = 1.0;
         glow = max(light(position, b) - threshold, 0.0) * scale;
