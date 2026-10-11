@@ -216,29 +216,41 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(motion.radius, CGFloat(ui.liveInkFieldSize) * 0.8, "smaller while pressed")
     }
 
-    func testTheWakeSpacesItsPointsKeepsTheNewestAndLetsThemGo() {
+    func testTheWakeFillsTheStrokeMergesOnlyWithinAStrokeAndLetsItGo() {
         var ui = UITweaks()
         ui.liveInkFieldSize = 0
+        ui.liveInkWakeStyle = 0
+        ui.liveInkWakeSize = 36
+        ui.liveInkWakeWiden = 0.5
+        // A point every 0.4 of the narrowest radius: 0.4 * 36 * (1 - 0.5).
+        let spacing = 7.2
         var motion = PointerFieldMotion()
         motion.reset(at: .zero, now: 0)
         _ = motion.step(to: 0.01, pointer: .zero, pressed: false, ui: ui)
         XCTAssertTrue(motion.trail.isEmpty, "no wake without a press")
         _ = motion.step(to: 0.02, pointer: .zero, pressed: true, ui: ui)
-        _ = motion.step(to: 0.03, pointer: CGPoint(x: 3, y: 0), pressed: true, ui: ui)
-        XCTAssertEqual(motion.trail.map(\.point), [.zero], "a point under 6 pt from the last adds no ring")
-        _ = motion.step(to: 0.04, pointer: CGPoint(x: 9, y: 0), pressed: true, ui: ui)
-        XCTAssertEqual(motion.trail.count, 2)
+        _ = motion.step(to: 0.03, pointer: CGPoint(x: spacing - 1, y: 0), pressed: true, ui: ui)
+        XCTAssertEqual(motion.trail.map(\.point), [.zero], "a step shorter than the spacing adds nothing")
+        _ = motion.step(to: 0.04, pointer: CGPoint(x: 200, y: 0), pressed: true, ui: ui)
+        XCTAssertEqual(motion.trail.count, 1 + PointerFieldMotion.fillLimit, "a long step is filled in")
+        XCTAssertEqual(motion.trail.last?.point, CGPoint(x: 200, y: 0))
+        XCTAssertEqual(motion.trail[1].velocity.dx, 200 / 0.02, accuracy: 0.001)
 
+        // Two strokes, along y = 0 and y = 100, long enough to fill the trail many times over.
         var now = 0.04
-        for i in 2..<200 {
-            now += 0.001
-            _ = motion.step(to: now, pointer: CGPoint(x: Double(i) * 10, y: 0), pressed: true, ui: ui)
+        for (row, start) in [(0.0, 0), (100.0, 200)] {
+            _ = motion.step(to: now, pointer: .zero, pressed: false, ui: ui)
+            for i in start..<(start + 200) {
+                now += 0.001
+                _ = motion.step(to: now, pointer: CGPoint(x: Double(i) * spacing, y: row), pressed: true, ui: ui)
+            }
         }
-        XCTAssertEqual(motion.trail.count, PointerFieldMotion.trailLimit)
-        XCTAssertEqual(motion.trail.last?.point, CGPoint(x: 1990, y: 0), "the oldest go first")
+        XCTAssertLessThanOrEqual(motion.trail.count, PointerFieldMotion.trailLimit)
+        XCTAssertEqual(motion.trail.last?.point, CGPoint(x: 399 * spacing, y: 100), "the newest stays")
+        XCTAssertTrue(motion.trail.allSatisfy { $0.point.y == 0 || $0.point.y == 100 }, "no point merges across strokes")
 
         now += ui.liveInkWakeDuration + 0.001
-        XCTAssertEqual(motion.step(to: now, pointer: .zero, pressed: false, ui: ui), .init(wake: true), "drawn once more as the last ring goes")
+        XCTAssertEqual(motion.step(to: now, pointer: .zero, pressed: false, ui: ui), .init(wake: true), "drawn once more as the last of it goes")
         XCTAssertTrue(motion.trail.isEmpty)
         XCTAssertEqual(motion.step(to: now + 0.01, pointer: .zero, pressed: false, ui: ui), .init())
     }
