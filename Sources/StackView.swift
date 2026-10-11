@@ -532,7 +532,7 @@ struct TactileButtonStyle: ButtonStyle {
 
 /// Flush over a card after a copy: the veil fades in, the mark springs in, and both fade out. A
 /// copy that failed shows its reason under the label, as a failed send does.
-private struct CopiedOverlay: View {
+struct CopiedOverlay: View {
     let corner: CGFloat
     let label: String
     var failure: String? = nil
@@ -542,8 +542,11 @@ private struct CopiedOverlay: View {
         ZStack {
             RoundedRectangle(cornerRadius: corner, style: .continuous).fill(.black.opacity(0.55))
             VStack(spacing: 2) {
-                Image(systemName: failure == nil ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                    .font(.system(size: 22, weight: .bold)).foregroundStyle(failure == nil ? .green : .red)
+                if failure == nil {
+                    MetalCheck(diameter: 22)
+                } else {
+                    Image(systemName: "exclamationmark.circle.fill").font(.system(size: 22, weight: .bold)).foregroundStyle(.red)
+                }
                 Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
                 if let failure {
                     Text(failure).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
@@ -569,7 +572,7 @@ private struct CopiedOverlay: View {
 ///
 /// The logo is one view in every state, so when the grace ends it glides to its new place rather
 /// than being replaced by a copy drawn there. Its badge comes in once it has arrived.
-private struct SendOverlay: View {
+struct SendOverlay: View {
     let notice: SendNotice
     let corner: CGFloat
     let onUnsend: () -> Void
@@ -775,7 +778,7 @@ private struct SendOverlay: View {
                 Group {
                     switch outcome {
                     case .check:
-                        MetalCheck()
+                        MetalCheck(diameter: 15)
                     case .clock:
                         // One layer, its hands cut out, so they show the white ring beneath.
                         Image(systemName: "clock.fill").font(.system(size: 15, weight: .bold)).foregroundStyle(Color.orange)
@@ -828,39 +831,6 @@ private struct LeavesWhenCovered: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         content.opacity(shown > 0 ? 1 : 0)
-    }
-}
-
-/// The sent badge's check, on a green disc lit like polished metal from the top left: a gradient
-/// from light to deep green, a bevelled rim, a fixed highlight, and one band of light that crosses
-/// it as it appears. With no motion the band is left out and the rest stays.
-private struct MetalCheck: View {
-    @State private var sweep: CGFloat = -1
-
-    var body: some View {
-        let motion = Settings.shared.motionScale
-        ZStack {
-            Circle().fill(LinearGradient(colors: [Color(red: 0.62, green: 0.95, blue: 0.62), Color(red: 0.16, green: 0.72, blue: 0.3),
-                                                  Color(red: 0.04, green: 0.43, blue: 0.16)],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-            Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0), .black.opacity(0.3)],
-                                                 startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.75)
-            Ellipse().fill(RadialGradient(colors: [.white.opacity(0.8), .white.opacity(0)], center: .center, startRadius: 0, endRadius: 4))
-                .frame(width: 8, height: 4.5).rotationEffect(.degrees(-35)).offset(x: -3, y: -3.5)
-            Image(systemName: "checkmark").font(.system(size: 7.5, weight: .heavy))
-                .foregroundStyle(LinearGradient(colors: [.white, Color(white: 0.86)], startPoint: .top, endPoint: .bottom))
-                .shadow(color: .black.opacity(0.35), radius: 0.4, y: 0.5)
-            if motion > 0 {
-                LinearGradient(colors: [.white.opacity(0), .white.opacity(0.75), .white.opacity(0)], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: 5, height: 24).rotationEffect(.degrees(25)).offset(x: sweep * 14)
-            }
-        }
-        .frame(width: 15, height: 15)
-        .clipShape(Circle())
-        .onAppear {
-            guard motion > 0 else { return }
-            withAnimation(.easeInOut(duration: 0.55 * motion).delay(0.12 * motion)) { sweep = 1 }
-        }
     }
 }
 
