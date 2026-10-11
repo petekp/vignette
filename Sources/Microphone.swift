@@ -7,7 +7,7 @@ import Speech
 /// macOS shows its microphone dot in the menu bar for exactly as long as this runs.
 ///
 /// Starting the transcriber and the engine took 80 to 165 ms on an M4 Max (2026-10-08), and on the
-/// main thread it held back the glow and the first stroke. So both start on one queue shared by
+/// main thread it held back the pointer field and the first stroke. So both start on one queue shared by
 /// every microphone, which takes starts and stops in order: a stop sent while a start is under way
 /// turns the microphone off once it is on, and only then lets the transcriber end, and one
 /// listening's stop is done before the next one's start.

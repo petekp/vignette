@@ -16,12 +16,12 @@ final class MotionTests: XCTestCase {
     func testScaledTweaksTouchOnlyMotion() {
         let base = UITweaks()
         let off = base.scaledForMotion(0)
-        // Motion without a motion word in the name: how far a flight bows and swells, and a live ink mark
-        // drawing itself on.
-        let motion: Set<String> = ["flightArc", "flightDepth", "liveInkDrawOn"]
+        // Motion without a motion word in the name: how far a flight bows and swells, a live ink mark
+        // drawing itself on, and how long the pointer field takes to catch up with the pointer.
+        let motion: Set<String> = ["flightArc", "flightDepth", "liveInkDrawOn", "liveInkFieldFollow"]
         // A motion word without motion: a press's wait before a drag, a share of the funnel's travel, and how
-        // long the live ink chord is held before the glow shows.
-        let notMotion: Set<String> = ["textDragDelay", "introFunnelFade", "liveInkGlowDelay"]
+        // long the live ink chord is held before the pointer field shows.
+        let notMotion: Set<String> = ["textDragDelay", "introFunnelFade", "liveInkFieldDelay"]
         for bound in UITweaks.bounds {
             let named = ["Duration", "Fade", "Slide", "Delay", "stagger"].contains { bound.name.contains($0) }
             if motion.contains(bound.name) || (named && !notMotion.contains(bound.name)) {

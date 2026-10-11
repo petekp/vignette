@@ -276,11 +276,23 @@ struct UITweaks: Codable, Equatable {
     var arrowheadWidth = 4.0
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
-    // Live ink's glow along the screen's edges, which says the screen is taking ink
-    var liveInkGlowWidth = 22.0      // points into the screen at which the glow is a third as strong as at the edge
-    var liveInkGlowOpacity = 1.0     // near the pointer; far from it the glow is a third as bright
-    var liveInkGlowDelay = 0.25      // how long the chord is held before the glow shows, unless a press shows it sooner
-    var liveInkGlowFade = 0.2
+    // The pointer field, which says the screen is taking ink while the chord is held: the ring round
+    // the pointer and the wake behind the pen. The keys named Field set the whole field, or the ring.
+    var liveInkFieldDelay = 0.25     // how long the chord is held before it shows, unless a press shows it sooner
+    var liveInkFieldFade = 0.5       // how long it fades in and out, and the ring grows in
+    var liveInkFieldOpacity = 1.0    // the ring and the wake
+    // The wake: rings that spread behind the pen while drawing and bend the screen under them. 0 is off.
+    var liveInkWakeStrength = 0.95   // 0 to 1: how far the rings move the screen
+    var liveInkWakeSize = 36.0       // points a ring spreads before it is gone
+    var liveInkWakeDuration = 0.85   // how long a ring lasts
+    // The ring: it bends the screen under it and glows in the ink colour, with a still middle so what
+    // the pointer is on stays put.
+    var liveInkFieldSize = 30.0      // the ring's radius in points; 0 turns it off
+    var liveInkFieldBend = 0.8       // 0 to 2: how far the ring moves what is under it
+    var liveInkFieldSplit = 0.4      // 0 to 1: how far red and blue part where the ring moves the picture
+    var liveInkFieldGlow = 0.5       // 0 to 1: the ink-coloured light on and round the ring
+    var liveInkFieldFollow = 0.12    // how long the ring takes to catch up with the pointer; 0 holds it on it
+    var liveInkFieldStretch = 0.5    // 0 to 1: how far the ring stretches along the way the pointer moves
     // Live ink's answers
     var liveInkDrawOn = 0.5          // how long an answer's mark takes to draw itself on
     var liveInkHideFade = 0.12       // a mark fading out as the content under it starts to move
@@ -313,7 +325,8 @@ struct UITweaks: Codable, Equatable {
         u.relayoutDuration *= scale; u.shiftUpDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
         u.introDuration *= scale
         u.noteSettleDuration *= scale
-        u.liveInkGlowFade *= scale; u.liveInkDrawOn *= scale
+        u.liveInkFieldFade *= scale; u.liveInkDrawOn *= scale
+        u.liveInkWakeDuration *= scale; u.liveInkFieldFollow *= scale
         u.liveInkHideFade *= scale; u.liveInkShowFade *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
@@ -378,8 +391,13 @@ struct UITweaks: Codable, Equatable {
         // The floor is the slider's, because below it a stitch is not a smaller picture but a
         // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
-        Bound("liveInkGlowWidth", \.liveInkGlowWidth, 0...1000), Bound("liveInkGlowOpacity", \.liveInkGlowOpacity, 0...1),
-        Bound("liveInkGlowDelay", \.liveInkGlowDelay, 0...60), Bound("liveInkGlowFade", \.liveInkGlowFade, 0...60),
+        Bound("liveInkFieldOpacity", \.liveInkFieldOpacity, 0...1),
+        Bound("liveInkFieldDelay", \.liveInkFieldDelay, 0...60), Bound("liveInkFieldFade", \.liveInkFieldFade, 0...60),
+        Bound("liveInkWakeStrength", \.liveInkWakeStrength, 0...1),
+        Bound("liveInkWakeSize", \.liveInkWakeSize, 0...1000), Bound("liveInkWakeDuration", \.liveInkWakeDuration, 0...10),
+        Bound("liveInkFieldSize", \.liveInkFieldSize, 0...200), Bound("liveInkFieldBend", \.liveInkFieldBend, 0...2),
+        Bound("liveInkFieldSplit", \.liveInkFieldSplit, 0...1), Bound("liveInkFieldGlow", \.liveInkFieldGlow, 0...1),
+        Bound("liveInkFieldFollow", \.liveInkFieldFollow, 0...1), Bound("liveInkFieldStretch", \.liveInkFieldStretch, 0...1),
         Bound("liveInkDrawOn", \.liveInkDrawOn, 0...60),
         Bound("liveInkHideFade", \.liveInkHideFade, 0...10), Bound("liveInkShowFade", \.liveInkShowFade, 0...10), Bound("liveInkTextSize", \.liveInkTextSize, 4...200),
         Bound("liveInkTextWidth", \.liveInkTextWidth, 40...2000),

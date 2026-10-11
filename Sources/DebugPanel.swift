@@ -10,6 +10,7 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
         var stack: () -> Void
         var annotator: () -> Void
         var intro: () -> Void
+        var pointer: () -> Void
     }
 
     private var panel: NSPanel?
@@ -66,6 +67,7 @@ struct DebugPanelView: View {
                 Button("Stack", action: previews.stack)
                 Button("Annotator", action: previews.annotator)
                 Button("Intro", action: previews.intro)
+                Button("Pointer", action: previews.pointer)
             }
             .padding(10)
             // Which file the sliders write to: a test launch points at another file, and a
@@ -222,12 +224,6 @@ struct DebugPanelView: View {
                     Tweak("Long side", \.stitchLongSide, 512...8192, step: 128, unit: "px")
                 }
                 Section("Live ink") {
-                    Tweak("Glow width", \.liveInkGlowWidth, 0...80, unit: "pt")
-                    Tweak("Glow opacity", \.liveInkGlowOpacity, 0...1, step: 0.05)
-                    Tweak("Glow delay", \.liveInkGlowDelay, 0...1, step: 0.05, unit: "s")
-                    Tweak("Glow fade", \.liveInkGlowFade, 0...1, step: 0.05, unit: "s")
-                    Text("The glow along the screen's edges while Control and Option are held. It waits for the delay, or for a press, so the chord on its way to a shortcut does not flash it.")
-                        .font(.caption).foregroundStyle(.secondary)
                     Tweak("Answer draw-on", \.liveInkDrawOn, 0...2, step: 0.05, unit: "s")
                     Tweak("Answer text size", \.liveInkTextSize, 8...32, unit: "pt")
                     Tweak("Answer text width", \.liveInkTextWidth, 120...800, step: 10, unit: "pt")

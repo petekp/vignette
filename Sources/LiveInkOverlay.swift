@@ -38,6 +38,9 @@ final class LiveInkOverlay: NSPanel {
     }
 
     private let canvas: Canvas
+    /// Taking presses to draw, and holding the pointer field up: either raises it to the inking level.
+    private var takesInk = false
+    private var holdsField = false
 
     /// Comes up at once, on the Space that is active now.
     init(screen: NSScreen, display: CGDirectDisplayID) {
@@ -65,6 +68,7 @@ final class LiveInkOverlay: NSPanel {
     func fit(to screen: NSScreen) {
         setFrame(screen.frame, display: false)
         canvas.fit(origin: CGPoint(x: screen.frame.minX, y: StateReport.primaryHeight - screen.frame.maxY))
+        canvas.field.place(on: screen, display: display, excluding: CGWindowID(windowNumber))
     }
 
     /// The screen it covers, in global top-left points, the marks' coordinates.
@@ -76,18 +80,20 @@ final class LiveInkOverlay: NSPanel {
     /// A press is down here and its stroke is not finished.
     var isTracking: Bool { canvas.isTracking }
 
-    /// Closes the overlay once `fade` has passed, so a glow fading out finishes first. Ordering it
-    /// out instead would lose its Space: ordered in again, it comes up on the active one.
+    /// Closes the overlay once `fade` has passed and the pointer field has faded out, so neither is cut
+    /// short. Ordering it out instead would lose its Space: ordered in again, it comes up on the active one.
     func close(after fade: TimeInterval) {
-        guard fade > 0 else { close(); return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + fade) { [weak self] in self?.close() }
+        let closeWhenHidden = { [weak self] in self?.canvas.field.whenHidden { [weak self] in self?.close() } }
+        guard fade > 0 else { closeWhenHidden(); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + fade) { closeWhenHidden() }
     }
 
     /// Whether this screen takes presses to draw. Once `ignoresMouseEvents` has been set, the window
     /// takes every press with it off, over clear pixels too. Stopping drops a stroke under way.
     func setInking(_ inking: Bool) {
         if !inking { canvas.cancelStroke() }
-        level = inking ? .screenSaver : Self.restingLevel
+        takesInk = inking
+        raise()
         ignoresMouseEvents = !inking
     }
 
@@ -107,22 +113,42 @@ final class LiveInkOverlay: NSPanel {
         canvas.showPen(points, markStyle: markStyle)
     }
 
-    /// `pen` is in global top-left points; the glow follows the pointer over this screen after that.
-    func showGlow(_ on: Bool, ui: UITweaks, color: CGColor, pen: CGPoint?) {
-        canvas.showGlow(on, ui: ui, color: color, pen: pen)
+    /// Readies the pointer field as the chord goes down, so its picture of the screen is there by the
+    /// time it shows.
+    func prepareField(ui: UITweaks) {
+        canvas.field.apply(ui)
+        canvas.field.prepare()
+    }
+
+    /// Holds the pointer field up in `ui`'s settings, or lets it go. Held, it raises the overlay to the
+    /// inking level without taking presses, so the pointer lab shows it where inking does.
+    func holdField(_ on: Bool, ui: UITweaks) {
+        holdsField = on
+        raise()
+        canvas.field.apply(ui)
+        canvas.field.show(on)
+    }
+
+    private func raise() {
+        level = takesInk || holdsField ? .screenSaver : Self.restingLevel
+    }
+
+    override func close() {
+        canvas.field.tearDown()
+        super.close()
     }
 
     func preview(_ preview: LiveMarksLayer.Preview?) { canvas.marksLayer.preview(preview) }
 
     func popover(of id: Mark.ID) -> ReplyPopover? { canvas.marksLayer.popover(of: id) }
 
-    /// The canvas: the marks, the stroke being drawn, and the glow. Flipped, so its layers run from
-    /// the screen's top-left corner, y down, as the marks' coordinates do.
+    /// The canvas: the pointer field, the marks and the stroke being drawn. Flipped, so its layers run
+    /// from the screen's top-left corner, y down, as the marks' coordinates do.
     private final class Canvas: NSView {
         var onStroke: (([CGPoint]) -> Void)?
         var onStrokeMoved: (([CGPoint]) -> Void)?
         var onHover: ((CGPoint) -> Void)?
-        let glow: EdgeGlow
+        let field: PointerField
         /// The screen's top-left corner in global top-left points, the coordinates marks are in.
         private(set) var origin: CGPoint = .zero
         private let host = CALayer()
@@ -137,18 +163,18 @@ final class LiveInkOverlay: NSPanel {
 
         init(frame: CGRect, scale: CGFloat) {
             self.scale = scale
-            glow = EdgeGlow(scale: scale)
+            field = PointerField(scale: scale)
             pen = InkMarkLayer(scale: scale)
             marksLayer = LiveMarksLayer(scale: scale)
             super.init(frame: frame)
             layer = host
             wantsLayer = true
             host.contentsScale = scale
+            host.addSublayer(field.layer)
             for layer in [marksLayer, pen] {
                 layer.anchorPoint = .zero
                 host.addSublayer(layer)
             }
-            host.addSublayer(glow)
             // The panel never becomes key, so only an always-active area hears the pointer move.
             addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect], owner: self))
         }
@@ -160,7 +186,7 @@ final class LiveInkOverlay: NSPanel {
             for layer in [marksLayer, pen] {
                 layer.setAffineTransform(CGAffineTransform(translationX: -origin.x, y: -origin.y))
             }
-            glow.frame = bounds
+            field.layer.frame = bounds
             CATransaction.commit()
         }
 
@@ -182,25 +208,18 @@ final class LiveInkOverlay: NSPanel {
             pen.showPen(stroke, markStyle: markStyle)
         }
 
-        func showGlow(_ on: Bool, ui: UITweaks, color: CGColor, pen: CGPoint?) {
-            glow.show(on, ui: ui, color: color, pen: pen.map { CGPoint(x: $0.x - origin.x, y: $0.y - origin.y) })
-        }
-
         override func mouseMoved(with event: NSEvent) {
-            glow.follow(convert(event.locationInWindow, from: nil))
             guard !isTracking else { return }
             onHover?(location(of: event))
         }
 
         override func mouseDown(with event: NSEvent) {
-            glow.follow(convert(event.locationInWindow, from: nil))
             stroke = [location(of: event)]
             onStrokeMoved?(stroke)
         }
 
         override func mouseDragged(with event: NSEvent) {
             guard isTracking else { return }
-            glow.follow(convert(event.locationInWindow, from: nil))
             stroke.append(location(of: event))
             onStrokeMoved?(stroke)
         }
@@ -912,174 +931,5 @@ final class NoteLayer: CALayer {
         appear.fillMode = .backwards
         add(pop, forKey: "pop")
         add(appear, forKey: "appear")
-    }
-}
-
-/// A thin bright line along the screen's edges with a soft glow falling off inward, brightest near
-/// the pen, which says the screen is taking ink.
-@MainActor
-final class EdgeGlow: CALayer {
-    /// The glow, cut into a strip along each edge as deep as it reaches: the top and bottom span the
-    /// width and the sides fit between them. Each strip has its own mask for the brightness round
-    /// the pen, so following the pen composites the strips again rather than the whole screen.
-    private let strips: [Strip]
-    /// Where the pen is, in this layer's points.
-    private var pen: CGPoint?
-    /// What the strips' pictures were drawn for.
-    private var laid: (size: CGSize, reach: CGFloat, color: CGColor)?
-
-    /// Sublayers of a layer-hosting view do not take the screen's scale from it.
-    init(scale: CGFloat) {
-        strips = (0..<4).map { _ in Strip(scale: scale) }
-        super.init()
-        contentsScale = scale
-        strips.forEach { addSublayer($0.layer) }
-        opacity = 0
-    }
-
-    override init(layer: Any) {
-        strips = []
-        super.init(layer: layer)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    /// Shows or hides the glow, `pen` in this layer's points, drawn in a lighter `color`.
-    func show(_ on: Bool, ui: UITweaks, color: CGColor, pen: CGPoint?) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        if on { lay(out: ui.liveInkGlowWidth, color: color.mixed(with: .white, Self.lighten)) }
-        if let pen { self.pen = pen }
-        follow()
-        let target: Float = on ? Float(ui.liveInkGlowOpacity) : 0
-        let from = presentation()?.opacity ?? opacity
-        opacity = target
-        CATransaction.commit()
-        // Core Animation runs an animation of no duration for its default 0.25 s, so with motion off
-        // there is none.
-        guard ui.liveInkGlowFade > 0 else { removeAnimation(forKey: "opacity"); return }
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = from
-        fade.toValue = target
-        fade.duration = ui.liveInkGlowFade
-        add(fade, forKey: "opacity")
-    }
-
-    /// Moves the brightest part of the glow to `pen`, in this layer's points.
-    func follow(_ pen: CGPoint) {
-        guard opacity > 0 else { return }
-        self.pen = pen
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        follow()
-        CATransaction.commit()
-    }
-
-    /// Draws the line and the glow into each strip, unless they are drawn already for this size, reach
-    /// and colour.
-    private func lay(out reach: CGFloat, color: CGColor) {
-        let size = bounds.size
-        if let laid, laid.size == size, laid.reach == reach, laid.color == color { return }
-        laid = (size, reach, color)
-        let depth = min(reach * Self.tail, size.width / 2, size.height / 2)
-        let rects = [CGRect(x: 0, y: 0, width: size.width, height: depth),
-                     CGRect(x: 0, y: size.height - depth, width: size.width, height: depth),
-                     CGRect(x: 0, y: depth, width: depth, height: size.height - depth * 2),
-                     CGRect(x: size.width - depth, y: depth, width: depth, height: size.height - depth * 2)]
-        for (strip, rect) in zip(strips, rects) {
-            strip.layer.frame = rect
-            strip.layer.contents = Self.picture(of: rect, on: size, scale: contentsScale, reach: reach, color: color)
-        }
-    }
-
-    /// Sets each strip's mask from `pen`: full brightness under it, falling to `floor` far from it.
-    private func follow() {
-        let size = bounds.size
-        guard let pen, size.width > 0, size.height > 0 else { return }
-        // A Gaussian of the distance from the pen, as stops of a radial gradient, which reaches
-        // twice the screen's diagonal so no strip is outside it.
-        let reach = 2 * hypot(size.width, size.height), spread = Self.spread * size.height
-        let stops: [CGFloat] = [0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.45, 1]
-        let colors = stops.map { stop -> CGColor in
-            let near = exp(-pow(stop * reach / spread, 2))
-            return CGColor(gray: 1, alpha: Self.floor + (1 - Self.floor) * near)
-        }
-        for strip in strips {
-            strip.brightness(at: pen, reach: reach, stops: stops.map { NSNumber(value: Double($0)) }, colors: colors)
-        }
-    }
-
-    /// The line and the glow over one strip of the screen, as a bitmap: each pixel's strength comes
-    /// from its distance to the nearest edge, so the corners meet on their diagonals.
-    private static func picture(of rect: CGRect, on screen: CGSize, scale: CGFloat, reach: CGFloat, color: CGColor) -> CGImage? {
-        let width = Int((rect.width * scale).rounded()), height = Int((rect.height * scale).rounded())
-        let space = CGColorSpace(name: CGColorSpace.sRGB)!
-        guard width > 0, height > 0, reach > 0,
-              let rgb = color.converted(to: space, intent: .defaultIntent, options: nil)?.components, rgb.count >= 3,
-              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
-              let data = context.data else { return nil }
-        // The strength at each whole pixel of distance, as far as a strip reaches.
-        let strengths = (0...Int(reach * tail * scale) + 1).map { step -> CGFloat in
-            let distance = (CGFloat(step) + 0.5) / scale
-            return min(1, lineAlpha * exp(-distance / lineFalloff) + glowAlpha * exp(-distance / reach))
-        }
-        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
-        for row in 0..<height {
-            let y = rect.minY + (CGFloat(row) + 0.5) / scale
-            let fromTopOrBottom = min(y, screen.height - y)
-            for column in 0..<width {
-                let x = rect.minX + (CGFloat(column) + 0.5) / scale
-                let distance = min(fromTopOrBottom, x, screen.width - x)
-                let alpha = strengths[min(Int(distance * scale), strengths.count - 1)]
-                let pixel = pixels + (row * width + column) * 4
-                pixel[0] = UInt8(rgb[0] * alpha * 255)
-                pixel[1] = UInt8(rgb[1] * alpha * 255)
-                pixel[2] = UInt8(rgb[2] * alpha * 255)
-                pixel[3] = UInt8(alpha * 255)
-            }
-        }
-        return context.makeImage()
-    }
-
-    /// How far the glow is moved towards white from the person's colour.
-    private static let lighten: CGFloat = 0.3
-    /// The line's strength at the edge and the distance over which it falls to a third, in points,
-    /// and the glow's strength at the edge, which falls to a third over the glow's width.
-    private static let lineAlpha: CGFloat = 0.9
-    private static let lineFalloff: CGFloat = 1.6
-    private static let glowAlpha: CGFloat = 0.55
-    /// How many glow widths a strip reaches into the screen, where the glow has all but gone.
-    private static let tail: CGFloat = 4
-    /// How bright the glow is far from the pen, and how far its brightness spreads round the pen, as
-    /// a fraction of the screen's height.
-    private static let floor: CGFloat = 0.35
-    private static let spread: CGFloat = 0.55
-
-    /// One edge's strip of the glow: its picture, and the mask that brightens it near the pen.
-    @MainActor
-    private final class Strip {
-        let layer = CALayer()
-        private let mask = CAGradientLayer()
-
-        init(scale: CGFloat) {
-            for layer in [layer, mask] {
-                layer.anchorPoint = .zero
-                layer.contentsScale = scale
-            }
-            mask.type = .radial
-            layer.mask = mask
-        }
-
-        func brightness(at pen: CGPoint, reach: CGFloat, stops: [NSNumber], colors: [CGColor]) {
-            let rect = layer.frame
-            guard rect.width > 0, rect.height > 0 else { return }
-            mask.frame = CGRect(origin: .zero, size: rect.size)
-            let centre = CGPoint(x: (pen.x - rect.minX) / rect.width, y: (pen.y - rect.minY) / rect.height)
-            mask.startPoint = centre
-            mask.endPoint = CGPoint(x: centre.x + reach / rect.width, y: centre.y + reach / rect.height)
-            mask.colors = colors
-            mask.locations = stops
-        }
     }
 }

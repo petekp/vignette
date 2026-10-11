@@ -46,13 +46,12 @@ final class Tween: NSObject {
     func animate(to target: CGFloat, duration: Double, completion: (() -> Void)? = nil) {
         self.completion = completion
         guard duration > 0, target != value else { set(target); completion?(); return }
-        // A critically damped step response is within 1% of its target at omega * t = 6.6.
         // A spring already ticking keeps its display link and its last tick: a gesture
         // retargets it at every input, and a link made anew each time fires its first tick at
         // an arbitrary part of the refresh, which read as uneven steps (measured: consecutive
         // steps of 33, 69, 40, and 65 pixels under a wheel that moved evenly).
         let lastTick = spring?.lastTick ?? CACurrentMediaTime()
-        spring = (target, 6.6 / duration, lastTick)
+        spring = (target, Self.omega(settling: duration), lastTick)
         if link == nil && timer == nil { startTicking() }
     }
 
@@ -96,7 +95,7 @@ final class Tween: NSObject {
     /// run loop that stalled for 50 ms threw the backdrop most of a screen past its target and it
     /// swept back into place; this lands where the spring really is, however late the tick, and a
     /// long stall simply finds it settled.
-    static func spring(value: CGFloat, velocity: CGFloat, target: CGFloat, omega: Double, dt: Double) -> (value: CGFloat, velocity: CGFloat) {
+    nonisolated static func spring(value: CGFloat, velocity: CGFloat, target: CGFloat, omega: Double, dt: Double) -> (value: CGFloat, velocity: CGFloat) {
         guard dt > 0, omega > 0 else { return (value, velocity) }
         // Measured from the target, a critically damped spring is (offset + slope t) e^(-omega t).
         let offset = Double(value - target)
@@ -105,4 +104,14 @@ final class Tween: NSObject {
         let next = (offset + slope * dt) * decay
         return (CGFloat(Double(target) + next), CGFloat((slope - omega * (offset + slope * dt)) * decay))
     }
+
+    /// The same spring, given how long it takes to settle. A duration of 0 lands on the target at once.
+    nonisolated static func spring(value: CGFloat, velocity: CGFloat, target: CGFloat, settling duration: Double, dt: Double) -> (value: CGFloat, velocity: CGFloat) {
+        guard duration > 0 else { return (target, 0) }
+        return spring(value: value, velocity: velocity, target: target, omega: omega(settling: duration), dt: dt)
+    }
+
+    /// The rate of a critically damped spring that settles in `duration`: its step response is within
+    /// 1% of its target at omega * t = 6.6.
+    nonisolated static func omega(settling duration: Double) -> Double { 6.6 / duration }
 }

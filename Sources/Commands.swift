@@ -58,6 +58,8 @@ struct CommandRequest: Equatable {
     var message: String? = nil
     /// `section=` from the query: the one section `state` reports beside `app`.
     var section: String? = nil
+    /// `preview=` from the query: `pointer-lab` holds live ink's pointer field on screen, or lets it go.
+    var preview: Bool? = nil
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -86,10 +88,11 @@ enum Commands {
         Fixed(name: "live-ink-clear", summary: "erase every live ink mark from the screen"),
         Fixed(name: "live-ink-ask", summary: "ask about the live ink on the screen, as Return in its note does: &message=<the note's words>; with no new ink it asks again about the ink asked about last. The answer is drawn on the screen and logged as [live-ink] lines. &session=<id> sends the picture to that agent session instead, as picking it in the note's target does", needsDebug: true),
         Fixed(name: "live-ink-stroke", summary: "draw a live ink stroke as if by hand: &points=x,y;x,y;… in global top-left points, the [state] convention; a loop draws an ellipse, another stroke an arrow, a tap erases the mark under it, or makes an answer's loop or arrow the person's", needsDebug: true),
-        Fixed(name: "live-ink-chord-down", summary: "hold the live ink chord down as if by hand: the glow comes up and listening starts", needsDebug: true),
+        Fixed(name: "live-ink-chord-down", summary: "hold the live ink chord down as if by hand: the pointer field comes up and listening starts", needsDebug: true),
         Fixed(name: "live-ink-chord-up", summary: "let go of the live ink chord as if by hand: with ink drawn since it went down, the note opens", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "intro-lab", summary: "open the Intro Lab, for tuning how setup's window goes into the menu bar icon", needsDebug: true),
+        Fixed(name: "pointer-lab", summary: "open the Pointer Lab, for trying and tuning live ink's pointer field and wake; &preview=1 holds the field on screen without opening it, and &preview=0 lets it go", needsDebug: true),
     ]
 
     /// URLComponents decodes each query value once; `open` does not encode again, so nothing else may.
@@ -109,7 +112,8 @@ enum Commands {
                               clear: items.first { $0.name == "clear" }?.value,
                               points: items.first { $0.name == "points" }?.value,
                               message: items.first { $0.name == "message" }?.value,
-                              section: items.first { $0.name == "section" }?.value)
+                              section: items.first { $0.name == "section" }?.value,
+                              preview: items.first { $0.name == "preview" }.map { !["0", "false"].contains($0.value ?? "") })
     }
 
     /// `points=` as a stroke: `x,y` pairs joined by `;`. Nil when it holds none, or any pair is not

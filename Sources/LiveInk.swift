@@ -17,8 +17,10 @@ final class LiveInk {
     private var inking: [Surface] = []
     private var chord: ModifierChord?
     private var observers: [(NotificationCenter, Any)] = []
-    private var glowTimer: Timer?
-    private var glowing = false
+    /// Runs out the pointer field's delay after the chord goes down.
+    private var fieldTimer: Timer?
+    /// The chord shows the pointer field on the surfaces taking ink: its delay passed, or a press came.
+    private var chordShowsField = false
     /// Runs while a stroke outlives the chord, until the button is up: inking ends then.
     private var releaseWatch: Timer?
     /// Runs after ⌘⇧ while there are marks, looking for macOS's window picker.
@@ -288,10 +290,10 @@ final class LiveInk {
         pickerUp = false
     }
 
-    /// The marks and the glow drawn again in the current settings.
+    /// The marks and the pointer field drawn again in the current settings.
     func applyTweaks() {
         showMarks()
-        if glowing { showGlow(true) }
+        holdField()
     }
 
     /// How far past a stroke's edge a tap still erases it. Wider than the editor's hit margin: nothing
@@ -1512,13 +1514,15 @@ final class LiveInk {
         releaseWatch = nil
         inking = activeSurfaces()
         inking.forEach { $0.overlay.setInking(true) }
+        let ui = Settings.shared.motionUI
+        inking.forEach { $0.overlay.prepareField(ui: ui) }
         let mouse = NSEvent.mouseLocation
         hover(at: CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y))
-        // The glow waits, so holding the chord on the way to a key, as in a window manager's
+        // The field waits, so holding the chord on the way to a key, as in a window manager's
         // Control-Option-arrow, does not flash it. A press shows it at once.
-        glowTimer?.invalidate()
-        glowTimer = Timer.scheduledTimer(withTimeInterval: Settings.shared.data.ui.liveInkGlowDelay, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.showGlow(true) }
+        fieldTimer?.invalidate()
+        fieldTimer = Timer.scheduledTimer(withTimeInterval: Settings.shared.data.ui.liveInkFieldDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showFieldForChord() }
         }
         Log.write("[live-ink] inking")
     }
@@ -1528,15 +1532,17 @@ final class LiveInk {
         isInking = false
         releaseWatch?.invalidate()
         releaseWatch = nil
-        showGlow(false)
+        fieldTimer?.invalidate()
+        chordShowsField = false
+        holdField()
         inking.forEach { $0.overlay.setInking(false) }
         inking = []
-        closeEmpty(fade: Settings.shared.motionUI.liveInkGlowFade)
+        closeEmpty(fade: 0)
         Log.write("[live-ink] stopped")
     }
 
     private func strokeMoved(_ points: [CGPoint]) {
-        if !points.isEmpty, !glowing { showGlow(true) }
+        if !points.isEmpty { showFieldForChord() }
         if !points.isEmpty, strokeBegan == nil { strokeBegan = Date() }
         // A press that moves is drawing, not tapping.
         if let first = points.first, let last = points.last, hypot(last.x - first.x, last.y - first.y) > 4 { hover(at: nil) }
@@ -1579,25 +1585,47 @@ final class LiveInk {
         }
     }
 
-    private func showGlow(_ on: Bool) {
-        glowTimer?.invalidate()
-        if !on && !glowing { return }
-        glowing = on
-        let ui = Settings.shared.motionUI
-        let color = ui.markStyle.color(.person)
-        let mouse = NSEvent.mouseLocation
-        let pen = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
-        inking.forEach { $0.overlay.showGlow(on, ui: ui, color: color, pen: pen) }
-        guard on else { return }
-        // The glow goes to the screen first, so making the recognizer on this thread never holds it back.
+    // MARK: The pointer field
+
+    /// The surfaces the pointer lab holds the pointer field on, at the inking level, passing every
+    /// press through.
+    private var labSurfaces: [Surface] = []
+
+    /// Holds the pointer field on every screen for the pointer lab, or lets it go, so what the lab tunes
+    /// is what inking shows.
+    func previewField(_ on: Bool) {
+        guard on != !labSurfaces.isEmpty else { return }
+        labSurfaces = on ? activeSurfaces() : []
+        holdField()
+        if !on { closeEmpty(fade: 0) }
+        Log.write("[live-ink] field preview \(on ? "on" : "off")")
+    }
+
+    /// The pointer field's delay passed, or a press came first: the field shows, and listening starts.
+    private func showFieldForChord() {
+        fieldTimer?.invalidate()
+        guard !chordShowsField else { return }
+        chordShowsField = true
+        holdField()
+        // The field goes to the screen first, so making the recognizer on this thread never holds it back.
         CATransaction.flush()
         listen()
     }
 
+    /// Holds the pointer field up, in the current settings, on the surfaces taking ink while the chord
+    /// shows it and on the pointer lab's, and lets it go on every other surface.
+    private func holdField() {
+        let ui = Settings.shared.motionUI
+        let held = (chordShowsField ? inking : []) + labSurfaces
+        for surface in surfaces {
+            surface.overlay.holdField(held.contains { $0 === surface }, ui: ui)
+        }
+    }
+
     // MARK: Listening
 
-    /// Starts listening, with speech on, as the glow shows: the chord on its way to a shortcut shows no
-    /// glow, so it never turns the microphone on either.
+    /// Starts listening, with speech on, as the pointer field shows: the chord on its way to a shortcut
+    /// shows no field, so it never turns the microphone on either.
     private func listen() {
         guard listening == nil else { return }
         let settings = Settings.shared.data
@@ -1683,7 +1711,9 @@ final class LiveInk {
     /// A surface with no marks closes, unless it is taking ink, so an idle live ink puts no
     /// full-screen window over every app.
     private func closeEmpty(fade: TimeInterval) {
-        let empty = surfaces.filter { surface in surface.marks.isEmpty && !inking.contains { $0 === surface } }
+        let empty = surfaces.filter { surface in
+            surface.marks.isEmpty && !inking.contains { $0 === surface } && !labSurfaces.contains { $0 === surface }
+        }
         empty.forEach { $0.overlay.close(after: fade) }
         surfaces.removeAll { surface in empty.contains { $0 === surface } }
     }
