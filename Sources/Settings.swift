@@ -130,7 +130,7 @@ struct SettingsData: Codable, Equatable {
             notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"
         }
         for (name, path) in [("personColor", \UITweaks.personColor), ("agentColor", \.agentColor), ("edgeColor", \.edgeColor),
-                             ("noteTextColor", \.noteTextColor)] where SRGB(hex: d.ui[keyPath: path]) == nil {
+                             ("noteTextColor", \.noteTextColor), ("checkColor", \.checkColor)] where SRGB(hex: d.ui[keyPath: path]) == nil {
             let fixed = UITweaks()[keyPath: path]
             notes.append("ui.\(name) \"\(d.ui[keyPath: path])\" -> \"\(fixed)\": a colour is #rrggbb"); d.ui[keyPath: path] = fixed
         }
@@ -193,6 +193,26 @@ struct UITweaks: Codable, Equatable {
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
     var markSeconds = 1.7            // how long a card's notice stays; the stored key keeps its older name
     var sendGraceSeconds = 3.0       // how long a Send waits before its session gets it; 0 sends at once
+    // The success check on a copied or sent card (MetalCheck; docs/check-lab-2026-10-11.md). Lengths
+    // are fractions of its diameter, so it looks the same at every size.
+    var checkColor = "#29b84d"       // the metal's own colour, the middle of its gradient
+    var checkShine = 0.55            // 0 to 1: how far the lit side goes toward white
+    var checkDepth = 0.45            // 0 to 1: how far the far side goes toward black
+    var checkLightAngle = -45.0      // where the light comes from, degrees clockwise from the top
+    var checkRim = 1.0               // 0 to 1: the bevel's light on the lit edge and shade on the far one
+    var checkRimWidth = 0.05
+    var checkHighlight = 0.8         // 0 to 1: the fixed highlight's brightness
+    var checkHighlightSize = 0.53
+    var checkGlyphSize = 0.5
+    var checkGlyphShadow = 0.35      // 0 to 1
+    var checkGlare = 0.75            // 0 to 1: the band of light's peak; 0 turns the glare off
+    var checkGlareWidth = 0.33
+    var checkGlareAngle = 25.0       // the band's tilt from upright, in degrees
+    var checkGlareDuration = 0.55    // how long the band takes to cross
+    var checkGlareDelay = 0.12       // after the check appears
+    var checkBloom = 1.0             // 0 to 2: the glare's bloom; 0 turns it off
+    var checkBloomRadius = 0.4
+    var checkBloomThreshold = 0.2    // 0 to 1: how bright the band must be to bloom
     var slideInDuration = 0.3
     var slideInCurve = "spring"      // spring, easeOut, easeInOut, linear
     var slideOutDuration = 0.15
@@ -343,6 +363,7 @@ struct UITweaks: Codable, Equatable {
         u.staggerDelay *= scale; u.staggerTotalMax *= scale
         u.relayoutDuration *= scale; u.shiftUpDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
         u.introDuration *= scale
+        u.checkGlareDuration *= scale; u.checkGlareDelay *= scale
         u.noteSettleDuration *= scale
         u.liveInkFieldFade *= scale; u.liveInkDrawOn *= scale
         u.liveInkWakeDuration *= scale; u.liveInkFieldFollow *= scale
@@ -369,6 +390,15 @@ struct UITweaks: Codable, Equatable {
         Bound("autoScrollZone", \.autoScrollZone, 0...10_000), Bound("autoScrollSpeed", \.autoScrollSpeed, 0...10_000),
         Bound("thumbnailSeconds", \.thumbnailSeconds, 0...3600), Bound("markSeconds", \.markSeconds, 0...3600),
         Bound("sendGraceSeconds", \.sendGraceSeconds, 0...10),
+        Bound("checkShine", \.checkShine, 0...1), Bound("checkDepth", \.checkDepth, 0...1),
+        Bound("checkLightAngle", \.checkLightAngle, -180...180), Bound("checkRim", \.checkRim, 0...1),
+        Bound("checkRimWidth", \.checkRimWidth, 0...0.5), Bound("checkHighlight", \.checkHighlight, 0...1),
+        Bound("checkHighlightSize", \.checkHighlightSize, 0...2), Bound("checkGlyphSize", \.checkGlyphSize, 0.05...1),
+        Bound("checkGlyphShadow", \.checkGlyphShadow, 0...1), Bound("checkGlare", \.checkGlare, 0...1),
+        Bound("checkGlareWidth", \.checkGlareWidth, 0.01...2), Bound("checkGlareAngle", \.checkGlareAngle, -90...90),
+        Bound("checkGlareDuration", \.checkGlareDuration, 0...10), Bound("checkGlareDelay", \.checkGlareDelay, 0...10),
+        Bound("checkBloom", \.checkBloom, 0...2), Bound("checkBloomRadius", \.checkBloomRadius, 0...1),
+        Bound("checkBloomThreshold", \.checkBloomThreshold, 0...0.95),
         Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
         Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
         Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("shiftUpDuration", \.shiftUpDuration, 0...60),

@@ -11,6 +11,7 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
         var annotator: () -> Void
         var intro: () -> Void
         var pointer: () -> Void
+        var check: () -> Void
     }
 
     private var panel: NSPanel?
@@ -68,6 +69,7 @@ struct DebugPanelView: View {
                 Button("Annotator", action: previews.annotator)
                 Button("Intro", action: previews.intro)
                 Button("Pointer", action: previews.pointer)
+                Button("Check", action: previews.check)
             }
             .padding(10)
             // Which file the sliders write to: a test launch points at another file, and a
@@ -281,7 +283,7 @@ struct Tweak: View {
 
 /// A colour setting, `#rrggbb`, picked in the system colour panel.
 @MainActor
-private struct ColorTweak: View {
+struct ColorTweak: View {
     let label: String
     let path: WritableKeyPath<UITweaks, String>
     @ObservedObject private var settings = Settings.shared

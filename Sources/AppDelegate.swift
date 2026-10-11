@@ -43,7 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         stack: { [weak self] in self?.toggleRecent() },
         annotator: { [weak self] in self?.annotateLast() },
         intro: { [weak self] in self?.introLab.show() },
-        pointer: { [weak self] in self?.pointerLab.show() }))
+        pointer: { [weak self] in self?.pointerLab.show() },
+        check: { [weak self] in self?.checkLab.show() }))
     private lazy var introLab = IntroLabController(
         play: { [weak self] window in
             self?.introduceMenuBar(from: window, close: { window.close() }, finished: {}) ?? false
@@ -51,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         iconFrame: { [weak self] in
             self?.visibleStatusButton.flatMap { button in button.window?.convertToScreen(button.convert(button.bounds, to: nil)) }
         })
+    private let checkLab = CheckLabController()
     private lazy var pointerLab = PointerLabController(preview: { [weak self] on in self?.liveInk.previewField(on) })
     private let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
@@ -697,6 +699,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
         case "intro-lab": introLab.show(); Commands.ok("intro-lab")
+        case "check-lab": checkLab.show(); Commands.ok("check-lab")
         case "pointer-lab":
             if let preview = request.preview {
                 pointerLab.hold(preview)

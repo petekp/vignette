@@ -107,9 +107,9 @@ annotator window's limits, the drawing editor's sizes, and a stitch's largest si
 the behaviour those numbers drive: how far a card bows and swells on its way to the annotator, how
 narrow the stack goes to make room for it and how far it stays from it, how deep the drag-select's
 edge band is and how fast it scrolls there, how near an edge of the image a zoom holds that
-edge, the ring live ink shows round the pointer while Control and Option are held, and how an
-answer to live ink is drawn: how long its marks take to draw on, and the size and widest wrap of its
-notes.
+edge, the ring live ink shows round the pointer while Control and Option are held, how an answer
+to live ink is drawn: how long its marks take to draw on, and the size and widest wrap of its notes,
+and the metal, glare and bloom of the check on a copied or sent card (the `check` keys).
 
 The defaults are the tuned UI, so a fresh install looks the same. A key the app does not know is
 ignored, and a key you leave out takes its default, so a line you no longer want is safe to delete.
@@ -125,7 +125,8 @@ With `debug` on, a floating panel of sliders edits these live. Open it with Twea
 Settings window's Developer tab or the menu, or with `open -g vignette://tweaks`. Its sections are
 Cards, Hover buttons, Timings, Flights, Backdrop, Annotator, Editor, Marks, Notes and Stitch. Its
 Preview buttons bring up the thumbnail, the stack and the annotator while you tweak. Intro opens
-the Intro Lab, which tunes the setup window's flight into the menu bar. Reset UI to defaults clears
+the Intro Lab, which tunes the setup window's flight into the menu bar. Check opens the Check Lab
+(`vignette://check-lab`), which tunes the check on copied and sent cards. Reset UI to defaults clears
 every `ui` value.
 
 ### The drawing editor's numbers
