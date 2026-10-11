@@ -11,7 +11,7 @@ import urllib.parse
 
 from e2e import AGENT, PERSON, PROBE, Failed, color_near, pixels
 
-KEY_R, KEY_M, KEY_RETURN = 15, 46, 36
+KEY_R, KEY_RETURN = 15, 36
 KEY_EQUALS, KEY_MINUS, KEY_ZERO = 24, 27, 29
 
 
@@ -71,7 +71,7 @@ def open_editor(app, path):
 
 def click_to_open(app, path):
     """Opens the editor as a person does, with a click on the card in the corner, so a run covers
-    the click, the flight and the handover of the keys to the editor."""
+    the click, the flight and the handover of the keys to Vignette."""
     name = os.path.basename(path)
     s = app.wait_state(lambda s: s['stack']['visible'] and (card_for(s, path) or {}).get('frame'), f'{name} in the corner')
     # The corner never takes the keys, so the gate is this copy's own card, read in the same step.
@@ -93,9 +93,22 @@ def wait_editor(app, offset):
     line = app.wait_log('[annotate] takes events', offset, timeout=10)
     if 'reached=true' not in line:
         raise Failed(f'the editor never took presses: {line}')
-    s = app.wait_state(lambda s: s['annotator']['windowVisible'] and s['annotator']['key'] and s['editor']['open'],
+    # The keys go to the image, or to the bar's message field when the bar offers a session; the
+    # field can also take them later, when the session list answers (`field_has_keys`).
+    s = app.wait_state(lambda s: s['annotator']['windowVisible'] and s['editor']['open']
+                       and (s['annotator']['key'] or s['annotator']['toolbarKey']),
                        'the editor coming up and taking the keys')
     app.report.step('editor up and key', detail=line.split('] ', 1)[1])
+    return s
+
+
+def field_has_keys(app, session):
+    """Waits for the bar to offer Send to `session`. Its message field then holds the keys, since
+    nothing has reached the image yet."""
+    app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == session, 'Send to the fake session')
+    s = app.wait_state(lambda s: s['annotator']['toolbarKey'] and s['annotator']['toolbarFocus'] == 'message',
+                       'the message field taking the keys', timeout=3)
+    app.report.step('the message field took the keys as the image opened')
     return s
 
 
@@ -469,16 +482,29 @@ def upgrade(app):
 
 
 def draw_box(app, s):
-    """Draws a rectangle in the middle of the open editor's frame, gated on the editor being key."""
-    app.require_key(s, 'annotator')
+    """Draws a rectangle in the middle of the open editor's frame. With the keys in the editor it
+    picks the rectangle tool first. With them in the message field, which took them as the image
+    opened, the drag is the first press, as a person's would be: it draws with the rectangle, the
+    tool an image opens with, and takes the keys back to the image."""
     x, y, w, h = s['annotator']['frame']
-    app.keys('annotator', 'key', KEY_R)
-    app.wait_state(lambda s: s['annotator'].get('tool') == 'rectangle', 'the rectangle tool')
-    s = app.state()
-    app.require_key(s, 'annotator')
+    from_field = s['annotator']['toolbarKey']
+    if from_field:
+        app.require_key(s, 'toolbar')
+        if s['annotator'].get('tool') != 'rectangle':
+            raise Failed(f"the image opened with the {s['annotator'].get('tool')} tool, not the rectangle")
+    else:
+        app.require_key(s, 'annotator')
+        app.keys('annotator', 'key', KEY_R)
+        app.wait_state(lambda s: s['annotator'].get('tool') == 'rectangle', 'the rectangle tool')
+        s = app.state()
+        app.require_key(s, 'annotator')
     app.input('glidedrag', round(x + w * 0.3), round(y + h * 0.3), round(x + w * 0.6), round(y + h * 0.6), 0.5)
     s = app.wait_state(lambda s: len(s['editor']['marks']) == 1, 'the box being drawn')
-    app.report.step('drew a box')
+    if from_field:
+        s = app.wait_state(lambda s: s['annotator']['key'] and not s['annotator']['toolbarKey'], 'the image taking the keys')
+        app.report.step('the first press drew a box and took the keys from the message field')
+    else:
+        app.report.step('drew a box')
     return s
 
 
@@ -594,9 +620,8 @@ def send_codex_thread_gone(app):
     start(app, **env)
     path = app.image('Screenshot gone.png', folder=app.watch)
     time.sleep(1)
-    s = click_to_open(app, path)
-    app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == thread, 'Send to the fake thread')
-    draw_box(app, app.state())
+    click_to_open(app, path)
+    draw_box(app, field_has_keys(app, thread))
     with open(os.path.join(app.folder, 'codex', 'gone'), 'w') as f:
         f.write(thread + '\n')
     offset = app.log_size()
@@ -616,9 +641,8 @@ def send_codex_queued(app):
     start(app, **env)
     path = app.image('Screenshot queued.png', folder=app.watch)
     time.sleep(1)
-    s = click_to_open(app, path)
-    app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == thread, 'Send to the fake thread')
-    draw_box(app, app.state())
+    click_to_open(app, path)
+    draw_box(app, field_has_keys(app, thread))
     offset = app.log_size()
     app.keys('annotator', 'key', KEY_RETURN, 'cmd')
     line = app.wait_log('[send] queued', offset, timeout=20)
@@ -630,7 +654,7 @@ def send_codex_queued(app):
 
 @needs_input
 def send_message(app):
-    """M in the editor puts the keys in the message field beside Send, and Return there sends the
+    """The message field beside Send takes the keys as the image opens, and Return there sends the
     image with the typed message ahead of Vignette's own line."""
     session, inbox = app.fake_session('e2e-project')
     start(app)
@@ -638,11 +662,7 @@ def send_message(app):
     time.sleep(1)
     app.touch_alive(inbox)
     click_to_open(app, path)
-    app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == session, 'Send to the fake session')
-    app.keys('annotator', 'key', KEY_M)
-    app.wait_state(lambda s: s['annotator']['toolbarFocus'] == 'message' and s['annotator']['toolbarKey'],
-                   'the message field taking the keys', timeout=3)
-    app.report.step('M put the keys in the message field')
+    field_has_keys(app, session)
     message = 'check the footer'
     app.keys('toolbar', 'type', message, 40)
     app.touch_alive(inbox)
@@ -679,9 +699,8 @@ def send_then_reply(app, session, delivered, keep_alive=lambda: None):
     path = app.image('Screenshot send.png', folder=app.watch)
     time.sleep(1)
     keep_alive()
-    s = click_to_open(app, path)
-    app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == session, 'Send to the fake session')
-    s = draw_box(app, app.state())
+    click_to_open(app, path)
+    draw_box(app, field_has_keys(app, session))
     keep_alive()
     offset = app.log_size()
     app.keys('annotator', 'key', KEY_RETURN, 'cmd')
