@@ -4,8 +4,9 @@ The ring round the pointer and the wake behind the pen each have several styles 
 Lab picks them with two segmented controls and shows only the sliders a style uses. Picking a style
 keeps the other keys, so tuning carries from one style to the next.
 
-The existing defaults did not change. Glass and Ripples, the two looks from before, are style 0 of
-the ring and style 4 of the wake.
+Glass, the ring from before, is ring style 0 and the default. Ripples, the wake from before, is wake
+style 4. The default wake is now Ribbon, style 0, so a settings file that does not name a style shows
+Ribbon. Every other default is unchanged.
 
 ## Ring styles (`ui.liveInkFieldStyle`)
 
@@ -62,9 +63,22 @@ stroke, and Lift is held to a quarter of its narrowest radius.
 
 ## Checked
 
-In the VM, with Size 20, Glow 0.85, Split 1 and Follow 0.04 for the ring, and Size 300 and Duration
-1.65 for the wake: every ring style still and moving, and every wake during and after a drag, over
-a grid page. Each drew as described. The unit tests cover the trail's spacing, fill and merge.
+In the VM, over a grid page, with Size 20, Glow 0.85, Split 1 and Follow 0.04 for the ring:
+every ring style drew as described, still and moving.
 
-Not checked: how each looks on Pete's display at 120 Hz, and the GPU cost of Frost's 24-tap blur on
-real hardware. The VM's GPU is emulated.
+The wakes were measured 0.3 s after a drag, against the same screen once the wake had gone, along
+the stroke and away from the ring. The table gives the share of pixels that changed by more than 8
+levels, at Duration 1.65 and Strength 1.
+
+| Style | Size 300 | Size 60 |
+|---|---|---|
+| Ribbon | 17.4% | 4.2% |
+| Silk | 8.7% | 3.7% |
+| Mist | 11.2% | 2.4% |
+| Frost | 13.1% | 2.7% |
+
+The GPU time per drawing was about 1 ms on average for every style, with no style clearly dearer.
+The VM's GPU is emulated, so that compares the styles and says nothing about real hardware. The unit
+tests cover the trail's spacing, fill and merge.
+
+Not checked: how each looks on Pete's display at 120 Hz.
