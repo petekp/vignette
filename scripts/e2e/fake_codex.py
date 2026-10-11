@@ -4,6 +4,8 @@
 folder. `<folder>/threads.json` holds the threads it lists. `<folder>/calls.jsonl` gets one line per
 call, with its arguments, and one per request `app-server` answers, written before the answer:
 Vignette ends the server once it has its answers, so nothing after the last one is sure to run.
+Each line carries its process and the time it was written, and an exception is a line of its own,
+since Vignette drops codex's standard error.
 
 It speaks only what Vignette asks of codex: `app-server` answers `initialize` and `thread/list`
 (`AppServer.swift`), and `queue --thread <id> --message <line>` succeeds, as the real one does once
@@ -14,6 +16,8 @@ and does nothing.
 import json
 import os
 import sys
+import time
+import traceback
 
 
 def main():
@@ -34,6 +38,7 @@ def gone(folder):
 
 
 def record(folder, call):
+    call = dict(call, pid=os.getpid(), at=round(time.time(), 3))
     with open(os.path.join(folder, 'calls.jsonl'), 'a') as f:
         f.write(json.dumps(call) + '\n')
 
@@ -57,4 +62,8 @@ def serve(folder, args):
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception:
+        record(sys.argv[1], {'args': sys.argv[2:], 'error': traceback.format_exc()})
+        raise
