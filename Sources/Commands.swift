@@ -19,7 +19,7 @@ enum CommandError: String, CaseIterable {
     /// An agent's reply was not taken. The detail names which ReplyProtocol.Refusal it was, and
     /// the receipt the helper reads carries the same word.
     case replyRefused = "reply-refused"
-    /// Live ink is turned off in settings.json (`liveInk`).
+    /// Live ink is turned off in settings.json (`liveInk`, or `debug`, which it needs for now).
     case liveInkOff = "live-ink-off"
     /// `points=` is missing, or is not `x,y` pairs of finite numbers joined by `;`.
     case invalidPoints = "invalid-points"

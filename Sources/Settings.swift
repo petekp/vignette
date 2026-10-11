@@ -57,7 +57,7 @@ struct SettingsData: Codable, Equatable {
     var sendInstructions = SettingsData.defaultSendInstructions  // the words after the image in the line Send puts in a session
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
-    var liveInk = false                      // holding Control and Option draws on the screen itself; needs Accessibility
+    var liveInk = false                      // holding Control and Option draws on the screen itself; needs Accessibility and, for now, `debug`
     var liveInkSpeech = false                // talking while drawing fills the note; needs the microphone and speech recognition
     var liveInkListenUntil = ListenUntil.pause.rawValue  // experiment: listening ends as the chord is let go, or at a pause after
     var liveInkSendWhenQuiet = true          // experiment: the ask goes once the person stops talking, or waits for Return
@@ -85,6 +85,10 @@ struct SettingsData: Codable, Equatable {
         if case .doubleTap = HotKeySpec.parse(recentHotkey) { return true }
         return false
     }
+
+    /// Live ink is internal until it ships: it runs, and the Settings window and the menu offer it,
+    /// only while `debug` is on too.
+    var usesLiveInk: Bool { liveInk && debug }
 
     /// What the line Send puts in a session says after the image (`ScreenshotRequests.requestLine`).
     static let defaultSendInstructions = "If a drawing would answer better than words, you can send one back."

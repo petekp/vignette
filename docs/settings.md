@@ -76,7 +76,8 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   screenshot on the clipboard as it lands: the image, plus its file URL and path for apps that take
   those. It is on by default. An image that arrives through `add` skips this and Instant Draw, since
   a push from an agent is not a capture.
-- **`liveInk`** is Live ink in Settings → General and in the menu bar menu. While it is on, hold
+- **`liveInk`** is Live ink in Settings → General and in the menu bar menu. It is internal for now:
+  it runs, and the window and the menu show it, only while `debug` is also on. While it is on, hold
   Control and Option and draw over any app: a loop becomes an ellipse and any other stroke an arrow.
   Click a mark with the keys held to erase it, or use Clear Live Ink in the menu. Letting go opens a
   note where you can ask Claude about what you drew, and the answer is drawn on the screen. It needs

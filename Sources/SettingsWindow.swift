@@ -276,45 +276,47 @@ struct SettingsView: View {
             // Under the title, the wide pop-up would leave the caption half the row's width.
             footer(ShortcutSetting.caption(doubleTap: settings.data.usesDoubleTap))
         }
-        Section {
-            Toggle(isOn: Binding(get: { settings.data.liveInk }, set: { on in
-                settings.update { $0.liveInk = on }
-                if on { ScreenRecording.request() }
-            })) {
-                Text("Live ink")
-                Text("Holding Control and Option lets you draw over any app. A click on a mark while you hold them erases it.")
-            }
-            // The double tap's row above asks for the same permission.
-            if settings.data.liveInk, !settings.data.usesDoubleTap, !trusted {
-                PermissionRow(symbol: "lock.fill", title: "Needs Accessibility permission",
-                              reason: SettingsView.liveInkAccessibilityReason, status: .refused) { Accessibility.request() }
-            }
-            if settings.data.liveInk, !screenRecording {
-                PermissionRow(symbol: "lock.fill", title: "Needs Screen Recording permission",
-                              reason: SettingsView.liveInkScreenRecordingReason, status: .refused) { ScreenRecording.openSystemSettings() }
-            }
-            if settings.data.liveInk {
-                Toggle(isOn: Binding(get: { settings.data.liveInkSpeech }, set: { on in
-                    settings.update { $0.liveInkSpeech = on }
-                    if on, !SpeechPermission.granted, SpeechPermission.unanswered { SpeechPermission.request { speechAllowed = $0 } }
+        if settings.data.debug {
+            Section {
+                Toggle(isOn: Binding(get: { settings.data.liveInk }, set: { on in
+                    settings.update { $0.liveInk = on }
+                    if on { ScreenRecording.request() }
                 })) {
-                    Text("Speak while you draw")
-                    Text("What you say goes into the note beside your ink. Your voice stays on this Mac.")
+                    Text("Live ink")
+                    Text("Holding Control and Option lets you draw over any app. A click on a mark while you hold them erases it.")
                 }
-                if settings.data.liveInkSpeech, !speechAllowed {
-                    PermissionRow(symbol: "lock.fill", title: "Needs microphone and speech recognition permission",
-                                  reason: SettingsView.liveInkSpeechReason, status: .refused) {
-                        if SpeechPermission.unanswered { SpeechPermission.request { speechAllowed = $0 } } else { SpeechPermission.openSystemSettings() }
-                    }
+                // The double tap's row above asks for the same permission.
+                if settings.data.liveInk, !settings.data.usesDoubleTap, !trusted {
+                    PermissionRow(symbol: "lock.fill", title: "Needs Accessibility permission",
+                                  reason: SettingsView.liveInkAccessibilityReason, status: .refused) { Accessibility.request() }
                 }
-                if settings.data.liveInkSpeech {
-                    Picker("Stop listening", selection: Binding(get: { settings.data.listenUntil }, set: { until in
-                        settings.update { $0.liveInkListenUntil = until.rawValue }
+                if settings.data.liveInk, !screenRecording {
+                    PermissionRow(symbol: "lock.fill", title: "Needs Screen Recording permission",
+                                  reason: SettingsView.liveInkScreenRecordingReason, status: .refused) { ScreenRecording.openSystemSettings() }
+                }
+                if settings.data.liveInk {
+                    Toggle(isOn: Binding(get: { settings.data.liveInkSpeech }, set: { on in
+                        settings.update { $0.liveInkSpeech = on }
+                        if on, !SpeechPermission.granted, SpeechPermission.unanswered { SpeechPermission.request { speechAllowed = $0 } }
                     })) {
-                        Text("When you let go of Control and Option").tag(ListenUntil.release)
-                        Text("When you pause").tag(ListenUntil.pause)
+                        Text("Speak while you draw")
+                        Text("What you say goes into the note beside your ink. Your voice stays on this Mac.")
                     }
-                    Toggle("Ask when you stop talking", isOn: binding(\.liveInkSendWhenQuiet))
+                    if settings.data.liveInkSpeech, !speechAllowed {
+                        PermissionRow(symbol: "lock.fill", title: "Needs microphone and speech recognition permission",
+                                      reason: SettingsView.liveInkSpeechReason, status: .refused) {
+                            if SpeechPermission.unanswered { SpeechPermission.request { speechAllowed = $0 } } else { SpeechPermission.openSystemSettings() }
+                        }
+                    }
+                    if settings.data.liveInkSpeech {
+                        Picker("Stop listening", selection: Binding(get: { settings.data.listenUntil }, set: { until in
+                            settings.update { $0.liveInkListenUntil = until.rawValue }
+                        })) {
+                            Text("When you let go of Control and Option").tag(ListenUntil.release)
+                            Text("When you pause").tag(ListenUntil.pause)
+                        }
+                        Toggle("Ask when you stop talking", isOn: binding(\.liveInkSendWhenQuiet))
+                    }
                 }
             }
         }
