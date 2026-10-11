@@ -296,7 +296,7 @@ final class LiveInk {
             let ui = Settings.shared.motionUI
             previewing.forEach { surface in
                 surface.overlay.prepareEdge(ui: ui)
-                surface.overlay.showGlow(true, ui: ui, color: ui.markStyle.color(.person), pen: nil)
+                surface.overlay.showGlow(true, ui: ui, color: ui.markStyle.color(.person))
             }
         }
     }
@@ -1591,40 +1591,35 @@ final class LiveInk {
 
     // MARK: The edge lab's preview
 
-    /// The surfaces holding the edge look for the edge lab, and the monitors that move its brightest
-    /// part with the pointer, since those surfaces pass every press and move through.
+    /// The surfaces holding the pointer field for the edge lab, and the monitors that start the wake's
+    /// rings on a drag, since those surfaces pass every press and move through.
     private var previewing: [Surface] = []
     private var previewMonitors: [Any] = []
 
-    /// Holds the edge look on every screen at the inking level, passing every press through, so what
-    /// the lab tunes is what inking shows.
+    /// Holds the pointer field on every screen at the inking level, passing every press through, so
+    /// what the lab tunes is what inking shows.
     func previewEdge(_ on: Bool) {
         guard on != !previewing.isEmpty else { return }
         let ui = Settings.shared.motionUI
         let color = ui.markStyle.color(.person)
-        let mouse = NSEvent.mouseLocation
-        let pen = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
         if on {
             previewing = activeSurfaces()
             previewing.forEach { surface in
                 surface.overlay.raise(true)
                 surface.overlay.prepareEdge(ui: ui)
-                surface.overlay.showGlow(true, ui: ui, color: color, pen: pen)
+                surface.overlay.showGlow(true, ui: ui, color: color)
             }
             // Any drag stands in for drawing, so the wake can be tuned while the presses pass through.
-            let follow: (NSEvent) -> Void = { [weak self] event in
+            let drag: (NSEvent) -> Void = { [weak self] _ in
                 let mouse = NSEvent.mouseLocation
                 let point = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
-                self?.previewing.forEach { surface in
-                    surface.overlay.followGlow(point)
-                    if event.type != .mouseMoved { surface.overlay.wake(point) }
-                }
+                self?.previewing.forEach { $0.overlay.wake(point) }
             }
-            let moves: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDown, .leftMouseDragged]
-            previewMonitors = [NSEvent.addGlobalMonitorForEvents(matching: moves, handler: follow),
-                               NSEvent.addLocalMonitorForEvents(matching: moves) { follow($0); return $0 }]
+            let drags: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged]
+            previewMonitors = [NSEvent.addGlobalMonitorForEvents(matching: drags, handler: drag),
+                               NSEvent.addLocalMonitorForEvents(matching: drags) { drag($0); return $0 }]
                 .compactMap { $0 }
-            Log.write("[live-ink] edge preview on style=\(Int(ui.liveInkEdgeStyle))")
+            Log.write("[live-ink] edge preview on")
         } else {
             previewMonitors.forEach(NSEvent.removeMonitor)
             previewMonitors = []
@@ -1632,7 +1627,7 @@ final class LiveInk {
             previewing = []
             shown.forEach { surface in
                 guard !inking.contains(where: { $0 === surface }) else { return }
-                surface.overlay.showGlow(false, ui: ui, color: color, pen: nil)
+                surface.overlay.showGlow(false, ui: ui, color: color)
                 surface.overlay.raise(false)
             }
             closeEmpty(fade: ui.liveInkGlowFade)
@@ -1648,9 +1643,7 @@ final class LiveInk {
         glowing = on
         let ui = Settings.shared.motionUI
         let color = ui.markStyle.color(.person)
-        let mouse = NSEvent.mouseLocation
-        let pen = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
-        inking.forEach { $0.overlay.showGlow(on, ui: ui, color: color, pen: pen) }
+        inking.forEach { $0.overlay.showGlow(on, ui: ui, color: color) }
         guard on else { return }
         // The glow goes to the screen first, so making the recognizer on this thread never holds it back.
         CATransaction.flush()

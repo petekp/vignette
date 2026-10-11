@@ -17,9 +17,8 @@ final class MotionTests: XCTestCase {
         let base = UITweaks()
         let off = base.scaledForMotion(0)
         // Motion without a motion word in the name: how far a flight bows and swells, a live ink mark
-        // drawing itself on, how fast the edge's moving looks run, and how long the pointer field
-        // takes to catch up with the pointer.
-        let motion: Set<String> = ["flightArc", "flightDepth", "liveInkDrawOn", "liveInkEdgeSpeed", "liveInkFieldFollow"]
+        // drawing itself on, and how long the pointer field takes to catch up with the pointer.
+        let motion: Set<String> = ["flightArc", "flightDepth", "liveInkDrawOn", "liveInkFieldFollow"]
         // A motion word without motion: a press's wait before a drag, a share of the funnel's travel, and how
         // long the live ink chord is held before the glow shows.
         let notMotion: Set<String> = ["textDragDelay", "introFunnelFade", "liveInkGlowDelay"]

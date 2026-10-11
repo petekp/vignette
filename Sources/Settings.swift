@@ -130,8 +130,7 @@ struct SettingsData: Codable, Equatable {
             notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"
         }
         for (name, path) in [("personColor", \UITweaks.personColor), ("agentColor", \.agentColor), ("edgeColor", \.edgeColor),
-                             ("noteTextColor", \.noteTextColor), ("liveInkEdgeColor1", \.liveInkEdgeColor1),
-                             ("liveInkEdgeColor2", \.liveInkEdgeColor2)] where SRGB(hex: d.ui[keyPath: path]) == nil {
+                             ("noteTextColor", \.noteTextColor)] where SRGB(hex: d.ui[keyPath: path]) == nil {
             let fixed = UITweaks()[keyPath: path]
             notes.append("ui.\(name) \"\(d.ui[keyPath: path])\" -> \"\(fixed)\": a colour is #rrggbb"); d.ui[keyPath: path] = fixed
         }
@@ -278,35 +277,9 @@ struct UITweaks: Codable, Equatable {
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
     // Live ink's glow along the screen's edges, which says the screen is taking ink
-    var liveInkGlowWidth = 29.0      // points into the screen at which the glow is a third as strong as at the edge
     var liveInkGlowOpacity = 1.0     // near the pointer; far from it the glow is a third as bright
     var liveInkGlowDelay = 0.25      // how long the chord is held before the glow shows, unless a press shows it sooner
     var liveInkGlowFade = 0.5
-    // The edge lab's looks (docs/live-ink-edge-lab-2026-10-08.md), as `EdgeLensLayer.Style`. 0 is the
-    // glow above, 7 is nothing along the edges; `EdgeLensLayer` draws the rest. The default is aurora
-    // ripple, as Pete tuned it.
-    var liveInkEdgeStyle = 6.0
-    var liveInkEdgeWidth = 38.0      // points into the screen that the look reaches
-    var liveInkEdgeBend = 2.0        // 0 to 2: how far the look moves what is under it
-    var liveInkEdgeSplit = 0.5       // 0 to 1: how far red and blue part where the look moves the picture
-    var liveInkEdgeShine = 0.89      // 0 to 1: the light along the rim
-    var liveInkEdgeFrost = 0.0       // 0 to 1: how much the look blurs what is under it
-    var liveInkEdgeTint = 1.0        // 0 to 1: how much of the ink colour the look takes
-    var liveInkEdgeSpeed = 1.51      // how fast an animated look moves; 0 holds it still
-    var liveInkEdgeCorner = 10.0     // the top corners' radius of a display with a notch, in points; macOS does not report it
-    var liveInkEdgeFocus = 0.5       // 0 to 1: how much the look gathers round the pointer
-    var liveInkEdgeLight = 1.0       // 0 to 1: the coloured light on aurora ripple's waves
-    // The light's colours in aurora and aurora ripple, and how aurora ripple's light meets the screen.
-    var liveInkEdgeColors = 0.0      // EdgeLensLayer.Palette: 0 the ink colour, 1 a rainbow, 2 two colours
-    var liveInkEdgeColor1 = "#38d9a9" // the two colours the light runs between
-    var liveInkEdgeColor2 = "#845ef7"
-    var liveInkEdgeRepeats = 2.0     // how many times the colours repeat round the screen, a whole number
-    var liveInkEdgeVariation = 0.0   // 0 to 1: how far the ink colour's hue swings to either side
-    var liveInkEdgeHue = 0.0         // 0 to 1: turns every colour round the colour wheel
-    var liveInkEdgeSaturation = 1.0
-    var liveInkEdgeBrightness = 1.0
-    var liveInkEdgeDrift = 0.05      // how fast the colours flow round, in repeats a second at speed 1
-    var liveInkEdgeBlend = 0.0       // EdgeLensLayer.Blend
     // The wake: rings that spread behind the pen while drawing and bend the screen under them. 0 is off.
     var liveInkWakeStrength = 0.95   // 0 to 1: how far the rings move the screen
     var liveInkWakeSize = 36.0       // points a ring spreads before it is gone
@@ -352,7 +325,7 @@ struct UITweaks: Codable, Equatable {
         u.introDuration *= scale
         u.noteSettleDuration *= scale
         u.liveInkGlowFade *= scale; u.liveInkDrawOn *= scale
-        u.liveInkEdgeSpeed *= scale; u.liveInkWakeDuration *= scale; u.liveInkFieldFollow *= scale
+        u.liveInkWakeDuration *= scale; u.liveInkFieldFollow *= scale
         u.liveInkHideFade *= scale; u.liveInkShowFade *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
@@ -417,18 +390,9 @@ struct UITweaks: Codable, Equatable {
         // The floor is the slider's, because below it a stitch is not a smaller picture but a
         // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
-        Bound("liveInkGlowWidth", \.liveInkGlowWidth, 0...1000), Bound("liveInkGlowOpacity", \.liveInkGlowOpacity, 0...1),
+        Bound("liveInkGlowOpacity", \.liveInkGlowOpacity, 0...1),
         Bound("liveInkGlowDelay", \.liveInkGlowDelay, 0...60), Bound("liveInkGlowFade", \.liveInkGlowFade, 0...60),
-        Bound("liveInkEdgeStyle", \.liveInkEdgeStyle, 0...7), Bound("liveInkEdgeWidth", \.liveInkEdgeWidth, 1...400),
-        Bound("liveInkEdgeBend", \.liveInkEdgeBend, 0...2), Bound("liveInkEdgeSplit", \.liveInkEdgeSplit, 0...1),
-        Bound("liveInkEdgeShine", \.liveInkEdgeShine, 0...1), Bound("liveInkEdgeFrost", \.liveInkEdgeFrost, 0...1),
-        Bound("liveInkEdgeTint", \.liveInkEdgeTint, 0...1), Bound("liveInkEdgeSpeed", \.liveInkEdgeSpeed, 0...10),
-        Bound("liveInkEdgeCorner", \.liveInkEdgeCorner, 0...60), Bound("liveInkEdgeFocus", \.liveInkEdgeFocus, 0...1),
-        Bound("liveInkEdgeLight", \.liveInkEdgeLight, 0...1), Bound("liveInkWakeStrength", \.liveInkWakeStrength, 0...1),
-        Bound("liveInkEdgeColors", \.liveInkEdgeColors, 0...2), Bound("liveInkEdgeRepeats", \.liveInkEdgeRepeats, 1...12),
-        Bound("liveInkEdgeVariation", \.liveInkEdgeVariation, 0...1), Bound("liveInkEdgeHue", \.liveInkEdgeHue, 0...1),
-        Bound("liveInkEdgeSaturation", \.liveInkEdgeSaturation, 0...2), Bound("liveInkEdgeBrightness", \.liveInkEdgeBrightness, 0...3),
-        Bound("liveInkEdgeDrift", \.liveInkEdgeDrift, 0...2), Bound("liveInkEdgeBlend", \.liveInkEdgeBlend, 0...8),
+        Bound("liveInkWakeStrength", \.liveInkWakeStrength, 0...1),
         Bound("liveInkWakeSize", \.liveInkWakeSize, 0...1000), Bound("liveInkWakeDuration", \.liveInkWakeDuration, 0...10),
         Bound("liveInkFieldSize", \.liveInkFieldSize, 0...200), Bound("liveInkFieldBend", \.liveInkFieldBend, 0...2),
         Bound("liveInkFieldSplit", \.liveInkFieldSplit, 0...1), Bound("liveInkFieldGlow", \.liveInkFieldGlow, 0...1),

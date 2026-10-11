@@ -5,8 +5,8 @@ import Metal
 import QuartzCore
 import ScreenCaptureKit
 
-/// A live picture of one display without live ink's overlay, for the edge looks that bend the
-/// screen's own pixels. ScreenCaptureKit sends a frame only when something on the display changed,
+/// A live picture of one display without live ink's overlay, for the pointer field and the wake,
+/// which bend the screen's own pixels. ScreenCaptureKit sends a frame only when something on the display changed,
 /// so a still screen costs nothing after the first. Frames are kept, not announced: whoever draws
 /// takes the newest one at its own pace.
 final class ScreenFeed: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
@@ -123,10 +123,11 @@ final class GPUTimes: @unchecked Sendable {
     }
 }
 
-/// Live ink's edge drawn by a Metal shader over a live picture of the screen: glass, and the other
-/// looks the edge lab tries, and the wake that follows the pen while drawing
-/// (docs/live-ink-edge-lab-2026-10-08.md). It fades in once the first frame is drawn, so it never
-/// shows the screen as it was before the chord went down.
+/// Live ink's pointer field and wake, drawn by a Metal shader over a live picture of the screen
+/// (docs/live-ink-cursor-2026-10-10.md): a ring round the pointer while the chord is held, and rings
+/// that spread behind the pen while it draws. It fades in once the first frame is drawn, so it never
+/// shows the screen as it was before the chord went down. Without a picture of the screen, because
+/// Screen Recording is refused or the stream stopped, the ring still glows and nothing bends.
 ///
 /// It draws only from its display link, at most once a refresh. Drawing from each frame's arrival
 /// queued a main-thread block per frame: the run loop never got back to commit the layer, so every
@@ -140,37 +141,39 @@ final class EdgeLensLayer: CAMetalLayer {
         descriptor.vertexFunction = library.makeFunction(name: "edgeVertex")
         descriptor.fragmentFunction = library.makeFunction(name: "edgeFragment")
         descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        // A look that draws only light still binds a picture of the screen; it reads none.
+        // Drawing with no picture of the screen still binds one; the shader reads none of it.
         let blankDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 1, height: 1, mipmapped: false)
         guard let pipeline = try? device.makeRenderPipelineState(descriptor: descriptor),
               let blank = device.makeTexture(descriptor: blankDescriptor) else { return nil }
         return (device, queue, pipeline, blank)
     }()
 
-    /// Whether this Mac can draw it at all; without it the plain glow shows.
+    /// Whether this Mac can draw it at all.
     static var isAvailable: Bool { metal != nil }
 
     private let feed = ScreenFeed()
-    /// How long the GPU took over each drawing since the look came up, logged with the feed's frames.
+    /// How long the GPU took over each drawing since the field came up, logged with the feed's frames.
     private let gpuTimes = GPUTimes()
     private var textures: CVMetalTextureCache?
     private var link: CADisplayLink?
     private var ui = UITweaks()
     private var color = SIMD4<Float>(1, 1, 1, 1)
-    private var pen = CGPoint.zero
     private var wanted = false
     private var shown = false
     private var started: CFTimeInterval = 0
     private var asked: CFTimeInterval = 0
     private var streaming = false
-    /// Something besides the screen changed since the last drawing: the pen, the settings, or the look.
+    /// The screen's picture could not be had since the chord went down, so nothing bends: Screen
+    /// Recording is refused, or the stream stopped.
+    private var pictureFailed = false
+    /// The settings or the colour changed since the last drawing.
     private var dirty = false
     /// The points the pen passed while drawing, oldest first, each the centre of one of the wake's
     /// rings. Weight is less where points crowd, so slow drawing does not stack rings.
     private var trail: [(point: CGPoint, born: CFTimeInterval, weight: Float)] = []
-    /// The display's corners and notch, taken when the look is readied on it.
-    private var shape = DisplayShape()
-    /// The screen's frame in AppKit's global points, which the pointer field reads the pointer against.
+    /// The most points the shader takes, which fits `setFragmentBytes`' 4 KB.
+    private static let trailLimit = 96
+    /// The screen's frame in AppKit's global points, which the pointer is read against.
     private var screenFrame = CGRect.zero
     /// The ring round the pointer: where its centre is and how fast it moves, in the layer's points,
     /// its radius, and the last refresh that moved them. It is sprung once a refresh from where the
@@ -184,10 +187,6 @@ final class EdgeLensLayer: CAMetalLayer {
     /// From the arrow's tip, its hotspot, to about the middle of the arrow, so the ring sits round
     /// the arrow rather than round its tip.
     private static let fieldOffset = CGPoint(x: 4, y: 6)
-    /// The most points the shader takes, which fits `setFragmentBytes`' 4 KB.
-    private static let trailLimit = 96
-    /// Runs when the look cannot be drawn, so the plain glow can show in its place.
-    var onUnavailable: (() -> Void)?
 
     init(scale: CGFloat) {
         super.init()
@@ -205,20 +204,20 @@ final class EdgeLensLayer: CAMetalLayer {
         }
         feed.onStopped = { [weak self] error in
             Log.write("[live-ink] edge feed stopped: \(error)")
-            self?.streaming = false
-            self?.onUnavailable?()
+            self?.lostPicture()
         }
     }
 
     override init(layer: Any) { super.init(layer: layer) }
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// Readies the look on `screen` as the chord goes down. A look that draws from the screen starts its
-    /// picture now, so the first frame is there by the time the look shows.
+    /// Readies the field on `screen` as the chord goes down. With `capture` it starts the screen's
+    /// picture now, so the first frame is there by the time the field shows. Each chord tries the
+    /// picture again: a refusal or a stream error may be over by now.
     func prepare(display: CGDirectDisplayID, screen: NSScreen, excluding window: CGWindowID, capture: Bool) {
         guard Self.metal != nil else { return }
-        shape = DisplayShape(of: screen)
         screenFrame = screen.frame
+        pictureFailed = false
         if link == nil {
             link = screen.displayLink(target: self, selector: #selector(tick))
             link?.add(to: .main, forMode: .common)
@@ -233,13 +232,19 @@ final class EdgeLensLayer: CAMetalLayer {
                 try await feed.start(display: display, pixels: pixels, excluding: [window])
             } catch {
                 Log.write("[live-ink] edge feed could not start: \(error)")
-                self?.streaming = false
-                self?.onUnavailable?()
+                self?.lostPicture()
             }
         }
     }
 
-    /// Stops the screen's picture. The look is gone by then.
+    /// Draws on without the screen's picture: the ring glows and nothing bends.
+    private func lostPicture() {
+        streaming = false
+        pictureFailed = true
+        dirty = true
+    }
+
+    /// Stops the screen's picture. The field is gone by then.
     func stopFeed() {
         guard streaming else { return }
         streaming = false
@@ -248,13 +253,12 @@ final class EdgeLensLayer: CAMetalLayer {
         Log.write("[live-ink] edge feed stopped frames=\(feed.frameCount) \(gpuTimes.take())")
     }
 
-    func show(_ on: Bool, ui: UITweaks, color: CGColor, pen: CGPoint?) {
+    func show(_ on: Bool, ui: UITweaks, color: CGColor) {
         self.ui = ui
         if let components = color.converted(to: CGColorSpace(name: CGColorSpace.displayP3)!, intent: .defaultIntent, options: nil)?.components,
            components.count >= 3 {
             self.color = SIMD4(Float(components[0]), Float(components[1]), Float(components[2]), 1)
         }
-        if let pen { self.pen = pen }
         wanted = on
         dirty = true
         if !on { trail = [] }
@@ -262,7 +266,7 @@ final class EdgeLensLayer: CAMetalLayer {
             if started == 0 {
                 started = CACurrentMediaTime()
                 gpuTimes.reset()
-                // The ring grows in from the pointer each time the look comes up.
+                // The ring grows in from the pointer each time the field comes up.
                 fieldAt = pointer
                 fieldVelocity = .zero
                 (fieldRadius, fieldRadiusVelocity, fieldTick) = (0, 0, started)
@@ -271,18 +275,12 @@ final class EdgeLensLayer: CAMetalLayer {
         } else {
             started = 0
             fade(in: false)
-            // The feed stops once the fade is over, unless the look was asked for again by then.
+            // The feed stops once the fade is over, unless the field was asked for again by then.
             DispatchQueue.main.asyncAfter(deadline: .now() + ui.liveInkGlowFade + 0.05) { [weak self] in
                 guard let self, !self.wanted else { return }
                 self.stopFeed()
             }
         }
-    }
-
-    func follow(_ pen: CGPoint) {
-        guard wanted else { return }
-        self.pen = pen
-        dirty = true
     }
 
     /// The button went down or up: the ring tightens and brightens while it is down.
@@ -307,24 +305,21 @@ final class EdgeLensLayer: CAMetalLayer {
         // One more drawing once the last ring is gone, so none of it stays.
         if rippling, trail.isEmpty { dirty = true }
         let fieldMoved = stepField(at: now)
-        let needsPicture = look.drawsFromScreen || ui.wakes || ui.pointerFieldBends
+        let needsPicture = (ui.wakes || ui.pointerFieldBends) && !pictureFailed
         let picture = needsPicture ? feed.take() : nil
-        // A look that draws from the screen waits for its first frame.
+        // Bending waits for the first frame of the screen.
         if needsPicture, picture == nil { return }
-        // A still look draws only when the screen, the pen, the ring round the pointer or the settings
-        // changed; a moving look, or a wake with rings, every refresh.
-        guard dirty || fieldMoved || picture?.fresh == true || (look.moves && ui.liveInkEdgeSpeed > 0) || !trail.isEmpty else { return }
+        // Draws only when the screen, the ring or the settings changed, or while rings spread.
+        guard dirty || fieldMoved || picture?.fresh == true || !trail.isEmpty else { return }
         dirty = false
         draw(picture?.frame, at: now)
         if !shown {
-            // `ms` is how long the look waited for the picture once it was wanted, `stream-ms` how long
+            // `ms` is how long the field waited for the picture once it was wanted, `stream-ms` how long
             // since the picture was asked for, as the chord went down.
             if needsPicture { Log.write("[live-ink] edge first frame ms=\(Int((now - started) * 1000)) stream-ms=\(Int((now - asked) * 1000))") }
             fade(in: true)
         }
     }
-
-    private var look: Style { Style(rawValue: Int(ui.liveInkEdgeStyle.rounded())) ?? .glass }
 
     /// The pointer now, in the layer's points, moved from the arrow's tip to its middle.
     private var pointer: CGPoint {
@@ -333,7 +328,7 @@ final class EdgeLensLayer: CAMetalLayer {
     }
 
     /// Moves the ring round the pointer on its springs to `now`: its centre after the pointer, over
-    /// `ui.liveInkFieldFollow`, and its radius to its size, smaller while pressing, over the look's
+    /// `ui.liveInkFieldFollow`, and its radius to its size, smaller while pressing, over the field's
     /// fade. Answers whether it moved.
     private func stepField(at now: CFTimeInterval) -> Bool {
         let dt = now - fieldTick
@@ -420,54 +415,27 @@ final class EdgeLensLayer: CAMetalLayer {
         commands.commit()
     }
 
-    /// A `#rrggbb` setting in the layer's Display P3, black for one that does not parse.
-    private static func layerColor(_ hex: String) -> SIMD3<Float> {
-        guard let components = SRGB(hex: hex)?.cgColor.converted(to: CGColorSpace(name: CGColorSpace.displayP3)!, intent: .defaultIntent, options: nil)?.components,
-              components.count >= 3 else { return .zero }
-        return SIMD3(Float(components[0]), Float(components[1]), Float(components[2]))
-    }
-
     private func uniforms(size: CGSize, at now: CFTimeInterval, hasPicture: Bool) -> EdgeUniforms {
         var uniforms = EdgeUniforms()
         uniforms.color = color
         uniforms.size = SIMD2(Float(size.width), Float(size.height))
-        uniforms.pen = SIMD2(Float(pen.x), Float(pen.y))
-        uniforms.scale = Float(contentsScale)
-        uniforms.style = Float(ui.liveInkEdgeStyle)
-        uniforms.width = Float(ui.liveInkEdgeWidth)
-        uniforms.bend = Float(ui.liveInkEdgeBend)
-        uniforms.split = Float(ui.liveInkEdgeSplit)
-        uniforms.shine = Float(ui.liveInkEdgeShine)
-        uniforms.frost = Float(ui.liveInkEdgeFrost)
-        uniforms.tint = Float(ui.liveInkEdgeTint)
-        uniforms.speed = Float(ui.liveInkEdgeSpeed)
-        uniforms.focus = Float(ui.liveInkEdgeFocus)
-        uniforms.time = Float(now - started)
-        uniforms.light = Float(ui.liveInkEdgeLight)
-        uniforms.colors = Float(ui.liveInkEdgeColors)
-        uniforms.repeats = Float(ui.liveInkEdgeRepeats)
-        uniforms.variation = Float(ui.liveInkEdgeVariation)
-        uniforms.hue = Float(ui.liveInkEdgeHue)
-        uniforms.saturation = Float(ui.liveInkEdgeSaturation)
-        uniforms.brightness = Float(ui.liveInkEdgeBrightness)
-        uniforms.drift = Float(ui.liveInkEdgeDrift)
-        uniforms.blend = Float(ui.liveInkEdgeBlend)
-        let top = Float(shape.roundedTop ? ui.liveInkEdgeCorner : 0)
-        (uniforms.radiusTopLeft, uniforms.radiusTopRight) = (top, top)
-        if let notch = shape.notch {
-            uniforms.notchLeft = Float(notch.minX)
-            uniforms.notchRight = Float(notch.maxX)
-            uniforms.notchHeight = Float(notch.height)
-            uniforms.notchRadius = Float(DisplayShape.notchRadius)
+        // Without a picture of the screen there is nothing to bend, only light to draw.
+        if hasPicture, !trail.isEmpty {
+            uniforms.wakeCount = Float(trail.count)
+            uniforms.wakeStrength = Float(ui.liveInkWakeStrength)
+            uniforms.wakeSize = Float(ui.liveInkWakeSize)
+            uniforms.wakeLife = Float(ui.liveInkWakeDuration)
+            // A ring reaches its size, and its packet of waves 24 pt past it.
+            let reach = ui.liveInkWakeSize + 24
+            uniforms.wakeLeft = Float(trail.map(\.point.x).min()! - reach)
+            uniforms.wakeTop = Float(trail.map(\.point.y).min()! - reach)
+            uniforms.wakeRight = Float(trail.map(\.point.x).max()! + reach)
+            uniforms.wakeBottom = Float(trail.map(\.point.y).max()! + reach)
         }
-        let first = Self.layerColor(ui.liveInkEdgeColor1), second = Self.layerColor(ui.liveInkEdgeColor2)
-        (uniforms.color1R, uniforms.color1G, uniforms.color1B) = (first.x, first.y, first.z)
-        (uniforms.color2R, uniforms.color2G, uniforms.color2B) = (second.x, second.y, second.z)
         if ui.pointerField {
             uniforms.fieldX = Float(fieldAt.x)
             uniforms.fieldY = Float(fieldAt.y)
             uniforms.fieldRadius = Float(fieldRadius)
-            // Without a picture of the screen there is nothing to bend, only light to draw.
             uniforms.fieldBend = hasPicture ? Float(ui.liveInkFieldBend) : 0
             uniforms.fieldSplit = hasPicture ? Float(ui.liveInkFieldSplit) : 0
             uniforms.fieldGlow = Float(ui.liveInkFieldGlow)
@@ -478,18 +446,6 @@ final class EdgeLensLayer: CAMetalLayer {
             let size = max(CGFloat(ui.liveInkFieldSize), 1)
             uniforms.fieldPress = Float(min(max((size - fieldRadius) / (size * 0.2), 0), 1))
         }
-        uniforms.wakeCount = Float(trail.count)
-        uniforms.wakeStrength = Float(ui.liveInkWakeStrength)
-        uniforms.wakeSize = Float(ui.liveInkWakeSize)
-        uniforms.wakeLife = Float(ui.liveInkWakeDuration)
-        if !trail.isEmpty {
-            // A ring reaches its size, and its packet of waves 24 pt past it.
-            let reach = ui.liveInkWakeSize + 24
-            uniforms.wakeLeft = Float(trail.map(\.point.x).min()! - reach)
-            uniforms.wakeTop = Float(trail.map(\.point.y).min()! - reach)
-            uniforms.wakeRight = Float(trail.map(\.point.x).max()! + reach)
-            uniforms.wakeBottom = Float(trail.map(\.point.y).max()! + reach)
-        }
         return uniforms
     }
 }
@@ -498,19 +454,6 @@ final class EdgeLensLayer: CAMetalLayer {
 struct EdgeUniforms {
     var color = SIMD4<Float>(repeating: 0)
     var size = SIMD2<Float>(repeating: 0)
-    var pen = SIMD2<Float>(repeating: 0)
-    var scale: Float = 1
-    var style: Float = 0
-    var width: Float = 0
-    var bend: Float = 0
-    var split: Float = 0
-    var shine: Float = 0
-    var frost: Float = 0
-    var tint: Float = 0
-    var speed: Float = 0
-    var focus: Float = 0
-    var time: Float = 0
-    var light: Float = 0
     var wakeCount: Float = 0
     var wakeStrength: Float = 0
     var wakeSize: Float = 0
@@ -519,28 +462,6 @@ struct EdgeUniforms {
     var wakeTop: Float = 0
     var wakeRight: Float = 0
     var wakeBottom: Float = 0
-    var colors: Float = 0
-    var repeats: Float = 0
-    var variation: Float = 0
-    var hue: Float = 0
-    var saturation: Float = 0
-    var brightness: Float = 0
-    var drift: Float = 0
-    var blend: Float = 0
-    var color1R: Float = 0
-    var color1G: Float = 0
-    var color1B: Float = 0
-    var color2R: Float = 0
-    var color2G: Float = 0
-    var color2B: Float = 0
-    var radiusTopLeft: Float = 0
-    var radiusTopRight: Float = 0
-    var radiusBottomRight: Float = 0
-    var radiusBottomLeft: Float = 0
-    var notchLeft: Float = 0
-    var notchRight: Float = 0
-    var notchHeight: Float = 0
-    var notchRadius: Float = 0
     var fieldX: Float = 0
     var fieldY: Float = 0
     var fieldRadius: Float = 0
@@ -553,28 +474,6 @@ struct EdgeUniforms {
     var fieldPress: Float = 0
 }
 
-/// The display's own shape, which the band follows: its notch, and whether its top corners are
-/// rounded. macOS reports the notch, through the menu bar's areas either side of it, but not the
-/// corners' radius. The MacBook displays with a notch round their top corners and not their bottom
-/// ones, so a display with a notch gets top corners of `ui.liveInkEdgeCorner`, and any other display
-/// square ones.
-struct DisplayShape {
-    var roundedTop = false
-    /// The notch in the screen's points, y down from its top.
-    var notch: CGRect?
-    /// The notch's bottom corners, an estimate: macOS does not report them either.
-    static let notchRadius: CGFloat = 8
-
-    init() {}
-
-    init(of screen: NSScreen) {
-        guard screen.safeAreaInsets.top > 0, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea,
-              right.minX > left.maxX else { return }
-        roundedTop = true
-        notch = CGRect(x: left.maxX - screen.frame.minX, y: 0, width: right.minX - left.maxX, height: screen.safeAreaInsets.top)
-    }
-}
-
 extension UITweaks {
     /// Whether the wake follows the pen while drawing. Reduce Motion turns it off, since its
     /// duration is motion.
@@ -583,134 +482,4 @@ extension UITweaks {
     var pointerField: Bool { liveInkFieldSize > 0 && (liveInkFieldBend > 0 || liveInkFieldSplit > 0 || liveInkFieldGlow > 0) }
     /// Whether that ring bends the screen, which needs a live picture of it.
     var pointerFieldBends: Bool { liveInkFieldSize > 0 && (liveInkFieldBend > 0 || liveInkFieldSplit > 0) }
-}
-
-extension EdgeLensLayer {
-    /// The edge looks the lab tries, as `ui.liveInkEdgeStyle`. Glow is drawn by `EdgeGlow`; the rest
-    /// are this layer's.
-    enum Style: Int, CaseIterable {
-        case glow, glass, lens, aurora, ripple, frost, auroraRipple, none
-
-        var name: String {
-            switch self {
-            case .glow: "Glow"
-            case .glass: "Glass"
-            case .lens: "Lens"
-            case .aurora: "Aurora"
-            case .ripple: "Ripple"
-            case .frost: "Frost"
-            case .auroraRipple: "Aurora ripple"
-            case .none: "None"
-            }
-        }
-
-        var summary: String {
-            switch self {
-            case .glow: "A thin bright line along the edges, with a soft glow that is brightest near the pointer."
-            case .glass: "A pane of glass whose rim curves down to the edges. The rim bends what is under it and catches the light."
-            case .lens: "The edges squeeze the screen like the rim of a wide lens. The colours split where it squeezes most."
-            case .aurora: "Coloured light flows round the edges, swelling and thinning as it goes."
-            case .ripple: "Waves run along the edges and bend what is under them. Rings spread from the pointer."
-            case .frost: "A band of frosted glass along the edges, with a bright rim."
-            case .auroraRipple: "Ripple's waves bend the screen, and aurora's coloured light rides on their crests."
-            case .none: "Nothing along the edges: only the wake and the pointer field show."
-            }
-        }
-
-        /// Whether it draws from a live picture of the screen, which needs Screen Recording.
-        var drawsFromScreen: Bool { self != .glow && self != .aurora && self != .none }
-        /// Whether it moves on its own, at `ui.liveInkEdgeSpeed`.
-        var moves: Bool { self == .aurora || self == .ripple || self == .auroraRipple }
-
-        struct Slider {
-            let label: String
-            let path: WritableKeyPath<UITweaks, Double>
-            let range: ClosedRange<Double>
-            var step = 0.01
-            var unit = ""
-        }
-
-        /// The values the lab starts this look from when it is picked, so each look shows at its best
-        /// at once. The looks share their sliders, so without these one look kept another's.
-        var startingValues: [(WritableKeyPath<UITweaks, Double>, Double)] {
-            switch self {
-            case .glow: [(\.liveInkGlowWidth, UITweaks().liveInkGlowWidth)]
-            case .glass: [(\.liveInkEdgeWidth, 28), (\.liveInkEdgeBend, 0.5), (\.liveInkEdgeSplit, 0.3), (\.liveInkEdgeShine, 0.6),
-                          (\.liveInkEdgeFrost, 0), (\.liveInkEdgeTint, 0.15), (\.liveInkEdgeFocus, 0.5)]
-            case .lens: [(\.liveInkEdgeWidth, 70), (\.liveInkEdgeBend, 1.1), (\.liveInkEdgeSplit, 0.5), (\.liveInkEdgeShine, 0.2),
-                         (\.liveInkEdgeTint, 0.1), (\.liveInkEdgeFocus, 0.3)]
-            case .aurora: [(\.liveInkEdgeWidth, 60), (\.liveInkEdgeShine, 0.6), (\.liveInkEdgeSpeed, 0.6),
-                           (\.liveInkEdgeFocus, 0.4), (\.liveInkEdgeColors, 1), (\.liveInkEdgeRepeats, 2),
-                           (\.liveInkEdgeHue, 0), (\.liveInkEdgeSaturation, 0.75), (\.liveInkEdgeBrightness, 1), (\.liveInkEdgeDrift, 0.05)]
-            case .ripple: [(\.liveInkEdgeWidth, 48), (\.liveInkEdgeBend, 1.2), (\.liveInkEdgeSplit, 0.4), (\.liveInkEdgeShine, 0.5),
-                           (\.liveInkEdgeSpeed, 0.8), (\.liveInkEdgeFocus, 0.5)]
-            case .frost: [(\.liveInkEdgeWidth, 36), (\.liveInkEdgeFrost, 0.7), (\.liveInkEdgeShine, 0.6), (\.liveInkEdgeTint, 0.1),
-                          (\.liveInkEdgeFocus, 0.3)]
-            case .auroraRipple: [(\.liveInkEdgeWidth, 38), (\.liveInkEdgeBend, 2), (\.liveInkEdgeLight, 1), (\.liveInkEdgeSplit, 0.5),
-                                 (\.liveInkEdgeShine, 0.89), (\.liveInkEdgeSpeed, 1.51),
-                                 (\.liveInkEdgeFocus, 0.5), (\.liveInkEdgeColors, 0), (\.liveInkEdgeRepeats, 2),
-                                 (\.liveInkEdgeVariation, 0), (\.liveInkEdgeHue, 0), (\.liveInkEdgeSaturation, 1), (\.liveInkEdgeBrightness, 1),
-                                 (\.liveInkEdgeDrift, 0.05), (\.liveInkEdgeBlend, 0)]
-            case .none: []
-            }
-        }
-
-        /// The sliders that change this look, besides its width, opacity and fade.
-        var sliders: [Slider] {
-            let bend = Slider(label: self == .ripple || self == .auroraRipple ? "Wave height" : self == .lens ? "Squeeze" : "Bend",
-                              path: \.liveInkEdgeBend, range: 0...2)
-            let split = Slider(label: "Colour split", path: \.liveInkEdgeSplit, range: 0...1)
-            let shine = Slider(label: self == .aurora || self == .auroraRipple ? "Line" : "Shine", path: \.liveInkEdgeShine, range: 0...1)
-            let light = Slider(label: "Light", path: \.liveInkEdgeLight, range: 0...1)
-            let frost = Slider(label: "Frost", path: \.liveInkEdgeFrost, range: 0...1)
-            let tint = Slider(label: "Tint", path: \.liveInkEdgeTint, range: 0...1)
-            let speed = Slider(label: "Speed", path: \.liveInkEdgeSpeed, range: 0...3)
-            let focus = Slider(label: "Pointer focus", path: \.liveInkEdgeFocus, range: 0...1)
-            switch self {
-            case .glow, .none: return []
-            case .glass: return [bend, split, shine, frost, tint, focus]
-            case .lens: return [bend, split, shine, tint, focus]
-            case .aurora: return [shine, speed, focus]
-            case .ripple: return [bend, split, shine, speed, focus]
-            case .frost: return [frost, shine, tint, focus]
-            case .auroraRipple: return [bend, light, split, shine, speed, focus]
-            }
-        }
-
-        /// Whether the Colour section tunes its light.
-        var hasAuroraLight: Bool { self == .aurora || self == .auroraRipple }
-    }
-
-    /// Where the aurora's colours come from, as `ui.liveInkEdgeColors`.
-    enum Palette: Int, CaseIterable {
-        case ink, rainbow, twoColours
-
-        var name: String {
-            switch self {
-            case .ink: "Ink"
-            case .rainbow: "Rainbow"
-            case .twoColours: "Two colours"
-            }
-        }
-    }
-
-    /// How aurora ripple's light meets the screen under it, as `ui.liveInkEdgeBlend`. Each is CSS's
-    /// blend mode of that name.
-    enum Blend: Int, CaseIterable {
-        case normal, add, screen, overlay, softLight, colorDodge, multiply, color, difference
-
-        var name: String {
-            switch self {
-            case .normal: "Normal"
-            case .add: "Add"
-            case .screen: "Screen"
-            case .overlay: "Overlay"
-            case .softLight: "Soft light"
-            case .colorDodge: "Colour dodge"
-            case .multiply: "Multiply"
-            case .color: "Colour"
-            case .difference: "Difference"
-            }
-        }
-    }
 }
