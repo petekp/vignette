@@ -1,8 +1,8 @@
 # A magic cursor for live ink (2026-10-10)
 
-Status 2026-10-10: built on glow-lab as the pointer field, option 1 below with the bend of the
-screen added, and it replaced the edge looks. docs/live-ink.md says how it works. Spike 1, the lag
-at 120 Hz, is still unmeasured, and spike 2, swapping the arrow, has not been run.
+Status 2026-10-10: built as the pointer field, option 1 below with the bend of the screen added,
+and it replaced the edge glow. docs/live-ink.md says how it works. Spike 1, the lag at 120 Hz, is
+still unmeasured, and spike 2, swapping the arrow, has not been run.
 
 It can be done. Build the magic cursor as an aura (a ring, glow or nib) drawn around the real cursor inside the live-ink overlay that already covers the screen while Control+Option is held. That needs only public API. It works over every app and cannot leave the cursor stuck. It plugs in beside `EdgeGlow`. The main limit is that macOS gives a background app no public way to change the real arrow's own pixels, so the aura is drawn by Vignette and trails the arrow by about one frame. One small experiment decides whether we can also swap the arrow itself for a pen cursor with no lag.
 
