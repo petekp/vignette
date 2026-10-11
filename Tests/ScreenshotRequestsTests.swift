@@ -439,6 +439,244 @@ final class ScreenshotRequestsTests: XCTestCase {
         }
     }
 
+    // MARK: Waiting before the line goes
+
+    private func send(_ file: String, grace: TimeInterval = 3, message: String? = nil) throws -> (record: ScreenshotRequests.Record, source: URL) {
+        requests.reconcile(try inventory(in: folder))
+        let source = folder.appendingPathComponent(file)
+        try png().write(to: source)
+        let record = try requests.send(png: png(), source: source,
+                                       to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")),
+                                       message: message, grace: grace)
+        return (record, source)
+    }
+
+    /// Gives `requests` a recording connection and a clock and timers the test runs by hand.
+    private func holdSends(events: GraceEvents) -> (connection: RecordingConnection, clock: GraceClock) {
+        let connection = RecordingConnection(events: events)
+        let clock = GraceClock()
+        let callbacks = requests.callbacks
+        requests = ScreenshotRequests(root: root, connections: [.claude: connection], now: { clock.time },
+                                      schedule: { _, work in clock.timers.append(work) })
+        requests.callbacks = callbacks
+        requests.callbacks.released = { _ in events.add("released") }
+        requests.callbacks.cancelled = { _ in events.add("cancelled") }
+        return (connection, clock)
+    }
+
+    /// Waits long enough for a submission the last step started on another queue to reach the client,
+    /// and fails if one did: reading `lines` straight away would pass whenever the submit is still on its way.
+    private func assertNothingSent(to connection: RecordingConnection, file: StaticString = #filePath, line: UInt = #line) async {
+        let arrived = expectation(description: "a line reached the client")
+        arrived.isInverted = true
+        connection.onSubmit = { arrived.fulfill() }
+        await fulfillment(of: [arrived], timeout: 0.3)
+        connection.onSubmit = nil
+        XCTAssertEqual(connection.lines, [], "a line reached the client", file: file, line: line)
+    }
+
+    /// A changed or lost line, or the client asked before the card was told, is a send that went wrong.
+    func testTheLineWaitsForTheGraceThenGoesUnchanged() async throws {
+        let events = GraceEvents()
+        let (connection, clock) = holdSends(events: events)
+        let answered = expectation(description: "delivered")
+        requests.callbacks.delivered = { _, _ in events.add("delivered"); answered.fulfill() }
+        let (record, _) = try send("Shot.png", message: "look at this")
+        await assertNothingSent(to: connection)
+        XCTAssertEqual(try stored(record).status, .prepared)
+        let waiting = try XCTUnwrap((requests.stateJSON["requests"] as? [[String: Any]])?.first?["graceMs"] as? Int)
+        XCTAssertEqual(waiting, 3000)
+
+        clock.time += 3
+        clock.fire()
+        await fulfillment(of: [answered], timeout: 3)
+        XCTAssertEqual(events.all, ["released", "submit", "delivered"])
+        let expected = ScreenshotRequests.requestLine(record: record, root: root, message: "look at this",
+                                                      instructions: SettingsData.defaultSendInstructions)
+        XCTAssertEqual(connection.lines, [expected], "the line is what a send with no grace would have written")
+        XCTAssertEqual(try stored(record).status, .submitted)
+    }
+
+    /// A send cancelled in its grace that still reached the agent, or deleted the screenshot, is the failure to catch.
+    func testDontSendClearsTheRequestAndNothingIsEverSent() async throws {
+        let events = GraceEvents()
+        let (connection, clock) = holdSends(events: events)
+        let (record, source) = try send("Shot.png")
+        XCTAssertEqual(requests.unsend(file: source).map(\.id), [record.id])
+        XCTAssertEqual(events.all, ["cancelled"])
+        clock.time += 3
+        clock.fire()
+        await assertNothingSent(to: connection)
+        XCTAssertEqual(try stored(record).status, .cleared)
+        let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("image.png").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path), "the person's screenshot stays")
+        let attempt = UUID().uuidString.lowercased()
+        requests.receiveReply(envelope: try stageReply(record, attemptID: attempt))
+        XCTAssertEqual(receipt(record, attempt)?.errorCode, "request-closed")
+    }
+
+    /// Cancelling after the line went must not clear a request the agent already has.
+    func testDontSendAfterTheLineWentChangesNothing() async throws {
+        let events = GraceEvents()
+        let (_, clock) = holdSends(events: events)
+        let answered = expectation(description: "delivered")
+        requests.callbacks.delivered = { _, _ in answered.fulfill() }
+        let (record, source) = try send("Shot.png")
+        clock.time += 3
+        clock.fire()
+        await fulfillment(of: [answered], timeout: 3)
+        XCTAssertTrue(requests.unsend(file: source).isEmpty)
+        XCTAssertFalse(events.all.contains("cancelled"))
+        XCTAssertEqual(try stored(record).status, .submitted)
+    }
+
+    /// Cancelling one screenshot's send must leave another screenshot's to go at its deadline.
+    func testSendsOfTwoScreenshotsAreCancelledApart() async throws {
+        let events = GraceEvents()
+        let (connection, clock) = holdSends(events: events)
+        let answered = expectation(description: "delivered")
+        requests.callbacks.delivered = { _, _ in answered.fulfill() }
+        let (_, first) = try send("First.png")
+        let (second, _) = try send("Second.png")
+        XCTAssertEqual(requests.unsend(file: first).count, 1)
+        clock.time += 3
+        clock.fire()
+        await fulfillment(of: [answered], timeout: 3)
+        XCTAssertEqual(connection.lines.count, 1)
+        XCTAssertTrue(connection.lines[0].contains(second.id))
+    }
+
+    /// A request cleared by id or by the admission limit must not be sent when its timer runs.
+    func testClearingAWaitingRequestStopsItsSend() async throws {
+        let events = GraceEvents()
+        let (connection, clock) = holdSends(events: events)
+        let (record, _) = try send("Shot.png")
+        requests.run(clear: record.id)
+        XCTAssertEqual(events.all, ["cancelled"])
+        clock.time += 3
+        clock.fire()
+        await assertNothingSent(to: connection)
+    }
+
+    /// A timer that runs early must not shorten the grace, and one that runs late must still send once.
+    func testATimerThatRunsEarlyArmsAgainForWhatIsLeft() async throws {
+        let events = GraceEvents()
+        let (connection, clock) = holdSends(events: events)
+        let answered = expectation(description: "delivered")
+        requests.callbacks.delivered = { _, _ in answered.fulfill() }
+        _ = try send("Shot.png")
+        clock.time += 1
+        clock.fire()
+        await assertNothingSent(to: connection)
+        XCTAssertEqual(clock.timers.count, 1, "armed again for the two seconds left")
+        clock.time += 2
+        clock.fire()
+        await fulfillment(of: [answered], timeout: 3)
+        XCTAssertEqual(connection.lines.count, 1)
+    }
+
+    /// A session that ended during the grace is the existing failure, told after the grace and not before.
+    func testAnAnswerThatFailsAfterTheGraceReachesTheCard() async throws {
+        let events = GraceEvents()
+        let (connection, clock) = holdSends(events: events)
+        connection.outcome = .notSubmitted(code: .noAgent, detail: "ended", reason: "This session has ended.")
+        let answered = expectation(description: "delivered")
+        var delivered: SubmissionOutcome?
+        requests.callbacks.delivered = { _, outcome in delivered = outcome; answered.fulfill() }
+        let (record, _) = try send("Shot.png")
+        XCTAssertEqual(try stored(record).status, .prepared)
+        clock.time += 3
+        clock.fire()
+        await fulfillment(of: [answered], timeout: 3)
+        guard case .notSubmitted(_, _, let reason)? = delivered else { return XCTFail("expected a failure") }
+        XCTAssertEqual(reason, "This session has ended.")
+        XCTAssertNotEqual(try stored(record).status, .prepared)
+    }
+
+    /// Deleting the card is a way of not sending it: a file that left the folder cancels its waiting send.
+    func testAFileThatLeavesTheFolderCancelsItsWaitingSend() async throws {
+        let events = GraceEvents()
+        let (connection, clock) = holdSends(events: events)
+        let (record, source) = try send("Shot.png")
+        requests.fileRemoved(source)
+        XCTAssertEqual(events.all, ["cancelled"])
+        clock.time += 3
+        clock.fire()
+        await assertNothingSent(to: connection)
+        XCTAssertEqual(try stored(record).status, .cleared)
+    }
+
+    /// A quit or crash during the grace takes the line from memory: the request must not stay prepared for good.
+    func testARequestStillPreparedAtLaunchIsClearedBecauseItsLineIsGone() throws {
+        let events = GraceEvents()
+        _ = holdSends(events: events)
+        let (record, _) = try send("Shot.png")
+        XCTAssertEqual(try stored(record).status, .prepared)
+        let reopened = ScreenshotRequests(root: root)
+        reopened.callbacks = requests.callbacks
+        reopened.load()
+        XCTAssertEqual(try stored(record).status, .cleared)
+        let image = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("image.png")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: image.path))
+    }
+
+    /// A client that answers after quit's wait must not hold the quit up, and its late answer must not crash.
+    func testQuitDoesNotWaitLongerThanItsLimitForASlowClient() throws {
+        let slow = HeldSubmission()
+        let clock = GraceClock()
+        requests = ScreenshotRequests(root: root, connections: [.claude: slow], now: { clock.time },
+                                      schedule: { _, work in clock.timers.append(work) })
+        let (record, _) = try send("Shot.png")
+        let started = Date()
+        requests.releaseHeld(waitingUpTo: 0.05)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+        // The line may have arrived, so the next launch must not clear it as one that never went.
+        XCTAssertEqual(try stored(record).status, .uncertain)
+        slow.resume.signal()
+        let reopened = ScreenshotRequests(root: root)
+        reopened.load()
+        XCTAssertEqual(try stored(record).status, .uncertain)
+        let image = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("image.png")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: image.path), "the image the line names stays")
+    }
+
+    /// Quitting is not a retraction: the waiting line goes once, and the cards the callbacks tell are going too.
+    func testQuitHandsAWaitingSendOverOnceWithoutTouchingCards() async throws {
+        let events = GraceEvents()
+        let (connection, clock) = holdSends(events: events)
+        requests.callbacks.delivered = { _, _ in events.add("delivered") }
+        let (record, _) = try send("Shot.png")
+        requests.releaseHeld()
+        XCTAssertEqual(connection.lines.count, 1)
+        XCTAssertEqual(try stored(record).status, .submitted)
+        clock.time += 3
+        clock.fire()
+        // A callback queued for the main thread runs before this one does.
+        let drained = expectation(description: "main queue drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        await fulfillment(of: [drained], timeout: 3)
+        XCTAssertEqual(connection.lines.count, 1, "the timer that was armed finds nothing")
+        XCTAssertEqual(events.all, ["submit"])
+    }
+
+    /// A newer launch loads while the older copy is still handing its waiting lines over as it quits.
+    /// Clearing the request then deletes the image the line names.
+    func testALaunchReplacingACopyLeavesItsWaitingSendsAlone() throws {
+        let events = GraceEvents()
+        let (connection, _) = holdSends(events: events)
+        let (record, _) = try send("Shot.png")
+        let newer = ScreenshotRequests(root: root)
+        newer.load(clearingUnsent: false)
+        let image = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("image.png")
+        XCTAssertEqual(try stored(record).status, .prepared)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: image.path))
+        requests.releaseHeld()
+        XCTAssertEqual(connection.lines.count, 1)
+        XCTAssertEqual(try stored(record).status, .submitted, "the older copy's answer is not written over a cleared record")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: image.path))
+    }
+
     func testClearWriteFailureKeepsStateAndOwnedFiles() throws {
         heldAdd = { _ in }
         let record = try makeRequest()
@@ -846,6 +1084,58 @@ private final class HeldSubmission: AgentConnection, @unchecked Sendable {
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
         entered.signal()
         _ = resume.wait(timeout: .now() + 5)
+        return outcome
+    }
+}
+
+/// What happened, in order, from callbacks on the main thread and connections on another.
+private final class GraceEvents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [String] = []
+    func add(_ event: String) { lock.lock(); events.append(event); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return events }
+}
+
+/// The clock and the timers a grace period runs on, moved by hand.
+private final class GraceClock {
+    var time: TimeInterval = 1000
+    var timers: [@MainActor @Sendable () -> Void] = []
+
+    @MainActor func fire() {
+        let due = timers
+        timers = []
+        for timer in due { timer() }
+    }
+}
+
+private final class RecordingConnection: AgentConnection, @unchecked Sendable {
+    let client = AgentClient.claude
+    private let events: GraceEvents
+    private let lock = NSLock()
+    private var sent: [String] = []
+    private var answer: SubmissionOutcome = .accepted(detail: "")
+
+    /// What the next submission answers.
+    var outcome: SubmissionOutcome {
+        get { lock.lock(); defer { lock.unlock() }; return answer }
+        set { lock.lock(); answer = newValue; lock.unlock() }
+    }
+
+    init(events: GraceEvents) { self.events = events }
+
+    private var arrived: (@Sendable () -> Void)?
+    /// Called on the submitting queue for each line, so a test can wait for one that may be on its way.
+    var onSubmit: (@Sendable () -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return arrived }
+        set { lock.lock(); arrived = newValue; lock.unlock() }
+    }
+
+    var lines: [String] { lock.lock(); defer { lock.unlock() }; return sent }
+    func destinations() -> [AgentDestination] { [] }
+    func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
+        lock.lock(); sent.append(line); lock.unlock()
+        events.add("submit")
+        onSubmit?()
         return outcome
     }
 }

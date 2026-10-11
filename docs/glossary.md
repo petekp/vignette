@@ -161,6 +161,17 @@ routes differ in how firmly they pin the destination.
 **Send**:
 To hand a rendering, and an optional message, to a destination as a screenshot request.
 
+**Grace period**:
+The seconds between pressing Send and the line reaching the session (`ui.sendGraceSeconds`). A
+send in it is in its grace period and can still be cancelled with Don't send. Once the grace
+period ends the line is released to the session, and a cancel no longer takes it back.
+
+**Don't send**:
+The button on a card, and `vignette://unsend`, that cancel a send still in its grace period. The
+request is cleared and nothing reaches the session. In code and logs the same act is `cancelled`
+(`SendGrace.Event.cancelled`, `[send] cancelled`); `unsend` is only the URL and action id.
+_Avoid_: Cancel or undo send in anything a person reads
+
 **Reply**:
 To send to the agent session a card came from, which the card names.
 _Avoid_: Respond, answer

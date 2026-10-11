@@ -122,6 +122,7 @@ struct DebugPanelView: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Tweak("Thumbnail stays", \.thumbnailSeconds, 1...20, step: 0.5, unit: "s")
                     Tweak("Card notice stays", \.markSeconds, 0.5...5, step: 0.1, unit: "s")
+                    Tweak("Wait before sending", \.sendGraceSeconds, 0...10, step: 0.5, unit: "s")
                     Tweak("Slide in", \.slideInDuration, 0...1.5, step: 0.05, unit: "s")
                     Picker("Slide in curve", selection: binding(\.slideInCurve)) {
                         ForEach(["spring", "easeOut", "easeInOut", "linear"], id: \.self) { Text($0).tag($0) }

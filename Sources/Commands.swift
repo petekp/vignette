@@ -27,6 +27,8 @@ enum CommandError: String, CaseIterable {
     case liveInkNotAsked = "live-ink-not-asked"
     /// `section=` names no section of the `[state]` report.
     case unknownSection = "unknown-section"
+    /// `unsend` found no send of that screenshot still waiting out its grace.
+    case nothingToUnsend = "nothing-to-unsend"
 }
 
 /// A `vignette://<name>?file=…&file=…` URL, decoded once.
@@ -196,6 +198,7 @@ enum Commands {
         let commands = fixed.map { "\($0.name): \($0.summary)\($0.needsDebug ? " (needs \"debug\": true in settings.json)" : "")" }
         let actions = Config.actions.map { action -> String in
             var line = "\(action.id): \(action.label); \(Identity.urlScheme)://\(action.id)?file=<path>&file=<path>, the newest file it applies to when no file is given"
+            if let help = action.help { line += "; \(help)" }
             if action.minimumCount > 1 { line += "; needs \(action.minimumCount) files" }
             if !action.kinds.contains(.recording) { line += "; screenshots only" }
             else if !action.kinds.contains(.image) { line += "; recordings only" }

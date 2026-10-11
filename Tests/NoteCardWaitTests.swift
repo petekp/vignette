@@ -241,6 +241,36 @@ final class NoteCardWaitTests: XCTestCase {
         return waits.handle(turns(ids, .idle), at: t0 + 3)
     }
 
+    /// Catches a turn that ends during a note's grace period being taken for the answer to the note:
+    /// the wait on the session's turn must start when the line goes, not when the note is sent.
+    func testAHeldNoteWatchesNoTurnUntilItsLineIsReleased() {
+        var waits = NoteCardGroups()
+        XCTAssertEqual(waits.handle(.held("r1", onWindow(1), reportsTurns: true, canLookAgain: true), at: t0), [])
+        XCTAssertNil(waits["r1"])
+        XCTAssertFalse(waits.isWatchingAny)
+        XCTAssertEqual(waits.handle(turns(["r1"], .idle), at: t0 + 1), [], "a turn read during the grace is no one's")
+
+        let sent = NoteCardGroups.Input.sent("r1", onWindow(1), reportsTurns: true, canLookAgain: true)
+        var immediate = NoteCardGroups()
+        let expected = immediate.handle(sent, at: t0 + 2)
+        XCTAssertEqual(waits.handle(.released("r1"), at: t0 + 2), expected, "released is a send, from that moment")
+        XCTAssertTrue(waits.isWatchingAny)
+        XCTAssertEqual(waits.handle(.released("r1"), at: t0 + 3), [], "a line goes once")
+    }
+
+    /// Catches a cancelled note still waiting on its session, or a release that follows a cancel
+    /// bringing a wait back for a note whose card is gone.
+    func testACancelledHeldNoteIsNeverWaitedFor() {
+        var waits = NoteCardGroups()
+        _ = waits.handle(.held("r1", onWindow(1), reportsTurns: true, canLookAgain: true), at: t0)
+        _ = waits.handle(.held("r2", onWindow(1), reportsTurns: true, canLookAgain: true), at: t0)
+        XCTAssertEqual(waits.handle(.cancelled("r1"), at: t0 + 1), [])
+        XCTAssertEqual(waits.handle(.released("r1"), at: t0 + 3), [])
+        XCTAssertNil(waits["r1"])
+        XCTAssertFalse(waits.handle(.released("r2"), at: t0 + 3).isEmpty, "the other note's send is its own")
+        XCTAssertNotNil(waits["r2"])
+    }
+
     /// Catches Pete's bug of 2026-10-09: seven notes answered by one turn end made seven result cards.
     func testSevenNotesEndedByOneReadingShareOneLookAndOneResultCard() {
         let ids = (1...7).map { "r\($0)" }

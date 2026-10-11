@@ -188,6 +188,7 @@ struct UITweaks: Codable, Equatable {
     // Timings
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
     var markSeconds = 1.7            // how long a card's notice stays; the stored key keeps its older name
+    var sendGraceSeconds = 3.0       // how long a Send waits before its session gets it; 0 sends at once
     var slideInDuration = 0.3
     var slideInCurve = "spring"      // spring, easeOut, easeInOut, linear
     var slideOutDuration = 0.15
@@ -299,8 +300,8 @@ struct UITweaks: Codable, Equatable {
     }
 
     /// The same tweaks with every animation scaled: the durations, and how far a flight bows and
-    /// swells. Dwell times (`thumbnailSeconds`, `markSeconds`) are not motion and stay as they
-    /// are, and `flightArcMax` is a limit on the bow rather than an amount of it.
+    /// swells. Dwell times (`thumbnailSeconds`, `markSeconds`, `sendGraceSeconds`) are not motion and
+    /// stay as they are, and `flightArcMax` is a limit on the bow rather than an amount of it.
     func scaledForMotion(_ scale: Double) -> UITweaks {
         var u = self
         u.slideInDuration *= scale; u.slideOutDuration *= scale
@@ -331,6 +332,7 @@ struct UITweaks: Codable, Equatable {
         Bound("selectionStripGap", \.selectionStripGap, 0...1000),
         Bound("autoScrollZone", \.autoScrollZone, 0...10_000), Bound("autoScrollSpeed", \.autoScrollSpeed, 0...10_000),
         Bound("thumbnailSeconds", \.thumbnailSeconds, 0...3600), Bound("markSeconds", \.markSeconds, 0...3600),
+        Bound("sendGraceSeconds", \.sendGraceSeconds, 0...10),
         Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
         Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
         Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("shiftUpDuration", \.shiftUpDuration, 0...60),

@@ -72,6 +72,16 @@ request is stored. Then the editor closes and the client delivers the line off t
   could not be made a card shows on the card it answers, as "Reply not shown".
 - A send past 50 open requests clears the oldest instead of refusing.
 
+## The waiting state
+
+Added 2026-10-10 (`docs/send-grace-2026-10-10.md`). The line waits `ui.sendGraceSeconds` before
+the client gets it, so a send has one state ahead of Sending: waiting. The card says "Sending to
+*project*", the same words as Sending, so nothing changes in what it says when the line goes. The
+logo wears a ring that empties to the deadline, there is no badge, and a Don't send button sits
+under the words. A card too short for the words drops them, then the button's label becomes a
+small round close button. The ring and the button stay at any size. Pressing the button takes the
+notice away and says nothing, since the press is the confirmation.
+
 ## Checked
 
 On the stage copy, with a stub in place of herdr at `media/trailer/out/stage/bin/herdr` that

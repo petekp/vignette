@@ -38,6 +38,7 @@ anything works inside.
 
 | State | Headline | Reason |
 | --- | --- | --- |
+| Waiting to send (the line has not gone yet) | Sending to *project* | Button: Don't send |
 | Sending | Sending to *project* | |
 | Sent | Sent to *project* | |
 | Queued: no Codex engine has the thread open | Queued for *project* | Codex reads it when you open this thread. |
@@ -45,6 +46,9 @@ anything works inside.
 | Not sent | Not sent | One of the reasons below |
 | A reply that could not be shown | Reply not shown | You can ask *agent* to send it again. / Vignette couldn't save the reply. The log has details. |
 | A live ink note whose session finished with nothing to show as a result card | Done in *project* | |
+
+Pressing Don't send says nothing. The press is the confirmation, the ring and the button go with
+it, and "Not sent" is the headline for a failure, not for a choice.
 
 ### Why a send did not go (`SubmissionOutcome.reason`)
 

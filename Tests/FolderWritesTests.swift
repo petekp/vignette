@@ -214,6 +214,16 @@ final class FolderWritesTests: XCTestCase {
         XCTAssertFalse(writes.arrived(url))
     }
 
+    /// Catches a cancelled note card leaving its file in the folder, or its card or drawing on screen.
+    func testADiscardedCardLeavesNothingBehind() async throws {
+        let written = await card()
+        let url = try XCTUnwrap(written)
+        writes.discard(Screenshot(url: url))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(events, leaves(url, .infinity))
+        XCTAssertFalse(writes.arrived(url))
+    }
+
     /// Catches a card that was not written keeping its name reserved or recording a write.
     func testACardThatIsNotWrittenLeavesNothing() async throws {
         let url = await card(fails: true)

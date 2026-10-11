@@ -20,6 +20,13 @@ struct NoteCardGroups: Equatable {
 
     enum Input: Equatable {
         case sent(String, SessionWindow, reportsTurns: Bool, canLookAgain: Bool)
+        /// A note sent with its line held back by the grace period: nothing watches its session's turn
+        /// yet, since a turn that ends before the line goes is not this note's.
+        case held(String, SessionWindow, reportsTurns: Bool, canLookAgain: Bool)
+        /// The held note's line went to its session: it is `sent` now.
+        case released(String)
+        /// The held note was cancelled before its line went: nothing will be waited for.
+        case cancelled(String)
         case delivered(String, failed: Bool)
         /// One reading of each watched note's session's turn, all from one tick.
         case turns([Reading])
@@ -50,7 +57,14 @@ struct NoteCardGroups: Equatable {
         let sequence: Int
     }
 
+    private struct Held: Equatable {
+        let sessionWindow: SessionWindow
+        let reportsTurns: Bool
+        let canLookAgain: Bool
+    }
+
     private var entries: [String: Entry] = [:]
+    private var held: [String: Held] = [:]
     private var nextSequence = 0
 
     subscript(request: String) -> NoteCardWait? { entries[request]?.wait }
@@ -69,6 +83,18 @@ struct NoteCardGroups: Equatable {
             }
             entries[request] = Entry(wait: wait, sessionWindow: window, sequence: nextSequence)
             nextSequence += 1
+
+        case .held(let request, let window, let reportsTurns, let canLookAgain):
+            guard entries[request] == nil else { return [] }
+            held[request] = Held(sessionWindow: window, reportsTurns: reportsTurns, canLookAgain: canLookAgain)
+
+        case .released(let request):
+            guard let note = held.removeValue(forKey: request) else { return [] }
+            return handle(.sent(request, note.sessionWindow, reportsTurns: note.reportsTurns, canLookAgain: note.canLookAgain), at: now)
+
+        case .cancelled(let request):
+            held[request] = nil
+            entries[request] = nil
 
         case .delivered(let request, let failed):
             actions = step(request, .delivered(failed: failed), at: now)

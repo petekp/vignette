@@ -70,7 +70,7 @@ makes such a decision, and mark the old one superseded when a change reverses it
 - `Sources/AgentConnection.swift`, `Sources/ScreenshotRequests.swift`, `Sources/ReplyProtocol.swift`,
   `Sources/ReplyCommand.swift` and `skills/vignette/scripts/reply` are the closed loop: a drawing
   sent to an agent session and that agent's drawing sent back. `Sources/SessionListing.swift` lists
-  the sessions Send can go to, and `Sources/HerdrFocus.swift` reads herdr's focus. See the rules below and
+  the sessions Send can go to, `Sources/SendGrace.swift` decides what a send does while its line waits, and `Sources/HerdrFocus.swift` reads herdr's focus. See the rules below and
   `docs/closed-agent-loop-implementation-2026-09-20.md`. `agent-plugin/` is the plugin Claude Code
   and Codex install, which carries the skill and, for Claude Code, delivers what Send sends, and
   `Sources/AgentPlugin.swift` installs it (`docs/claude-code-without-herdr-2026-09-27.md`).
@@ -494,7 +494,7 @@ screenshot location for such a launch is written with the same variable:
   is still the annotator in both, because it is a thing rather than an action.
 - Every animation goes through `Settings.motionUI`: `ui.motion` (0 to 1) in settings.json scales
   every duration, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
-  `markSeconds`) are not motion, and neither is a movement the user's own hand is driving: the
+  `markSeconds`, `sendGraceSeconds`) are not motion, and neither is a movement the user's own hand is driving: the
   drag-select's auto-scroll (`ui.autoScrollZone`, `ui.autoScrollSpeed`, `StackLayout.autoScrollSpeed`,
   ticked by a display link in `ThumbnailController`) follows the drag at its own speed whatever
   the scale says. `"ui": {"motion": 0}` makes the stack appear and leave at once, which is what a
@@ -1251,6 +1251,17 @@ screenshot location for such a launch is written with the same variable:
   without a Copied notice, and the queue carries on to the next card: a list of files to annotate is
   something the person asked for, and handing one of them to an agent does not withdraw the rest.
   Esc is the one that empties the queue, because that is a person stopping.
+  Once the request is stored, its line waits `ui.sendGraceSeconds` (3 by default, 0 for no wait)
+  before the client gets it (`SendGrace`, run by `ScreenshotRequests`). The wait is time, not
+  motion: the scale and Reduce Motion never shorten it. When it ends the line goes through the
+  same `submit` as before, so nothing written changes. Quitting hands every waiting line over at
+  once and waits up to 2 s for the clients (`releaseHeld`), recording each request uncertain
+  before its line leaves, and a clear of the request, by
+  `requests?clear=` or by the 50-request limit, stops its waiting send. So does a file leaving
+  the watch folder, which is how deleting a card during the wait cancels its send
+  (`ScreenshotRequests.fileRemoved`). A crash during the wait loses the send, and the next launch
+  clears the request it left prepared, unless that launch replaced a running copy, which may
+  still be handing its lines over (`load(clearingUnsent:)`); a later launch clears it then.
 - A send reports on the card it was sent from. Once the request is stored the card
   carries a `SendNotice` (`ThumbnailController.showSending`), keyed by the file's path because a lone
   thumbnail's card leaves the panel while it is in the editor. It shows the destination's logo and
@@ -1264,6 +1275,13 @@ screenshot location for such a launch is written with the same variable:
   has no card to report on, so the card it answers takes a `replyFailed` notice, "Reply not shown"
   (`ScreenshotRequests.Callbacks.replyFailed`). A published reply is its own card and nothing else
   says it arrived. `docs/send-confirmation-2026-09-26.md` has the frames.
+  While the line waits, the card shows `.inGrace`: a ring round the logo that empties to the
+  deadline, and a Don't send button, the only part of the overlay that takes presses. The ring is
+  drawn from the clock and is the one animation not scaled by the motion setting. The button
+  and `vignette://unsend` both run the `unsend` action, which cancels every send of that file
+  still waiting and clears the request. An editor card keeps its screenshot and goes back to no
+  notice. A live ink note card is Vignette's own file, so it is discarded with its drawing
+  (`FolderWrites.discard`). `docs/send-grace-2026-10-10.md` has the reasons and the checks.
 - The agent plugin (`agent-plugin/`) and the skill it carries (`skills/vignette/SKILL.md`) ship in
   the bundle as folder resources (project.yml), and `AgentPlugin.swift` installs them.
   `AgentPlugin.stage` writes a marketplace into Application Support: the template, the skill copied
