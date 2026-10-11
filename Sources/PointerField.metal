@@ -2,14 +2,16 @@
 using namespace metal;
 
 // Live ink's pointer field: the ring round the pointer while the chord is held, and the wake that
-// follows the pen (docs/live-ink-cursor-2026-10-10.md). Lengths are in the screen's points, y down
-// from its top-left corner. `screen` is a live capture of the display without the overlay, the same
+// follows the pen (docs/live-ink-cursor-2026-10-10.md), each drawn into its own layer. Lengths are in
+// the screen's points, y down from its top-left corner. `screen` is a live capture of the display without the overlay, the same
 // size as the layer, or a blank texture when there is none, and then nothing reads it.
 
 struct FieldUniforms {
     float4 color;        // the person's ink colour, lightened, in the layer's colour space
     float4 wakeBox;      // left, top, right, bottom: the box the wake's rings can reach; nothing moves outside it
-    float2 size;         // the layer, in points
+    float2 size;         // the screen, in points
+    float2 origin;       // the top-left corner of the layer being drawn, on the screen
+    float2 area;         // that layer's size
     float2 ringCentre;
     float2 ringVelocity; // in points a second
     uint wakeCount;      // how many points of the pen's path are in `trail`
@@ -30,7 +32,7 @@ struct Varyings {
 };
 
 vertex Varyings fieldVertex(uint id [[vertex_id]]) {
-    // One triangle that covers the layer.
+    // One triangle that covers the layer. `uv` runs from its top-left corner, y down.
     float2 corners[3] = { float2(-1, -1), float2(3, -1), float2(-1, 3) };
     Varyings out;
     out.position = float4(corners[id], 0, 1);
@@ -88,6 +90,7 @@ static float4 ring(float2 p, texture2d<float> screen, constant FieldUniforms &u)
     float speed = length(v);
     float s = 1.0 + u.ringStretch * min(speed / 1200.0, 1.5);
     float2 q = p - c;
+    // `PointerField.ringArea` sizes the ring's layer to this reach at the most stretch.
     if (length(q) > (big * 1.8 + 24.0) * s) return float4(0);
     if (speed > 1.0) {
         float2 dir = v / speed;
@@ -121,17 +124,21 @@ static float4 ring(float2 p, texture2d<float> screen, constant FieldUniforms &u)
     return float4(float3(shine), shine) + out * (1.0 - shine);
 }
 
-fragment float4 fieldFragment(Varyings in [[stage_in]],
+fragment float4 ringFragment(Varyings in [[stage_in]],
+                             texture2d<float> screen [[texture(0)]],
+                             constant FieldUniforms &u [[buffer(0)]]) {
+    return ring(u.origin + in.uv * u.area, screen, u);
+}
+
+// The wake shows the picture moved, and fades in with how far it moved, so the layer is clear
+// wherever nothing moved and meets the screen without a seam.
+fragment float4 wakeFragment(Varyings in [[stage_in]],
                              texture2d<float> screen [[texture(0)]],
                              constant FieldUniforms &u [[buffer(0)]],
                              constant float4 *trail [[buffer(1)]]) {
-    float2 p = in.uv * u.size;
-    float4 field = ring(p, screen, u);
+    float2 p = u.origin + in.uv * u.area;
     float2 shift = wakeShift(p, u, trail);
     float moved = length(shift);
-    if (moved < 0.01) return field;
-    // The wake shows the picture moved, and fades in with how far it moved, so the layer is clear
-    // wherever nothing moved and meets the screen without a seam.
-    float4 wake = premultiplied(sampleScreen(screen, p - shift, u.size), clamp(moved * 4.0, 0.0, 1.0));
-    return field + wake * (1.0 - field.a);
+    if (moved < 0.01) return float4(0);
+    return premultiplied(sampleScreen(screen, p - shift, u.size), clamp(moved * 4.0, 0.0, 1.0));
 }

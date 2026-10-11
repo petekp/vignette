@@ -5,6 +5,8 @@ reuse, simplification, efficiency and module boundaries. They found one defect: 
 can keep running after the chord is let go. The rest is ownership spread over three files, and a
 look that redraws the whole screen to show a small ring.
 
+Status: both steps landed on glow-lab. The smoothness of step 2 at 120 Hz is unchecked on Pete's Mac.
+
 In this note, the pointer field is the whole look. It has two parts: the ring round the pointer, and
 the wake, the rings that spread behind the pen.
 

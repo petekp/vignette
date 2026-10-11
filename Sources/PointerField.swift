@@ -35,27 +35,37 @@ final class GPUTimes: @unchecked Sendable {
 ///
 /// It is hidden until its holder shows it, and fades in once its first frame is drawn, so it never
 /// shows the screen as it was before the chord went down. It reads the pointer and the button
-/// itself, once a refresh, from its display link, and draws only from there. Drawing from each
+/// itself, once a refresh, from its display link, and draws only from there. The ring has a layer
+/// only as big as it, moved with it, so a frame draws and composites a few hundred points square
+/// rather than the screen. Drawing from each
 /// frame's arrival queued a main-thread block per frame: the run loop never got back to commit the
 /// layer, so every `nextDrawable()` waited out its one-second timeout and the app stopped answering.
 @MainActor
 final class PointerField: NSObject {
-    private static let metal: (device: MTLDevice, queue: MTLCommandQueue, pipeline: MTLRenderPipelineState, blank: MTLTexture)? = {
+    private static let metal: (device: MTLDevice, queue: MTLCommandQueue, ring: MTLRenderPipelineState, wake: MTLRenderPipelineState, blank: MTLTexture)? = {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
               let library = device.makeDefaultLibrary() else { return nil }
-        let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.vertexFunction = library.makeFunction(name: "fieldVertex")
-        descriptor.fragmentFunction = library.makeFunction(name: "fieldFragment")
-        descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        func pipeline(_ fragment: String) -> MTLRenderPipelineState? {
+            let descriptor = MTLRenderPipelineDescriptor()
+            descriptor.vertexFunction = library.makeFunction(name: "fieldVertex")
+            descriptor.fragmentFunction = library.makeFunction(name: fragment)
+            descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+            return try? device.makeRenderPipelineState(descriptor: descriptor)
+        }
         // Drawing with no picture of the screen still binds one; the shader reads none of it.
         let blankDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 1, height: 1, mipmapped: false)
-        guard let pipeline = try? device.makeRenderPipelineState(descriptor: descriptor),
+        guard let ring = pipeline("ringFragment"), let wake = pipeline("wakeFragment"),
               let blank = device.makeTexture(descriptor: blankDescriptor) else { return nil }
-        return (device, queue, pipeline, blank)
+        return (device, queue, ring, wake, blank)
     }()
 
-    /// What the overlay hosts, under the marks so the ink stays sharp.
-    let layer = CAMetalLayer()
+    /// What the overlay hosts, under the marks so the ink stays sharp, and what fades.
+    let layer = CALayer()
+    /// The ring's layer, as big as the ring can reach, over the wake's, which covers the screen and is
+    /// hidden while no ring of it spreads. Each presents in the transaction that places it, so the
+    /// ring's picture and its place change in the same frame.
+    private let ringLayer: CAMetalLayer
+    private let wakeLayer: CAMetalLayer
     private let feed = ScreenFeed()
     /// How long the GPU took over each drawing since the field came up, logged with the feed's frames.
     private let gpuTimes = GPUTimes()
@@ -99,23 +109,35 @@ final class PointerField: NSObject {
     private var asked: CFTimeInterval = 0
 
     init(scale: CGFloat) {
+        ringLayer = Self.metalLayer(scale: scale)
+        wakeLayer = Self.metalLayer(scale: scale)
         super.init()
-        layer.contentsScale = scale
         layer.anchorPoint = .zero
-        layer.isOpaque = false
-        layer.framebufferOnly = true
-        layer.pixelFormat = .bgra8Unorm
-        layer.colorspace = CGColorSpace(name: CGColorSpace.displayP3)
-        layer.maximumDrawableCount = 3
         layer.opacity = 0
+        layer.addSublayer(wakeLayer)
+        layer.addSublayer(ringLayer)
         if let metal = Self.metal {
-            layer.device = metal.device
             CVMetalTextureCacheCreate(nil, nil, metal.device, nil, &textures)
         }
         feed.onStopped = { [weak self] error in
             Log.write("[live-ink] field feed stopped: \(error)")
             self?.lostPicture()
         }
+    }
+
+    private static func metalLayer(scale: CGFloat) -> CAMetalLayer {
+        let layer = CAMetalLayer()
+        layer.contentsScale = scale
+        layer.anchorPoint = .zero
+        layer.isOpaque = false
+        layer.isHidden = true
+        layer.framebufferOnly = true
+        layer.pixelFormat = .bgra8Unorm
+        layer.colorspace = CGColorSpace(name: CGColorSpace.displayP3)
+        layer.maximumDrawableCount = 3
+        layer.presentsWithTransaction = true
+        layer.device = metal?.device
+        return layer
     }
 
     /// Covers `screen`, whose picture leaves out the window `excluding`. Again when the screens change.
@@ -190,6 +212,11 @@ final class PointerField: NSObject {
         started = CACurrentMediaTime()
         gpuTimes.reset()
         motion.reset(at: pointer, now: started)
+        // The last time's rings are gone; the ring draws again before it shows.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        wakeLayer.isHidden = true
+        CATransaction.commit()
         dirty = true
         link?.isPaused = false
     }
@@ -263,10 +290,11 @@ final class PointerField: NSObject {
         let picture = needsPicture ? feed.take() : nil
         // Bending waits for the first frame of the screen.
         if needsPicture, picture == nil { return }
-        // Draws only when the screen, the motion or the settings changed.
-        guard dirty || moved || picture?.fresh == true else { return }
+        // Each part draws only when the screen, its motion or the settings changed.
+        let all = dirty || picture?.fresh == true
+        guard all || moved.ring || moved.wake else { return }
         dirty = false
-        draw(picture?.frame, at: now)
+        draw(picture?.frame, ring: all || moved.ring, wake: all || moved.wake, at: now)
         if !faded {
             // `ms` is how long the field waited for the picture once it was wanted, `stream-ms` how long
             // since the picture was asked for, as the chord went down.
@@ -295,7 +323,8 @@ final class PointerField: NSObject {
         CATransaction.commit()
     }
 
-    private func draw(_ frame: CVPixelBuffer?, at now: CFTimeInterval) {
+    /// Draws the ring, the wake or both, and places and presents them in one transaction.
+    private func draw(_ frame: CVPixelBuffer?, ring: Bool, wake: Bool, at now: CFTimeInterval) {
         guard let metal = Self.metal, let textures else { return }
         let size = layer.bounds.size
         guard size.width > 0, size.height > 0 else { return }
@@ -310,23 +339,64 @@ final class PointerField: NSObject {
             guard let read = texture.flatMap({ CVMetalTextureGetTexture($0.texture) }) else { return }
             screen = read
         }
-        layer.drawableSize = CGSize(width: size.width * layer.contentsScale, height: size.height * layer.contentsScale)
-        guard let drawable = layer.nextDrawable(), let commands = metal.queue.makeCommandBuffer() else { return }
+        let uniforms = uniforms(size: size, hasPicture: frame != nil)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        var drawn: [(commands: MTLCommandBuffer, drawable: CAMetalDrawable)] = []
+        if ring {
+            let area = ringArea(on: size)
+            ringLayer.isHidden = area == nil
+            if let area, let ring = render(ringLayer, metal.ring, area: area, screen: screen, uniforms: uniforms) { drawn.append(ring) }
+        }
+        if wake {
+            let rippling = frame != nil && !motion.trail.isEmpty
+            wakeLayer.isHidden = !rippling
+            // Each point: where, its age in seconds, its weight.
+            let points = motion.trail.map { SIMD4<Float>(Float($0.point.x), Float($0.point.y), Float(now - $0.born), $0.weight) }
+            if rippling, let wake = render(wakeLayer, metal.wake, area: CGRect(origin: .zero, size: size), screen: screen,
+                                           uniforms: uniforms, points: points) { drawn.append(wake) }
+        }
+        drawn.forEach { $0.commands.commit() }
+        // A layer that presents with its transaction shows a drawable only once it is scheduled.
+        drawn.forEach { $0.commands.waitUntilScheduled(); $0.drawable.present() }
+    }
+
+    /// The square of the screen the ring can reach, stretched as far as it goes, on the screen's
+    /// pixels so its picture is not resampled; nil when none of it is on this screen or it is off.
+    private func ringArea(on size: CGSize) -> CGRect? {
+        guard ui.ringShows else { return nil }
+        let scale = ringLayer.contentsScale
+        let reach = (CGFloat(ui.liveInkFieldSize) * 1.8 + 24) * (1 + CGFloat(ui.liveInkFieldStretch) * 1.5)
+        let side = ceil(reach * 2 * scale) / scale
+        let area = CGRect(x: ((motion.centre.x - side / 2) * scale).rounded() / scale,
+                          y: ((motion.centre.y - side / 2) * scale).rounded() / scale, width: side, height: side)
+        return area.intersects(CGRect(origin: .zero, size: size)) ? area : nil
+    }
+
+    /// Draws `pipeline` into `target`, placed over `area` of the screen, and answers what to present.
+    private func render(_ target: CAMetalLayer, _ pipeline: MTLRenderPipelineState, area: CGRect, screen: MTLTexture,
+                        uniforms: FieldUniforms, points: [SIMD4<Float>] = []) -> (commands: MTLCommandBuffer, drawable: CAMetalDrawable)? {
+        guard let queue = Self.metal?.queue else { return nil }
+        target.frame = area
+        target.drawableSize = CGSize(width: area.width * target.contentsScale, height: area.height * target.contentsScale)
+        guard let drawable = target.nextDrawable(), let commands = queue.makeCommandBuffer() else { return nil }
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = drawable.texture
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         pass.colorAttachments[0].storeAction = .store
-        guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return }
-        var uniforms = uniforms(size: size, hasPicture: frame != nil)
-        // Each point: where, its age in seconds, its weight. The shader reads none when the count is 0,
-        // but Metal wants a buffer bound.
-        var points = motion.trail.map { SIMD4<Float>(Float($0.point.x), Float($0.point.y), Float(now - $0.born), $0.weight) }
-        if points.isEmpty { points = [SIMD4(repeating: 0)] }
-        encoder.setRenderPipelineState(metal.pipeline)
+        guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return nil }
+        var uniforms = uniforms
+        uniforms.origin = SIMD2(Float(area.minX), Float(area.minY))
+        uniforms.area = SIMD2(Float(area.width), Float(area.height))
+        encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(screen, index: 0)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<FieldUniforms>.stride, index: 0)
-        encoder.setFragmentBytes(&points, length: MemoryLayout<SIMD4<Float>>.stride * points.count, index: 1)
+        if !points.isEmpty {
+            var points = points
+            encoder.setFragmentBytes(&points, length: MemoryLayout<SIMD4<Float>>.stride * points.count, index: 1)
+        }
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         // The capture's buffer must outlive the GPU's read of it.
@@ -334,8 +404,7 @@ final class PointerField: NSObject {
             withExtendedLifetime(texture) {}
             gpuTimes.add(buffer.gpuEndTime - buffer.gpuStartTime)
         }
-        commands.present(drawable)
-        commands.commit()
+        return (commands, drawable)
     }
 
     private func uniforms(size: CGSize, hasPicture: Bool) -> FieldUniforms {
@@ -407,12 +476,18 @@ struct PointerFieldMotion {
         last = now
     }
 
+    /// What a step changed that is drawn. The wake changes while its rings spread, and once more when
+    /// the last is gone, so none of it stays.
+    struct Changes: Equatable {
+        var ring = false
+        var wake = false
+    }
+
     /// Moves everything on to `now`, with the pointer at `pointer` and the button down there or not.
     /// The ring follows the pointer over `liveInkFieldFollow` and springs to its size, smaller while
     /// pressed, over `liveInkFieldFade`. The wake gains a point where the pen is, unless the last one
-    /// is under 6 pt away, and loses those whose ring has spread. Answers whether anything drawn
-    /// changed: also while rings spread, and once more when the last is gone, so none of it stays.
-    mutating func step(to now: CFTimeInterval, pointer: CGPoint, pressed: Bool, ui: UITweaks) -> Bool {
+    /// is under 6 pt away, and loses those whose ring has spread.
+    mutating func step(to now: CFTimeInterval, pointer: CGPoint, pressed: Bool, ui: UITweaks) -> Changes {
         let dt = now - last
         last = now
         var moved = false
@@ -430,7 +505,7 @@ struct PointerFieldMotion {
         let rippling = !trail.isEmpty
         trail.removeAll { now - $0.born >= ui.liveInkWakeDuration }
         if pressed, ui.wakes { wake(at: pointer, now: now) }
-        return moved || rippling || !trail.isEmpty
+        return Changes(ring: moved, wake: rippling || !trail.isEmpty)
     }
 
     private mutating func wake(at point: CGPoint, now: CFTimeInterval) {
@@ -450,6 +525,8 @@ struct FieldUniforms {
     var color = SIMD4<Float>(repeating: 0)
     var wakeBox = SIMD4<Float>(repeating: 0)
     var size = SIMD2<Float>(repeating: 0)
+    var origin = SIMD2<Float>(repeating: 0)
+    var area = SIMD2<Float>(repeating: 0)
     var ringCentre = SIMD2<Float>(repeating: 0)
     var ringVelocity = SIMD2<Float>(repeating: 0)
     var wakeCount: UInt32 = 0

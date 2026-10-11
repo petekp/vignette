@@ -103,7 +103,10 @@ The names in brackets are `// MARK:` sections.
   chord goes down, leaves out the overlay by its window id, and stops once the field has faded
   out, or as the chord is let go when the field never showed. While it runs, macOS shows its recording indicator. The layer fades in from its first
   frame, so it never shows the screen as it was. It draws only from its display link: drawing on
-  each frame's arrival starved the main thread until the app hung. With no Screen Recording or a
+  each frame's arrival starved the main thread until the app hung. The ring has a layer only as big
+  as it can reach, moved with it and presented in the same transaction, so a frame draws a few
+  hundred points square rather than the screen. The wake's layer covers the screen and is hidden
+  while none of its rings spread. With no Screen Recording or a
   stream error, the ring glows and nothing bends, and the next chord tries the picture again. The
   Pointer Lab (`vignette://pointer-lab`, needs `debug`) tunes the ring and the whole field
   (`ui.liveInkField*`) and the wake. Its "Hold on screen" keeps the field up at the inking level
