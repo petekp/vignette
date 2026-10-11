@@ -566,6 +566,9 @@ private struct CopiedOverlay: View {
 /// `sendingHold` before it gives way: two steps rather than one state flickering into the next.
 /// While the send waits out its grace the logo wears a ring that empties, and a Don't send button
 /// is the one part of the overlay that takes presses.
+///
+/// The logo is one view in every state, so when the grace ends it glides to its new place rather
+/// than being replaced by a copy drawn there. Its badge comes in once it has arrived.
 private struct SendOverlay: View {
     let notice: SendNotice
     let corner: CGFloat
@@ -574,7 +577,11 @@ private struct SendOverlay: View {
     @State private var landed = false
     @State private var shown: SendNotice.State?
     @State private var since = Date()
+    /// The logo is where the layout puts it, so its badge may show.
+    @State private var logoArrived = true
     private static let sendingHold: TimeInterval = 0.45
+    /// The logo over the smallest Don't send. A card shorter than this puts the button beside it.
+    private static let stackedHeight: CGFloat = 57
 
     private var state: SendNotice.State { shown ?? notice.state }
 
@@ -595,31 +602,15 @@ private struct SendOverlay: View {
         ZStack {
             RoundedRectangle(cornerRadius: corner, style: .continuous).fill(.black.opacity(0.55))
                 .allowsHitTesting(false)
-            Group {
-                if state == .inGrace, let grace = notice.grace {
-                    waitingContent(grace)
-                } else {
-                    VStack(spacing: 5) {
-                        logo
-                        // A failure's reason goes first when the card is too short for it, then the words.
-                        ViewThatFits(in: .vertical) {
-                            if let reason = notice.reason, state != .inGrace && state != .sending && state != .sent {
-                                VStack(spacing: 3) {
-                                    headline
-                                    Text(reason).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
-                                        .multilineTextAlignment(.center).lineLimit(3)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                            headline
-                            Color.clear.frame(width: 1, height: 1)
-                        }
-                        .id(words)
-                        .transition(.blurReplace)
-                        .padding(.horizontal, 8)
-                    }
-                    .allowsHitTesting(false)
+            GeometryReader { geometry in
+                let stacked = geometry.size.height >= Self.stackedHeight
+                let layout = stacked ? AnyLayout(VStackLayout(spacing: 5)) : AnyLayout(HStackLayout(spacing: 6))
+                layout {
+                    logo
+                    details(stacked: stacked)
                 }
+                .padding(.horizontal, 8)
+                .frame(width: geometry.size.width, height: geometry.size.height)
             }
             .scaleEffect(landed ? 1 : 0.3)
             .opacity(landed ? 1 : 0)
@@ -631,50 +622,76 @@ private struct SendOverlay: View {
             withAnimation(Anim.spring(0.4 * motion, bounce: 0.45)) { landed = true }
         }
         .onChange(of: notice.state) { previous, next in
-            let steps = SendNotice.steps(from: previous, to: next)
+            let spring = Anim.spring(0.35 * motion, bounce: 0.35)
+            // The logo has arrived when its spring first reaches the new place.
+            let glide = Anim.passesTarget(0.35 * motion, bounce: 0.35)
             var wait = shown == .sending ? max(0, Self.sendingHold - Date().timeIntervalSince(since)) : 0
-            for step in steps {
+            var last = shown ?? previous
+            for step in SendNotice.steps(from: previous, to: next) {
+                let leavesGrace = last == .inGrace && step != .inGrace
                 DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
-                    // The grace is not the sending state: the hold counts from when the line went.
-                    if step == .sending { since = Date() }
-                    withAnimation(Anim.spring(0.35 * motion, bounce: 0.35)) { shown = step }
+                    // The grace is not the sending state: the hold counts from when the badge shows.
+                    if step == .sending { since = Date().addingTimeInterval(leavesGrace ? glide : 0) }
+                    withAnimation(spring) {
+                        shown = step
+                        if leavesGrace { logoArrived = false }
+                    }
+                    if leavesGrace {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + glide) {
+                            withAnimation(Anim.spring(0.3 * motion, bounce: 0.45)) { logoArrived = true }
+                        }
+                    }
                 }
-                wait += Self.sendingHold
+                wait += (leavesGrace ? glide : 0) + Self.sendingHold
+                last = step
             }
         }
     }
 
-    /// The logo with its ring and Don't send. The card gives up the words, then the button's label,
-    /// before it gives up the button: whatever the size, a send in its grace can be cancelled.
-    private func waitingContent(_ grace: SendNotice.Grace) -> some View {
-        ViewThatFits {
-            VStack(spacing: 5) {
-                countdownLogo(grace)
-                label(words).allowsHitTesting(false)
-                unsendButton
-            }
-            VStack(spacing: 5) {
-                countdownLogo(grace)
-                unsendButton
-            }
-            HStack(spacing: 6) {
-                countdownLogo(grace)
-                Button(action: onUnsend) {
-                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
-                        .frame(width: 22, height: 22).background(Circle().fill(.white.opacity(0.18)))
+    /// What goes with the logo. While the send waits: the words, then Don't send, giving up the
+    /// words, then the button's label, before the button, so a send in its grace can always be
+    /// cancelled. After: the words, with a failure's reason under them while the card has room.
+    @ViewBuilder
+    private func details(stacked: Bool) -> some View {
+        if state == .inGrace {
+            Group {
+                if stacked {
+                    ViewThatFits {
+                        VStack(spacing: 5) {
+                            label(words).allowsHitTesting(false)
+                            unsendButton
+                        }
+                        unsendButton
+                        unsendMark
+                    }
+                } else {
+                    unsendMark
                 }
-                .buttonStyle(TactileButtonStyle(shape: .circle))
-                .accessibilityLabel("Don't send")
-                .onHover(perform: onOverControl)
             }
-        }
-        .padding(.horizontal, 8)
-    }
-
-    private func countdownLogo(_ grace: SendNotice.Grace) -> some View {
-        logoDisc
-            .overlay { GraceRing(grace: grace).padding(-4) }
+            .transition(.opacity)
+        } else {
+            Group {
+                if stacked {
+                    ViewThatFits(in: .vertical) {
+                        if let reason = notice.reason, state != .sending && state != .sent {
+                            VStack(spacing: 3) {
+                                headline
+                                Text(reason).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
+                                    .multilineTextAlignment(.center).lineLimit(3)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        headline
+                        Color.clear.frame(width: 1, height: 1)
+                    }
+                } else {
+                    headline
+                }
+            }
+            .id(words)
+            .transition(.blurReplace)
             .allowsHitTesting(false)
+        }
     }
 
     private var unsendButton: some View {
@@ -685,6 +702,16 @@ private struct SendOverlay: View {
                 .fixedSize()
         }
         .buttonStyle(TactileButtonStyle(shape: .capsule))
+        .onHover(perform: onOverControl)
+    }
+
+    private var unsendMark: some View {
+        Button(action: onUnsend) {
+            Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 22, height: 22).background(Circle().fill(.white.opacity(0.18)))
+        }
+        .buttonStyle(TactileButtonStyle(shape: .circle))
+        .accessibilityLabel("Don't send")
         .onHover(perform: onOverControl)
     }
 
@@ -702,9 +729,21 @@ private struct SendOverlay: View {
             .lineLimit(1).fixedSize()
     }
 
-    /// The agent's logo on a white disc, as on a card an agent sent, with the delivery at its corner.
+    /// The agent's logo on a white disc, as on a card an agent sent: in its grace with the ring that
+    /// empties, after it with the delivery at its corner.
     private var logo: some View {
-        logoDisc.overlay(alignment: .bottomTrailing) { badge.offset(x: 5, y: 4) }
+        logoDisc
+            .overlay {
+                if state == .inGrace, let grace = notice.grace {
+                    GraceRing(grace: grace).padding(-4).transition(.opacity)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if state != .inGrace, logoArrived {
+                    badge.offset(x: 5, y: 4).transition(.scale(scale: 0.3).combined(with: .opacity))
+                }
+            }
+            .allowsHitTesting(false)
     }
 
     private var logoDisc: some View {
@@ -732,8 +771,7 @@ private struct SendOverlay: View {
                         ProgressView().controlSize(.mini).environment(\.colorScheme, .dark).scaleEffect(0.8)
                     }
                 case .sent, .done:
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 15, weight: .bold))
-                        .symbolRenderingMode(.palette).foregroundStyle(.white, .green)
+                    MetalCheck()
                 case .queued:
                     // One layer, its hands cut out, so they show the white ring beneath.
                     Image(systemName: "clock.fill").font(.system(size: 15, weight: .bold)).foregroundStyle(Color.orange)
@@ -745,6 +783,39 @@ private struct SendOverlay: View {
             .id(state)
             // The next state pops in while the last one only fades, so the ring is never empty.
             .transition(.asymmetric(insertion: .scale(scale: 0.3).combined(with: .opacity), removal: .opacity))
+        }
+    }
+}
+
+/// The sent badge's check, on a green disc lit like polished metal from the top left: a gradient
+/// from light to deep green, a bevelled rim, a fixed highlight, and one band of light that crosses
+/// it as it appears. With no motion the band is left out and the rest stays.
+private struct MetalCheck: View {
+    @State private var sweep: CGFloat = -1
+
+    var body: some View {
+        let motion = Settings.shared.motionScale
+        ZStack {
+            Circle().fill(LinearGradient(colors: [Color(red: 0.62, green: 0.95, blue: 0.62), Color(red: 0.16, green: 0.72, blue: 0.3),
+                                                  Color(red: 0.04, green: 0.43, blue: 0.16)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+            Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0), .black.opacity(0.3)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.75)
+            Ellipse().fill(RadialGradient(colors: [.white.opacity(0.8), .white.opacity(0)], center: .center, startRadius: 0, endRadius: 4))
+                .frame(width: 8, height: 4.5).rotationEffect(.degrees(-35)).offset(x: -3, y: -3.5)
+            Image(systemName: "checkmark").font(.system(size: 7.5, weight: .heavy))
+                .foregroundStyle(LinearGradient(colors: [.white, Color(white: 0.86)], startPoint: .top, endPoint: .bottom))
+                .shadow(color: .black.opacity(0.35), radius: 0.4, y: 0.5)
+            if motion > 0 {
+                LinearGradient(colors: [.white.opacity(0), .white.opacity(0.75), .white.opacity(0)], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 5, height: 24).rotationEffect(.degrees(25)).offset(x: sweep * 14)
+            }
+        }
+        .frame(width: 15, height: 15)
+        .clipShape(Circle())
+        .onAppear {
+            guard motion > 0 else { return }
+            withAnimation(.easeInOut(duration: 0.55 * motion).delay(0.12 * motion)) { sweep = 1 }
         }
     }
 }
