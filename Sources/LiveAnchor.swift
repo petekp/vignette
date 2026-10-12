@@ -234,34 +234,63 @@ final class LiveAnchor: @unchecked Sendable {
 /// A line of a terminal that gives its visible text and no positions (Ghostty): found again by its
 /// words, with the lines round it to tell repeats apart, and placed by row, since every row of a
 /// terminal is the same height. The text stays on this Mac; it is only compared.
+///
+/// Only the pane under the mark is compared. Ghostty gives a row as one line across the whole window,
+/// so with a multiplexer's panes side by side (herdr, tmux) a row also holds the panes beside it, and
+/// output there changed the row's text and hid a mark on a pane that had not moved.
 final class LineAnchor: @unchecked Sendable {
     private let element: AXUIElement
+    private let columns: Range<Int>
     private let line: String, before: String, after: String
     private var row: Int
 
     init?(_ element: AXUIElement, at point: CGPoint) {
         guard let lines = Self.lines(element), lines.count > 2, let frame = LiveAnchor.frame(of: element) else { return nil }
         let row = Int((point.y - frame.minY) / (frame.height / CGFloat(lines.count)))
-        guard lines.indices.contains(row), !lines[row].trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        let width = lines.map(\.count).max() ?? 0
+        guard lines.indices.contains(row), width > 0 else { return nil }
+        let column = Int((point.x - frame.minX) / (frame.width / CGFloat(width)))
+        let columns = Self.pane(around: column, in: lines, width: width)
+        let text = lines.map { Self.cut($0, columns) }
+        guard !text[row].trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
         self.element = element
+        self.columns = columns
         self.row = row
-        line = lines[row]
-        before = row > 0 ? lines[row - 1] : ""
-        after = row + 1 < lines.count ? lines[row + 1] : ""
+        line = text[row]
+        before = row > 0 ? text[row - 1] : ""
+        after = row + 1 < text.count ? text[row + 1] : ""
     }
 
-    private static func lines(_ element: AXUIElement) -> [String]? {
-        (LiveAnchor.attribute(element, kAXValueAttribute) as? String).map { $0.components(separatedBy: "\n") }
+    private static func lines(_ element: AXUIElement) -> [[Character]]? {
+        (LiveAnchor.attribute(element, kAXValueAttribute) as? String).map { $0.components(separatedBy: "\n").map(Array.init) }
     }
+
+    private static func cut(_ line: [Character], _ columns: Range<Int>) -> String {
+        String(line[columns.clamped(to: 0..<line.count)])
+    }
+
+    /// The columns between the pane borders either side of `column`, or the whole row with no borders. A
+    /// border is a column holding a vertical line in at least half the rows, as a multiplexer draws it.
+    private static func pane(around column: Int, in lines: [[Character]], width: Int) -> Range<Int> {
+        let borders = (0..<width).filter { at in
+            lines.filter { at < $0.count && verticals.contains($0[at]) }.count * 2 >= lines.count
+        }
+        let left = borders.last { $0 < column }.map { $0 + 1 } ?? 0
+        let right = borders.first { $0 > column } ?? width
+        return left < right ? left..<right : 0..<width
+    }
+
+    private static let verticals: Set<Character> = ["│", "┃", "║", "┆", "┇", "┊", "┋"]
 
     /// Where the line is now, or nil once it has scrolled off the screen.
     func rect() -> CGRect? {
         guard let lines = Self.lines(element), !lines.isEmpty, let frame = LiveAnchor.frame(of: element) else { return nil }
+        let text = lines.map { Self.cut($0, columns) }
         var best: (row: Int, score: Int)?
-        for (index, text) in lines.enumerated() where text == line {
+        for index in text.indices where text[index] == line {
             var score = 4
-            if index > 0, lines[index - 1] == before { score += 2 }
-            if index + 1 < lines.count, lines[index + 1] == after { score += 2 }
+            if index > 0, text[index - 1] == before { score += 2 }
+            if index + 1 < text.count, text[index + 1] == after { score += 2 }
             score -= min(3, abs(index - row) / 10)
             if best.map({ score > $0.score }) ?? true { best = (index, score) }
         }
