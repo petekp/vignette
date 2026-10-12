@@ -109,7 +109,7 @@ narrow the stack goes to make room for it and how far it stays from it, how deep
 edge band is and how fast it scrolls there, how near an edge of the image a zoom holds that
 edge, the ring live ink shows round the pointer while Control and Option are held, how an answer
 to live ink is drawn: how long its marks take to draw on, and the size and widest wrap of its notes,
-and the metal, glare and bloom of the check on a copied or sent card (the `check` keys).
+and the coin, light, spin and bloom of the check on a copied or sent card (the `check` keys).
 
 The defaults are the tuned UI, so a fresh install looks the same. A key the app does not know is
 ignored, and a key you leave out takes its default, so a line you no longer want is safe to delete.

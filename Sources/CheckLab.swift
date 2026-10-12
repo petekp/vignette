@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// A debug window for tuning the success check on copied and sent cards: its metal, its glare and
-/// the glare's bloom (docs/check-lab-2026-10-11.md). It shows the check large, and the Copied notice
+/// A debug window for tuning the success check on copied and sent cards: the coin, its light, its
+/// spin and its bloom (docs/check-lab-2026-10-11.md). It shows the check large, and the Copied notice
 /// and a send's notice at their real size on a card. The sliders are the `check` settings every card
 /// draws with, so a value chosen here is the one cards show. Opened from the tweak panel or
 /// `vignette://check-lab` (needs `debug`).
@@ -36,24 +36,24 @@ final class CheckLabController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        model.glare = .once
+        model.spin = .once
         DispatchQueue.main.async { FocusReturn.shared.restore(reason: "check lab closed") }
     }
 }
 
 @MainActor
 final class CheckLabModel: ObservableObject {
-    /// `once`: every check runs its glare once from when it appears, as on a card. `loop`: the glare
-    /// crosses over and over at `speed`. `hold`: it stays at `place`.
-    enum Glare: Hashable { case once, loop, hold }
+    /// `once`: every check spins once from when it appears, as on a card. `loop`: the spin runs over
+    /// and over at `speed`. `hold`: it stays at `place`.
+    enum Spin: Hashable { case once, loop, hold }
 
-    /// Each change replays, so going back to Once shows a glare again.
-    @Published var glare = Glare.once {
-        didSet { if glare != oldValue { replay() } }
+    /// Each change replays, so going back to Once spins again.
+    @Published var spin = Spin.once {
+        didSet { if spin != oldValue { replay() } }
     }
-    /// The loop's speed, as a fraction of the glare's own.
+    /// The loop's speed, as a fraction of the spin's own.
     @Published var speed = 0.25
-    @Published var place = 0.5
+    @Published var place = 0.3
     /// Changed by Replay, so the previews appear again.
     @Published private(set) var take = 0
     @Published private(set) var sendState = SendNotice.State.sending
@@ -72,16 +72,16 @@ final class CheckLabModel: ObservableObject {
         }
     }
 
-    /// Where the previews' glare is at `now`, or nil when each runs its own.
+    /// Where the previews' spin is at `now`, 0 to 1, or nil when each runs its own.
     func place(at now: Date) -> Double? {
-        switch glare {
+        switch spin {
         case .once: return nil
         case .hold: return place
         case .loop:
-            let crossing = max(Settings.shared.data.ui.checkGlareDuration, 0.05) / max(speed, 0.01)
-            let rest = 0.4
-            let phase = now.timeIntervalSince(loopStart).truncatingRemainder(dividingBy: crossing + rest)
-            return min(1, phase / crossing)
+            let length = max(CheckSpin(Settings.shared.data.ui).length, 0.05) / max(speed, 0.01)
+            let rest = 0.6
+            let phase = now.timeIntervalSince(loopStart).truncatingRemainder(dividingBy: length + rest)
+            return min(1, phase / length)
         }
     }
 }
@@ -92,8 +92,8 @@ private struct CheckLabView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TimelineView(.animation(paused: model.glare != .loop)) { context in
-                previews.environment(\.checkGlarePlace, model.place(at: context.date))
+            TimelineView(.animation(paused: model.spin != .loop)) { context in
+                previews.environment(\.checkSpinPlace, model.place(at: context.date))
             }
             .id(model.take)
             .padding(10)
@@ -102,47 +102,49 @@ private struct CheckLabView: View {
                 Section {
                     ColorTweak("Colour", \.checkColor)
                     Tweak("Roughness", \.checkRoughness, 0...1, step: 0.01)
-                    Tweak("Dome", \.checkDome, 0...0.6, step: 0.01)
-                    Tweak("Rim", \.checkRim, 0...0.5, step: 0.01)
+                    Tweak("Thickness", \.checkThickness, 0.02...0.4, step: 0.01)
+                    Tweak("Edge", \.checkEdge, 0...0.2, step: 0.01)
+                    Tweak("Dome", \.checkDome, 0...0.2, step: 0.01)
                 } header: {
-                    Text("Metal")
+                    Text("Coin")
                 } footer: {
-                    Text("Colour is what the metal reflects face on; at a grazing angle every metal reflects white. Roughness softens every reflection, from a mirror at 0 to brushed at 1. Dome is how far the middle rises, and Rim how wide the rounded edge is, both fractions of the radius.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    Tweak("Angle", \.checkLightAngle, -180...180, unit: "°")
-                    Tweak("Height", \.checkLightHeight, 5...90, unit: "°")
-                    Tweak("Key light", \.checkLight, 0...3, step: 0.01)
-                    Tweak("Studio contrast", \.checkStudio, 0...1, step: 0.01)
-                } header: {
-                    Text("Light")
-                } footer: {
-                    Text("The disc reflects a studio: a bright ceiling, a soft horizon well below eye level, a dim floor, and a key light, a soft box like a window, at Angle, clockwise from the top, and Height above the disc. The metal reflects the studio in its own colour, and a clear coat over it reflects the lights white. Studio contrast is how much brighter the ceiling is than the floor.")
+                    Text("Colour is what the metal reflects face on; at a grazing angle every metal reflects white. A clear coat over it reflects the lights white. Roughness softens every reflection, from a mirror at 0 to brushed at 1. Edge rounds the rim, and Dome raises each face's middle. Lengths are fractions of the coin's width.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
                     ColorTweak("Colour", \.checkMarkColor)
                     Tweak("Size", \.checkMarkSize, 0.2...0.8, step: 0.01)
-                    Tweak("Height", \.checkMarkHeight, 0...0.3, step: 0.01)
-                    Tweak("Bevel", \.checkMarkBevel, 0...0.2, step: 0.01)
+                    Tweak("Weight", \.checkMarkWeight, 0.03...0.25, step: 0.01)
+                    Tweak("Height", \.checkMarkHeight, 0...0.15, step: 0.01)
                     Tweak("Shadow", \.checkMarkShadow, 0...1, step: 0.01)
                 } header: {
                     Text("Check mark")
                 } footer: {
-                    Text("The mark is raised out of the disc in its own metal. Height is how far it stands, and Bevel how wide its rounded edge is, both fractions of the disc. Its shadow falls away from the key light.")
+                    Text("The mark stands on each face, in its own metal. Weight is its stroke's width and Height how far it stands; where it is no taller than wide its top is fully rounded. Its shadow falls away from the key light.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
-                    Tweak("Brightness", \.checkGlare, 0...3, step: 0.01)
-                    Tweak("Width", \.checkGlareWidth, 0.01...0.6, step: 0.01)
-                    Tweak("Tilt", \.checkGlareAngle, -60...60, unit: "°")
-                    Tweak("Duration", \.checkGlareDuration, 0.1...2, step: 0.01, unit: "s")
-                    Tweak("Delay", \.checkGlareDelay, 0...1, step: 0.01, unit: "s")
+                    Tweak("Key angle", \.checkLightAngle, -180...180, unit: "°")
+                    Tweak("Key height", \.checkLightHeight, 5...90, unit: "°")
+                    Tweak("Key light", \.checkLight, 0...3, step: 0.01)
+                    Tweak("Glint", \.checkGlint, 0...3, step: 0.01)
+                    Tweak("Glint angle", \.checkGlintAngle, -90...90, unit: "°")
+                    Tweak("Studio contrast", \.checkStudio, 0...1, step: 0.01)
                 } header: {
-                    Text("Glare")
+                    Text("Light")
                 } footer: {
-                    Text("A strip light swept across the studio once, Delay after the check appears. The disc reflects it as a band that bends over the dome and flashes along the rim and the mark's edges. Brightness 0 turns it off. Tilt is from upright.")
+                    Text("The coin reflects a studio: a bright ceiling, a soft horizon, a dim floor, a key light shaped like a window at Key angle, clockwise from the top, and Key height above the face, and a tall strip light, Glint, at Glint angle to the viewer's right. Spinning sweeps the coin's reflections across the strip, so its face and rim flash as they pass it.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section {
+                    Tweak("Turns", \.checkSpinTurns, 0...3, step: 0.25)
+                    Tweak("Duration", \.checkSpinDuration, 0.2...3, step: 0.05, unit: "s")
+                    Tweak("Bounce", \.checkSpinBounce, 0...0.8, step: 0.01)
+                    Tweak("Delay", \.checkSpinDelay, 0...1, step: 0.01, unit: "s")
+                } header: {
+                    Text("Spin")
+                } footer: {
+                    Text("The coin turns about its upright axis as it appears, a spring winding the turns back to face on. Bounce is how far it rocks past face on before it settles. Turns 0 leaves it still. A half turn shows the back, which has its own check.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
@@ -152,7 +154,7 @@ private struct CheckLabView: View {
                 } header: {
                     Text("Bloom")
                 } footer: {
-                    Text("What is brighter than Threshold, the lights' reflections most of all, blurred over Radius, a fraction of the disc, and added back, so it glows past the disc's edge. Strength 0 turns it off. It shows on the dark veil, not on the white ring of a send's badge.")
+                    Text("What is brighter than Threshold, the glint's flash most of all, blurred over Radius, a fraction of the coin, and added back, so it glows past the coin's edge. Strength 0 turns it off. It shows on the dark veil, not on the white ring of a send's badge.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
@@ -176,18 +178,18 @@ private struct CheckLabView: View {
     private var controls: some View {
         VStack(spacing: 6) {
             HStack {
-                Picker("Glare", selection: $model.glare) {
-                    Text("Once").tag(CheckLabModel.Glare.once)
-                    Text("Loop").tag(CheckLabModel.Glare.loop)
-                    Text("Hold").tag(CheckLabModel.Glare.hold)
+                Picker("Spin", selection: $model.spin) {
+                    Text("Once").tag(CheckLabModel.Spin.once)
+                    Text("Loop").tag(CheckLabModel.Spin.loop)
+                    Text("Hold").tag(CheckLabModel.Spin.hold)
                 }
                 .pickerStyle(.segmented).frame(width: 220)
                 Spacer()
                 Button("Replay", action: model.replay).keyboardShortcut(.defaultAction)
             }
-            switch model.glare {
+            switch model.spin {
             case .once:
-                row("", Text(settings.motionScale > 0 ? "Replay shows the notices as a card does." : "Motion is off, so cards show no glare. Hold still shows it here.")
+                row("", Text(settings.motionScale > 0 ? "Replay shows the notices as a card does." : "Motion is off, so cards do not spin. Hold still turns it here.")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading))
             case .loop:
                 row("Speed", Slider(value: $model.speed, in: 0.05...1), value: String(format: "%.2f×", model.speed))

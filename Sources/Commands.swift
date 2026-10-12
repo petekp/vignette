@@ -91,7 +91,7 @@ enum Commands {
         Fixed(name: "live-ink-chord-down", summary: "hold the live ink chord down as if by hand: the pointer field comes up and listening starts", needsDebug: true),
         Fixed(name: "live-ink-chord-up", summary: "let go of the live ink chord as if by hand: with ink drawn since it went down, the note opens", needsDebug: true),
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
-        Fixed(name: "check-lab", summary: "open the Check Lab, for tuning the check on copied and sent cards: its metal, its glare and the glare's bloom", needsDebug: true),
+        Fixed(name: "check-lab", summary: "open the Check Lab, for tuning the check on copied and sent cards: the coin, its light, its spin and its bloom", needsDebug: true),
         Fixed(name: "intro-lab", summary: "open the Intro Lab, for tuning how setup's window goes into the menu bar icon", needsDebug: true),
         Fixed(name: "pointer-lab", summary: "open the Pointer Lab, for trying and tuning live ink's pointer field and wake; &preview=1 holds the field on screen without opening it, and &preview=0 lets it go", needsDebug: true),
     ]

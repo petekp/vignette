@@ -193,26 +193,29 @@ struct UITweaks: Codable, Equatable {
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
     var markSeconds = 1.7            // how long a card's notice stays; the stored key keeps its older name
     var sendGraceSeconds = 3.0       // how long a Send waits before its session gets it; 0 sends at once
-    // The success check on a copied or sent card (MetalCheck; docs/check-lab-2026-10-11.md): a domed
-    // metal disc and a raised mark, lit by reflecting a studio. Lengths are fractions of its diameter.
-    var checkColor = "#29b84d"       // the disc's metal: the colour it reflects face on
+    // The success check on a copied or sent card (MetalCheck; docs/check-lab-2026-10-11.md): a green
+    // coin with a chrome check mark on each face, which spins as it appears and settles face on.
+    // Lengths are fractions of its diameter.
+    var checkColor = "#29b84d"       // the coin's metal: the colour it reflects face on
     var checkMarkColor = "#eef1f3"   // the mark's metal
     var checkRoughness = 0.3         // 0 a mirror, 1 brushed: how soft every reflection is
-    var checkDome = 0.25             // how far the disc's middle rises, a fraction of its radius
-    var checkRim = 0.18              // the rounded rim's width, a fraction of the radius
+    var checkThickness = 0.14
+    var checkEdge = 0.05             // the rounding of the coin's rim
+    var checkDome = 0.06             // how far each face rises at its centre
+    var checkMarkSize = 0.52         // the mark's width
+    var checkMarkWeight = 0.1        // its stroke's width
+    var checkMarkHeight = 0.05       // how far it stands off the face
+    var checkMarkShadow = 0.7        // 0 to 1: its shadow on the face
     var checkLightAngle = -40.0      // where the key light is, degrees clockwise from the top
-    var checkLightHeight = 50.0      // its height above the disc's plane, in degrees
+    var checkLightHeight = 68.0      // its height above the coin's face, in degrees
     var checkLight = 1.6             // 0 to 3: its strength
     var checkStudio = 0.75           // 0 to 1: how much brighter the studio's ceiling is than its floor
-    var checkMarkSize = 0.5
-    var checkMarkHeight = 0.06
-    var checkMarkBevel = 0.05
-    var checkMarkShadow = 0.25       // 0 to 1
-    var checkGlare = 1.4             // 0 to 3: the swept strip light; 0 turns the glare off
-    var checkGlareWidth = 0.08       // the strip's width as the disc reflects it, 0 to 1
-    var checkGlareAngle = 25.0       // the strip's tilt from upright, in degrees
-    var checkGlareDuration = 0.55    // how long the strip takes to cross
-    var checkGlareDelay = 0.12       // after the check appears
+    var checkGlint = 1.5             // 0 to 3: the strip light the spin sweeps the coin past
+    var checkGlintAngle = 60.0       // where the strip stands, degrees to the right of the viewer
+    var checkSpinTurns = 1.0         // how many times the coin turns; 0 for no spin
+    var checkSpinDuration = 1.1      // the spring's duration
+    var checkSpinBounce = 0.2        // 0 to 1: how far it rocks past face on before it settles
+    var checkSpinDelay = 0.05        // after the check appears
     var checkBloom = 1.0             // 0 to 2: the bloom; 0 turns it off
     var checkBloomRadius = 0.35
     var checkBloomThreshold = 0.7    // 0 to 1: how bright a reflection must be to bloom
@@ -347,7 +350,7 @@ struct UITweaks: Codable, Equatable {
         u.staggerDelay *= scale; u.staggerTotalMax *= scale
         u.relayoutDuration *= scale; u.shiftUpDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
         u.introDuration *= scale
-        u.checkGlareDuration *= scale; u.checkGlareDelay *= scale
+        u.checkSpinDuration *= scale; u.checkSpinDelay *= scale
         u.noteSettleDuration *= scale
         u.liveInkFieldFade *= scale; u.liveInkDrawOn *= scale
         u.liveInkWakeDuration *= scale; u.liveInkFieldFollow *= scale
@@ -374,14 +377,15 @@ struct UITweaks: Codable, Equatable {
         Bound("autoScrollZone", \.autoScrollZone, 0...10_000), Bound("autoScrollSpeed", \.autoScrollSpeed, 0...10_000),
         Bound("thumbnailSeconds", \.thumbnailSeconds, 0...3600), Bound("markSeconds", \.markSeconds, 0...3600),
         Bound("sendGraceSeconds", \.sendGraceSeconds, 0...10),
-        Bound("checkRoughness", \.checkRoughness, 0...1), Bound("checkDome", \.checkDome, 0...1),
-        Bound("checkRim", \.checkRim, 0...1), Bound("checkLightAngle", \.checkLightAngle, -180...180),
-        Bound("checkLightHeight", \.checkLightHeight, 5...90), Bound("checkLight", \.checkLight, 0...3),
-        Bound("checkStudio", \.checkStudio, 0...1), Bound("checkMarkSize", \.checkMarkSize, 0.05...1),
-        Bound("checkMarkHeight", \.checkMarkHeight, 0...0.5), Bound("checkMarkBevel", \.checkMarkBevel, 0...0.3),
-        Bound("checkMarkShadow", \.checkMarkShadow, 0...1), Bound("checkGlare", \.checkGlare, 0...3),
-        Bound("checkGlareWidth", \.checkGlareWidth, 0.01...1), Bound("checkGlareAngle", \.checkGlareAngle, -90...90),
-        Bound("checkGlareDuration", \.checkGlareDuration, 0...10), Bound("checkGlareDelay", \.checkGlareDelay, 0...10),
+        Bound("checkRoughness", \.checkRoughness, 0...1), Bound("checkThickness", \.checkThickness, 0.02...0.5),
+        Bound("checkEdge", \.checkEdge, 0...0.25), Bound("checkDome", \.checkDome, 0...0.3),
+        Bound("checkMarkSize", \.checkMarkSize, 0.1...0.8), Bound("checkMarkWeight", \.checkMarkWeight, 0.02...0.3),
+        Bound("checkMarkHeight", \.checkMarkHeight, 0...0.2), Bound("checkMarkShadow", \.checkMarkShadow, 0...1),
+        Bound("checkLightAngle", \.checkLightAngle, -180...180), Bound("checkLightHeight", \.checkLightHeight, 5...90),
+        Bound("checkLight", \.checkLight, 0...3), Bound("checkStudio", \.checkStudio, 0...1),
+        Bound("checkGlint", \.checkGlint, 0...3), Bound("checkGlintAngle", \.checkGlintAngle, -90...90),
+        Bound("checkSpinTurns", \.checkSpinTurns, 0...5), Bound("checkSpinDuration", \.checkSpinDuration, 0...10),
+        Bound("checkSpinBounce", \.checkSpinBounce, 0...0.9), Bound("checkSpinDelay", \.checkSpinDelay, 0...10),
         Bound("checkBloom", \.checkBloom, 0...2), Bound("checkBloomRadius", \.checkBloomRadius, 0...1),
         Bound("checkBloomThreshold", \.checkBloomThreshold, 0...0.95),
         Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
