@@ -138,6 +138,7 @@ static Trace march(Ray r, Coin c, float bound) {
 struct Shade {
     float3 light;
     float cover;
+    float facing;       // 1 where the surface faces the viewer, 0 at the outline
 };
 
 // The coin at `at`, where `r` met it. The surface reflects the studio as glossy plastic does: a
@@ -184,6 +185,7 @@ static Shade shade(float3 at, Ray r, Coin c, Studio s, float ct, float st, float
     Shade out;
     out.light = surface + (1.0 - fresnel) * (body + glow);
     out.cover = 1.0 - (1.0 - fresnel) * s.clarity * clear;
+    out.facing = facing;
     return out;
 }
 
@@ -216,14 +218,34 @@ static Shade shade(float3 at, Ray r, Coin c, Studio s, float ct, float st, float
     float3 eye = float3(0.0, 0.0, c.rim + 8.0 * c.radius);
     float bound = sqrt(c.radius * c.radius + top * top) + pixel;
 
-    // One ray a pixel: the glow is soft, and four rays a pixel looked the same at 15 and 22 pt.
+    // One ray a pixel, except at the outline: the glow is soft, and four rays a pixel looked the
+    // same at 15 and 22 pt everywhere else.
     Ray r = rayThrough(p, eye, c, ct, st);
     Trace tr = march(r, c, bound);
     // A ray that passes within a pixel of the coin's outline covers part of that pixel.
     float alpha = tr.hit ? 1.0 : clamp(1.0 - tr.closest / pixel, 0.0, 1.0);
     if (alpha <= 0.0) return half4(0.0);
     Shade sh = shade(r.o + r.d * tr.t, r, c, s, ct, st, pixel);
-    return half4(half3(clamp(sh.light, 0.0, 1.0) * alpha), half(sh.cover * alpha));
+    if (tr.hit && sh.facing > 0.35) {
+        return half4(half3(clamp(sh.light, 0.0, 1.0)), half(sh.cover));
+    }
+    // At the outline the rim turns from facing the viewer to grazing within a pixel, and a grazing
+    // surface reflects nearly all of the bright studio. One ray there coloured the whole pixel with
+    // its brightest point, a white ring round the coin, so the pixel averages four rays across it.
+    const float2 offsets[4] = { float2(-0.125, -0.375), float2(0.375, -0.125), float2(0.125, 0.375), float2(-0.375, 0.125) };
+    float3 sum = float3(0.0);
+    float covered = 0.0;
+    for (int k = 0; k < 4; k++) {
+        Ray sub = rayThrough(p + offsets[k] * pixel, eye, c, ct, st);
+        Trace subTrace = march(sub, c, bound);
+        // Only a ray that meets the coin counts: one that passes it is coloured by the rim's most
+        // grazing point, and brightened the outline again.
+        if (!subTrace.hit) continue;
+        Shade subShade = shade(sub.o + sub.d * subTrace.t, sub, c, s, ct, st, pixel);
+        sum += clamp(subShade.light, 0.0, 1.0);
+        covered += subShade.cover;
+    }
+    return half4(half3(0.25 * sum), half(0.25 * covered));
 }
 
 // The bloom's bright pass: what is brighter than `threshold`, scaled by `strength`. It is blurred
