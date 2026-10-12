@@ -177,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             startAgentPlugin()
         }
         sessions.refreshKeptLists()
+        CheckCoin.compileShaders()
         // The contract for agents: after this line every command answers.
         Log.write("[app] ready pid=\(ProcessInfo.processInfo.processIdentifier) build=\(BuildInfo.current.build) watching=\(watchFolder.path)")
     }

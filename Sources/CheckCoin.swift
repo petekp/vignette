@@ -40,10 +40,24 @@ struct CheckCoin: View {
     /// The coin at `turn` radians about its vertical axis, in a square wider than the disc by the
     /// bloom's reach on each side, since the bloom spills past the coin's edge.
     private func coin(_ ui: UITweaks, turn: Double) -> some View {
-        let d = diameter
-        let reach = ui.checkBloom > 0 ? ui.checkBloomRadius * d : 0
-        let side = d + 2 * reach
-        let stroke = Self.stroke(width: ui.checkMarkSize)
+        let reach = ui.checkBloom > 0 ? ui.checkBloomRadius * diameter : 0
+        let side = diameter + 2 * reach
+        let shaded = Rectangle().fill(Color.white).frame(width: side, height: side)
+            .colorEffect(Self.coinShader(ui, diameter: diameter, side: side, turn: turn, pixel: 1 / displayScale))
+        // The bloom: the bright pass blurred and added over the coin.
+        return shaded
+            .overlay {
+                if reach > 0 {
+                    shaded.colorEffect(Self.brightShader(ui))
+                        .blur(radius: reach / 2)
+                        .blendMode(.plusLighter)
+                }
+            }
+            .allowsHitTesting(false)
+    }
+
+    private static func coinShader(_ ui: UITweaks, diameter d: CGFloat, side: CGFloat, turn: Double, pixel: CGFloat) -> Shader {
+        let stroke = stroke(width: ui.checkMarkSize)
         let lightAngle = ui.checkLightAngle * .pi / 180, lightHeight = ui.checkLightHeight * .pi / 180
         let glintAngle = ui.checkGlintAngle * .pi / 180
         let shape: Shader.Argument = .float4(d / 2, ui.checkThickness * d / 2, ui.checkEdge * d, ui.checkDome * d)
@@ -53,20 +67,32 @@ struct CheckCoin: View {
                                              sin(lightHeight), ui.checkLight)
         let glint: Shader.Argument = .float4(sin(glintAngle), 0, cos(glintAngle), ui.checkGlint)
         let surface: Shader.Argument = .float4(ui.checkRoughness, ui.checkStudio, ui.checkClarity, ui.checkGlowSpread * d)
-        let view: Shader.Argument = .float3(turn, 1 / displayScale, side)
-        let shader = ShaderLibrary.checkCoin(shape, mark, markEnd, Self.rgb(ui.checkColor, \.checkColor),
-                                             Self.rgb(ui.checkGlowColor, \.checkGlowColor), light, glint, surface, view)
-        let shaded = Rectangle().fill(Color.white).frame(width: side, height: side).colorEffect(shader)
-        // The bloom: the bright pass blurred and added over the coin.
-        return shaded
-            .overlay {
-                if reach > 0 {
-                    shaded.colorEffect(ShaderLibrary.checkBright(.float(ui.checkBloom), .float(ui.checkBloomThreshold)))
-                        .blur(radius: reach / 2)
-                        .blendMode(.plusLighter)
-                }
+        let view: Shader.Argument = .float3(turn, pixel, side)
+        return ShaderLibrary.checkCoin(shape, mark, markEnd, rgb(ui.checkColor, \.checkColor),
+                                       rgb(ui.checkGlowColor, \.checkGlowColor), light, glint, surface, view)
+    }
+
+    private static func brightShader(_ ui: UITweaks) -> Shader {
+        ShaderLibrary.checkBright(.float(ui.checkBloom), .float(ui.checkBloomThreshold))
+    }
+
+    /// Compiles both shaders off the main thread. SwiftUI otherwise compiles them in the frame that
+    /// first draws a check: 27 to 34 ms on an M-series Mac and a third of a second in a VM, so the
+    /// first check after a launch stalled its card's animation. macOS 14 has no way to ask for this.
+    static func compileShaders() {
+        guard #available(macOS 15, *) else { return }
+        let ui = Settings.shared.data.ui
+        let coin = coinShader(ui, diameter: 22, side: 22, turn: 0, pixel: 0.5), bright = brightShader(ui)
+        Task.detached(priority: .utility) {
+            let start = DispatchTime.now().uptimeNanoseconds
+            do {
+                try await coin.compile(as: .colorEffect)
+                try await bright.compile(as: .colorEffect)
+                Log.write("[check] shaders compiled \((DispatchTime.now().uptimeNanoseconds - start) / 1_000_000)ms")
+            } catch {
+                Log.write("[check] error shader compile: \(error)")
             }
-            .allowsHitTesting(false)
+        }
     }
 
     /// The mark's stroke, the short leg then the long one, as x and y fractions of the radius for a
