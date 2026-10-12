@@ -1096,6 +1096,8 @@ final class LiveInk {
             if let behind, behind <= LivePacket.Luminance.dark { overDark.insert(mark.id) }
         }
         _ = asks.reduce(.answered(reply: placed.first, actions: answer.actions, findings: layout.findings, shown: Set(shown.map(\.id))))
+        // The agent may have changed the window under the person's ink.
+        InkBackdrop.shared.refresh()
         let labels = zip(answer.marks, targets).filter { $0.0.label != nil && $0.1 != nil }.count
         let notDrawn = layout.findings.indices.filter { layout.findings[$0].isEmpty }
         Log.write("[live-ink] drew answer marks=\(placed.count - 1) dropped=\(notDrawn.count) "
@@ -1514,6 +1516,8 @@ final class LiveInk {
         releaseWatch = nil
         inking = activeSurfaces()
         inking.forEach { $0.overlay.setInking(true) }
+        // The ink takes its colour from what is behind it.
+        InkBackdrop.shared.refresh()
         let ui = Settings.shared.motionUI
         inking.forEach { $0.overlay.prepareField(ui: ui) }
         let mouse = NSEvent.mouseLocation

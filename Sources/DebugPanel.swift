@@ -226,12 +226,13 @@ struct DebugPanelView: View {
                     Tweak("Long side", \.stitchLongSide, 512...8192, step: 128, unit: "px")
                 }
                 Section("Live ink gel") {
-                    ColorTweak("Body", \.inkGelColor)
+                    ColorTweak("Ice", \.inkGelLight)
+                    ColorTweak("Deep blue", \.inkGelDeep)
                     Tweak("Width", \.inkGelWidth, 1...12, step: 0.25, unit: "pt")
-                    Tweak("Iridescence", \.inkGelIridescence, 0...3, step: 0.05)
-                    Tweak("Film thickness", \.inkGelFilm, 200...1600, step: 10, unit: "nm")
+                    Tweak("White middle", \.inkGelCore, 0...1, step: 0.05)
                     Tweak("Highlight", \.inkGelSheen, 0...2, step: 0.05)
-                    Tweak("Darker edges", \.inkGelRim, 0...1, step: 0.01)
+                    Tweak("Turns deep at", \.inkGelSwitch, 0.2...0.8, step: 0.01)
+                    Tweak("Turn width", \.inkGelSwitchWidth, 0.02...0.4, step: 0.01)
                     Tweak("Glow", \.inkGelGlow, 0...2, step: 0.05)
                     Tweak("Bloom toward light", \.inkGelBloom, 0...2, step: 0.05)
                     Tweak("Glow reach", \.inkGelGlowRadius, 0...24, step: 0.5, unit: "pt")
@@ -239,7 +240,7 @@ struct DebugPanelView: View {
                     Tweak("Drift speed", \.inkGelMotion, 0...3, step: 0.05)
                     Tweak("Shimmer", \.inkGelShimmer, 0...3, step: 0.05)
                     Tweak("Light wander", \.inkGelWander, 0...1.5, step: 0.05, unit: " rad")
-                    Text("Your live ink is a rod of milky gel under a thin film. The film's thickness sets its pale colours, and iridescence sets how much of them shows. The light drifts slowly round the line. The shimmer is a ripple that runs along the film, and drift speed 0 holds both still. The shadow shows over light windows.")
+                    Text("Your live ink is luminous ice over dark windows and deep blue over light ones, so it stands out on both. Turns deep at is the brightness behind the ink, 0 to 1, where it changes; the deep blue grows in from the line's edge over the turn's width. Vignette reads the brightness when you start inking and after an answer is drawn. The light drifts slowly round the line, and drift speed 0 holds it still.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Live ink") {

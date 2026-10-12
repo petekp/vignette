@@ -604,8 +604,8 @@ extension LivePacket {
         /// The mean luminance at or below which a window counts as dark behind what is drawn over it.
         static let dark: CGFloat = 0.45
 
-        init?(_ image: CGImage, frame: CGRect) {
-            let columns = 64
+        /// `image` drawn down to `columns` cells across, each the mean of the pixels under it.
+        init?(_ image: CGImage, frame: CGRect, columns: Int = 64) {
             let rows = max(1, Int((CGFloat(columns) * CGFloat(image.height) / CGFloat(max(image.width, 1))).rounded()))
             var cells = [UInt8](repeating: 0, count: columns * rows)
             let drawn = cells.withUnsafeMutableBytes { buffer -> Bool in

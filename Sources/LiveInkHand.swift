@@ -453,15 +453,21 @@ final class InkMarkLayer: CALayer {
                   let buffer = metal.device.makeBuffer(bytes: vertices.floats, length: vertices.floats.count * MemoryLayout<Float>.stride) else { return nil }
             built = (buffer, vertices.halo, vertices.body)
         }
-        guard let built, let drawable = gel.nextDrawable(), let commands = metal.queue.makeCommandBuffer() else { return nil }
+        let place = onScreen(gel.frame)
+        let backdrop = place.map { InkBackdrop.shared.reading(for: $0, at: now) } ?? InkBackdrop.Reading(now: nil, before: nil, fade: 1)
+        guard let built, let maps = InkBackdrop.shared.textures(for: backdrop), let drawable = gel.nextDrawable(),
+              let commands = metal.queue.makeCommandBuffer() else { return nil }
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = drawable.texture
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         pass.colorAttachments[0].storeAction = .store
         guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return nil }
-        var uniforms = InkGel.uniforms(ui, size: gel.drawableSize, scale: contentsScale, time: time, override: override, headOpacity: headOpacity)
+        var uniforms = InkGel.uniforms(ui, gel: place ?? gel.frame, size: gel.drawableSize, scale: contentsScale, time: time, override: override,
+                                       headOpacity: headOpacity, backdrop: backdrop)
         encoder.setVertexBuffer(built.buffer, offset: 0, index: 0)
+        encoder.setFragmentTexture(maps.now, index: 0)
+        encoder.setFragmentTexture(maps.before, index: 1)
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
         encoder.setRenderPipelineState(metal.halo)
@@ -470,6 +476,23 @@ final class InkMarkLayer: CALayer {
         encoder.drawPrimitives(type: .triangle, vertexStart: built.halo, vertexCount: built.body)
         encoder.endEncoding()
         return (commands, drawable)
+    }
+
+    /// `rect`, in this layer's points, in global top-left points. A mark is drawn in its window's
+    /// overlay or the screen's, inside that overlay's content view, so the window is the one whose
+    /// content view's layer shares this layer's root.
+    private func onScreen(_ rect: CGRect) -> CGRect? {
+        func root(of layer: CALayer) -> CALayer {
+            var root = layer
+            while let up = root.superlayer { root = up }
+            return root
+        }
+        let mine = root(of: self)
+        guard let view = NSApp.windows.lazy.compactMap(\.contentView).first(where: { $0.layer.map(root) === mine }),
+              let layer = view.layer, let window = view.window else { return nil }
+        // The content views are flipped, so their layers run y down from the window's top-left.
+        let inView = convert(rect, to: layer)
+        return inView.offsetBy(dx: window.frame.minX, dy: StateReport.primaryHeight - window.frame.maxY)
     }
 
     /// The style its line is laid out in: the mark's, at the gel's width.

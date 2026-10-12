@@ -1,10 +1,11 @@
-# Live ink: the person's lines as iridescent gel (2026-10-12)
+# Live ink: the person's lines as adaptive ice (2026-10-12)
 
-Status: Pete picked A, opal, and it is built (`InkGel.swift`, `InkGel.metal`). Its look is in the
-tweak panel's Live ink gel section.
+Status: built (`InkGel.swift`, `InkGel.metal`). Its look is in the tweak panel's Live ink gel
+section.
 
-Pete asked for the person's live ink lines to be an iridescent gel with an emissive glow,
-in place of red.
+The person's live ink is a lit rod of light in place of red. Over dark content it is luminous ice:
+a white middle falling to a cool blue at its edge, with a glow. Over light content a deep blue
+sheath grows in from its edge. So the line stands out on any window.
 
 ## Scope
 
@@ -16,97 +17,73 @@ in place of red.
 - **The agent's light:** unchanged. It keeps one hue, a core and a bloom.
 - **The question's note pill:** stays red. Changing it is a follow-up.
 
-## Two earlier decisions this touches
+## Why this look
 
-- **Colour says who drew a mark.** Pete's request replaces red on screen. Material still tells the
-  marks apart. The person's gel has moving hues, a glassy body and a specular line. The agent's
-  light has neither.
-- **The rejected "Intelligence gradient".** It looked like Siri's edge glow
-  (`docs/live-ink-look-2026-10-07.md`). The gel takes its hue from the stroke itself: the place
-  round the loop, the distance along the line, or the line's direction. It does not sweep a rainbow
-  across the screen. The colours come from a thin-film model, so they read as a material, the
-  way a soap film or oil on water does.
+Pete rejected two earlier directions. Rainbow hues swept along the line were "way too rainbowy". A
+pale opal gel with a thin-film sheen read as "childlike". He asked for something futuristic and
+tasteful, and said contrast with the content below would decide it.
 
-## The looks
+So the lab measured each candidate's contrast over the backgrounds ink lands on. The measure is the
+WCAG contrast ratio: the best ratio within 8 px of the line's middle, against the same pixel without
+ink, with the median taken along the line. A single colour cannot clear 3:1 on both white and black.
+Every single-tone material fell to about 2 on white, light grey, mid grey or yellow. Adaptive ice
+clears 3.5 everywhere:
 
-The lab is `.scratch/gel-lab/`. It draws each stroke as a triangle strip. Each vertex holds its
-place across the stroke and along it, which is how a shipped Metal version would draw it too. The
-strokes are 5 pt wide, against 3.5 pt for today's ink. A gel needs that width to show its body.
+| Background | White | Light grey | Mid grey | Grey .46 | Grey .40 | Blue | Yellow | Green | Photo | Dark grey | Black |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Lab | 10.9 | 10.2 | 4.5 | 3.6 | 4.2 | 3.7 | 8.6 | 5.6 | 4.2 | 14.4 | 20.0 |
+| App, in the VM | 12.4 | 11.3 | 4.2 | 4.5 | 5.7 | 3.5 | 9.2 | 6.0 | 4.1 | 16.7 | 20.1 |
 
-**Round 1 was rejected as too rainbow-like.** Its hues swept along the line or round the loop, so
-the line read as a gradient masked by a stroke.
+## How it adapts
 
-**Round 2 lights the line as a solid rod.** Its colour comes from the material, not from a gradient:
-
-- **The light follows the line.** Each pixel's normal turns with the line's direction and its
-  place across the line. So the highlight sits where the rod faces the light, and it slides round
-  every bend.
-- **The iridescence is a thin film.** It is a coating of high-order thickness, which gives pale,
-  pearly colours. Its colour shifts with the view angle, so the rim differs from the middle. It also
-  shifts with the line's direction to the light, so a bend changes it.
-- **The motion is the light.** The light wanders a few degrees, and the film drifts slowly. The
-  sheen moves along the curves. Nothing sweeps across the screen.
-
-| Look | Body | Iridescence |
-|---|---|---|
-| A Opal | Milky, pale grey | Pearly at the rim and in the sheen |
-| B Glass rod | Nearly clear | Only at the rim and in the highlights |
-| C Smoked gel | A deep, near-neutral body | A soft sheen, like oil on water, where it catches light |
-
-Each look draws in Metal. On light pages, A and C hold up, and B nearly disappears.
-
-## Constraints
-
-- **Light pages.** An overlay cannot brighten white, so the glow only tints there. The lab gives
-  the gel a darker rim and a soft shadow on light pages. Yellows and cyans thin out on white.
-  Looks A and C hold up there.
-- **Motion.** The hue drifts slowly. The thinking light already runs along the ink, and the gel's
-  drift must not compete with it. While the agent thinks, the flow could speed up in place of the
-  band. The drift goes through `Settings.motionUI` and stops at motion 0.
-- **Cost.** A Metal version draws one small layer per mark, and redraws only while it moves. Ink
-  sits on screen for a whole turn, so the drift should run at a low rate, or stop once the ink
-  settles.
-- **What `InkMarkLayer` must keep doing:** `showPen`, `ease`, `drawOn` and `undraw` through the
-  reveal mask, `twin` for the green done state, `centreLine` for the thinking band, and the pick
-  preview. The Core Animation path keeps all of them as they are. A Metal path takes the outline's
-  vertices from `InkMarkLayer.outline` and keeps the reveal mask as a layer mask.
+- **The brightness map.** `InkBackdrop` captures each display, without Vignette's own windows, when
+  inking starts (the chord press) and after an answer is drawn, since the agent may have changed the
+  window. Each capture is drawn down to a grid of 8 pt cells (`LivePacket.Luminance`). It takes about
+  100 ms, so the map is there before most strokes start. Cells this size follow windows and regions,
+  not the letters of a text, so the ink does not flicker along a line of type.
+- **The switch.** The ice turns deep blue around brightness 0.46 (`inkGelSwitch`), over a band 0.12
+  wide (`inkGelSwitchWidth`). That is where the two colours give the same contrast: about 3.4.
+- **The sheath.** Across the switch, the deep blue grows in from the line's edge rather than the two
+  colours mixing. A half mix is a mid colour, which stands out from nothing: over a background right
+  at the switch it measured 2.5. A light middle in a dark sheath measured 3.5 there.
+- **A new map fades in** over the one before, in 0.2 s times the motion scale, so a change is not a
+  pop. Ink drawn before the first map is the ice, then turns.
+- **No Screen Recording:** there is no map, and the ink is the ice. It stands out on dark windows
+  and is faint on white. Live ink's asks need the permission anyway.
+- **The done state** is the same rod in green: the green takes the ice's place, and a darker green
+  the deep blue's.
 
 ## As built
 
 - **Drawing.** `InkMarkLayer` draws its line into a `CAMetalLayer` (`InkGel`). Each vertex of the
   line's triangle strip holds its place across the line and along it, its half width and its tangent.
-  The shader lights the line as a rod and adds the film's colour.
+  The shader lights the line as a rod, so its highlight follows every bend.
+- **Where a layer is.** A mark is drawn in its window's overlay or the screen's, so a layer's own
+  points are not screen points. The layer finds its overlay window through the root of its layer tree
+  and converts its frame to global top-left points before it reads the map.
 - **Glow.** A halo strip under the line, wider by the glow's reach, draws the glow and the shadow in
-  one pass, with max blending. A loop that crosses itself is not brighter where it crosses, and a
-  tight bend does not show the halo's folds. Over a dark window the glow adds light. Over a light
-  one the shadow wins.
-- **Bloom.** The glow is brightest where the line faces the light (`inkGelBloom`), so it moves with
-  the sheen.
-- **Motion.** `InkClock` is one display link for every gel layer. It drifts the light and the film
-  at about 30 frames a second, and draws every frame while a line eases onto its shape. Its time runs
-  at `inkGelMotion` times the motion scale, so motion 0 holds the gel still and the link rests. A
-  tweak redraws every gel.
+  one pass, with max blending. A loop that crosses itself is not brighter where it crosses. Over light
+  content the glow mostly goes, since an overlay can only tint there.
+- **Motion.** `InkClock` is one display link for every gel layer. It drifts the light and a slow
+  shimmer along the line at about 30 frames a second, and draws every frame while a line eases onto
+  its shape or a map fades in. Its time runs at `inkGelMotion` times the motion scale, so motion 0
+  holds the gel still and the link rests. A tweak redraws every gel.
 - **What stays the same.** `show`, `showPen`, `ease`, `drawOn`, `undraw`, `twin` and `centreLine`.
-  Drawing on and undrawing still go through a reveal mask, now wide enough for the glow. The green
-  done state is the same gel in green.
-- **What went.** The wet streak behind the pen and the layered Core Animation bodies. The gel's own
-  highlight takes the streak's place.
-- **Width.** The gel's line is `inkGelWidth` wide, 5 pt. Its arrowhead is sized for that width. Hit
-  testing and the image sent to the agent still use the mark's own style, so they are unchanged.
+  Drawing on and undrawing go through a reveal mask wide enough for the glow.
+- **Width.** The line is `inkGelWidth` wide, 5 pt. Hit testing and the image sent to the agent still
+  use the mark's own style.
 
 ## Verified
 
-In the `vignette-e2e` VM (macOS 15.7.7), over a light page and a dark terminal, with strokes from
-`vignette://live-ink-stroke`:
+In the `vignette-e2e` VM (macOS 15.7.7). The app ran from Terminal so it had Screen Recording, over a
+window of bands, a light page and a dark terminal, with strokes from `vignette://live-ink-stroke`:
 
-- **Loops, curved arrows and a sharp V** all draw, and so do their arrowheads.
-- **No seams or folds** show where a loop crosses itself or the V turns.
-- **The drift runs.** About 72,000 pixels changed over 3 s with the ink idle.
-- **CPU.** The app used about 3% while idle with five marks up.
+- **Contrast** as in the table above, measured from the VM's screen against the same screen without
+  ink. `.scratch/gel-test/contrast.py` does the measuring.
+- **The map** came 97 ms after the chord press (`[live-ink] backdrop read`).
+- **Ink drawn before the map** was the ice, and turned when the map came.
+- **CPU.** The app used about 4% while idle with four marks up.
 
-- **Motion 0 holds the gel still.** No pixel changed over 3 s. A tweak still redraws it: changing
-  the body colour changed about 83,000 pixels.
-- **The thinking light** shows clearly over the gel on a dark window. On a light window it barely
-  shows, because its white band runs over a near-white gel.
+An earlier round of the same layer checked motion 0: no pixel changed over 3 s.
 
-Not checked yet: a real 120 Hz display.
+Not checked yet: the thinking light over the deep blue, a real 120 Hz display, and two displays.
