@@ -29,9 +29,10 @@ final class GPUTimes: @unchecked Sendable {
 }
 
 /// Live ink's pointer field (docs/live-ink-cursor-2026-10-10.md): the ring round the pointer while
-/// the chord is held, and the wake, rings that spread behind the pen while it draws. A Metal shader
-/// draws both over a live picture of the screen, which they bend. Without that picture, because
-/// Screen Recording is refused or the stream stopped, the ring still glows and nothing bends.
+/// the chord is held, and the wake that follows the pen while it draws, each in one of several
+/// styles (docs/live-ink-pointer-variants-2026-10-10.md). A Metal shader draws both over a live
+/// picture of the screen, which they bend. Without that picture, because Screen Recording is refused
+/// or the stream stopped, their light still draws and nothing bends.
 ///
 /// It is hidden until its holder shows it, and fades in once its first frame is drawn, so it never
 /// shows the screen as it was before the chord went down. It reads the pointer and the button
@@ -350,33 +351,75 @@ final class PointerField: NSObject {
             if let area, let ring = render(ringLayer, metal.ring, area: area, screen: screen, uniforms: uniforms) { drawn.append(ring) }
         }
         if wake {
-            let rippling = frame != nil && !motion.trail.isEmpty
-            wakeLayer.isHidden = !rippling
-            // Each point: where, its age in seconds, its weight.
-            let points = motion.trail.map { SIMD4<Float>(Float($0.point.x), Float($0.point.y), Float(now - $0.born), $0.weight) }
-            if rippling, let wake = render(wakeLayer, metal.wake, area: CGRect(origin: .zero, size: size), screen: screen,
-                                           uniforms: uniforms, points: points) { drawn.append(wake) }
+            // Without a picture of the screen, only a wake with light of its own draws.
+            let showing = !motion.trail.isEmpty && (frame != nil || ui.wakeLights)
+            wakeLayer.isHidden = !showing
+            if showing {
+                let buffers = wakeBuffers(at: now)
+                if let wake = render(wakeLayer, metal.wake, area: CGRect(origin: .zero, size: size), screen: screen,
+                                     uniforms: uniforms, buffers: [buffers.first, buffers.second]) { drawn.append(wake) }
+            }
         }
         drawn.forEach { $0.commands.commit() }
         // A layer that presents with its transaction shows a drawable only once it is scheduled.
         drawn.forEach { $0.commands.waitUntilScheduled(); $0.drawable.present() }
     }
 
-    /// The square of the screen the ring can reach, stretched as far as it goes, on the screen's
-    /// pixels so its picture is not resampled; nil when none of it is on this screen or it is off.
+    /// The part of the screen the ring can reach, stretched as far as it goes, on the screen's pixels
+    /// so its picture is not resampled; nil when none of it is on this screen or it is off.
     private func ringArea(on size: CGSize) -> CGRect? {
         guard ui.ringShows else { return nil }
         let scale = ringLayer.contentsScale
-        let reach = (CGFloat(ui.liveInkFieldSize) * 1.8 + 24) * (1 + CGFloat(ui.liveInkFieldStretch) * 1.5)
-        let side = ceil(reach * 2 * scale) / scale
-        let area = CGRect(x: ((motion.centre.x - side / 2) * scale).rounded() / scale,
-                          y: ((motion.centre.y - side / 2) * scale).rounded() / scale, width: side, height: side)
-        return area.intersects(CGRect(origin: .zero, size: size)) ? area : nil
+        let reach = ui.ringReach
+        let square = CGRect(x: motion.centre.x - reach, y: motion.centre.y - reach, width: reach * 2, height: reach * 2)
+            .intersection(CGRect(origin: .zero, size: size))
+        guard !square.isNull, square.width > 0, square.height > 0 else { return nil }
+        let left = floor(square.minX * scale) / scale, top = floor(square.minY * scale) / scale
+        return CGRect(x: left, y: top, width: ceil(square.maxX * scale) / scale - left, height: ceil(square.maxY * scale) / scale - top)
+    }
+
+    /// The wake's two buffers, one entry per point of the trail. For Ripples, the first holds each
+    /// point's place, its age in seconds and its weight. For the other styles it holds each point's
+    /// place, 1 over its radius and its height, and the second holds the pen's direction there,
+    /// scaled by its speed, and the point's age as a fraction of its life.
+    private func wakeBuffers(at now: CFTimeInterval) -> (first: [SIMD4<Float>], second: [SIMD4<Float>]) {
+        let trail = motion.trail
+        let second = [SIMD4<Float>](repeating: .zero, count: trail.count)
+        if ui.wakeStyle == 4 {
+            // Less where points crowd, so slow drawing does not stack rings.
+            return (trail.map { SIMD4(Float($0.point.x), Float($0.point.y), Float(now - $0.born), Float(min($0.length / 12, 1))) }, second)
+        }
+        let life = max(ui.liveInkWakeDuration, 0.01)
+        let size = CGFloat(ui.liveInkWakeSize), widen = CGFloat(ui.liveInkWakeWiden)
+        let rise = ui.wakeRise, hold = max(ui.liveInkWakeHold, rise)
+        return (trail.map { point in
+            let age = min(max((now - point.born) / life, 0), 1)
+            // It widens as the square root of its age and flattens as it widens, as a drop of honey spreads.
+            let radius = max(size * ((1 - widen) + widen * CGFloat(age.squareRoot())), 1)
+            let envelope = Self.smootherstep(0, rise, age) * (1 - Self.smootherstep(hold, 1, age))
+            // One bump's integral along a line through it is 0.914 R (32/35), so along a stroke the
+            // field is the envelope whatever the spacing of its points.
+            let height = envelope * Double(point.length / (0.914 * radius))
+            return SIMD4(Float(point.point.x), Float(point.point.y), Float(1 / radius), Float(height))
+        }, trail.map { point in
+            let speed = hypot(point.velocity.dx, point.velocity.dy)
+            let gain = 0.3 + 0.7 * Self.smootherstep(0, 500, Double(speed))
+            let direction = speed > 0 ? CGVector(dx: point.velocity.dx / speed, dy: point.velocity.dy / speed) : .zero
+            let age = min(max((now - point.born) / life, 0), 1)
+            return SIMD4(Float(direction.dx * gain), Float(direction.dy * gain), Float(age), 0)
+        })
+    }
+
+    private static func smootherstep(_ from: Double, _ to: Double, _ x: Double) -> Double {
+        guard to > from else { return x >= to ? 1 : 0 }
+        let t = min(max((x - from) / (to - from), 0), 1)
+        return t * t * t * (t * (t * 6 - 15) + 10)
     }
 
     /// Draws `pipeline` into `target`, placed over `area` of the screen, and answers what to present.
+    /// `buffers` go to the fragment shader from index 1.
     private func render(_ target: CAMetalLayer, _ pipeline: MTLRenderPipelineState, area: CGRect, screen: MTLTexture,
-                        uniforms: FieldUniforms, points: [SIMD4<Float>] = []) -> (commands: MTLCommandBuffer, drawable: CAMetalDrawable)? {
+                        uniforms: FieldUniforms, buffers: [[SIMD4<Float>]] = []) -> (commands: MTLCommandBuffer, drawable: CAMetalDrawable)? {
         guard let queue = Self.metal?.queue else { return nil }
         target.frame = area
         target.drawableSize = CGSize(width: area.width * target.contentsScale, height: area.height * target.contentsScale)
@@ -393,9 +436,9 @@ final class PointerField: NSObject {
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(screen, index: 0)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<FieldUniforms>.stride, index: 0)
-        if !points.isEmpty {
-            var points = points
-            encoder.setFragmentBytes(&points, length: MemoryLayout<SIMD4<Float>>.stride * points.count, index: 1)
+        for (index, buffer) in buffers.enumerated() where !buffer.isEmpty {
+            var buffer = buffer
+            encoder.setFragmentBytes(&buffer, length: MemoryLayout<SIMD4<Float>>.stride * buffer.count, index: index + 1)
         }
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
@@ -411,29 +454,43 @@ final class PointerField: NSObject {
         var uniforms = FieldUniforms()
         uniforms.color = ink
         uniforms.size = SIMD2(Float(size.width), Float(size.height))
-        // Without a picture of the screen there is nothing to bend, only light to draw.
+        uniforms.hasPicture = hasPicture ? 1 : 0
         let trail = motion.trail
-        if hasPicture, let first = trail.first {
+        if let first = trail.first {
             uniforms.wakeCount = UInt32(trail.count)
+            uniforms.wakeStyle = UInt32(ui.wakeStyle)
             uniforms.wakeStrength = Float(ui.liveInkWakeStrength)
             uniforms.wakeSize = Float(ui.liveInkWakeSize)
             uniforms.wakeLife = Float(ui.liveInkWakeDuration)
+            // Without a picture of the screen there is nothing to move, only light to draw.
+            uniforms.wakeLift = hasPicture ? Float(ui.wakeLift) : 0
+            uniforms.wakeBlur = hasPicture ? Float(ui.liveInkWakeBlur * ui.liveInkWakeStrength) : 0
+            uniforms.wakeLook = SIMD4(Float(ui.liveInkWakeSwell), Float(ui.liveInkWakeSplit),
+                                      Float(ui.liveInkWakeLight * ui.liveInkWakeStrength), Float(ui.liveInkWakeMist))
+            uniforms.wakeMaskRadius = ui.ringShows ? Float(1.3 * motion.radius) : 0
             var box = (min: first.point, max: first.point)
             for point in trail.dropFirst().map(\.point) {
                 box = (CGPoint(x: min(box.min.x, point.x), y: min(box.min.y, point.y)), CGPoint(x: max(box.max.x, point.x), y: max(box.max.y, point.y)))
             }
-            // A ring reaches its size, and its packet of waves 24 pt past it.
-            let reach = ui.liveInkWakeSize + 24
+            // A point reaches its size; a ripple's packet of waves reaches 24 pt past it.
+            let reach = ui.liveInkWakeSize + (ui.wakeStyle == 4 ? 24 : 0)
             uniforms.wakeBox = SIMD4(Float(box.min.x - reach), Float(box.min.y - reach), Float(box.max.x + reach), Float(box.max.y + reach))
         }
         if ui.ringShows {
+            uniforms.ringStyle = UInt32(ui.ringStyle)
             uniforms.ringCentre = SIMD2(Float(motion.centre.x), Float(motion.centre.y))
             uniforms.ringVelocity = SIMD2(Float(motion.velocity.dx), Float(motion.velocity.dy))
+            uniforms.ringHotspot = SIMD2(Float(motion.hotspot.x), Float(motion.hotspot.y))
             uniforms.ringRadius = Float(motion.radius)
+            uniforms.ringReach = Float(ui.ringReach)
             uniforms.ringBend = hasPicture ? Float(ui.liveInkFieldBend) : 0
             uniforms.ringSplit = hasPicture ? Float(ui.liveInkFieldSplit) : 0
             uniforms.ringGlow = Float(ui.liveInkFieldGlow)
             uniforms.ringStretch = Float(ui.liveInkFieldStretch)
+            uniforms.ringGlass = SIMD4(Float(ui.liveInkFieldZoom), Float(ui.liveInkFieldClear),
+                                       Float(ui.liveInkFieldShine), Float(ui.liveInkFieldShade))
+            uniforms.ringShape = SIMD4(Float(ui.liveInkFieldSquareness), Float(ui.liveInkFieldBreak),
+                                       Float(ui.liveInkFieldSpread), Float(ui.liveInkFieldDepth))
             // Brighter while the ring is smaller than its size: as it grows in, and while pressing.
             let ringSize = max(CGFloat(ui.liveInkFieldSize), 1)
             uniforms.ringPress = Float(min(max((ringSize - motion.radius) / (ringSize * 0.2), 0), 1))
@@ -442,14 +499,20 @@ final class PointerField: NSObject {
     }
 }
 
-/// How the ring round the pointer and the wake's rings move, stepped once a refresh. Lengths are in
-/// the screen's points, y down from its top-left corner.
+/// How the ring round the pointer and the wake move, stepped once a refresh. Lengths are in the
+/// screen's points, y down from its top-left corner.
 struct PointerFieldMotion {
+    /// A point the pen passed while drawing.
     struct WakePoint: Equatable {
         var point: CGPoint
         var born: CFTimeInterval
-        /// Less where points crowd, so slow drawing does not stack rings.
-        var weight: Float
+        /// The length of the pen's path the point stands for, so a stroke is as strong however far
+        /// apart its points are.
+        var length: CGFloat
+        /// How fast the pen moved there, in points a second; zero at a stroke's first point.
+        var velocity: CGVector
+        /// The stroke it is on. Only points on one stroke merge.
+        var stroke: Int
     }
 
     /// From the arrow's tip, its hotspot, to about the middle of the arrow, so the ring sits round
@@ -457,15 +520,29 @@ struct PointerFieldMotion {
     static let ringOffset = CGVector(dx: 4, dy: 6)
     /// The most wake points the shader takes, which fits `setFragmentBytes`' 4 KB.
     static let trailLimit = 96
+    /// How many of the oldest points merge in pairs when the trail is full.
+    static let mergedAtOnce = 32
+    /// The most points a long step between two refreshes is filled in with.
+    static let fillLimit = 6
 
     /// The ring's centre, how fast it moves in points a second, and its radius.
     private(set) var centre = CGPoint.zero
     private(set) var velocity = CGVector.zero
     private(set) var radius: CGFloat = 0
     private var radiusVelocity: CGFloat = 0
-    /// The points the pen passed while drawing, oldest first, each the centre of one of the wake's rings.
+    /// The points the pen passed while drawing, oldest first.
     private(set) var trail: [WakePoint] = []
+    /// The newest point of the stroke being drawn, nil while the button is up.
+    private var strokeLast: (point: CGPoint, born: CFTimeInterval)?
+    private var stroke = 0
     private var last: CFTimeInterval = 0
+
+    /// The arrow's tip under the ring, which Lens magnifies about. Below a radius of 18 pt it moves
+    /// toward the ring's centre, so it stays inside the part a lens leaves flat.
+    var hotspot: CGPoint {
+        let pull = min(1, 0.5 * radius / (hypot(Self.ringOffset.dx, Self.ringOffset.dy) * 1.25))
+        return CGPoint(x: centre.x - Self.ringOffset.dx * pull, y: centre.y - Self.ringOffset.dy * pull)
+    }
 
     /// Starts over round `pointer` at `now`, with no ring, so the ring grows in.
     mutating func reset(at pointer: CGPoint, now: CFTimeInterval) {
@@ -473,11 +550,12 @@ struct PointerFieldMotion {
         velocity = .zero
         (radius, radiusVelocity) = (0, 0)
         trail = []
+        strokeLast = nil
         last = now
     }
 
-    /// What a step changed that is drawn. The wake changes while its rings spread, and once more when
-    /// the last is gone, so none of it stays.
+    /// What a step changed that is drawn. The wake changes while any of it lasts, and once more when
+    /// the last of it is gone, so none of it stays.
     struct Changes: Equatable {
         var ring = false
         var wake = false
@@ -485,8 +563,8 @@ struct PointerFieldMotion {
 
     /// Moves everything on to `now`, with the pointer at `pointer` and the button down there or not.
     /// The ring follows the pointer over `liveInkFieldFollow` and springs to its size, smaller while
-    /// pressed, over `liveInkFieldFade`. The wake gains a point where the pen is, unless the last one
-    /// is under 6 pt away, and loses those whose ring has spread.
+    /// pressed, over `liveInkFieldFade`. The wake gains points along the pen's path, one every
+    /// `wakeSpacing`, and loses those older than its duration.
     mutating func step(to now: CFTimeInterval, pointer: CGPoint, pressed: Bool, ui: UITweaks) -> Changes {
         let dt = now - last
         last = now
@@ -502,17 +580,65 @@ struct PointerFieldMotion {
             (radius, radiusVelocity) = Tween.spring(value: radius, velocity: radiusVelocity, target: size, settling: ui.liveInkFieldFade, dt: dt)
             moved = hypot(centre.x - before.0.x, centre.y - before.0.y) > 0.01 || abs(radius - before.1) > 0.01
         }
-        let rippling = !trail.isEmpty
+        let lasting = !trail.isEmpty
         trail.removeAll { now - $0.born >= ui.liveInkWakeDuration }
-        if pressed, ui.wakes { wake(at: pointer, now: now) }
-        return Changes(ring: moved, wake: rippling || !trail.isEmpty)
+        if pressed, ui.wakeShows { wake(at: pointer, now: now, spacing: ui.wakeSpacing) } else { strokeLast = nil }
+        return Changes(ring: moved, wake: lasting || !trail.isEmpty)
     }
 
-    private mutating func wake(at point: CGPoint, now: CFTimeInterval) {
-        let spacing = trail.last.map { hypot(point.x - $0.point.x, point.y - $0.point.y) } ?? 12
-        guard spacing >= 6 else { return }
-        trail.append(WakePoint(point: point, born: now, weight: Float(min(spacing / 12, 1))))
+    private mutating func wake(at point: CGPoint, now: CFTimeInterval, spacing: CGFloat) {
+        guard let from = strokeLast else {
+            // The field at a stroke's end has the stroke on one side only, so its first point stands for twice as much.
+            stroke += 1
+            add(WakePoint(point: point, born: now, length: 2 * spacing, velocity: .zero, stroke: stroke))
+            strokeLast = (point, now)
+            return
+        }
+        let distance = hypot(point.x - from.point.x, point.y - from.point.y)
+        guard distance >= spacing else { return }
+        let elapsed = max(now - from.born, 0.001)
+        let velocity = CGVector(dx: (point.x - from.point.x) / elapsed, dy: (point.y - from.point.y) / elapsed)
+        // A long step is filled in, so a flick leaves one smooth stroke rather than beads.
+        let count = min(Int((distance / spacing).rounded(.up)), Self.fillLimit)
+        let length = min(distance / CGFloat(count), max(40, 2 * spacing))
+        for i in 1...count {
+            let f = CGFloat(i) / CGFloat(count)
+            add(WakePoint(point: CGPoint(x: from.point.x + (point.x - from.point.x) * f, y: from.point.y + (point.y - from.point.y) * f),
+                          born: from.born + elapsed * Double(f), length: length, velocity: velocity, stroke: stroke))
+        }
+        strokeLast = (point, now)
+    }
+
+    /// Adds a point. A full trail merges its oldest points in pairs rather than dropping them, since a
+    /// point dropped while its part of the field still shows would make that part jump. The oldest
+    /// are the widest and faintest, so a merge does not show.
+    private mutating func add(_ point: WakePoint) {
+        trail.append(point)
+        guard trail.count > Self.trailLimit else { return }
+        let oldest = min(Self.mergedAtOnce, trail.count)
+        var merged: [WakePoint] = []
+        var i = 0
+        while i < oldest {
+            if i + 1 < oldest, trail[i].stroke == trail[i + 1].stroke {
+                merged.append(Self.merge(trail[i], trail[i + 1]))
+                i += 2
+            } else {
+                merged.append(trail[i])
+                i += 1
+            }
+        }
+        trail = merged + trail[oldest...]
+        // Points that are each a stroke of their own cannot merge, so the oldest of them go.
         if trail.count > Self.trailLimit { trail.removeFirst(trail.count - Self.trailLimit) }
+    }
+
+    private static func merge(_ a: WakePoint, _ b: WakePoint) -> WakePoint {
+        let length = a.length + b.length
+        let wa = a.length / max(length, 0.001), wb = 1 - wa
+        return WakePoint(point: CGPoint(x: (a.point.x + b.point.x) / 2, y: (a.point.y + b.point.y) / 2),
+                         born: (a.born + b.born) / 2, length: length,
+                         velocity: CGVector(dx: a.velocity.dx * wa + b.velocity.dx * wb, dy: a.velocity.dy * wa + b.velocity.dy * wb),
+                         stroke: a.stroke)
     }
 
     private static func ring(at pointer: CGPoint) -> CGPoint {
@@ -524,30 +650,101 @@ struct PointerFieldMotion {
 struct FieldUniforms {
     var color = SIMD4<Float>(repeating: 0)
     var wakeBox = SIMD4<Float>(repeating: 0)
+    var ringGlass = SIMD4<Float>(repeating: 0)
+    var ringShape = SIMD4<Float>(repeating: 0)
+    var wakeLook = SIMD4<Float>(repeating: 0)
     var size = SIMD2<Float>(repeating: 0)
     var origin = SIMD2<Float>(repeating: 0)
     var area = SIMD2<Float>(repeating: 0)
     var ringCentre = SIMD2<Float>(repeating: 0)
     var ringVelocity = SIMD2<Float>(repeating: 0)
+    var ringHotspot = SIMD2<Float>(repeating: 0)
     var wakeCount: UInt32 = 0
+    var ringStyle: UInt32 = 0
+    var wakeStyle: UInt32 = 0
+    var hasPicture: UInt32 = 0
     var wakeStrength: Float = 0
     var wakeSize: Float = 0
     var wakeLife: Float = 0
+    var wakeLift: Float = 0
+    var wakeMaskRadius: Float = 0
+    var wakeBlur: Float = 0
     var ringRadius: Float = 0
     var ringBend: Float = 0
     var ringSplit: Float = 0
     var ringGlow: Float = 0
     var ringStretch: Float = 0
     var ringPress: Float = 0
+    var ringReach: Float = 0
 }
 
+// What the field draws, decided from the settings in one place. The styles are numbers in the file,
+// so they are rounded and kept in range here.
 extension UITweaks {
+    /// 0 Glass, 1 Lens, 2 Squircle, 3 Droplet, 4 Lamp, 5 Caustic.
+    fileprivate var ringStyle: Int { min(max(Int(liveInkFieldStyle.rounded()), 0), 5) }
+    /// 0 Ribbon, 1 Silk, 2 Mist, 3 Frost, 4 Ripples.
+    fileprivate var wakeStyle: Int { min(max(Int(liveInkWakeStyle.rounded()), 0), 4) }
+
     /// The wake follows the pen while drawing. Reduce Motion turns it off, since its duration is motion.
     fileprivate var wakes: Bool { liveInkWakeStrength > 0 && liveInkWakeDuration > 0 && liveInkWakeSize > 0 }
-    /// The ring shows round the pointer while the chord is held.
-    fileprivate var ringShows: Bool { liveInkFieldSize > 0 && (liveInkFieldBend > 0 || liveInkFieldSplit > 0 || liveInkFieldGlow > 0) }
+    /// The wake moves the screen, which needs a live picture of it.
+    fileprivate var wakeBends: Bool {
+        guard wakes else { return false }
+        switch wakeStyle {
+        case 0: return liveInkWakeLift > 0 && (liveInkWakeSwell != 0 || liveInkWakeSplit > 0)
+        case 1: return liveInkWakeLift > 0
+        case 2: return liveInkWakeLift > 0 && liveInkWakeSwell != 0
+        case 3: return liveInkWakeBlur > 0 || (liveInkWakeLift > 0 && liveInkWakeSwell != 0)
+        default: return true
+        }
+    }
+    /// The wake has light of its own, which draws without a picture of the screen.
+    fileprivate var wakeLights: Bool { wakes && [0, 2, 3].contains(wakeStyle) && liveInkWakeLight > 0 }
+    fileprivate var wakeShows: Bool { wakeBends || wakeLights }
+    /// How far apart the wake's points are. Ripples keep one ring every 6 pt; the other styles need a
+    /// point every 0.4 of the narrowest radius for a smooth stroke.
+    fileprivate var wakeSpacing: CGFloat {
+        wakeStyle == 4 ? 6 : max(2, 0.4 * CGFloat(liveInkWakeSize * (1 - liveInkWakeWiden)))
+    }
+    /// How long a point of the wake takes to come in, a fraction of its duration. Silk comes in later,
+    /// since it moves the screen under the pen's own ink.
+    fileprivate var wakeRise: Double { wakeStyle == 1 ? max(liveInkWakeRise, 0.25) : liveInkWakeRise }
+    /// The most the wake moves the screen, in points: no more than a quarter of its narrowest radius,
+    /// and 4 pt for Silk.
+    fileprivate var wakeLift: Double {
+        let narrowest = liveInkWakeSize * (1 - liveInkWakeWiden)
+        return min(liveInkWakeLift, 0.25 * narrowest, wakeStyle == 1 ? 4 : .infinity) * liveInkWakeStrength
+    }
+
     /// The ring bends the screen, which needs a live picture of it.
-    fileprivate var ringBends: Bool { liveInkFieldSize > 0 && (liveInkFieldBend > 0 || liveInkFieldSplit > 0) }
-    fileprivate var drawsField: Bool { wakes || ringShows }
-    fileprivate var capturesScreen: Bool { wakes || ringBends }
+    fileprivate var ringBends: Bool {
+        guard liveInkFieldSize > 0 else { return false }
+        switch ringStyle {
+        case 1: return liveInkFieldBend > 0 || liveInkFieldSplit > 0 || liveInkFieldZoom > 1
+        case 4: return false
+        case 5: return liveInkFieldBend > 0
+        default: return liveInkFieldBend > 0 || liveInkFieldSplit > 0
+        }
+    }
+    /// The ring shows round the pointer while the chord is held.
+    fileprivate var ringShows: Bool {
+        liveInkFieldSize > 0 && (ringBends || liveInkFieldGlow > 0
+            || ([1, 5].contains(ringStyle) && (liveInkFieldShine > 0 || liveInkFieldShade > 0)))
+    }
+    /// How far from its centre the ring draws anything, at its most stretched. The ring's layer is
+    /// this far each way, so it is capped at 600 pt.
+    fileprivate var ringReach: CGFloat {
+        let size = CGFloat(liveInkFieldSize), stretch = CGFloat(liveInkFieldStretch)
+        let glass = (size * 1.8 + 24) * (1 + 1.5 * stretch)
+        let reach: CGFloat
+        switch ringStyle {
+        case 3: reach = max(glass, size * (2.5 + 2.4 * stretch) + 8)
+        case 4: reach = (3 * CGFloat(liveInkFieldSpread) * size + 8) * (1 + 0.5 * stretch)
+        default: reach = glass
+        }
+        return min(reach, 600)
+    }
+    fileprivate var drawsField: Bool { wakeShows || ringShows }
+    fileprivate var capturesScreen: Bool { wakeBends || ringBends }
 }

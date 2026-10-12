@@ -307,18 +307,37 @@ struct UITweaks: Codable, Equatable {
     var liveInkFieldDelay = 0.25     // how long the chord is held before it shows, unless a press shows it sooner
     var liveInkFieldFade = 0.5       // how long it fades in and out, and the ring grows in
     var liveInkFieldOpacity = 1.0    // the ring and the wake
-    // The wake: rings that spread behind the pen while drawing and bend the screen under them. 0 is off.
-    var liveInkWakeStrength = 0.95   // 0 to 1: how far the rings move the screen
-    var liveInkWakeSize = 36.0       // points a ring spreads before it is gone
-    var liveInkWakeDuration = 0.85   // how long a ring lasts
+    // The wake: what follows the pen while drawing, in one of five styles. Strength 0 is off.
+    var liveInkWakeStrength = 0.95   // 0 to 1: how far it moves the screen, and how bright its light is
+    var liveInkWakeSize = 36.0       // how far it reaches from the stroke; Ripples: how far a ring spreads
+    var liveInkWakeDuration = 0.85   // how long it lasts
+    var liveInkWakeStyle = 0.0       // 0 Ribbon, 1 Silk, 2 Mist, 3 Frost, 4 Ripples
+    var liveInkWakeLift = 8.0        // Ribbon, Silk, Mist, Frost: the most it moves the screen, in points
+    var liveInkWakeWiden = 0.5       // how much narrower it is when new; it spreads to its size as it ages
+    var liveInkWakeRise = 0.12       // how long it takes to come in behind the pen, a fraction of its duration
+    var liveInkWakeHold = 0.15       // where it starts to fade, a fraction of its duration
+    var liveInkWakeSwell = 1.0       // -1 to 1: it swells across the stroke; below 0 it pulls the screen in
+    var liveInkWakeSplit = 0.3       // Ribbon: how far red and blue part on its slopes
+    var liveInkWakeLight = 0.2       // Ribbon and Frost: their haze and sheen; Mist: how bright it is
+    var liveInkWakeMist = 0.5        // Mist: the contrast of its slow clumps; 0 is a smooth band
+    var liveInkWakeBlur = 2.5        // Frost: the most it blurs, in points
     // The ring: it bends the screen under it and glows in the ink colour, with a still middle so what
     // the pointer is on stays put.
     var liveInkFieldSize = 30.0      // the ring's radius in points; 0 turns it off
-    var liveInkFieldBend = 0.8       // 0 to 2: how far the ring moves what is under it
-    var liveInkFieldSplit = 0.4      // 0 to 1: how far red and blue part where the ring moves the picture
+    var liveInkFieldBend = 0.8       // 0 to 1.8: how far the ring moves what is under it
+    var liveInkFieldSplit = 0.4      // 0 to 2: how far red and blue part where the ring moves the picture
     var liveInkFieldGlow = 0.5       // 0 to 1: the ink-coloured light on and round the ring
     var liveInkFieldFollow = 0.12    // how long the ring takes to catch up with the pointer; 0 holds it on it
     var liveInkFieldStretch = 0.5    // 0 to 1: how far the ring stretches along the way the pointer moves
+    var liveInkFieldStyle = 0.0      // 0 Glass, 1 Lens, 2 Squircle, 3 Droplet, 4 Lamp, 5 Caustic
+    var liveInkFieldZoom = 1.0       // Lens: magnifies its middle about the arrow's tip; 1 is none
+    var liveInkFieldClear = 0.4      // Lens and Lamp: how much of the middle is left alone
+    var liveInkFieldShine = 0.6      // Lens: its rim and highlight; Caustic: its glass edge
+    var liveInkFieldShade = 0.4      // Lens and Caustic: the darker parts that let them read on white
+    var liveInkFieldSquareness = 4.5 // Squircle: 2 is a circle, 4.5 Apple's continuous corners, 8 nearly square
+    var liveInkFieldBreak = 0.0      // Squircle: 0 is a closed outline; raised, only its corners remain
+    var liveInkFieldSpread = 1.7     // Lamp: how far its light reaches, in ring sizes
+    var liveInkFieldDepth = 0.12     // Caustic: how far into the ring its bright crescent reaches, a fraction of the size
     // Live ink's answers
     var liveInkDrawOn = 0.5          // how long an answer's mark takes to draw itself on
     var liveInkHideFade = 0.12       // a mark fading out as the content under it starts to move
@@ -433,9 +452,20 @@ struct UITweaks: Codable, Equatable {
         Bound("liveInkFieldDelay", \.liveInkFieldDelay, 0...60), Bound("liveInkFieldFade", \.liveInkFieldFade, 0...60),
         Bound("liveInkWakeStrength", \.liveInkWakeStrength, 0...1),
         Bound("liveInkWakeSize", \.liveInkWakeSize, 0...1000), Bound("liveInkWakeDuration", \.liveInkWakeDuration, 0...10),
-        Bound("liveInkFieldSize", \.liveInkFieldSize, 0...200), Bound("liveInkFieldBend", \.liveInkFieldBend, 0...2),
-        Bound("liveInkFieldSplit", \.liveInkFieldSplit, 0...1), Bound("liveInkFieldGlow", \.liveInkFieldGlow, 0...1),
+        Bound("liveInkWakeStyle", \.liveInkWakeStyle, 0...4), Bound("liveInkWakeLift", \.liveInkWakeLift, 0...20),
+        Bound("liveInkWakeWiden", \.liveInkWakeWiden, 0...0.8), Bound("liveInkWakeRise", \.liveInkWakeRise, 0.02...0.5),
+        Bound("liveInkWakeHold", \.liveInkWakeHold, 0...0.7), Bound("liveInkWakeSwell", \.liveInkWakeSwell, -1...1),
+        Bound("liveInkWakeSplit", \.liveInkWakeSplit, 0...1), Bound("liveInkWakeLight", \.liveInkWakeLight, 0...1),
+        Bound("liveInkWakeMist", \.liveInkWakeMist, 0...1), Bound("liveInkWakeBlur", \.liveInkWakeBlur, 0...6),
+        // Bend past 1.8 folds the glass where the ridge is steepest.
+        Bound("liveInkFieldSize", \.liveInkFieldSize, 0...200), Bound("liveInkFieldBend", \.liveInkFieldBend, 0...1.8),
+        Bound("liveInkFieldSplit", \.liveInkFieldSplit, 0...2), Bound("liveInkFieldGlow", \.liveInkFieldGlow, 0...1),
         Bound("liveInkFieldFollow", \.liveInkFieldFollow, 0...1), Bound("liveInkFieldStretch", \.liveInkFieldStretch, 0...1),
+        Bound("liveInkFieldStyle", \.liveInkFieldStyle, 0...5), Bound("liveInkFieldZoom", \.liveInkFieldZoom, 1...1.6),
+        Bound("liveInkFieldClear", \.liveInkFieldClear, 0...1), Bound("liveInkFieldShine", \.liveInkFieldShine, 0...1),
+        Bound("liveInkFieldShade", \.liveInkFieldShade, 0...1), Bound("liveInkFieldSquareness", \.liveInkFieldSquareness, 2...8),
+        Bound("liveInkFieldBreak", \.liveInkFieldBreak, 0...1), Bound("liveInkFieldSpread", \.liveInkFieldSpread, 0.8...3),
+        Bound("liveInkFieldDepth", \.liveInkFieldDepth, 0.04...0.3),
         Bound("liveInkDrawOn", \.liveInkDrawOn, 0...60),
         Bound("liveInkHideFade", \.liveInkHideFade, 0...10), Bound("liveInkShowFade", \.liveInkShowFade, 0...10), Bound("liveInkTextSize", \.liveInkTextSize, 4...200),
         Bound("liveInkTextWidth", \.liveInkTextWidth, 40...2000),
