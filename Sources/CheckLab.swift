@@ -101,33 +101,48 @@ private struct CheckLabView: View {
             Form {
                 Section {
                     ColorTweak("Colour", \.checkColor)
-                    Tweak("Shine", \.checkShine, 0...1, step: 0.01)
-                    Tweak("Depth", \.checkDepth, 0...1, step: 0.01)
-                    Tweak("Light angle", \.checkLightAngle, -180...180, unit: "°")
-                    Tweak("Rim", \.checkRim, 0...1, step: 0.01)
-                    Tweak("Rim width", \.checkRimWidth, 0...0.2, step: 0.01)
-                    Tweak("Highlight", \.checkHighlight, 0...1, step: 0.01)
-                    Tweak("Highlight size", \.checkHighlightSize, 0...1.2, step: 0.01)
+                    Tweak("Roughness", \.checkRoughness, 0...1, step: 0.01)
+                    Tweak("Dome", \.checkDome, 0...0.6, step: 0.01)
+                    Tweak("Rim", \.checkRim, 0...0.5, step: 0.01)
                 } header: {
                     Text("Metal")
                 } footer: {
-                    Text("The disc's gradient runs from the colour taken toward white by Shine, on the side the light comes from, to the colour taken toward black by Depth. The rim is light on that side and shade on the other. Light angle is in degrees clockwise from the top, and turns the gradient, the rim and the highlight together. Widths and sizes are fractions of the disc.")
+                    Text("Colour is what the metal reflects face on; at a grazing angle every metal reflects white. Roughness softens every reflection, from a mirror at 0 to brushed at 1. Dome is how far the middle rises, and Rim how wide the rounded edge is, both fractions of the radius.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section("Check mark") {
-                    Tweak("Size", \.checkGlyphSize, 0.2...0.8, step: 0.01)
-                    Tweak("Shadow", \.checkGlyphShadow, 0...1, step: 0.01)
+                Section {
+                    Tweak("Angle", \.checkLightAngle, -180...180, unit: "°")
+                    Tweak("Height", \.checkLightHeight, 5...90, unit: "°")
+                    Tweak("Key light", \.checkLight, 0...3, step: 0.01)
+                    Tweak("Studio contrast", \.checkStudio, 0...1, step: 0.01)
+                } header: {
+                    Text("Light")
+                } footer: {
+                    Text("The disc reflects a studio: a bright ceiling, a soft horizon well below eye level, a dim floor, and a key light, a soft box like a window, at Angle, clockwise from the top, and Height above the disc. The metal reflects the studio in its own colour, and a clear coat over it reflects the lights white. Studio contrast is how much brighter the ceiling is than the floor.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
-                    Tweak("Brightness", \.checkGlare, 0...1, step: 0.01)
-                    Tweak("Width", \.checkGlareWidth, 0.05...1, step: 0.01)
+                    ColorTweak("Colour", \.checkMarkColor)
+                    Tweak("Size", \.checkMarkSize, 0.2...0.8, step: 0.01)
+                    Tweak("Height", \.checkMarkHeight, 0...0.3, step: 0.01)
+                    Tweak("Bevel", \.checkMarkBevel, 0...0.2, step: 0.01)
+                    Tweak("Shadow", \.checkMarkShadow, 0...1, step: 0.01)
+                } header: {
+                    Text("Check mark")
+                } footer: {
+                    Text("The mark is raised out of the disc in its own metal. Height is how far it stands, and Bevel how wide its rounded edge is, both fractions of the disc. Its shadow falls away from the key light.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section {
+                    Tweak("Brightness", \.checkGlare, 0...3, step: 0.01)
+                    Tweak("Width", \.checkGlareWidth, 0.01...0.6, step: 0.01)
                     Tweak("Tilt", \.checkGlareAngle, -60...60, unit: "°")
                     Tweak("Duration", \.checkGlareDuration, 0.1...2, step: 0.01, unit: "s")
                     Tweak("Delay", \.checkGlareDelay, 0...1, step: 0.01, unit: "s")
                 } header: {
                     Text("Glare")
                 } footer: {
-                    Text("A band of light that crosses the disc once, Delay after the check appears. Brightness 0 turns it off. Tilt is from upright.")
+                    Text("A strip light swept across the studio once, Delay after the check appears. The disc reflects it as a band that bends over the dome and flashes along the rim and the mark's edges. Brightness 0 turns it off. Tilt is from upright.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
@@ -137,7 +152,7 @@ private struct CheckLabView: View {
                 } header: {
                     Text("Bloom")
                 } footer: {
-                    Text("The part of the glare brighter than Threshold, spread over Radius, a fraction of the disc, and added back, so the band glows past its edges and past the disc's. Strength 0 turns it off. It shows on the dark veil, not on the white ring of a send's badge.")
+                    Text("What is brighter than Threshold, the lights' reflections most of all, blurred over Radius, a fraction of the disc, and added back, so it glows past the disc's edge. Strength 0 turns it off. It shows on the dark veil, not on the white ring of a send's badge.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
@@ -145,6 +160,7 @@ private struct CheckLabView: View {
                         settings.update { settings in
                             let defaults = UITweaks()
                             settings.ui.checkColor = defaults.checkColor
+                            settings.ui.checkMarkColor = defaults.checkMarkColor
                             for bound in UITweaks.bounds where bound.name.hasPrefix("check") {
                                 settings.ui[keyPath: bound.path] = defaults[keyPath: bound.path]
                             }

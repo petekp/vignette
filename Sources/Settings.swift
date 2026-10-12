@@ -130,7 +130,7 @@ struct SettingsData: Codable, Equatable {
             notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"
         }
         for (name, path) in [("personColor", \UITweaks.personColor), ("agentColor", \.agentColor), ("edgeColor", \.edgeColor),
-                             ("noteTextColor", \.noteTextColor), ("checkColor", \.checkColor)] where SRGB(hex: d.ui[keyPath: path]) == nil {
+                             ("noteTextColor", \.noteTextColor), ("checkColor", \.checkColor), ("checkMarkColor", \.checkMarkColor)] where SRGB(hex: d.ui[keyPath: path]) == nil {
             let fixed = UITweaks()[keyPath: path]
             notes.append("ui.\(name) \"\(d.ui[keyPath: path])\" -> \"\(fixed)\": a colour is #rrggbb"); d.ui[keyPath: path] = fixed
         }
@@ -193,26 +193,29 @@ struct UITweaks: Codable, Equatable {
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
     var markSeconds = 1.7            // how long a card's notice stays; the stored key keeps its older name
     var sendGraceSeconds = 3.0       // how long a Send waits before its session gets it; 0 sends at once
-    // The success check on a copied or sent card (MetalCheck; docs/check-lab-2026-10-11.md). Lengths
-    // are fractions of its diameter, so it looks the same at every size.
-    var checkColor = "#29b84d"       // the metal's own colour, the middle of its gradient
-    var checkShine = 0.55            // 0 to 1: how far the lit side goes toward white
-    var checkDepth = 0.45            // 0 to 1: how far the far side goes toward black
-    var checkLightAngle = -45.0      // where the light comes from, degrees clockwise from the top
-    var checkRim = 1.0               // 0 to 1: the bevel's light on the lit edge and shade on the far one
-    var checkRimWidth = 0.05
-    var checkHighlight = 0.8         // 0 to 1: the fixed highlight's brightness
-    var checkHighlightSize = 0.53
-    var checkGlyphSize = 0.5
-    var checkGlyphShadow = 0.35      // 0 to 1
-    var checkGlare = 0.75            // 0 to 1: the band of light's peak; 0 turns the glare off
-    var checkGlareWidth = 0.33
-    var checkGlareAngle = 25.0       // the band's tilt from upright, in degrees
-    var checkGlareDuration = 0.55    // how long the band takes to cross
+    // The success check on a copied or sent card (MetalCheck; docs/check-lab-2026-10-11.md): a domed
+    // metal disc and a raised mark, lit by reflecting a studio. Lengths are fractions of its diameter.
+    var checkColor = "#29b84d"       // the disc's metal: the colour it reflects face on
+    var checkMarkColor = "#eef1f3"   // the mark's metal
+    var checkRoughness = 0.3         // 0 a mirror, 1 brushed: how soft every reflection is
+    var checkDome = 0.25             // how far the disc's middle rises, a fraction of its radius
+    var checkRim = 0.18              // the rounded rim's width, a fraction of the radius
+    var checkLightAngle = -40.0      // where the key light is, degrees clockwise from the top
+    var checkLightHeight = 50.0      // its height above the disc's plane, in degrees
+    var checkLight = 1.6             // 0 to 3: its strength
+    var checkStudio = 0.75           // 0 to 1: how much brighter the studio's ceiling is than its floor
+    var checkMarkSize = 0.5
+    var checkMarkHeight = 0.06
+    var checkMarkBevel = 0.05
+    var checkMarkShadow = 0.25       // 0 to 1
+    var checkGlare = 1.4             // 0 to 3: the swept strip light; 0 turns the glare off
+    var checkGlareWidth = 0.08       // the strip's width as the disc reflects it, 0 to 1
+    var checkGlareAngle = 25.0       // the strip's tilt from upright, in degrees
+    var checkGlareDuration = 0.55    // how long the strip takes to cross
     var checkGlareDelay = 0.12       // after the check appears
-    var checkBloom = 1.0             // 0 to 2: the glare's bloom; 0 turns it off
-    var checkBloomRadius = 0.4
-    var checkBloomThreshold = 0.2    // 0 to 1: how bright the band must be to bloom
+    var checkBloom = 1.0             // 0 to 2: the bloom; 0 turns it off
+    var checkBloomRadius = 0.35
+    var checkBloomThreshold = 0.7    // 0 to 1: how bright a reflection must be to bloom
     var slideInDuration = 0.3
     var slideInCurve = "spring"      // spring, easeOut, easeInOut, linear
     var slideOutDuration = 0.15
@@ -390,12 +393,13 @@ struct UITweaks: Codable, Equatable {
         Bound("autoScrollZone", \.autoScrollZone, 0...10_000), Bound("autoScrollSpeed", \.autoScrollSpeed, 0...10_000),
         Bound("thumbnailSeconds", \.thumbnailSeconds, 0...3600), Bound("markSeconds", \.markSeconds, 0...3600),
         Bound("sendGraceSeconds", \.sendGraceSeconds, 0...10),
-        Bound("checkShine", \.checkShine, 0...1), Bound("checkDepth", \.checkDepth, 0...1),
-        Bound("checkLightAngle", \.checkLightAngle, -180...180), Bound("checkRim", \.checkRim, 0...1),
-        Bound("checkRimWidth", \.checkRimWidth, 0...0.5), Bound("checkHighlight", \.checkHighlight, 0...1),
-        Bound("checkHighlightSize", \.checkHighlightSize, 0...2), Bound("checkGlyphSize", \.checkGlyphSize, 0.05...1),
-        Bound("checkGlyphShadow", \.checkGlyphShadow, 0...1), Bound("checkGlare", \.checkGlare, 0...1),
-        Bound("checkGlareWidth", \.checkGlareWidth, 0.01...2), Bound("checkGlareAngle", \.checkGlareAngle, -90...90),
+        Bound("checkRoughness", \.checkRoughness, 0...1), Bound("checkDome", \.checkDome, 0...1),
+        Bound("checkRim", \.checkRim, 0...1), Bound("checkLightAngle", \.checkLightAngle, -180...180),
+        Bound("checkLightHeight", \.checkLightHeight, 5...90), Bound("checkLight", \.checkLight, 0...3),
+        Bound("checkStudio", \.checkStudio, 0...1), Bound("checkMarkSize", \.checkMarkSize, 0.05...1),
+        Bound("checkMarkHeight", \.checkMarkHeight, 0...0.5), Bound("checkMarkBevel", \.checkMarkBevel, 0...0.3),
+        Bound("checkMarkShadow", \.checkMarkShadow, 0...1), Bound("checkGlare", \.checkGlare, 0...3),
+        Bound("checkGlareWidth", \.checkGlareWidth, 0.01...1), Bound("checkGlareAngle", \.checkGlareAngle, -90...90),
         Bound("checkGlareDuration", \.checkGlareDuration, 0...10), Bound("checkGlareDelay", \.checkGlareDelay, 0...10),
         Bound("checkBloom", \.checkBloom, 0...2), Bound("checkBloomRadius", \.checkBloomRadius, 0...1),
         Bound("checkBloomThreshold", \.checkBloomThreshold, 0...0.95),
