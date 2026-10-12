@@ -212,40 +212,45 @@ struct InkHand: Equatable {
     private static let rectangleCorner: CGFloat = 4
 }
 
-/// The person's ink: a filled outline whose width follows the hand, darker towards its edges, with
-/// a soft shadow under it. While it is wet, a lighter streak trails the pen and dries off.
+/// The person's ink: a rod of opal gel whose width follows the hand, drawn by `InkGel` into a Metal
+/// layer, with a glow under it. Its light and film drift on `InkClock`'s time, so it looks alive
+/// while it is on the screen (docs/live-ink-gel-2026-10-12.md).
 @MainActor
 final class InkMarkLayer: CALayer {
-    /// The body, outermost first, each narrower and nearer the ink's own colour.
-    private var bodies: [CAShapeLayer] = []
-    private let head = CAShapeLayer()
-    private let sheen = CAShapeLayer()
-    /// What is drawn: the mark, the hand it was given, and the hand it is drawn with, which is an
-    /// even one when it was given none.
-    private var shown: (mark: Mark, given: InkHand?, hand: InkHand, markStyle: MarkStyle)?
+    private let gel = CAMetalLayer()
+    /// What is drawn: the mark, the hand it was given, the hand it is drawn with, which is an even one
+    /// when it was given none, and the style its line is laid out in.
+    private var shown: (mark: Mark, given: InkHand?, hand: InkHand, markStyle: MarkStyle, inkStyle: MarkStyle)?
+    /// The stroke being drawn, while this is the pen.
+    private var pen: (stroke: InkHand.Stroke, markStyle: MarkStyle)?
+    /// The shape as it settles: the line and head drawn now, and while easing, the line it eases from.
+    private var shape: InkGel.Shape?
+    private var easing: (from: InkHand.Stroke, start: CFTimeInterval, duration: CFTimeInterval)?
+    /// The done state's colour, in place of the gel's own.
+    private var override: CGColor?
+    /// The vertices for `shape` as it is, kept while it holds still, and the frame they are in.
+    private var built: (buffer: MTLBuffer, halo: Int, body: Int)?
+    /// Something changed since the last drawing: draw at the next tick, whatever the clock's rate.
+    private(set) var needsGel = false
     /// The centre line as drawn, for the thinking light and drawing on.
     private(set) var centreLine: CGPath?
-    /// The widest the ink is, in points.
+    /// The widest the line is, in points.
     private var widest: CGFloat = 0
 
     init(scale: CGFloat) {
-        bodies = Self.bodyWidths.map { _ in CAShapeLayer() }
         super.init()
         anchorPoint = .zero
         contentsScale = scale
-        for layer in bodies + [head, sheen] {
-            layer.anchorPoint = .zero
-            layer.contentsScale = scale
-            layer.strokeColor = nil
-            addSublayer(layer)
-        }
-        for layer in [bodies[0], head] {
-            layer.shadowColor = CGColor(gray: 0, alpha: 1)
-            layer.shadowOffset = CGSize(width: 0, height: 0.5)
-            layer.shadowRadius = Self.shadowRadius
-            layer.shadowOpacity = Self.shadowOpacity
-        }
-        sheen.opacity = 0
+        gel.anchorPoint = .zero
+        gel.contentsScale = scale
+        gel.isOpaque = false
+        gel.framebufferOnly = true
+        gel.pixelFormat = .bgra8Unorm
+        gel.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+        gel.maximumDrawableCount = 3
+        gel.presentsWithTransaction = true
+        gel.device = InkGel.metal?.device
+        addSublayer(gel)
     }
 
     override init(layer: Any) {
@@ -256,59 +261,48 @@ final class InkMarkLayer: CALayer {
 
     /// Draws `mark` as `hand` drew it, or evenly with no hand, unless it is drawn already as it is.
     func show(_ mark: Mark, hand: InkHand?, markStyle: MarkStyle) {
-        if let shown, shown.mark == mark, shown.given == hand, shown.markStyle == markStyle { return }
-        guard let drawing = hand ?? InkHand.even(for: mark, markStyle: markStyle) else { return }
-        shown = (mark, hand, drawing, markStyle)
-        let points = drawing.points(of: mark, markStyle: markStyle)
-        draw(InkHand.Stroke(points: points, widths: drawing.widths), markStyle: markStyle, colour: markStyle.color(mark.color))
-        head.path = mark.shape(pointScale: 1, markStyle: markStyle)?.filled
-        head.shadowPath = head.path
+        let inkStyle = Self.inkStyle(markStyle)
+        if let shown, shown.mark == mark, shown.given == hand, shown.inkStyle == inkStyle { return }
+        guard let drawing = hand ?? InkHand.even(for: mark, markStyle: inkStyle) else { return }
+        shown = (mark, hand, drawing, markStyle, inkStyle)
+        pen = nil
+        easing = nil
+        lay(InkHand.Stroke(points: drawing.points(of: mark, markStyle: inkStyle), widths: drawing.widths),
+            head: InkGel.corners(of: mark.shape(pointScale: 1, markStyle: inkStyle)?.filled), width: inkStyle.strokeWidth, growOnly: false)
     }
 
-    /// The stroke being drawn: its end at the pen, and the wet streak trailing it.
+    /// The stroke being drawn, its end at the pen. It draws at once, in the pointer's own event.
     func showPen(_ stroke: InkHand.Stroke, markStyle: MarkStyle) {
         shown = nil
-        head.path = nil
-        head.shadowPath = nil
-        draw(stroke, markStyle: markStyle, colour: markStyle.color(.person))
-        sheen.path = Self.sheen(of: stroke, width: markStyle.strokeWidth)
-        sheen.opacity = 1
+        easing = nil
+        pen = (stroke, markStyle)
+        // A new stroke starts the layer afresh; one under way only grows it.
+        lay(stroke, head: [], width: Self.inkStyle(markStyle).strokeWidth, growOnly: stroke.points.count > 3)
+        if isVisible, let frame = encode(at: CACurrentMediaTime(), time: InkClock.shared.time) {
+            frame.commands.commit()
+            frame.commands.waitUntilScheduled()
+            frame.drawable.present()
+        }
     }
 
-    /// A copy in `markStyle`, as the done state's green.
+    /// A copy in `markStyle`'s person colour, as the done state's green.
     func twin(in markStyle: MarkStyle) -> InkMarkLayer {
         let twin = InkMarkLayer(scale: contentsScale)
+        twin.override = markStyle.color(.person)
         if let shown { twin.show(shown.mark, hand: shown.hand, markStyle: markStyle) }
         return twin
     }
 
     /// Eases from where the hand drew it onto its shape over `duration`, keeping the hand's widths,
-    /// while the wet streak dries.
+    /// its head coming in as it arrives.
     func ease(from drawn: InkHand.Stroke, duration: CFTimeInterval) {
-        guard let shown, duration > 0 else { return }
-        let hand = shown.hand
-        let width = shown.markStyle.strokeWidth
-        let now = convertTime(CACurrentMediaTime(), from: nil)
-        let curve = CAMediaTimingFunction(controlPoints: 0.3, 0, 0.2, 1)
-        func animate(_ layer: CALayer, _ key: String, from: Any?, duration: CFTimeInterval, timing: CAMediaTimingFunction = curve) {
-            let animation = CABasicAnimation(keyPath: key)
-            animation.fromValue = from
-            animation.beginTime = now
-            animation.duration = duration
-            animation.timingFunction = timing
-            animation.fillMode = .backwards
-            layer.add(animation, forKey: "ease-\(key)")
-        }
-        for (layer, fraction) in zip(bodies, Self.bodyWidths) {
-            animate(layer, "path", from: Self.outline(drawn, width: width * fraction), duration: duration)
-        }
-        animate(bodies[0], "shadowPath", from: Self.outline(drawn, width: width), duration: duration)
-        animate(head, "opacity", from: 0, duration: duration, timing: CAMediaTimingFunction(name: .easeIn))
-        let final = InkHand.Stroke(points: hand.points(of: shown.mark, markStyle: shown.markStyle), widths: hand.widths)
-        sheen.path = Self.sheen(of: final, width: width)
-        sheen.opacity = 0
-        animate(sheen, "path", from: Self.sheen(of: drawn, width: width), duration: duration)
-        animate(sheen, "opacity", from: 1, duration: Self.dry * Double(Settings.shared.motionScale), timing: CAMediaTimingFunction(name: .easeOut))
+        guard let shape, duration > 0, drawn.points.count == shape.stroke.points.count else { return }
+        easing = (drawn, CACurrentMediaTime(), duration)
+        // The layer covers both ends of the ease, so it is not resized while it runs.
+        fit(covering: [shape.stroke, drawn], growOnly: false)
+        built = nil
+        needsGel = true
+        InkClock.shared.wake()
     }
 
     /// Draws itself on along its centre line after `delay`, over `duration`, its head appearing as
@@ -330,13 +324,6 @@ final class InkMarkLayer: CALayer {
         }
         reveal.add(grow, forKey: "drawOn")
         CATransaction.commit()
-        let appear = CABasicAnimation(keyPath: "opacity")
-        appear.fromValue = 0
-        appear.toValue = 1
-        appear.beginTime = begin + duration * 0.85
-        appear.duration = duration * 0.25
-        appear.fillMode = .backwards
-        head.add(appear, forKey: "drawOn")
     }
 
     /// Un-draws along its centre line from `begin`, in this layer's time, over `duration`, and stays
@@ -362,79 +349,150 @@ final class InkMarkLayer: CALayer {
         reveal.path = line
         reveal.fillColor = nil
         reveal.strokeColor = CGColor(gray: 0, alpha: 1)
-        reveal.lineWidth = widest + Self.shadowRadius * 4
+        // Wide enough for the glow, and round its end for the head.
+        reveal.lineWidth = widest + 2 * Self.reach + 8
         reveal.lineCap = .round
         reveal.lineJoin = .round
         mask = reveal
         return reveal
     }
 
-    private func draw(_ stroke: InkHand.Stroke, markStyle: MarkStyle, colour: CGColor) {
-        let width = markStyle.strokeWidth
-        for ((layer, fraction), darken) in zip(zip(bodies, Self.bodyWidths), Self.bodyDarkening) {
-            layer.path = Self.outline(stroke, width: width * fraction)
-            layer.fillColor = colour.mixed(with: .black, darken)
+    // MARK: Drawing
+
+    /// The tweaks changed: lay the line out again in case its width changed, and draw it.
+    func settingsChanged() {
+        if let shown {
+            self.shown = nil
+            show(shown.mark, hand: shown.given, markStyle: shown.markStyle)
+        } else if let pen {
+            showPen(pen.stroke, markStyle: pen.markStyle)
         }
-        bodies.first?.shadowPath = bodies.first?.path
-        head.fillColor = colour.mixed(with: .black, Self.bodyDarkening[1])
-        sheen.fillColor = colour.mixed(with: .white, Self.sheenLightening)
+        built = nil
+        needsGel = true
+        InkClock.shared.wake()
+    }
+
+    private func lay(_ stroke: InkHand.Stroke, head: [CGPoint], width: CGFloat, growOnly: Bool) {
+        shape = InkGel.Shape(stroke: stroke, width: width, head: head)
         widest = (stroke.widths.max() ?? 1) * width
         let line = CGMutablePath()
         line.addLines(between: stroke.points)
         centreLine = line
+        fit(covering: [stroke], growOnly: growOnly)
+        built = nil
+        needsGel = true
+        InkClock.shared.add(self)
     }
 
-    /// The outline round `stroke`, `width` points wide where its width is 1: each side offset along
-    /// the normal by half the width, and round ends. The same count of points makes the same
-    /// elements, so Core Animation can animate one outline into another.
-    static func outline(_ stroke: InkHand.Stroke, width: CGFloat) -> CGPath {
-        let points = stroke.points
-        let path = CGMutablePath()
-        guard points.count > 1 else { return path }
-        let halves = stroke.widths.map { max($0 * width / 2, 0.05) }
-        var normals: [CGVector] = []
-        var last = CGVector(dx: 0, dy: -1)
-        for index in points.indices {
-            let a = points[max(index - 1, 0)], b = points[min(index + 1, points.count - 1)]
-            let length = hypot(b.x - a.x, b.y - a.y)
-            if length > 0 { last = CGVector(dx: -(b.y - a.y) / length, dy: (b.x - a.x) / length) }
-            normals.append(last)
+    /// Sizes the Metal layer to cover `strokes`, their heads and the glow. The pen's layer only grows,
+    /// in steps, so its drawables are not made again at every pointer event.
+    private func fit(covering strokes: [InkHand.Stroke], growOnly: Bool) {
+        let points = strokes.flatMap(\.points) + (shape?.head ?? [])
+        guard let first = points.first else { return }
+        var box = points.reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+        let margin = widest + Self.reach + 4
+        box = box.insetBy(dx: -margin, dy: -margin)
+        if growOnly {
+            if gel.frame.contains(box) { return }
+            box = box.union(gel.frame.isEmpty ? box : gel.frame)
+            let step = Self.growStep
+            box = CGRect(x: (box.minX / step).rounded(.down) * step, y: (box.minY / step).rounded(.down) * step,
+                         width: ((box.maxX / step).rounded(.up) - (box.minX / step).rounded(.down)) * step,
+                         height: ((box.maxY / step).rounded(.up) - (box.minY / step).rounded(.down)) * step)
+        } else {
+            box = box.integral
         }
-        func side(_ index: Int, _ sign: CGFloat) -> CGPoint {
-            CGPoint(x: points[index].x + normals[index].dx * halves[index] * sign, y: points[index].y + normals[index].dy * halves[index] * sign)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gel.frame = box
+        gel.drawableSize = CGSize(width: box.width * contentsScale, height: box.height * contentsScale)
+        CATransaction.commit()
+    }
+
+    /// Whether it eases at `now`, and so must draw every frame.
+    func isEasing(at now: CFTimeInterval) -> Bool {
+        guard let easing else { return false }
+        if now - easing.start < easing.duration { return true }
+        // One more drawing, exactly on its shape.
+        self.easing = nil
+        built = nil
+        needsGel = true
+        return false
+    }
+
+    /// In a layer tree, with nothing over it hidden or faded out.
+    var isVisible: Bool {
+        var layer: CALayer? = self
+        while let current = layer {
+            if current.isHidden || current.opacity <= 0 { return false }
+            if current.superlayer == nil { return current !== self }
+            layer = current.superlayer
         }
-        path.move(to: side(0, 1))
-        for index in 1..<points.count { path.addLine(to: side(index, 1)) }
-        let end = points.count - 1
-        let endAngle = atan2(normals[end].dy, normals[end].dx)
-        path.addArc(center: points[end], radius: halves[end], startAngle: endAngle, endAngle: endAngle + .pi, clockwise: true)
-        for index in stride(from: end - 1, through: 0, by: -1) { path.addLine(to: side(index, -1)) }
-        let startAngle = atan2(-normals[0].dy, -normals[0].dx)
-        path.addArc(center: points[0], radius: halves[0], startAngle: startAngle, endAngle: startAngle + .pi, clockwise: true)
-        path.closeSubpath()
-        return path
+        return false
     }
 
-    /// The wet streak: the last `sheenPoints` of the stroke, narrower than the ink, growing from
-    /// nothing at its old end to its full width at the pen.
-    private static func sheen(of stroke: InkHand.Stroke, width: CGFloat) -> CGPath {
-        let start = max(0, stroke.points.count - sheenPoints)
-        let count = stroke.points.count - start
-        guard count > 1 else { return CGMutablePath() }
-        let widths = (0..<count).map { stroke.widths[start + $0] * sheenWidth * CGFloat($0) / CGFloat(count - 1) }
-        return outline(InkHand.Stroke(points: Array(stroke.points[start...]), widths: widths), width: width)
+    /// Encodes a drawing of the gel at `now`, its material at `time`, for the clock to commit and
+    /// present with the others.
+    func encode(at now: CFTimeInterval, time: CFTimeInterval) -> (commands: MTLCommandBuffer, drawable: CAMetalDrawable)? {
+        guard let metal = InkGel.metal, var shape, gel.bounds.width > 0, gel.bounds.height > 0 else { return nil }
+        needsGel = false
+        var headOpacity: CGFloat = 1
+        if let easing {
+            let t = Self.curve(min(max((now - easing.start) / easing.duration, 0), 1))
+            let to = shape.stroke
+            shape.stroke = InkHand.Stroke(points: zip(easing.from.points, to.points).map { a, b in
+                CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+            }, widths: zip(easing.from.widths, to.widths).map { $0 + ($1 - $0) * t })
+            headOpacity = t * t
+            built = nil
+        }
+        let ui = Settings.shared.data.ui
+        if built == nil {
+            let vertices = InkGel.vertices(shape, origin: gel.frame.origin, scale: contentsScale, reach: Self.reach)
+            guard !vertices.floats.isEmpty,
+                  let buffer = metal.device.makeBuffer(bytes: vertices.floats, length: vertices.floats.count * MemoryLayout<Float>.stride) else { return nil }
+            built = (buffer, vertices.halo, vertices.body)
+        }
+        guard let built, let drawable = gel.nextDrawable(), let commands = metal.queue.makeCommandBuffer() else { return nil }
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = drawable.texture
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        pass.colorAttachments[0].storeAction = .store
+        guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return nil }
+        var uniforms = InkGel.uniforms(ui, size: gel.drawableSize, scale: contentsScale, time: time, override: override, headOpacity: headOpacity)
+        encoder.setVertexBuffer(built.buffer, offset: 0, index: 0)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
+        encoder.setRenderPipelineState(metal.halo)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: built.halo)
+        encoder.setRenderPipelineState(metal.body)
+        encoder.drawPrimitives(type: .triangle, vertexStart: built.halo, vertexCount: built.body)
+        encoder.endEncoding()
+        return (commands, drawable)
     }
 
-    /// The body's layers, as fractions of the ink's width, and how far each is darkened.
-    private static let bodyWidths: [CGFloat] = [1, 0.72, 0.42]
-    private static let bodyDarkening: [CGFloat] = [0.2, 0.08, 0]
-    /// The wet streak: how many of the stroke's points it covers, its width as a fraction of the
-    /// ink's, how much lighter it is, and how long it takes to dry once the pen lifts.
-    private static let sheenPoints = 40
-    private static let sheenWidth: CGFloat = 0.4
-    private static let sheenLightening: CGFloat = 0.45
-    private static let dry: CFTimeInterval = 0.55
-    /// The soft shadow under the ink.
-    private static let shadowRadius: CGFloat = 2.5
-    private static let shadowOpacity: Float = 0.3
+    /// The style its line is laid out in: the mark's, at the gel's width.
+    private static func inkStyle(_ markStyle: MarkStyle) -> MarkStyle {
+        var style = markStyle
+        style.strokeWidth = Settings.shared.data.ui.inkGelWidth
+        return style
+    }
+
+    /// How far the glow reaches past the line, in points.
+    private static var reach: CGFloat { Settings.shared.data.ui.inkGelGlowRadius * 2 }
+
+    /// The pen's layer grows in steps of this many points.
+    private static let growStep: CGFloat = 64
+
+    /// The ease's curve, `CAMediaTimingFunction(controlPoints: 0.3, 0, 0.2, 1)`, at time fraction `x`.
+    private static func curve(_ x: CGFloat) -> CGFloat {
+        var lo: CGFloat = 0, hi: CGFloat = 1, t = x
+        for _ in 0..<24 {
+            t = (lo + hi) / 2
+            let bx = 3 * (1 - t) * (1 - t) * t * 0.3 + 3 * (1 - t) * t * t * 0.2 + t * t * t
+            if bx < x { lo = t } else { hi = t }
+        }
+        return 3 * (1 - t) * t * t + t * t * t
+    }
 }

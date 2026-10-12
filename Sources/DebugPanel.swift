@@ -225,6 +225,23 @@ struct DebugPanelView: View {
                 Section("Stitch") {
                     Tweak("Long side", \.stitchLongSide, 512...8192, step: 128, unit: "px")
                 }
+                Section("Live ink gel") {
+                    ColorTweak("Body", \.inkGelColor)
+                    Tweak("Width", \.inkGelWidth, 1...12, step: 0.25, unit: "pt")
+                    Tweak("Iridescence", \.inkGelIridescence, 0...3, step: 0.05)
+                    Tweak("Film thickness", \.inkGelFilm, 200...1600, step: 10, unit: "nm")
+                    Tweak("Highlight", \.inkGelSheen, 0...2, step: 0.05)
+                    Tweak("Darker edges", \.inkGelRim, 0...1, step: 0.01)
+                    Tweak("Glow", \.inkGelGlow, 0...2, step: 0.05)
+                    Tweak("Bloom toward light", \.inkGelBloom, 0...2, step: 0.05)
+                    Tweak("Glow reach", \.inkGelGlowRadius, 0...24, step: 0.5, unit: "pt")
+                    Tweak("Shadow", \.inkGelShadow, 0...1, step: 0.01)
+                    Tweak("Drift speed", \.inkGelMotion, 0...3, step: 0.05)
+                    Tweak("Shimmer", \.inkGelShimmer, 0...3, step: 0.05)
+                    Tweak("Light wander", \.inkGelWander, 0...1.5, step: 0.05, unit: " rad")
+                    Text("Your live ink is a rod of milky gel under a thin film. The film's thickness sets its pale colours, and iridescence sets how much of them shows. The light drifts slowly round the line. The shimmer is a ripple that runs along the film, and drift speed 0 holds both still. The shadow shows over light windows.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section("Live ink") {
                     Tweak("Answer draw-on", \.liveInkDrawOn, 0...2, step: 0.05, unit: "s")
                     Tweak("Answer text size", \.liveInkTextSize, 8...32, unit: "pt")

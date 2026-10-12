@@ -130,7 +130,7 @@ struct SettingsData: Codable, Equatable {
             notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"
         }
         for (name, path) in [("personColor", \UITweaks.personColor), ("agentColor", \.agentColor), ("edgeColor", \.edgeColor),
-                             ("noteTextColor", \.noteTextColor), ("checkColor", \.checkColor), ("checkGlowColor", \.checkGlowColor)] where SRGB(hex: d.ui[keyPath: path]) == nil {
+                             ("noteTextColor", \.noteTextColor), ("checkColor", \.checkColor), ("checkGlowColor", \.checkGlowColor), ("inkGelColor", \.inkGelColor)] where SRGB(hex: d.ui[keyPath: path]) == nil {
             let fixed = UITweaks()[keyPath: path]
             notes.append("ui.\(name) \"\(d.ui[keyPath: path])\" -> \"\(fixed)\": a colour is #rrggbb"); d.ui[keyPath: path] = fixed
         }
@@ -348,6 +348,21 @@ struct UITweaks: Codable, Equatable {
     // Live ink's speech input
     var liveInkSpeechPause = 1.2     // how long a quiet spell after the chord is let go ends listening
     var liveInkSpeechQuiet = 0.4     // the input's level under which it counts as quiet, 0 for -60 dB to 1 for 0 dB
+    // The person's live ink as opal gel (InkGel; docs/live-ink-gel-2026-10-12.md): a rod of milky
+    // material under a thin film whose pale colours follow the line, with a glow under it.
+    var inkGelColor = "#dbdbe5"      // the gel's body
+    var inkGelWidth = 5.0            // the line's width, in points of the screen
+    var inkGelIridescence = 1.3      // 0 to 3: how much colour the film shows
+    var inkGelFilm = 800.0           // the film's thickness in nm, which sets its colours
+    var inkGelSheen = 0.9            // 0 to 2: the highlight
+    var inkGelRim = 0.38             // 0 to 1: how much darker the rod is at its edges
+    var inkGelGlow = 0.55            // 0 to 2: the glow round the line
+    var inkGelBloom = 0.6            // 0 to 2: more glow where the line faces the light
+    var inkGelGlowRadius = 6.0       // how far the glow reaches, in points
+    var inkGelShadow = 0.3           // 0 to 1: the shadow under the line, which shows on light windows
+    var inkGelMotion = 1.0           // 0 to 3: how fast the light and the film drift; 0 holds them still
+    var inkGelShimmer = 1.0          // 0 to 3: the film's slow ripple along the line
+    var inkGelWander = 0.35          // how far the light wanders, in radians
 
     /// One entry of `bounds`. A plain struct, not a tuple, so the array can be `Sendable`.
     /// `@unchecked`: `WritableKeyPath` isn't marked `Sendable` in the standard library, but key
@@ -409,6 +424,12 @@ struct UITweaks: Codable, Equatable {
         Bound("checkSpinBounce", \.checkSpinBounce, 0...0.9), Bound("checkSpinDelay", \.checkSpinDelay, 0...10),
         Bound("checkBloom", \.checkBloom, 0...2), Bound("checkBloomRadius", \.checkBloomRadius, 0...1),
         Bound("checkBloomThreshold", \.checkBloomThreshold, 0...0.95),
+        Bound("inkGelWidth", \.inkGelWidth, 0.5...30), Bound("inkGelIridescence", \.inkGelIridescence, 0...3),
+        Bound("inkGelFilm", \.inkGelFilm, 100...2000), Bound("inkGelSheen", \.inkGelSheen, 0...2),
+        Bound("inkGelRim", \.inkGelRim, 0...1), Bound("inkGelGlow", \.inkGelGlow, 0...2), Bound("inkGelBloom", \.inkGelBloom, 0...2),
+        Bound("inkGelGlowRadius", \.inkGelGlowRadius, 0...60), Bound("inkGelShadow", \.inkGelShadow, 0...1),
+        Bound("inkGelMotion", \.inkGelMotion, 0...3), Bound("inkGelShimmer", \.inkGelShimmer, 0...3),
+        Bound("inkGelWander", \.inkGelWander, 0...1.5),
         Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
         Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
         Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("shiftUpDuration", \.shiftUpDuration, 0...60),
