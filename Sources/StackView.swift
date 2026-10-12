@@ -762,6 +762,9 @@ struct SendOverlay: View {
         }
     }
 
+    /// The dark disc the spinner turns on, and the coin after it.
+    private var disc: some View { Circle().fill(Color(white: 0.18)).frame(width: 15, height: 15) }
+
     /// On a white ring, which parts it from the disc it sits on. The spinner is always there under
     /// what the delivery came to, and goes once that has covered it: removed instead, as the
     /// delivery's badge came in, it was gone in one frame and the ring showed white until the next
@@ -770,7 +773,7 @@ struct SendOverlay: View {
         ZStack {
             Circle().fill(.white).frame(width: 18, height: 18)
             ZStack {
-                Circle().fill(Color(white: 0.18)).frame(width: 15, height: 15)
+                disc
                 ProgressView().controlSize(.mini).environment(\.colorScheme, .dark).scaleEffect(0.8)
             }
             .modifier(LeavesWhenCovered(shown: state == .sending ? 1 : 0))
@@ -778,7 +781,12 @@ struct SendOverlay: View {
                 Group {
                     switch outcome {
                     case .check:
-                        MetalCheck(diameter: 15)
+                        // The coin covers the badge only face on. Its own disc keeps the spinner,
+                        // which leaves under it on a bouncing spring, out of sight while it turns.
+                        ZStack {
+                            disc
+                            MetalCheck(diameter: 15)
+                        }
                     case .clock:
                         // One layer, its hands cut out, so they show the white ring beneath.
                         Image(systemName: "clock.fill").font(.system(size: 15, weight: .bold)).foregroundStyle(Color.orange)
