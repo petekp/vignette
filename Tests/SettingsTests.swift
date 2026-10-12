@@ -140,7 +140,7 @@ final class SettingsTests: XCTestCase {
 
     @MainActor
     func testFileHoldsOnlyTheUIValuesThatDiffer() throws {
-        try write(#"{"version": 2, "ui": {"cardMaxWidth": 300, "cardMaxHeight": \#(UITweaks().cardMaxHeight)}}"#)
+        try write(#"{"version": 2, "ui": {"cardMaxWidth": 300, "cardMaxHeight": \#(UITweaks().cardMaxHeight), "dimOpacity": \#(UITweaks().dimOpacity.nextUp)}}"#)
         let boot = Settings.bootstrap(at: file)
         XCTAssertEqual(boot.data.ui.cardMaxWidth, 300)
         XCTAssertEqual(try json()["ui"] as? [String: Double], ["cardMaxWidth": 300])
