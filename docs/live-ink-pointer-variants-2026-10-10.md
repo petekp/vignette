@@ -4,9 +4,9 @@ The ring round the pointer and the wake behind the pen each have several styles 
 Lab picks them with two segmented controls and shows only the sliders a style uses. Picking a style
 keeps the other keys, so tuning carries from one style to the next.
 
-Glass, the ring from before, is ring style 0 and the default. Ripples, the wake from before, is wake
-style 4. The default wake is now Ribbon, style 0, so a settings file that does not name a style shows
-Ribbon. Every other default is unchanged.
+Glass, the ring from before, is ring style 0. Ripples, the wake from before, is wake style 4. The
+defaults are the ring and wake Pete tuned in the Pointer Lab on 2026-10-11: Lens, style 1, and
+Ripples, style 4.
 
 ## Ring styles (`ui.liveInkFieldStyle`)
 
