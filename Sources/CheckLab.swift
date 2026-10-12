@@ -105,22 +105,23 @@ private struct CheckLabView: View {
                     Tweak("Thickness", \.checkThickness, 0.02...0.4, step: 0.01)
                     Tweak("Edge", \.checkEdge, 0...0.2, step: 0.01)
                     Tweak("Dome", \.checkDome, 0...0.2, step: 0.01)
+                    Tweak("Clarity", \.checkClarity, 0...1, step: 0.01)
                 } header: {
                     Text("Coin")
                 } footer: {
-                    Text("Colour is what the metal reflects face on; at a grazing angle every metal reflects white. A clear coat over it reflects the lights white. Roughness softens every reflection, from a mirror at 0 to brushed at 1. Edge rounds the rim, and Dome raises each face's middle. Lengths are fractions of the coin's width.")
+                    Text("Colour tints the polymer, more deeply the farther you look through it. Its glossy surface reflects the lights white, a little face on and nearly all at a grazing angle. Roughness softens every reflection, from a mirror at 0 to frosted at 1. Clarity is how much of what is behind the coin shows through it. Edge rounds the rim, and Dome raises each face's middle. Lengths are fractions of the coin's width.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
-                    ColorTweak("Colour", \.checkMarkColor)
+                    ColorTweak("Glow colour", \.checkGlowColor)
+                    Tweak("Glow", \.checkGlow, 0...3, step: 0.01)
+                    Tweak("Glow spread", \.checkGlowSpread, 0.01...0.3, step: 0.01)
                     Tweak("Size", \.checkMarkSize, 0.2...0.8, step: 0.01)
                     Tweak("Weight", \.checkMarkWeight, 0.03...0.25, step: 0.01)
-                    Tweak("Height", \.checkMarkHeight, 0...0.15, step: 0.01)
-                    Tweak("Shadow", \.checkMarkShadow, 0...1, step: 0.01)
                 } header: {
                     Text("Check mark")
                 } footer: {
-                    Text("The mark stands on each face, in its own metal. Weight is its stroke's width and Height how far it stands; where it is no taller than wide its top is fully rounded. Its shadow falls away from the key light.")
+                    Text("The mark is a glowing tube in the middle of the coin, seen through both faces. Glow spread is how far its light reaches into the polymer around it. Weight is the tube's width, kept inside the coin's thickness.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
@@ -144,7 +145,7 @@ private struct CheckLabView: View {
                 } header: {
                     Text("Spin")
                 } footer: {
-                    Text("The coin turns about its upright axis as it appears, a spring winding the turns back to face on. Bounce is how far it rocks past face on before it settles. Turns 0 leaves it still. A half turn shows the back, which has its own check.")
+                    Text("The coin turns about its upright axis as it appears, a spring winding the turns back to face on. Bounce is how far it rocks past face on before it settles. Turns 0 leaves it still. A half turn shows the back, where the mark inside reads mirrored.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
@@ -154,7 +155,7 @@ private struct CheckLabView: View {
                 } header: {
                     Text("Bloom")
                 } footer: {
-                    Text("What is brighter than Threshold, the glint's flash most of all, blurred over Radius, a fraction of the coin, and added back, so it glows past the coin's edge. Strength 0 turns it off. It shows on the dark veil, not on the white ring of a send's badge.")
+                    Text("What is brighter than Threshold, the mark's glow and the glint's flash, blurred over Radius, a fraction of the coin, and added back, so it glows past the coin's edge. Strength 0 turns it off. It shows on the dark veil, not on the white ring of a send's badge.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
@@ -162,7 +163,7 @@ private struct CheckLabView: View {
                         settings.update { settings in
                             let defaults = UITweaks()
                             settings.ui.checkColor = defaults.checkColor
-                            settings.ui.checkMarkColor = defaults.checkMarkColor
+                            settings.ui.checkGlowColor = defaults.checkGlowColor
                             for bound in UITweaks.bounds where bound.name.hasPrefix("check") {
                                 settings.ui[keyPath: bound.path] = defaults[keyPath: bound.path]
                             }
@@ -215,7 +216,7 @@ private struct CheckLabView: View {
         return HStack(spacing: 16) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(white: 0.12))
-                MetalCheck(diameter: 120)
+                CheckCoin(diameter: 120)
             }
             .frame(width: 190, height: 190)
             VStack(spacing: 14) {

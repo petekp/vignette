@@ -543,7 +543,7 @@ struct CopiedOverlay: View {
             RoundedRectangle(cornerRadius: corner, style: .continuous).fill(.black.opacity(0.55))
             VStack(spacing: 2) {
                 if failure == nil {
-                    MetalCheck(diameter: 22)
+                    CheckCoin(diameter: 22)
                 } else {
                     Image(systemName: "exclamationmark.circle.fill").font(.system(size: 22, weight: .bold)).foregroundStyle(.red)
                 }
@@ -785,7 +785,7 @@ struct SendOverlay: View {
                         // which leaves under it on a bouncing spring, out of sight while it turns.
                         ZStack {
                             disc
-                            MetalCheck(diameter: 15)
+                            CheckCoin(diameter: 15)
                         }
                     case .clock:
                         // One layer, its hands cut out, so they show the white ring beneath.

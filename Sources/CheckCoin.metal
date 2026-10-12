@@ -2,20 +2,19 @@
 #include <SwiftUI/SwiftUI_Metal.h>
 using namespace metal;
 
-// The success check as a solid: a green coin with a chrome check mark standing on each face, ray
-// marched and lit by what it reflects (docs/check-lab-2026-10-11.md). Lengths are in the view's
-// points with the coin's centre at the origin, y down and z toward the viewer. The coin turns about
-// the vertical axis by `turn` radians; at 0 its front face is square to the viewer and exactly the
-// view's disc.
+// The success check as a solid: a coin of tinted, glossy polymer with a glowing check mark inside it,
+// ray marched and lit by what its surface reflects (docs/check-lab-2026-10-11.md). Lengths are in the
+// view's points with the coin's centre at the origin, y down and z toward the viewer. The coin turns
+// about the vertical axis by `turn` radians; at 0 its front face is square to the viewer and exactly
+// the view's disc.
 
 struct Coin {
     float radius;
     float rim;          // half the coin's thickness at its rim
     float edge;         // the radius its rim is rounded to
-    float dome;         // how far the faces rise at the centre beyond `half`
+    float dome;         // how far the faces rise at the centre beyond `rim`
     float2 a, b, c;     // the mark's stroke: a to b, then b to c
-    float weight;       // half the stroke's width
-    float height;       // how far the mark stands off the face
+    float weight;       // the radius of the mark's round stroke
 };
 
 static float segment(float2 p, float2 a, float2 b) {
@@ -40,62 +39,21 @@ static float coinDistance(float3 p, Coin c) {
     return extrude(r - c.radius, p.z, -face(r, c), face(r, c), c.edge);
 }
 
-// The mark on whichever face `p` is nearer. The back's is mirrored, so it reads the right way round
-// when the back is toward the viewer.
+// The mark: a round tube along the stroke in the coin's middle plane, so it shows through both
+// faces, mirrored from the back as a real one would be.
 static float markDistance(float3 p, Coin c) {
-    float side = p.z >= 0.0 ? 1.0 : -1.0;
-    float2 q = float2(p.x * side, p.y);
-    float d = min(segment(q, c.a, c.b), segment(q, c.b, c.c)) - c.weight;
-    float base = face(length(p.xy), c);
-    // Rounded right across the stroke where it is no taller than wide, so its top is a bead that
-    // carries reflections rather than a flat that shows one grey.
-    return extrude(d, abs(p.z), base - c.height, base + c.height, 0.95 * min(c.weight, c.height));
-}
-
-// The scene's distance at `p`, and in `mark` whether the mark is the nearer surface.
-static float scene(float3 p, Coin c, thread bool &mark) {
-    float coin = coinDistance(p, c);
-    float m = markDistance(p, c);
-    mark = m < coin;
-    return min(coin, m);
-}
-
-static float scene(float3 p, Coin c) {
-    bool mark;
-    return scene(p, c, mark);
+    float d = min(segment(p.xy, c.a, c.b), segment(p.xy, c.b, c.c));
+    return length(float2(d, p.z)) - c.weight;
 }
 
 static float3 normalAt(float3 p, Coin c, float e) {
     float2 k = float2(1.0, -1.0);
-    return normalize(k.xyy * scene(p + k.xyy * e, c) + k.yyx * scene(p + k.yyx * e, c)
-                   + k.yxy * scene(p + k.yxy * e, c) + k.xxx * scene(p + k.xxx * e, c));
+    return normalize(k.xyy * coinDistance(p + k.xyy * e, c) + k.yyx * coinDistance(p + k.yyx * e, c)
+                   + k.yxy * coinDistance(p + k.yxy * e, c) + k.xxx * coinDistance(p + k.xxx * e, c));
 }
 
-// How much of the light reaches `p`: a soft shadow, darker the nearer the ray toward the light
-// passes to the mark or the rim.
-static float shadow(float3 p, float3 toLight, Coin c, float reach) {
-    float lit = 1.0, t = 0.02 * c.radius;
-    for (int i = 0; i < 24 && t < reach; i++) {
-        float d = scene(p + toLight * t, c);
-        lit = min(lit, 10.0 * d / t);
-        if (lit < 0.01) break;
-        t += clamp(d, 0.01 * c.radius, 0.1 * c.radius);
-    }
-    return clamp(lit, 0.0, 1.0);
-}
-
-// How open the surface at `p` is to the room: less where the mark meets the face.
-static float openness(float3 p, float3 n, Coin c) {
-    float closed = 0.0;
-    for (int i = 1; i <= 4; i++) {
-        float h = 0.03 * c.radius * float(i);
-        closed += (h - scene(p + n * h, c)) / exp2(float(i));
-    }
-    return clamp(1.0 - 12.0 * closed / c.radius, 0.0, 1.0);
-}
-
-// The studio's walls as seen in the reflected direction `R`: a bright ceiling, a soft horizon well
-// below eye level and a dim floor. Metal reflects them in its own colour.
+// The studio's walls as seen in the direction `R`: a bright ceiling, a soft horizon well below eye
+// level and a dim floor.
 static float room(float3 R, float roughness, float contrast) {
     float up = -R.y;
     float soft = 0.12 + 0.5 * roughness;
@@ -126,11 +84,11 @@ static float strip(float3 R, float3 toStrip, float strength, float roughness) {
     return strength * exp(-x * x) * tall * step(0.0, dot(R, toStrip));
 }
 
-// What the studio looks like: the metals, the lights and the surface, as `checkCoin` takes them.
+// The polymer, its glow and the lights, as `checkCoin` takes them.
 struct Studio {
-    float3 metal, markColour;
+    float3 tint, glowColour;
     float4 light, glint;
-    float3 surface;
+    float roughness, contrast, clarity, spread, glow;
 };
 
 // Where a ray meets the coin, or, when it misses, where it passed nearest.
@@ -165,7 +123,7 @@ static Trace march(Ray r, Coin c, float bound) {
     float t = -b - sqrt(disc), far = -b + sqrt(disc);
     tr.t = t;
     for (int i = 0; i < 80 && t < far; i++) {
-        float dist = scene(r.o + r.d * t, c);
+        float dist = coinDistance(r.o + r.d * t, c);
         if (dist < tr.closest) { tr.closest = dist; tr.t = t; }
         if (dist < 0.002 * c.radius) { tr.hit = true; tr.t = t; break; }
         t += 0.9 * dist;
@@ -176,37 +134,67 @@ static Trace march(Ray r, Coin c, float bound) {
     return tr;
 }
 
-// The colour at `at`, where `r` met the coin. `onMark` says which surface it is.
-static float3 shade(float3 at, bool onMark, Ray r, Coin c, Studio s, float ct, float st, float pixel) {
+// What a ray sees, as light added over what is behind the coin, and how much of that it hides.
+struct Shade {
+    float3 light;
+    float cover;
+};
+
+// The coin at `at`, where `r` met it. The surface reflects the studio as glossy plastic does: a
+// little face on and nearly all of it at a grazing angle, the lights white. The rest of the ray bends
+// into the polymer, which tints it the longer it travels, and gathers the mark's glow on the way: its
+// core where it meets the mark, and the halo the mark lights in the polymer around it.
+static Shade shade(float3 at, Ray r, Coin c, Studio s, float ct, float st, float pixel) {
     float3 n = normalAt(at, c, 0.25 * pixel);
     // Back to the world's frame, where the studio is.
     float3 N = float3(ct * n.x + st * n.z, n.y, -st * n.x + ct * n.z);
     float3 R = reflect(r.world, N);
-    float3 toLight = s.light.xyz;
-    float3 toLightHere = float3(ct * toLight.x - st * toLight.z, toLight.y, st * toLight.x + ct * toLight.z);
+    float facing = clamp(dot(N, -r.world), 0.0, 1.0);
+    float grazing = pow(1.0 - facing, 5.0);
+    // Schlick's Fresnel for a polymer, whose reflectance face on is 4%. The lights are strong enough
+    // that 4% of them still shows, so the face flashes as it turns past the strip, not only the rim.
+    float fresnel = 0.04 + 0.96 * grazing;
+    float lights = window(R, s.light.xyz, s.light.w, s.roughness) + strip(R, s.glint.xyz, s.glint.w, s.roughness);
+    float coat = mix(0.25, 1.0, grazing);
+    float3 surface = float3(fresnel * room(R, s.roughness, s.contrast) + coat * lights);
 
-    float3 f0 = onMark ? s.markColour : s.metal;
-    // Schlick's Fresnel: metal reflects its own colour face on and white at a grazing angle. The
-    // green has a clear coat, which reflects the light white, more so at a grazing angle.
-    float grazing = pow(1.0 - clamp(dot(N, -r.world), 0.0, 1.0), 5.0);
-    float3 fresnel = f0 + (1.0 - f0) * grazing;
-    float3 coat = onMark ? fresnel : float3(mix(0.4, 1.0, grazing));
-    float lit = mix(1.0, shadow(at + n * 0.01 * c.radius, toLightHere, c, 2.0 * c.radius), s.surface.z);
-    float open = openness(at, n, c);
-    float3 result = fresnel * room(R, s.surface.x, s.surface.y) * mix(0.55, 1.0, open)
-                  + coat * (window(R, toLight, s.light.w, s.surface.x) * lit
-                            + strip(R, s.glint.xyz, s.glint.w, s.surface.x));
-    return clamp(result, 0.0, 1.0);
+    // Into the polymer, bent as by a refractive index of 1.5.
+    float3 d = refract(r.d, n, 1.0 / 1.5);
+    float3 p = at - n * 0.01 * c.radius;
+    float travelled = 0.0, halo = 0.0, core = 0.0;
+    for (int i = 0; i < 40; i++) {
+        float m = markDistance(p, c);
+        float inside = -coinDistance(p, c);
+        if (m < 0.002 * c.radius) { core = 1.0; break; }
+        if (inside < 0.0) break;
+        float dt = clamp(min(m, inside), 0.015 * c.radius, 0.08 * c.radius);
+        halo += exp(-m / s.spread) * dt;
+        p += d * dt;
+        travelled += dt;
+    }
+    // About 1 for a ray that passes through the mark's halo, and falling away from it.
+    halo /= 2.0 * s.spread;
+    // The tint, deeper the farther the ray went: once its colour through the coin's thickness.
+    float3 through = pow(max(s.tint, 0.001), float3(travelled / (2.0 * c.rim)));
+    float clear = (1.0 - core) * dot(through, float3(0.2126, 0.7152, 0.0722));
+    // The polymer scatters a little of the studio's light, lit from where its surface faces.
+    float3 body = s.tint * mix(0.12, 0.45, room(N, 1.0, s.contrast)) * (1.0 - s.clarity * clear);
+    float3 glow = s.glowColour * s.glow * (2.0 * core + halo * mix(float3(1.0), through, 0.5));
+
+    Shade out;
+    out.light = surface + (1.0 - fresnel) * (body + glow);
+    out.cover = 1.0 - (1.0 - fresnel) * s.clarity * clear;
+    return out;
 }
 
 // `shape`: radius, half thickness, rim rounding, dome, in points. `mark`: the stroke's first two
-// points, x and y as fractions of the radius; `markEnd`: its last point, then its half width and its
-// height in points. `light`: the direction to the key light and its strength; `glint`: the
-// direction to the glint's strip and its strength. `surface`: roughness,
-// studio contrast, the mark's shadow strength. `view`: the turn in radians, one pixel in points, and
+// points, x and y as fractions of the radius; `markEnd`: its last point, then its stroke's radius in
+// points and the glow's strength. `light`: the direction to the key light and its strength; `glint`:
+// the direction to the glint's strip and its strength. `surface`: roughness, studio contrast,
+// clarity, and the glow's spread in points. `view`: the turn in radians, one pixel in points, and
 // the view's side.
 [[ stitchable ]] half4 checkCoin(float2 position, half4 colour, float4 shape, float4 mark, float4 markEnd,
-                                 float3 metal, float3 markColour, float4 light, float4 glint, float3 surface, float3 view) {
+                                 float3 tint, float3 glowColour, float4 light, float4 glint, float4 surface, float3 view) {
     Coin c;
     c.radius = shape.x;
     c.rim = shape.y;
@@ -215,37 +203,27 @@ static float3 shade(float3 at, bool onMark, Ray r, Coin c, Studio s, float ct, f
     c.a = mark.xy * c.radius;
     c.b = mark.zw * c.radius;
     c.c = markEnd.xy * c.radius;
-    c.weight = markEnd.z;
-    c.height = markEnd.w;
-    Studio s = { metal, markColour, light, glint, surface };
+    // The mark stays inside the coin, clear of both faces.
+    c.weight = min(markEnd.z, 0.7 * c.rim);
+    Studio s = { tint, glowColour, light, glint, surface.x, surface.y, surface.z, max(surface.w, 0.01), markEnd.w };
     float turn = view.x, pixel = view.y;
     float2 p = position - 0.5 * view.z;
     float ct = cos(turn), st = sin(turn);
 
     // A camera eight radii in front of the face, looking through the face's plane, so the front face
     // at rest fills the disc exactly and a turn foreshortens as a real coin does.
-    float top = c.rim + c.dome + c.height;
+    float top = c.rim + c.dome;
     float3 eye = float3(0.0, 0.0, c.rim + 8.0 * c.radius);
     float bound = sqrt(c.radius * c.radius + top * top) + pixel;
 
-    // Four rays a pixel, on a rotated grid, since the mark's outline crosses the face inside the
-    // coin, where no near miss says how much of a pixel each side covers.
-    const float2 offsets[4] = { float2(-0.125, -0.375), float2(0.375, -0.125), float2(0.125, 0.375), float2(-0.375, 0.125) };
-    float3 sum = float3(0.0);
-    float covered = 0.0;
-    for (int k = 0; k < 4; k++) {
-        Ray r = rayThrough(p + offsets[k] * pixel, eye, c, ct, st);
-        Trace tr = march(r, c, bound);
-        // A ray that passes within half a pixel of the coin's outline covers part of its share.
-        float alpha = tr.hit ? 1.0 : clamp(1.0 - 2.0 * tr.closest / pixel, 0.0, 1.0);
-        if (alpha <= 0.0) continue;
-        float3 at = r.o + r.d * tr.t;
-        bool onMark;
-        scene(at, c, onMark);
-        sum += shade(at, onMark, r, c, s, ct, st, pixel) * alpha;
-        covered += alpha;
-    }
-    return half4(half3(0.25 * sum), half(0.25 * covered));
+    // One ray a pixel: the glow is soft, and four rays a pixel looked the same at 15 and 22 pt.
+    Ray r = rayThrough(p, eye, c, ct, st);
+    Trace tr = march(r, c, bound);
+    // A ray that passes within a pixel of the coin's outline covers part of that pixel.
+    float alpha = tr.hit ? 1.0 : clamp(1.0 - tr.closest / pixel, 0.0, 1.0);
+    if (alpha <= 0.0) return half4(0.0);
+    Shade sh = shade(r.o + r.d * tr.t, r, c, s, ct, st, pixel);
+    return half4(half3(clamp(sh.light, 0.0, 1.0) * alpha), half(sh.cover * alpha));
 }
 
 // The bloom's bright pass: what is brighter than `threshold`, scaled by `strength`. It is blurred

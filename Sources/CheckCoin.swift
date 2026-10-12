@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// The success check on a copied or sent card: a green coin with a chrome check mark on each face,
-/// ray marched and lit by a studio's reflections (`CheckMetal.metal`). It spins as it appears, its
-/// face and rim flashing as they pass the studio's strip light, and settles face on with a spring.
-/// The brightest of it blooms. Its look is the `check` settings, and every length is a fraction of
-/// `diameter`, so it looks the same at every size. With no motion it does not spin
-/// (docs/check-lab-2026-10-11.md).
-struct MetalCheck: View {
+/// The success check on a copied or sent card: a coin of tinted polymer with a glowing check mark
+/// inside it, ray marched and lit by a studio's reflections (`CheckCoin.metal`). It spins as it
+/// appears, its face and rim flashing as they pass the studio's strip light, and settles face on
+/// with a spring. The glow and the brightest reflections bloom. Its look is the `check` settings,
+/// and every length is a fraction of `diameter`, so it looks the same at every size. With no motion
+/// it does not spin (docs/check-lab-2026-10-11.md).
+struct CheckCoin: View {
     let diameter: CGFloat
     @ObservedObject private var settings = Settings.shared
     /// The Check Lab's hold on the spin; nil runs it once from when the check appears.
@@ -48,14 +48,14 @@ struct MetalCheck: View {
         let glintAngle = ui.checkGlintAngle * .pi / 180
         let shape: Shader.Argument = .float4(d / 2, ui.checkThickness * d / 2, ui.checkEdge * d, ui.checkDome * d)
         let mark: Shader.Argument = .float4(stroke[0], stroke[1], stroke[2], stroke[3])
-        let markEnd: Shader.Argument = .float4(stroke[4], stroke[5], ui.checkMarkWeight * d / 2, ui.checkMarkHeight * d)
+        let markEnd: Shader.Argument = .float4(stroke[4], stroke[5], ui.checkMarkWeight * d / 2, ui.checkGlow)
         let light: Shader.Argument = .float4(sin(lightAngle) * cos(lightHeight), -cos(lightAngle) * cos(lightHeight),
                                              sin(lightHeight), ui.checkLight)
         let glint: Shader.Argument = .float4(sin(glintAngle), 0, cos(glintAngle), ui.checkGlint)
-        let surface: Shader.Argument = .float3(ui.checkRoughness, ui.checkStudio, ui.checkMarkShadow)
+        let surface: Shader.Argument = .float4(ui.checkRoughness, ui.checkStudio, ui.checkClarity, ui.checkGlowSpread * d)
         let view: Shader.Argument = .float3(turn, 1 / displayScale, side)
         let shader = ShaderLibrary.checkCoin(shape, mark, markEnd, Self.rgb(ui.checkColor, \.checkColor),
-                                             Self.rgb(ui.checkMarkColor, \.checkMarkColor), light, glint, surface, view)
+                                             Self.rgb(ui.checkGlowColor, \.checkGlowColor), light, glint, surface, view)
         let shaded = Rectangle().fill(Color.white).frame(width: side, height: side).colorEffect(shader)
         // The bloom: the bright pass blurred and added over the coin.
         return shaded
@@ -104,6 +104,6 @@ struct CheckSpin {
 }
 
 extension EnvironmentValues {
-    /// Where every `MetalCheck` below holds its spin, 0 at its start to 1 once settled, in the Check Lab.
+    /// Where every `CheckCoin` below holds its spin, 0 at its start to 1 once settled, in the Check Lab.
     @Entry var checkSpinPlace: Double? = nil
 }

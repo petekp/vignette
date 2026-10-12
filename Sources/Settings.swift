@@ -130,7 +130,7 @@ struct SettingsData: Codable, Equatable {
             notes.append("ui.slideInCurve \"\(d.ui.slideInCurve)\" -> \"spring\""); d.ui.slideInCurve = "spring"
         }
         for (name, path) in [("personColor", \UITweaks.personColor), ("agentColor", \.agentColor), ("edgeColor", \.edgeColor),
-                             ("noteTextColor", \.noteTextColor), ("checkColor", \.checkColor), ("checkMarkColor", \.checkMarkColor)] where SRGB(hex: d.ui[keyPath: path]) == nil {
+                             ("noteTextColor", \.noteTextColor), ("checkColor", \.checkColor), ("checkGlowColor", \.checkGlowColor)] where SRGB(hex: d.ui[keyPath: path]) == nil {
             let fixed = UITweaks()[keyPath: path]
             notes.append("ui.\(name) \"\(d.ui[keyPath: path])\" -> \"\(fixed)\": a colour is #rrggbb"); d.ui[keyPath: path] = fixed
         }
@@ -193,19 +193,20 @@ struct UITweaks: Codable, Equatable {
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
     var markSeconds = 1.7            // how long a card's notice stays; the stored key keeps its older name
     var sendGraceSeconds = 3.0       // how long a Send waits before its session gets it; 0 sends at once
-    // The success check on a copied or sent card (MetalCheck; docs/check-lab-2026-10-11.md): a green
-    // coin with a chrome check mark on each face, which spins as it appears and settles face on.
-    // Lengths are fractions of its diameter.
-    var checkColor = "#29b84d"       // the coin's metal: the colour it reflects face on
-    var checkMarkColor = "#eef1f3"   // the mark's metal
-    var checkRoughness = 0.3         // 0 a mirror, 1 brushed: how soft every reflection is
+    // The success check on a copied or sent card (CheckCoin; docs/check-lab-2026-10-11.md): a coin
+    // of tinted polymer with a glowing check mark inside it, which spins as it appears and settles
+    // face on. Lengths are fractions of its diameter.
+    var checkColor = "#29b84d"       // the polymer's tint
+    var checkGlowColor = "#8dffc4"   // the mark's glow
+    var checkRoughness = 0.3         // 0 a mirror, 1 frosted: how soft every reflection is
     var checkThickness = 0.14
     var checkEdge = 0.05             // the rounding of the coin's rim
     var checkDome = 0.06             // how far each face rises at its centre
     var checkMarkSize = 0.52         // the mark's width
     var checkMarkWeight = 0.1        // its stroke's width
-    var checkMarkHeight = 0.05       // how far it stands off the face
-    var checkMarkShadow = 0.7        // 0 to 1: its shadow on the face
+    var checkGlow = 1.2              // 0 to 3: how bright the mark glows
+    var checkGlowSpread = 0.08       // how far its glow lights the polymer around it
+    var checkClarity = 0.2           // 0 to 1: how much of what is behind the coin shows through it
     var checkLightAngle = -40.0      // where the key light is, degrees clockwise from the top
     var checkLightHeight = 68.0      // its height above the coin's face, in degrees
     var checkLight = 1.6             // 0 to 3: its strength
@@ -399,7 +400,8 @@ struct UITweaks: Codable, Equatable {
         Bound("checkRoughness", \.checkRoughness, 0...1), Bound("checkThickness", \.checkThickness, 0.02...0.5),
         Bound("checkEdge", \.checkEdge, 0...0.25), Bound("checkDome", \.checkDome, 0...0.3),
         Bound("checkMarkSize", \.checkMarkSize, 0.1...0.8), Bound("checkMarkWeight", \.checkMarkWeight, 0.02...0.3),
-        Bound("checkMarkHeight", \.checkMarkHeight, 0...0.2), Bound("checkMarkShadow", \.checkMarkShadow, 0...1),
+        Bound("checkGlow", \.checkGlow, 0...3), Bound("checkGlowSpread", \.checkGlowSpread, 0.01...0.3),
+        Bound("checkClarity", \.checkClarity, 0...1),
         Bound("checkLightAngle", \.checkLightAngle, -180...180), Bound("checkLightHeight", \.checkLightHeight, 5...90),
         Bound("checkLight", \.checkLight, 0...3), Bound("checkStudio", \.checkStudio, 0...1),
         Bound("checkGlint", \.checkGlint, 0...3), Bound("checkGlintAngle", \.checkGlintAngle, -90...90),
