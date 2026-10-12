@@ -104,8 +104,9 @@ In the `vignette-e2e` VM (macOS 15.7.7), over a light page and a dark terminal, 
 - **The drift runs.** About 72,000 pixels changed over 3 s with the ink idle.
 - **CPU.** The app used about 3% while idle with five marks up.
 
-Not checked yet:
+- **Motion 0 holds the gel still.** No pixel changed over 3 s. A tweak still redraws it: changing
+  the body colour changed about 83,000 pixels.
+- **The thinking light** shows clearly over the gel on a dark window. On a light window it barely
+  shows, because its white band runs over a near-white gel.
 
-- **On a real display** at 120 Hz.
-- **The thinking light** over the near-white gel.
-- **Motion 0.**
+Not checked yet: a real 120 Hz display.
