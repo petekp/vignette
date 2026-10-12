@@ -80,7 +80,8 @@ enum InkGel {
                 return CGPoint(x: (b.x - a.x) / length, y: (b.y - a.y) / length)
             }
             let halves = shape.stroke.widths.map { max($0 * shape.width / 2, 0.05) }
-            for (pass, grow) in [(Float(0), reach), (Float(1), 0)] {
+            // The body reaches past the line's edge by a pixel and a half, so its soft edge is not cut off.
+            for (pass, grow) in [(Float(0), reach), (Float(1), 1.5 / scale)] {
                 var out: [Float] = []
                 func side(_ index: Int, _ sign: CGFloat, _ extent: CGFloat) -> CGPoint {
                     CGPoint(x: points[index].x - tangents[index].y * extent * sign, y: points[index].y + tangents[index].x * extent * sign)

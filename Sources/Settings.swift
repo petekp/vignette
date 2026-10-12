@@ -355,11 +355,11 @@ struct UITweaks: Codable, Equatable {
     var inkGelIridescence = 1.3      // 0 to 3: how much colour the film shows
     var inkGelFilm = 800.0           // the film's thickness in nm, which sets its colours
     var inkGelSheen = 0.9            // 0 to 2: the highlight
-    var inkGelRim = 0.38             // 0 to 1: how much darker the rod is at its edges
+    var inkGelRim = 0.12             // 0 to 1: how much darker the rod is towards its edges
     var inkGelGlow = 0.55            // 0 to 2: the glow round the line
     var inkGelBloom = 0.6            // 0 to 2: more glow where the line faces the light
     var inkGelGlowRadius = 6.0       // how far the glow reaches, in points
-    var inkGelShadow = 0.3           // 0 to 1: the shadow under the line, which shows on light windows
+    var inkGelShadow = 0.18          // 0 to 1: the shadow under the line, which shows on light windows
     var inkGelMotion = 1.0           // 0 to 3: how fast the light and the film drift; 0 holds them still
     var inkGelShimmer = 1.0          // 0 to 3: the film's slow ripple along the line
     var inkGelWander = 0.35          // how far the light wanders, in radians
