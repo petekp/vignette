@@ -362,9 +362,18 @@ extension UITweaks {
         let differencesOnly = encoder.userInfo[Self.differencesOnly] as? Bool ?? false
         for (child, fallback) in zip(Mirror(reflecting: self).children, Mirror(reflecting: UITweaks()).children) {
             guard let name = child.label, let value = child.value as? any Encodable else { continue }
-            if differencesOnly, let a = child.value as? AnyHashable, let b = fallback.value as? AnyHashable, a == b { continue }
+            if differencesOnly, Self.same(child.value, fallback.value) { continue }
             try container.encode(value, forKey: Key(stringValue: name))
         }
+    }
+
+    /// Equal, counting floating-point noise as equal: a slider's steps leave values such as
+    /// 0.30000000000000004 where it showed 0.3, and written as a difference that would pin the
+    /// default it equals.
+    private static func same(_ a: Any, _ b: Any) -> Bool {
+        if let x = a as? Double, let y = b as? Double { return abs(x - y) <= 1e-9 * max(1, abs(x), abs(y)) }
+        guard let x = a as? AnyHashable, let y = b as? AnyHashable else { return false }
+        return x == y
     }
 
     var editorMetrics: EditorMetrics {
