@@ -25,9 +25,7 @@ struct GelUniforms {
     float4 deep;       // rgb the deep blue at the middle of the line
     float4 glow;       // glow, bloom, glow radius in px, shadow
     float4 more;       // head opacity, light wander in radians, shimmer, highlight
-    float4 behind;     // the switch's low and high brightness, how far the newest map has faded in, the sheath's depth
-    float4 mapNow;     // the newest brightness map's rect, in px of the layer
-    float4 mapBefore;  // the map it fades in from
+    float4 behind;     // x: the stroke's colour, 0 the ice and 1 the deep blue; w: the sheath's depth
     float4 offset;     // xy: px taken off every vertex's place, so a line laid out once is drawn as its layer moves
     float4 material;   // the highlight's sharpness, the glow's falloff, the deep blue's edge, the ice's edge opacity
     float4 lightPlace; // the shimmer's wavelength in pt and its speed, the light's angle in radians and its height
@@ -84,22 +82,12 @@ static Lit light(GelVaryings in, constant GelUniforms &uni) {
     return lit;
 }
 
-/// How light the screen is behind this pixel, 0 to 1, from the brightness maps: the one fading in
-/// over the one before it. A map is a grid of 8 pt cells, so this follows windows and regions, not
-/// the letters of a text.
-static float brightness(float2 pixel, constant GelUniforms &uni, texture2d<float> now, texture2d<float> before) {
-    constexpr sampler cells(filter::linear, address::clamp_to_edge);
-    float b = before.sample(cells, (pixel - uni.mapBefore.xy) / uni.mapBefore.zw).r;
-    float n = now.sample(cells, (pixel - uni.mapNow.xy) / uni.mapNow.zw).r;
-    return mix(b, n, uni.behind.z);
-}
-
-fragment float4 gelFragment(GelVaryings in [[stage_in]], constant GelUniforms &uni [[buffer(1)]],
-                            texture2d<float> mapNow [[texture(0)]], texture2d<float> mapBefore [[texture(1)]]) {
+fragment float4 gelFragment(GelVaryings in [[stage_in]], constant GelUniforms &uni [[buffer(1)]]) {
     Lit lit = light(in, uni);
     float a = clamp(abs(in.u), 0.0, 1.0);
     float across = in.kind < 0.5 ? clamp(abs(in.u) * in.extent / max(in.halfw, 1e-3), 0.0, 1.0) : a;
-    float lightBehind = smoothstep(uni.behind.x, uni.behind.y, brightness(in.pixel, uni, mapNow, mapBefore));
+    // One colour for the whole stroke, chosen from what is behind all of it (`InkContrast`).
+    float lightBehind = uni.behind.x;
     float3 hue = uni.light.rgb;
     float shimmer = 1 + 0.25 * uni.more.z * sin(in.s / (max(uni.lightPlace.x, 1.0) * uni.scale) - uni.time * uni.lightPlace.y);
 

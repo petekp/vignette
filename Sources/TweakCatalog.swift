@@ -266,8 +266,6 @@ enum TweakCatalog {
                 .number("inkGelWidth", "Width", \.inkGelWidth, 1...12, step: 0.25, unit: "pt", safe: 0.5...30),
                 .number("inkGelCore", "White middle", \.inkGelCore, 0...1, step: 0.05, safe: 0...1),
                 .number("inkGelSheen", "Highlight", \.inkGelSheen, 0...2, step: 0.05, safe: 0...2),
-                .number("inkGelSwitch", "Turns deep at", \.inkGelSwitch, 0.2...0.8, step: 0.01, safe: 0...1),
-                .number("inkGelSwitchWidth", "Turn width", \.inkGelSwitchWidth, 0.02...0.4, step: 0.01, safe: 0.01...1),
                 .number("inkGelGlow", "Glow", \.inkGelGlow, 0...2, step: 0.05, safe: 0...2),
                 .number("inkGelBloom", "Bloom toward light", \.inkGelBloom, 0...2, step: 0.05, safe: 0...2),
                 .number("inkGelGlowRadius", "Glow reach", \.inkGelGlowRadius, 0...24, step: 0.5, unit: "pt", safe: 0...60),
@@ -275,7 +273,7 @@ enum TweakCatalog {
                 .number("inkGelMotion", "Drift speed", \.inkGelMotion, 0...3, step: 0.05, safe: 0...3),
                 .number("inkGelShimmer", "Shimmer", \.inkGelShimmer, 0...3, step: 0.05, safe: 0...3),
                 .number("inkGelWander", "Light wander", \.inkGelWander, 0...1.5, step: 0.05, unit: " rad", safe: 0...1.5),
-            ], caption: { _ in "Your live ink is luminous ice over dark windows and deep blue over light ones, so it stands out on both. Turns deep at is the brightness behind the ink, 0 to 1, where it changes; the deep blue grows in from the line's edge over the turn's width. Vignette reads the brightness when you start inking and after an answer is drawn. The light drifts slowly round the line, and drift speed 0 holds it still." }),
+            ], caption: { _ in "Your live ink is luminous ice over dark windows and deep blue over light ones, whichever of the two has more contrast with what is behind it. Each stroke takes one colour for its whole length; one that crosses both kinds of content gets a light middle in a deep blue sheath. Vignette reads what is behind the ink when you start inking and after an answer is drawn. The light drifts slowly round the line, and drift speed 0 holds it still." }),
             TweakGroup("Material", [
                 .number("inkGelHighlightSharpness", "Highlight sharpness", \.inkGelHighlightSharpness, 10...300, safe: 1...1000),
                 .number("inkGelGlowFalloff", "Glow falloff", \.inkGelGlowFalloff, 0.5...6, step: 0.1, safe: 0.1...20),
@@ -351,6 +349,12 @@ enum TweakCatalog {
                 .number("liveInkFieldFollow", "Follow", \.liveInkFieldFollow, 0...0.5, step: 0.01, unit: "s", safe: 0...1),
                 .number("liveInkFieldStretch", "Stretch", \.liveInkFieldStretch, 0...1, step: 0.05, safe: 0...1),
             ], caption: { TweakCatalog.ringNote($0) }),
+            TweakGroup("Lamp's life", [
+                .number("liveInkLampBreath", "Breath", \.liveInkLampBreath, 0...0.5, step: 0.01, safe: 0...1, when: { $0.ring == 4 }),
+                .number("liveInkLampBreathSeconds", "Breath length", \.liveInkLampBreathSeconds, 1...8, step: 0.1, unit: "s", safe: 0.5...30, when: { $0.ring == 4 }),
+                .number("liveInkLampEnergy", "Energy from speed", \.liveInkLampEnergy, 0...1.5, step: 0.05, safe: 0...3, when: { $0.ring == 4 }),
+                .number("liveInkLampDrift", "Drift", \.liveInkLampDrift, 0...1, step: 0.05, safe: 0...1, when: { $0.ring == 4 }),
+            ], caption: { _ in "The lamp takes your ink's colours: the ice over dark content and deep blue over light, which darkens what is under it. Breath makes its pool rise and fall over the breath length. Energy brightens and widens it while the pointer moves fast. Drift moves light slowly round inside it. Breath and drift stop with Reduce Motion." }),
             TweakGroup("Showing", [
                 .number("liveInkFieldDelay", "Delay", \.liveInkFieldDelay, 0...1, step: 0.05, unit: "s", safe: 0...60),
                 .number("liveInkFieldFade", "Fade", \.liveInkFieldFade, 0...1, step: 0.05, unit: "s", safe: 0...60),

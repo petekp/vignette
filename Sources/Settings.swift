@@ -316,7 +316,7 @@ struct UITweaks: Codable, Equatable {
     var liveInkFieldGlow = 1.0       // 0 to 1: the ink-coloured light on and round the ring
     var liveInkFieldFollow = 0.04    // how long the ring takes to catch up with the pointer; 0 holds it on it
     var liveInkFieldStretch = 0.6    // 0 to 1: how far the ring stretches along the way the pointer moves
-    var liveInkFieldStyle = 1.0      // 0 Glass, 1 Lens, 2 Squircle, 3 Droplet, 4 Lamp, 5 Caustic
+    var liveInkFieldStyle = 4.0      // 0 Glass, 1 Lens, 2 Squircle, 3 Droplet, 4 Lamp, 5 Caustic
     var liveInkFieldZoom = 1.46      // Lens: magnifies its middle about the arrow's tip; 1 is none
     var liveInkFieldClear = 0.4      // Lens and Lamp: how much of the middle is left alone
     var liveInkFieldShine = 1.0      // Lens: its rim and highlight; Caustic: its glass edge
@@ -325,6 +325,11 @@ struct UITweaks: Codable, Equatable {
     var liveInkFieldBreak = 0.0      // Squircle: 0 is a closed outline; raised, only its corners remain
     var liveInkFieldSpread = 1.7     // Lamp: how far its light reaches, in ring sizes
     var liveInkFieldDepth = 0.23     // Caustic: how far into the ring its bright crescent reaches, a fraction of the size
+    // Lamp's life: how its pool of light moves on its own
+    var liveInkLampBreath = 0.15     // 0 to 0.5: how far its size and light rise and fall
+    var liveInkLampBreathSeconds = 3.5 // how long one breath takes
+    var liveInkLampEnergy = 0.6      // 0 to 1.5: how much brighter and wider it grows while the pointer moves fast
+    var liveInkLampDrift = 0.3       // 0 to 1: light drifting slowly round inside the pool
     // Live ink's answers
     var liveInkDrawOn = 0.5          // how long an answer's mark takes to draw itself on
     var liveInkHideFade = 0.12       // a mark fading out as the content under it starts to move
@@ -341,8 +346,6 @@ struct UITweaks: Codable, Equatable {
     var inkGelWidth = 5.0            // the line's width, in points of the screen
     var inkGelCore = 0.9             // 0 to 1: how white the ice is along its middle
     var inkGelSheen = 0.6            // 0 to 2: the highlight
-    var inkGelSwitch = 0.46          // 0 to 1: the brightness behind the ink at which it turns from ice to deep blue
-    var inkGelSwitchWidth = 0.12     // how much brightness the turn takes, from all ice to all deep blue
     var inkGelGlow = 0.55            // 0 to 2: the glow round the line
     var inkGelBloom = 0.6            // 0 to 2: more glow where the line faces the light
     var inkGelGlowRadius = 6.0       // how far the glow reaches, in points
@@ -408,6 +411,8 @@ struct UITweaks: Codable, Equatable {
         u.liveInkFieldFollow *= scale
         u.liveInkHideFade *= scale; u.liveInkShowFade *= scale
         u.inkSettle *= scale; u.lightGlintFade *= scale
+        // The lamp's breath and drift are motion, so they go with it.
+        u.liveInkLampBreath *= scale; u.liveInkLampDrift *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
         u.flightArc *= scale; u.flightDepth *= scale

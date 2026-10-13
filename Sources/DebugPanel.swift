@@ -257,7 +257,8 @@ struct TweakGroups: View {
     let ui: UITweaks
 
     var body: some View {
-        ForEach(section.groups.indices, id: \.self) { index in
+        // A group whose every row is for another style is left out.
+        ForEach(section.groups.indices.filter { section.groups[$0].tweaks.contains { $0.applies(ui) } }, id: \.self) { index in
             let group = section.groups[index]
             Section {
                 ForEach(group.tweaks.filter { $0.applies(ui) }) { TweakRow(spec: $0, ui: ui).equatable() }

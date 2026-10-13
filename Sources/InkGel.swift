@@ -53,8 +53,6 @@ enum InkGel {
         var glow: SIMD4<Float>
         var more: SIMD4<Float>
         var behind: SIMD4<Float>
-        var mapNow: SIMD4<Float>
-        var mapBefore: SIMD4<Float>
         /// xy: px taken off every vertex's place, so a line laid out once can be drawn as its layer moves.
         var offset: SIMD4<Float>
         var material: SIMD4<Float>
@@ -228,27 +226,27 @@ enum InkGel {
     /// The tweaks' values as the shader takes them, for a gel at `gel` on the screen, in global
     /// top-left points. `override` is the done state's colour, which takes the ice's place and,
     /// darkened, the deep blue's.
-    static func uniforms(_ ui: UITweaks, gel: CGRect, size: CGSize, scale: CGFloat, time: CFTimeInterval, override: CGColor?,
-                         headOpacity: CGFloat, backdrop: InkBackdrop.Reading) -> Uniforms {
-        let light = rgb(override ?? SRGB(hex: ui.inkGelLight)?.cgColor ?? CGColor(srgbRed: 0.55, green: 0.78, blue: 1, alpha: 1))
-        let deep = override.map { rgb($0) * 0.45 } ?? rgb(SRGB(hex: ui.inkGelDeep)?.cgColor ?? CGColor(srgbRed: 0.14, green: 0.3, blue: 0.62, alpha: 1))
-        let half = ui.inkGelSwitchWidth / 2
-        func rect(_ map: InkBackdrop.Map?) -> SIMD4<Float> {
-            // No map reads as dark everywhere, so the ink is the ice until one comes.
-            guard let map else { return SIMD4(0, 0, 1, 1) }
-            return SIMD4(Float((map.frame.minX - gel.minX) * scale), Float((map.frame.minY - gel.minY) * scale),
-                         Float(map.frame.width * scale), Float(map.frame.height * scale))
-        }
+    static func uniforms(_ ui: UITweaks, size: CGSize, scale: CGFloat, time: CFTimeInterval, override: CGColor?,
+                         headOpacity: CGFloat, deepness: CGFloat) -> Uniforms {
+        let light = rgb(override ?? SRGB(hex: ui.inkGelLight)?.cgColor ?? defaultIce)
+        let deep = override.map { rgb($0) * 0.45 } ?? rgb(SRGB(hex: ui.inkGelDeep)?.cgColor ?? defaultDeep)
         return Uniforms(size: SIMD2(Float(size.width), Float(size.height)), scale: Float(scale), time: Float(time),
                         light: SIMD4(light, Float(ui.inkGelCore)), deep: SIMD4(deep, 0),
                         glow: SIMD4(Float(ui.inkGelGlow), Float(ui.inkGelBloom), Float(ui.inkGelGlowRadius * scale), Float(ui.inkGelShadow)),
                         more: SIMD4(Float(headOpacity), Float(ui.inkGelWander), Float(ui.inkGelShimmer), Float(ui.inkGelSheen)),
-                        behind: SIMD4(Float(ui.inkGelSwitch - half), Float(ui.inkGelSwitch + half), backdrop.fade, Float(ui.inkGelSheathDepth)),
-                        mapNow: rect(backdrop.now), mapBefore: rect(backdrop.before), offset: .zero,
+                        behind: SIMD4(Float(deepness), 0, 0, Float(ui.inkGelSheathDepth)), offset: .zero,
                         material: SIMD4(Float(ui.inkGelHighlightSharpness), Float(ui.inkGelGlowFalloff), Float(ui.inkGelDeepEdge), Float(ui.inkGelEdgeOpacity)),
                         lightPlace: SIMD4(Float(ui.inkGelShimmerLength), Float(ui.inkGelShimmerSpeed), Float(ui.inkGelLightAngle * .pi / 180),
                                           Float(ui.inkGelLightHeight)))
     }
+
+    /// The ice and the deep blue when the settings' colours do not parse.
+    static let defaultIce = CGColor(srgbRed: 0.55, green: 0.78, blue: 1, alpha: 1)
+    static let defaultDeep = CGColor(srgbRed: 0.14, green: 0.3, blue: 0.62, alpha: 1)
+
+    /// How deep a stroke over content of both kinds goes: far enough that its deep sheath starts a
+    /// little past the middle of the line, leaving a light middle, at `sheathDepth`.
+    static func mixedDeepness(sheathDepth: Double) -> CGFloat { CGFloat(min(0.57 / max(sheathDepth, 0.01), 1)) }
 
     private static func rgb(_ colour: CGColor) -> SIMD3<Float> {
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
@@ -305,11 +303,11 @@ final class SettledLine {
     }
 }
 
-/// How light the screen is behind the person's ink, so the gel takes the colour that stands out
-/// there: luminous ice over dark content and deep blue over light. Each display is captured without
-/// Vignette's own windows when inking starts and after an answer is drawn, and kept as a grid of
-/// 8 pt cells (`LivePacket.Luminance`). A new map fades in over the one before. Without Screen
-/// Recording there is no map, and the ink is the ice.
+/// How light the screen is behind the person's ink, so each stroke takes the colour that stands out
+/// there (`InkContrast`). Each display is captured without Vignette's own windows when inking starts
+/// and after an answer is drawn, and kept as a grid of 8 pt cells (`LivePacket.Luminance`). A stroke
+/// eases to the colour a new map gives it. Without Screen Recording there is no map, and the ink is
+/// the ice.
 @MainActor
 final class InkBackdrop {
     static let shared = InkBackdrop()
@@ -317,29 +315,13 @@ final class InkBackdrop {
     struct Map {
         /// The display it covers, in global top-left points.
         let frame: CGRect
-        let texture: MTLTexture
         let luminance: LivePacket.Luminance
     }
 
-    /// The maps a layer reads: the newest, the one it fades in from, and how far it has come.
-    struct Reading {
-        var now: Map?
-        var before: Map?
-        var fade: Float
-    }
-
     private var maps: [Map] = []
-    private var earlier: [Map] = []
-    private var changed: CFTimeInterval = 0
-    private var fadeDuration: CFTimeInterval = 0
     private var capturing: Task<Void, Never>?
-    /// What a texture is bound to when there is no map: one cell of black, read as dark.
-    private lazy var none: MTLTexture? = {
-        guard let device = InkGel.metal?.device else { return nil }
-        let texture = device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .r8Unorm, width: 1, height: 1, mipmapped: false))
-        texture?.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: [UInt8(0)], bytesPerRow: 1)
-        return texture
-    }()
+    /// Counts the captures taken in, so a stroke knows its colour was chosen from an older one.
+    private(set) var generation = 0
 
     /// The size of a map's cell, in points.
     static let cell: CGFloat = 8
@@ -352,54 +334,23 @@ final class InkBackdrop {
         capturing = Task { [weak self] in
             let captured = await Self.capture()
             guard !Task.isCancelled, let self, !captured.isEmpty else { return }
-            self.take(captured)
+            self.maps = captured.map { Map(frame: $0.frame, luminance: $0.luminance) }
+            self.generation += 1
+            InkClock.shared.backdropChanged()
             Log.write("[live-ink] backdrop read displays=\(captured.count) ms=\(Int((CACurrentMediaTime() - started) * 1000))")
             read?()
         }
     }
 
-    /// The newest map's mean luminance, 0 to 1, under `rect` in global top-left points, or nil with no
-    /// map there.
+    /// The brightness of the cell under `point`, in global top-left points, sRGB encoded from 0 to 1,
+    /// or nil with no map there.
+    func cell(at point: CGPoint) -> CGFloat? {
+        maps.lazy.compactMap { $0.luminance.value(at: point) }.first
+    }
+
+    /// The mean brightness, 0 to 1, under `rect` in global top-left points, or nil with no map there.
     func brightness(in rect: CGRect) -> CGFloat? {
         maps.lazy.compactMap { $0.luminance.mean(in: rect) }.first
-    }
-
-    /// What a layer covering `rect`, in global top-left points, reads at `now`.
-    func reading(for rect: CGRect, at now: CFTimeInterval) -> Reading {
-        let centre = CGPoint(x: rect.midX, y: rect.midY)
-        func map(in list: [Map]) -> Map? { list.first { $0.frame.contains(centre) } ?? list.first { $0.frame.intersects(rect) } }
-        let fade = fadeDuration > 0 ? min(max((now - changed) / fadeDuration, 0), 1) : 1
-        return Reading(now: map(in: maps), before: map(in: earlier), fade: Float(fade))
-    }
-
-    /// The textures to bind for `reading`: the newest map's, and the one before's.
-    func textures(for reading: Reading) -> (now: MTLTexture, before: MTLTexture)? {
-        guard let none else { return nil }
-        return (reading.now?.texture ?? none, reading.before?.texture ?? none)
-    }
-
-    /// A map is fading in, so every gel draws each frame.
-    func isFading(at now: CFTimeInterval) -> Bool {
-        // A frame past the end, so the last drawing is the map alone.
-        now < changed + fadeDuration + 0.05
-    }
-
-    private func take(_ captured: [(frame: CGRect, luminance: LivePacket.Luminance)]) {
-        guard let device = InkGel.metal?.device else { return }
-        let made = captured.compactMap { frame, luminance -> Map? in
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Unorm, width: luminance.columns,
-                                                                      height: luminance.rows, mipmapped: false)
-            guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
-            texture.replace(region: MTLRegionMake2D(0, 0, luminance.columns, luminance.rows), mipmapLevel: 0,
-                            withBytes: luminance.cells, bytesPerRow: luminance.columns)
-            return Map(frame: frame, texture: texture, luminance: luminance)
-        }
-        let now = CACurrentMediaTime()
-        earlier = maps
-        maps = made
-        changed = now
-        fadeDuration = 0.2 * Settings.shared.motionScale
-        InkClock.shared.wake()
     }
 
     /// Each display behind the ink, drawn down to its map's cells. Vignette's own windows are left
@@ -459,6 +410,12 @@ final class InkClock: NSObject {
         layers[ObjectIdentifier(layer)] = nil
     }
 
+    /// The backdrop was read again: every gel chooses its colour again.
+    func backdropChanged() {
+        layers.values.forEach { $0.layer?.backdropChanged() }
+        wake()
+    }
+
     /// Ticks again, after being paused for want of anything moving.
     func wake() {
         if link == nil, let screen = NSScreen.screens.first {
@@ -479,7 +436,7 @@ final class InkClock: NSObject {
         let idle = rate > 0 && now - lastIdle >= 1.0 / 30
         if idle { lastIdle = now }
         var drawn: [(commands: MTLCommandBuffer, drawable: CAMetalDrawable)] = []
-        var moving = InkBackdrop.shared.isFading(at: now)
+        var moving = false
         for layer in shown {
             let easing = moving || layer.isEasing(at: now)
             moving = moving || easing

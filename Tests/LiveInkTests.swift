@@ -185,6 +185,24 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(chord.flagsChanged([.control, .option]), .began)
     }
 
+    // MARK: The ink's colour
+
+    func testTheInkTakesTheColourThatStandsOutAndOneColourAStroke() {
+        let contrast = InkContrast(ice: CGColor(srgbRed: 0, green: 0.522, blue: 1, alpha: 1),
+                                   deep: CGColor(srgbRed: 0.02, green: 0.1, blue: 0.57, alpha: 1))
+        XCTAssertFalse(contrast.deepWins(behind: 0), "ice on black")
+        XCTAssertTrue(contrast.deepWins(behind: 1), "deep blue on white")
+        XCTAssertFalse(contrast.deepWins(behind: 0.3))
+        XCTAssertTrue(contrast.deepWins(behind: 0.4))
+
+        let mixed: CGFloat = 0.4
+        XCTAssertEqual(InkContrast.state(deepShare: 0, mixed: mixed), 0)
+        XCTAssertEqual(InkContrast.state(deepShare: 0.03, mixed: mixed), 0, "a little light content leaves it ice")
+        XCTAssertEqual(InkContrast.state(deepShare: 0.5, mixed: mixed), mixed, "both kinds give the sheath")
+        XCTAssertEqual(InkContrast.state(deepShare: 0.97, mixed: mixed), 1)
+        XCTAssertEqual(InkContrast.state(deepShare: 1, mixed: mixed), 1)
+    }
+
     // MARK: The pointer field
 
     func testTheRingGrowsInAndSettlesRoundThePointer() {

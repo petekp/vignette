@@ -622,6 +622,15 @@ extension LivePacket {
             self.cells = cells
         }
 
+        /// The luminance, 0 to 1, of the cell under `point`, in global top-left points, or nil when
+        /// it is outside the capture.
+        func value(at point: CGPoint) -> CGFloat? {
+            guard frame.contains(point), frame.width > 0, frame.height > 0 else { return nil }
+            let column = min(Int((point.x - frame.minX) / frame.width * CGFloat(columns)), columns - 1)
+            let row = min(Int((point.y - frame.minY) / frame.height * CGFloat(rows)), rows - 1)
+            return CGFloat(cells[row * columns + column]) / 255
+        }
+
         /// The mean luminance, 0 to 1, of the cells under `rect`, in global top-left points, or nil
         /// when it is outside the capture.
         func mean(in rect: CGRect) -> CGFloat? {

@@ -92,7 +92,10 @@ The names in brackets are `// MARK:` sections.
   the marks; `docs/live-ink-cursor-2026-10-10.md`). It is a ring round the pointer, in one of
   several styles (`ui.liveInkFieldStyle`; `docs/live-ink-pointer-variants-2026-10-10.md`).
   Nothing follows the pen while it draws: a wake that rippled the screen behind the stroke was
-  removed on 2026-10-13 as too much. In its first
+  removed on 2026-10-12 as too much. The default style is Lamp, a soft pool of light in the ink's
+  colours, the ice over dark content and deep blue over light, that breathes, brightens with the
+  pointer's speed and has light drifting inside it
+  (`docs/live-ink-lamp-and-stroke-colour-2026-10-12.md`). In its first
   style, Glass, it bends the screen under it towards its crest, parts red from blue there, and glows
   in a lighter shade of the person's colour. Inside the ring nothing moves, so what the pointer is on
   stays where it is.

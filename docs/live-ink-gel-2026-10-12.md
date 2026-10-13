@@ -41,13 +41,18 @@ clears 3.5 everywhere:
   window. Each capture is drawn down to a grid of 8 pt cells (`LivePacket.Luminance`). It takes about
   100 ms, so the map is there before most strokes start. Cells this size follow windows and regions,
   not the letters of a text, so the ink does not flicker along a line of type.
-- **The switch.** The ice turns deep blue around brightness 0.46 (`inkGelSwitch`), over a band 0.12
-  wide (`inkGelSwitchWidth`). That is where the two colours give the same contrast: about 3.4.
-- **The sheath.** Across the switch, the deep blue grows in from the line's edge rather than the two
-  colours mixing. A half mix is a mid colour, which stands out from nothing: over a background right
-  at the switch it measured 2.5. A light middle in a dark sheath measured 3.5 there.
-- **A new map fades in** over the one before, in 0.2 s times the motion scale, so a change is not a
-  pop. Ink drawn before the first map is the ice, then turns.
+- **One colour a stroke, by contrast.** A stroke is read every 8 pt along its centre line. At each
+  reading, the colour with the higher contrast ratio against that cell wins (`InkContrast`). A stroke
+  almost all over cells where the ice wins is the ice, one almost all over cells where the deep blue
+  wins is deep blue, and one with a real share of both takes the sheath look below. The shader takes
+  the stroke's colour as one uniform. Before 2026-10-12 each pixel chose by a brightness threshold,
+  and a stroke across mixed content was striped
+  (`docs/live-ink-lamp-and-stroke-colour-2026-10-12.md`).
+- **The sheath.** Between the two, the deep blue grows in from the line's edge rather than the two
+  colours mixing. A half mix is a mid colour, which stands out from nothing: over a background where
+  the two tie it measured 2.5. A light middle in a dark sheath measured 3.5 there.
+- **A new colour eases in** over 0.2 s times the motion scale, when the backdrop is read again or
+  the pen crosses onto other content. Ink drawn before the first map is the ice.
 - **No Screen Recording:** there is no map, and the ink is the ice. It stands out on dark windows
   and is faint on white. Live ink's asks need the permission anyway.
 - **The done state** is the same rod in green: the green takes the ice's place, and a darker green

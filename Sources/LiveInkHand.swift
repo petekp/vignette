@@ -369,6 +369,20 @@ final class InkMarkLayer: CALayer {
     }
     /// The widest the line is, in points.
     private var widest: CGFloat = 0
+    /// What the line passes over, read once a map cell along it: the length read, in points, how much
+    /// of it is over content where the deep blue stands out more, the length since the last reading,
+    /// how many of its points are counted, and the backdrop they were read from.
+    private var behind = Behind()
+    private struct Behind {
+        var read: CGFloat = 0
+        var deep: CGFloat = 0
+        var pending: CGFloat = 0
+        var counted = 0
+        var generation = -1
+    }
+    /// The line's colour, 0 the ice and 1 the deep blue (`InkContrast.state`): where it is going, and
+    /// where it eases from and since when.
+    private var deepness: (target: CGFloat, from: CGFloat, start: CFTimeInterval)?
 
     init(scale: CGFloat) {
         super.init()
@@ -515,6 +529,11 @@ final class InkMarkLayer: CALayer {
     /// the ones before already.
     private func lay(_ stroke: InkHand.Stroke, head: [CGPoint], width: CGFloat, growOnly: Bool, from: Int = 0) {
         shape = InkGel.Shape(stroke: stroke, width: width, head: head)
+        // The pen's settled points stay where they were counted; anything else is counted again.
+        if !growOnly {
+            behind = Behind()
+            deepness = nil
+        }
         let new = InkHand.Stroke(points: Array(stroke.points[min(from, stroke.points.count)...]),
                                  widths: Array(stroke.widths[min(from, stroke.widths.count)...]))
         widest = max(growOnly ? widest : 0, (new.widths.max() ?? 1) * width)
@@ -549,8 +568,14 @@ final class InkMarkLayer: CALayer {
         CATransaction.commit()
     }
 
+    /// The backdrop was read again: the line chooses its colour again at its next drawing.
+    func backdropChanged() {
+        needsGel = true
+    }
+
     /// Whether it eases at `now`, and so must draw every frame.
     func isEasing(at now: CFTimeInterval) -> Bool {
+        if let deepness, now - deepness.start < Self.colourEase { return true }
         guard let easing else { return false }
         if now - easing.start < easing.duration { return true }
         // One more drawing, exactly on its shape.
@@ -589,20 +614,18 @@ final class InkMarkLayer: CALayer {
         let ui = Settings.shared.data.ui
         if built == nil { built = build(shape, device: metal.device) }
         let place = onScreen(gel.frame)
-        let backdrop = place.map { InkBackdrop.shared.reading(for: $0, at: now) } ?? InkBackdrop.Reading(now: nil, before: nil, fade: 1)
-        guard let built, let maps = InkBackdrop.shared.textures(for: backdrop), let drawable = gel.nextDrawable(),
-              let commands = metal.queue.makeCommandBuffer() else { return nil }
+        let colour = deepness(of: shape.stroke, onScreenAt: place.map { CGPoint(x: $0.minX - gel.frame.minX, y: $0.minY - gel.frame.minY) },
+                              ui: ui, at: now)
+        guard let built, let drawable = gel.nextDrawable(), let commands = metal.queue.makeCommandBuffer() else { return nil }
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = drawable.texture
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         pass.colorAttachments[0].storeAction = .store
         guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return nil }
-        var uniforms = InkGel.uniforms(ui, gel: place ?? gel.frame, size: gel.drawableSize, scale: contentsScale, time: time, override: override,
-                                       headOpacity: headOpacity, backdrop: backdrop)
+        var uniforms = InkGel.uniforms(ui, size: gel.drawableSize, scale: contentsScale, time: time, override: override,
+                                       headOpacity: headOpacity, deepness: colour)
         uniforms.offset = SIMD4(Float((gel.frame.minX - built.origin.x) * contentsScale), Float((gel.frame.minY - built.origin.y) * contentsScale), 0, 0)
-        encoder.setFragmentTexture(maps.now, index: 0)
-        encoder.setFragmentTexture(maps.before, index: 1)
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
         for (pipeline, draws) in [(metal.halo, built.halo), (metal.body, built.body)] {
@@ -660,6 +683,46 @@ final class InkMarkLayer: CALayer {
         // The content views are flipped, so their layers run y down from the window's top-left.
         let inView = convert(rect, to: layer)
         return inView.offsetBy(dx: window.frame.minX, dy: StateReport.primaryHeight - window.frame.maxY)
+    }
+
+    /// How long the line takes to ease to a new colour, in seconds at full motion.
+    private static let colourEase: CFTimeInterval = 0.2
+
+    /// The line's colour at `now`, 0 the ice and 1 the deep blue, from the content behind `stroke`
+    /// sampled every map cell along it. `shift` takes a point of this layer to global top-left
+    /// points; without it, or without a map, the line is the ice. The pen's settled points are
+    /// counted once.
+    private func deepness(of stroke: InkHand.Stroke, onScreenAt shift: CGPoint?, ui: UITweaks, at now: CFTimeInterval) -> CGFloat {
+        let backdrop = InkBackdrop.shared
+        if behind.generation != backdrop.generation { behind = Behind(generation: backdrop.generation) }
+        if let shift, behind.counted < stroke.points.count {
+            let contrast = InkContrast(ui)
+            let points = stroke.points
+            for index in behind.counted..<points.count {
+                let point = points[index]
+                if index > 0 { behind.pending += hypot(point.x - points[index - 1].x, point.y - points[index - 1].y) }
+                // The first point, then one reading a cell along, standing for the length since the last.
+                guard index == 0 || behind.pending >= InkBackdrop.cell,
+                      let cell = backdrop.cell(at: CGPoint(x: point.x + shift.x, y: point.y + shift.y)) else { continue }
+                let weight = max(behind.pending, 1)
+                behind.read += weight
+                if contrast.deepWins(behind: cell) { behind.deep += weight }
+                behind.pending = 0
+            }
+            behind.counted = points.count
+        }
+        let share = behind.read > 0 ? min(behind.deep / behind.read, 1) : 0
+        let target = InkContrast.state(deepShare: share, mixed: InkGel.mixedDeepness(sheathDepth: ui.inkGelSheathDepth))
+        let duration = Self.colourEase * Settings.shared.motionScale
+        // The first colour a line takes shows at once; a change eases.
+        guard let current = deepness else {
+            deepness = (target, target, now - duration)
+            return target
+        }
+        let t = duration > 0 ? min(max((now - current.start) / duration, 0), 1) : 1
+        let shown = current.from + (current.target - current.from) * Self.curve(t)
+        if abs(target - current.target) > 0.001 { deepness = (target, shown, now) }
+        return shown
     }
 
     /// The style its line is laid out in: the mark's, at the gel's width.
