@@ -156,6 +156,8 @@ final class LiveInkOverlay: NSPanel {
         let marksLayer: LiveMarksLayer
         /// The stroke being drawn, above the marks, moved as they are.
         private let pen: InkMarkLayer
+        /// Builds the stroke being drawn as its points come.
+        private var hand = InkHand.Pen()
         private var stroke: [CGPoint] = []
         private let scale: CGFloat
 
@@ -202,10 +204,10 @@ final class LiveInkOverlay: NSPanel {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             defer { CATransaction.commit() }
-            let stroke = InkHand.stroke(points, tapersEnd: false)
+            let stroke = hand.stroke(through: points)
             pen.isHidden = stroke.points.count < 2
             guard stroke.points.count > 1 else { return }
-            pen.showPen(stroke, markStyle: markStyle)
+            pen.showPen(stroke, settled: hand.settled.points.count, markStyle: markStyle)
         }
 
         override func mouseMoved(with event: NSEvent) {
@@ -933,3 +935,4 @@ final class NoteLayer: CALayer {
         add(appear, forKey: "appear")
     }
 }
+

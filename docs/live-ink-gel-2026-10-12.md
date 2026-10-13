@@ -70,6 +70,12 @@ clears 3.5 everywhere:
   holds the gel still and the link rests. A tweak redraws every gel.
 - **What stays the same.** `show`, `showPen`, `ease`, `drawOn`, `undraw`, `twin` and `centreLine`.
   Drawing on and undrawing go through a reveal mask wide enough for the glow.
+- **The pen.** A point's width compares how fast the hand moved there with its speed over the 48
+  pointer events before it (`InkHand.Pen`), so a drawn part of the line never changes. Points a later
+  event cannot move are laid out once into buffers that only grow (`SettledLine`), and each event
+  lays out only the last few. An event costs the same at any length: in unit timing, 0.1 ms at
+  500 pt and at 12,000 pt. Before, it rebuilt the whole line: 13 ms at 1,500 pt and 65 ms at
+  12,000 pt, so long lines dropped frames.
 - **Width.** The line is `inkGelWidth` wide, 5 pt. Hit testing and the image sent to the agent still
   use the mark's own style.
 

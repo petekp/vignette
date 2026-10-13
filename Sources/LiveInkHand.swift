@@ -110,59 +110,162 @@ struct InkHand: Equatable {
     }
 
     /// `raw` resampled every `spacing` points and smoothed, each point as wide as the hand was slow
-    /// there, measured by the spacing of the pointer's events around it against their mean, and
-    /// tapered where the pen landed and, with `tapersEnd`, where it lifted.
+    /// there, and tapered where the pen landed and, with `tapersEnd`, where it lifted.
     static func stroke(_ raw: [CGPoint], tapersEnd: Bool) -> Stroke {
-        guard raw.count > 1 else { return Stroke(points: raw, widths: raw.map { _ in 1 }) }
-        let steps = raw.indices.map { index -> CGFloat in
-            let a = raw[max(index - 1, 0)], b = raw[min(index + 1, raw.count - 1)]
-            return hypot(b.x - a.x, b.y - a.y) / CGFloat(min(index + 1, raw.count - 1) - max(index - 1, 0))
+        var pen = Pen()
+        let stroke = pen.stroke(through: raw)
+        guard tapersEnd, stroke.points.count > 1 else { return stroke }
+        return Stroke(points: stroke.points, widths: taper(stroke.widths, along: lengths(stroke.points), start: false, end: true))
+    }
+
+    /// The stroke under the pen, built as the pointer's events arrive. A point's place and width
+    /// depend only on the events up to a few past it, so all but the stroke's end is worked out once
+    /// and kept, and an event costs the same however long the stroke is.
+    ///
+    /// A point is as wide as the hand was slow there: the spacing of the pointer's events round it
+    /// against their mean over the `meanReach` events before it. A mean over the whole stroke
+    /// changed every width with each event, so the line shifted as it grew.
+    struct Pen {
+        private var raw: [CGPoint] = []
+        /// The slowness at each raw event whose next event has come.
+        private var slowness: [CGFloat] = []
+        /// The running sum of those events' spacings, for their mean.
+        private var spacingSums: [CGFloat] = [0]
+        /// The points every `spacing` along the raw segments whose ends are settled, and their slowness,
+        /// before smoothing.
+        private var flat: [CGPoint] = [], flatSlowness: [CGFloat] = []
+        private var resampled = 0
+        private var carried: CGFloat = 0
+        /// The stroke's start, which no later event changes, and the length to each of its points.
+        private(set) var settled = Stroke(points: [], widths: [])
+        private var settledLengths: [CGFloat] = []
+
+        /// The stroke through `raw`, which continues the events this pen has had or starts a new stroke.
+        mutating func stroke(through raw: [CGPoint]) -> Stroke {
+            if raw.count < self.raw.count || raw.first != self.raw.first { self = Pen() }
+            for point in raw.dropFirst(self.raw.count) { add(point) }
+            return current()
         }
-        let mean = max(steps.reduce(0, +) / CGFloat(steps.count), .ulpOfOne)
-        let slowness = steps.map { min(max(1.32 - 0.42 * $0 / mean, 0.72), 1.4) }
-        // Resampled by length, so the widths no longer depend on how often the pointer reported.
-        var points = [raw[0]], widths = [slowness[0]]
-        var carried: CGFloat = 0
-        for index in 1..<raw.count {
-            let a = raw[index - 1], b = raw[index]
+
+        private mutating func add(_ point: CGPoint) {
+            raw.append(point)
+            // An event's spacing needs the event after it, so the one before this is settled now.
+            while slowness.count < raw.count - 1 {
+                let index = slowness.count
+                let step = Self.step(at: index, in: raw)
+                spacingSums.append(spacingSums[spacingSums.count - 1] + step)
+                slowness.append(slowness(of: step, at: index))
+            }
+            // A segment's points need the slowness at both its ends.
+            if flat.isEmpty, let first = slowness.first { flat = [raw[0]]; flatSlowness = [first] }
+            while resampled + 1 < slowness.count {
+                Self.resample(from: raw[resampled], to: raw[resampled + 1], slowness[resampled], slowness[resampled + 1],
+                              carried: &carried, into: &flat, &flatSlowness)
+                resampled += 1
+            }
+            settle()
+        }
+
+        private static func step(at index: Int, in raw: [CGPoint]) -> CGFloat {
+            let before = max(index - 1, 0), after = min(index + 1, raw.count - 1)
+            let a = raw[before], b = raw[after]
+            return hypot(b.x - a.x, b.y - a.y) / CGFloat(max(after - before, 1))
+        }
+
+        private func slowness(of step: CGFloat, at index: Int) -> CGFloat {
+            let from = max(0, index + 1 - Self.meanReach)
+            let sum = spacingSums[spacingSums.count - 1] - spacingSums[from] + (index < spacingSums.count - 1 ? 0 : step)
+            let count = CGFloat(index + 1 - from)
+            let mean = max(sum / count, .ulpOfOne)
+            return min(max(1.32 - 0.42 * step / mean, 0.72), 1.4)
+        }
+
+        private static func resample(from a: CGPoint, to b: CGPoint, _ slowA: CGFloat, _ slowB: CGFloat, carried: inout CGFloat,
+                                     into points: inout [CGPoint], _ slownesses: inout [CGFloat]) {
             let length = hypot(b.x - a.x, b.y - a.y)
-            guard length > 0 else { continue }
+            guard length > 0 else { return }
             var at = spacing - carried
             while at <= length {
                 let t = at / length
                 points.append(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
-                widths.append(slowness[index - 1] + (slowness[index] - slowness[index - 1]) * t)
+                slownesses.append(slowA + (slowB - slowA) * t)
                 at += spacing
             }
             carried = length - (at - spacing)
         }
-        if let last = raw.last, points.last != last { points.append(last); widths.append(slowness[slowness.count - 1]) }
-        for _ in 0..<2 {
-            points = points.indices.map { index in
-                guard index > 0, index < points.count - 1 else { return points[index] }
-                let a = points[index - 1], b = points[index], c = points[index + 1]
+
+        /// Keeps the points that no later event can change: smoothing reaches two points either side and
+        /// the widths' average `widthReach`.
+        private mutating func settle() {
+            let final = flat.count - max(2, Self.widthReach) - 1
+            guard final > settled.points.count else { return }
+            let points = flat, slownesses = flatSlowness
+            for index in settled.points.count..<final { keep(index, in: points, slownesses) }
+        }
+
+        private mutating func keep(_ index: Int, in points: [CGPoint], _ slownesses: [CGFloat]) {
+            let point = Self.smoothed(index, in: points)
+            let length = settled.points.last.map { settledLengths[settledLengths.count - 1] + hypot(point.x - $0.x, point.y - $0.y) } ?? 0
+            settled.points.append(point)
+            settledLengths.append(length)
+            settled.widths.append(Self.averaged(index, in: slownesses) * InkHand.startTaper(at: length))
+        }
+
+        /// The settled start and the end as the events so far place it.
+        private func current() -> Stroke {
+            guard raw.count > 1 else { return Stroke(points: raw, widths: raw.map { _ in 1 }) }
+            var points = flat, slownesses = flatSlowness, carried = carried
+            // The last event's slowness as it stands, and the segments not settled yet.
+            let ends = slowness + [slowness(of: Self.step(at: raw.count - 1, in: raw), at: raw.count - 1)]
+            for index in resampled..<(raw.count - 1) {
+                Self.resample(from: raw[index], to: raw[index + 1], ends[index], ends[index + 1], carried: &carried, into: &points, &slownesses)
+            }
+            if let last = raw.last, points.last != last { points.append(last); slownesses.append(ends[ends.count - 1]) }
+            var stroke = settled
+            var length = settledLengths.last ?? 0
+            for index in settled.points.count..<points.count {
+                let point = Self.smoothed(index, in: points)
+                if let before = stroke.points.last { length += hypot(point.x - before.x, point.y - before.y) }
+                stroke.points.append(point)
+                stroke.widths.append(Self.averaged(index, in: slownesses) * InkHand.startTaper(at: length))
+            }
+            return stroke
+        }
+
+        /// `points[index]` after two passes of a [1 2 1] smoothing, the ends kept.
+        private static func smoothed(_ index: Int, in points: [CGPoint]) -> CGPoint {
+            func once(_ i: Int) -> CGPoint {
+                guard i > 0, i < points.count - 1 else { return points[i] }
+                let a = points[i - 1], b = points[i], c = points[i + 1]
                 return CGPoint(x: (a.x + 2 * b.x + c.x) / 4, y: (a.y + 2 * b.y + c.y) / 4)
             }
+            guard index > 0, index < points.count - 1 else { return once(index) }
+            let a = once(index - 1), b = once(index), c = once(index + 1)
+            return CGPoint(x: (a.x + 2 * b.x + c.x) / 4, y: (a.y + 2 * b.y + c.y) / 4)
         }
-        let reach = 6
-        widths = widths.indices.map { index in
-            let span = max(0, index - reach)...min(widths.count - 1, index + reach)
-            return span.reduce(0) { $0 + widths[$1] } / CGFloat(span.count)
+
+        private static func averaged(_ index: Int, in slownesses: [CGFloat]) -> CGFloat {
+            let span = max(0, index - widthReach)...min(slownesses.count - 1, index + widthReach)
+            return span.reduce(0) { $0 + slownesses[$1] } / CGFloat(span.count)
         }
-        return Stroke(points: points, widths: taper(widths, along: lengths(points), end: tapersEnd))
+
+        private static let meanReach = 48
+        private static let widthReach = 6
     }
 
-    /// The widths narrowed over the first `startTaper` points of length and, with `end`, the last
-    /// `endTaper`.
-    private static func taper(_ widths: [CGFloat], along lengths: [CGFloat], end: Bool) -> [CGFloat] {
+    /// The widths narrowed over the first `startTaper` points of length, with `start`, and the last
+    /// `endTaper`, with `end`.
+    private static func taper(_ widths: [CGFloat], along lengths: [CGFloat], start: Bool = true, end: Bool) -> [CGFloat] {
         let total = lengths.last ?? 0
-        func ease(_ x: CGFloat) -> CGFloat { let t = min(max(x, 0), 1); return t * t * (3 - 2 * t) }
         return widths.indices.map { index in
-            let start = 0.38 + 0.62 * ease(lengths[index] / startTaper)
             let finish = end ? 0.3 + 0.7 * ease((total - lengths[index]) / endTaper) : 1
-            return widths[index] * start * finish
+            return widths[index] * (start ? startTaper(at: lengths[index]) : 1) * finish
         }
     }
+
+    private static func startTaper(at length: CGFloat) -> CGFloat { 0.38 + 0.62 * ease(length / startTaper) }
+
+    private static func ease(_ x: CGFloat) -> CGFloat { let t = min(max(x, 0), 1); return t * t * (3 - 2 * t) }
 
     /// The length of the path from the first point to each.
     static func lengths(_ points: [CGPoint]) -> [CGFloat] {
@@ -221,19 +324,27 @@ final class InkMarkLayer: CALayer {
     /// What is drawn: the mark, the hand it was given, the hand it is drawn with, which is an even one
     /// when it was given none, and the style its line is laid out in.
     private var shown: (mark: Mark, given: InkHand?, hand: InkHand, markStyle: MarkStyle, inkStyle: MarkStyle)?
-    /// The stroke being drawn, while this is the pen.
-    private var pen: (stroke: InkHand.Stroke, markStyle: MarkStyle)?
+    /// The stroke being drawn, while this is the pen, and how many of its points no later event moves.
+    private var pen: (stroke: InkHand.Stroke, settled: Int, markStyle: MarkStyle)?
+    /// The pen's settled start, laid out once.
+    private var settledLine: SettledLine?
     /// The shape as it settles: the line and head drawn now, and while easing, the line it eases from.
     private var shape: InkGel.Shape?
     private var easing: (from: InkHand.Stroke, start: CFTimeInterval, duration: CFTimeInterval)?
     /// The done state's colour, in place of the gel's own.
     private var override: CGColor?
-    /// The vertices for `shape` as it is, kept while it holds still, and the frame they are in.
-    private var built: (buffer: MTLBuffer, halo: Int, body: Int)?
+    /// The vertices for `shape` as it is, kept while it holds still: the buffers each pass draws, with
+    /// their vertex counts, and the place in points their vertices are laid out from.
+    private var built: (halo: [(MTLBuffer, Int)], body: [(MTLBuffer, Int)], origin: CGPoint)?
     /// Something changed since the last drawing: draw at the next tick, whatever the clock's rate.
     private(set) var needsGel = false
     /// The centre line as drawn, for the thinking light and drawing on.
-    private(set) var centreLine: CGPath?
+    var centreLine: CGPath? {
+        guard let shape else { return nil }
+        let line = CGMutablePath()
+        line.addLines(between: shape.stroke.points)
+        return line
+    }
     /// The widest the line is, in points.
     private var widest: CGFloat = 0
 
@@ -266,18 +377,23 @@ final class InkMarkLayer: CALayer {
         guard let drawing = hand ?? InkHand.even(for: mark, markStyle: inkStyle) else { return }
         shown = (mark, hand, drawing, markStyle, inkStyle)
         pen = nil
+        settledLine = nil
         easing = nil
         lay(InkHand.Stroke(points: drawing.points(of: mark, markStyle: inkStyle), widths: drawing.widths),
             head: InkGel.corners(of: mark.shape(pointScale: 1, markStyle: inkStyle)?.filled), width: inkStyle.strokeWidth, growOnly: false)
     }
 
-    /// The stroke being drawn, its end at the pen. It draws at once, in the pointer's own event.
-    func showPen(_ stroke: InkHand.Stroke, markStyle: MarkStyle) {
+    /// The stroke being drawn, its end at the pen, its first `settled` points where no later event
+    /// moves them. It draws at once, in the pointer's own event.
+    func showPen(_ stroke: InkHand.Stroke, settled: Int, markStyle: MarkStyle) {
         shown = nil
         easing = nil
-        pen = (stroke, markStyle)
         // A new stroke starts the layer afresh; one under way only grows it.
-        lay(stroke, head: [], width: Self.inkStyle(markStyle).strokeWidth, growOnly: stroke.points.count > 3)
+        let growing = stroke.points.count > 3 && pen.map { $0.stroke.points.first == stroke.points.first && settled >= $0.settled } ?? false
+        if !growing { settledLine = nil }
+        let covered = growing ? max(0, (pen?.settled ?? 0) - 8) : 0
+        pen = (stroke, settled, markStyle)
+        lay(stroke, head: [], width: Self.inkStyle(markStyle).strokeWidth, growOnly: growing, from: covered)
         if isVisible, let frame = encode(at: CACurrentMediaTime(), time: InkClock.shared.time) {
             frame.commands.commit()
             frame.commands.waitUntilScheduled()
@@ -365,20 +481,22 @@ final class InkMarkLayer: CALayer {
             self.shown = nil
             show(shown.mark, hand: shown.given, markStyle: shown.markStyle)
         } else if let pen {
-            showPen(pen.stroke, markStyle: pen.markStyle)
+            settledLine = nil
+            showPen(pen.stroke, settled: pen.settled, markStyle: pen.markStyle)
         }
         built = nil
         needsGel = true
         InkClock.shared.wake()
     }
 
-    private func lay(_ stroke: InkHand.Stroke, head: [CGPoint], width: CGFloat, growOnly: Bool) {
+    /// Lays out `stroke`. A layer that only grows covers its points from `from` on, since it covered
+    /// the ones before already.
+    private func lay(_ stroke: InkHand.Stroke, head: [CGPoint], width: CGFloat, growOnly: Bool, from: Int = 0) {
         shape = InkGel.Shape(stroke: stroke, width: width, head: head)
-        widest = (stroke.widths.max() ?? 1) * width
-        let line = CGMutablePath()
-        line.addLines(between: stroke.points)
-        centreLine = line
-        fit(covering: [stroke], growOnly: growOnly)
+        let new = InkHand.Stroke(points: Array(stroke.points[min(from, stroke.points.count)...]),
+                                 widths: Array(stroke.widths[min(from, stroke.widths.count)...]))
+        widest = max(growOnly ? widest : 0, (new.widths.max() ?? 1) * width)
+        fit(covering: [new], growOnly: growOnly)
         built = nil
         needsGel = true
         InkClock.shared.add(self)
@@ -447,12 +565,7 @@ final class InkMarkLayer: CALayer {
             built = nil
         }
         let ui = Settings.shared.data.ui
-        if built == nil {
-            let vertices = InkGel.vertices(shape, origin: gel.frame.origin, scale: contentsScale, reach: Self.reach)
-            guard !vertices.floats.isEmpty,
-                  let buffer = metal.device.makeBuffer(bytes: vertices.floats, length: vertices.floats.count * MemoryLayout<Float>.stride) else { return nil }
-            built = (buffer, vertices.halo, vertices.body)
-        }
+        if built == nil { built = build(shape, device: metal.device) }
         let place = onScreen(gel.frame)
         let backdrop = place.map { InkBackdrop.shared.reading(for: $0, at: now) } ?? InkBackdrop.Reading(now: nil, before: nil, fade: 1)
         guard let built, let maps = InkBackdrop.shared.textures(for: backdrop), let drawable = gel.nextDrawable(),
@@ -465,17 +578,49 @@ final class InkMarkLayer: CALayer {
         guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return nil }
         var uniforms = InkGel.uniforms(ui, gel: place ?? gel.frame, size: gel.drawableSize, scale: contentsScale, time: time, override: override,
                                        headOpacity: headOpacity, backdrop: backdrop)
-        encoder.setVertexBuffer(built.buffer, offset: 0, index: 0)
+        uniforms.offset = SIMD4(Float((gel.frame.minX - built.origin.x) * contentsScale), Float((gel.frame.minY - built.origin.y) * contentsScale), 0, 0)
         encoder.setFragmentTexture(maps.now, index: 0)
         encoder.setFragmentTexture(maps.before, index: 1)
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
-        encoder.setRenderPipelineState(metal.halo)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: built.halo)
-        encoder.setRenderPipelineState(metal.body)
-        encoder.drawPrimitives(type: .triangle, vertexStart: built.halo, vertexCount: built.body)
+        for (pipeline, draws) in [(metal.halo, built.halo), (metal.body, built.body)] {
+            encoder.setRenderPipelineState(pipeline)
+            for (buffer, count) in draws where count > 0 {
+                encoder.setVertexBuffer(buffer, offset: 0, index: 0)
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: count)
+            }
+        }
         encoder.endEncoding()
         return (commands, drawable)
+    }
+
+    /// The vertices of `shape`. The pen's settled start is laid out once, from this layer's own origin,
+    /// and only its end is laid out again; anything else is laid out whole from the gel's corner.
+    private func build(_ shape: InkGel.Shape, device: MTLDevice) -> (halo: [(MTLBuffer, Int)], body: [(MTLBuffer, Int)], origin: CGPoint)? {
+        func buffers(_ vertices: InkGel.Vertices) -> (halo: (MTLBuffer, Int)?, body: (MTLBuffer, Int)?) {
+            func one(_ floats: [Float]) -> (MTLBuffer, Int)? {
+                guard !floats.isEmpty, let buffer = device.makeBuffer(bytes: floats, length: floats.count * MemoryLayout<Float>.stride) else { return nil }
+                return (buffer, floats.count / 10)
+            }
+            return (one(vertices.halo), one(vertices.body))
+        }
+        guard let pen, easing == nil else {
+            let whole = buffers(InkGel.Builder(width: shape.width, origin: gel.frame.origin, scale: contentsScale, reach: Self.reach).vertices(shape))
+            return ([whole.halo].compactMap { $0 }, [whole.body].compactMap { $0 }, gel.frame.origin)
+        }
+        let builder = InkGel.Builder(width: shape.width, origin: .zero, scale: contentsScale, reach: Self.reach)
+        if settledLine.map({ $0.builder.width != builder.width || $0.builder.reach != builder.reach || $0.builder.scale != builder.scale }) ?? true {
+            settledLine = SettledLine(builder: builder)
+        }
+        guard let line = settledLine else { return nil }
+        line.extend(shape.stroke, settled: pen.settled, device: device)
+        let end = builder.segments(shape.stroke, line.segments..<max(shape.stroke.points.count - 1, line.segments), startLength: line.length)
+        var unsettled = builder.ends(of: shape.stroke, length: end.endLength, hasHead: false)
+        unsettled.append(end.vertices)
+        let fresh = buffers(unsettled)
+        let halo = [line.halo.buffer.map { ($0, line.halo.vertexCount) }, fresh.halo].compactMap { $0 }
+        let body = [line.body.buffer.map { ($0, line.body.vertexCount) }, fresh.body].compactMap { $0 }
+        return (halo, body, .zero)
     }
 
     /// `rect`, in this layer's points, in global top-left points. A mark is drawn in its window's

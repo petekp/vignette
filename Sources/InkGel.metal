@@ -28,6 +28,7 @@ struct GelUniforms {
     float4 behind;     // the switch's low and high brightness, how far the newest map has faded in, 0
     float4 mapNow;     // the newest brightness map's rect, in px of the layer
     float4 mapBefore;  // the map it fades in from
+    float4 offset;     // xy: px taken off every vertex's place, so a line laid out once is drawn as its layer moves
 };
 
 struct GelVaryings {
@@ -40,9 +41,11 @@ vertex GelVaryings gelVertex(uint id [[vertex_id]], const device GelVertex *vert
                              constant GelUniforms &uni [[buffer(1)]]) {
     GelVertex v = vertices[id];
     GelVaryings out;
-    out.position = float4(v.pos.x / uni.size.x * 2 - 1, 1 - v.pos.y / uni.size.y * 2, 0, 1);
+    float2 pos = float2(v.pos) - uni.offset.xy;
+    out.position = float4(pos.x / uni.size.x * 2 - 1, 1 - pos.y / uni.size.y * 2, 0, 1);
     out.u = v.u; out.s = v.s; out.halfw = v.halfw; out.extent = v.extent; out.kind = v.kind; out.pass = v.pass;
-    out.tangent = v.tangent; out.pixel = v.pos;
+    // A head's tangent is its middle, a place like the vertex's own.
+    out.tangent = v.kind > 0.5 ? float2(v.tangent) - uni.offset.xy : float2(v.tangent); out.pixel = pos;
     return out;
 }
 
