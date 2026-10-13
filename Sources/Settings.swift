@@ -304,24 +304,10 @@ struct UITweaks: Codable, Equatable {
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
     // The pointer field, which says the screen is taking ink while the chord is held: the ring round
-    // the pointer and the wake behind the pen. The keys named Field set the whole field, or the ring.
+    // the pointer.
     var liveInkFieldDelay = 0.25     // how long the chord is held before it shows, unless a press shows it sooner
     var liveInkFieldFade = 0.5       // how long it fades in and out, and the ring grows in
-    var liveInkFieldOpacity = 1.0    // the ring and the wake
-    // The wake: what follows the pen while drawing, in one of five styles. Strength 0 is off.
-    var liveInkWakeStrength = 1.0    // 0 to 1: how far it moves the screen, and how bright its light is
-    var liveInkWakeSize = 10.0       // how far it reaches from the stroke; Ripples: how far a ring spreads
-    var liveInkWakeDuration = 1.1    // how long it lasts
-    var liveInkWakeStyle = 4.0       // 0 Ribbon, 1 Silk, 2 Mist, 3 Frost, 4 Ripples
-    var liveInkWakeLift = 19.0       // Ribbon, Silk, Mist, Frost: the most it moves the screen, in points
-    var liveInkWakeWiden = 0.0       // how much narrower it is when new; it spreads to its size as it ages
-    var liveInkWakeRise = 0.45       // how long it takes to come in behind the pen, a fraction of its duration
-    var liveInkWakeHold = 0.5        // where it starts to fade, a fraction of its duration
-    var liveInkWakeSwell = 0.8       // -1 to 1: it swells across the stroke; below 0 it pulls the screen in
-    var liveInkWakeSplit = 1.0       // Ribbon: how far red and blue part on its slopes
-    var liveInkWakeLight = 1.0       // Ribbon and Frost: their haze and sheen; Mist: how bright it is
-    var liveInkWakeMist = 0.5        // Mist: the contrast of its slow clumps; 0 is a smooth band
-    var liveInkWakeBlur = 2.5        // Frost: the most it blurs, in points
+    var liveInkFieldOpacity = 1.0
     // The ring: it bends the screen under it and glows in the ink colour, with a still middle so what
     // the pointer is on stays put.
     var liveInkFieldSize = 23.0      // the ring's radius in points; 0 turns it off
@@ -419,7 +405,7 @@ struct UITweaks: Codable, Equatable {
         u.checkSpinDuration *= scale; u.checkSpinDelay *= scale
         u.noteSettleDuration *= scale
         u.liveInkFieldFade *= scale; u.liveInkDrawOn *= scale
-        u.liveInkWakeDuration *= scale; u.liveInkFieldFollow *= scale
+        u.liveInkFieldFollow *= scale
         u.liveInkHideFade *= scale; u.liveInkShowFade *= scale
         u.inkSettle *= scale; u.lightGlintFade *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale

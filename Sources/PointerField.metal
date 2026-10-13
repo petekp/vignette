@@ -1,9 +1,8 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Live ink's pointer field: the ring round the pointer while the chord is held, and the wake that
-// follows the pen, each drawn into its own layer, in one of several styles
-// (docs/live-ink-pointer-variants-2026-10-10.md). Lengths are in the screen's points, y down from
+// Live ink's pointer field: the ring round the pointer while the chord is held, in one of several
+// styles (docs/live-ink-pointer-variants-2026-10-10.md). Lengths are in the screen's points, y down from
 // its top-left corner. `screen` is a live capture of the display without the overlay, the same size
 // as the screen, or a blank texture when there is none (`hasPicture` 0), and then nothing reads it.
 // Every output is premultiplied and clear wherever it shows nothing, so it meets the screen without
@@ -11,26 +10,16 @@ using namespace metal;
 
 struct FieldUniforms {
     float4 color;          // the person's ink colour, lightened, in the layer's colour space
-    float4 wakeBox;        // left, top, right, bottom: the box the wake can reach; nothing moves outside it
     float4 ringGlass;      // zoom, clear, shine, shade
     float4 ringShape;      // squareness, break, spread, depth
-    float4 wakeLook;       // swell, split, light (strength included), mist
     float2 size;           // the screen, in points
     float2 origin;         // the top-left corner of the layer being drawn, on the screen
     float2 area;           // that layer's size
     float2 ringCentre;
     float2 ringVelocity;   // in points a second
     float2 ringHotspot;    // the arrow's tip, which Lens magnifies about
-    uint wakeCount;        // how many points are in the wake's buffers
     uint ringStyle;        // 0 Glass, 1 Lens, 2 Squircle, 3 Droplet, 4 Lamp, 5 Caustic
-    uint wakeStyle;        // 0 Ribbon, 1 Silk, 2 Mist, 3 Frost, 4 Ripples
     uint hasPicture;       // 1 when `screen` is the display
-    float wakeStrength;    // Ripples: 0 to 1, how far it moves the picture
-    float wakeSize;        // Ripples: how far a ring spreads before it is gone
-    float wakeLife;        // Ripples: how long a ring lasts, in seconds
-    float wakeLift;        // the most the other wakes move the picture, in points, strength included
-    float wakeMaskRadius;  // the wake leaves the screen still within this of the ring; 0 when there is none
-    float wakeBlur;        // Frost: the most it blurs, in points, strength included
     float ringRadius;      // its radius now; nothing shows at 0
     float ringBend;        // 0 to 1.8: how far the glass moves what is under it
     float ringSplit;       // 0 to 2: how far red and blue part there
@@ -68,17 +57,6 @@ static float4 over(float4 top, float4 bottom) { return top + bottom * (1.0 - top
 
 /// A value from 0 to 1 that depends on the pixel alone, never on time, so grain and dither stay still.
 static float hash(float2 p) { return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
-
-/// Interleaved gradient noise: a turn per pixel that spreads blur taps evenly.
-static float ign(float2 p) { return fract(52.9829189 * fract(dot(p, float2(0.06711056, 0.00583715)))); }
-
-/// Smooth value noise from 0 to 1, with a quintic fade so its clumps have no creases.
-static float valueNoise(float2 p) {
-    float2 i = floor(p), f = fract(p);
-    float2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-    float a = hash(i), b = hash(i + float2(1, 0)), c = hash(i + float2(0, 1)), d = hash(i + float2(1, 1));
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
 
 /// How far the ring stretches along its motion: 1 at rest, up to 1 + stretch * most when fast.
 /// `PointerField.ringReach` sizes the ring's layer with the same numbers.
@@ -341,182 +319,4 @@ fragment float4 ringFragment(Varyings in [[stage_in]],
         case 5: return caustic(p, screen, u);
         default: return glassRing(p, screen, u);
     }
-}
-
-// MARK: The wake
-
-// How far `p` is from the ring, in the ring's own shape: stretched with it, or along the Droplet's
-// tail. The wake leaves the screen still within `wakeMaskRadius` of it, because the ring's layer,
-// drawn over the wake, samples the screen as it is, and the two would show the same content twice.
-static float ringSpan(float2 p, constant FieldUniforms &u) {
-    float2 pc = p - u.ringCentre;
-    if (u.ringStyle == 3) {
-        float speed = length(u.ringVelocity);
-        float2 dir = speed > 1.0 ? u.ringVelocity / speed : float2(1, 0);
-        float along = clamp(dot(pc, -dir), 0.0, dropletTail(u));
-        return length(pc + dir * along);
-    }
-    return length(stretched(pc, u.ringVelocity, stretchOf(u, u.ringStyle == 4 ? 0.5 : 1.5)));
-}
-
-/// `v` softly limited to `cap` points, so overlapping strokes never stack past it.
-static float2 limited(float2 v, float cap) {
-    float m = length(v);
-    if (m < 1e-5 || cap <= 0.0) return float2(0);
-    return v * cap * tanh(m / cap) / m;
-}
-
-// Ripples: a ring spreads from each point the pen passed, a short packet of waves that moves the
-// picture out and back as it passes. `trail` holds each point's place in xy, its age in seconds in
-// z, and in w its weight, less where points crowd.
-static float2 ripples(float2 p, constant FieldUniforms &u, constant float4 *trail) {
-    float life = max(u.wakeLife, 0.01);
-    float speed = u.wakeSize / life;
-    float2 shift = float2(0);
-    for (uint i = 0; i < u.wakeCount; i++) {
-        float4 point = trail[i];
-        float2 away = p - point.xy;
-        // Only a pixel within 24 pt of a ring's edge moves, so the rest are passed over before the square root.
-        float spread = point.z * speed;
-        float near = max(spread - 24.0, 0.0);
-        float d2 = dot(away, away);
-        if (d2 > (spread + 24.0) * (spread + 24.0) || d2 < near * near) continue;
-        float far = sqrt(d2);
-        float g = far - spread;
-        float age = point.z / life;
-        float fade = smoothstep(0.0, 0.08, age) * (1.0 - age) * (1.0 - age);
-        float packet = sin(g * 0.45) * exp(-g * g / 110.0);
-        // A ring moves nothing near its centre. The direction away from the centre flips across it,
-        // and a newborn ring there pinched lines into droplets.
-        shift += away / max(far, 1.0) * packet * fade * point.w * smoothstep(0.0, 8.0, far);
-    }
-    return shift * u.wakeStrength * 4.0;
-}
-
-// The other wakes share one smooth field. Each point of the pen's path is a bump (1 - q)^3, q its
-// distance over its radius, squared, which is exactly 0 at the radius, so the loop needs no exp or
-// root. A point widens as the square root of its age and flattens as it widens, as a drop of honey
-// spreads, so the field has one sign and never oscillates. `kernels` holds each point's place, 1 over
-// its radius, and its height; `motion` holds the pen's direction there scaled by its speed, and the
-// point's age as a fraction of its life.
-static float4 smoothWake(float2 p, float2 pixel, texture2d<float> screen, constant FieldUniforms &u,
-                         constant float4 *kernels, constant float4 *motion) {
-    float f = 0.0, fa = 0.0;
-    float2 g = float2(0), drag = float2(0);
-    for (uint i = 0; i < u.wakeCount; i++) {
-        float4 A = kernels[i];
-        float2 d = p - A.xy;
-        float q = dot(d, d) * A.z * A.z;
-        if (q >= 1.0) continue;
-        float s = 1.0 - q;
-        float k = A.w * s * s * s;
-        f += k;
-        // The radius times the field's gradient, pointing uphill, toward the stroke.
-        g -= A.w * 6.0 * A.z * s * s * d;
-        drag += k * motion[i].xy;
-        fa += k * motion[i].z;
-    }
-    if (f < 1e-4) return float4(0);
-    // exp(-f) keeps overlapping strokes from stacking; 1.1887 is the peak across one dense line.
-    float2 G = g * exp(-f) / 1.1887;
-    float slope = min(length(G), 1.0);
-    float mask = u.wakeMaskRadius > 0.0 ? smoothstep(u.wakeMaskRadius, u.wakeMaskRadius + 24.0, ringSpan(p, u)) : 1.0;
-    float L = u.wakeLift;
-    float swell = u.wakeLook.x, split = u.wakeLook.y, light = u.wakeLook.z, mist = u.wakeLook.w;
-    float3 ink = u.color.rgb;
-    float haze = light * 0.25 * (1.0 - exp(-f)) * mask;
-    switch (u.wakeStyle) {
-        case 1: {
-            // Silk: the surface leans the way the pen went, a shear rather than a magnification.
-            if (u.hasPicture == 0) return float4(0);
-            float m = length(drag);
-            float2 sh = m > 1e-5 ? L * drag * (1.0 - exp(-1.5 * m)) / (m * 0.7769) : L * drag * 1.931;
-            sh *= mask;
-            return premultiplied(sampleScreen(screen, p - sh, u.size), clamp(length(sh) * 4.0, 0.0, 1.0));
-        }
-        case 2: {
-            // Mist: a plume of ink-coloured light in slow clumps that rise a little as it ages, over a
-            // very slight swell.
-            float age = fa / max(f, 1e-4);
-            float noise = valueNoise((p + float2(0.0, 12.0 * age)) / 70.0);
-            float density = 0.65 + 0.35 * mist * (2.0 * noise - 1.0);
-            float Lm = (1.0 - exp(-light * 1.6 * f * density)) * mask;
-            float3 col = mix(mix(ink, float3(1), 0.25), float3(1), 0.35 * Lm);
-            float3 rgb = col * Lm + (hash(pixel) - 0.5) / 255.0 * min(Lm * 64.0, 1.0);
-            float4 glow = float4(max(rgb, 0.0), Lm);
-            float4 pic = float4(0);
-            float2 sh = limited(0.35 * L * swell * G, 1.2 * 0.35 * L) * mask;
-            if (u.hasPicture != 0) {
-                pic = premultiplied(sampleScreen(screen, p + sh, u.size), clamp(length(sh) * 4.0, 0.0, 1.0));
-            }
-            return over(glow, pic);
-        }
-        case 3: {
-            // Frost: the band goes soft behind the pen, with a faint milky lift, and clears from its edges.
-            float frost = 1.0 - exp(-1.5 * f);
-            float radius = u.wakeBlur * frost * mix(1.0, slope, 0.6) * mask;
-            float2 sh = limited(0.35 * L * swell * G, 1.2 * 0.35 * L) * mask;
-            float4 pic = float4(0);
-            if (u.hasPicture != 0) {
-                float3 col;
-                if (radius < 0.4) {
-                    col = sampleScreen(screen, p + sh, u.size);
-                } else {
-                    // 24 taps on a Vogel spiral, turned per pixel so the pattern becomes fine grain.
-                    float turn = 6.2831853 * ign(pixel);
-                    float2x2 rotate = float2x2(cos(turn), sin(turn), -sin(turn), cos(turn));
-                    col = float3(0);
-                    for (int j = 0; j < 24; j++) {
-                        float a = float(j) * 2.39996;
-                        float2 vogel = sqrt((float(j) + 0.5) / 24.0) * float2(cos(a), sin(a));
-                        col += sampleScreen(screen, p + sh + radius * (rotate * vogel), u.size);
-                    }
-                    col /= 24.0;
-                }
-                col = mix(col, float3(1), 0.12 * light * frost * mask);
-                pic = premultiplied(col, clamp(max(length(sh), radius) * 4.0, 0.0, 1.0));
-            }
-            return over(premultiplied(mix(ink, float3(1), 0.5), clamp(haze, 0.0, 1.0)), pic);
-        }
-        default: {
-            // Ribbon: a beat behind the pen, content near the stroke spreads outward, one smooth bump
-            // that grows wider and flatter as it ages. Below 0, Swell pulls it in.
-            float2 sh = limited(L * swell * G, 1.2 * L) * mask;
-            float4 pic = float4(0);
-            if (u.hasPicture != 0) {
-                float3 col;
-                if (split > 0.0) {
-                    col.r = sampleScreen(screen, p + sh * (1.0 + 0.25 * split), u.size).r;
-                    col.g = sampleScreen(screen, p + sh, u.size).g;
-                    col.b = sampleScreen(screen, p + sh * (1.0 - 0.25 * split), u.size).b;
-                } else {
-                    col = sampleScreen(screen, p + sh, u.size);
-                }
-                pic = premultiplied(col, clamp(length(sh) * 4.0, 0.0, 1.0));
-            }
-            float2 uphill = normalize(G + 1e-6);
-            float sheen = clamp(light * 0.5 * pow(max(dot(-uphill, lightDir), 0.0), 2.0) * slope * mask, 0.0, 1.0);
-            float4 out = over(premultiplied(mix(ink, float3(1), 0.5), clamp(haze, 0.0, 1.0)), pic);
-            return over(premultiplied(float3(1), sheen), out);
-        }
-    }
-}
-
-fragment float4 wakeFragment(Varyings in [[stage_in]],
-                             texture2d<float> screen [[texture(0)]],
-                             constant FieldUniforms &u [[buffer(0)]],
-                             constant float4 *first [[buffer(1)]],
-                             constant float4 *second [[buffer(2)]]) {
-    float2 p = u.origin + in.uv * u.area;
-    if (u.wakeCount == 0 || p.x < u.wakeBox.x || p.x > u.wakeBox.z || p.y < u.wakeBox.y || p.y > u.wakeBox.w) {
-        return float4(0);
-    }
-    if (u.wakeStyle != 4) return smoothWake(p, in.position.xy, screen, u, first, second);
-    if (u.hasPicture == 0) return float4(0);
-    // Ripples show the picture moved, and fade in with how far it moved, so the layer is clear
-    // wherever nothing moved and meets the screen without a seam.
-    float2 shift = ripples(p, u, first);
-    float moved = length(shift);
-    if (moved < 0.01) return float4(0);
-    return premultiplied(sampleScreen(screen, p - shift, u.size), clamp(moved * 4.0, 0.0, 1.0));
 }

@@ -93,7 +93,7 @@ enum Commands {
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "check-lab", summary: "open the Check Lab, for tuning the check on copied and sent cards: the coin, its light, its spin and its bloom", needsDebug: true),
         Fixed(name: "intro-lab", summary: "open the Intro Lab, for tuning how setup's window goes into the menu bar icon", needsDebug: true),
-        Fixed(name: "pointer-lab", summary: "open the Pointer Lab, for trying and tuning live ink's pointer field and wake; &preview=1 holds the field on screen without opening it, and &preview=0 lets it go", needsDebug: true),
+        Fixed(name: "pointer-lab", summary: "open the Pointer Lab, for trying and tuning live ink's pointer field; &preview=1 holds the field on screen without opening it, and &preview=0 lets it go", needsDebug: true),
     ]
 
     /// URLComponents decodes each query value once; `open` does not encode again, so nothing else may.

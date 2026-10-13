@@ -356,21 +356,6 @@ enum TweakCatalog {
                 .number("liveInkFieldFade", "Fade", \.liveInkFieldFade, 0...1, step: 0.05, unit: "s", safe: 0...60),
                 .number("liveInkFieldOpacity", "Opacity", \.liveInkFieldOpacity, 0...1, step: 0.05, safe: 0...1),
             ], caption: { _ in "The field waits for the delay, or for a press, so the chord on its way to a shortcut does not flash it. It fades in and out, and the ring grows in, over the fade." }),
-            TweakGroup("Wake", [
-                .style("liveInkWakeStyle", "Style", \.liveInkWakeStyle, ["Ribbon", "Silk", "Mist", "Frost", "Ripples"], safe: 0...4),
-                .number("liveInkWakeStrength", "Strength", \.liveInkWakeStrength, 0...1, step: 0.05, safe: 0...1),
-                .number("liveInkWakeSize", "Size", \.liveInkWakeSize, 10...600, unit: "pt", safe: 0...1000),
-                .number("liveInkWakeDuration", "Duration", \.liveInkWakeDuration, 0.1...3, step: 0.05, unit: "s", safe: 0...10),
-                .number("liveInkWakeLift", "Lift", \.liveInkWakeLift, 0...20, step: 0.5, unit: "pt", safe: 0...20, when: { $0.wake != 4 }),
-                .number("liveInkWakeWiden", "Widen", \.liveInkWakeWiden, 0...0.8, step: 0.05, safe: 0...0.8, when: { $0.wake != 4 }),
-                .number("liveInkWakeRise", "Rise", \.liveInkWakeRise, 0.02...0.5, step: 0.01, safe: 0.02...0.5, when: { $0.wake != 4 }),
-                .number("liveInkWakeHold", "Fade starts", \.liveInkWakeHold, 0...0.7, step: 0.05, safe: 0...0.7, when: { $0.wake != 4 }),
-                .number("liveInkWakeSwell", "Swell", \.liveInkWakeSwell, -1...1, step: 0.05, safe: -1...1, when: { [0, 2, 3].contains($0.wake) }),
-                .number("liveInkWakeSplit", "Colour split", \.liveInkWakeSplit, 0...1, step: 0.05, safe: 0...1, when: { $0.wake == 0 }),
-                .number("liveInkWakeBlur", "Blur", \.liveInkWakeBlur, 0...6, step: 0.1, unit: "pt", safe: 0...6, when: { $0.wake == 3 }),
-                .number("liveInkWakeLight", "Light", \.liveInkWakeLight, 0...1, step: 0.05, safe: 0...1, when: { [0, 2, 3].contains($0.wake) }),
-                .number("liveInkWakeMist", "Clumps", \.liveInkWakeMist, 0...1, step: 0.05, safe: 0...1, when: { $0.wake == 2 }),
-            ], caption: { TweakCatalog.wakeNote($0) }),
         ]),
         TweakSection("Menu bar intro", lab: .intro, [
             TweakGroup("Flight", [
@@ -433,26 +418,13 @@ enum TweakCatalog {
         "Caustic: light through a glass on a table. A bright crescent gathers to a point on the side away from the light, fringed by Colour split.",
     ]
 
-    private static let wakeNotes = [
-        "Ribbon: a beat behind the pen, the screen near the stroke spreads outward in one smooth swell, wider and flatter as it fades. Below 0, Swell pulls it in.",
-        "Silk: the screen leans the way the pen went, as if dragged, and settles back.",
-        "Mist: a plume of ink-coloured light in slow clumps that drifts up a little as it fades, over a very slight swell.",
-        "Frost: the band behind the pen goes soft, as if breathed on, and clears from its edges.",
-        "Ripples: rings of waves spread from the pen, as before.",
-    ]
-
     private static func ringNote(_ ui: UITweaks) -> String {
         ringNotes[min(max(ui.ring, 0), ringNotes.count - 1)]
             + " It shows while Control and Option are held, tightens while the button is down, and Size 0 turns it off. Follow 0 holds it on the pointer."
     }
-
-    private static func wakeNote(_ ui: UITweaks) -> String {
-        wakeNotes[min(max(ui.wake, 0), wakeNotes.count - 1)] + " Strength 0 turns it off. While the field is held, any drag makes a wake."
-    }
 }
 
 extension UITweaks {
-    /// The pointer field's ring style and its wake's, as the indexes their names are kept as.
+    /// The pointer field's ring style, as the index its name is kept as.
     var ring: Int { Int(liveInkFieldStyle.rounded()) }
-    var wake: Int { Int(liveInkWakeStyle.rounded()) }
 }

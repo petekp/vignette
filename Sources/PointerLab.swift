@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// A debug window for trying and tuning live ink's pointer field, the ring and the wake
+/// A debug window for trying and tuning live ink's pointer field, the ring round the pointer
 /// (docs/live-ink-cursor-2026-10-10.md). The sliders are the `ui` settings live ink draws with, so a
 /// value chosen here is the one inking shows. Hold on Screen keeps the field up at the inking level
 /// while every press passes through. Opened from the tweak panel or `vignette://pointer-lab` (needs

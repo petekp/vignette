@@ -28,7 +28,7 @@ The names in brackets are `// MARK:` sections.
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
 | Marks following their window, holding still, hiding | `LiveWindows.swift`, `LiveAnchor.swift` (Accessibility), `LivePatch.swift` (pixels) |
-| The pointer field (the ring and the wake) while inking, the Pointer Lab | `PointerField.swift`, `PointerField.metal`, `ScreenFeed.swift`, `PointerLab.swift`, `LiveInk.swift` (The pointer field) |
+| The pointer field (the ring round the pointer) while inking, the Pointer Lab | `PointerField.swift`, `PointerField.metal`, `ScreenFeed.swift`, `PointerLab.swift`, `LiveInk.swift` (The pointer field) |
 | Whether a session's turn changed what the ink was on | `LiveChange.swift`, `LiveNoteCards.swift` (`look(again:)`, which compares the notes on one window; `before`) |
 
 ## Checking a change
@@ -89,9 +89,10 @@ The names in brackets are `// MARK:` sections.
   is a tap on a mark with the chord held, not a key: Vignette sees a key but cannot keep it from the
   frontmost app, where ⌃⌥⌫ deletes a word.
 - While inking, the pointer field says the screen takes ink (`PointerField`, a Metal layer under
-  the marks; `docs/live-ink-cursor-2026-10-10.md`). It has two parts, the ring and the wake, and
-  each has several styles (`ui.liveInkFieldStyle`, `ui.liveInkWakeStyle`;
-  `docs/live-ink-pointer-variants-2026-10-10.md`). The ring goes round the pointer. In its first
+  the marks; `docs/live-ink-cursor-2026-10-10.md`). It is a ring round the pointer, in one of
+  several styles (`ui.liveInkFieldStyle`; `docs/live-ink-pointer-variants-2026-10-10.md`).
+  Nothing follows the pen while it draws: a wake that rippled the screen behind the stroke was
+  removed on 2026-10-13 as too much. In its first
   style, Glass, it bends the screen under it towards its crest, parts red from blue there, and glows
   in a lighter shade of the person's colour. Inside the ring nothing moves, so what the pointer is on
   stays where it is.
@@ -100,22 +101,19 @@ The names in brackets are `// MARK:` sections.
   is down, and stretches along the way it moves. Each refresh the field reads the pointer and the
   button from its display link (`NSEvent.mouseLocation`, `NSEvent.pressedMouseButtons`), so the
   ring is sprung towards where the pointer is then, not where the last event put it. Its motion is
-  a pure value, `PointerFieldMotion`. The wake (`ui.liveInkWake*`, off at 0 strength) follows the
-  pen while the button is down on that screen. Its first style, Ribbon, swells the screen near the
-  stroke a beat behind the pen; Ripples spreads rings of waves.
+  a pure value, `PointerFieldMotion`.
 - The field draws from a live picture of the display (`ScreenFeed`). The picture starts when the
   chord goes down, leaves out the overlay by its window id, and stops once the field has faded
   out, or as the chord is let go when the field never showed. While it runs, macOS shows its recording indicator. The layer fades in from its first
   frame, so it never shows the screen as it was. It draws only from its display link: drawing on
   each frame's arrival starved the main thread until the app hung. The ring has a layer only as big
   as it can reach, moved with it and presented in the same transaction, so a frame draws a few
-  hundred points square rather than the screen. The wake's layer covers the screen and is hidden
-  while none of the wake lasts. A style made only of light (Lamp, or a wake's light alone) starts no
+  hundred points square rather than the screen. A style made only of light (Lamp) starts no
   picture. With no Screen Recording or a stream error, the light still draws and nothing bends, and
   the next chord tries the picture again. The
   Pointer Lab (`vignette://pointer-lab`, needs `debug`) tunes the ring and the whole field
-  (`ui.liveInkField*`) and the wake. Its "Hold on screen" keeps the field up at the inking level
-  while presses pass through, and a press anywhere then tightens the ring and starts the wake.
+  (`ui.liveInkField*`). Its "Hold on screen" keeps the field up at the inking level while presses
+  pass through, and a press anywhere then tightens the ring.
   `LiveInk.holdField` is the one place that holds the field up: on the surfaces taking ink while
   the chord shows it, and on the lab's while the lab holds it. An overlay closes only once its
   field has faded out (`PointerField.whenHidden`).
