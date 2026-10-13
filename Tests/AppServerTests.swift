@@ -70,16 +70,15 @@ final class AppServerTests: XCTestCase {
     /// editor opened from the Codex app until the timeout.
     func testAConversationEndsOnAnErrorAnswer() {
         let responder = """
-        import sys, time
-        sys.stdin.readline()
-        print('{"id":1,"result":{}}', flush=True)
-        sys.stdin.readline(); sys.stdin.readline(); sys.stdin.readline()
-        print('{"id":2,"result":{"data":[]}}', flush=True)
-        print('{"id":3,"error":{"code":-32602,"message":"unknown field"}}', flush=True)
-        time.sleep(30)
+        read line
+        echo '{"id":1,"result":{}}'
+        read line; read line; read line
+        echo '{"id":2,"result":{"data":[]}}'
+        echo '{"id":3,"error":{"code":-32602,"message":"unknown field"}}'
+        exec sleep 30
         """
         let started = Date()
-        let lines = AppServer.converse("/usr/bin/python3", ["-c", responder],
+        let lines = AppServer.converse("/bin/sh", ["-c", responder],
                                        AppServer.discoveryRequests(shown: "x"), timeout: 20)
         XCTAssertLessThan(Date().timeIntervalSince(started), 15)
         XCTAssertEqual(lines.count, 3)
@@ -89,17 +88,15 @@ final class AppServerTests: XCTestCase {
     /// not wait for the process to exit: a real app-server keeps running until it is told not to.
     func testAConversationReturnsWhenItsAnswersHaveArrivedAndNotBefore() throws {
         let responder = """
-        import sys, time
-        sys.stdin.readline()
-        print('{"id":1,"result":{}}', flush=True)
-        sys.stdin.readline()
-        sys.stdin.readline()
-        print('{"method":"notification/noise"}', flush=True)
-        print('{"id":2,"result":{"data":[]}}', flush=True)
-        time.sleep(30)
+        read line
+        echo '{"id":1,"result":{}}'
+        read line; read line
+        echo '{"method":"notification/noise"}'
+        echo '{"id":2,"result":{"data":[]}}'
+        exec sleep 30
         """
         let started = Date()
-        let lines = AppServer.converse("/usr/bin/python3", ["-c", responder],
+        let lines = AppServer.converse("/bin/sh", ["-c", responder],
                                        AppServer.discoveryRequests(), timeout: 20)
         XCTAssertLessThan(Date().timeIntervalSince(started), 15, "it must not wait out the sleeping process")
         XCTAssertEqual(lines.count, 3, "every line is kept, notifications included")
