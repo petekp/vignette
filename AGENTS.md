@@ -29,8 +29,9 @@ makes such a decision, and mark the old one superseded when a change reverses it
   `TextStyle` (`docs/mark-style-settings-2026-09-29.md`). A change
   reaches every place that draws marks at once: the open editor (`AnnotationController.applyTweaks`),
   the cards and flights (`ThumbnailController.applyTweaks`), live ink (`LiveInk.applyTweaks`), and
-  the next stitch, drag image and rendering, which read the settings when they draw. What a user would tune belongs in `UITweaks`
-  with a `Bound` and a slider; when in doubt, put it there. Editing the file is a supported way to
+  the next stitch, drag image and rendering, which read the settings when they draw. What a user would tune belongs in `UITweaks`,
+  with an entry in `TweakCatalog`, which gives it its row in the tweak panel and its safety range
+  (`UITweaks.bounds` is made from it); when in doubt, put it there. Editing the file is a supported way to
   change settings; the app reloads it within a second. It is the user's real config: never test
   against it. `VIGNETTE_SETTINGS=<path>` in the environment
   (`open -g --env VIGNETTE_SETTINGS=/tmp/x/settings.json <app>`) points a launch at another file,

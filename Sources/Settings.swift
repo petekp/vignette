@@ -397,104 +397,14 @@ struct UITweaks: Codable, Equatable {
         return u
     }
 
-    /// Bounds outside which a value crashes, divides by zero, or makes NaN. Not design limits.
-    static let bounds: [Bound] = [
-        Bound("cardMaxWidth", \.cardMaxWidth, 1...10_000), Bound("cardMaxHeight", \.cardMaxHeight, 1...10_000),
-        Bound("cardMinSide", \.cardMinSide, 1...10_000), Bound("cardSpacing", \.cardSpacing, 0...1000),
-        Bound("panelInset", \.panelInset, 0...1000), Bound("screenMargin", \.screenMargin, 0...10_000),
-        Bound("stackMinScale", \.stackMinScale, 0.3...1), Bound("stackGap", \.stackGap, 0...1000),
-        Bound("cardCornerRadius", \.cardCornerRadius, 0...1000), Bound("cardBorderWidth", \.cardBorderWidth, 0...100),
-        Bound("cardBorderOpacity", \.cardBorderOpacity, 0...1), Bound("cardShadowRadius", \.cardShadowRadius, 0...1000),
-        Bound("cardShadowOpacity", \.cardShadowOpacity, 0...1), Bound("cardShadowY", \.cardShadowY, -1000...1000),
-        Bound("hoverScale", \.hoverScale, 0.1...10), Bound("pressScale", \.pressScale, 0.1...10), Bound("hoverDim", \.hoverDim, 0...1),
-        Bound("buttonSize", \.buttonSize, 1...1000), Bound("buttonIconSize", \.buttonIconSize, 1...1000),
-        Bound("buttonSpacing", \.buttonSpacing, 0...1000), Bound("selectionCircleSize", \.selectionCircleSize, 1...1000),
-        Bound("selectionStripGap", \.selectionStripGap, 0...1000),
-        Bound("autoScrollZone", \.autoScrollZone, 0...10_000), Bound("autoScrollSpeed", \.autoScrollSpeed, 0...10_000),
-        Bound("thumbnailSeconds", \.thumbnailSeconds, 0...3600), Bound("markSeconds", \.markSeconds, 0...3600),
-        Bound("sendGraceSeconds", \.sendGraceSeconds, 0...10),
-        Bound("checkRoughness", \.checkRoughness, 0...1), Bound("checkThickness", \.checkThickness, 0.02...0.5),
-        Bound("checkEdge", \.checkEdge, 0...0.25), Bound("checkDome", \.checkDome, 0...0.3),
-        Bound("checkMarkSize", \.checkMarkSize, 0.1...0.8), Bound("checkMarkWeight", \.checkMarkWeight, 0.02...0.3),
-        Bound("checkGlow", \.checkGlow, 0...3), Bound("checkGlowSpread", \.checkGlowSpread, 0.01...0.3),
-        Bound("checkClarity", \.checkClarity, 0...1),
-        Bound("checkLightAngle", \.checkLightAngle, -180...180), Bound("checkLightHeight", \.checkLightHeight, 5...90),
-        Bound("checkLight", \.checkLight, 0...3), Bound("checkStudio", \.checkStudio, 0...1),
-        Bound("checkGlint", \.checkGlint, 0...3), Bound("checkGlintAngle", \.checkGlintAngle, -90...90),
-        Bound("checkSpinTurns", \.checkSpinTurns, 0...5), Bound("checkSpinDuration", \.checkSpinDuration, 0...10),
-        Bound("checkSpinBounce", \.checkSpinBounce, 0...0.9), Bound("checkSpinDelay", \.checkSpinDelay, 0...10),
-        Bound("checkBloom", \.checkBloom, 0...2), Bound("checkBloomRadius", \.checkBloomRadius, 0...1),
-        Bound("checkBloomThreshold", \.checkBloomThreshold, 0...0.95),
-        Bound("inkGelWidth", \.inkGelWidth, 0.5...30), Bound("inkGelCore", \.inkGelCore, 0...1),
-        Bound("inkGelSheen", \.inkGelSheen, 0...2), Bound("inkGelSwitch", \.inkGelSwitch, 0...1),
-        Bound("inkGelSwitchWidth", \.inkGelSwitchWidth, 0.01...1), Bound("inkGelGlow", \.inkGelGlow, 0...2), Bound("inkGelBloom", \.inkGelBloom, 0...2),
-        Bound("inkGelGlowRadius", \.inkGelGlowRadius, 0...60), Bound("inkGelShadow", \.inkGelShadow, 0...1),
-        Bound("inkGelMotion", \.inkGelMotion, 0...3), Bound("inkGelShimmer", \.inkGelShimmer, 0...3),
-        Bound("inkGelWander", \.inkGelWander, 0...1.5),
-        Bound("slideInDuration", \.slideInDuration, 0...60), Bound("slideOutDuration", \.slideOutDuration, 0...60),
-        Bound("staggerDelay", \.staggerDelay, 0...60), Bound("staggerTotalMax", \.staggerTotalMax, 0...60),
-        Bound("relayoutDuration", \.relayoutDuration, 0...60), Bound("shiftUpDuration", \.shiftUpDuration, 0...60),
-        Bound("expandDuration", \.expandDuration, 0...60), Bound("introDuration", \.introDuration, 0...60), Bound("introFunnel", \.introFunnel, 0...1), Bound("introFunnelSmoothing", \.introFunnelSmoothing, 0...1), Bound("introFunnelCorner", \.introFunnelCorner, 0...200), Bound("introFunnelSmear", \.introFunnelSmear, 0...1), Bound("introFunnelRim", \.introFunnelRim, 0...1), Bound("introFunnelFade", \.introFunnelFade, 0...1),
-        Bound("hoverRevealDuration", \.hoverRevealDuration, 0...60), Bound("motion", \.motion, 0...1),
-        Bound("flightArc", \.flightArc, 0...1), Bound("flightArcMax", \.flightArcMax, 0...2000),
-        Bound("flightDepth", \.flightDepth, 0...1),
-        Bound("backdropWidth", \.backdropWidth, 1...10_000), Bound("backdropTint", \.backdropTint, 0...1),
-        Bound("backdropTintStart", \.backdropTintStart, 0...1), Bound("backdropBlurRadius", \.backdropBlurRadius, 0...1000),
-        Bound("backdropRampPower", \.backdropRampPower, 0.01...100), Bound("backdropFadeIn", \.backdropFadeIn, 0...60),
-        Bound("backdropSlideIn", \.backdropSlideIn, 0...60), Bound("backdropSlideOut", \.backdropSlideOut, 0...60),
-        Bound("backdropFadeOut", \.backdropFadeOut, 0...60), Bound("dimOpacity", \.dimOpacity, 0...1), Bound("dimBlurRadius", \.dimBlurRadius, 0...1000), Bound("dimFade", \.dimFade, 0...60),
-        Bound("annotationMinWidth", \.annotationMinWidth, 1...100_000), Bound("annotationMinHeight", \.annotationMinHeight, 1...100_000),
-        Bound("annotationCornerRadius", \.annotationCornerRadius, 0...1000), Bound("annotationToolbarGap", \.annotationToolbarGap, 0...1000),
-        Bound("annotationScreenInset", \.annotationScreenInset, 0...10_000),
-        // `Zoom.pulledToEdges` caps the band at half a side, so any value past a frame's own size
-        // behaves the same; this is that, not a design limit. 0...400 is the slider's range.
-        Bound("zoomEdgeBandPoints", \.zoomEdgeBandPoints, 0...2000), Bound("zoomEdgePull", \.zoomEdgePull, 0...1),
-        Bound("dragDistance", \.dragDistance, 0...1000), Bound("hitMargin", \.hitMargin, 0...1000),
-        Bound("cornerHitSize", \.cornerHitSize, 0...1000), Bound("edgeHitSize", \.edgeHitSize, 0...1000),
-        Bound("smallSide", \.smallSide, 0...10_000), Bound("handleSize", \.handleSize, 0...1000),
-        Bound("dotRadius", \.dotRadius, 0...1000), Bound("dotHitRadius", \.dotHitRadius, 0...1000),
-        Bound("smallestRectangle", \.smallestRectangle, 0...10_000), Bound("shortestArrow", \.shortestArrow, 0...10_000),
-        Bound("textDragDelay", \.textDragDelay, 0...60), Bound("textDragDistance", \.textDragDistance, 0...10_000),
-        // A drawing file refuses a text larger than `Mark.Text.maxSize`, so a new one past it would be
-        // dropped when the drawing is read again.
-        Bound("newTextSize", \.newTextSize, 1...Double(Mark.Text.maxSize)),
-        Bound("selectionOutlineWidth", \.selectionOutlineWidth, 0...1000), Bound("noteSettleDuration", \.noteSettleDuration, 0...60),
-        Bound("strokeWidth", \.strokeWidth, 0.1...100), Bound("edgeWidth", \.edgeWidth, 0...100),
-        Bound("shadowOpacity", \.shadowOpacity, 0...10),
-        Bound("textWeight", \.textWeight, 100...900), Bound("agentTextWeight", \.agentTextWeight, 100...900),
-        // A text past `Mark.Text.maxSize` is capped there, so a larger share of the width is the same.
-        Bound("agentTextSize", \.agentTextSize, 0.01...100), Bound("textLineHeight", \.textLineHeight, 0.1...10),
-        Bound("notePaddingTop", \.notePaddingTop, 0...10), Bound("notePaddingBottom", \.notePaddingBottom, 0...10),
-        Bound("notePaddingSide", \.notePaddingSide, 0...10), Bound("noteMaxWidth", \.noteMaxWidth, 1...1000),
-        // `NoteTag.reach` leaves room above a tag for the badge's whole height, and no more.
-        Bound("badgeInset", \.badgeInset, 0...100), Bound("badgeOverlap", \.badgeOverlap, 0...Double(NoteBadge.height)),
-        Bound("arrowheadLength", \.arrowheadLength, 0...100), Bound("arrowheadWidth", \.arrowheadWidth, 0...100),
-        // The floor is the slider's, because below it a stitch is not a smaller picture but a
-        // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
-        Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
-        Bound("liveInkFieldOpacity", \.liveInkFieldOpacity, 0...1),
-        Bound("liveInkFieldDelay", \.liveInkFieldDelay, 0...60), Bound("liveInkFieldFade", \.liveInkFieldFade, 0...60),
-        Bound("liveInkWakeStrength", \.liveInkWakeStrength, 0...1),
-        Bound("liveInkWakeSize", \.liveInkWakeSize, 0...1000), Bound("liveInkWakeDuration", \.liveInkWakeDuration, 0...10),
-        Bound("liveInkWakeStyle", \.liveInkWakeStyle, 0...4), Bound("liveInkWakeLift", \.liveInkWakeLift, 0...20),
-        Bound("liveInkWakeWiden", \.liveInkWakeWiden, 0...0.8), Bound("liveInkWakeRise", \.liveInkWakeRise, 0.02...0.5),
-        Bound("liveInkWakeHold", \.liveInkWakeHold, 0...0.7), Bound("liveInkWakeSwell", \.liveInkWakeSwell, -1...1),
-        Bound("liveInkWakeSplit", \.liveInkWakeSplit, 0...1), Bound("liveInkWakeLight", \.liveInkWakeLight, 0...1),
-        Bound("liveInkWakeMist", \.liveInkWakeMist, 0...1), Bound("liveInkWakeBlur", \.liveInkWakeBlur, 0...6),
-        // Bend past 1.8 folds the glass where the ridge is steepest.
-        Bound("liveInkFieldSize", \.liveInkFieldSize, 0...200), Bound("liveInkFieldBend", \.liveInkFieldBend, 0...1.8),
-        Bound("liveInkFieldSplit", \.liveInkFieldSplit, 0...2), Bound("liveInkFieldGlow", \.liveInkFieldGlow, 0...1),
-        Bound("liveInkFieldFollow", \.liveInkFieldFollow, 0...1), Bound("liveInkFieldStretch", \.liveInkFieldStretch, 0...1),
-        Bound("liveInkFieldStyle", \.liveInkFieldStyle, 0...5), Bound("liveInkFieldZoom", \.liveInkFieldZoom, 1...1.6),
-        Bound("liveInkFieldClear", \.liveInkFieldClear, 0...1), Bound("liveInkFieldShine", \.liveInkFieldShine, 0...1),
-        Bound("liveInkFieldShade", \.liveInkFieldShade, 0...1), Bound("liveInkFieldSquareness", \.liveInkFieldSquareness, 2...8),
-        Bound("liveInkFieldBreak", \.liveInkFieldBreak, 0...1), Bound("liveInkFieldSpread", \.liveInkFieldSpread, 0.8...3),
-        Bound("liveInkFieldDepth", \.liveInkFieldDepth, 0.04...0.3),
-        Bound("liveInkDrawOn", \.liveInkDrawOn, 0...60),
-        Bound("liveInkHideFade", \.liveInkHideFade, 0...10), Bound("liveInkShowFade", \.liveInkShowFade, 0...10), Bound("liveInkTextSize", \.liveInkTextSize, 4...200),
-        Bound("liveInkTextWidth", \.liveInkTextWidth, 40...2000),
-        Bound("liveInkSpeechPause", \.liveInkSpeechPause, 0.1...30), Bound("liveInkSpeechQuiet", \.liveInkSpeechQuiet, 0...1),
-    ]
+    /// Bounds outside which a value crashes, divides by zero, or makes NaN. Not design limits. Each is
+    /// defined with its tweak in `TweakCatalog`.
+    static let bounds: [Bound] = TweakCatalog.sections.flatMap(\.tweaks).compactMap { spec in
+        switch spec.control {
+        case .number(let path, _, _, _, let safe), .style(let path, _, let safe): Bound(spec.key, path, safe)
+        default: nil
+        }
+    }
 }
 
 extension UITweaks {
@@ -525,7 +435,7 @@ extension UITweaks {
     /// Equal, counting floating-point noise as equal: a slider's steps leave values such as
     /// 0.30000000000000004 where it showed 0.3, and written as a difference that would pin the
     /// default it equals.
-    private static func same(_ a: Any, _ b: Any) -> Bool {
+    static func same(_ a: Any, _ b: Any) -> Bool {
         if let x = a as? Double, let y = b as? Double { return abs(x - y) <= 1e-9 * max(1, abs(x), abs(y)) }
         guard let x = a as? AnyHashable, let y = b as? AnyHashable else { return false }
         return x == y
@@ -1229,3 +1139,4 @@ enum Motion {
         reduceMotion ? 0 : min(max(multiplier.isFinite ? multiplier : 1, 0), 1)
     }
 }
+

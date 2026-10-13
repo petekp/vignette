@@ -172,21 +172,7 @@ private struct IntroLabView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
             }
             Form {
-                Section("Flight") {
-                    Tweak("Duration", \.introDuration, 0.1...3, step: 0.05, unit: "s")
-                    Tweak("Funnel strength", \.introFunnel, 0...1, step: 0.05)
-                    Text("At 0 the intro flies the window as one piece, as it shipped; the preview then shows its rows moving together instead.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Pour") {
-                    Tweak("Smoothing", \.introFunnelSmoothing, 0...1, step: 0.05)
-                    Tweak("Corner", \.introFunnelCorner, 0...80, unit: "pt")
-                    Tweak("Smear", \.introFunnelSmear, 0...1, step: 0.05)
-                    Tweak("Rim light", \.introFunnelRim, 0...1, step: 0.05)
-                    Tweak("Fade into icon", \.introFunnelFade, 0.05...1, step: 0.05)
-                    Text("Smoothing eases each row's start and stop, which curves the sides. Corner is the radius the pour's corners grow to. Smear averages squeezed rows so text softens instead of breaking up. Rim light brightens the bent edges. Fade into icon is how much of each row's travel it fades over as it reaches the icon.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                if let section = TweakCatalog.section("Menu bar intro") { TweakGroups(section: section, ui: settings.data.ui) }
             }
             .formStyle(.grouped)
         }

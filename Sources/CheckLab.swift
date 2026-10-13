@@ -99,74 +99,11 @@ private struct CheckLabView: View {
             .padding(10)
             controls
             Form {
-                Section {
-                    ColorTweak("Colour", \.checkColor)
-                    Tweak("Roughness", \.checkRoughness, 0...1, step: 0.01)
-                    Tweak("Thickness", \.checkThickness, 0.02...0.4, step: 0.01)
-                    Tweak("Edge", \.checkEdge, 0...0.2, step: 0.01)
-                    Tweak("Dome", \.checkDome, 0...0.2, step: 0.01)
-                    Tweak("Clarity", \.checkClarity, 0...1, step: 0.01)
-                } header: {
-                    Text("Coin")
-                } footer: {
-                    Text("Colour tints the polymer, more deeply the farther you look through it. Its glossy surface reflects the lights white, a little face on and nearly all at a grazing angle. Roughness softens every reflection, from a mirror at 0 to frosted at 1. Clarity is how much of what is behind the coin shows through it. Edge rounds the rim, and Dome raises each face's middle. Lengths are fractions of the coin's width.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    ColorTweak("Glow colour", \.checkGlowColor)
-                    Tweak("Glow", \.checkGlow, 0...3, step: 0.01)
-                    Tweak("Glow spread", \.checkGlowSpread, 0.01...0.3, step: 0.01)
-                    Tweak("Size", \.checkMarkSize, 0.2...0.8, step: 0.01)
-                    Tweak("Weight", \.checkMarkWeight, 0.03...0.25, step: 0.01)
-                } header: {
-                    Text("Check mark")
-                } footer: {
-                    Text("The mark is a glowing tube in the middle of the coin, seen through both faces. Glow spread is how far its light reaches into the polymer around it. Weight is the tube's width, kept inside the coin's thickness.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    Tweak("Key angle", \.checkLightAngle, -180...180, unit: "°")
-                    Tweak("Key height", \.checkLightHeight, 5...90, unit: "°")
-                    Tweak("Key light", \.checkLight, 0...3, step: 0.01)
-                    Tweak("Glint", \.checkGlint, 0...3, step: 0.01)
-                    Tweak("Glint angle", \.checkGlintAngle, -90...90, unit: "°")
-                    Tweak("Studio contrast", \.checkStudio, 0...1, step: 0.01)
-                } header: {
-                    Text("Light")
-                } footer: {
-                    Text("The coin reflects a studio: a bright ceiling, a soft horizon, a dim floor, a key light shaped like a window at Key angle, clockwise from the top, and Key height above the face, and a tall strip light, Glint, at Glint angle to the viewer's right. Spinning sweeps the coin's reflections across the strip, so its face and rim flash as they pass it.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    Tweak("Turns", \.checkSpinTurns, 0...3, step: 0.25)
-                    Tweak("Duration", \.checkSpinDuration, 0.2...3, step: 0.05, unit: "s")
-                    Tweak("Bounce", \.checkSpinBounce, 0...0.8, step: 0.01)
-                    Tweak("Delay", \.checkSpinDelay, 0...1, step: 0.01, unit: "s")
-                } header: {
-                    Text("Spin")
-                } footer: {
-                    Text("The coin turns about its upright axis as it appears, a spring winding the turns back to face on. Bounce is how far it rocks past face on before it settles. Turns 0 leaves it still. A half turn shows the back, where the mark inside reads mirrored.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    Tweak("Strength", \.checkBloom, 0...2, step: 0.01)
-                    Tweak("Radius", \.checkBloomRadius, 0...0.8, step: 0.01)
-                    Tweak("Threshold", \.checkBloomThreshold, 0...0.95, step: 0.01)
-                } header: {
-                    Text("Bloom")
-                } footer: {
-                    Text("What is brighter than Threshold, the mark's glow and the glint's flash, blurred over Radius, a fraction of the coin, and added back, so it glows past the coin's edge. Strength 0 turns it off. It shows on the dark veil, not on the white ring of a send's badge.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    Button("Reset the check to its defaults") {
-                        settings.update { settings in
-                            let defaults = UITweaks()
-                            settings.ui.checkColor = defaults.checkColor
-                            settings.ui.checkGlowColor = defaults.checkGlowColor
-                            for bound in UITweaks.bounds where bound.name.hasPrefix("check") {
-                                settings.ui[keyPath: bound.path] = defaults[keyPath: bound.path]
-                            }
+                if let section = TweakCatalog.section("Check") {
+                    TweakGroups(section: section, ui: settings.data.ui)
+                    Section {
+                        Button("Reset the check to its defaults") {
+                            settings.update { data in section.tweaks.forEach { $0.reset(&data.ui) } }
                         }
                     }
                 }

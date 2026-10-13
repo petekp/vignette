@@ -1,8 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// A floating panel of sliders bound to `settings.ui`. Every change applies to whatever is on screen
-/// immediately and lands in settings.json. Preview buttons summon each UI state to tweak against.
+/// A floating panel of the settings in `settings.ui`, from `TweakCatalog`: a sidebar of sections, a
+/// search across all of them, and the values that differ from their defaults. Every change applies to
+/// whatever is on screen at once and lands in settings.json. Previews summon each UI state to tweak
+/// against (docs/tweak-panel-redesign-2026-10-12.md).
 @MainActor
 final class DebugPanelController: NSObject, NSWindowDelegate {
     struct Previews {
@@ -16,6 +18,8 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
 
     private var panel: NSPanel?
     private let previews: Previews
+    /// Kept with the controller, so the panel opens again where it was left.
+    private let place = TweakPlace()
 
     init(previews: Previews) {
         self.previews = previews
@@ -33,18 +37,18 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
     }
 
     private func make() -> NSPanel {
-        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 760),
-                        styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 720, height: 640),
+                        styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         p.title = "Vignette Tweaks"
         p.isFloatingPanel = true
         p.level = .floating
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false
         p.delegate = self
-        p.contentView = NSHostingView(rootView: DebugPanelView(previews: previews))
+        p.contentView = NSHostingView(rootView: DebugPanelView(previews: previews, place: place))
         // Left side of the screen so it never sits under the stack or the backdrop.
         if let v = NSScreen.main?.visibleFrame {
-            p.setFrameOrigin(NSPoint(x: v.minX + 40, y: v.midY - 380))
+            p.setFrameOrigin(NSPoint(x: v.minX + 40, y: v.midY - 320))
         }
         panel = p
         return p
@@ -55,318 +59,353 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
     }
 }
 
+/// What the panel shows: a section, or the values that differ from their defaults, and the search.
+@MainActor
+final class TweakPlace: ObservableObject {
+    enum Shown: Hashable {
+        case changed
+        case section(String)
+    }
+
+    @Published var shown: Shown? = .section(TweakCatalog.sections[0].name)
+    @Published var search = ""
+    /// The settings that differed from their defaults when Changed was picked. They stay listed while
+    /// it shows, so a row brought back to its default does not vanish under the pointer.
+    var listed: Set<String> = []
+}
+
 @MainActor
 struct DebugPanelView: View {
     let previews: DebugPanelController.Previews
+    @ObservedObject var place: TweakPlace
     @ObservedObject private var settings = Settings.shared
+    @State private var confirmsReset = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Text("Preview").font(.caption).foregroundStyle(.secondary)
-                Button("Thumbnail", action: previews.thumbnail)
-                Button("Stack", action: previews.stack)
-                Button("Annotator", action: previews.annotator)
-                Button("Intro", action: previews.intro)
-                Button("Pointer", action: previews.pointer)
-                Button("Check", action: previews.check)
-            }
-            .padding(10)
-            // Which file the sliders write to: a test launch points at another file, and a
-            // change made there never reaches the real one.
-            if Settings.isOverridden {
-                Text("Test settings file: \(Settings.fileURL.path). Changes here do not reach your settings.json.")
-                    .font(.caption).foregroundStyle(.black)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Color.yellow)
-            } else {
-                Text("Writes to \((Settings.fileURL.path as NSString).abbreviatingWithTildeInPath)")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10).padding(.bottom, 6)
-            }
-            Divider()
-            Form {
-                Section("Cards") {
-                    Tweak("Max width", \.cardMaxWidth, 80...600)
-                    Tweak("Max height", \.cardMaxHeight, 60...400)
-                    Tweak("Min side", \.cardMinSide, 20...200)
-                    Tweak("Spacing", \.cardSpacing, 0...40)
-                    Tweak("Panel inset", \.panelInset, 0...60)
-                    Tweak("Screen margin", \.screenMargin, 0...80)
-                    Tweak("Narrows to", \.stackMinScale, 0.3...1, step: 0.05)
-                    Tweak("Gap to annotator", \.stackGap, 0...80)
-                    Text("How narrow the stack goes to make room for the annotator's frame, and how far it stays from it. The frame never grows into that narrowest width.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Tweak("Corner radius", \.cardCornerRadius, 0...30)
-                    Tweak("Border width", \.cardBorderWidth, 0...4, step: 0.5)
-                    Tweak("Border opacity", \.cardBorderOpacity, 0...1, step: 0.05)
-                    Tweak("Shadow radius", \.cardShadowRadius, 0...40)
-                    Tweak("Shadow opacity", \.cardShadowOpacity, 0...1, step: 0.05)
-                    Tweak("Shadow y", \.cardShadowY, -20...30)
-                    Tweak("Hover scale", \.hoverScale, 0.9...1.2, step: 0.01)
-                    Tweak("Press scale", \.pressScale, 0.8...1, step: 0.01)
-                    Tweak("Hover dim", \.hoverDim, 0...0.8, step: 0.05)
-                }
-                Section("Hover buttons") {
-                    Tweak("Size", \.buttonSize, 16...48)
-                    Tweak("Icon size", \.buttonIconSize, 8...24)
-                    Tweak("Spacing", \.buttonSpacing, 0...24)
-                    Tweak("Selection circle", \.selectionCircleSize, 12...36)
-                    Tweak("Selection strip gap", \.selectionStripGap, 0...40)
-                    Tweak("Drag-select edge band", \.autoScrollZone, 0...120, unit: "pt")
-                    Tweak("Drag-select speed", \.autoScrollSpeed, 0...2000, step: 25, unit: "pt/s")
-                    Text("How deep the band at each end of the column is, and how fast a drag-select scrolls at its very edge.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Timings") {
-                    Tweak("Motion", \.motion, 0...1, step: 0.05)
-                    Text("Scales every animation; 0 makes them instant. The system's Reduce Motion forces 0.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Tweak("Thumbnail stays", \.thumbnailSeconds, 1...20, step: 0.5, unit: "s")
-                    Tweak("Card notice stays", \.markSeconds, 0.5...5, step: 0.1, unit: "s")
-                    Tweak("Wait before sending", \.sendGraceSeconds, 0...10, step: 0.5, unit: "s")
-                    Tweak("Slide in", \.slideInDuration, 0...1.5, step: 0.05, unit: "s")
-                    Picker("Slide in curve", selection: binding(\.slideInCurve)) {
-                        ForEach(["spring", "easeOut", "easeInOut", "linear"], id: \.self) { Text($0).tag($0) }
+        let ui = settings.data.ui
+        NavigationSplitView {
+            List(selection: $place.shown) {
+                Label("Changed", systemImage: "circle.fill")
+                    .badge(TweakCatalog.sections.reduce(0) { $0 + changed(in: $1, ui) })
+                    .tag(TweakPlace.Shown.changed)
+                Section {
+                    ForEach(TweakCatalog.sections) { section in
+                        Text(section.name)
+                            .badge(changed(in: section, ui))
+                            .tag(TweakPlace.Shown.section(section.name))
                     }
-                    Tweak("Slide out", \.slideOutDuration, 0...1.5, step: 0.05, unit: "s")
-                    Tweak("Stagger per card", \.staggerDelay, 0...0.3, step: 0.01, unit: "s")
-                    Tweak("Stagger total max", \.staggerTotalMax, 0...1.5, step: 0.05, unit: "s")
-                    Tweak("Relayout", \.relayoutDuration, 0...1, step: 0.05, unit: "s")
-                    Tweak("Shift up for a new card", \.shiftUpDuration, 0...2, step: 0.05, unit: "s")
-                    Tweak("Hover reveal", \.hoverRevealDuration, 0...0.6, step: 0.05, unit: "s")
                 }
-                Section("Flights") {
-                    Tweak("Expand to annotator", \.expandDuration, 0...1.5, step: 0.05, unit: "s")
-                    Tweak("Setup into the menu bar", \.introDuration, 0...2, step: 0.05, unit: "s")
-                    Tweak("Funnel into the icon", \.introFunnel, 0...1, step: 0.05)
-                    Tweak("Arc", \.flightArc, 0...0.4, step: 0.01)
-                    Tweak("Arc cap", \.flightArcMax, 0...300, step: 2, unit: "pt")
-                    Tweak("Depth", \.flightDepth, 0...0.3, step: 0.01)
-                    Text("How far a card bows off the straight line between its slot and the annotator, and how much it swells halfway there.")
-                        .font(.caption).foregroundStyle(.secondary)
+            }
+            .searchable(text: $place.search, placement: .sidebar, prompt: "Search tweaks")
+            .onChange(of: place.shown) { _, shown in
+                place.listed = shown == .changed ? Set(TweakCatalog.sections.flatMap(\.tweaks).filter { !$0.isDefault(in: ui) }.map(\.key)) : []
+            }
+            .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 260)
+            .safeAreaInset(edge: .bottom) {
+                HStack {
+                    Button("Reveal File") { NSWorkspace.shared.activateFileViewerSelecting([Settings.fileURL]) }
+                        .help("Show settings.json in the Finder")
+                    Spacer()
+                    Button("Reset All…") { confirmsReset = true }
                 }
-                Section("Backdrop") {
-                    Tweak("Width", \.backdropWidth, 100...1000, step: 10)
-                    Tweak("Blur radius", \.backdropBlurRadius, 0...120)
-                    IntTweak("Bands", \.backdropBands, 1...12)
-                    Tweak("Ramp power", \.backdropRampPower, 0.5...4, step: 0.1)
-                    Tweak("Tint", \.backdropTint, 0...1, step: 0.05)
-                    Tweak("Tint start", \.backdropTintStart, 0...1, step: 0.05)
-                    Tweak("Fade in", \.backdropFadeIn, 0...1.5, step: 0.05, unit: "s")
-                    Tweak("Fade out", \.backdropFadeOut, 0...1.5, step: 0.05, unit: "s")
-                    Tweak("Slide in", \.backdropSlideIn, 0...1.5, step: 0.05, unit: "s")
-                    Tweak("Slide out", \.backdropSlideOut, 0...1.5, step: 0.05, unit: "s")
-                    Tweak("Dim behind annotator", \.dimOpacity, 0...0.9, step: 0.05)
-                    Tweak("Dim blur", \.dimBlurRadius, 0...60, step: 1, unit: "pt")
-                    Tweak("Dim fade", \.dimFade, 0...1, step: 0.05, unit: "s")
+                .controlSize(.small)
+                .padding(10)
+            }
+        } detail: {
+            VStack(spacing: 0) {
+                // Which file the values write to: a test launch points at another file, and a change
+                // made there never reaches the real one.
+                if Settings.isOverridden {
+                    Text("Test settings file: \(Settings.fileURL.path). Changes here do not reach your settings.json.")
+                        .font(.caption).foregroundStyle(.black)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Color.yellow)
                 }
-                Section("Annotator") {
-                    Tweak("Min width", \.annotationMinWidth, 200...1200, step: 10)
-                    Tweak("Min height", \.annotationMinHeight, 100...900, step: 10)
-                    Tweak("Screen inset", \.annotationScreenInset, 0...200, step: 5)
-                    Tweak("Corner radius", \.annotationCornerRadius, 0...30)
-                    Tweak("Toolbar gap", \.annotationToolbarGap, 0...40)
-                    Tweak("Zoom edge band", \.zoomEdgeBandPoints, 0...400, step: 5, unit: "pt")
-                    Tweak("Zoom edge pull", \.zoomEdgePull, 0...1, step: 0.05)
+                detail(ui)
+            }
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button("Thumbnail", action: previews.thumbnail)
+                        Button("Stack", action: previews.stack)
+                        Button("Annotator", action: previews.annotator)
+                        Divider()
+                        Button("Menu Bar Intro Lab", action: previews.intro)
+                        Button("Pointer Lab", action: previews.pointer)
+                        Button("Check Lab", action: previews.check)
+                    } label: {
+                        Label("Preview", systemImage: "eye")
+                    }
+                    .help("Show a part of Vignette to tweak against")
                 }
-                Section("Editor") {
-                    Tweak("Drag starts after", \.dragDistance, 0...20, step: 0.5, unit: "pt")
-                    Tweak("Stroke hit margin", \.hitMargin, 0...20, step: 0.5, unit: "pt")
-                    Tweak("Corner hit area", \.cornerHitSize, 0...40, step: 0.5, unit: "pt")
-                    Tweak("Edge hit area", \.edgeHitSize, 0...40, step: 0.5, unit: "pt")
-                    Tweak("Small mark", \.smallSide, 0...60, unit: "pt")
-                    Text("A mark shorter than this along a side keeps its handles' hit areas outside it.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Tweak("Handle size", \.handleSize, 2...24, step: 0.5, unit: "pt")
-                    Tweak("Arrow dot radius", \.dotRadius, 1...16, step: 0.5, unit: "pt")
-                    Tweak("Arrow dot hit radius", \.dotHitRadius, 2...40, step: 0.5, unit: "pt")
-                    Tweak("Selection outline", \.selectionOutlineWidth, 0...12, step: 0.5, unit: "pt")
-                    Tweak("Smallest rectangle", \.smallestRectangle, 0...40, unit: "pt")
-                    Tweak("Shortest arrow", \.shortestArrow, 0...40, unit: "pt")
-                    Tweak("Text drag wait", \.textDragDelay, 0...1, step: 0.05, unit: "s")
-                    Tweak("Text drag distance", \.textDragDistance, 0...80, unit: "pt")
-                    Tweak("Note settles", \.noteSettleDuration, 0...1, step: 0.05, unit: "s")
-                    Text("Sizes are screen points, the same at any zoom. A press with the Text tool sets how wide the text wraps if it is held this long and then dragged this far sideways. When typing ends, a note's lines are evened out over the settle time.")
-                        .font(.caption).foregroundStyle(.secondary)
+            }
+            .confirmationDialog("Reset every tweak to its default?", isPresented: $confirmsReset) {
+                Button("Reset Every Tweak", role: .destructive) { settings.update { $0.ui = UITweaks() } }
+            }
+        }
+        .frame(minWidth: 620, minHeight: 420)
+    }
+
+    private var title: String {
+        if !place.search.isEmpty { return "Search" }
+        switch place.shown {
+        case .changed: return "Changed"
+        case .section(let name): return name
+        case nil: return "Tweaks"
+        }
+    }
+
+    @ViewBuilder private func detail(_ ui: UITweaks) -> some View {
+        let query = place.search.trimmingCharacters(in: .whitespaces)
+        if !query.isEmpty {
+            let found = TweakCatalog.sections.compactMap { section -> (TweakSection, [TweakSpec])? in
+                let hits = section.tweaks.filter { matches($0, in: section, query) && $0.applies(ui) }
+                return hits.isEmpty ? nil : (section, hits)
+            }
+            listing(found, ui, empty: "No tweak matches “\(query)”.")
+        } else if place.shown == .changed {
+            let changed = TweakCatalog.sections.compactMap { section -> (TweakSection, [TweakSpec])? in
+                let differ = section.tweaks.filter { !$0.isDefault(in: ui) || place.listed.contains($0.key) }
+                return differ.isEmpty ? nil : (section, differ)
+            }
+            listing(changed, ui, empty: "Every tweak is at its default.")
+        } else if case .section(let name) = place.shown, let section = TweakCatalog.section(name) {
+            Form {
+                // Always there, so the rows below keep their places, and a slider its drag, when a value
+                // comes back to its default.
+                Section {
+                    HStack {
+                        if let lab = section.lab {
+                            Button("Open \(labName(lab))") { open(lab) }
+                        }
+                        Spacer()
+                        Button("Reset \(section.name)") {
+                            settings.update { data in section.tweaks.forEach { $0.reset(&data.ui) } }
+                        }
+                        .disabled(changed(in: section, ui) == 0)
+                    }
                 }
-                Section("Marks") {
-                    ColorTweak("Person colour", \.personColor)
-                    ColorTweak("Agent colour", \.agentColor)
-                    ColorTweak("Edge colour", \.edgeColor)
-                    ColorTweak("Note text colour", \.noteTextColor)
-                    Tweak("Stroke width", \.strokeWidth, 0.5...12, step: 0.25, unit: "pt")
-                    Tweak("Edge width", \.edgeWidth, 0...6, step: 0.25, unit: "pt")
-                    Tweak("Shadow opacity", \.shadowOpacity, 0...3, step: 0.05)
-                    Tweak("Arrowhead length", \.arrowheadLength, 1...10, step: 0.25)
-                    Tweak("Arrowhead width", \.arrowheadWidth, 1...10, step: 0.25)
-                    Text("Widths are in the drawing's points. Shadow opacity multiplies the shadows' darkness. The arrowhead's length and width are multiples of the stroke width.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Notes") {
-                    FontTweak("Person font", \.textFont)
-                    Tweak("Person weight", \.textWeight, 100...900, step: 100)
-                    Tweak("New text size", \.newTextSize, 8...96, unit: "pt")
-                    FontTweak("Agent font", \.agentTextFont)
-                    Tweak("Agent weight", \.agentTextWeight, 100...900, step: 100)
-                    Tweak("Agent text size", \.agentTextSize, 0.5...4, step: 0.01, unit: "%")
-                    Tweak("Line height", \.textLineHeight, 1...2, step: 0.05)
-                    Tweak("Padding top", \.notePaddingTop, 0...2, step: 0.01)
-                    Tweak("Padding bottom", \.notePaddingBottom, 0...2, step: 0.01)
-                    Tweak("Padding sides", \.notePaddingSide, 0...2, step: 0.01)
-                    Tweak("Widest note", \.noteMaxWidth, 4...60, step: 0.5)
-                    Tweak("Badge inset", \.badgeInset, 0...3, step: 0.01)
-                    Tweak("Badge overlap", \.badgeOverlap, 0...Double(NoteBadge.height), step: 0.01)
-                    Text("A font is rounded, monospaced, serif, default, or the name of an installed font family. Weights run from 100, Ultralight, to 900, Black. New text size is in the drawing's points. An agent's text size is a percentage of the image's width. The rest are multiples of the text's size.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Stitch") {
-                    Tweak("Long side", \.stitchLongSide, 512...8192, step: 128, unit: "px")
-                }
-                Section("Live ink gel") {
-                    ColorTweak("Ice", \.inkGelLight)
-                    ColorTweak("Deep blue", \.inkGelDeep)
-                    Tweak("Width", \.inkGelWidth, 1...12, step: 0.25, unit: "pt")
-                    Tweak("White middle", \.inkGelCore, 0...1, step: 0.05)
-                    Tweak("Highlight", \.inkGelSheen, 0...2, step: 0.05)
-                    Tweak("Turns deep at", \.inkGelSwitch, 0.2...0.8, step: 0.01)
-                    Tweak("Turn width", \.inkGelSwitchWidth, 0.02...0.4, step: 0.01)
-                    Tweak("Glow", \.inkGelGlow, 0...2, step: 0.05)
-                    Tweak("Bloom toward light", \.inkGelBloom, 0...2, step: 0.05)
-                    Tweak("Glow reach", \.inkGelGlowRadius, 0...24, step: 0.5, unit: "pt")
-                    Tweak("Shadow", \.inkGelShadow, 0...1, step: 0.01)
-                    Tweak("Drift speed", \.inkGelMotion, 0...3, step: 0.05)
-                    Tweak("Shimmer", \.inkGelShimmer, 0...3, step: 0.05)
-                    Tweak("Light wander", \.inkGelWander, 0...1.5, step: 0.05, unit: " rad")
-                    Text("Your live ink is luminous ice over dark windows and deep blue over light ones, so it stands out on both. Turns deep at is the brightness behind the ink, 0 to 1, where it changes; the deep blue grows in from the line's edge over the turn's width. Vignette reads the brightness when you start inking and after an answer is drawn. The light drifts slowly round the line, and drift speed 0 holds it still.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Live ink") {
-                    Tweak("Answer draw-on", \.liveInkDrawOn, 0...2, step: 0.05, unit: "s")
-                    Tweak("Answer text size", \.liveInkTextSize, 8...32, unit: "pt")
-                    Tweak("Answer text width", \.liveInkTextWidth, 120...800, step: 10, unit: "pt")
-                    Tweak("Hide fade", \.liveInkHideFade, 0...1, step: 0.01, unit: "s")
-                    Tweak("Show fade", \.liveInkShowFade, 0...1, step: 0.01, unit: "s")
-                    Text("Marks on a window fade out while its content scrolls or the window is resized, and fade back in once it is still.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Tweak("Speech pause", \.liveInkSpeechPause, 0.3...4, step: 0.1, unit: "s")
-                    Tweak("Speech quiet level", \.liveInkSpeechQuiet, 0...1, step: 0.05)
-                    Text("Listening until a pause ends once the input stays under the quiet level for the pause, after Control and Option are let go. The level runs from -60 dB at 0 to 0 dB at 1.")
-                        .font(.caption).foregroundStyle(.secondary)
+                TweakGroups(section: section, ui: ui)
+            }
+            .formStyle(.grouped)
+        } else {
+            Text("Pick a section.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// Rows from several sections, each under its section's name.
+    @ViewBuilder private func listing(_ found: [(TweakSection, [TweakSpec])], _ ui: UITweaks, empty: String) -> some View {
+        if found.isEmpty {
+            Text(empty).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Form {
+                ForEach(found, id: \.0.id) { section, tweaks in
+                    Section(section.name) {
+                        ForEach(tweaks) { TweakRow(spec: $0, ui: ui).equatable() }
+                    }
                 }
             }
             .formStyle(.grouped)
-            Divider()
-            HStack {
-                Button("Reset UI to defaults") { settings.update { $0.ui = UITweaks() } }
-                Spacer()
-                Button("Reveal settings.json") { NSWorkspace.shared.activateFileViewerSelecting([Settings.fileURL]) }
+        }
+    }
+
+    private func matches(_ spec: TweakSpec, in section: TweakSection, _ query: String) -> Bool {
+        [spec.label, spec.key, section.name].contains { $0.localizedCaseInsensitiveContains(query) }
+    }
+
+    private func changed(in section: TweakSection, _ ui: UITweaks) -> Int {
+        section.tweaks.filter { !$0.isDefault(in: ui) }.count
+    }
+
+    private func labName(_ lab: TweakSection.Lab) -> String {
+        switch lab {
+        case .intro: "Menu Bar Intro Lab"
+        case .pointer: "Pointer Lab"
+        case .check: "Check Lab"
+        }
+    }
+
+    private func open(_ lab: TweakSection.Lab) {
+        switch lab {
+        case .intro: previews.intro()
+        case .pointer: previews.pointer()
+        case .check: previews.check()
+        }
+    }
+}
+
+/// A section's groups as form sections, each with its caption under it. The labs show their sections
+/// with it too.
+@MainActor
+struct TweakGroups: View {
+    let section: TweakSection
+    let ui: UITweaks
+
+    var body: some View {
+        ForEach(section.groups.indices, id: \.self) { index in
+            let group = section.groups[index]
+            Section {
+                ForEach(group.tweaks.filter { $0.applies(ui) }) { TweakRow(spec: $0, ui: ui).equatable() }
+            } header: {
+                if let title = group.title { Text(title) }
+            } footer: {
+                if let caption = group.caption {
+                    Text(caption(ui)).font(.caption).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
-            .padding(10)
-        }
-        .frame(minWidth: 380, minHeight: 500)
-    }
-
-    private func binding<T>(_ path: WritableKeyPath<UITweaks, T>) -> Binding<T> {
-        Binding(get: { settings.data.ui[keyPath: path] }, set: { v in settings.update { $0.ui[keyPath: path] = v } })
-    }
-}
-
-/// A slider bound to one `ui` setting. The Intro Lab uses it too.
-@MainActor
-struct Tweak: View {
-    let label: String
-    let path: WritableKeyPath<UITweaks, Double>
-    let range: ClosedRange<Double>
-    var step: Double = 1
-    var unit = ""
-    @ObservedObject private var settings = Settings.shared
-
-    init(_ label: String, _ path: WritableKeyPath<UITweaks, Double>, _ range: ClosedRange<Double>, step: Double = 1, unit: String = "") {
-        self.label = label; self.path = path; self.range = range; self.step = step; self.unit = unit
-    }
-
-    var body: some View {
-        let value = settings.data.ui[keyPath: path]
-        HStack {
-            Text(label).frame(width: 140, alignment: .leading)
-            Slider(value: Binding(get: { value }, set: { v in settings.update { $0.ui[keyPath: path] = v } }), in: range, step: step)
-            Text(step < 1 ? String(format: "%.2f", value) + unit : "\(Int(value))\(unit)")
-                .monospacedDigit().font(.caption).frame(width: 52, alignment: .trailing)
         }
     }
 }
 
-/// A colour setting, `#rrggbb`, picked in the system colour panel.
+/// One setting: its label, its control, its value, which takes a typed number, and a dot when it
+/// differs from its default, which puts the default back. Equal while its own value is, so a change
+/// to another setting does not draw it again.
 @MainActor
-struct ColorTweak: View {
-    let label: String
-    let path: WritableKeyPath<UITweaks, String>
-    @ObservedObject private var settings = Settings.shared
+struct TweakRow: View, Equatable {
+    let spec: TweakSpec
+    let ui: UITweaks
 
-    init(_ label: String, _ path: WritableKeyPath<UITweaks, String>) {
-        self.label = label; self.path = path
+    nonisolated static func == (a: TweakRow, b: TweakRow) -> Bool {
+        a.spec.key == b.spec.key && a.spec.value(in: a.ui) == b.spec.value(in: b.ui)
     }
 
     var body: some View {
-        let hex = settings.data.ui[keyPath: path]
-        HStack {
-            Text(label).frame(width: 140, alignment: .leading)
+        HStack(spacing: 8) {
+            Text(spec.label)
+                .lineLimit(1)
+                .frame(width: 150, alignment: .leading)
+                .help(spec.key)
+            control
+            resetDot
+        }
+    }
+
+    @ViewBuilder private var control: some View {
+        switch spec.control {
+        case .number(let path, let range, let step, let unit, let safe):
+            NumberControl(value: ui[keyPath: path], range: range, step: step, unit: unit, safe: safe) { write(path, $0) }
+        case .integer(let path, let range):
+            NumberControl(value: Double(ui[keyPath: path]), range: Double(range.lowerBound)...Double(range.upperBound), step: 1, unit: "",
+                          safe: Double(range.lowerBound)...Double(range.upperBound)) { v in write(path, Int(v.rounded())) }
+        case .colour(let path):
+            let hex = ui[keyPath: path]
             ColorPicker("", selection: Binding(get: { (SRGB(hex: hex) ?? SRGB(hex: UITweaks()[keyPath: path])!).cgColor },
-                                               set: { color in if let picked = SRGB(color)?.hex { settings.update { $0.ui[keyPath: path] = picked } } }),
+                                               set: { color in if let picked = SRGB(color)?.hex { write(path, picked) } }),
                         supportsOpacity: false)
                 .labelsHidden()
             Spacer()
-            Text(hex).monospacedDigit().font(.caption)
+            Text(hex).monospacedDigit().font(.caption).foregroundStyle(.secondary)
+        case .font(let path):
+            FontField(value: ui[keyPath: path]) { write(path, $0) }
+        case .choice(let path, let options):
+            Picker("", selection: Binding(get: { ui[keyPath: path] }, set: { write(path, $0) })) {
+                ForEach(options, id: \.self) { Text($0).tag($0) }
+            }
+            .labelsHidden()
+        case .style(let path, let names, _):
+            Picker("", selection: Binding(get: { Int(ui[keyPath: path].rounded()) }, set: { write(path, Double($0)) })) {
+                ForEach(names.indices, id: \.self) { Text(names[$0]).tag($0) }
+            }
+            .labelsHidden()
         }
+    }
+
+    @ViewBuilder private var resetDot: some View {
+        if spec.isDefault(in: ui) {
+            Color.clear.frame(width: 14, height: 14)
+        } else {
+            Button {
+                Settings.shared.update { spec.reset(&$0.ui) }
+            } label: {
+                Circle().fill(Color.accentColor).frame(width: 7, height: 7).frame(width: 14, height: 14).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Changed. Click to reset to \(spec.defaultText).")
+        }
+    }
+
+    private func write<T>(_ path: WritableKeyPath<UITweaks, T>, _ value: T) {
+        Settings.shared.update { $0.ui[keyPath: path] = value }
     }
 }
 
-/// A font setting: a system design's name or an installed family's. One that is not installed is
-/// not saved.
-@MainActor
-private struct FontTweak: View {
-    let label: String
-    let path: WritableKeyPath<UITweaks, String>
-    @ObservedObject private var settings = Settings.shared
+/// A slider with no tick marks and the value beside it, which takes a typed number. The slider covers
+/// `range` and rounds to `step`; a typed value may go past the slider, but not past `safe`.
+private struct NumberControl: View {
+    let value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let unit: String
+    let safe: ClosedRange<Double>
+    let set: (Double) -> Void
+    @State private var typed: String?
+    @FocusState private var typing: Bool
+
+    var body: some View {
+        Slider(value: Binding(get: { min(max(value, range.lowerBound), range.upperBound) },
+                              set: { set(((($0 - range.lowerBound) / step).rounded() * step + range.lowerBound)) }),
+               in: range)
+        TextField("", text: Binding(get: { typed ?? TweakSpec.format(value, step: step) }, set: { typed = $0 }))
+            .multilineTextAlignment(.trailing)
+            .monospacedDigit()
+            .font(.callout)
+            .textFieldStyle(.plain)
+            .frame(width: 56)
+            .focused($typing)
+            .onSubmit(commit)
+            .onChange(of: typing) { _, now in if !now { commit() } }
+        Text(unit).font(.caption).foregroundStyle(.secondary).frame(width: 30, alignment: .leading)
+    }
+
+    private func commit() {
+        defer { typed = nil }
+        guard let typed, let number = Double(typed.trimmingCharacters(in: .whitespaces)), number.isFinite else { return }
+        set(min(max(number, safe.lowerBound), safe.upperBound))
+    }
+}
+
+/// A font's name. One that is not installed is not saved.
+private struct FontField: View {
+    let value: String
+    let set: (String) -> Void
     @State private var typed: String?
 
-    init(_ label: String, _ path: WritableKeyPath<UITweaks, String>) {
-        self.label = label; self.path = path
-    }
-
     var body: some View {
-        HStack {
-            Text(label).frame(width: 140, alignment: .leading)
-            TextField("", text: Binding(get: { typed ?? settings.data.ui[keyPath: path] }, set: { typed = $0 }))
-                .onSubmit {
-                    if let typed, TextStyle.isInstalled(typed) { settings.update { $0.ui[keyPath: path] = typed } }
-                    typed = nil
-                }
-        }
+        TextField("", text: Binding(get: { typed ?? value }, set: { typed = $0 }))
+            .onSubmit {
+                if let typed, TextStyle.isInstalled(typed) { set(typed) }
+                typed = nil
+            }
     }
 }
 
-@MainActor
-private struct IntTweak: View {
-    let label: String
-    let path: WritableKeyPath<UITweaks, Int>
-    let range: ClosedRange<Int>
-    @ObservedObject private var settings = Settings.shared
-
-    init(_ label: String, _ path: WritableKeyPath<UITweaks, Int>, _ range: ClosedRange<Int>) {
-        self.label = label; self.path = path; self.range = range
+extension TweakSpec {
+    /// The setting's value in `ui`, to compare.
+    func value(in ui: UITweaks) -> AnyHashable {
+        switch control {
+        case .number(let path, _, _, _, _), .style(let path, _, _): ui[keyPath: path]
+        case .integer(let path, _): ui[keyPath: path]
+        case .colour(let path), .font(let path), .choice(let path, _): ui[keyPath: path]
+        }
     }
 
-    var body: some View {
-        let value = settings.data.ui[keyPath: path]
-        HStack {
-            Text(label).frame(width: 140, alignment: .leading)
-            Slider(value: Binding(get: { Double(value) }, set: { v in settings.update { $0.ui[keyPath: path] = Int(v.rounded()) } }),
-                   in: Double(range.lowerBound)...Double(range.upperBound), step: 1)
-            Text("\(value)").monospacedDigit().font(.caption).frame(width: 52, alignment: .trailing)
+    /// The default, as the row shows a value.
+    var defaultText: String {
+        let defaults = UITweaks()
+        switch control {
+        case .number(let path, _, let step, let unit, _): return Self.format(defaults[keyPath: path], step: step) + (unit.isEmpty ? "" : " \(unit)")
+        case .style(let path, let names, _): return names[min(max(Int(defaults[keyPath: path].rounded()), 0), names.count - 1)]
+        case .integer(let path, _): return "\(defaults[keyPath: path])"
+        case .colour(let path), .font(let path), .choice(let path, _): return defaults[keyPath: path]
         }
+    }
+
+    /// `value` with as many decimals as `step` has.
+    static func format(_ value: Double, step: Double) -> String {
+        let decimals = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3
+        return String(format: "%.\(decimals)f", value)
     }
 }
