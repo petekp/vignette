@@ -58,5 +58,14 @@ the pen:
 - The pen's sharp turns are round and unbroken, and the scribble is one colour along its length.
 - The glow inside a rectangle's corner is even, with no streak along the diagonal.
 
-Not measured: the GPU time of the two passes on a long line. The CPU work per pointer event is
-unchanged.
+GPU time of both passes for one frame, on an Apple M4 Max at 2x, measured in a unit test that drew
+each line 60 times through the same pipelines and read the command buffer's GPU times:
+
+| Line | Layer, px | Median | Slowest |
+| --- | --- | --- | --- |
+| 500 pt | 1200 × 400 | 0.13 ms | 0.21 ms |
+| 12,000 pt, across the screen | 3400 × 2000 | 0.63 ms | 0.73 ms |
+| 40,000 pt, dense | 3400 × 2000 | 1.45 ms | 1.63 ms |
+
+A frame at 120 Hz has 8.3 ms. The cost grows with the line's length, as the passes only draw round
+the mark. The CPU work per pointer event is unchanged.
