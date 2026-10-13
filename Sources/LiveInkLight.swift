@@ -17,7 +17,7 @@ final class LightMarkLayer {
     /// The core, outermost first, each narrower and nearer the light's own colour.
     private let core: [(stroke: CAShapeLayer, fill: CAShapeLayer)]
     private let glint = CAShapeLayer()
-    private var shown: (mark: Mark, markStyle: MarkStyle, dark: Bool)?
+    private var shown: (mark: Mark, markStyle: MarkStyle, dark: Bool, look: Look)?
     /// The stroked path's length in points, for the glint's.
     private var length: CGFloat = 0
     /// Whether the light is drawn for a dark window behind it.
@@ -25,7 +25,7 @@ final class LightMarkLayer {
 
     init(scale: CGFloat) {
         core = Self.coreWidths.map { _ in (CAShapeLayer(), CAShapeLayer()) }
-        blooms = Self.glows(dark: true).map { _ in (CALayer(), CAShapeLayer(), CAShapeLayer()) }
+        blooms = Self.glows(dark: true, look: Look()).map { _ in (CALayer(), CAShapeLayer(), CAShapeLayer()) }
         root.anchorPoint = .zero
         for bloom in blooms {
             bloom.container.anchorPoint = .zero
@@ -57,14 +57,15 @@ final class LightMarkLayer {
     /// Draws `mark` in the light of its colour, for a dark or a light window behind it, unless it is
     /// drawn already as it is.
     func show(_ mark: Mark, markStyle: MarkStyle, dark: Bool) {
-        if let shown, shown.mark == mark, shown.markStyle == markStyle, shown.dark == dark { return }
+        let look = Look(Settings.shared.motionUI)
+        if let shown, shown.mark == mark, shown.markStyle == markStyle, shown.dark == dark, shown.look == look { return }
         guard let shape = mark.shape(pointScale: 1, markStyle: markStyle) else { return }
-        shown = (mark, markStyle, dark)
+        shown = (mark, markStyle, dark, look)
         self.dark = dark
         let tint = markStyle.color(mark.color)
         let width = shape.lineWidth
         length = shape.stroked?.length ?? 0
-        for (bloom, glow) in zip(blooms, Self.glows(dark: dark)) {
+        for (bloom, glow) in zip(blooms, Self.glows(dark: dark, look: look)) {
             bloom.stroke.path = shape.stroked
             bloom.stroke.lineWidth = width
             bloom.stroke.strokeColor = tint
@@ -77,7 +78,7 @@ final class LightMarkLayer {
             bloom.container.shadowOpacity = glow.settled
         }
         let centre = shape.filled.flatMap(Self.centroid(of:))
-        for ((layers, fraction), colour) in zip(zip(core, Self.coreWidths), Self.coreColours(tint, dark: dark)) {
+        for ((layers, fraction), colour) in zip(zip(core, Self.coreWidths), Self.coreColours(tint, dark: dark, white: look.coreWhite)) {
             layers.stroke.path = shape.stroked
             layers.stroke.lineWidth = width * fraction
             layers.stroke.strokeColor = colour
@@ -108,6 +109,7 @@ final class LightMarkLayer {
     func drawOn(after delay: CFTimeInterval, duration: CFTimeInterval, settle: CFTimeInterval) {
         guard duration > 0 else { return }
         let begin = CACurrentMediaTime() + delay
+        let look = shown?.look ?? Look()
         let curve = CAMediaTimingFunction(controlPoints: 0.3, 0, 0.2, 1)
         func animate(_ layer: CALayer, _ key: String, from: Any, to: Any, at start: CFTimeInterval, for time: CFTimeInterval,
                      curve timing: CAMediaTimingFunction = curve) {
@@ -126,18 +128,18 @@ final class LightMarkLayer {
         for layer in fills {
             animate(layer, "opacity", from: 0, to: 1, at: begin + duration * 0.85, for: duration * 0.25, curve: CAMediaTimingFunction(name: .linear))
         }
-        for (bloom, glow) in zip(blooms, Self.glows(dark: dark)) {
+        for (bloom, glow) in zip(blooms, Self.glows(dark: dark, look: look)) {
             animate(bloom.container, "shadowOpacity", from: glow.drawing, to: glow.settled, at: begin + duration, for: max(settle, 0.01),
                     curve: CAMediaTimingFunction(name: .easeInEaseOut))
         }
         guard length > 0 else { return }
         // The glint is a short piece of the path that runs with the head: its end is the head, and
         // its start trails by its length, clamped at the path's start.
-        let trail = min(Self.glintLength / length, 1)
+        let trail = min(look.glintLength / length, 1)
         animate(glint, "strokeEnd", from: 0, to: 1, at: begin, for: duration)
         animate(glint, "strokeStart", from: -trail, to: 1 - trail, at: begin, for: duration)
         let shine = CAKeyframeAnimation(keyPath: "opacity")
-        let gone = duration + Self.glintFade
+        let gone = duration + look.glintFade
         shine.values = [1, 1, 0]
         shine.keyTimes = [0, NSNumber(value: duration / gone), 1]
         shine.beginTime = begin
@@ -151,8 +153,8 @@ final class LightMarkLayer {
 
     /// The core's colours, outermost first. Over a dark window the middle is white and the edge
     /// the light's colour, paled; over a light one the edge darkens and the middle stays the colour.
-    private static func coreColours(_ tint: CGColor, dark: Bool) -> [CGColor] {
-        dark ? [tint.mixed(with: .white, 0.3), tint.mixed(with: .white, 0.75), .white]
+    private static func coreColours(_ tint: CGColor, dark: Bool, white: CGFloat) -> [CGColor] {
+        dark ? [tint.mixed(with: .white, 0.4 * white), tint.mixed(with: .white, white), .white]
              : [tint.mixed(with: .black, 0.25), tint.mixed(with: .black, 0.1), tint.mixed(with: .white, 0.1)]
     }
 
@@ -165,15 +167,36 @@ final class LightMarkLayer {
         let settled: Float
     }
 
-    /// The tight glow, then the wide one. Over a light window they tint it rather than light it.
-    private static func glows(dark: Bool) -> [Glow] {
-        dark ? [Glow(radius: 3, whiten: 0.45, drawing: 1, settled: 0.8), Glow(radius: 9, whiten: 0.15, drawing: 1, settled: 0.6)]
-             : [Glow(radius: 2, whiten: 0, drawing: 0.25, settled: 0.12), Glow(radius: 5, whiten: 0, drawing: 0.35, settled: 0.2)]
+    /// The tight glow, then the wide one. Over a light window they tint it rather than light it, and
+    /// reach two thirds as far for the tight one and five ninths for the wide one.
+    private static func glows(dark: Bool, look: Look) -> [Glow] {
+        func glow(_ radius: CGFloat, _ whiten: CGFloat, _ drawing: Float, _ settled: Float, _ scale: Float) -> Glow {
+            Glow(radius: radius, whiten: whiten, drawing: min(drawing * look.drawing * scale, 1), settled: min(settled * look.strength * scale, 1))
+        }
+        return dark ? [glow(look.tight, 0.45, 1, 0.8, 1), glow(look.wide, 0.15, 1, 0.6, 1)]
+                    : [glow(look.tight * 2 / 3, 0, 0.25, 0.12, look.overLight), glow(look.wide * 5 / 9, 0, 0.35, 0.2, look.overLight)]
     }
 
-    /// The glint's length along the path, in points, and how long it takes to go once drawn on.
-    private static let glintLength: CGFloat = 26
-    private static let glintFade: CFTimeInterval = 0.15
+    /// The tweaks the light is drawn with: the tweak panel's Answer light section.
+    struct Look: Equatable {
+        var tight: CGFloat = 3
+        var wide: CGFloat = 9
+        var strength: Float = 1
+        var drawing: Float = 1
+        var overLight: Float = 1
+        var coreWhite: CGFloat = 0.75
+        /// The glint's length along the path, in points, and how long it takes to go once drawn on.
+        var glintLength: CGFloat = 26
+        var glintFade: CFTimeInterval = 0.15
+
+        init() {}
+
+        init(_ ui: UITweaks) {
+            tight = ui.lightGlow; wide = ui.lightGlowWide
+            strength = Float(ui.lightGlowStrength); drawing = Float(ui.lightGlowDrawing); overLight = Float(ui.lightOverLight)
+            coreWhite = ui.lightCoreWhite; glintLength = ui.lightGlintLength; glintFade = ui.lightGlintFade
+        }
+    }
 
     /// The mean of a path's points: inside a filled arrowhead, which is convex.
     private static func centroid(of path: CGPath) -> CGPoint? {

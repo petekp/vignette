@@ -57,6 +57,8 @@ enum InkGel {
         var mapBefore: SIMD4<Float>
         /// xy: px taken off every vertex's place, so a line laid out once can be drawn as its layer moves.
         var offset: SIMD4<Float>
+        var material: SIMD4<Float>
+        var lightPlace: SIMD4<Float>
     }
 
     /// What a layer draws: its line in points of the layer, its head's corners, and how far the
@@ -241,8 +243,11 @@ enum InkGel {
                         light: SIMD4(light, Float(ui.inkGelCore)), deep: SIMD4(deep, 0),
                         glow: SIMD4(Float(ui.inkGelGlow), Float(ui.inkGelBloom), Float(ui.inkGelGlowRadius * scale), Float(ui.inkGelShadow)),
                         more: SIMD4(Float(headOpacity), Float(ui.inkGelWander), Float(ui.inkGelShimmer), Float(ui.inkGelSheen)),
-                        behind: SIMD4(Float(ui.inkGelSwitch - half), Float(ui.inkGelSwitch + half), backdrop.fade, 0),
-                        mapNow: rect(backdrop.now), mapBefore: rect(backdrop.before), offset: .zero)
+                        behind: SIMD4(Float(ui.inkGelSwitch - half), Float(ui.inkGelSwitch + half), backdrop.fade, Float(ui.inkGelSheathDepth)),
+                        mapNow: rect(backdrop.now), mapBefore: rect(backdrop.before), offset: .zero,
+                        material: SIMD4(Float(ui.inkGelHighlightSharpness), Float(ui.inkGelGlowFalloff), Float(ui.inkGelDeepEdge), Float(ui.inkGelEdgeOpacity)),
+                        lightPlace: SIMD4(Float(ui.inkGelShimmerLength), Float(ui.inkGelShimmerSpeed), Float(ui.inkGelLightAngle * .pi / 180),
+                                          Float(ui.inkGelLightHeight)))
     }
 
     private static func rgb(_ colour: CGColor) -> SIMD3<Float> {
@@ -313,6 +318,7 @@ final class InkBackdrop {
         /// The display it covers, in global top-left points.
         let frame: CGRect
         let texture: MTLTexture
+        let luminance: LivePacket.Luminance
     }
 
     /// The maps a layer reads: the newest, the one it fades in from, and how far it has come.
@@ -338,8 +344,9 @@ final class InkBackdrop {
     /// The size of a map's cell, in points.
     static let cell: CGFloat = 8
 
-    /// Captures the displays again. A capture still on its way is dropped.
-    func refresh() {
+    /// Captures the displays again, and calls `read` once the new maps are in. A capture still on its
+    /// way is dropped, and its `read` with it.
+    func refresh(then read: (() -> Void)? = nil) {
         capturing?.cancel()
         let started = CACurrentMediaTime()
         capturing = Task { [weak self] in
@@ -347,7 +354,14 @@ final class InkBackdrop {
             guard !Task.isCancelled, let self, !captured.isEmpty else { return }
             self.take(captured)
             Log.write("[live-ink] backdrop read displays=\(captured.count) ms=\(Int((CACurrentMediaTime() - started) * 1000))")
+            read?()
         }
+    }
+
+    /// The newest map's mean luminance, 0 to 1, under `rect` in global top-left points, or nil with no
+    /// map there.
+    func brightness(in rect: CGRect) -> CGFloat? {
+        maps.lazy.compactMap { $0.luminance.mean(in: rect) }.first
     }
 
     /// What a layer covering `rect`, in global top-left points, reads at `now`.
@@ -378,7 +392,7 @@ final class InkBackdrop {
             guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
             texture.replace(region: MTLRegionMake2D(0, 0, luminance.columns, luminance.rows), mipmapLevel: 0,
                             withBytes: luminance.cells, bytesPerRow: luminance.columns)
-            return Map(frame: frame, texture: texture)
+            return Map(frame: frame, texture: texture, luminance: luminance)
         }
         let now = CACurrentMediaTime()
         earlier = maps

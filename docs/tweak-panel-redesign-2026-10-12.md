@@ -39,6 +39,11 @@ themselves.
 - **A compact row.** The label, a plain slider with no ticks, and the value as a field that takes a
   typed number. A value that differs from its default shows a dot, and the row's reset puts that one
   value back.
+- **Ink samples.** The Live ink gel, Live ink hand and Answer light sections can draw live ink's
+  marks over the screen (`InkSamples`). The person's loop, arrow and box are on top, drawn from
+  pointer points that slow at each end. The agent's three marks in light are below. They sit beside
+  the panel and redraw with every change. A window dragged under them shows how the ink reads on it.
+  Replay reads the screen behind them again and draws them on.
 - **Previews in the toolbar.** The preview buttons move to a toolbar menu, so they are never cut off.
   Revealing the file and resetting every tweak sit at the foot of the sidebar.
 

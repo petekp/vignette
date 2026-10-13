@@ -22,13 +22,13 @@ struct InkHand: Equatable {
 
     /// The hand that drew `raw`, the pointer's points in the order they came, as the stroke that
     /// became `mark`. Nil for a mark that is neither an ellipse nor an arrow.
-    init?(raw: [CGPoint], mark: Mark) {
-        let drawn = Self.stroke(raw, tapersEnd: false)
+    init?(raw: [CGPoint], mark: Mark, feel: Feel) {
+        let drawn = Self.stroke(raw, tapersEnd: false, feel: feel)
         guard drawn.points.count > 1 else { return nil }
         switch mark.geometry {
         case .ellipse(let frame):
             places = drawn.points.map { Self.angle(of: $0, in: frame) }
-            widths = Self.stroke(raw, tapersEnd: true).widths
+            widths = Self.stroke(raw, tapersEnd: true, feel: feel).widths
         case .arrow:
             let lengths = Self.lengths(drawn.points)
             let total = max(lengths.last ?? 0, .ulpOfOne)
@@ -50,7 +50,7 @@ struct InkHand: Equatable {
     /// A hand for a mark no hand drew, as an answer's mark the person picked: even widths, tapered
     /// at the start, and an ellipse or a rectangle that starts at its upper left and runs a little
     /// past it, as a loop drawn by hand does.
-    static func even(for mark: Mark, markStyle: MarkStyle) -> InkHand? {
+    static func even(for mark: Mark, markStyle: MarkStyle, feel: Feel) -> InkHand? {
         let count: Int
         let places: [CGFloat]
         let closed: Bool
@@ -74,7 +74,7 @@ struct InkHand: Equatable {
         }
         var hand = InkHand(places: places, widths: Array(repeating: 1, count: count), drawn: Stroke(points: [], widths: []))
         let points = hand.points(of: mark, markStyle: markStyle)
-        hand.widths = taper(hand.widths, along: lengths(points), end: closed)
+        hand.widths = taper(hand.widths, along: lengths(points), feel: feel, end: closed)
         hand.drawn = moved(Stroke(points: points, widths: hand.widths), by: corner(of: mark), toward: false)
         return hand
     }
@@ -111,11 +111,31 @@ struct InkHand: Equatable {
 
     /// `raw` resampled every `spacing` points and smoothed, each point as wide as the hand was slow
     /// there, and tapered where the pen landed and, with `tapersEnd`, where it lifted.
-    static func stroke(_ raw: [CGPoint], tapersEnd: Bool) -> Stroke {
-        var pen = Pen()
+    static func stroke(_ raw: [CGPoint], tapersEnd: Bool, feel: Feel) -> Stroke {
+        var pen = Pen(feel: feel)
         let stroke = pen.stroke(through: raw)
         guard tapersEnd, stroke.points.count > 1 else { return stroke }
-        return Stroke(points: stroke.points, widths: taper(stroke.widths, along: lengths(stroke.points), start: false, end: true))
+        return Stroke(points: stroke.points, widths: taper(stroke.widths, along: lengths(stroke.points), feel: feel, start: false, end: true))
+    }
+
+    /// How a hand's speed and its pen's landing and lifting shape the line: the tweak panel's Live ink
+    /// hand section.
+    struct Feel: Equatable, Sendable {
+        /// The width where the hand moves at its average speed, and how much each multiple of that
+        /// speed narrows it, between the thinnest and the widest.
+        var width: CGFloat = 0.9
+        var speed: CGFloat = 0.42
+        var thinnest: CGFloat = 0.72
+        var widest: CGFloat = 1.4
+        /// Pointer events the average speed is taken over, and points either side a width is averaged with.
+        var memory = 48
+        var smoothing = 6
+        /// Points the line narrows over where the pen lands and where a loop's pen lifts, and the share of
+        /// the width it narrows to there.
+        var startTaper: CGFloat = 14
+        var startWidth: CGFloat = 0.38
+        var endTaper: CGFloat = 26
+        var endWidth: CGFloat = 0.3
     }
 
     /// The stroke under the pen, built as the pointer's events arrive. A point's place and width
@@ -126,6 +146,7 @@ struct InkHand: Equatable {
     /// against their mean over the `meanReach` events before it. A mean over the whole stroke
     /// changed every width with each event, so the line shifted as it grew.
     struct Pen {
+        let feel: Feel
         private var raw: [CGPoint] = []
         /// The slowness at each raw event whose next event has come.
         private var slowness: [CGFloat] = []
@@ -140,9 +161,13 @@ struct InkHand: Equatable {
         private(set) var settled = Stroke(points: [], widths: [])
         private var settledLengths: [CGFloat] = []
 
+        init(feel: Feel) {
+            self.feel = feel
+        }
+
         /// The stroke through `raw`, which continues the events this pen has had or starts a new stroke.
         mutating func stroke(through raw: [CGPoint]) -> Stroke {
-            if raw.count < self.raw.count || raw.first != self.raw.first { self = Pen() }
+            if raw.count < self.raw.count || raw.first != self.raw.first { self = Pen(feel: feel) }
             for point in raw.dropFirst(self.raw.count) { add(point) }
             return current()
         }
@@ -173,11 +198,11 @@ struct InkHand: Equatable {
         }
 
         private func slowness(of step: CGFloat, at index: Int) -> CGFloat {
-            let from = max(0, index + 1 - Self.meanReach)
+            let from = max(0, index + 1 - max(feel.memory, 1))
             let sum = spacingSums[spacingSums.count - 1] - spacingSums[from] + (index < spacingSums.count - 1 ? 0 : step)
             let count = CGFloat(index + 1 - from)
             let mean = max(sum / count, .ulpOfOne)
-            return min(max(1.32 - 0.42 * step / mean, 0.72), 1.4)
+            return min(max(feel.width + feel.speed * (1 - step / mean), feel.thinnest), feel.widest)
         }
 
         private static func resample(from a: CGPoint, to b: CGPoint, _ slowA: CGFloat, _ slowB: CGFloat, carried: inout CGFloat,
@@ -197,7 +222,7 @@ struct InkHand: Equatable {
         /// Keeps the points that no later event can change: smoothing reaches two points either side and
         /// the widths' average `widthReach`.
         private mutating func settle() {
-            let final = flat.count - max(2, Self.widthReach) - 1
+            let final = flat.count - max(2, feel.smoothing) - 1
             guard final > settled.points.count else { return }
             let points = flat, slownesses = flatSlowness
             for index in settled.points.count..<final { keep(index, in: points, slownesses) }
@@ -208,7 +233,7 @@ struct InkHand: Equatable {
             let length = settled.points.last.map { settledLengths[settledLengths.count - 1] + hypot(point.x - $0.x, point.y - $0.y) } ?? 0
             settled.points.append(point)
             settledLengths.append(length)
-            settled.widths.append(Self.averaged(index, in: slownesses) * InkHand.startTaper(at: length))
+            settled.widths.append(averaged(index, in: slownesses) * InkHand.startTaper(at: length, feel: feel))
         }
 
         /// The settled start and the end as the events so far place it.
@@ -227,7 +252,7 @@ struct InkHand: Equatable {
                 let point = Self.smoothed(index, in: points)
                 if let before = stroke.points.last { length += hypot(point.x - before.x, point.y - before.y) }
                 stroke.points.append(point)
-                stroke.widths.append(Self.averaged(index, in: slownesses) * InkHand.startTaper(at: length))
+                stroke.widths.append(averaged(index, in: slownesses) * InkHand.startTaper(at: length, feel: feel))
             }
             return stroke
         }
@@ -244,26 +269,25 @@ struct InkHand: Equatable {
             return CGPoint(x: (a.x + 2 * b.x + c.x) / 4, y: (a.y + 2 * b.y + c.y) / 4)
         }
 
-        private static func averaged(_ index: Int, in slownesses: [CGFloat]) -> CGFloat {
-            let span = max(0, index - widthReach)...min(slownesses.count - 1, index + widthReach)
+        private func averaged(_ index: Int, in slownesses: [CGFloat]) -> CGFloat {
+            let reach = max(feel.smoothing, 0)
+            let span = max(0, index - reach)...min(slownesses.count - 1, index + reach)
             return span.reduce(0) { $0 + slownesses[$1] } / CGFloat(span.count)
         }
-
-        private static let meanReach = 48
-        private static let widthReach = 6
     }
 
-    /// The widths narrowed over the first `startTaper` points of length, with `start`, and the last
-    /// `endTaper`, with `end`.
-    private static func taper(_ widths: [CGFloat], along lengths: [CGFloat], start: Bool = true, end: Bool) -> [CGFloat] {
+    /// The widths narrowed over the feel's start taper, with `start`, and its end taper, with `end`.
+    private static func taper(_ widths: [CGFloat], along lengths: [CGFloat], feel: Feel, start: Bool = true, end: Bool) -> [CGFloat] {
         let total = lengths.last ?? 0
         return widths.indices.map { index in
-            let finish = end ? 0.3 + 0.7 * ease((total - lengths[index]) / endTaper) : 1
-            return widths[index] * (start ? startTaper(at: lengths[index]) : 1) * finish
+            let finish = end ? feel.endWidth + (1 - feel.endWidth) * ease((total - lengths[index]) / max(feel.endTaper, .ulpOfOne)) : 1
+            return widths[index] * (start ? startTaper(at: lengths[index], feel: feel) : 1) * finish
         }
     }
 
-    private static func startTaper(at length: CGFloat) -> CGFloat { 0.38 + 0.62 * ease(length / startTaper) }
+    private static func startTaper(at length: CGFloat, feel: Feel) -> CGFloat {
+        feel.startWidth + (1 - feel.startWidth) * ease(length / max(feel.startTaper, .ulpOfOne))
+    }
 
     private static func ease(_ x: CGFloat) -> CGFloat { let t = min(max(x, 0), 1); return t * t * (3 - 2 * t) }
 
@@ -307,10 +331,8 @@ struct InkHand: Equatable {
         atan2((point.y - frame.midY) / max(frame.height / 2, .ulpOfOne), (point.x - frame.midX) / max(frame.width / 2, .ulpOfOne))
     }
 
-    /// How far apart a stroke's points are, and how far its ends taper, in points.
+    /// How far apart a stroke's points are, in points.
     static let spacing: CGFloat = 2
-    private static let startTaper: CGFloat = 14
-    private static let endTaper: CGFloat = 26
     /// The radius of a rectangle's corners in ink, in points.
     private static let rectangleCorner: CGFloat = 4
 }
@@ -374,7 +396,7 @@ final class InkMarkLayer: CALayer {
     func show(_ mark: Mark, hand: InkHand?, markStyle: MarkStyle) {
         let inkStyle = Self.inkStyle(markStyle)
         if let shown, shown.mark == mark, shown.given == hand, shown.inkStyle == inkStyle { return }
-        guard let drawing = hand ?? InkHand.even(for: mark, markStyle: inkStyle) else { return }
+        guard let drawing = hand ?? InkHand.even(for: mark, markStyle: inkStyle, feel: Settings.shared.data.ui.inkHandFeel) else { return }
         shown = (mark, hand, drawing, markStyle, inkStyle)
         pen = nil
         settledLine = nil

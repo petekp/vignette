@@ -25,10 +25,12 @@ struct GelUniforms {
     float4 deep;       // rgb the deep blue at the middle of the line
     float4 glow;       // glow, bloom, glow radius in px, shadow
     float4 more;       // head opacity, light wander in radians, shimmer, highlight
-    float4 behind;     // the switch's low and high brightness, how far the newest map has faded in, 0
+    float4 behind;     // the switch's low and high brightness, how far the newest map has faded in, the sheath's depth
     float4 mapNow;     // the newest brightness map's rect, in px of the layer
     float4 mapBefore;  // the map it fades in from
     float4 offset;     // xy: px taken off every vertex's place, so a line laid out once is drawn as its layer moves
+    float4 material;   // the highlight's sharpness, the glow's falloff, the deep blue's edge, the ice's edge opacity
+    float4 lightPlace; // the shimmer's wavelength in pt and its speed, the light's angle in radians and its height
 };
 
 struct GelVaryings {
@@ -61,8 +63,8 @@ static Lit light(GelVaryings in, constant GelUniforms &uni) {
     Lit lit;
     // A line's strip reaches past its edge, so its place across is its distance over its half width.
     float a = in.kind < 0.5 ? clamp(abs(in.u) * in.extent / max(in.halfw, 1e-3), 0.0, 1.0) : clamp(abs(in.u), 0.0, 1.0);
-    float phi = -2.15 + uni.more.y * sin(uni.time * 0.45);
-    lit.L = normalize(float3(cos(phi), sin(phi), 1.1));
+    float phi = uni.lightPlace.z + uni.more.y * sin(uni.time * 0.45);
+    lit.L = normalize(float3(cos(phi), sin(phi), uni.lightPlace.w));
     float2 side;
     if (in.kind < 0.5) {
         float2 t = normalize(in.tangent);
@@ -99,7 +101,7 @@ fragment float4 gelFragment(GelVaryings in [[stage_in]], constant GelUniforms &u
     float across = in.kind < 0.5 ? clamp(abs(in.u) * in.extent / max(in.halfw, 1e-3), 0.0, 1.0) : a;
     float lightBehind = smoothstep(uni.behind.x, uni.behind.y, brightness(in.pixel, uni, mapNow, mapBefore));
     float3 hue = uni.light.rgb;
-    float shimmer = 1 + 0.25 * uni.more.z * sin(in.s / (90 * uni.scale) - uni.time * 1.1);
+    float shimmer = 1 + 0.25 * uni.more.z * sin(in.s / (max(uni.lightPlace.x, 1.0) * uni.scale) - uni.time * uni.lightPlace.y);
 
     if (in.pass < 0.5) {
         // The halo: a glow in the ice's colour, brightest where the line faces the light, and a
@@ -111,7 +113,7 @@ fragment float4 gelFragment(GelVaryings in [[stage_in]], constant GelUniforms &u
         float core = in.kind < 0.5 ? in.halfw * 0.6 : in.halfw * 0.4;
         float edge = in.halfw;
         float reach = max(uni.glow.z, 1.0);
-        float fall = exp(-2.2 * pow(max(dist - core, 0.0) / reach, 2.0));
+        float fall = exp(-uni.material.y * pow(max(dist - core, 0.0) / reach, 2.0));
         // The shadow starts past the line's soft edge, so it never reads as a dark outline.
         float shadowFall = exp(-2.0 * pow(max(dist - edge - 1.5, 0.0) / reach, 2.0));
         float strength = (uni.glow.x + uni.glow.y * lit.facing * lit.facing) * shimmer * (in.kind < 0.5 ? 1.0 : 0.6)
@@ -126,21 +128,21 @@ fragment float4 gelFragment(GelVaryings in [[stage_in]], constant GelUniforms &u
 
     float3 H = normalize(lit.L + float3(0, 0, 1));
     float nh = max(dot(lit.n, H), 0.0);
-    float spec = pow(nh, 110.0) * uni.more.w;
+    float spec = pow(nh, max(uni.material.x, 1.0)) * uni.more.w;
     float soft = pow(nh, 12.0) * shimmer;
     float core = pow(lit.h, 3.0);
     // The ice: a white middle falling to its hue at the edge, its highlight running with the light.
     float3 ice = mix(hue * 0.8, float3(1.0), uni.light.a * core) + spec + 0.08 * soft * hue;
     // The deep blue: darker at the edge, with a paler highlight.
-    float3 deep = mix(uni.deep.rgb * 0.38, uni.deep.rgb, core) + spec * 1.5;
+    float3 deep = mix(uni.deep.rgb * uni.material.z, uni.deep.rgb, core) + spec * 1.5;
     // Between the two, the deep sheath grows in from the edge rather than the colours mixing: a mid
     // colour stands out from nothing, and a light middle in a dark sheath stands out from anything.
-    float sheath = smoothstep(1.12 - 1.3 * lightBehind, 1.28 - 1.3 * lightBehind, across);
+    float sheath = smoothstep(1.12 - uni.behind.w * lightBehind, 1.28 - uni.behind.w * lightBehind, across);
     float3 colour = mix(ice, deep, sheath);
     // Coverage in screen pixels: a line's edge is its half width, a pixel soft, inside a strip that
     // reaches past it; a head's is its outline, from how fast its place across changes per pixel.
     float edge = in.kind < 0.5 ? clamp(in.halfw - abs(in.u) * in.extent + 0.5, 0.0, 1.0)
                                : clamp((1.0 - a) / max(fwidth(in.u), 1e-4) + 0.5, 0.0, 1.0);
-    float alpha = mix(0.75 + 0.25 * core, 0.95, sheath) * edge * (in.kind > 0.5 ? uni.more.x : 1.0);
+    float alpha = mix(uni.material.w + (1 - uni.material.w) * core, 0.95, sheath) * edge * (in.kind > 0.5 ? uni.more.x : 1.0);
     return float4(clamp(colour, 0.0, 1.0) * alpha, alpha);
 }

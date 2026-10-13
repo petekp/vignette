@@ -411,7 +411,7 @@ final class LiveInk {
     private func stroked(_ mark: Mark, by points: [CGPoint]? = nil) {
         strokeTimes[mark.id] = (strokeBegan ?? Date(), Date())
         _ = asks.reduce(.drew(mark.id))
-        if let points, let hand = InkHand(raw: points, mark: mark) {
+        if let points, let hand = InkHand(raw: points, mark: mark, feel: Settings.shared.data.ui.inkHandFeel) {
             hands[mark.id] = hand
             drawingOn.insert(mark.id)
         }

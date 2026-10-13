@@ -20,13 +20,14 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
     private let previews: Previews
     /// Kept with the controller, so the panel opens again where it was left.
     private let place = TweakPlace()
+    private let samples = InkSamples()
 
     init(previews: Previews) {
         self.previews = previews
     }
 
     func toggle() {
-        if let p = panel, p.isVisible { p.orderOut(nil); return }
+        if let p = panel, p.isVisible { p.orderOut(nil); samples.hide(); return }
         show()
     }
 
@@ -45,16 +46,18 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false
         p.delegate = self
-        p.contentView = NSHostingView(rootView: DebugPanelView(previews: previews, place: place))
+        p.contentView = NSHostingView(rootView: DebugPanelView(previews: previews, place: place, samples: samples))
         // Left side of the screen so it never sits under the stack or the backdrop.
         if let v = NSScreen.main?.visibleFrame {
             p.setFrameOrigin(NSPoint(x: v.minX + 40, y: v.midY - 320))
         }
+        samples.beside = p
         panel = p
         return p
     }
 
     func windowWillClose(_ notification: Notification) {
+        samples.hide()
         DispatchQueue.main.async { FocusReturn.shared.restore(reason: "tweaks closed") }
     }
 }
@@ -78,6 +81,7 @@ final class TweakPlace: ObservableObject {
 struct DebugPanelView: View {
     let previews: DebugPanelController.Previews
     @ObservedObject var place: TweakPlace
+    @ObservedObject var samples: InkSamples
     @ObservedObject private var settings = Settings.shared
     @State private var confirmsReset = false
 
@@ -135,6 +139,8 @@ struct DebugPanelView: View {
                         Button("Menu Bar Intro Lab", action: previews.intro)
                         Button("Pointer Lab", action: previews.pointer)
                         Button("Check Lab", action: previews.check)
+                        Divider()
+                        Button(samples.isShown ? "Hide Ink Samples" : "Ink Samples") { samples.toggle() }
                     } label: {
                         Label("Preview", systemImage: "eye")
                     }
@@ -179,6 +185,13 @@ struct DebugPanelView: View {
                     HStack {
                         if let lab = section.lab {
                             Button("Open \(labName(lab))") { open(lab) }
+                        }
+                        if section.inkSamples {
+                            Button(samples.isShown ? "Hide Samples" : "Show Samples") { samples.toggle() }
+                                .help("Draw live ink's marks over the screen, beside this panel")
+                            Button("Replay") { samples.replay() }
+                                .disabled(!samples.isShown)
+                                .help("Read the screen behind the samples again and draw them on")
                         }
                         Spacer()
                         Button("Reset \(section.name)") {

@@ -157,7 +157,7 @@ final class LiveInkOverlay: NSPanel {
         /// The stroke being drawn, above the marks, moved as they are.
         private let pen: InkMarkLayer
         /// Builds the stroke being drawn as its points come.
-        private var hand = InkHand.Pen()
+        private var hand = InkHand.Pen(feel: InkHand.Feel())
         private var stroke: [CGPoint] = []
         private let scale: CGFloat
 
@@ -204,6 +204,8 @@ final class LiveInkOverlay: NSPanel {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             defer { CATransaction.commit() }
+            let feel = Settings.shared.data.ui.inkHandFeel
+            if hand.feel != feel { hand = InkHand.Pen(feel: feel) }
             let stroke = hand.stroke(through: points)
             pen.isHidden = stroke.points.count < 2
             guard stroke.points.count > 1 else { return }
@@ -378,7 +380,7 @@ final class LiveMarksLayer: CALayer {
                 ink.show(mark, hand: hand, markStyle: markStyle)
                 if record.ink == nil { record.previewed.addSublayer(ink); record.ink = ink }
                 if drawingOn.contains(mark.id), let hand {
-                    ink.ease(from: hand.drawn(for: mark), duration: Self.inkEase * Settings.shared.motionScale)
+                    ink.ease(from: hand.drawn(for: mark), duration: Settings.shared.motionUI.inkSettle)
                 } else if drawingOn.contains(mark.id) {
                     ink.drawOn(after: delay, duration: motion.liveInkDrawOn)
                     delay += motion.liveInkDrawOn * 0.6
@@ -789,10 +791,8 @@ final class LiveMarksLayer: CALayer {
     static let doneHold: CFTimeInterval = 0.9
     static let doneAway: CFTimeInterval = 0.45
     static let doneFade: CFTimeInterval = 0.3
-    /// How long an agent's light takes to settle once it has drawn itself on, and how long the
-    /// person's ink takes to ease onto its shape, at full motion.
+    /// How long an agent's light takes to settle once it has drawn itself on, at full motion.
     static let lightSettle: CFTimeInterval = 0.9
-    static let inkEase: CFTimeInterval = 0.3
     /// The done state's green, macOS's system green in light mode, and the check's diameter in pt.
     static let doneColor = SRGB(hex: "#34C759")!
     private static let checkSize: CGFloat = 16

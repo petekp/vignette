@@ -364,6 +364,36 @@ struct UITweaks: Codable, Equatable {
     var inkGelMotion = 1.0           // 0 to 3: how fast the light and the shimmer drift; 0 holds them still
     var inkGelShimmer = 1.0          // 0 to 3: a slow ripple of light along the line
     var inkGelWander = 0.35          // how far the light wanders, in radians
+    var inkGelHighlightSharpness = 110.0 // the highlight's specular power: higher is a smaller, harder spot
+    var inkGelGlowFalloff = 2.2      // how fast the glow fades past the line's core
+    var inkGelDeepEdge = 0.38        // the deep blue at the line's edge, as a share of it at the middle
+    var inkGelEdgeOpacity = 0.75     // the ice's opacity at the line's edge; its middle is opaque
+    var inkGelSheathDepth = 1.3      // how far the deep blue sheath reaches in over light content
+    var inkGelShimmerLength = 90.0   // the shimmer's wavelength along the line, in points
+    var inkGelShimmerSpeed = 1.1     // how fast the shimmer runs along the line
+    var inkGelLightAngle = -123.19   // where the light comes from, in degrees, 0 to the right
+    var inkGelLightHeight = 1.1      // how high the light is over the line: lower lights it from the side
+    // The person's live ink as the hand draws it (`InkHand.Feel`). Widths are multiples of `inkGelWidth`.
+    var inkHandWidth = 0.9           // the width where the hand moves at its average speed
+    var inkHandSpeed = 0.42          // how much each multiple of the average speed narrows it
+    var inkHandThinnest = 0.72
+    var inkHandWidest = 1.4
+    var inkHandSpeedMemory = 48.0    // pointer events the average speed is taken over
+    var inkHandWidthSmoothing = 6.0  // points either side that a width is averaged with
+    var inkHandStartTaper = 14.0     // points the line narrows over where the pen lands
+    var inkHandStartWidth = 0.38     // its width where the pen lands, a share of the full width
+    var inkHandEndTaper = 26.0       // points a loop narrows over where the pen lifts
+    var inkHandEndWidth = 0.3
+    var inkSettle = 0.3              // seconds a drawn loop or arrow takes to ease onto its shape
+    // An agent's marks on the live screen, drawn as light (`LightMarkLayer`)
+    var lightGlow = 3.0              // the tight glow's reach, in points, over a dark window
+    var lightGlowWide = 9.0          // the wide glow's
+    var lightGlowStrength = 1.0      // multiplies the glows once the mark has settled
+    var lightGlowDrawing = 1.0       // multiplies the glows while the mark draws itself on
+    var lightCoreWhite = 0.75        // how white the core's middle is over a dark window
+    var lightGlintLength = 26.0      // points of the glint that runs at the head as a mark draws on
+    var lightGlintFade = 0.15        // seconds the glint takes to go once the mark is drawn
+    var lightOverLight = 1.0         // multiplies the glows over a light window, where they tint it
 
     /// One entry of `bounds`. A plain struct, not a tuple, so the array can be `Sendable`.
     /// `@unchecked`: `WritableKeyPath` isn't marked `Sendable` in the standard library, but key
@@ -391,6 +421,7 @@ struct UITweaks: Codable, Equatable {
         u.liveInkFieldFade *= scale; u.liveInkDrawOn *= scale
         u.liveInkWakeDuration *= scale; u.liveInkFieldFollow *= scale
         u.liveInkHideFade *= scale; u.liveInkShowFade *= scale
+        u.inkSettle *= scale; u.lightGlintFade *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale
         u.backdropSlideIn *= scale; u.backdropSlideOut *= scale
         u.flightArc *= scale; u.flightDepth *= scale
@@ -439,6 +470,12 @@ extension UITweaks {
         if let x = a as? Double, let y = b as? Double { return abs(x - y) <= 1e-9 * max(1, abs(x), abs(y)) }
         guard let x = a as? AnyHashable, let y = b as? AnyHashable else { return false }
         return x == y
+    }
+
+    var inkHandFeel: InkHand.Feel {
+        InkHand.Feel(width: inkHandWidth, speed: inkHandSpeed, thinnest: inkHandThinnest, widest: inkHandWidest,
+                     memory: Int(inkHandSpeedMemory.rounded()), smoothing: Int(inkHandWidthSmoothing.rounded()),
+                     startTaper: inkHandStartTaper, startWidth: inkHandStartWidth, endTaper: inkHandEndTaper, endWidth: inkHandEndWidth)
     }
 
     var editorMetrics: EditorMetrics {

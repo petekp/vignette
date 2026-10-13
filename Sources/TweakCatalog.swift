@@ -86,19 +86,21 @@ struct TweakGroup: @unchecked Sendable {
     }
 }
 
-/// One entry of the panel's sidebar. A section a lab also shows names the lab.
+/// One entry of the panel's sidebar. A section a lab also shows names the lab, and one that changes
+/// how live ink looks offers its samples (`InkSamples`).
 struct TweakSection: @unchecked Sendable, Identifiable {
     enum Lab { case intro, pointer, check }
 
     let name: String
     let lab: Lab?
+    let inkSamples: Bool
     let groups: [TweakGroup]
 
     var id: String { name }
     var tweaks: [TweakSpec] { groups.flatMap(\.tweaks) }
 
-    init(_ name: String, lab: Lab? = nil, _ groups: [TweakGroup]) {
-        self.name = name; self.lab = lab; self.groups = groups
+    init(_ name: String, lab: Lab? = nil, inkSamples: Bool = false, _ groups: [TweakGroup]) {
+        self.name = name; self.lab = lab; self.inkSamples = inkSamples; self.groups = groups
     }
 }
 
@@ -257,7 +259,7 @@ enum TweakCatalog {
                 .number("stitchLongSide", "Long side", \.stitchLongSide, 512...8192, step: 128, unit: "px", safe: 512...20_000),
             ]),
         ]),
-        TweakSection("Live ink gel", [
+        TweakSection("Live ink gel", inkSamples: true, [
             TweakGroup(nil, [
                 .colour("inkGelLight", "Ice", \.inkGelLight),
                 .colour("inkGelDeep", "Deep blue", \.inkGelDeep),
@@ -274,6 +276,48 @@ enum TweakCatalog {
                 .number("inkGelShimmer", "Shimmer", \.inkGelShimmer, 0...3, step: 0.05, safe: 0...3),
                 .number("inkGelWander", "Light wander", \.inkGelWander, 0...1.5, step: 0.05, unit: " rad", safe: 0...1.5),
             ], caption: { _ in "Your live ink is luminous ice over dark windows and deep blue over light ones, so it stands out on both. Turns deep at is the brightness behind the ink, 0 to 1, where it changes; the deep blue grows in from the line's edge over the turn's width. Vignette reads the brightness when you start inking and after an answer is drawn. The light drifts slowly round the line, and drift speed 0 holds it still." }),
+            TweakGroup("Material", [
+                .number("inkGelHighlightSharpness", "Highlight sharpness", \.inkGelHighlightSharpness, 10...300, safe: 1...1000),
+                .number("inkGelGlowFalloff", "Glow falloff", \.inkGelGlowFalloff, 0.5...6, step: 0.1, safe: 0.1...20),
+                .number("inkGelDeepEdge", "Deep blue edge", \.inkGelDeepEdge, 0...1, step: 0.01, safe: 0...1),
+                .number("inkGelEdgeOpacity", "Ice edge opacity", \.inkGelEdgeOpacity, 0...1, step: 0.01, safe: 0...1),
+                .number("inkGelSheathDepth", "Deep sheath depth", \.inkGelSheathDepth, 0...2.5, step: 0.05, safe: 0...5),
+                .number("inkGelShimmerLength", "Shimmer length", \.inkGelShimmerLength, 10...400, step: 5, unit: "pt", safe: 1...2000),
+                .number("inkGelShimmerSpeed", "Shimmer speed", \.inkGelShimmerSpeed, 0...4, step: 0.05, safe: 0...20),
+                .number("inkGelLightAngle", "Light angle", \.inkGelLightAngle, -180...180, unit: "°", safe: -360...360),
+                .number("inkGelLightHeight", "Light height", \.inkGelLightHeight, 0.2...3, step: 0.05, safe: 0.01...10),
+            ], caption: { _ in "Highlight sharpness makes the highlight a smaller, harder spot. Glow falloff is how fast the glow fades past the line. Deep blue edge is how dark the deep blue gets at the line's edge, and Ice edge opacity how clear the ice is there. Deep sheath depth is how far the deep blue reaches in over light content. The shimmer runs along the line in waves Shimmer length apart. The light comes from Light angle, 0 to the right, and Light height lower lights the line from its side." }),
+        ]),
+        TweakSection("Live ink hand", inkSamples: true, [
+            TweakGroup("Width from speed", [
+                .number("inkHandWidth", "At average speed", \.inkHandWidth, 0.3...1.5, step: 0.01, safe: 0.05...5),
+                .number("inkHandSpeed", "Speed effect", \.inkHandSpeed, 0...1, step: 0.01, safe: 0...3),
+                .number("inkHandThinnest", "Thinnest", \.inkHandThinnest, 0.2...1, step: 0.01, safe: 0.05...5),
+                .number("inkHandWidest", "Widest", \.inkHandWidest, 1...3, step: 0.05, safe: 0.05...5),
+                .number("inkHandSpeedMemory", "Speed memory", \.inkHandSpeedMemory, 4...200, unit: "events", safe: 1...1000),
+                .number("inkHandWidthSmoothing", "Width smoothing", \.inkHandWidthSmoothing, 0...20, unit: "points", safe: 0...50),
+            ], caption: { _ in "A line is wider where the hand slows and thinner where it hurries. At average speed it is the first width; Speed effect is how much each multiple of the average speed narrows it, between Thinnest and Widest. Widths are multiples of the gel's width. The average is over the last Speed memory pointer events, about 120 a second, and each width is averaged with the Width smoothing points either side, 2 pt apart." }),
+            TweakGroup("Tapers", [
+                .number("inkHandStartTaper", "Start taper", \.inkHandStartTaper, 0...60, unit: "pt", safe: 0...500),
+                .number("inkHandStartWidth", "Start width", \.inkHandStartWidth, 0...1, step: 0.01, safe: 0...1),
+                .number("inkHandEndTaper", "End taper", \.inkHandEndTaper, 0...80, unit: "pt", safe: 0...500),
+                .number("inkHandEndWidth", "End width", \.inkHandEndWidth, 0...1, step: 0.01, safe: 0...1),
+                .number("inkSettle", "Settle onto shape", \.inkSettle, 0...1.5, step: 0.05, unit: "s", safe: 0...10),
+            ], caption: { _ in "The line narrows over its first Start taper points to Start width of its width, and a loop over its last End taper points. When the pen lifts, a loop or an arrow eases from where the hand drew it onto its shape over Settle onto shape." }),
+        ]),
+        TweakSection("Answer light", inkSamples: true, [
+            TweakGroup("Glow", [
+                .number("lightGlow", "Tight glow reach", \.lightGlow, 0...20, step: 0.5, unit: "pt", safe: 0...100),
+                .number("lightGlowWide", "Wide glow reach", \.lightGlowWide, 0...40, step: 0.5, unit: "pt", safe: 0...200),
+                .number("lightGlowStrength", "Glow", \.lightGlowStrength, 0...2, step: 0.05, safe: 0...3),
+                .number("lightGlowDrawing", "Glow while drawing", \.lightGlowDrawing, 0...2, step: 0.05, safe: 0...3),
+                .number("lightOverLight", "Over light windows", \.lightOverLight, 0...3, step: 0.05, safe: 0...5),
+                .number("lightCoreWhite", "White middle", \.lightCoreWhite, 0...1, step: 0.05, safe: 0...1),
+            ], caption: { _ in "An agent's marks are light: a core whose middle is White middle of the way to white, in a tight glow and a wide one. Glow while drawing is their strength as the mark draws itself on, and Glow once it settles. Over a light window the glows can only tint it, so Over light windows sets their strength there." }),
+            TweakGroup("Glint", [
+                .number("lightGlintLength", "Glint length", \.lightGlintLength, 0...120, unit: "pt", safe: 0...500),
+                .number("lightGlintFade", "Glint fade", \.lightGlintFade, 0...1, step: 0.05, unit: "s", safe: 0...5),
+            ], caption: { _ in "A bright piece of the line runs at the mark's head as it draws itself on, and fades over Glint fade once it is drawn." }),
         ]),
         TweakSection("Live ink", [
             TweakGroup(nil, [
