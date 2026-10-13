@@ -253,7 +253,7 @@ enum AgentPlugin {
         case failed
     }
 
-    struct Result: Equatable {
+    struct Result: Equatable, Sendable {
         let root: URL
         let outcome: Outcome
         var detail = ""
@@ -467,7 +467,7 @@ final class AgentPlugins: @unchecked Sendable {
     /// skill from before the plugin is (that person chose the skill, and the plugin is what carries it
     /// now), takes that skill's folders away once the plugin is in, and updates a plugin older than
     /// this app's. Nothing is installed where neither is.
-    func launch(completion: @escaping ([AgentPlugin.Result]) -> Void = { _ in }) {
+    func launch(completion: @escaping @MainActor @Sendable ([AgentPlugin.Result]) -> Void = { _ in }) {
         queue.async { [self] in
             var results: [AgentPlugin.Result] = []
             let changed: Bool
@@ -492,12 +492,13 @@ final class AgentPlugins: @unchecked Sendable {
                 }
                 results += legacy.map { log(AgentPlugin.removeLegacySkill(at: $0, root: root)) }
             }
-            DispatchQueue.main.async { completion(results) }
+            let found = results
+            DispatchQueue.main.async { MainActor.assumeIsolated { completion(found) } }
         }
     }
 
     /// The Agents tab's switch, setup's last page and `install-skill`.
-    func install(into roots: [URL], completion: @escaping ([AgentPlugin.Result]) -> Void) {
+    func install(into roots: [URL], completion: @escaping @MainActor @Sendable ([AgentPlugin.Result]) -> Void) {
         queue.async { [self] in
             var results: [AgentPlugin.Result] = []
             do { try stageNow() } catch {
@@ -516,12 +517,13 @@ final class AgentPlugins: @unchecked Sendable {
                     }
                 }
             }
-            DispatchQueue.main.async { completion(results) }
+            let found = results
+            DispatchQueue.main.async { MainActor.assumeIsolated { completion(found) } }
         }
     }
 
     /// The Agents tab's switch, turned off.
-    func remove(from root: URL, completion: @escaping (AgentPlugin.Result) -> Void) {
+    func remove(from root: URL, completion: @escaping @MainActor @Sendable (AgentPlugin.Result) -> Void) {
         queue.async { [self] in
             let result: AgentPlugin.Result
             if let client = AgentPlugin.client(of: root) {
@@ -529,7 +531,7 @@ final class AgentPlugins: @unchecked Sendable {
             } else {
                 result = AgentPlugin.Result(root: root, outcome: .failed, detail: "not a Claude Code or Codex folder")
             }
-            DispatchQueue.main.async { completion(result) }
+            DispatchQueue.main.async { MainActor.assumeIsolated { completion(result) } }
         }
     }
 
