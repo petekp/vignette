@@ -626,6 +626,11 @@ final class InkMarkLayer: CALayer {
         var uniforms = InkGel.uniforms(ui, size: gel.drawableSize, scale: contentsScale, time: time, override: override, deepness: colour)
         uniforms.offset = SIMD4(Float((gel.frame.minX - built.origin.x) * contentsScale), Float((gel.frame.minY - built.origin.y) * contentsScale), 0, 0)
         InkGel.head(of: shape, origin: built.origin, scale: contentsScale, grown: headGrown, into: &uniforms)
+        if let place {
+            let mouse = NSEvent.mouseLocation
+            uniforms.pointer = SIMD4(Float((mouse.x - place.minX) * contentsScale), Float((StateReport.primaryHeight - mouse.y - place.minY) * contentsScale),
+                                     Float(ui.inkGelPointerHeight * contentsScale), Float(ui.inkGelPointerLight))
+        }
 
         let fieldPass = MTLRenderPassDescriptor()
         fieldPass.colorAttachments[0].texture = targets.field

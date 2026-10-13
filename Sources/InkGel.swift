@@ -75,6 +75,9 @@ enum InkGel {
         var headShape: SIMD4<Float> = .zero
         /// x: the line's half width where it meets the head, px.
         var headMore: SIMD4<Float> = .zero
+        /// The pointer's place in px of the layer, its light's height over the screen in px, and how
+        /// much of the light it gives: 0 where the layer's place on the screen is not known.
+        var pointer: SIMD4<Float> = .zero
     }
 
     /// What a layer draws: its line in points of the layer, and its head's corners.
@@ -486,7 +489,31 @@ final class InkClock: NSObject {
     func add(_ layer: InkMarkLayer) {
         layers[ObjectIdentifier(layer)] = Weak(layer: layer)
         InkBackdrop.shared.keepFresh()
+        watchPointer()
         wake()
+    }
+
+    /// The gel is lit from the pointer, so a move draws it again, whatever the motion setting: the
+    /// light follows the hand rather than animating. The link rests while nothing moves, so the
+    /// pointer's moves wake it, in Vignette's windows and over every other app's.
+    private var pointerWatch: [Any] = []
+    private var lastPointer = CGPoint(x: -1, y: -1)
+
+    private func watchPointer() {
+        guard pointerWatch.isEmpty else { return }
+        let moves: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: moves, handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.wake() }
+        }) { pointerWatch.append(global) }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: moves, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.wake() }
+            return event
+        }) { pointerWatch.append(local) }
+    }
+
+    private func stopWatchingPointer() {
+        pointerWatch.forEach(NSEvent.removeMonitor)
+        pointerWatch = []
     }
 
     /// Whether any ink is on the screen.
@@ -521,8 +548,11 @@ final class InkClock: NSObject {
         let shown = layers.values.compactMap(\.layer).filter(\.isVisible)
         let idle = rate > 0 && now - lastIdle >= 1.0 / 30
         if idle { lastIdle = now }
+        let pointer = NSEvent.mouseLocation
+        let pointerMoved = ui.inkGelPointerLight > 0 && pointer != lastPointer
+        lastPointer = pointer
         var drawn: [(commands: MTLCommandBuffer, drawable: CAMetalDrawable)] = []
-        var moving = false
+        var moving = pointerMoved
         for layer in shown {
             let easing = moving || layer.isEasing(at: now)
             moving = moving || easing
@@ -534,6 +564,7 @@ final class InkClock: NSObject {
         drawn.forEach { $0.commands.waitUntilScheduled(); $0.drawable.present() }
         // Nothing drifts at motion 0, so the link rests until a layer changes. With no layer showing,
         // it rests and looks again twice a second, since a holder fading back in says nothing here.
+        if layers.isEmpty { stopWatchingPointer() }
         if layers.isEmpty || (!moving && rate <= 0 && !shown.contains(where: \.needsGel)) {
             link?.isPaused = true
         } else if shown.isEmpty {

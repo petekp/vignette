@@ -284,7 +284,9 @@ enum TweakCatalog {
                 .number("inkGelShimmerSpeed", "Shimmer speed", \.inkGelShimmerSpeed, 0...4, step: 0.05, safe: 0...20),
                 .number("inkGelLightAngle", "Light angle", \.inkGelLightAngle, -180...180, unit: "°", safe: -360...360),
                 .number("inkGelLightHeight", "Light height", \.inkGelLightHeight, 0.2...3, step: 0.05, safe: 0.01...10),
-            ], caption: { _ in "Highlight sharpness makes the highlight a smaller, harder spot. Glow falloff is how fast the glow fades past the line. Deep blue edge is how dark the deep blue gets at the line's edge, and Ice edge opacity how clear the ice is there. Deep sheath depth is how far the deep blue reaches in over light content. The shimmer runs along the line in waves Shimmer length apart. The light comes from Light angle, 0 to the right, and Light height lower lights the line from its side." }),
+                .number("inkGelPointerLight", "Light from pointer", \.inkGelPointerLight, 0...1, step: 0.05, safe: 0...1),
+                .number("inkGelPointerHeight", "Pointer light height", \.inkGelPointerHeight, 10...600, step: 5, unit: "pt", safe: 1...5000),
+            ], caption: { _ in "Highlight sharpness makes the highlight a smaller, harder spot. Glow falloff is how fast the glow fades past the line. Deep blue edge is how dark the deep blue gets at the line's edge, and Ice edge opacity how clear the ice is there. Deep sheath depth is how far the deep blue reaches in over light content. The shimmer runs along the line in waves Shimmer length apart. The light hangs over the pointer, Pointer light height above the screen, so the highlights follow it; lower lights the line from its side. Light from pointer at 0 lights it from Light angle instead, 0 to the right, with Light height lower lighting it from the side." }),
         ]),
         TweakSection("Live ink hand", inkSamples: true, [
             TweakGroup("Width from speed", [

@@ -35,6 +35,7 @@ struct GelUniforms {
     float4 head[4];    // the head's corners, px, two to a float4, already moved in by its rounding
     float4 headShape;  // the corner count, the rounding, how far it is shrunk, px along the line at it
     float4 headMore;   // x: the line's half width where it meets the head, px
+    float4 pointer;    // the pointer's place in px of the layer, its light's height over the screen in px, and how much of the light it gives
 };
 
 struct FieldVaryings {
@@ -133,8 +134,12 @@ fragment float4 gelLight(FieldVaryings in [[stage_in]], texture2d<float, access:
     float2 glowSide = slope(field, at, sd, 8);
     float r = max(here.y, 0.5);
 
+    // The light: from the light angle, drifting, and from a lamp over the pointer, so each pixel is
+    // lit from where the pointer is.
     float phi = uni.lightPlace.z + uni.more.y * sin(uni.time * 0.45);
-    float3 L = normalize(float3(cos(phi), sin(phi), uni.lightPlace.w));
+    float3 fixedLight = normalize(float3(cos(phi), sin(phi), uni.lightPlace.w));
+    float3 lamp = normalize(float3(uni.pointer.xy - in.position.xy, max(uni.pointer.z, 1.0)));
+    float3 L = normalize(mix(fixedLight, lamp, uni.pointer.w));
     // A rod's place across, 0 at its middle and 1 at its edge, from how deep in the shape it is; past
     // its half width, as inside the head, the shape is flat on top.
     float across = clamp(1 + sd / r, 0.0, 1.0);

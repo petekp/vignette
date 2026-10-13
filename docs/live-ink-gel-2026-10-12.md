@@ -73,6 +73,11 @@ clears 3.5 everywhere:
 - **Glow.** The glow and the shadow come from the same distance field, outside the shape. A loop
   that crosses itself is not brighter where it crosses. Over light content the glow mostly goes,
   since an overlay can only tint there.
+- **The light** hangs over the pointer, `inkGelPointerHeight` points above the screen, so each
+  pixel is lit from where the pointer is and the highlights follow the hand. `inkGelPointerLight`
+  blends it with the light from `inkGelLightAngle`, which drifts with the material's time. A pointer
+  move draws the gel again at any motion setting, since the light follows the hand rather than
+  animating.
 - **Motion.** `InkClock` is one display link for every gel layer. It drifts the light and a slow
   shimmer along the line at about 30 frames a second, and draws every frame while a line eases onto
   its shape or a map fades in. Its time runs at `inkGelMotion` times the motion scale, so motion 0

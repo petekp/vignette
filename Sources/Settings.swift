@@ -362,6 +362,8 @@ struct UITweaks: Codable, Equatable {
     var inkGelShimmerSpeed = 1.1     // how fast the shimmer runs along the line
     var inkGelLightAngle = -123.19   // where the light comes from, in degrees, 0 to the right
     var inkGelLightHeight = 1.1      // how high the light is over the line: lower lights it from the side
+    var inkGelPointerLight = 1.0     // 0 to 1: how much of the light comes from the pointer rather than the light angle
+    var inkGelPointerHeight = 120.0  // how high over the screen the pointer's light hangs, in points
     // The person's live ink as the hand draws it (`InkHand.Feel`). Widths are multiples of `inkGelWidth`.
     var inkHandWidth = 0.9           // the width where the hand moves at its average speed
     var inkHandSpeed = 0.42          // how much each multiple of the average speed narrows it
