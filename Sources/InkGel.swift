@@ -347,10 +347,12 @@ final class SettledLine {
 }
 
 /// How light the screen is behind the person's ink, so each stroke takes the colour that stands out
-/// there (`InkContrast`). Each display is captured without Vignette's own windows when inking starts
-/// and after an answer is drawn, and kept as a grid of 8 pt cells (`LivePacket.Luminance`). A stroke
-/// eases to the colour a new map gives it. Without Screen Recording there is no map, and the ink is
-/// the ice.
+/// there (`InkContrast`). Each display is captured without Vignette's own windows when inking starts,
+/// after an answer is drawn, and, while ink is on the screen, shortly after the person clicks,
+/// scrolls, types or brings another app forward, since any of those can change what is behind the
+/// ink. Each capture lights macOS's screen recording indicator for a moment, so nothing captures on a
+/// timer. A capture is kept as a grid of 8 pt cells (`LivePacket.Luminance`). A stroke eases to the colour a
+/// new map gives it. Without Screen Recording there is no map, and the ink is the ice.
 @MainActor
 final class InkBackdrop {
     static let shared = InkBackdrop()
@@ -368,6 +370,43 @@ final class InkBackdrop {
 
     /// The size of a map's cell, in points.
     static let cell: CGFloat = 8
+
+    /// How long after the person's last click, scroll or key the maps are read again, in seconds, so
+    /// a scroll or a burst of typing is read once it stops and what it changed has drawn.
+    static let settle: TimeInterval = 0.3
+
+    private var interactions: Any?
+    private var appCameForward: NSObjectProtocol?
+    private var settling: DispatchWorkItem?
+
+    /// Reads the maps again after the person's interactions while ink is on the screen, and stops once
+    /// none is. Keys reach the monitor only while Vignette is trusted for Accessibility.
+    func keepFresh() {
+        guard interactions == nil else { return }
+        let events: NSEvent.EventTypeMask = [.leftMouseUp, .rightMouseUp, .otherMouseUp, .scrollWheel, .keyDown]
+        interactions = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] _ in
+            MainActor.assumeIsolated { self?.interacted() }
+        }
+        appCameForward = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
+                                                                          object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.interacted() }
+        }
+    }
+
+    private func interacted() {
+        guard InkClock.shared.showsInk else {
+            interactions.map(NSEvent.removeMonitor)
+            appCameForward.map(NSWorkspace.shared.notificationCenter.removeObserver)
+            interactions = nil
+            appCameForward = nil
+            settling?.cancel()
+            return
+        }
+        settling?.cancel()
+        let read = DispatchWorkItem { [weak self] in self?.refresh() }
+        settling = read
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.settle, execute: read)
+    }
 
     /// Captures the displays again, and calls `read` once the new maps are in. A capture still on its
     /// way is dropped, and its `read` with it.
@@ -446,8 +485,12 @@ final class InkClock: NSObject {
 
     func add(_ layer: InkMarkLayer) {
         layers[ObjectIdentifier(layer)] = Weak(layer: layer)
+        InkBackdrop.shared.keepFresh()
         wake()
     }
+
+    /// Whether any ink is on the screen.
+    var showsInk: Bool { layers.values.contains { $0.layer?.isVisible == true } }
 
     func remove(_ layer: InkMarkLayer) {
         layers[ObjectIdentifier(layer)] = nil

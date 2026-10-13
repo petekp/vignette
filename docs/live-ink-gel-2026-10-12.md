@@ -38,7 +38,11 @@ clears 3.5 everywhere:
 
 - **The brightness map.** `InkBackdrop` captures each display, without Vignette's own windows, when
   inking starts (the chord press) and after an answer is drawn, since the agent may have changed the
-  window. Each capture is drawn down to a grid of 8 pt cells (`LivePacket.Luminance`). It takes about
+  window. While ink is on the screen it captures again 0.3 s after the person's last click, scroll or
+  key, or when another app comes forward, so ink over a window that changed takes the colour that
+  stands out there. Each capture lights macOS's purple screen recording indicator for a few seconds,
+  so nothing captures on a timer: a change nobody caused, such as a video playing under the ink, is
+  read at the next interaction. Each capture is drawn down to a grid of 8 pt cells (`LivePacket.Luminance`). It takes about
   100 ms, so the map is there before most strokes start. Cells this size follow windows and regions,
   not the letters of a text, so the ink does not flicker along a line of type.
 - **One colour a stroke, by contrast.** A stroke is read every 8 pt along its centre line. At each
