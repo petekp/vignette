@@ -355,9 +355,11 @@ final class InkMarkLayer: CALayer {
     private var easing: (from: InkHand.Stroke, start: CFTimeInterval, duration: CFTimeInterval)?
     /// The done state's colour, in place of the gel's own.
     private var override: CGColor?
-    /// The vertices for `shape` as it is, kept while it holds still: the buffers each pass draws, with
-    /// their vertex counts, and the place in points their vertices are laid out from.
-    private var built: (halo: [(MTLBuffer, Int)], body: [(MTLBuffer, Int)], origin: CGPoint)?
+    /// The vertices for `shape` as it is, kept while it holds still: the buffers the field pass draws,
+    /// with their vertex counts, and the place in points their vertices are laid out from.
+    private var built: (draws: [(MTLBuffer, Int)], origin: CGPoint)?
+    /// The field pass's targets, the drawable's size.
+    private var targets: (field: MTLTexture, depth: MTLTexture)?
     /// Something changed since the last drawing: draw at the next tick, whatever the clock's rate.
     private(set) var needsGel = false
     /// The centre line as drawn, for the thinking light and drawing on.
@@ -601,14 +603,14 @@ final class InkMarkLayer: CALayer {
     func encode(at now: CFTimeInterval, time: CFTimeInterval) -> (commands: MTLCommandBuffer, drawable: CAMetalDrawable)? {
         guard let metal = InkGel.metal, var shape, gel.bounds.width > 0, gel.bounds.height > 0 else { return nil }
         needsGel = false
-        var headOpacity: CGFloat = 1
+        var headGrown: CGFloat = 1
         if let easing {
             let t = Self.curve(min(max((now - easing.start) / easing.duration, 0), 1))
             let to = shape.stroke
             shape.stroke = InkHand.Stroke(points: zip(easing.from.points, to.points).map { a, b in
                 CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
             }, widths: zip(easing.from.widths, to.widths).map { $0 + ($1 - $0) * t })
-            headOpacity = t * t
+            headGrown = t * t
             built = nil
         }
         let ui = Settings.shared.data.ui
@@ -616,42 +618,63 @@ final class InkMarkLayer: CALayer {
         let place = onScreen(gel.frame)
         let colour = deepness(of: shape.stroke, onScreenAt: place.map { CGPoint(x: $0.minX - gel.frame.minX, y: $0.minY - gel.frame.minY) },
                               ui: ui, at: now)
-        guard let built, let drawable = gel.nextDrawable(), let commands = metal.queue.makeCommandBuffer() else { return nil }
-        let pass = MTLRenderPassDescriptor()
-        pass.colorAttachments[0].texture = drawable.texture
-        pass.colorAttachments[0].loadAction = .clear
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-        pass.colorAttachments[0].storeAction = .store
-        guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { return nil }
-        var uniforms = InkGel.uniforms(ui, size: gel.drawableSize, scale: contentsScale, time: time, override: override,
-                                       headOpacity: headOpacity, deepness: colour)
-        uniforms.offset = SIMD4(Float((gel.frame.minX - built.origin.x) * contentsScale), Float((gel.frame.minY - built.origin.y) * contentsScale), 0, 0)
-        encoder.setVertexBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
-        for (pipeline, draws) in [(metal.halo, built.halo), (metal.body, built.body)] {
-            encoder.setRenderPipelineState(pipeline)
-            for (buffer, count) in draws where count > 0 {
-                encoder.setVertexBuffer(buffer, offset: 0, index: 0)
-                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: count)
-            }
+        let width = Int(gel.drawableSize.width), height = Int(gel.drawableSize.height)
+        if targets.map({ $0.field.width != width || $0.field.height != height }) ?? true {
+            targets = InkGel.targets(width: width, height: height, device: metal.device)
         }
-        encoder.endEncoding()
+        guard let built, let targets, let drawable = gel.nextDrawable(), let commands = metal.queue.makeCommandBuffer() else { return nil }
+        var uniforms = InkGel.uniforms(ui, size: gel.drawableSize, scale: contentsScale, time: time, override: override, deepness: colour)
+        uniforms.offset = SIMD4(Float((gel.frame.minX - built.origin.x) * contentsScale), Float((gel.frame.minY - built.origin.y) * contentsScale), 0, 0)
+        InkGel.head(of: shape, origin: built.origin, scale: contentsScale, grown: headGrown, into: &uniforms)
+
+        let fieldPass = MTLRenderPassDescriptor()
+        fieldPass.colorAttachments[0].texture = targets.field
+        fieldPass.colorAttachments[0].loadAction = .clear
+        fieldPass.colorAttachments[0].clearColor = MTLClearColor(red: InkGel.far, green: 1, blue: 0, alpha: 0)
+        fieldPass.colorAttachments[0].storeAction = .store
+        fieldPass.depthAttachment.texture = targets.depth
+        fieldPass.depthAttachment.loadAction = .clear
+        fieldPass.depthAttachment.clearDepth = 1
+        fieldPass.depthAttachment.storeAction = .dontCare
+        guard let field = commands.makeRenderCommandEncoder(descriptor: fieldPass) else { return nil }
+        field.setRenderPipelineState(metal.field)
+        field.setDepthStencilState(metal.nearest)
+        field.setVertexBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
+        field.setFragmentBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
+        for (buffer, count) in built.draws where count > 0 {
+            field.setVertexBuffer(buffer, offset: 0, index: 0)
+            field.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: count)
+        }
+        field.endEncoding()
+
+        let lightPass = MTLRenderPassDescriptor()
+        lightPass.colorAttachments[0].texture = drawable.texture
+        lightPass.colorAttachments[0].loadAction = .clear
+        lightPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        lightPass.colorAttachments[0].storeAction = .store
+        guard let light = commands.makeRenderCommandEncoder(descriptor: lightPass) else { return nil }
+        light.setRenderPipelineState(metal.light)
+        light.setFragmentTexture(targets.field, index: 0)
+        light.setVertexBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
+        light.setFragmentBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
+        for (buffer, count) in built.draws where count > 0 {
+            light.setVertexBuffer(buffer, offset: 0, index: 0)
+            light.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: count)
+        }
+        light.endEncoding()
         return (commands, drawable)
     }
 
     /// The vertices of `shape`. The pen's settled start is laid out once, from this layer's own origin,
     /// and only its end is laid out again; anything else is laid out whole from the gel's corner.
-    private func build(_ shape: InkGel.Shape, device: MTLDevice) -> (halo: [(MTLBuffer, Int)], body: [(MTLBuffer, Int)], origin: CGPoint)? {
-        func buffers(_ vertices: InkGel.Vertices) -> (halo: (MTLBuffer, Int)?, body: (MTLBuffer, Int)?) {
-            func one(_ floats: [Float]) -> (MTLBuffer, Int)? {
-                guard !floats.isEmpty, let buffer = device.makeBuffer(bytes: floats, length: floats.count * MemoryLayout<Float>.stride) else { return nil }
-                return (buffer, floats.count / 10)
-            }
-            return (one(vertices.halo), one(vertices.body))
+    private func build(_ shape: InkGel.Shape, device: MTLDevice) -> (draws: [(MTLBuffer, Int)], origin: CGPoint)? {
+        func buffer(_ floats: [Float]) -> (MTLBuffer, Int)? {
+            guard !floats.isEmpty, let buffer = device.makeBuffer(bytes: floats, length: floats.count * MemoryLayout<Float>.stride) else { return nil }
+            return (buffer, floats.count / 10)
         }
         guard let pen, easing == nil else {
-            let whole = buffers(InkGel.Builder(width: shape.width, origin: gel.frame.origin, scale: contentsScale, reach: Self.reach).vertices(shape))
-            return ([whole.halo].compactMap { $0 }, [whole.body].compactMap { $0 }, gel.frame.origin)
+            let whole = InkGel.Builder(width: shape.width, origin: gel.frame.origin, scale: contentsScale, reach: Self.reach).vertices(shape)
+            return ([buffer(whole)].compactMap { $0 }, gel.frame.origin)
         }
         let builder = InkGel.Builder(width: shape.width, origin: .zero, scale: contentsScale, reach: Self.reach)
         if settledLine.map({ $0.builder.width != builder.width || $0.builder.reach != builder.reach || $0.builder.scale != builder.scale }) ?? true {
@@ -660,12 +683,8 @@ final class InkMarkLayer: CALayer {
         guard let line = settledLine else { return nil }
         line.extend(shape.stroke, settled: pen.settled, device: device)
         let end = builder.segments(shape.stroke, line.segments..<max(shape.stroke.points.count - 1, line.segments), startLength: line.length)
-        var unsettled = builder.ends(of: shape.stroke, length: end.endLength, hasHead: false)
-        unsettled.append(end.vertices)
-        let fresh = buffers(unsettled)
-        let halo = [line.halo.buffer.map { ($0, line.halo.vertexCount) }, fresh.halo].compactMap { $0 }
-        let body = [line.body.buffer.map { ($0, line.body.vertexCount) }, fresh.body].compactMap { $0 }
-        return (halo, body, .zero)
+        let fresh = buffer(builder.ends(of: shape.stroke, length: end.endLength) + end.vertices)
+        return ([line.vertices.buffer.map { ($0, line.vertices.vertexCount) }, fresh].compactMap { $0 }, .zero)
     }
 
     /// `rect`, in this layer's points, in global top-left points. A mark is drawn in its window's

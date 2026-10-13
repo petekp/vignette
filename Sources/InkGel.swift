@@ -4,45 +4,57 @@ import Metal
 import QuartzCore
 import ScreenCaptureKit
 
-/// Draws the person's live ink as adaptive ice (`InkGel.metal`, docs/live-ink-gel-2026-10-12.md):
-/// each line a triangle strip whose vertices carry their place across and along it, so the shader
-/// lights it as a rod, and its colour turns from luminous ice to deep blue with the brightness behind
-/// it (`InkBackdrop`). A halo strip under it, wider by the glow's reach, draws the glow and the shadow.
+/// Draws the person's live ink as adaptive ice (`InkGel.metal`, docs/live-ink-gel-2026-10-12.md): one
+/// soft rod whose width follows the hand, its colour turning from luminous ice to deep blue with what
+/// is behind it (`InkBackdrop`). A mark is laid out as capsules, one a segment of its line, and its
+/// head as a rounded polygon. The field pass keeps each pixel's distance to the nearest, so the line,
+/// its joins and its head are one shape, and the light pass lights that shape as one surface, with
+/// its glow and its shadow (docs/live-ink-one-material-2026-10-13.md).
 @MainActor
 enum InkGel {
-    static let metal: (device: MTLDevice, queue: MTLCommandQueue, halo: MTLRenderPipelineState, body: MTLRenderPipelineState)? = {
+    static let metal: (device: MTLDevice, queue: MTLCommandQueue, field: MTLRenderPipelineState, nearest: MTLDepthStencilState,
+                       light: MTLRenderPipelineState)? = {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
               let library = device.makeDefaultLibrary() else { return nil }
-        func pipeline(max: Bool) -> MTLRenderPipelineState? {
-            let descriptor = MTLRenderPipelineDescriptor()
-            descriptor.vertexFunction = library.makeFunction(name: "gelVertex")
-            descriptor.fragmentFunction = library.makeFunction(name: "gelFragment")
-            let colour = descriptor.colorAttachments[0]!
-            colour.pixelFormat = .bgra8Unorm
-            colour.isBlendingEnabled = true
-            if max {
-                // A loop that crosses itself, or a halo that folds on a tight bend, would be brighter
-                // there with over blending.
-                colour.rgbBlendOperation = .max
-                colour.alphaBlendOperation = .max
-                colour.sourceRGBBlendFactor = .one
-                colour.sourceAlphaBlendFactor = .one
-                colour.destinationRGBBlendFactor = .one
-                colour.destinationAlphaBlendFactor = .one
-            } else {
-                colour.sourceRGBBlendFactor = .one
-                colour.sourceAlphaBlendFactor = .one
-                colour.destinationRGBBlendFactor = .oneMinusSourceAlpha
-                colour.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-            }
-            return try? device.makeRenderPipelineState(descriptor: descriptor)
-        }
-        guard let halo = pipeline(max: true), let body = pipeline(max: false) else {
+        let field = MTLRenderPipelineDescriptor()
+        field.vertexFunction = library.makeFunction(name: "gelFieldVertex")
+        field.fragmentFunction = library.makeFunction(name: "gelField")
+        field.colorAttachments[0].pixelFormat = fieldFormat
+        field.depthAttachmentPixelFormat = .depth32Float
+        let light = MTLRenderPipelineDescriptor()
+        light.vertexFunction = library.makeFunction(name: "gelFieldVertex")
+        light.fragmentFunction = library.makeFunction(name: "gelLight")
+        light.colorAttachments[0].pixelFormat = .bgra8Unorm
+        let nearest = MTLDepthStencilDescriptor()
+        nearest.depthCompareFunction = .less
+        nearest.isDepthWriteEnabled = true
+        guard let fieldState = try? device.makeRenderPipelineState(descriptor: field),
+              let lightState = try? device.makeRenderPipelineState(descriptor: light),
+              let depthState = device.makeDepthStencilState(descriptor: nearest) else {
             Log.write("[live-ink] error gel pipelines did not build")
             return nil
         }
-        return (device, queue, halo, body)
+        return (device, queue, fieldState, depthState, lightState)
     }()
+
+    /// The field's distance, half width and shimmer phase, a pixel each.
+    static let fieldFormat = MTLPixelFormat.rgba16Float
+    /// What the field reads where no part of the mark is near.
+    static let far: Double = 10_000
+
+    /// A field pass's targets for a layer `width` by `height` px.
+    static func targets(width: Int, height: Int, device: MTLDevice) -> (field: MTLTexture, depth: MTLTexture)? {
+        let field = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: fieldFormat, width: width, height: height, mipmapped: false)
+        field.usage = [.renderTarget, .shaderRead]
+        field.storageMode = .private
+        let depth = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: width, height: height, mipmapped: false)
+        depth.usage = .renderTarget
+        // The depth only picks the nearest part within the field pass, so on Apple's GPUs it never
+        // needs memory.
+        depth.storageMode = device.supportsFamily(.apple7) ? .memoryless : .private
+        guard let fieldTexture = device.makeTexture(descriptor: field), let depthTexture = device.makeTexture(descriptor: depth) else { return nil }
+        return (fieldTexture, depthTexture)
+    }
 
     struct Uniforms {
         var size: SIMD2<Float>
@@ -57,29 +69,28 @@ enum InkGel {
         var offset: SIMD4<Float>
         var material: SIMD4<Float>
         var lightPlace: SIMD4<Float>
+        /// The head's corners in px, two to each, moved in by its rounding.
+        var head: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) = (.zero, .zero, .zero, .zero)
+        /// The corner count, the rounding in px, how far the head is shrunk in px, and px along the line at it.
+        var headShape: SIMD4<Float> = .zero
+        /// x: the line's half width where it meets the head, px.
+        var headMore: SIMD4<Float> = .zero
     }
 
-    /// What a layer draws: its line in points of the layer, its head's corners, and how far the
-    /// head has come in.
+    /// What a layer draws: its line in points of the layer, and its head's corners.
     struct Shape {
         var stroke: InkHand.Stroke
         var width: CGFloat
         var head: [CGPoint]
     }
 
-    /// Vertices for the halo pass and the body pass. A vertex is 10 floats: its place in px, across,
-    /// along, its half width, its tangent, the strip's half width, its kind and its pass (`GelVertex`).
-    struct Vertices {
-        var halo: [Float] = []
-        var body: [Float] = []
+    /// The most corners a head can have.
+    static let headCorners = 8
 
-        mutating func append(_ other: Vertices) {
-            halo += other.halo
-            body += other.body
-        }
-    }
-
-    /// Lays a line's vertices out in px from `origin`.
+    /// Lays a mark's pieces out in px from `origin`, each as triangles over the pixels its distance
+    /// matters to: its edge and the glow's reach past it. A vertex is 10 floats: its place, the
+    /// segment's ends, their half widths, the length along the line at the segment's start, and its
+    /// kind, 0 a segment and 1 the head (`GelVertex`).
     struct Builder {
         let width: CGFloat
         let origin: CGPoint
@@ -87,124 +98,122 @@ enum InkGel {
         let reach: CGFloat
 
         /// The whole of `shape`: its line, its round ends and its head.
-        func vertices(_ shape: Shape) -> Vertices {
-            var out = ends(of: shape.stroke, length: InkHand.lengths(shape.stroke.points).last ?? 0, hasHead: shape.head.count > 2)
-            out.append(segments(shape.stroke, 0..<max(shape.stroke.points.count - 1, 0), startLength: 0).vertices)
-            out.append(head(shape))
-            return out
+        func vertices(_ shape: Shape) -> [Float] {
+            ends(of: shape.stroke, length: InkHand.lengths(shape.stroke.points).last ?? 0)
+                + segments(shape.stroke, 0..<max(shape.stroke.points.count - 1, 0), startLength: 0).vertices
+                + head(shape)
         }
 
-        /// The quads of segments `range` of `stroke`, segment `i` joining points `i` and `i + 1`, with
-        /// the length along the line at the range's first point, and the length at its last.
-        func segments(_ stroke: InkHand.Stroke, _ range: Range<Int>, startLength: CGFloat) -> (vertices: Vertices, endLength: CGFloat) {
-            var out = Vertices()
+        /// Segments `range` of `stroke`, segment `i` joining points `i` and `i + 1`, with the length
+        /// along the line at the range's first point, and the length at its last. Each segment covers
+        /// a quad mitred to its neighbours, so together they cover the line's reach without gaps; at a
+        /// turn too sharp to mitre, a square round the point covers what the quads miss.
+        func segments(_ stroke: InkHand.Stroke, _ range: Range<Int>, startLength: CGFloat) -> (vertices: [Float], endLength: CGFloat) {
+            var out: [Float] = []
             let points = stroke.points
             guard points.count > 1, !range.isEmpty else { return (out, startLength) }
-            out.halo.reserveCapacity(range.count * 60)
-            out.body.reserveCapacity(range.count * 60)
+            out.reserveCapacity(range.count * 60)
             var along = startLength
             for index in range {
                 let next = index + 1
-                let alongNext = along + hypot(points[next].x - points[index].x, points[next].y - points[index].y)
-                let ta = tangent(points, index), tb = tangent(points, next)
-                let ha = half(stroke, index), hb = half(stroke, next)
-                for (pass, grow) in [(Float(0), reach), (Float(1), 1.5 / scale)] {
-                    let ea = ha + grow, eb = hb + grow
-                    let a0 = side(points[index], ta, 1, ea), a1 = side(points[index], ta, -1, ea)
-                    let b0 = side(points[next], tb, 1, eb), b1 = side(points[next], tb, -1, eb)
-                    func vertex(_ p: CGPoint, _ u: Float, _ at: Bool) {
-                        let a = at ? (along, ha, ta, ea) : (alongNext, hb, tb, eb)
-                        if pass == 0 {
-                            put(&out.halo, p, u: u, along: a.0, half: a.1, tangent: a.2, extent: a.3, kind: 0, pass: pass)
-                        } else {
-                            put(&out.body, p, u: u, along: a.0, half: a.1, tangent: a.2, extent: a.3, kind: 0, pass: pass)
-                        }
-                    }
-                    vertex(a0, 1, true); vertex(a1, -1, true); vertex(b0, 1, false)
-                    vertex(a1, -1, true); vertex(b1, -1, false); vertex(b0, 1, false)
+                let length = hypot(points[next].x - points[index].x, points[next].y - points[index].y)
+                let n = normal(points, index)
+                let (ma, la) = miter(points, at: index, stroke: stroke), (mb, lb) = miter(points, at: next, stroke: stroke)
+                let a0 = CGPoint(x: points[index].x + ma.x * la, y: points[index].y + ma.y * la)
+                let a1 = CGPoint(x: points[index].x - ma.x * la, y: points[index].y - ma.y * la)
+                let b0 = CGPoint(x: points[next].x + mb.x * lb, y: points[next].y + mb.y * lb)
+                let b1 = CGPoint(x: points[next].x - mb.x * lb, y: points[next].y - mb.y * lb)
+                let segment = (index, next, along)
+                for p in [a0, a1, b0, a1, b1, b0] { put(&out, p, segment, stroke) }
+                if index > 0, ma.x * n.x + ma.y * n.y < Self.sharpest {
+                    let before = (index - 1, index, along - hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y))
+                    square(&out, round: points[index], half: extent(stroke, index), before, stroke)
+                    square(&out, round: points[index], half: extent(stroke, index), segment, stroke)
                 }
-                along = alongNext
+                along += length
             }
             return (out, along)
         }
 
-        /// Round ends, each a fan whose middle is across 0 and whose rim is across 1. An arrow's end is
-        /// under its head. `length` is the line's.
-        func ends(of stroke: InkHand.Stroke, length: CGFloat, hasHead: Bool) -> Vertices {
-            var out = Vertices()
+        /// The line's round ends: a square round each end, lit as its segment's capsule. `length` is
+        /// the line's.
+        func ends(of stroke: InkHand.Stroke, length: CGFloat) -> [Float] {
+            var out: [Float] = []
             let points = stroke.points
-            guard points.count > 1 else { return out }
-            for (index, sign, along) in [(0, CGFloat(-1), CGFloat(0)), (points.count - 1, 1, length)] where !(index == points.count - 1 && hasHead) {
-                let t = tangent(points, index), h = half(stroke, index), p = points[index]
-                for (pass, grow) in [(Float(0), reach), (Float(1), 1.5 / scale)] {
-                    let e = h + grow
-                    let base = atan2(t.y, t.x) - .pi / 2
-                    for k in 0..<10 {
-                        let a0 = base + .pi * CGFloat(k) / 10 * sign, a1 = base + .pi * CGFloat(k + 1) / 10 * sign
-                        for (q, u) in [(p, Float(0)), (CGPoint(x: p.x + cos(a0) * e, y: p.y + sin(a0) * e), 1),
-                                       (CGPoint(x: p.x + cos(a1) * e, y: p.y + sin(a1) * e), 1)] {
-                            if pass == 0 {
-                                put(&out.halo, q, u: u, along: along, half: h, tangent: t, extent: e, kind: 0, pass: pass)
-                            } else {
-                                put(&out.body, q, u: u, along: along, half: h, tangent: t, extent: e, kind: 0, pass: pass)
-                            }
-                        }
-                    }
-                }
+            guard let last = points.indices.last else { return out }
+            let start = (0, min(1, last), CGFloat(0))
+            square(&out, round: points[0], half: extent(stroke, 0), start, stroke)
+            if last > 0 {
+                let end = (last - 1, last, length - hypot(points[last].x - points[last - 1].x, points[last].y - points[last - 1].y))
+                square(&out, round: points[last], half: extent(stroke, last), end, stroke)
             }
             return out
         }
 
-        /// A filled head, a fan round its middle.
-        func head(_ shape: Shape) -> Vertices {
-            var out = Vertices()
-            guard shape.head.count > 2 else { return out }
+        /// The head: a square over its corners and the glow's reach past them.
+        func head(_ shape: Shape) -> [Float] {
+            guard shape.head.count > 2, let first = shape.head.first else { return [] }
+            let box = shape.head.reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+                .insetBy(dx: -reach - 2, dy: -reach - 2)
             let s = Float(scale)
-            let along = Float(InkHand.lengths(shape.stroke.points).last ?? 0) * s
-            let middle = CGPoint(x: shape.head.map(\.x).reduce(0, +) / CGFloat(shape.head.count),
-                                 y: shape.head.map(\.y).reduce(0, +) / CGFloat(shape.head.count))
-            let radius = shape.head.map { hypot($0.x - middle.x, $0.y - middle.y) }.reduce(0, +) / CGFloat(shape.head.count)
-            // The halo's fan is the head grown until it holds the glow's circle round the head's middle.
-            let nearest = zip(shape.head, shape.head.dropFirst() + [shape.head[0]]).map { a, b -> CGFloat in
-                let dx = b.x - a.x, dy = b.y - a.y, length = max(hypot(dx, dy), .ulpOfOne)
-                return abs((middle.x - a.x) * dy - (middle.y - a.y) * dx) / length
-            }.min() ?? radius
-            let share = max(nearest, 0.5) / (radius + reach * 1.5)
-            let centre = [Float(middle.x - origin.x) * s, Float(middle.y - origin.y) * s]
-            func head(_ into: inout [Float], _ p: CGPoint, u: Float, half: Float, pass: Float) {
-                into += [Float(p.x - origin.x) * s, Float(p.y - origin.y) * s, u, along, half, centre[0], centre[1], 0, 1, pass]
-            }
-            func grown(_ p: CGPoint) -> CGPoint { CGPoint(x: middle.x + (p.x - middle.x) / share, y: middle.y + (p.y - middle.y) / share) }
-            for (index, corner) in shape.head.enumerated() {
-                let next = shape.head[(index + 1) % shape.head.count]
-                head(&out.halo, middle, u: 0, half: Float(radius) * s, pass: 0)
-                head(&out.halo, grown(corner), u: 1, half: Float(radius) * s, pass: 0)
-                head(&out.halo, grown(next), u: 1, half: Float(radius) * s, pass: 0)
-                head(&out.body, middle, u: 0, half: Float(radius) * s, pass: 1)
-                head(&out.body, corner, u: 1, half: Float(radius) * s, pass: 1)
-                head(&out.body, next, u: 1, half: Float(radius) * s, pass: 1)
+            var out: [Float] = []
+            for p in [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY), CGPoint(x: box.minX, y: box.maxY),
+                      CGPoint(x: box.maxX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY)] {
+                out += [Float(p.x - origin.x) * s, Float(p.y - origin.y) * s, 0, 0, 0, 0, 0, 0, 0, 1]
             }
             return out
         }
 
-        private func tangent(_ points: [CGPoint], _ index: Int) -> CGPoint {
-            let a = points[max(index - 1, 0)], b = points[min(index + 1, points.count - 1)]
-            let length = max(hypot(b.x - a.x, b.y - a.y), .ulpOfOne)
-            return CGPoint(x: (b.x - a.x) / length, y: (b.y - a.y) / length)
+        /// A miter's cosine below this is too sharp to mitre: the quads would reach twice the line's
+        /// extent and on past it.
+        private static let sharpest: CGFloat = 0.5
+
+        /// The direction a point's quad corners lie in from it, and how far: the mean of its two
+        /// segments' normals, as far as keeps each quad's edge the line's extent from its segment.
+        private func miter(_ points: [CGPoint], at index: Int, stroke: InkHand.Stroke) -> (CGPoint, CGFloat) {
+            let e = extent(stroke, index)
+            let after = normal(points, min(index, points.count - 2))
+            guard index > 0, index < points.count - 1 else { return (after, e) }
+            let before = normal(points, index - 1)
+            let sum = CGPoint(x: before.x + after.x, y: before.y + after.y)
+            let length = hypot(sum.x, sum.y)
+            guard length > 1e-3 else { return (after, e) }
+            let m = CGPoint(x: sum.x / length, y: sum.y / length)
+            return (m, e / max(m.x * after.x + m.y * after.y, Self.sharpest))
+        }
+
+        /// The unit normal of segment `index`, or of the nearest segment with a length.
+        private func normal(_ points: [CGPoint], _ index: Int) -> CGPoint {
+            var i = index
+            while i >= 0 {
+                let dx = points[i + 1].x - points[i].x, dy = points[i + 1].y - points[i].y
+                let length = hypot(dx, dy)
+                if length > 1e-4 { return CGPoint(x: -dy / length, y: dx / length) }
+                i -= 1
+            }
+            return CGPoint(x: 0, y: 1)
+        }
+
+        /// How far past point `index` its pieces reach: the widest of it and its neighbours, and the glow.
+        private func extent(_ stroke: InkHand.Stroke, _ index: Int) -> CGFloat {
+            let near = max(index - 1, 0)...min(index + 1, stroke.points.count - 1)
+            return near.map { half(stroke, $0) }.max()! + reach + 2
         }
 
         private func half(_ stroke: InkHand.Stroke, _ index: Int) -> CGFloat { max(stroke.widths[index] * width / 2, 0.05) }
 
-        private func side(_ point: CGPoint, _ tangent: CGPoint, _ sign: CGFloat, _ extent: CGFloat) -> CGPoint {
-            CGPoint(x: point.x - tangent.y * extent * sign, y: point.y + tangent.x * extent * sign)
+        private func square(_ into: inout [Float], round p: CGPoint, half: CGFloat, _ segment: (Int, Int, CGFloat), _ stroke: InkHand.Stroke) {
+            for (dx, dy) in [(-1, -1), (1, -1), (-1, 1), (1, -1), (1, 1), (-1, 1)] as [(CGFloat, CGFloat)] {
+                put(&into, CGPoint(x: p.x + dx * half, y: p.y + dy * half), segment, stroke)
+            }
         }
 
-        private func put(_ into: inout [Float], _ p: CGPoint, u: Float, along: CGFloat, half: CGFloat, tangent: CGPoint, extent: CGFloat,
-                         kind: Float, pass: Float) {
+        private func put(_ into: inout [Float], _ p: CGPoint, _ segment: (Int, Int, CGFloat), _ stroke: InkHand.Stroke) {
             let s = Float(scale)
-            into.append(Float(p.x - origin.x) * s); into.append(Float(p.y - origin.y) * s); into.append(u)
-            into.append(Float(along) * s); into.append(Float(half) * s); into.append(Float(tangent.x)); into.append(Float(tangent.y))
-            into.append(Float(extent) * s); into.append(kind); into.append(pass)
+            let a = stroke.points[segment.0], b = stroke.points[segment.1]
+            into += [Float(p.x - origin.x) * s, Float(p.y - origin.y) * s, Float(a.x - origin.x) * s, Float(a.y - origin.y) * s,
+                     Float(b.x - origin.x) * s, Float(b.y - origin.y) * s, Float(half(stroke, segment.0)) * s,
+                     Float(half(stroke, segment.1)) * s, Float(segment.2) * s, 0]
         }
     }
 
@@ -220,20 +229,56 @@ enum InkGel {
             }
         }
         if corners.count > 1, let first = corners.first, let last = corners.last, hypot(first.x - last.x, first.y - last.y) < 0.01 { corners.removeLast() }
-        return corners
+        return Array(corners.prefix(headCorners))
     }
 
-    /// The tweaks' values as the shader takes them, for a gel at `gel` on the screen, in global
-    /// top-left points. `override` is the done state's colour, which takes the ice's place and,
-    /// darkened, the deep blue's.
+    /// Puts `shape`'s head into `uniforms`, laid out from `origin`: its corners moved in by its
+    /// rounding, which is a share of the line's width where it meets the head so the two read as one
+    /// soft shape, and shrunk toward its middle by `1 - grown` of the way, so it grows out of the line.
+    static func head(of shape: Shape, origin: CGPoint, scale: CGFloat, grown: CGFloat, into uniforms: inout Uniforms) {
+        let corners = shape.head
+        guard corners.count > 2 else { uniforms.headShape = .zero; return }
+        let lineHalf = max((shape.stroke.widths.last ?? 1) * shape.width / 2, 0.5)
+        // The middle a rounding keeps its edges parallel round: a triangle's incentre, else the mean.
+        var middle = CGPoint(x: corners.map(\.x).reduce(0, +) / CGFloat(corners.count), y: corners.map(\.y).reduce(0, +) / CGFloat(corners.count))
+        if corners.count == 3 {
+            let (a, b, c) = (corners[0], corners[1], corners[2])
+            let la = hypot(b.x - c.x, b.y - c.y), lb = hypot(a.x - c.x, a.y - c.y), lc = hypot(a.x - b.x, a.y - b.y)
+            let sum = max(la + lb + lc, .ulpOfOne)
+            middle = CGPoint(x: (la * a.x + lb * b.x + lc * c.x) / sum, y: (la * a.y + lb * b.y + lc * c.y) / sum)
+        }
+        let inradius = zip(corners, corners.dropFirst() + [corners[0]]).map { a, b -> CGFloat in
+            let dx = b.x - a.x, dy = b.y - a.y
+            return abs((middle.x - a.x) * dy - (middle.y - a.y) * dx) / max(hypot(dx, dy), .ulpOfOne)
+        }.min() ?? 0
+        guard inradius > 0.1 else { uniforms.headShape = .zero; return }
+        let rounding = min(lineHalf * headRounding, inradius * 0.8)
+        let keep = 1 - rounding / inradius
+        let px = corners.map { p -> SIMD2<Float> in
+            SIMD2(Float((middle.x + (p.x - middle.x) * keep - origin.x) * scale), Float((middle.y + (p.y - middle.y) * keep - origin.y) * scale))
+        }
+        func pair(_ i: Int) -> SIMD4<Float> {
+            SIMD4(lowHalf: i < px.count ? px[i] : .zero, highHalf: i + 1 < px.count ? px[i + 1] : .zero)
+        }
+        uniforms.head = (pair(0), pair(2), pair(4), pair(6))
+        uniforms.headShape = SIMD4(Float(px.count), Float(rounding * scale), Float((1 - min(max(grown, 0), 1)) * inradius * scale),
+                                   Float((InkHand.lengths(shape.stroke.points).last ?? 0) * scale))
+        uniforms.headMore = SIMD4(Float(lineHalf * scale), 0, 0, 0)
+    }
+
+    /// How round a head's corners are, a share of the line's half width where it meets the head.
+    static let headRounding: CGFloat = 0.6
+
+    /// The tweaks' values as the shader takes them. `override` is the done state's colour, which
+    /// takes the ice's place and, darkened, the deep blue's.
     static func uniforms(_ ui: UITweaks, size: CGSize, scale: CGFloat, time: CFTimeInterval, override: CGColor?,
-                         headOpacity: CGFloat, deepness: CGFloat) -> Uniforms {
+                         deepness: CGFloat) -> Uniforms {
         let light = rgb(override ?? SRGB(hex: ui.inkGelLight)?.cgColor ?? defaultIce)
         let deep = override.map { rgb($0) * 0.45 } ?? rgb(SRGB(hex: ui.inkGelDeep)?.cgColor ?? defaultDeep)
         return Uniforms(size: SIMD2(Float(size.width), Float(size.height)), scale: Float(scale), time: Float(time),
                         light: SIMD4(light, Float(ui.inkGelCore)), deep: SIMD4(deep, 0),
                         glow: SIMD4(Float(ui.inkGelGlow), Float(ui.inkGelBloom), Float(ui.inkGelGlowRadius * scale), Float(ui.inkGelShadow)),
-                        more: SIMD4(Float(headOpacity), Float(ui.inkGelWander), Float(ui.inkGelShimmer), Float(ui.inkGelSheen)),
+                        more: SIMD4(0, Float(ui.inkGelWander), Float(ui.inkGelShimmer), Float(ui.inkGelSheen)),
                         behind: SIMD4(Float(deepness), 0, 0, Float(ui.inkGelSheathDepth)), offset: .zero,
                         material: SIMD4(Float(ui.inkGelHighlightSharpness), Float(ui.inkGelGlowFalloff), Float(ui.inkGelDeepEdge), Float(ui.inkGelEdgeOpacity)),
                         lightPlace: SIMD4(Float(ui.inkGelShimmerLength), Float(ui.inkGelShimmerSpeed), Float(ui.inkGelLightAngle * .pi / 180),
@@ -255,30 +300,28 @@ enum InkGel {
     }
 }
 
-/// A line's settled start, laid out once in px and kept in buffers that only grow, so a line under the
-/// pen costs the same to draw at every length. A frame the GPU is still drawing reads only vertices
-/// that were there when it was encoded, and those are never written again.
+/// A line's settled start, laid out once in px and kept in a buffer that only grows, so a line under
+/// the pen costs the same to lay out at every length. A frame the GPU is still drawing reads only
+/// vertices that were there when it was encoded, and those are never written again.
 @MainActor
 final class SettledLine {
     let builder: InkGel.Builder
     /// The segments laid out, from the line's start, and the length along the line to their end.
     private(set) var segments = 0
     private(set) var length: CGFloat = 0
-    private(set) var halo = GrowingBuffer()
-    private(set) var body = GrowingBuffer()
+    private(set) var vertices = GrowingBuffer()
 
     init(builder: InkGel.Builder) {
         self.builder = builder
     }
 
-    /// Lays out the segments of `stroke` that its first `settled` points fix. A segment's end takes its
-    /// tangent from the point after it, so the last settled point ends no segment yet.
+    /// Lays out the segments of `stroke` that its first `settled` points fix. A segment's end is
+    /// mitred to the segment after it, so the last settled point ends no segment yet.
     func extend(_ stroke: InkHand.Stroke, settled: Int, device: MTLDevice) {
         let fixed = min(settled, stroke.points.count) - 2
         guard fixed > segments else { return }
         let laid = builder.segments(stroke, segments..<fixed, startLength: length)
-        halo.append(laid.vertices.halo, device: device)
-        body.append(laid.vertices.body, device: device)
+        vertices.append(laid.vertices, device: device)
         segments = fixed
         length = laid.endLength
     }

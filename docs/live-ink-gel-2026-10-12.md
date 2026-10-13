@@ -60,15 +60,15 @@ clears 3.5 everywhere:
 
 ## As built
 
-- **Drawing.** `InkMarkLayer` draws its line into a `CAMetalLayer` (`InkGel`). Each vertex of the
-  line's triangle strip holds its place across the line and along it, its half width and its tangent.
-  The shader lights the line as a rod, so its highlight follows every bend.
+- **Drawing.** `InkMarkLayer` draws its mark into a `CAMetalLayer` (`InkGel`) as one shape: a
+  distance field built from the line's segments and the arrow's head, lit as one rod-like surface
+  whose highlight follows every bend. `docs/live-ink-one-material-2026-10-13.md` has the design.
 - **Where a layer is.** A mark is drawn in its window's overlay or the screen's, so a layer's own
   points are not screen points. The layer finds its overlay window through the root of its layer tree
   and converts its frame to global top-left points before it reads the map.
-- **Glow.** A halo strip under the line, wider by the glow's reach, draws the glow and the shadow in
-  one pass, with max blending. A loop that crosses itself is not brighter where it crosses. Over light
-  content the glow mostly goes, since an overlay can only tint there.
+- **Glow.** The glow and the shadow come from the same distance field, outside the shape. A loop
+  that crosses itself is not brighter where it crosses. Over light content the glow mostly goes,
+  since an overlay can only tint there.
 - **Motion.** `InkClock` is one display link for every gel layer. It drifts the light and a slow
   shimmer along the line at about 30 frames a second, and draws every frame while a line eases onto
   its shape or a map fades in. Its time runs at `inkGelMotion` times the motion scale, so motion 0
