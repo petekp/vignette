@@ -161,7 +161,7 @@ final class InkSamples: ObservableObject {
 
     /// How fast a hand moves at `t`, 0 to 1 of the way: slow to start, quick through the middle, slowing
     /// at the end.
-    private static func speed(_ t: CGFloat) -> CGFloat { 0.3 + 1.4 * pow(sin(.pi * min(max(t, 0), 1)), 1.5) }
+    private static func speed(_ t: CGFloat) -> CGFloat { 0.3 + 1.4 * pow(sin(CGFloat.pi * min(max(t, 0), 1)), 1.5) }
 
     /// A loop round `frame` from its upper left and a little past, its points one pointer event apart,
     /// so they spread out where the hand is quick.
