@@ -291,7 +291,9 @@ screenshot location for such a launch is written with the same variable:
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
 - With `annotateOnCapture` on, a capture flies into the editor from the rect it was taken from
-  (`CaptureOrigin.swift`). macOS records no position in the file, and its capture overlay keeps
+  (`CaptureOrigin.swift`). macOS usually writes the rect into the file's metadata
+  (`kMDItemScreenCaptureGlobalRect`), but on one Mac it stopped for weeks at a time, and Vignette
+  does not read it yet (`docs/capture-origin-spike-2026-10-03.md`). Its capture overlay keeps
   its drag from every other app's event monitors. The button's state still reads, so ⌘ and ⇧ held
   together, seen by a `flagsChanged` monitor, start a 30 Hz poll of `NSEvent.pressedMouseButtons`
   and the pointer for 15 s. None of this needs a permission. `CaptureRect.locate` is the pure part.

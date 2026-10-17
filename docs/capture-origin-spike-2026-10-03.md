@@ -2,8 +2,9 @@
 
 The question: with Instant Draw (`annotateOnCapture`) on, can the flight into the editor start
 at the rect the person just captured instead of the corner? That needs the capture's rect on
-screen. macOS does not record it, and Vignette has no Accessibility or Screen Recording to spend
-on it.
+screen. Vignette has no Accessibility or Screen Recording to spend on it. macOS also records it in
+the file's metadata, except for stretches when it stops. "The file's metadata" at the end has the
+measurements.
 
 ## Result
 
@@ -18,8 +19,10 @@ Vignette can learn the rect without any permission, for the selection and window
 
 ## What does not work
 
-- **The file.** A ⌘⇧4 PNG carries no screen position: no extended attribute, and its eXIf chunk
-  holds only the pixel size.
+- **The file, that morning.** The ⌘⇧4 PNGs tested carried no screen position: no extended
+  attribute, and the eXIf chunk holds only the pixel size. macOS had stopped writing its capture
+  metadata on that Mac since 2026-09-01 and started again after a reboot at 16:40 that day. See
+  "The file's metadata" below.
 - **Apple's defaults.** `com.apple.screencapture` has `last-selection`, but ⌘⇧4 captures did not
   update it. Neither its value nor the preferences file's write time matched the captures. It
   appears to be ⌘⇧5's remembered selection.
@@ -98,3 +101,38 @@ It ran on the E2E test copy, with `screencapture -i` and synthetic ⌘⇧ and dr
 - The flight's start point is `from` in `ThumbnailController.perform(.prepare)`'s call to
   `flights.fly`. It would also start with square corners and no shadow, because the captured
   pixels are still on screen there.
+
+## The file's metadata, 2026-10-17
+
+macOS writes three extended attributes on a capture, each a binary property list:
+`com.apple.metadata:kMDItemIsScreenCapture` (true), `kMDItemScreenCaptureGlobalRect` and
+`kMDItemScreenCaptureType` (`selection`, `window` or `display`). The rect is in global top-left
+points, the same convention as `[state]`. A window capture's rect is the file's footprint,
+shadow included: 713 × 603 pt for a 1426 × 1206 px file at scale 2.
+
+**They are there when the watcher sees the file.** A probe polled a folder every 2 ms in the
+`vignette-e2e` VM (macOS 15.7.7) during real ⌘⇧4 selection and window captures and a ⌘⇧3 full
+screen capture, and on the host for `screencapture -x` and `-R`. Each capture is written as
+`..<name>-XXXX`, renamed to `.<name>`, then renamed to its final name. The attributes are set
+before the last rename: they were present at the first poll that saw the final name, 0 to 4 ms
+after it appeared, never later. The watcher skips names that start with a dot
+(`ScreenshotWatcher.swift:361`), so it never sees a capture without them.
+
+| Capture | Rect | Type |
+| --- | --- | --- |
+| ⌘⇧4 drag in the VM | 150, 150, 151, 101 | selection |
+| ⌘⇧4, Space, click on TextEdit | 23, 14, 713, 603 | window |
+| ⌘⇧3 | 0, 0, 1024, 768 | display |
+| `screencapture -x -R 0,0,200,120` | 0, 0, 200, 120 | selection |
+
+**macOS sometimes stops writing them.** In Pete's `~/Dropbox/Screenshots`, every capture from
+February to August 2026 has them. None has them from 2026-01-10 to 01-15, or from 2026-09-01 at
+22:14 until 2026-10-03 at 16:40, when the Mac rebooted; every capture since has them. No macOS
+update was installed at either boundary, and the second gap began before Vignette existed.
+Screen recordings (`.mov`) never carry them, and neither do Vignette's `-annotated.png` files or
+agent pushes.
+
+So the metadata is exact whenever it is present, and it can be missing for weeks. It can give a
+capture's origin first, with `CaptureRect.locate` as the fallback, and it covers captures the poll
+cannot see: ⌘⇧3, ⌘⇧5's toolbar and `screencapture` itself. Its absence cannot mark a file as not
+a capture.
