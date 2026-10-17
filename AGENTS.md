@@ -94,7 +94,9 @@ Before you drive the app:
 - Delete test files from the watch folder afterwards. It is the user's real screenshot folder.
 - A test copy never touches the person's own `~/.claude` and `~/.codex`: with `VIGNETTE_SETTINGS`
   set, `AgentPlugin.roots` leaves them out and the launch logs `[plugin] test launch: left <folder>
-  alone`, and it registers no login item. To test the plugin, also launch with
+  alone`. It neither registers nor removes a login item. It runs no updater, and logs
+  `[update] test launch: no updater`, unless `VIGNETTE_FEED` names a feed. With one, it checks that
+  feed in place of the release feed. Each of these gates reads `Launch.isTest`. To test the plugin, also launch with
   `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`). It runs no codex and
   no herdr unless `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names one (`AgentTools.forSessions`), since
   any other found on the Mac reaches the person's own sessions; the launch logs
@@ -1104,10 +1106,10 @@ screenshot location for such a launch is written with the same variable:
   Sparkle compares `CFBundleVersion`, which the build phase stamps with the commit count. So each
   release needs more commits behind it than the last, which a release cut from main has. Every
   download is checked against `SUPublicEDKey`. Installs trust only images signed with the private key
-  in the Keychain account `vignette`, so a lost key leaves every install unable to update. The
-  trailer's stage copy turns the checks off. Sparkle relaunches an updated app through
-  LaunchServices, with no environment, so a test copy that must stay on scratch files sets
-  `VIGNETTE_SETTINGS` and `CFFIXED_USER_HOME` under `LSEnvironment` in its Info.plist.
+  in the Keychain account `vignette`, so a lost key leaves every install unable to update. A test
+  launch runs no updater unless `VIGNETTE_FEED` names a feed. Sparkle relaunches an updated app
+  through LaunchServices, with no environment, so a test copy that must stay on scratch files sets
+  `VIGNETTE_SETTINGS`, `CFFIXED_USER_HOME` and `VIGNETTE_FEED` under `LSEnvironment` in its Info.plist.
   `docs/updater-2026-09-27.md` has the tests.
 
 ### Agents

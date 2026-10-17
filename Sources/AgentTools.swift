@@ -39,7 +39,7 @@ enum AgentTools {
     static func forSessions(_ variable: String, environment: [String: String] = ProcessInfo.processInfo.environment,
                             exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
                             otherwise: () -> String?) -> String? {
-        guard environment["VIGNETTE_SETTINGS"].map({ !$0.isEmpty }) ?? false else { return otherwise() }
+        guard Launch.isTest(in: environment) else { return otherwise() }
         return environment[variable].flatMap { exists($0) ? $0 : nil }
     }
 
@@ -68,7 +68,7 @@ enum AgentTools {
     /// Asks the login shell once where `names` are. Call at launch.
     static func start(names: [String] = ["claude", "codex"]) {
         guard !lock.withLock({ let was = started; started = true; return was }) else { return }
-        if Settings.isOverridden {
+        if Launch.isTest {
             let env = ProcessInfo.processInfo.environment
             Log.write("[tools] test launch: codex=\(env["VIGNETTE_CODEX"] ?? "none") herdr=\(env["VIGNETTE_HERDR"] ?? "none"), from VIGNETTE_CODEX and VIGNETTE_HERDR")
         }

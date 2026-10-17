@@ -139,7 +139,7 @@ enum AgentPlugin {
     /// `VIGNETTE_SETTINGS` marks. A test copy that must install the plugin moves the home folder
     /// with `CFFIXED_USER_HOME`, or names scratch folders with `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
     private static func isGuarded(_ folder: URL, environment: [String: String], personHome: URL) -> Bool {
-        guard environment["VIGNETTE_SETTINGS"].map({ !$0.isEmpty }) ?? false else { return false }
+        guard Launch.isTest(in: environment) else { return false }
         let own = AgentClient.allCases.map { root(of: $0, home: personHome, environment: [:]).resolvingSymlinksInPath().path }
         return own.contains(folder.resolvingSymlinksInPath().path)
     }

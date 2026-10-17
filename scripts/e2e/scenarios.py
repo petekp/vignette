@@ -141,8 +141,8 @@ def check_marks_drawn(app, png, rect, rgb, who):
 def launch(app):
     """A test launch comes up on its scratch files and reaches nothing of the person's.
 
-    It uses no codex and no herdr, registers no login item, answers every command it lists, and
-    answers a bad file with an error line."""
+    It uses no codex and no herdr, registers no login item, runs no updater, answers every command
+    it lists, and answers a bad file with an error line."""
     start(app)
     app.wait_log('[tools] test launch: codex=none herdr=none', 0)
     app.report.step('no codex and no herdr in a test launch')
@@ -150,6 +150,10 @@ def launch(app):
     if s['app']['launchAtLogin'] or s['app']['loginItem'] == 'enabled':
         raise Failed(f"login item: launchAtLogin={s['app']['launchAtLogin']} loginItem={s['app']['loginItem']}")
     app.report.step('no login item', detail=s['app']['loginItem'])
+    app.wait_log('[update] test launch: no updater', 0)
+    if s['app']['update'] is not None:
+        raise Failed(f"an updater runs: {s['app']['update']}")
+    app.report.step('no updater')
     offset = app.log_size()
     app.command('help')
     listed = set(re.findall(r'\[help\] ([a-z-]+):', app.log_since(offset)))

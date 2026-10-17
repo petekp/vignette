@@ -423,6 +423,17 @@ struct AppleOriginal: Codable, Equatable {
     }
 }
 
+/// A launch with `VIGNETTE_SETTINGS` set is a test launch. It reads and writes that settings file and
+/// its own screenshot defaults, and reaches nothing else of the person's: no login item, and no
+/// update feed, agent folder or agent tool the environment does not name.
+enum Launch {
+    static let isTest = isTest(in: ProcessInfo.processInfo.environment)
+
+    static func isTest(in environment: [String: String]) -> Bool {
+        environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false
+    }
+}
+
 /// The settings file is the source of truth. The Settings window, the debug panel, agents, and
 /// dotfiles all edit it; the app reloads it when it changes on disk and pushes the relevant keys to
 /// Apple's defaults. `VIGNETTE_SETTINGS=<path>` in the environment points the app at another file,
@@ -431,7 +442,6 @@ struct AppleOriginal: Codable, Equatable {
 final class Settings: ObservableObject {
     static let shared = Settings()
     nonisolated static let currentVersion = 2
-    nonisolated static let isOverridden = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false
     static let fileURL: URL = {
         if let path = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"], !path.isEmpty {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
@@ -912,7 +922,7 @@ final class Settings: ObservableObject {
 /// `VIGNETTE_SETTINGS` reads and writes `<bundle id>.screencapture` instead, so a test copy never
 /// takes or moves the user's save location. macOS itself never reads that domain.
 enum AppleScreencapture {
-    static let domainName = (ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false) ? "\(Identity.bundleID).screencapture" : "com.apple.screencapture"
+    static let domainName = Launch.isTest ? "\(Identity.bundleID).screencapture" : "com.apple.screencapture"
     private static let domain = domainName as CFString
 
     static func string(_ key: String) -> String? { CFPreferencesCopyAppValue(key as CFString, domain) as? String }

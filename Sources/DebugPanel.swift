@@ -70,7 +70,7 @@ struct DebugPanelView: View {
             .padding(10)
             // Which file the sliders write to: a test launch points at another file, and a
             // change made there never reaches the real one.
-            if Settings.isOverridden {
+            if Launch.isTest {
                 Text("Test settings file: \(Settings.fileURL.path). Changes here do not reach your settings.json.")
                     .font(.caption).foregroundStyle(.black)
                     .frame(maxWidth: .infinity, alignment: .leading)

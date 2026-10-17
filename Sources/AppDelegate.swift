@@ -74,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         AppLocation.ejectDiskImageIfAsked()
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppDelegate.makeMainMenu()
-        let settingsSource = Settings.isOverridden ? " (VIGNETTE_SETTINGS) screencapture=\(AppleScreencapture.domainName)" : ""
+        let settingsSource = Launch.isTest ? " (VIGNETTE_SETTINGS) screencapture=\(AppleScreencapture.domainName)" : ""
         Log.writeLaunch("[app] launched \(BuildInfo.current.description) watching \(watchFolder.path) settings \(Settings.fileURL.path)\(settingsSource)")
         if let type = AppleScreencapture.string("type"), !ScreenshotWatcher.isCandidate("screenshot.\(type)") {
             Log.write("[settings] warning Apple screencapture type=\(type) is a format the watcher ignores")
@@ -920,7 +920,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func startUpdater() {
-        let updater = Updater()
+        let feed = Launch.isTest ? ProcessInfo.processInfo.environment["VIGNETTE_FEED"].flatMap { $0.isEmpty ? nil : $0 } : nil
+        if Launch.isTest, feed == nil {
+            Log.write("[update] test launch: no updater; VIGNETTE_FEED names a feed to test one")
+            return
+        }
+        let updater = Updater(feed: feed)
         updater.hasStatusItem = { [weak self] in self?.statusItem != nil }
         updater.onChange = { [weak self] in self?.showUpdateDot() }
         self.updater = updater
