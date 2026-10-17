@@ -400,19 +400,18 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 }
 
-/// What the note's popover shows: the words, a hairline, then the target and the key that asks.
+/// What the note's popover shows: the words, then the target and the key that asks.
 @MainActor
 private final class NoteContent: NSView {
     let field = NSTextField()
     let session = SessionButton()
-    private let rule = NSBox()
     private let key = NSTextField(labelWithString: "↩")
 
     static let width: CGFloat = 300
     private static let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
     private static let inset: CGFloat = 12
     private static let top: CGFloat = 11
-    private static let belowWords: CGFloat = 9
+    private static let belowWords: CGFloat = 4
     private static let row: CGFloat = 34
     private static let mostLines = 5
     /// Where an `NSTextField` without a border starts its words, past its frame's left edge.
@@ -421,7 +420,7 @@ private final class NoteContent: NSView {
 
     /// The body with `lines` lines of words.
     static func size(lines: Int) -> CGSize {
-        CGSize(width: width, height: top + CGFloat(lines) * lineHeight + belowWords + 1 + row)
+        CGSize(width: width, height: top + CGFloat(lines) * lineHeight + belowWords + row)
     }
 
     override var isFlipped: Bool { true }
@@ -438,11 +437,10 @@ private final class NoteContent: NSView {
         field.cell?.isScrollable = false
         field.cell?.usesSingleLineMode = false
         field.lineBreakMode = .byWordWrapping
-        rule.boxType = .separator
         key.font = .systemFont(ofSize: 12, weight: .medium)
         key.textColor = .secondaryLabelColor
         key.toolTip = "Return asks"
-        for view in [field, rule, session, key] { addSubview(view) }
+        for view in [field, session, key] { addSubview(view) }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -460,9 +458,7 @@ private final class NoteContent: NSView {
         let measured = measuring?.cellSize(forBounds: CGRect(x: 0, y: 0, width: fieldWidth, height: .greatestFiniteMagnitude)).height ?? 0
         let wordsHeight = min(max(ceil(measured), Self.lineHeight), Self.lineHeight * CGFloat(Self.mostLines))
         field.frame = CGRect(x: Self.inset - Self.fieldTextInset, y: Self.top, width: fieldWidth, height: wordsHeight)
-        let ruleY = Self.top + wordsHeight + Self.belowWords
-        rule.frame = CGRect(x: Self.inset, y: ruleY, width: Self.width - Self.inset * 2, height: 1)
-        let rowY = ruleY + 1
+        let rowY = Self.top + wordsHeight + Self.belowWords
         session.setFrameOrigin(CGPoint(x: Self.inset - 6, y: rowY + (Self.row - SessionButton.height) / 2))
         key.sizeToFit()
         key.setFrameOrigin(CGPoint(x: Self.width - Self.inset - key.frame.width, y: rowY + (Self.row - key.frame.height) / 2))
