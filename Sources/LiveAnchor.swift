@@ -238,10 +238,14 @@ final class LiveAnchor: @unchecked Sendable {
 /// Only the pane under the mark is compared. Ghostty gives a row as one line across the whole window,
 /// so with a multiplexer's panes side by side (herdr, tmux) a row also holds the panes beside it, and
 /// output there changed the row's text and hid a mark on a pane that had not moved.
+///
+/// A row whose own text changes while the rows either side of it do not, as a spinner's or a timer's
+/// does, is the same line changed in place, and the mark stays on it.
 final class LineAnchor: @unchecked Sendable {
     private let element: AXUIElement
     private let columns: Range<Int>
-    private let line: String, before: String, after: String
+    private let before: String, after: String
+    private var line: String
     private var row: Int
 
     init?(_ element: AXUIElement, at point: CGPoint) {
@@ -294,9 +298,22 @@ final class LineAnchor: @unchecked Sendable {
             score -= min(3, abs(index - row) / 10)
             if best.map({ score > $0.score }) ?? true { best = (index, score) }
         }
+        if best == nil, changedInPlace(text) {
+            line = text[row]
+            best = (row, 0)
+        }
         guard let found = best else { return nil }
         row = found.row
         let height = frame.height / CGFloat(lines.count)
         return CGRect(x: frame.minX, y: frame.minY + CGFloat(row) * height, width: frame.width, height: height)
+    }
+
+    /// Whether the row still has text and the rows either side of it are as they were, at least one
+    /// of them with text, since two blank rows say nothing about where the line is.
+    private func changedInPlace(_ text: [String]) -> Bool {
+        func blank(_ line: String) -> Bool { line.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard text.indices.contains(row), !blank(text[row]), !(blank(before) && blank(after)) else { return false }
+        let above = row > 0 ? text[row - 1] : "", below = row + 1 < text.count ? text[row + 1] : ""
+        return above == before && below == after
     }
 }
