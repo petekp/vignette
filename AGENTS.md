@@ -637,10 +637,10 @@ screenshot location for such a launch is written with the same variable:
   steps by what the spring still had to go. `fly` therefore answers on `arrived`, at `Anim.settle`
   (the spring within half a point of the target, with the flight put exactly on it in that turn):
   the card retakes its slot, and the annotator takes the shadow back
-  (`AnnotationController.landed`). The flight into the editor lifts at the last of three moments
-  (`ThumbnailController.liftIntoEditor`): `arrived`, which `lift(id:)` waits for itself; the
-  editor's `loaded` (`editorLoaded`, `loadedKeys`); and its window taking presses
-  (`annotatorTakesEvents`, `takingEvents`). The wait for `loaded` matters at motion 0, where the
+  (`AnnotationController.landed`). The flight into the editor lifts at the last of three moments,
+  which reach `AnnotationRun` as events for the opening and come back as `liftFlight`: `arrived`,
+  which `lift(id:)` waits for itself; the editor's `loaded`; and its window taking presses
+  (`takesPresses`). The wait for `loaded` matters at motion 0, where the
   flight can arrive before the image, and lifting it then would show an empty editor;
   `docs/native-editor-2026-09-23.md` has the timings. The wait for presses keeps the flight over the
   window until the window takes presses itself, so a press there never falls through to the app
@@ -732,13 +732,18 @@ screenshot location for such a launch is written with the same variable:
   has it cached, which it does after a hover, and with no image otherwise; `setImage` adds the image
   when the decode answers, and `[annotate] loaded <ms>ms <name>` is logged then. Opening first is
   what lets the keys work from `prepare`, and it leaves no moment in which an agent's push could
-  miss the open drawing. `openGeneration` drops a decode or a colour sample that answers after
-  another image opened.
+  miss the open drawing. A decode that answers after another opening began is dropped
+  (`AnnotationController.opening`).
 - Which image is in the annotator, where it came from, what is in flight and what opens next have
   one owner: `AnnotationRun`, a pure reducer held by `ThumbnailController`. The controller sends
   what happened (annotate a list, shown, parked, cancel, sent, finish, dismiss, remove, newShot,
-  selectionChanged, copyFailed) and runs the effects it returns (prepare, show, park, abandon,
-  returnCard, hideAnnotator, join, next, queued, endRun). The moves into and out of the annotator
+  selectionChanged, copyFailed, loaded, takesPresses, arrived) and runs the effects it returns
+  (prepare, show, park, abandon, returnCard, hideAnnotator, join, next, queued, endRun, landed,
+  handOverPresses, liftFlight). Each image the run sends to the annotator is an `Opening`: the
+  file's path and an id the run mints and never reuses, so the same file opened again is another
+  opening. Every answer names its opening, and one that names any other than the current one
+  changes nothing. The annotator holds the same value (`AnnotationController.opening`), which is
+  what Send and the session listing compare. The moves into and out of the annotator
   are decided by `AnnotatorTransition`, a pure reducer the run holds privately. Done sends
   `finish`: the card returns and takes the Copied notice (`returnCard`'s `copied`), and a lone
   thumbnail, which left the panel when the annotator opened, comes back to the corner for it. Esc
@@ -749,7 +754,8 @@ screenshot location for such a launch is written with the same variable:
   `dismiss(byHand: true)`. A `prepare` is never emitted while a
   park is in flight, which is what serializes rapid swaps; a new screenshot during a lone annotation
   joins the panel instead of closing the editor. Every event logs one
-  `[transition] <event> -> <phase> [queued=<n>] effects=…` line. The annotator never hides itself: Esc, a click
+  `[transition] <event> -> <phase> [queued=<n>] effects=…` line, where an opening prints as
+  `<file name>#<id>`. The annotator never hides itself: Esc, a click
   outside, Cmd+W and Done ask through `onClosed` and `onFinished`, and the reducer decides. `show`
   is the window coming up behind the flight. The editor parks synchronously, so an effect can answer
   inside the event that asked for it: at zoom 1 there is no fit-out, and `parked` comes back in the
@@ -1238,14 +1244,14 @@ screenshot location for such a launch is written with the same variable:
   Info.plist too (`ReplyCommand.dispatch`), so a fork's reply goes to the fork's scheme.
 - Send never reuses Done. It renders the drawing on `RenderingQueue` and closes nothing while it
   waits. The request is stored before the image leaves the editor, so a failure anywhere before then
-  leaves the drawing where the hand left it. A rendering belongs to the annotator session Send was
-  pressed in (`annotator.session`). One that answers after that session ended is dropped, even when
+  leaves the drawing where the hand left it. A rendering belongs to the opening Send was
+  pressed in (`annotator.opening`). One that answers after that opening ended is dropped, even when
   the same image is open again, and nothing is sent or closed
   (`[send] dropped <name>; the editor moved on`). `sending` stays on from the press until the bar
   has left, so the button keeps its paper plane through the exit, and `prepare` resets it, so the
   next image's toolbar never shows a send that is not its own. A list of agent sessions that
   arrives after its opening ended is dropped as well, including a close and reopen of the same
-  image. Both discovery continuations compare `annotator.session`. A rendering that fails is a
+  image. Both discovery continuations compare `annotator.opening`. A rendering that fails is a
   refusal, never a send of the bare screenshot: only a drawing with no marks sends the picture
   itself, and it goes through PNG whatever the capture's own format is. Send closes the editor
   without a Copied notice, and the queue carries on to the next card: a list of files to annotate is

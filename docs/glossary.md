@@ -86,6 +86,11 @@ The time from a screenshot opening in the annotator until the annotator closes w
 it. Drawing a list of screenshots is one run, which opens them in turn.
 _Avoid_: Session
 
+**Opening**:
+One screenshot's time in the annotator, from its flight out until its card comes home. The same
+screenshot closed and drawn again is a new opening. A run of a list is one opening per screenshot.
+_Avoid_: Session, generation
+
 **Queue**:
 The screenshots waiting in an annotation run, in the order they will open.
 

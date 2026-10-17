@@ -1,5 +1,12 @@
 import Foundation
 
+/// One image opening in the annotator. `AnnotationRun` mints the id for every image it sends there
+/// and never reuses one, so the same file closed and opened again is another opening.
+struct Opening: Hashable {
+    let id: Int
+    let key: String
+}
+
 /// The one owner of "what is in the annotator, where it came from, and what is in flight".
 /// `reduce` takes the current state and one event and returns the next state and the effects the
 /// controllers must run, in order. Nothing else decides a transition, so every interruption
@@ -7,10 +14,13 @@ import Foundation
 ///
 /// Serialization rule: a `prepare` is never emitted while a park is in flight. A request that
 /// arrives during a park only changes what happens once `parked` comes back.
+///
+/// Each image the annotator opens is an `Opening`, minted by `AnnotationRun`. An answer that names
+/// an opening other than the current one is about an image that has gone, and changes nothing.
 struct AnnotatorTransition: Equatable {
     /// What to do once the editor has parked the current drawing.
     enum Next: Equatable {
-        case annotate(String)   // the old card returns and this key flies out (a swap)
+        case annotate(Opening)  // the old card returns and this one flies out (a swap)
         case close              // Esc or Send: the card returns, to its slot or the corner, with no Copied notice
         case finish             // the result is on the clipboard: the card returns, to its slot or the corner, marked copied
         case dismiss            // the panel is leaving with it
@@ -19,15 +29,15 @@ struct AnnotatorTransition: Equatable {
 
     enum Phase: Equatable {
         case idle
-        case flyingOut(String)            // prepare sent; the card is travelling to the annotator frame
-        case annotating(String)           // the annotator is visible with this key
-        case parking(String, then: Next)  // the editor is parking this key's drawing
+        case flyingOut(Opening)            // prepare sent; the card is travelling to the annotator frame
+        case annotating(Opening)           // the annotator is visible with this image
+        case parking(Opening, then: Next)  // the editor is parking this image's drawing
     }
 
     enum Event: Equatable {
-        case annotate(String)
-        case shown               // the flight landed and the annotator became visible
-        case parked              // the editor finished parking
+        case annotate(Opening)
+        case shown(Opening)      // the flight landed and the annotator became visible
+        case parked(Opening)     // the editor finished parking
         case close               // Esc, click outside, Cmd+W, or Send: nothing was copied
         case finish              // Done or Return: the result is on the clipboard
         case newShot(String)     // a new file arrived
@@ -36,22 +46,22 @@ struct AnnotatorTransition: Equatable {
     }
 
     enum Effect: Equatable {
-        case prepare(String)     // load this key in the hidden annotator and fly its card out
+        case prepare(Opening)    // load this image in the hidden annotator and fly its card out
         case show                // reveal the annotator in place of the landed card
-        case park(String)        // ask the editor to park; answer with `.parked`
-        case abandon(String)     // the editor holds this key and nobody saw it: close it at once, no fit on the way out
-        case returnCard(String, copied: Bool)  // fly the card back; `copied` when its result is on the clipboard
+        case park(Opening)       // ask the editor to park; answer with `.parked`
+        case abandon(Opening)    // the editor holds this image and nobody saw it: close it at once, no fit on the way out
+        case returnCard(Opening, copied: Bool)  // fly the card back; `copied` when its result is on the clipboard
         case hideAnnotator       // the annotator is done; nothing returns
         case join(String)        // a new shot joins the panel while the annotator stays open
     }
 
     private(set) var phase: Phase = .idle
 
-    /// The key in the annotator or on its way there, if any.
-    var key: String? {
+    /// The image in the annotator or on its way there, if any.
+    var opening: Opening? {
         switch phase {
         case .idle: return nil
-        case .flyingOut(let k), .annotating(let k), .parking(let k, _): return k
+        case .flyingOut(let o), .annotating(let o), .parking(let o, _): return o
         }
     }
 
@@ -60,108 +70,110 @@ struct AnnotatorTransition: Equatable {
     mutating func reduce(_ event: Event) -> [Effect] {
         switch phase {
         case .idle:
-            guard case .annotate(let k) = event else { return [] }
-            phase = .flyingOut(k)
-            return [.prepare(k)]
+            guard case .annotate(let o) = event else { return [] }
+            phase = .flyingOut(o)
+            return [.prepare(o)]
 
-        case .flyingOut(let k):
+        case .flyingOut(let o):
             // The window has not come up, so nobody has seen this image and no zoom has moved it.
             // A request to close it or to open another one turns the flight around in this turn:
             // `abandon` stores the drawing at once, with no fit-out to wait for.
             switch event {
-            case .shown:
-                phase = .annotating(k)
+            case .shown(let shown):
+                guard shown == o else { return [] }
+                phase = .annotating(o)
                 return [.show]
             case .close:
                 phase = .idle
-                return [.abandon(k), .returnCard(k, copied: false)]
-            case .annotate(let k2):
-                if k2 == k { return [] }
-                phase = .flyingOut(k2)
-                return [.abandon(k), .returnCard(k, copied: false), .prepare(k2)]
+                return [.abandon(o), .returnCard(o, copied: false)]
+            case .annotate(let o2):
+                if o2.key == o.key { return [] }
+                phase = .flyingOut(o2)
+                return [.abandon(o), .returnCard(o, copied: false), .prepare(o2)]
             case .finish:
                 // The editor holds the keys from `prepare`, so Return can finish before the window
                 // is up; the drawing is parked as usual and the card comes back marked copied.
-                phase = .parking(k, then: .finish)
-                return [.park(k)]
+                phase = .parking(o, then: .finish)
+                return [.park(o)]
             case .dismiss:
                 // The panel takes the image with it (see `ThumbnailController.dismiss`), which
                 // aims this flight offscreen before the event arrives. The park keeps the card in
                 // the layer until it is out of sight.
-                phase = .parking(k, then: .dismiss)
-                return [.park(k)]
+                phase = .parking(o, then: .dismiss)
+                return [.park(o)]
             case .remove(let r):
-                guard r == k else { return [] }
-                phase = .parking(k, then: .remove)
-                return [.park(k)]
+                guard r == o.key else { return [] }
+                phase = .parking(o, then: .remove)
+                return [.park(o)]
             case .newShot(let n):
                 return [.join(n)]
             case .parked:
                 return []
             }
 
-        case .annotating(let k):
+        case .annotating(let o):
             switch event {
             case .shown:
                 return []
-            case .annotate(let k2):
-                if k2 == k { return [] }
-                phase = .parking(k, then: .annotate(k2))
-                return [.park(k)]
+            case .annotate(let o2):
+                if o2.key == o.key { return [] }
+                phase = .parking(o, then: .annotate(o2))
+                return [.park(o)]
             case .close:
-                phase = .parking(k, then: .close)
-                return [.park(k)]
+                phase = .parking(o, then: .close)
+                return [.park(o)]
             case .finish:
-                phase = .parking(k, then: .finish)
-                return [.park(k)]
+                phase = .parking(o, then: .finish)
+                return [.park(o)]
             case .dismiss:
-                phase = .parking(k, then: .dismiss)
-                return [.park(k)]
+                phase = .parking(o, then: .dismiss)
+                return [.park(o)]
             case .remove(let r):
-                guard r == k else { return [] }
-                phase = .parking(k, then: .remove)
-                return [.park(k)]
+                guard r == o.key else { return [] }
+                phase = .parking(o, then: .remove)
+                return [.park(o)]
             case .newShot(let n):
                 return [.join(n)]
             case .parked:
                 return []
             }
 
-        case .parking(let k, let next):
+        case .parking(let o, let next):
             switch event {
-            case .parked:
+            case .parked(let parked):
+                guard parked == o else { return [] }
                 switch next {
-                case .annotate(let k2):
-                    phase = .flyingOut(k2)
-                    return [.returnCard(k, copied: false), .prepare(k2)]
+                case .annotate(let o2):
+                    phase = .flyingOut(o2)
+                    return [.returnCard(o, copied: false), .prepare(o2)]
                 case .close:
                     // A lone thumbnail left the panel when the annotator opened; returnCard flies it
                     // back to the corner, so the editor never leaves without a flight.
                     phase = .idle
-                    return [.returnCard(k, copied: false)]
+                    return [.returnCard(o, copied: false)]
                 case .finish:
                     phase = .idle
-                    return [.returnCard(k, copied: true)]
+                    return [.returnCard(o, copied: true)]
                 case .dismiss, .remove:
                     phase = .idle
                     return [.hideAnnotator]
                 }
-            case .annotate(let k2):
+            case .annotate(let o2):
                 // A later request wins, unless the panel is already leaving or the card is gone.
-                // Re-requesting the key that is finishing changes nothing: it is coming back anyway.
+                // Re-requesting the image that is finishing changes nothing: it is coming back anyway.
                 switch next {
-                case .annotate, .close: phase = .parking(k, then: k2 == k ? .close : .annotate(k2))
-                case .finish: if k2 != k { phase = .parking(k, then: .annotate(k2)) }
+                case .annotate, .close: phase = .parking(o, then: o2.key == o.key ? .close : .annotate(o2))
+                case .finish: if o2.key != o.key { phase = .parking(o, then: .annotate(o2)) }
                 case .dismiss, .remove: break
                 }
                 return []
             case .dismiss:
-                phase = .parking(k, then: .dismiss)
+                phase = .parking(o, then: .dismiss)
                 return []
             case .remove(let r):
                 switch next {
-                case .annotate(let k2) where r == k2: phase = .parking(k, then: .close)
-                case .close where r == k, .finish where r == k: phase = .parking(k, then: .remove)
+                case .annotate(let o2) where r == o2.key: phase = .parking(o, then: .close)
+                case .close where r == o.key, .finish where r == o.key: phase = .parking(o, then: .remove)
                 default: break
                 }
                 return []
@@ -177,13 +189,17 @@ struct AnnotatorTransition: Equatable {
 // Short log forms: keys print as file names, so a `[transition]` line stays readable.
 private func short(_ key: String) -> String { (key as NSString).lastPathComponent }
 
+extension Opening: CustomStringConvertible {
+    var description: String { "\(short(key))#\(id)" }
+}
+
 extension AnnotatorTransition.Phase: CustomStringConvertible {
     var description: String {
         switch self {
         case .idle: return "idle"
-        case .flyingOut(let k): return "flyingOut(\(short(k)))"
-        case .annotating(let k): return "annotating(\(short(k)))"
-        case .parking(let k, let next): return "parking(\(short(k)) then \(next))"
+        case .flyingOut(let o): return "flyingOut(\(o))"
+        case .annotating(let o): return "annotating(\(o))"
+        case .parking(let o, let next): return "parking(\(o) then \(next))"
         }
     }
 }
@@ -191,7 +207,7 @@ extension AnnotatorTransition.Phase: CustomStringConvertible {
 extension AnnotatorTransition.Next: CustomStringConvertible {
     var description: String {
         switch self {
-        case .annotate(let k): return "annotate(\(short(k)))"
+        case .annotate(let o): return "annotate(\(o))"
         case .close: return "close"
         case .finish: return "finish"
         case .dismiss: return "dismiss"
@@ -203,9 +219,9 @@ extension AnnotatorTransition.Next: CustomStringConvertible {
 extension AnnotatorTransition.Event: CustomStringConvertible {
     var description: String {
         switch self {
-        case .annotate(let k): return "annotate(\(short(k)))"
-        case .shown: return "shown"
-        case .parked: return "parked"
+        case .annotate(let o): return "annotate(\(o))"
+        case .shown(let o): return "shown(\(o))"
+        case .parked(let o): return "parked(\(o))"
         case .close: return "close"
         case .finish: return "finish"
         case .newShot(let k): return "newShot(\(short(k)))"
@@ -218,11 +234,11 @@ extension AnnotatorTransition.Event: CustomStringConvertible {
 extension AnnotatorTransition.Effect: CustomStringConvertible {
     var description: String {
         switch self {
-        case .prepare(let k): return "prepare(\(short(k)))"
+        case .prepare(let o): return "prepare(\(o))"
         case .show: return "show"
-        case .park(let k): return "park(\(short(k)))"
-        case .abandon(let k): return "abandon(\(short(k)))"
-        case .returnCard(let k, let copied): return "returnCard(\(short(k))\(copied ? " copied" : ""))"
+        case .park(let o): return "park(\(o))"
+        case .abandon(let o): return "abandon(\(o))"
+        case .returnCard(let o, let copied): return "returnCard(\(o)\(copied ? " copied" : ""))"
         case .hideAnnotator: return "hideAnnotator"
         case .join(let k): return "join(\(short(k)))"
         }

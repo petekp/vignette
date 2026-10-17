@@ -87,9 +87,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // window of ours can take the focus.
         _ = FocusReturn.shared
         thumbnail.actions = self
-        thumbnail.onAnnotatorPrepare = { [weak self] shot, frame, room in
+        thumbnail.onAnnotatorPrepare = { [weak self] shot, opening, frame, room in
             guard let self else { return }
-            self.annotator.prepare(shot, in: frame, room: room)
+            self.annotator.prepare(shot, opening: opening, in: frame, room: room)
             self.refreshDestinations(for: shot)
         }
         annotator.onFrame = { [weak self] frame in self?.thumbnail.annotatorFrameMoved(frame) }
@@ -100,10 +100,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide { hidden() } }
         thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }
         thumbnail.onAnnotatorPress = { [weak self] event, key in self?.annotator.take(event, for: key) }
-        annotator.onTakesEvents = { [weak self] key in self?.thumbnail.annotatorTakesEvents(key) }
+        annotator.onTakesEvents = { [weak self] opening in self?.thumbnail.annotatorTakesEvents(opening) }
         annotator.onFinished = { [weak self] shot, drawing in self?.finishAnnotation(shot, drawing) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
-        annotator.onLoaded = { [weak self] key in self?.thumbnail.editorLoaded(key) }
+        annotator.onLoaded = { [weak self] opening in self?.thumbnail.editorLoaded(opening) }
         annotator.storedDrawing = { [weak self] url, pixels in
             guard let self else { return nil }
             return drawings.read(url, pixels: pixels, style: settings.data.ui.textStyle)
@@ -521,7 +521,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Done: the rendering goes on the clipboard at once as a promise and the card goes home; the
     /// file is written when the rendering finishes. With nothing drawn, the original file is copied.
     private func finishAnnotation(_ shot: Screenshot, _ drawing: Drawing) {
-        copyRendering(of: drawing, shot: shot, verb: "done")
+        copyRendering(of: drawing, shot: shot, verb: "done", in: annotator.opening)
         // Quick annotate: the drawing was the point; nothing comes back.
         if settings.data.quickAnnotate { Log.write("[annotate] quick close") }
         thumbnail.annotationFinished(quick: settings.data.quickAnnotate)
@@ -529,14 +529,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// Cmd+C in the editor with nothing selected: the same clipboard Done gives, and the editor stays open.
     private func copyDrawing(_ drawing: Drawing, of shot: Screenshot) {
-        copyRendering(of: drawing, shot: shot, verb: "copied")
+        copyRendering(of: drawing, shot: shot, verb: "copied", in: annotator.opening)
     }
 
     /// The annotated file on the clipboard as a file, an image, and its path as text, so a terminal
     /// pastes the path and a chat app pastes the image. The file is promised, so nothing waits for
     /// the rendering but a paste that comes before it, and the rendering goes ahead of any that has
     /// not started. `verb` names the moment in the log line.
-    private func copyRendering(of drawing: Drawing, shot: Screenshot, verb: String) {
+    private func copyRendering(of drawing: Drawing, shot: Screenshot, verb: String, in opening: Opening?) {
         let name = shot.url.lastPathComponent
         guard !drawing.marks.isEmpty else {
             Clipboard.copyFiles([shot.url])
@@ -552,7 +552,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             if let failure = output.failure {
                 Log.write("[annotate] error \(failure.code.rawValue) \(name): \(failure)")
                 // The clipboard took its promise back; the card must not say otherwise.
-                thumbnail.showNotCopied(shot, reason: failure.reason)
+                thumbnail.showNotCopied(shot, reason: failure.reason, in: opening)
             } else if let file = output.file, let png = output.png {
                 Log.write("[annotate] \(verb) files=\(Self.renderingPaths([file])) \(png.count) bytes, copied")
             }
@@ -1134,12 +1134,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// reply to a request, or a push that named its session. Reading the sessions runs
     /// subprocesses, so it answers later; the bar offers Send once it has a session to send to.
     private func refreshDestinations(for shot: Screenshot) {
-        guard let session = annotator.session else { return }
+        guard let opening = annotator.opening else { return }
         annotator.beginDestinations(replyTo: requests.origin(of: shot.url) ?? Agent.origin(of: shot.url))
         let asked = CACurrentMediaTime()
         let app = FocusReturn.shared.previousApp
         guard let client = AgentApp.client(of: app), let pid = app?.processIdentifier else {
-            return listDestinations(for: shot, session: session, asked: asked, cameFrom: nil)
+            return listDestinations(for: shot, opening: opening, asked: asked, cameFrom: nil)
         }
         // The thread the agent's app shows is read before anything is listed: Claude Code's list
         // comes first and would settle the target on the session in herdr's focus, which you were not in.
@@ -1147,20 +1147,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         DispatchQueue.global(qos: .userInitiated).async {
             let shown = AgentApp.shownThread(pid: pid, launched: launched)
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.annotator.session == session else { return }
+                guard let self, self.annotator.opening == opening else { return }
                 Log.write("[send] came from the \(client.label) app, showing \(shown ?? "no thread") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms")
-                self.listDestinations(for: shot, session: session, asked: asked, cameFrom: (client, shown))
+                self.listDestinations(for: shot, opening: opening, asked: asked, cameFrom: (client, shown))
             }
         }
     }
 
-    private func listDestinations(for shot: Screenshot, session: Int, asked: CFTimeInterval, cameFrom: (client: AgentClient, shown: String?)?) {
+    private func listDestinations(for shot: Screenshot, opening: Opening, asked: CFTimeInterval, cameFrom: (client: AgentClient, shown: String?)?) {
         let shown = cameFrom.flatMap { from in from.shown.map { (from.client, $0) } }
         sessions.list(shown: shown) { [weak self] candidates in
             guard let self else { return }
             Log.write("[send] sessions \(candidates.destinations.count)\(candidates.complete ? " complete" : "")\(candidates.fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
             // A file can reopen while its earlier destination listing is still running.
-            guard self.annotator.session == session else { return }
+            guard self.annotator.opening == opening else { return }
             self.annotator.destinationsAnswered(DestinationChoice.choose(candidates, cameFrom: cameFrom))
         }
     }
@@ -1171,17 +1171,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// The button shows the send from the press until the bar leaves, and says "Not sent" when it
     /// fails before the request is stored, since the drawing is still in the editor then.
     private func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination, message: String?) {
-        guard !annotator.sending, let session = annotator.session else { return }
+        guard !annotator.sending, let opening = annotator.opening else { return }
         let name = shot.url.lastPathComponent
         annotator.sending = true
         let ui = settings.data.ui
         let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .bytes, style: ui.textStyle, markStyle: ui.markStyle)
         rendering.whenDone { [weak self] output in
             guard let self else { return }
-            // A rendering that answers after the session that pressed Send has ended belongs to no
+            // A rendering that answers after the opening Send was pressed in has ended belongs to no
             // image now, even the same one opened again: it is dropped, and nothing is sent and
-            // nothing closed. The session open now has its own `sending`, which this leaves alone.
-            guard annotator.session == session else {
+            // nothing closed. The image open now has its own `sending`, which this leaves alone.
+            guard annotator.opening == opening else {
                 Log.write("[send] dropped \(name); the editor moved on"); return
             }
             guard let png = output.png, output.failure == nil else {

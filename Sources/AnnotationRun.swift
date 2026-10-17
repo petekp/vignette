@@ -12,8 +12,8 @@ import Foundation
 struct AnnotationRun: Equatable {
     enum Event: Equatable {
         case annotate([String])      // a list: the first opens and the rest queue; replaces any queue
-        case shown                   // the flight landed and the annotator became visible
-        case parked                  // the editor finished parking
+        case shown(Opening)          // the flight landed and the annotator became visible
+        case parked(Opening)         // the editor finished parking
         case cancel                  // Esc, a click outside, Cmd+W: the run ends
         case sent                    // Send: this image closes without a Copied notice, and the run goes on
         case finish                  // Done or Return: the result is on the clipboard, and the run goes on
@@ -21,29 +21,47 @@ struct AnnotationRun: Equatable {
         case remove([String])        // files trashed or deleted
         case newShot(String)         // a new file arrived
         case selectionChanged(added: [String], removed: [String])   // image files only, in the order picked
-        case copyFailed(String)      // Done's copy failed before the card came home
+        case copyFailed(Opening)     // Done's copy failed before the card came home
+        case loaded(Opening)         // the editor has the image at the screen's size
+        case takesPresses(Opening)   // the window server gives the editor's window its presses
+        case arrived(Opening)        // the flight into the editor settled on the frame
     }
 
     enum Effect: Equatable {
-        case prepare(String)
+        case prepare(Opening)
         case show
-        case park(String)
-        case abandon(String)
-        case returnCard(String, copied: Bool)
+        case park(Opening)
+        case abandon(Opening)
+        case returnCard(Opening, copied: Bool)
         case hideAnnotator
         case join(String)
         case next(String, place: Int, of: Int)     // the queue opens its next file
         case queued(String, place: Int, of: Int)   // a selected card joined the queue
         case endRun(restoreFocus: Bool)            // nothing follows: the run is over
+        case landed(Opening)                       // the window takes the shadow back from the flight
+        case handOverPresses(Opening)              // presses held on the flight go to the editor
+        case liftFlight(Opening)                   // the editor is ready and seen: the flight image goes
 
-        /// The file a `prepare` opens.
-        var opening: String? {
-            if case .prepare(let key) = self { return key }
+        /// The image a `prepare` opens.
+        var prepares: Opening? {
+            if case .prepare(let opening) = self { return opening }
             return nil
         }
     }
 
+    /// What the flight into the editor waits for before it lifts: the editor's image, the window
+    /// taking presses, and the flight's arrival. They come in any order, for the current opening.
+    private struct Lift: Equatable {
+        var loaded = false
+        var takesPresses = false
+        var arrived = false
+        var lifted = false
+    }
+
     private var transition = AnnotatorTransition()
+    /// The id the last opening took. Never reset, so no two openings share one.
+    private var minted = 0
+    private var lift = Lift()
     /// The files still waiting, in the order they were given or picked. Empty whenever the run is idle.
     private(set) var queue: [String] = []
     /// How many files the run has been given, and how many of them have opened, which is what the
@@ -52,15 +70,18 @@ struct AnnotationRun: Equatable {
     private var opened = 0
     /// The file the queue opened last, so one that does not open gives its number back.
     private var fromQueue: String?
-    /// The file whose Done failed to copy before its card came home, so the card takes no Copied notice.
-    private var uncopied: String?
+    /// The opening whose Done failed to copy before its card came home, so the card takes no Copied notice.
+    private var uncopied: Opening?
     /// The run ends by the person's hand, so the focus goes back to their app once the annotator is gone.
     private var restoreFocus = false
 
     var phase: AnnotatorTransition.Phase { transition.phase }
-    /// The key in the annotator or on its way there, if any.
-    var key: String? { transition.key }
+    /// The image in the annotator or on its way there, if any.
+    var opening: Opening? { transition.opening }
+    var key: String? { transition.opening?.key }
     var isActive: Bool { transition.isActive }
+    /// The editor's window takes presses now, so a press on its flight goes straight to it.
+    var takesPresses: Bool { opening != nil && lift.takesPresses }
 
     /// `opens` is asked, before anything is returned, whether a file this event opens has a card.
     /// The controller makes the card there when the panel lacks it. A queued file may have gone or
@@ -68,14 +89,14 @@ struct AnnotationRun: Equatable {
     /// effect runs, so the room and the flights are aimed at the image that really opens next.
     mutating func reduce(_ event: Event, opens: (String) -> Bool) -> [Effect] {
         var effects = step(event)
-        while let key = effects.last(where: { $0.opening != nil })?.opening, !opens(key) {
+        while let opening = effects.last(where: { $0.prepares != nil })?.prepares, !opens(opening.key) {
             effects.removeAll { effect in
                 switch effect {
-                case .prepare(key), .next(key, _, _): return true
+                case .prepare(opening), .next(opening.key, _, _): return true
                 default: return false
                 }
             }
-            effects += cannotOpen(key)
+            effects += cannotOpen(opening.key)
         }
         return effects
     }
@@ -88,11 +109,11 @@ struct AnnotationRun: Equatable {
             total = keys.count
             opened = 1
             fromQueue = nil
-            return forward(.annotate(first))
-        case .shown:
-            return forward(.shown)
-        case .parked:
-            return forward(.parked)
+            return forward(.annotate(mint(first)))
+        case .shown(let opening):
+            return forward(.shown(opening))
+        case .parked(let opening):
+            return forward(.parked(opening))
         case .cancel:
             endsByHand()
             endQueue()
@@ -116,10 +137,34 @@ struct AnnotationRun: Equatable {
             return forward(.newShot(key))
         case .selectionChanged(let added, let removed):
             return select(added: added, removed: removed)
-        case .copyFailed(let key):
-            if case .parking(key, then: .finish) = transition.phase { uncopied = key }
+        case .copyFailed(let opening):
+            if case .parking(opening, then: .finish) = transition.phase { uncopied = opening }
             return []
+        case .loaded(let opening):
+            guard opening == self.opening else { return [] }
+            lift.loaded = true
+            return liftIfReady()
+        case .takesPresses(let opening):
+            guard opening == self.opening else { return [] }
+            lift.takesPresses = true
+            return [.handOverPresses(opening)] + liftIfReady()
+        case .arrived(let opening):
+            guard opening == self.opening else { return [] }
+            lift.arrived = true
+            return [.landed(opening)] + liftIfReady()
         }
+    }
+
+    private mutating func mint(_ key: String) -> Opening {
+        minted += 1
+        return Opening(id: minted, key: key)
+    }
+
+    /// The flight into the editor lifts once, when the last of its three conditions comes in.
+    private mutating func liftIfReady() -> [Effect] {
+        guard let opening, lift.loaded, lift.takesPresses, lift.arrived, !lift.lifted else { return [] }
+        lift.lifted = true
+        return [.liftFlight(opening)]
     }
 
     /// `key` has no card, so its `prepare` never runs: the transition goes back to idle with nothing
@@ -137,14 +182,15 @@ struct AnnotationRun: Equatable {
         var effects: [Effect] = []
         for effect in transition.reduce(event) {
             switch effect {
-            case .prepare(let key):
+            case .prepare(let opening):
                 uncopied = nil   // the image it was for has gone home
-                effects.append(.prepare(key))
+                lift = Lift()
+                effects.append(.prepare(opening))
             case .show: effects.append(.show)
-            case .park(let key): effects.append(.park(key))
-            case .abandon(let key): effects.append(.abandon(key))
-            case .returnCard(let key, let copied):
-                effects.append(.returnCard(key, copied: copied && uncopied != key))
+            case .park(let opening): effects.append(.park(opening))
+            case .abandon(let opening): effects.append(.abandon(opening))
+            case .returnCard(let opening, let copied):
+                effects.append(.returnCard(opening, copied: copied && uncopied != opening))
                 uncopied = nil
             case .hideAnnotator:
                 endQueue()   // the panel or the file went, and the run with it
@@ -168,7 +214,7 @@ struct AnnotationRun: Equatable {
         queue.removeFirst()
         opened += 1
         fromQueue = next
-        return [.next(next, place: opened, of: total)] + forward(.annotate(next))
+        return [.next(next, place: opened, of: total)] + forward(.annotate(mint(next)))
     }
 
     /// A person's hand is ending this run, so their app gets the focus back when it ends. Nothing
@@ -185,7 +231,7 @@ struct AnnotationRun: Equatable {
         queue.removeAll { removed.contains($0) }
         total -= before - queue.count
         var effects: [Effect] = []
-        for key in added where key != transition.key && !queue.contains(key) {
+        for key in added where key != self.key && !queue.contains(key) {
             queue.append(key)
             total += 1
             effects.append(.queued(key, place: opened + queue.count, of: total))
@@ -227,8 +273,8 @@ extension AnnotationRun.Event: CustomStringConvertible {
     var description: String {
         switch self {
         case .annotate(let keys): return "annotate(\(keys.map(short).joined(separator: ", ")))"
-        case .shown: return "shown"
-        case .parked: return "parked"
+        case .shown(let o): return "shown(\(o))"
+        case .parked(let o): return "parked(\(o))"
         case .cancel: return "cancel"
         case .sent: return "sent"
         case .finish: return "finish"
@@ -237,7 +283,10 @@ extension AnnotationRun.Event: CustomStringConvertible {
         case .newShot(let key): return "newShot(\(short(key)))"
         case .selectionChanged(let added, let removed):
             return "selectionChanged(+\(added.map(short).joined(separator: ", ")) -\(removed.map(short).joined(separator: ", ")))"
-        case .copyFailed(let key): return "copyFailed(\(short(key)))"
+        case .copyFailed(let o): return "copyFailed(\(o))"
+        case .loaded(let o): return "loaded(\(o))"
+        case .takesPresses(let o): return "takesPresses(\(o))"
+        case .arrived(let o): return "arrived(\(o))"
         }
     }
 }
@@ -245,16 +294,19 @@ extension AnnotationRun.Event: CustomStringConvertible {
 extension AnnotationRun.Effect: CustomStringConvertible {
     var description: String {
         switch self {
-        case .prepare(let k): return "prepare(\(short(k)))"
+        case .prepare(let o): return "prepare(\(o))"
         case .show: return "show"
-        case .park(let k): return "park(\(short(k)))"
-        case .abandon(let k): return "abandon(\(short(k)))"
-        case .returnCard(let k, let copied): return "returnCard(\(short(k))\(copied ? " copied" : ""))"
+        case .park(let o): return "park(\(o))"
+        case .abandon(let o): return "abandon(\(o))"
+        case .returnCard(let o, let copied): return "returnCard(\(o)\(copied ? " copied" : ""))"
         case .hideAnnotator: return "hideAnnotator"
         case .join(let k): return "join(\(short(k)))"
         case .next(let k, let place, let total): return "next(\(short(k)) \(place) of \(total))"
         case .queued(let k, let place, let total): return "queued(\(short(k)) \(place) of \(total))"
         case .endRun(let focus): return focus ? "endRun(restoreFocus)" : "endRun"
+        case .landed(let o): return "landed(\(o))"
+        case .handOverPresses(let o): return "handOverPresses(\(o))"
+        case .liftFlight(let o): return "liftFlight(\(o))"
         }
     }
 }

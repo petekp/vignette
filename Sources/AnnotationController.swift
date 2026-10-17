@@ -12,10 +12,10 @@ final class AnnotationController {
     /// Esc, a click outside, or Cmd+W. The owner decides what happens next and calls `hide` when
     /// it is time; nothing here hides on its own.
     var onClosed: (() -> Void)?
-    /// The editor has this key's screenshot, decoded at the screen's size.
-    var onLoaded: ((String) -> Void)?
-    /// The window server gives this window the presses on its frame now. Once per `show`, with the key.
-    var onTakesEvents: ((String) -> Void)?
+    /// The editor has this opening's screenshot, decoded at the screen's size.
+    var onLoaded: ((Opening) -> Void)?
+    /// The window server gives this window the presses on its frame now. Once per `show`.
+    var onTakesEvents: ((Opening) -> Void)?
     /// A drawing to store: the editor handed it over after a change, or it was parked. `reason`
     /// names which in the log.
     var onDrawing: ((Drawing, _ reason: String) -> Void)?
@@ -47,9 +47,9 @@ final class AnnotationController {
     private var eventProbe: Timer?
     /// Takes the frame and then the window down behind the flight home (`hideWindows`).
     private let removal = Removal()
-    /// Counts `open`s, so a decode or a send's rendering only lands on the open that asked
-    /// for it: the same file can be closed and opened again while the first is still on its way.
-    private var openGeneration = 0
+    /// The opening `prepare` was given, so a decode or a send's rendering only lands on the open
+    /// that asked for it: the same file can be closed and opened again while the first is on its way.
+    private var opened: Opening?
     /// Where the toolbar's Send or Reply goes once the editor hands over the drawing. A key that
     /// sends goes where the bar's filled button would.
     private var sendingTo: AgentDestination?
@@ -129,9 +129,10 @@ final class AnnotationController {
     /// window is ordered in invisible until `show`, and the window server passes every press through
     /// a window it draws nothing of. `room` is the rect the frame may grow within: the visible
     /// screen, less any strip its owner keeps for itself.
-    func prepare(_ shot: Screenshot, in frame: NSRect, room: NSRect) {
+    func prepare(_ shot: Screenshot, opening: Opening, in frame: NSRect, room: NSRect) {
         let started = CACurrentMediaTime()
         current = shot
+        opened = opening
         // A send still rendering belongs to the session before this one, which its answer will find gone.
         toolbar.model.resetSend()
         // The window and the editor are this image's now, so the last image's removal must not take them.
@@ -149,16 +150,14 @@ final class AnnotationController {
         win.alphaValue = 0
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        open(shot, started: started)
+        open(shot, opening: opening, started: started)
     }
 
     /// Opens the drawing with the screenshot's decode at the screen's size: the one a hovered card's
     /// flight already asked for when there is one, else decoded off the main thread and handed to
     /// the editor when it is ready. The drawing opens at once either way, so the keys work from here.
-    private func open(_ shot: Screenshot, started: CFTimeInterval) {
+    private func open(_ shot: Screenshot, opening: Opening, started: CFTimeInterval) {
         let key = shot.url.path, name = shot.url.lastPathComponent
-        openGeneration += 1
-        let generation = openGeneration
         guard let pixels = PixelSize(imageAt: shot.url) else {
             Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(name)")
             cancel()
@@ -176,24 +175,24 @@ final class AnnotationController {
         editor.open(drawing, image: decoded, picture: container?.bounds ?? .zero, style: textStyle, metrics: ui.editorMetrics,
                     markStyle: ui.markStyle)
         editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
-        if decoded != nil { loaded(key, started: started) }
+        if decoded != nil { loaded(opening, started: started) }
         else {
             Thumbnailer.load(at: shot.url, maxPixel: maxPixel, space: space) { [weak self] image in
-                guard let self, openGeneration == generation, current?.url.path == key else { return }
+                guard let self, self.opening == opening else { return }
                 guard let cg = image.flatMap(Self.cgImage) else {
                     Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(name)")
                     cancel()
                     return
                 }
                 editor.setImage(cg)
-                loaded(key, started: started)
+                loaded(opening, started: started)
             }
         }
     }
 
-    private func loaded(_ key: String, started: CFTimeInterval) {
-        Log.write("[annotate] loaded \(Int((CACurrentMediaTime() - started) * 1000))ms \((key as NSString).lastPathComponent)")
-        onLoaded?(key)
+    private func loaded(_ opening: Opening, started: CFTimeInterval) {
+        Log.write("[annotate] loaded \(Int((CACurrentMediaTime() - started) * 1000))ms \((opening.key as NSString).lastPathComponent)")
+        onLoaded?(opening)
     }
 
     private static func cgImage(_ image: NSImage) -> CGImage? {
@@ -344,17 +343,17 @@ final class AnnotationController {
     /// which window a press at the frame's centre would reach.
     private func probeEvents() {
         eventProbe?.invalidate()
-        guard let win = window, let key = current?.url.path else { return }
+        guard let win = window, let opening else { return }
         let started = CACurrentMediaTime()
         let timer = Timer(timeInterval: 0.001, repeats: true) { [weak self] timer in
             let answered = MainActor.assumeIsolated { () -> Bool in
-                guard let self, self.current?.url.path == key else { return true }
+                guard let self, self.opening == opening else { return true }
                 let elapsed = CACurrentMediaTime() - started
                 let reached = self.pressReaches(win)
                 guard reached || elapsed > Self.eventProbeDeadline else { return false }
                 self.eventProbe = nil
                 Log.write("[annotate] takes events after=\(Int((elapsed * 1000).rounded()))ms reached=\(reached)")
-                self.onTakesEvents?(key)
+                self.onTakesEvents?(opening)
                 return true
             }
             if answered { timer.invalidate() }
@@ -526,10 +525,10 @@ final class AnnotationController {
     /// The image in the editor, by path, or nil between sessions.
     var currentKey: String? { current?.url.path }
 
-    /// The open the editor is in, or nil between sessions. A send compares its rendering's answer
+    /// The opening the editor is in, or nil between them. A send compares its rendering's answer
     /// with this rather than the path: after Esc and a reopen of the same image, the path matches
-    /// and the session does not.
-    var session: Int? { current == nil ? nil : openGeneration }
+    /// and the opening does not.
+    var opening: Opening? { current == nil ? nil : opened }
 
     /// The tweaks changed: the open editor takes their text style, sizes and arrowhead at once.
     func applyTweaks() {
