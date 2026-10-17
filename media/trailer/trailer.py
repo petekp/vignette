@@ -77,24 +77,6 @@ def identity(project):
     return name, bundle, scheme
 
 
-def replace_once(text, old, new, where):
-    count = text.count(old)
-    if count != 1:
-        sys.exit(f'build: expected one {old!r} in {where}, found {count}; the stage patch needs updating')
-    return text.replace(old, new)
-
-
-def replace_array(text, owner, name, new, where):
-    """Replaces the `static let <name> = [...]` inside `struct <owner>`."""
-    start = text.find(f'struct {owner}')
-    if start < 0:
-        sys.exit(f'build: no struct {owner} in {where}; the stage patch needs updating')
-    match = re.compile(rf'static let {name} = \[.*?\]\n', re.S).search(text, start)
-    if not match:
-        sys.exit(f'build: no {name} in {owner}; the stage patch needs updating')
-    return text[:match.start()] + f'static let {name}: [String] = {new}\n' + text[match.end():]
-
-
 def build():
     src = PATHS['app_src']
     os.makedirs(src, exist_ok=True)
@@ -105,38 +87,9 @@ def build():
 
     # The stage copy has its own bundle id, name and URL scheme, so it never touches the real app's
     # settings, drawings, log or URLs.
-    project_path = os.path.join(src, 'project.yml')
-    with open(project_path) as f:
-        project = f.read()
-    name, bundle, scheme = identity(project)
+    with open(os.path.join(src, 'project.yml')) as f:
+        name, bundle, scheme = identity(f.read())
     stage_name, stage_bundle, stage_scheme = f'{name} Demo', f'{bundle}.demo', f'{scheme}-demo'
-    project = project.replace(f'PRODUCT_BUNDLE_IDENTIFIER: {bundle}', f'PRODUCT_BUNDLE_IDENTIFIER: {stage_bundle}')
-    project = replace_once(project, f'VIGNETTE_URL_SCHEME: {scheme}', f'VIGNETTE_URL_SCHEME: {stage_scheme}', 'project.yml')
-    # A take never checks for updates: a found version would put a dot on the menu bar icon.
-    project = replace_once(project, 'SUEnableAutomaticChecks: true', 'SUEnableAutomaticChecks: false', 'project.yml')
-    with open(project_path, 'w') as f:
-        f.write(project)
-
-    # Send lists the Claude Code sessions running the stage copy's own plugin, which only the
-    # trailer's Claude Code has. There is no Codex, and no herdr, whose focus would name one of your
-    # panes, so a take lists none of your sessions and sends nothing to one.
-    path = os.path.join(src, 'Sources', 'AgentConnection.swift')
-    with open(path) as f:
-        text = f.read()
-    text = replace_array(text, 'ClaudeCodeConnection', 'herdrPaths', '[]', 'AgentConnection.swift')
-    text = replace_array(text, 'CodexConnection', 'binaryPaths', '[]', 'AgentConnection.swift')
-    with open(path, 'w') as f:
-        f.write(text)
-    # The skill in the plugin names the real app's URL scheme and log; the stage copy's must name
-    # its own, or the trailer's Claude Code would drive your Vignette.
-    path = os.path.join(src, 'skills', 'vignette', 'SKILL.md')
-    with open(path) as f:
-        text = f.read()
-    text = text.replace(f'{scheme}://', f'{stage_scheme}://').replace(f'Logs/{name}.log', f'Logs/{stage_name}.log')
-    if f'{scheme}://' in text.replace(f'{stage_scheme}://', ''):
-        sys.exit('build: the skill still names the real URL scheme')
-    with open(path, 'w') as f:
-        f.write(text)
 
     run(['xcodegen', 'generate'], cwd=src, stdout=subprocess.DEVNULL)
     signing = []
@@ -150,7 +103,8 @@ def build():
     with open(log, 'w') as f:
         result = subprocess.run(['xcodebuild', '-project', f'{name}.xcodeproj', '-scheme', name,
                                  '-configuration', 'Release', '-derivedDataPath', 'build', 'build', '-quiet',
-                                 f'PRODUCT_NAME={stage_name}', *signing], cwd=src, stdout=f, stderr=subprocess.STDOUT)
+                                 f'PRODUCT_NAME={stage_name}', f'PRODUCT_BUNDLE_IDENTIFIER={stage_bundle}',
+                                 f'VIGNETTE_URL_SCHEME={stage_scheme}', *signing], cwd=src, stdout=f, stderr=subprocess.STDOUT)
     if result.returncode != 0:
         sys.exit(f'build: xcodebuild failed; see {log}')
 

@@ -749,6 +749,8 @@ def setup(stage):
         json.dump(c['app']['settings'], f, indent=2)
     # Launched with VIGNETTE_SETTINGS, the copy follows this domain's location, never Apple's own.
     subprocess.run(['defaults', 'write', f"{stage.app['bundle']}.screencapture", 'location', p['watch']], check=True)
+    # A found update would put a dot on the menu bar icon.
+    subprocess.run(['defaults', 'write', stage.app['bundle'], 'SUEnableAutomaticChecks', '-bool', 'false'], check=True)
     stage_game(stage)
 
     # The Dock would cover the bottom of the desktop, so it hides for the take and comes back after.

@@ -65,8 +65,10 @@ times against.
   it has its own settings, log, drawings and URLs, and never touches yours.
 - **The stage copy talks only to the trailer's Claude Code, and no Codex.** Since 2026-09-28 Send
   reaches it through the stage copy's own plugin, `vignette@vignette-demo`, as it reaches anyone's.
-  `build` empties the app's herdr and Codex path lists and patches the plugin's skill to the stage
-  copy's URL scheme and log. The stage copy lists only inboxes under its own Application Support
+  Launched with `VIGNETTE_SETTINGS`, it runs no herdr and no Codex (`AgentTools.forSessions`), and
+  its plugin's skill names its own URL scheme, log and path (`AgentPlugin.stage`). `build` changes
+  no source: the identity comes from `xcodebuild` settings, and the take turns update checks off in
+  the copy's defaults. The stage copy lists only inboxes under its own Application Support
   folder, and only the trailer's config has its plugin. So Send and Reply reach a real Claude Code,
   the toolbar shows none of your sessions, and nothing reaches one of them.
 - **The trailer's Claude Code has its own config.** `trailer.py claude` puts it in
