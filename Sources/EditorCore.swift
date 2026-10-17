@@ -1577,6 +1577,11 @@ struct EditorCore {
         CGRect(x: rect.minX * factor, y: rect.minY * factor, width: rect.width * factor, height: rect.height * factor)
     }
 
+    /// The open screenshot's file was renamed: the drawing is the same, under this key.
+    mutating func rekey(to key: String) {
+        if isOpen { drawing.key = key }
+    }
+
     // MARK: Agents' marks
 
     /// Agents' marks join the open drawing as one undo step, and go to the host straight away. The

@@ -159,6 +159,27 @@ struct DrawingStore: Sendable {
         }
     }
 
+    /// Moves the drawing stored for `old` to `new`: the file under `new`'s name carries `new` as its
+    /// key, and the one under `old`'s name goes. Answers the drawing's pixel size, or nil when none is
+    /// stored for `old`. Throws like `write`, and leaves `old` in place when `new` could not be written.
+    func rename(from old: String, to new: String) throws -> PixelSize? {
+        guard old != new, case .stored(let stored) = contents(of: url(for: old)), stored.key == old else { return nil }
+        let target = url(for: new), name = (new as NSString).lastPathComponent
+        try refuseNewer(target, name: name)
+        do {
+            guard var object = try DrawingJSON.object(from: Data(contentsOf: url(for: old))) as? [String: Any] else { return nil }
+            object["key"] = new
+            let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: target, options: .atomic)
+        } catch {
+            log("[drawing] error write-failed \(name): \(error.localizedDescription)")
+            throw error
+        }
+        try remove(key: old)
+        return stored.pixels
+    }
+
     /// The key of every drawing this build can read, so the drawings of screenshots that are gone
     /// can be removed. A file from a newer build is not listed. A file that does not parse is set
     /// aside as `<id>.json.invalid`, here and nowhere else: this runs once, at launch, before

@@ -1,10 +1,19 @@
 import Foundation
 
 /// One image opening in the annotator. `AnnotationRun` mints the id for every image it sends there
-/// and never reuses one, so the same file closed and opened again is another opening.
+/// and never reuses one, so the same file closed and opened again is another opening. An opening is
+/// its id: a rename gives the same opening another key, and an answer still in flight names the old
+/// one, so two values with one id are the same opening.
 struct Opening: Hashable {
     let id: Int
-    let key: String
+    let key: ScreenshotKey
+
+    static func == (a: Opening, b: Opening) -> Bool { a.id == b.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    func renamed(from old: ScreenshotKey, to new: ScreenshotKey) -> Opening {
+        key == old ? Opening(id: id, key: new) : self
+    }
 }
 
 /// The one owner of "what is in the annotator, where it came from, and what is in flight".
@@ -40,9 +49,10 @@ struct AnnotatorTransition: Equatable {
         case parked(Opening)     // the editor finished parking
         case close               // Esc, click outside, Cmd+W, or Send: nothing was copied
         case finish              // Done or Return: the result is on the clipboard
-        case newShot(String)     // a new file arrived
+        case newShot(ScreenshotKey)     // a new file arrived
         case dismiss             // the panel is going away
-        case remove(String)      // a file was trashed or deleted
+        case remove(ScreenshotKey)      // a file was trashed or deleted
+        case renamed(from: ScreenshotKey, to: ScreenshotKey)   // a file was renamed: the opening keeps its id and takes the new key
     }
 
     enum Effect: Equatable {
@@ -52,7 +62,7 @@ struct AnnotatorTransition: Equatable {
         case abandon(Opening)    // the editor holds this image and nobody saw it: close it at once, no fit on the way out
         case returnCard(Opening, copied: Bool)  // fly the card back; `copied` when its result is on the clipboard
         case hideAnnotator       // the annotator is done; nothing returns
-        case join(String)        // a new shot joins the panel while the annotator stays open
+        case join(ScreenshotKey)        // a new shot joins the panel while the annotator stays open
     }
 
     private(set) var phase: Phase = .idle
@@ -68,6 +78,20 @@ struct AnnotatorTransition: Equatable {
     var isActive: Bool { phase != .idle }
 
     mutating func reduce(_ event: Event) -> [Effect] {
+        if case .renamed(let old, let new) = event {
+            switch phase {
+            case .idle: break
+            case .flyingOut(let o): phase = .flyingOut(o.renamed(from: old, to: new))
+            case .annotating(let o): phase = .annotating(o.renamed(from: old, to: new))
+            case .parking(let o, let next):
+                if case .annotate(let o2) = next {
+                    phase = .parking(o.renamed(from: old, to: new), then: .annotate(o2.renamed(from: old, to: new)))
+                } else {
+                    phase = .parking(o.renamed(from: old, to: new), then: next)
+                }
+            }
+            return []
+        }
         switch phase {
         case .idle:
             guard case .annotate(let o) = event else { return [] }
@@ -107,7 +131,7 @@ struct AnnotatorTransition: Equatable {
                 return [.park(o)]
             case .newShot(let n):
                 return [.join(n)]
-            case .parked:
+            case .parked, .renamed:
                 return []
             }
 
@@ -134,7 +158,7 @@ struct AnnotatorTransition: Equatable {
                 return [.park(o)]
             case .newShot(let n):
                 return [.join(n)]
-            case .parked:
+            case .parked, .renamed:
                 return []
             }
 
@@ -179,7 +203,7 @@ struct AnnotatorTransition: Equatable {
                 return []
             case .newShot(let n):
                 return [.join(n)]
-            case .close, .finish, .shown:
+            case .close, .finish, .shown, .renamed:
                 return []
             }
         }
@@ -187,7 +211,7 @@ struct AnnotatorTransition: Equatable {
 }
 
 // Short log forms: keys print as file names, so a `[transition]` line stays readable.
-private func short(_ key: String) -> String { (key as NSString).lastPathComponent }
+private func short(_ key: ScreenshotKey) -> String { key.name }
 
 extension Opening: CustomStringConvertible {
     var description: String { "\(short(key))#\(id)" }
@@ -227,6 +251,7 @@ extension AnnotatorTransition.Event: CustomStringConvertible {
         case .newShot(let k): return "newShot(\(short(k)))"
         case .dismiss: return "dismiss"
         case .remove(let k): return "remove(\(short(k)))"
+        case .renamed(let from, let to): return "renamed(\(short(from)) to \(short(to)))"
         }
     }
 }

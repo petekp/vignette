@@ -13,7 +13,7 @@ struct SendNotice: Equatable {
     var reason: String? = nil
 }
 
-/// What a card says about something that happened to it, by file path: a card shown again for the
+/// What a card says about something that happened to it, by screenshot: a card shown again for the
 /// same file says the same, and a lone thumbnail's card leaves the panel while it is in the annotator.
 ///
 /// A card shows one notice at a time, and the newest wins. A send waiting for its answer keeps its
@@ -54,8 +54,8 @@ struct CardNotices {
         let hold: TimeInterval?
     }
 
-    private var shown: [String: (id: Int, notice: Notice)] = [:]
-    private var waiting: [String: SendNotice] = [:]
+    private var shown: [ScreenshotKey: (id: Int, notice: Notice)] = [:]
+    private var waiting: [ScreenshotKey: SendNotice] = [:]
     private var lastID = 0
 
     /// Nil when there is nothing to show: an answer to a request that is not the one waiting, a
@@ -63,7 +63,7 @@ struct CardNotices {
     /// `seen`: the card is on screen, in the annotator, or on its way home; a card that is not
     /// comes up to say anything else. `noticeHold` is how long a notice holds; one that explains
     /// something holds three times as long.
-    mutating func post(_ event: Event, on file: String, seen: Bool, noticeHold: TimeInterval) -> Posted? {
+    mutating func post(_ event: Event, on file: ScreenshotKey, seen: Bool, noticeHold: TimeInterval) -> Posted? {
         let notice: Notice
         switch event {
         case .copied(let label):
@@ -93,18 +93,24 @@ struct CardNotices {
     }
 
     /// Takes a notice down if it is still the one `id` posted.
-    mutating func expire(_ id: Int, on file: String) {
+    mutating func expire(_ id: Int, on file: ScreenshotKey) {
         if shown[file]?.id == id { shown[file] = nil }
     }
 
-    func notice(on file: String) -> Notice? { shown[file]?.notice }
+    /// The file was renamed: what its card says, and a send still waiting for its answer, follow it.
+    mutating func rename(from old: ScreenshotKey, to new: ScreenshotKey) {
+        if let notice = shown.removeValue(forKey: old) { shown[new] = notice }
+        if let send = waiting.removeValue(forKey: old) { waiting[new] = send }
+    }
+
+    func notice(on file: ScreenshotKey) -> Notice? { shown[file]?.notice }
 
     /// A send on one of `files` is still waiting for its answer.
-    func awaitsAnswer(on files: some Sequence<String>) -> Bool {
+    func awaitsAnswer(on files: some Sequence<ScreenshotKey>) -> Bool {
         files.contains { waiting[$0] != nil }
     }
 
-    private mutating func show(_ notice: Notice, on file: String, hold: TimeInterval?) -> Posted {
+    private mutating func show(_ notice: Notice, on file: ScreenshotKey, hold: TimeInterval?) -> Posted {
         lastID += 1
         shown[file] = (lastID, notice)
         return Posted(id: lastID, hold: hold)

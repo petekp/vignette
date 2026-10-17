@@ -4,16 +4,47 @@ final class AnnotationRunTests: XCTestCase {
     typealias R = AnnotationRun
 
     /// Every file opens except those named.
-    private func reduce(_ run: inout R, _ event: R.Event, unreadable: Set<String> = []) -> [R.Effect] {
+    private func reduce(_ run: inout R, _ event: R.Event, unreadable: Set<ScreenshotKey> = []) -> [R.Effect] {
         run.reduce(event) { !unreadable.contains($0) }
     }
 
-    private func o(_ key: String, _ id: Int) -> Opening { Opening(id: id, key: key) }
+    private func o(_ key: ScreenshotKey, _ id: Int) -> Opening { Opening(id: id, key: key) }
 
     private func shown(_ run: inout R) -> [R.Effect] { reduce(&run, .shown(run.opening!)) }
 
-    private func parked(_ run: inout R, unreadable: Set<String> = []) -> [R.Effect] {
+    private func parked(_ run: inout R, unreadable: Set<ScreenshotKey> = []) -> [R.Effect] {
         reduce(&run, .parked(run.opening!), unreadable: unreadable)
+    }
+
+    func testARenameReKeysTheOpenImageAndTheQueueAndKeepsTheOpeningIds() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a", "b", "c"])); _ = shown(&r)
+        let before = r.opening!
+        XCTAssertEqual(reduce(&r, .renamed(from: "a", to: "a2")), [])
+        _ = reduce(&r, .renamed(from: "b", to: "b2"))
+        XCTAssertEqual(r.opening?.id, before.id)
+        XCTAssertEqual(r.key, "a2")
+        XCTAssertEqual(r.queue, ["b2", "c"])
+        XCTAssertEqual(r.phase, .annotating(o("a2", 1)))
+
+        XCTAssertEqual(reduce(&r, .loaded(before)), [], "an answer carrying the old key is still this opening's")
+        XCTAssertEqual(reduce(&r, .takesPresses(before)), [.handOverPresses(o("a2", 1))])
+        XCTAssertEqual(reduce(&r, .arrived(before)), [.landed(o("a2", 1)), .liftFlight(o("a2", 1))])
+
+        _ = reduce(&r, .finish)
+        XCTAssertEqual(reduce(&r, .parked(before)), [.returnCard(o("a2", 1), copied: true), .next("b2", place: 2, of: 3), .prepare(o("b2", 2))])
+        XCTAssertEqual(r.opening?.key, "b2")
+    }
+
+    func testARenameDuringAParkReKeysTheOpeningThatFollows() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)
+        _ = reduce(&r, .annotate(["c"]))
+        _ = reduce(&r, .renamed(from: "c", to: "c2"))
+        _ = reduce(&r, .renamed(from: "a", to: "a2"))
+        XCTAssertEqual(r.phase, .parking(o("a2", 1), then: .annotate(o("c2", 2))))
+        XCTAssertEqual(parked(&r), [.returnCard(o("a2", 1), copied: false), .prepare(o("c2", 2))])
+        XCTAssertEqual(r.key, "c2")
     }
 
     // MARK: Rules
@@ -218,7 +249,7 @@ final class AnnotationRunTests: XCTestCase {
     /// in the same turn through `EventHold`, and one file, "x", that never opens. Late answers for
     /// openings that have gone are part of the mix. Checks the transition's invariants and the run's own.
     func testRandomSequencesKeepTheInvariants() {
-        let keys = ["a", "b", "c", "d"]
+        let keys: [ScreenshotKey] = ["a", "b", "c", "d"]
         var sameTurn = 0, handovers = 0, passedOver = 0, lifts = 0, staleAnswers = 0
         for seed in 0..<1000 {
             var rng = SeededGenerator(seed: UInt64(seed))
@@ -318,7 +349,7 @@ final class AnnotationRunTests: XCTestCase {
                 let due = pending.filter { $0.due <= step }
                 pending.removeAll { $0.due <= step }
                 var events = due.map(\.event)
-                func some() -> [String] { (keys + ["x"]).filter { _ in Int.random(in: 0..<3, using: &rng) == 0 } }
+                func some() -> [ScreenshotKey] { (keys + ["x"]).filter { _ in Int.random(in: 0..<3, using: &rng) == 0 } }
                 switch Int.random(in: 0..<13, using: &rng) {
                 case 0...2:
                     // A person's request starts with a file that reads, as the controller checks;
@@ -329,7 +360,7 @@ final class AnnotationRunTests: XCTestCase {
                 case 5: events.append(.finish)
                 case 6: events.append(.dismiss(byHand: Bool.random(using: &rng)))
                 case 7: events.append(.remove(some()))
-                case 8: events.append(.newShot("n\(step)"))
+                case 8: events.append(.newShot(ScreenshotKey(asGiven: "n\(step)")))
                 case 9: events.append(.selectionChanged(added: some().filter { $0 != "x" }, removed: some()))
                 case 10:
                     if let opening = seen.randomElement(using: &rng) { events.append(.copyFailed(opening)) }

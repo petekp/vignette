@@ -10,8 +10,9 @@ import os
 /// callbacks only run after an explicit hop to the main queue.
 final class ScreenshotWatcher: @unchecked Sendable {
     private let folder: URL
-    private let onNew: (URL) -> Void
-    private let onRemoved: ([URL], Inventory) -> Void
+    private let onNew: (ScreenshotKey) -> Void
+    private let onRemoved: ([ScreenshotKey], Inventory) -> Void
+    private let onRenamed: ([(from: ScreenshotKey, to: ScreenshotKey)], Inventory) -> Void
     private let onInventory: (Inventory) -> Void
     private var source: DispatchSourceFileSystemObject?
     private var directoryID: DirectoryID?
@@ -33,6 +34,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
         /// Earlier app writes may be reconciled; writes made after this read began may not.
         let observedAt: TimeInterval
         var directoryID: DirectoryID?
+        var identities: [String: FileIdentity] = [:]
 
         func confirmsAbsence(of url: URL) -> Bool {
             // A positive lookup protects equivalent names and files created after the listing.
@@ -50,6 +52,14 @@ final class ScreenshotWatcher: @unchecked Sendable {
         func captures(since cutoff: Date) -> Set<String> {
             Set(names.filter { ScreenshotWatcher.isCandidate($0) && dates[$0].map { $0 >= cutoff } == true })
         }
+    }
+
+    /// What tells one file from another when its name changes: the same file keeps its inode, size
+    /// and modification date under a new name.
+    struct FileIdentity: Hashable, Sendable {
+        let file: UInt64
+        let size: Int
+        let modified: Date
     }
 
     struct DirectoryID: Equatable, Sendable {
@@ -78,6 +88,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
 
     private struct State {
         var files: [String: Date] = [:]   // candidate name -> modification date
+        var identities: [String: FileIdentity] = [:]
         var present: Set<String> = []
         var watching = false              // the directory source is live
         var indexed = false               // a successful listing or a missing-folder capture cutoff exists
@@ -86,6 +97,8 @@ final class ScreenshotWatcher: @unchecked Sendable {
         var availability = Availability.unavailable
         var generation = 0
         var pending: [String: Arrival] = [:]
+        var scans = 0
+        var renames: [(scan: Int, from: String, to: String)] = []   // paired, not yet delivered
     }
     private let state = OSAllocatedUnfairLock(initialState: State())
 
@@ -94,11 +107,13 @@ final class ScreenshotWatcher: @unchecked Sendable {
     private static let firstListingWait: TimeInterval = 0.5
     private static let retryDelay: TimeInterval = 2
 
-    init(folder: URL, onNew: @escaping (URL) -> Void,
-         onRemoved: @escaping ([URL], Inventory) -> Void, onInventory: @escaping (Inventory) -> Void = { _ in }) {
+    init(folder: URL, onNew: @escaping (ScreenshotKey) -> Void,
+         onRemoved: @escaping ([ScreenshotKey], Inventory) -> Void, onInventory: @escaping (Inventory) -> Void = { _ in },
+         onRenamed: @escaping ([(from: ScreenshotKey, to: ScreenshotKey)], Inventory) -> Void = { _, _ in }) {
         self.folder = folder
         self.onNew = onNew
         self.onRemoved = onRemoved
+        self.onRenamed = onRenamed
         self.onInventory = onInventory
         // macOS holds the first read of a folder it protects (the Desktop, Documents, Downloads)
         // until the user answers its prompt, so that read runs on the queue. An ordinary folder
@@ -198,7 +213,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
     /// index: that listing may be waiting on macOS's permission prompt, and a read here would wait
     /// with it on the main thread. `include` filters before the limit is taken, so a file the app
     /// is hiding does not cost the stack one of its cards.
-    func recent(limit: Int, include: (URL) -> Bool = { _ in true }) -> (recent: [URL], files: Int) {
+    func recent(limit: Int, include: (ScreenshotKey) -> Bool = { _ in true }) -> (recent: [ScreenshotKey], files: Int) {
         let snapshot = state.withLock { ($0.files, $0.watching || !$0.indexed) }
         if !snapshot.1, case .available(let inventory) = Self.read(folder) {
             return Self.recent(from: inventory.candidates(retaining: snapshot.0), in: folder, limit: limit, include: include)
@@ -206,7 +221,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
         return Self.recent(from: snapshot.0, in: folder, limit: limit, include: include)
     }
 
-    func newest(include: (URL) -> Bool = { _ in true }) -> URL? {
+    func newest(include: (ScreenshotKey) -> Bool = { _ in true }) -> ScreenshotKey? {
         recent(limit: 1, include: include).recent.first
     }
 
@@ -216,7 +231,8 @@ final class ScreenshotWatcher: @unchecked Sendable {
             source = nil
             directoryID = nil
             generation += 1
-            state.withLock { $0.watching = false; $0.generation = generation }
+            // A rename paired in the directory that was replaced is not one in this directory.
+            state.withLock { $0.watching = false; $0.generation = generation; $0.renames = [] }
         }
         if source == nil { start() }
         let listing = Self.read(folder)
@@ -233,18 +249,30 @@ final class ScreenshotWatcher: @unchecked Sendable {
             retryLater()
             return
         }
-        let arrivals = state.withLock { s -> [(String, Arrival)] in
+        let (arrivals, scanNumber) = state.withLock { s -> ([(String, Arrival)], Int) in
+            s.scans += 1
+            let scanNumber = s.scans
             s.availability = .available
             s.denied = false
+            let undelivered = Set(s.pending.keys)
             for (name, arrival) in s.pending where arrival.generation != generation {
                 s.files[name] = nil
             }
             let current = inventory.candidates(retaining: s.files)
             s.pending = s.pending.filter { current[$0.key] != nil }
+            let identities = inventory.identities.filter { current[$0.key] != nil }
             guard s.indexed else {
                 s.files = current
+                s.identities = identities
                 s.indexed = true
-                return []
+                return ([], scanNumber)
+            }
+            var renames: [(from: String, to: String)] = []
+            if s.missingSince == nil {
+                renames = Self.renames(removed: Set(s.files.keys).subtracting(current.keys),
+                                       added: Set(current.keys).subtracting(s.files.keys),
+                                       before: s.identities, after: identities)
+                    .filter { !undelivered.contains($0.from) }
             }
             var known = Set(s.files.keys)
             if let since = s.missingSince {
@@ -252,13 +280,16 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 known.formUnion(Set(current.keys).subtracting(inventory.captures(since: since)).subtracting(s.pending.keys))
                 s.missingSince = nil
             }
-            let added = Self.diff(known: known, current: Set(current.keys)).added
+            let renamedTo = Set(renames.map(\.to))
+            let added = Self.diff(known: known, current: Set(current.keys)).added.filter { !renamedTo.contains($0) }
             s.files = current
-            return added.map { name in
+            s.identities = identities
+            s.renames += renames.map { (scan: scanNumber, from: $0.from, to: $0.to) }
+            return (added.map { name in
                 let arrival = Arrival(generation: generation)
                 s.pending[name] = arrival
                 return (name, arrival)
-            }
+            }, scanNumber)
         }
         let started = generation
         DispatchQueue.main.async {
@@ -268,23 +299,37 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 self.rescan(reason: "directory changed before delivery")
                 return
             }
-            let removed = self.state.withLock { s in
-                let removed = Self.diff(known: s.present, current: inventory.names).removed.filter(Self.isCandidate)
+            let (renames, removed) = self.state.withLock { s -> ([(from: String, to: String)], [String]) in
+                let owed = s.renames.filter { $0.scan <= scanNumber }
+                s.renames.removeAll { $0.scan <= scanNumber }
+                let renames = owed.map { (from: $0.from, to: $0.to) }
+                let renamedFrom = Set(renames.map(\.from))
+                let removed = Self.diff(known: s.present, current: inventory.names).removed
+                    .filter { Self.isCandidate($0) && !renamedFrom.contains($0) }
                 s.present = inventory.names
-                return removed
+                return (renames, removed)
+            }
+            if !renames.isEmpty {
+                self.onRenamed(renames.map {
+                    (from: ScreenshotKey(folder: self.folder, name: $0.from), to: ScreenshotKey(folder: self.folder, name: $0.to))
+                }, inventory)
             }
             self.onInventory(inventory)
             if !removed.isEmpty {
-                self.onRemoved(removed.map { self.folder.appendingPathComponent($0) }, inventory)
+                self.onRemoved(removed.map { ScreenshotKey(folder: self.folder, name: $0) }, inventory)
             }
         }
         for (name, arrival) in arrivals {
-            let url = folder.appendingPathComponent(name)
+            let key = ScreenshotKey(folder: folder, name: name), url = key.url
             waitUntilComplete(url, arrival: arrival) { [weak self] complete in
                 guard let self else { return }
                 if complete {
                     // A streamed file's date settles with its content; the index keeps the final one.
-                    if let date = ScreenshotWatcher.modificationDate(of: url) {
+                    if let identity = ScreenshotWatcher.identity(of: url) {
+                        self.state.withLock {
+                            if $0.files[name] != nil { $0.files[name] = identity.modified; $0.identities[name] = identity }
+                        }
+                    } else if let date = ScreenshotWatcher.modificationDate(of: url) {
                         self.state.withLock { if $0.files[name] != nil { $0.files[name] = date } }
                     }
                     DispatchQueue.main.async {
@@ -295,7 +340,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
                             return
                         }
                         self.state.withLock { $0.pending[name] = nil }
-                        self.onNew(url)
+                        self.onNew(key)
                     }
                 } else if FileManager.default.fileExists(atPath: url.path) {
                     // Forget it so the next directory event or stack open picks it up again.
@@ -323,6 +368,22 @@ final class ScreenshotWatcher: @unchecked Sendable {
         (current.subtracting(known).sorted(), known.subtracting(current).sorted())
     }
 
+    /// Names that disappeared paired with names that appeared in the same listing, when the file's
+    /// identity is the same. A pair counts only when the match is one to one: two removed files with
+    /// one identity (a hard link) leave every name in it a removal or an arrival.
+    static func renames(removed: Set<String>, added: Set<String>, before: [String: FileIdentity],
+                        after: [String: FileIdentity]) -> [(from: String, to: String)] {
+        var gone: [FileIdentity: [String]] = [:]
+        for name in removed.sorted() { before[name].map { gone[$0, default: []].append(name) } }
+        var arrived: [FileIdentity: [String]] = [:]
+        for name in added.sorted() { after[name].map { arrived[$0, default: []].append(name) } }
+        return gone.compactMap { identity, from in
+            guard from.count == 1, let to = arrived[identity], to.count == 1 else { return nil }
+            return (from: from[0], to: to[0])
+        }
+        .sorted { $0.from < $1.from }
+    }
+
     /// screencapture writes the file in one go, but Dropbox and other syncers stream it in. Wait
     /// until the size holds across two polls and the file reads whole, for up to ten seconds.
     private func waitUntilComplete(_ url: URL, arrival: Arrival, attempts: Int = 100, last: Int = -1,
@@ -345,7 +406,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
     /// An image ImageIO can decode, or a recording AVFoundation finds a video track in. The second
     /// also stores the recording's size, so the card made for it next does not read it again.
     static func isComplete(_ url: URL) -> Bool {
-        Screenshot(url: url).kind == .recording ? Thumbnailer.pointSize(of: url) != nil : isCompleteImage(url)
+        Screenshot.Kind(of: url) == .recording ? Thumbnailer.pointSize(of: url) != nil : isCompleteImage(url)
     }
 
     static func isCompleteImage(_ url: URL) -> Bool {
@@ -383,7 +444,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
         let urls: [URL]
         do {
             urls = try FileManager.default.contentsOfDirectory(
-                at: folder, includingPropertiesForKeys: [.contentModificationDateKey])
+                at: folder, includingPropertiesForKeys: [.contentModificationDateKey, .fileIdentifierKey, .fileSizeKey])
         } catch CocoaError.fileReadNoSuchFile {
             return .unavailable(.missing)
         } catch {
@@ -393,12 +454,26 @@ final class ScreenshotWatcher: @unchecked Sendable {
             return .unavailable(refused ? .refused : .unavailable)
         }
         var files: [String: Date] = [:]
+        var identities: [String: FileIdentity] = [:]
         for url in urls where isCandidate(url.lastPathComponent) {
-            if let date = modificationDate(of: url) { files[url.lastPathComponent] = date }
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileIdentifierKey, .fileSizeKey])
+            guard let date = values?.contentModificationDate else { continue }
+            files[url.lastPathComponent] = date
+            if let identity = identity(from: values) { identities[url.lastPathComponent] = identity }
         }
         guard let before, before == DirectoryID(folder.path) else { return .unavailable(.unavailable) }
         return .available(Inventory(folder: folder, names: Set(urls.map(\.lastPathComponent)), dates: files,
-                                    observedAt: observedAt, directoryID: before))
+                                    observedAt: observedAt, directoryID: before, identities: identities))
+    }
+
+    private static func identity(from values: URLResourceValues?) -> FileIdentity? {
+        guard let date = values?.contentModificationDate, let file = values?.fileIdentifier,
+              let size = values?.fileSize else { return nil }
+        return FileIdentity(file: file, size: size, modified: date)
+    }
+
+    static func identity(of url: URL) -> FileIdentity? {
+        identity(from: try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileIdentifierKey, .fileSizeKey]))
     }
 
     static func modificationDate(of url: URL) -> Date? {
@@ -408,10 +483,10 @@ final class ScreenshotWatcher: @unchecked Sendable {
     /// The newest `limit` of `files`, newest first, plus the candidate count. Ties fall to the name,
     /// which carries the capture time for a screenshot.
     static func recent(from files: [String: Date], in folder: URL, limit: Int,
-                       include: (URL) -> Bool = { _ in true }) -> (recent: [URL], files: Int) {
+                       include: (ScreenshotKey) -> Bool = { _ in true }) -> (recent: [ScreenshotKey], files: Int) {
         let visible = files
             .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key > $1.key }
-            .map { folder.appendingPathComponent($0.key) }
+            .map { ScreenshotKey(folder: folder, name: $0.key) }
             .filter(include)
         return (Array(visible.prefix(max(0, limit))), visible.count)   // prefix traps on a negative count
     }

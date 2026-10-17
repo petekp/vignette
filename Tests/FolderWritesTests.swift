@@ -7,8 +7,10 @@ final class FolderWritesTests: XCTestCase {
         case present(URL, Bool)
         case showCard(URL)
         case removeCards([URL])
-        case removeDrawings([URL], TimeInterval)
+        case removeDrawings([ScreenshotKey], TimeInterval)
         case removeReply(URL)
+        case renameCards([ScreenshotKey], [ScreenshotKey])
+        case renameDrawings([ScreenshotKey], [ScreenshotKey])
         case sweepDrawings(TimeInterval)
         case reconcileRequests(TimeInterval)
         case rescan(String)
@@ -27,6 +29,7 @@ final class FolderWritesTests: XCTestCase {
     private var holdsJoin = false
     private var heldJoin: ((Result<Int, Drawings.Failure>) -> Void)?
     private var joinResult: Result<Int, Drawings.Failure> = .success(1)
+    private var joinedKeys: [ScreenshotKey] = []
     /// The one file name whose trash fails.
     private var trashFailsFor: String?
 
@@ -51,12 +54,15 @@ final class FolderWritesTests: XCTestCase {
                 self.events.append(.present(shot.url, annotate))
             },
             showCard: { [unowned self] shot in self.events.append(.showCard(shot.url)) },
-            joinMarks: { [unowned self] _, _, _, done in
+            joinMarks: { [unowned self] _, _, key, done in
+                self.joinedKeys.append(key)
                 if self.holdsJoin { self.heldJoin = done } else { done(self.joinResult) }
             },
             removeCards: { [unowned self] shots in self.events.append(.removeCards(shots.map(\.url))) },
-            removeDrawings: { [unowned self] urls, observedAt in self.events.append(.removeDrawings(urls, observedAt)) },
+            removeDrawings: { [unowned self] keys, observedAt in self.events.append(.removeDrawings(keys, observedAt)) },
             removeReply: { [unowned self] url in self.events.append(.removeReply(url)) },
+            renameCards: { [unowned self] renames in self.events.append(.renameCards(renames.map(\.from), renames.map(\.to))) },
+            renameDrawings: { [unowned self] renames in self.events.append(.renameDrawings(renames.map(\.from), renames.map(\.to))) },
             sweepDrawings: { [unowned self] inventory in self.events.append(.sweepDrawings(inventory.observedAt)) },
             reconcileRequests: { [unowned self] inventory in self.events.append(.reconcileRequests(inventory.observedAt)) },
             rescan: { [unowned self] reason in self.events.append(.rescan(reason)) })
@@ -101,7 +107,7 @@ final class FolderWritesTests: XCTestCase {
     }
 
     private func leaves(_ url: URL, _ observedAt: TimeInterval) -> [Event] {
-        [.removeCards([url]), .removeDrawings([url], observedAt), .removeReply(url)]
+        [.removeCards([url]), .removeDrawings([url.screenshotKey], observedAt), .removeReply(url)]
     }
 
     // MARK: Adds
@@ -112,11 +118,11 @@ final class FolderWritesTests: XCTestCase {
         holdsJoin = true
         writes.add(request(file: try source(), annotate: true, marks: marks))
         let destination = folder.appendingPathComponent("src.png")
-        XCTAssertTrue(writes.arrived(destination))
+        XCTAssertTrue(writes.arrived(destination.screenshotKey))
         XCTAssertEqual(events, [])
         heldJoin?(.success(1))
         XCTAssertEqual(events, [.present(destination, true)])
-        XCTAssertFalse(writes.arrived(destination))
+        XCTAssertFalse(writes.arrived(destination.screenshotKey))
         XCTAssertEqual(events, [.present(destination, true)])
     }
 
@@ -126,7 +132,7 @@ final class FolderWritesTests: XCTestCase {
         writes.add(request(file: try source(), marks: marks))
         let destination = folder.appendingPathComponent("src.png")
         XCTAssertEqual(events, [])
-        XCTAssertTrue(writes.arrived(destination))
+        XCTAssertTrue(writes.arrived(destination.screenshotKey))
         XCTAssertEqual(events, [.present(destination, false)])
     }
 
@@ -139,16 +145,25 @@ final class FolderWritesTests: XCTestCase {
         XCTAssertEqual(events, [.present(file, false)])
         XCTAssertEqual(agentsAtPresent, ["claude"])
         XCTAssertEqual(try listing(), before)
-        XCTAssertFalse(writes.arrived(file))
+        XCTAssertFalse(writes.arrived(file.screenshotKey))
+    }
+
+    func testMarksOnAFileInASubfolderJoinThatFilesDrawing() throws {
+        let sub = folder.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        let file = try source("inside.png", in: sub)
+        writes.add(request(file: file, marks: marks))
+        XCTAssertEqual(joinedKeys, [file.screenshotKey])
+        XCTAssertEqual(events, [.present(file, false)])
     }
 
     /// Catches a stale listing removing the card of a file an agent has just pushed: an add records
     /// the write time, so a listing observed before it waits for a newer one.
     func testAnAddHoldsBackRemovalsFromAnOlderListing() throws {
         writes.add(request(file: try source()))
-        XCTAssertTrue(writes.arrived(folder.appendingPathComponent("src.png")))
+        XCTAssertTrue(writes.arrived(folder.appendingPathComponent("src.png").screenshotKey))
         events = []
-        writes.removed([folder.appendingPathComponent("gone.png")], in: try inventory(observedAt: 5))
+        writes.removed([folder.appendingPathComponent("gone.png")].map(\.screenshotKey), in: try inventory(observedAt: 5))
         XCTAssertEqual(events, [])
         writes.listed(try inventory(observedAt: 5))
         XCTAssertEqual(events, [.rescan("after an app write")])
@@ -159,7 +174,7 @@ final class FolderWritesTests: XCTestCase {
         joinResult = .failure(Drawings.Failure(code: .writeFailed, description: "x"))
         writes.add(request(file: try source(), marks: marks))
         let destination = folder.appendingPathComponent("src.png")
-        XCTAssertTrue(writes.arrived(destination))
+        XCTAssertTrue(writes.arrived(destination.screenshotKey))
         XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
         XCTAssertEqual(events, [.present(destination, false)])
     }
@@ -168,7 +183,7 @@ final class FolderWritesTests: XCTestCase {
     func testBadMarksCopyNothing() throws {
         writes.add(request(file: try source(), marks: #"{"type":"ellipse"}"#))
         XCTAssertEqual(try listing(), [])
-        XCTAssertFalse(writes.arrived(folder.appendingPathComponent("src.png")))
+        XCTAssertFalse(writes.arrived(folder.appendingPathComponent("src.png").screenshotKey))
     }
 
     /// Catches a copy landing on `Agent reply <uuid>.png`: it would have no reply record, so the
@@ -177,7 +192,7 @@ final class FolderWritesTests: XCTestCase {
         let file = try source("Agent reply \(UUID().uuidString.lowercased()).png")
         writes.add(request(file: file))
         XCTAssertEqual(try listing(), [])
-        XCTAssertFalse(writes.arrived(folder.appendingPathComponent(file.lastPathComponent)))
+        XCTAssertFalse(writes.arrived(folder.appendingPathComponent(file.lastPathComponent).screenshotKey))
         XCTAssertEqual(events, [])
     }
 
@@ -187,9 +202,9 @@ final class FolderWritesTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
         writes.add(request(file: try source()))
         XCTAssertEqual(try listing(), [])
-        XCTAssertFalse(writes.arrived(folder.appendingPathComponent("src.png")))
+        XCTAssertFalse(writes.arrived(folder.appendingPathComponent("src.png").screenshotKey))
         let gone = folder.appendingPathComponent("gone.png")
-        writes.removed([gone], in: try inventory(observedAt: 5))
+        writes.removed([gone].map(\.screenshotKey), in: try inventory(observedAt: 5))
         XCTAssertEqual(events, leaves(gone, 5))
     }
 
@@ -219,9 +234,9 @@ final class FolderWritesTests: XCTestCase {
         let bytes = png()
         try writes.writeStitch(bytes, to: out)
         XCTAssertEqual(try Data(contentsOf: out), bytes)
-        XCTAssertFalse(writes.arrived(out))
+        XCTAssertFalse(writes.arrived(out.screenshotKey))
         let gone = folder.appendingPathComponent("gone.png")
-        writes.removed([gone], in: try inventory(observedAt: 5))
+        writes.removed([gone].map(\.screenshotKey), in: try inventory(observedAt: 5))
         XCTAssertEqual(events, leaves(gone, 5))
     }
 
@@ -229,9 +244,9 @@ final class FolderWritesTests: XCTestCase {
     /// a card, or a reply presented as a capture.
     func testAPublishedReplyRecordsTheWriteTimeAndShowsItsCard() throws {
         let reply = folder.appendingPathComponent("r.png")
-        writes.published(Screenshot(url: reply))
+        writes.published(Screenshot(key: reply.screenshotKey))
         XCTAssertEqual(events, [.showCard(reply)])
-        writes.removed([folder.appendingPathComponent("gone.png")], in: try inventory(observedAt: 5))
+        writes.removed([folder.appendingPathComponent("gone.png")].map(\.screenshotKey), in: try inventory(observedAt: 5))
         XCTAssertEqual(events, [.showCard(reply)])
     }
 
@@ -245,13 +260,13 @@ final class FolderWritesTests: XCTestCase {
         let other = base.appendingPathComponent("other")
         try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
         _ = try source("same.png", in: folder)
-        writes.published(Screenshot(url: folder.appendingPathComponent("r.png")))
+        writes.published(Screenshot(key: folder.appendingPathComponent("r.png").screenshotKey))
         events = []
         let gone = folder.appendingPathComponent("gone.png")
         // Held back for the folder watched before; the current folder holds a file of the same name.
         let elsewhere = other.appendingPathComponent("same.png")
-        writes.removed([gone], in: try inventory(observedAt: 5))
-        writes.removed([elsewhere], in: ScreenshotWatcher.Inventory(folder: other, names: [], dates: [:], observedAt: 5))
+        writes.removed([gone].map(\.screenshotKey), in: try inventory(observedAt: 5))
+        writes.removed([elsewhere].map(\.screenshotKey), in: ScreenshotWatcher.Inventory(folder: other, names: [], dates: [:], observedAt: 5))
         XCTAssertEqual(events, [])
         writes.listed(try inventory(observedAt: 5))
         XCTAssertEqual(events, [.rescan("after an app write")])
@@ -266,9 +281,9 @@ final class FolderWritesTests: XCTestCase {
         XCTAssertEqual(events, settled(13) + [.removeCards([elsewhere])])
 
         clock = 20
-        writes.published(Screenshot(url: folder.appendingPathComponent("r2.png")))
+        writes.published(Screenshot(key: folder.appendingPathComponent("r2.png").screenshotKey))
         events = []
-        writes.removed([gone], in: try inventory(observedAt: 15))
+        writes.removed([gone].map(\.screenshotKey), in: try inventory(observedAt: 15))
         XCTAssertEqual(events, [])
     }
 
@@ -277,7 +292,7 @@ final class FolderWritesTests: XCTestCase {
     func testAnUnconfirmedRemovalWaitsForALaterListing() throws {
         let file = try source("x.png", in: folder)
         let gone = folder.appendingPathComponent("gone.png")
-        writes.removed([gone, file], in: try inventory(observedAt: 5))
+        writes.removed([gone, file].map(\.screenshotKey), in: try inventory(observedAt: 5))
         XCTAssertEqual(events, [.rescan("after an unconfirmed removal")] + leaves(gone, 5))
         events = []
         writes.listed(try inventory(observedAt: 6))
@@ -291,8 +306,30 @@ final class FolderWritesTests: XCTestCase {
     /// Catches a party to the fan-out dropped or doubled, or the listing's time not reaching the drawings.
     func testAWatcherRemovalTellsEachOnceInOrder() throws {
         let gone = folder.appendingPathComponent("a.png")
-        writes.removed([gone], in: try inventory(observedAt: 20))
+        writes.removed([gone].map(\.screenshotKey), in: try inventory(observedAt: 20))
         XCTAssertEqual(events, leaves(gone, 20))
+    }
+
+    /// Catches a renamed file being told to the drawings before its card, or as a removal.
+    func testAWatcherRenameTellsTheCardsThenTheDrawingsAndNoRemoval() throws {
+        let from = folder.appendingPathComponent("a.png"), to = folder.appendingPathComponent("b.png")
+        writes.renamed([(from: from.screenshotKey, to: to.screenshotKey)], in: try inventory(observedAt: 20))
+        XCTAssertEqual(events, [.renameCards([from.screenshotKey], [to.screenshotKey]),
+                                .renameDrawings([from.screenshotKey], [to.screenshotKey])])
+    }
+
+    /// Catches a rename from a listing older than an app write landing early, or after the sweep
+    /// that would take the old name's drawing as the drawing of a file that is gone.
+    func testARenameFromAnOlderListingWaitsForANewerOneAndComesBeforeTheSweep() throws {
+        let from = folder.appendingPathComponent("a.png"), to = folder.appendingPathComponent("b.png")
+        writes.add(request(file: try source()))
+        XCTAssertTrue(writes.arrived(folder.appendingPathComponent("src.png").screenshotKey))
+        events = []
+        writes.renamed([(from: from.screenshotKey, to: to.screenshotKey)], in: try inventory(observedAt: 5))
+        XCTAssertEqual(events, [])
+        writes.listed(try inventory(observedAt: 12))
+        XCTAssertEqual(events, [.renameCards([from.screenshotKey], [to.screenshotKey]),
+                                .renameDrawings([from.screenshotKey], [to.screenshotKey])] + settled(12))
     }
 
     /// Catches a file whose trash failed losing its card, drawing or reply record, or the trash and
@@ -301,7 +338,7 @@ final class FolderWritesTests: XCTestCase {
         let a = try source("a.png", in: folder)
         let b = try source("b.png", in: folder)
         trashFailsFor = "b.png"
-        writes.trash([Screenshot(url: a), Screenshot(url: b)])
+        writes.trash([Screenshot(key: a.screenshotKey), Screenshot(key: b.screenshotKey)])
         XCTAssertEqual(events, leaves(a, .infinity))
         XCTAssertTrue(FileManager.default.fileExists(atPath: b.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: a.path))

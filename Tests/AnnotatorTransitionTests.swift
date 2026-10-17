@@ -148,7 +148,7 @@ final class AnnotatorTransitionTests: XCTestCase {
     /// `EventHold` runs it right after, before anything else, as `ThumbnailController` does. Late
     /// answers for openings that have gone are part of the mix.
     func testRandomSequencesKeepTheInvariants() {
-        let keys = ["a", "b", "c"]
+        let keys: [ScreenshotKey] = ["a", "b", "c"]
         var sameTurn = 0
         for seed in 0..<500 {
             var rng = SeededGenerator(seed: UInt64(seed))
@@ -170,7 +170,7 @@ final class AnnotatorTransitionTests: XCTestCase {
                     minted.append(opening)
                     events.append(.annotate(opening))
                 case 3: events.append(Bool.random(using: &rng) ? .close : .finish)
-                case 4: events.append(.newShot("n\(step)"))
+                case 4: events.append(.newShot(ScreenshotKey(asGiven: "n\(step)")))
                 case 5: events.append(.dismiss)
                 case 6: events.append(.remove(keys.randomElement(using: &rng)!))
                 case 7:

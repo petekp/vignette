@@ -20,7 +20,7 @@ final class AnnotationController {
     /// names which in the log.
     var onDrawing: ((Drawing, _ reason: String) -> Void)?
     /// The stored drawing for a screenshot whose size as displayed is the given one, if any.
-    var storedDrawing: ((URL, PixelSize) -> Drawing?)?
+    var storedDrawing: ((ScreenshotKey, PixelSize) -> Drawing?)?
     /// The frame moved: it was placed, a zoom stepped it, or it came home on the way out. The
     /// stack follows it, so it narrows as the frame grows towards it.
     var onFrame: ((NSRect) -> Void)?
@@ -157,7 +157,7 @@ final class AnnotationController {
     /// flight already asked for when there is one, else decoded off the main thread and handed to
     /// the editor when it is ready. The drawing opens at once either way, so the keys work from here.
     private func open(_ shot: Screenshot, opening: Opening, started: CFTimeInterval) {
-        let key = shot.url.path, name = shot.url.lastPathComponent
+        let key = shot.key.path, name = shot.url.lastPathComponent
         guard let pixels = PixelSize(imageAt: shot.url) else {
             Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(name)")
             cancel()
@@ -167,7 +167,7 @@ final class AnnotationController {
         // A new drawing takes the point scale of the screen the annotator opens on: Decision 8 in
         // docs/editor.md.
         let pointScale = min(max(screen.backingScaleFactor, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
-        let drawing = storedDrawing?(shot.url, pixels) ?? Drawing(key: key, pixels: pixels, pointScale: pointScale, marks: [])
+        let drawing = storedDrawing?(shot.key, pixels) ?? Drawing(key: key, pixels: pixels, pointScale: pointScale, marks: [])
         let maxPixel = Thumbnailer.screenPixels(on: screen), space = screen.colorSpace?.cgColorSpace
         let decoded = Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space).flatMap(Self.cgImage)
         let ui = Settings.shared.data.ui
@@ -191,7 +191,7 @@ final class AnnotationController {
     }
 
     private func loaded(_ opening: Opening, started: CFTimeInterval) {
-        Log.write("[annotate] loaded \(Int((CACurrentMediaTime() - started) * 1000))ms \((opening.key as NSString).lastPathComponent)")
+        Log.write("[annotate] loaded \(Int((CACurrentMediaTime() - started) * 1000))ms \(opening.key.name)")
         onLoaded?(opening)
     }
 
@@ -384,8 +384,8 @@ final class AnnotationController {
 
     /// A press begun on the card flying into this editor, which the flight layer took. Only for the
     /// image open now: a press held for another has nowhere to go.
-    func take(_ event: FlightPress.Event, for key: String) {
-        guard current?.url.path == key else { return }
+    func take(_ event: FlightPress.Event, for key: ScreenshotKey) {
+        guard current?.key == key else { return }
         editor.take(event)
     }
 
@@ -398,6 +398,13 @@ final class AnnotationController {
     func landed() {
         run(.landed)
         frameView?.layer?.shadowOpacity = Float(TransitionLayer.Look.annotator(Settings.shared.data.ui).shadowOpacity)
+    }
+
+    /// The file in the editor was renamed. The editor's drawing follows through `Drawings.rename`.
+    func renamed(to shot: Screenshot, opening: Opening) {
+        guard current != nil, self.opened == opening else { return }
+        current = shot
+        opened = opening
     }
 
     /// Lets the prepared image go without a fit: the session ends before the window came up, so
@@ -523,7 +530,7 @@ final class AnnotationController {
     }
 
     /// The image in the editor, by path, or nil between sessions.
-    var currentKey: String? { current?.url.path }
+    var currentKey: ScreenshotKey? { current?.key }
 
     /// The opening the editor is in, or nil between them. A send compares its rendering's answer
     /// with this rather than the path: after Esc and a reopen of the same image, the path matches

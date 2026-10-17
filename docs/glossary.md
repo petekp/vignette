@@ -10,6 +10,10 @@ settings keys say "annotate". Both name the same act.
 An image in the screenshots folder, whether macOS saved it from a capture or an agent added it.
 _Avoid_: Capture when an agent added it, shot in anything a person reads
 
+**Screenshot key**:
+A screenshot's path as the screenshots folder spells it. Every store that keeps something about a screenshot is keyed by it, and a rename inside the folder moves the key. Code only.
+_Avoid_: Path, file name
+
 **Screen recording**:
 A movie macOS saved to the screenshots folder. It appears as a card but is never drawn on.
 _Avoid_: Video

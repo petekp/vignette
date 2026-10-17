@@ -61,8 +61,8 @@ final class ScreenshotWatcherTests: XCTestCase {
         let same = try png("same.png", mtime: now.addingTimeInterval(-10))
         try "no".write(to: dir.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
         let watcher = ScreenshotWatcher(folder: dir, onNew: { _ in }, onRemoved: { _, _ in })
-        XCTAssertEqual(watcher.recent(limit: 10).recent, [same, new, mid, old], "an equal date falls to the name, which carries the capture time")
-        XCTAssertEqual(watcher.recent(limit: 2).recent, [same, new])
+        XCTAssertEqual(watcher.recent(limit: 10).recent, [same, new, mid, old].map(\.screenshotKey), "an equal date falls to the name, which carries the capture time")
+        XCTAssertEqual(watcher.recent(limit: 2).recent, [same, new].map(\.screenshotKey))
         XCTAssertEqual(watcher.recent(limit: 2).files, 4, "the count is every candidate, past the limit")
         XCTAssertEqual(watcher.recent(limit: -1).recent, [], "a negative limit yields nothing instead of trapping")
     }
@@ -87,19 +87,108 @@ final class ScreenshotWatcherTests: XCTestCase {
         let existing = try png("existing.png")
         let newSeen = expectation(description: "new file reported")
         let removedSeen = expectation(description: "removed file reported")
-        var reportedNew: URL?
-        var reportedRemoved: [URL] = []
-        let watcher = ScreenshotWatcher(folder: dir, onNew: { url in reportedNew = url; newSeen.fulfill() },
-                                        onRemoved: { urls, _ in reportedRemoved = urls; removedSeen.fulfill() })
-        XCTAssertEqual(watcher.newest(), existing, "the index is ready as soon as the watcher exists")
+        var reportedNew: ScreenshotKey?
+        var reportedRemoved: [ScreenshotKey] = []
+        let watcher = ScreenshotWatcher(folder: dir, onNew: { key in reportedNew = key; newSeen.fulfill() },
+                                        onRemoved: { keys, _ in reportedRemoved = keys; removedSeen.fulfill() })
+        XCTAssertEqual(watcher.newest(), existing.screenshotKey, "the index is ready as soon as the watcher exists")
         let added = try png("added.png")
         wait(for: [newSeen], timeout: 5)
-        XCTAssertEqual(reportedNew, added)
-        XCTAssertEqual(watcher.recent(limit: 10).recent, [added, existing], "the index follows the folder")
+        XCTAssertEqual(reportedNew, added.screenshotKey)
+        XCTAssertEqual(watcher.recent(limit: 10).recent, [added, existing].map(\.screenshotKey), "the index follows the folder")
         try FileManager.default.removeItem(at: existing)
         wait(for: [removedSeen], timeout: 5)
-        XCTAssertEqual(reportedRemoved, [existing])
+        XCTAssertEqual(reportedRemoved, [existing.screenshotKey])
         XCTAssertEqual(watcher.recent(limit: 10).files, 1)
+        withExtendedLifetime(watcher) {}
+    }
+
+    private typealias Identity = ScreenshotWatcher.FileIdentity
+    private let stamp = Date(timeIntervalSince1970: 1_000)
+
+    private func identity(_ file: UInt64, size: Int = 10) -> Identity { Identity(file: file, size: size, modified: stamp) }
+
+    private func pairs(removed: Set<String>, added: Set<String>, before: [String: Identity], after: [String: Identity]) -> [String] {
+        ScreenshotWatcher.renames(removed: removed, added: added, before: before, after: after).map { "\($0.from)>\($0.to)" }
+    }
+
+    func testARenamedFileIsPairedByIdentity() {
+        XCTAssertEqual(pairs(removed: ["a.png"], added: ["b.png"], before: ["a.png": identity(1)], after: ["b.png": identity(1)]),
+                       ["a.png>b.png"])
+    }
+
+    func testACaseOnlyRenameIsARename() {
+        XCTAssertEqual(pairs(removed: ["Shot.png"], added: ["shot.png"], before: ["Shot.png": identity(1)], after: ["shot.png": identity(1)]),
+                       ["Shot.png>shot.png"])
+    }
+
+    func testAReplacementUnderAKeptNameIsNotARename() {
+        XCTAssertEqual(pairs(removed: [], added: [], before: ["a.png": identity(1)], after: ["a.png": identity(2)]), [])
+    }
+
+    func testTwoFilesSwappingNamesChangeNothing() {
+        XCTAssertEqual(pairs(removed: [], added: [], before: ["a.png": identity(1), "b.png": identity(2)],
+                             after: ["a.png": identity(2), "b.png": identity(1)]), [])
+    }
+
+    func testARenameBesideAnUnrelatedRemovalAndArrival() {
+        XCTAssertEqual(pairs(removed: ["a.png", "gone.png"], added: ["b.png", "new.png"],
+                             before: ["a.png": identity(1), "gone.png": identity(2)],
+                             after: ["b.png": identity(1), "new.png": identity(3)]), ["a.png>b.png"])
+    }
+
+    func testTwoRenamesInOneListingAreBothPaired() {
+        XCTAssertEqual(pairs(removed: ["a.png", "c.png"], added: ["b.png", "d.png"],
+                             before: ["a.png": identity(1), "c.png": identity(2)],
+                             after: ["b.png": identity(1), "d.png": identity(2)]), ["a.png>b.png", "c.png>d.png"])
+    }
+
+    func testAnAmbiguousMatchStaysARemovalAndAnArrival() {
+        let same = identity(1)
+        XCTAssertEqual(pairs(removed: ["a.png", "b.png"], added: ["c.png"], before: ["a.png": same, "b.png": same],
+                             after: ["c.png": same]), [])
+        XCTAssertEqual(pairs(removed: ["a.png"], added: ["b.png", "c.png"], before: ["a.png": same],
+                             after: ["b.png": same, "c.png": same]), [])
+    }
+
+    func testADifferentSizeOrDateIsNotTheSameFile() {
+        XCTAssertEqual(pairs(removed: ["a.png"], added: ["b.png"], before: ["a.png": identity(1)],
+                             after: ["b.png": identity(1, size: 11)]), [])
+        XCTAssertEqual(pairs(removed: ["a.png"], added: ["b.png"], before: ["a.png": identity(1)],
+                             after: ["b.png": Identity(file: 1, size: 10, modified: stamp.addingTimeInterval(1))]), [])
+    }
+
+    func testRenamingAFileInTheFolderIsReportedAsARenameOnly() throws {
+        let original = try png("before.png")
+        let renamedSeen = expectation(description: "rename reported")
+        var renames: [(from: ScreenshotKey, to: ScreenshotKey)] = []
+        var news: [ScreenshotKey] = []
+        var removals: [[ScreenshotKey]] = []
+        let watcher = ScreenshotWatcher(folder: dir, onNew: { news.append($0) }, onRemoved: { keys, _ in removals.append(keys) },
+                                        onRenamed: { pairs, _ in renames = pairs; renamedSeen.fulfill() })
+        let target = dir.appendingPathComponent("after.png")
+        try FileManager.default.moveItem(at: original, to: target)
+        wait(for: [renamedSeen], timeout: 5)
+        XCTAssertEqual(renames.map(\.from), [original.screenshotKey])
+        XCTAssertEqual(renames.map(\.to), [target.screenshotKey])
+        let settled = expectation(description: "later events settle")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { settled.fulfill() }
+        wait(for: [settled], timeout: 5)
+        XCTAssertTrue(news.isEmpty)
+        XCTAssertTrue(removals.isEmpty)
+        XCTAssertEqual(watcher.recent(limit: 10).recent, [target].map(\.screenshotKey))
+    }
+
+    func testReplacingAFileUnderItsNameIsNotARename() throws {
+        let original = try png("same.png")
+        let fresh = try png("fresh.png", side: 3)
+        var renames = 0
+        let watcher = ScreenshotWatcher(folder: dir, onNew: { _ in }, onRemoved: { _, _ in }, onRenamed: { _, _ in renames += 1 })
+        _ = try FileManager.default.replaceItemAt(original, withItemAt: fresh)
+        let settled = expectation(description: "events settle")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { settled.fulfill() }
+        wait(for: [settled], timeout: 5)
+        XCTAssertEqual(renames, 0)
         withExtendedLifetime(watcher) {}
     }
 
@@ -107,19 +196,19 @@ final class ScreenshotWatcherTests: XCTestCase {
         let later = dir.appendingPathComponent("later")
         let newSeen = expectation(description: "both files reported once the folder is watched")
         newSeen.expectedFulfillmentCount = 2
-        var reported: Set<URL> = []
+        var reported: Set<ScreenshotKey> = []
         let watcher = ScreenshotWatcher(folder: later, onNew: { reported.insert($0); newSeen.fulfill() }, onRemoved: { _, _ in })
         XCTAssertNil(watcher.newest())
         try FileManager.default.createDirectory(at: later, withIntermediateDirectories: true)
         // A volume mounting brings files older than the watcher, which are not new captures.
         _ = try png("later/old.png", mtime: Date().addingTimeInterval(-3600))
         let first = try png("later/first.png")
-        XCTAssertEqual(watcher.newest(), first, "an unwatched folder is listed on every read")
+        XCTAssertEqual(watcher.newest(), first.screenshotKey, "an unwatched folder is listed on every read")
         XCTAssertEqual(watcher.recent(limit: 10).files, 2)
         watcher.rescan(reason: "test")   // retries the watch; the file that arrived meanwhile is reported too
         let second = try png("later/second.png")
         wait(for: [newSeen], timeout: 5)
-        XCTAssertEqual(reported, [first, second])
+        XCTAssertEqual(reported, [first.screenshotKey, second.screenshotKey])
         withExtendedLifetime(watcher) {}
     }
 
@@ -134,7 +223,7 @@ final class ScreenshotWatcherTests: XCTestCase {
         watcher.rescan(reason: "test missing folder")
         waitFor(.missing, in: watcher)
         wait(for: [removed], timeout: 0.5)
-        XCTAssertEqual(watcher.newest(), existing)
+        XCTAssertEqual(watcher.newest(), existing.screenshotKey)
         XCTAssertEqual(watcher.recent(limit: 10).files, 1)
         withExtendedLifetime(watcher) {}
     }
@@ -144,8 +233,8 @@ final class ScreenshotWatcherTests: XCTestCase {
         let replacementSeen = expectation(description: "replacement directory listed")
         let laterSeen = expectation(description: "later arrival on replacement directory")
         var listed = false
-        let watcher = ScreenshotWatcher(folder: dir, onNew: { url in
-            if url.lastPathComponent == "later.png" { laterSeen.fulfill() }
+        let watcher = ScreenshotWatcher(folder: dir, onNew: { key in
+            if key.name == "later.png" { laterSeen.fulfill() }
         }, onRemoved: { _, _ in }, onInventory: { inventory in
             if inventory.names.contains("replacement.png"), !listed {
                 listed = true
@@ -161,7 +250,7 @@ final class ScreenshotWatcherTests: XCTestCase {
         wait(for: [replacementSeen], timeout: 5)
         let later = try png("later.png")
         wait(for: [laterSeen], timeout: 5)
-        XCTAssertEqual(watcher.newest(), later)
+        XCTAssertEqual(watcher.newest(), later.screenshotKey)
         withExtendedLifetime(watcher) {}
     }
 
@@ -188,9 +277,9 @@ final class ScreenshotWatcherTests: XCTestCase {
             let arrivalSeen = expectation(description: "the undelivered capture survives \(name)")
             arrivalSeen.assertForOverFulfill = true
             var interrupted = false
-            var arrivals: [URL] = []
-            let watcher = ScreenshotWatcher(folder: folder, onNew: { url in
-                arrivals.append(url)
+            var arrivals: [ScreenshotKey] = []
+            let watcher = ScreenshotWatcher(folder: folder, onNew: { key in
+                arrivals.append(key)
                 arrivalSeen.fulfill()
             }, onRemoved: { _, _ in }, onInventory: { inventory in
                 guard inventory.names.contains("added.png"), !interrupted else { return }
@@ -213,7 +302,7 @@ final class ScreenshotWatcherTests: XCTestCase {
             else { try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
             watcher.rescan(reason: "test arrival recovery")
             wait(for: [arrivalSeen], timeout: 5)
-            XCTAssertEqual(arrivals, [added])
+            XCTAssertEqual(arrivals, [added.screenshotKey])
             withExtendedLifetime(watcher) {}
         }
     }

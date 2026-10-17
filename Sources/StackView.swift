@@ -138,7 +138,7 @@ private struct CardView: View {
     /// the flight is what the eye follows, so the hover state arrives with the card that lands.
     private var showsHover: Bool { hovered && !isOut && !isForming }
     private var showsCircle: Bool { model.offersSelection && !isOut && !isForming && (hovered || model.inSelectionMode || focused) }
-    private var notice: CardNotices.Notice? { model.notices.notice(on: card.shot.url.path) }
+    private var notice: CardNotices.Notice? { model.notices.notice(on: card.shot.key) }
     private var showsButtons: Bool { showsHover && !model.inSelectionMode && notice == nil }
     /// The padding every corner control is given.
     static let buttonPad: CGFloat = 6

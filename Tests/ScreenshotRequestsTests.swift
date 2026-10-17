@@ -121,7 +121,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         let drawings = Drawings(store: store)
         requests.callbacks.installDrawing = { [unowned self] shot, marks, agent, done in
             do {
-                try drawings.installReply(marks, from: agent, at: shot.url, style: .standard, newPointScale: 2)
+                try drawings.installReply(marks, from: agent, at: shot.key, style: .standard, newPointScale: 2)
                 self.heldAdd = done
             } catch {
                 done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
@@ -145,7 +145,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         requests.callbacks = ScreenshotRequests.Callbacks(
             installDrawing: { shot, marks, agent, done in
                 do {
-                    try reopened.installReply(marks, from: agent, at: shot.url, style: changedStyle, newPointScale: 1)
+                    try reopened.installReply(marks, from: agent, at: shot.key, style: changedStyle, newPointScale: 1)
                     done(nil)
                 } catch { done(Drawings.Failure(code: .writeFailed, description: "\(error)")) }
             },

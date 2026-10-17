@@ -13,6 +13,9 @@ struct Card: Identifiable {
     var marks: MarkLayers? = nil
 
     func with(image: NSImage?) -> Card { var card = self; card.image = image; return card }
+    func with(shot: Screenshot) -> Card {
+        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
+    }
     func with(size: NSSize) -> Card {
         Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
     }
@@ -111,6 +114,8 @@ final class ThumbnailController: NSObject {
     weak var actions: Actions?
     /// Which screenshots have a drawing, and each one read for its card.
     var drawings: Drawings?
+    /// The file in the annotator was renamed; the opening keeps its id.
+    var onAnnotatorRenamed: ((Screenshot, Opening) -> Void)?
     /// A card starts travelling to `frame`; the annotator loads the image there while hidden.
     /// `room` is the rect its frame may grow within, which a zoom may not leave.
     var onAnnotatorPrepare: ((Screenshot, Opening, NSRect, NSRect) -> Void)?
@@ -127,7 +132,7 @@ final class ThumbnailController: NSObject {
     /// The editor's marks, whose text bitmaps a flight to or from the annotator takes.
     var annotatorMarks: () -> MarkLayers? = { nil }
     /// A press begun on the card flying into the editor, for the image with this key; see `FlightPress`.
-    var onAnnotatorPress: ((FlightPress.Event, String) -> Void)?
+    var onAnnotatorPress: ((FlightPress.Event, ScreenshotKey) -> Void)?
     /// What the cards a drag out of the stack carries drop; see `StackModel.dragItems`.
     var dragItems: ([Card]) -> [NSPasteboardWriting] {
         get { model.dragItems }
@@ -175,10 +180,10 @@ final class ThumbnailController: NSObject {
     private var flightPress = FlightPress()
     /// Cards made in this turn whose stored drawings are still to be read. A stack opening makes
     /// every card in one turn, and reading theirs together gives the column one change of `cards`.
-    private var drawingReads: [URL] = []
+    private var drawingReads: [ScreenshotKey] = []
     /// Larger decodes for the flight to the annotator, by file path. Filled on hover.
-    private var flightImages: [String: NSImage] = [:]
-    private var flightOrder: [String] = []
+    private var flightImages: [ScreenshotKey: NSImage] = [:]
+    private var flightOrder: [ScreenshotKey] = []
 
     override init() {
         super.init()
@@ -203,7 +208,7 @@ final class ThumbnailController: NSObject {
             // Where the card is now, before opening it narrows the stack or takes it out of the column.
             let slot = self.cardFrame(of: card)
             // A click picks the next image by hand, so it replaces whatever the queue had left.
-            if self.run.isActive { self.send(.annotate([card.shot.url.path])); self.swallowSecondClick(on: slot); return }
+            if self.run.isActive { self.send(.annotate([card.shot.key])); self.swallowSecondClick(on: slot); return }
             if self.model.inSelectionMode { self.toggle(card) }
             else if let action = Config.defaultAction(for: [card.shot]) {
                 self.run(action, on: [card])
@@ -233,7 +238,7 @@ final class ThumbnailController: NSObject {
     /// what the user is looking at; pinning it keeps every frame of one presentation on one screen.
     private var pinnedScreen: NSScreen?
     /// Where on screen the file in `annotate`'s request was captured, until its `prepare` uses it.
-    private var captureOrigin: (path: String, rect: NSRect)?
+    private var captureOrigin: (key: ScreenshotKey, rect: NSRect)?
     private var screen: NSScreen {
         if let pinned = pinnedScreen, NSScreen.screens.contains(pinned) { return pinned }
         return NSScreen.main ?? NSScreen.screens[0]
@@ -325,27 +330,27 @@ final class ThumbnailController: NSObject {
                 "visible": visible, "isStack": model.isStack,
                 "cards": model.cards.indices.map { i -> [String: Any] in
                     let card = model.cards[i]
-                    let notice = model.notices.notice(on: card.shot.url.path)
+                    let notice = model.notices.notice(on: card.shot.key)
                     var notCopied: String?
                     if case .notCopied(let reason)? = notice { notCopied = reason }
-                    return ["file": card.shot.url.path, "frame": StateReport.topLeft(cardFrame(i), primaryHeight: h),
+                    return ["file": card.shot.key.path, "frame": StateReport.topLeft(cardFrame(i), primaryHeight: h),
                             "out": model.outCards.contains(card.id), "forming": model.forming.contains(card.id),
-                            "drawing": drawings?.keys.contains(card.shot.url.path) ?? false, "agent": card.agent as Any,
+                            "drawing": drawings?.keys.contains(card.shot.key) ?? false, "agent": card.agent as Any,
                             "kind": card.shot.kind == .recording ? "recording" : "image",
                             "copied": notice?.kind == .copied,
                             "notCopied": notCopied as Any]
                 },
-                "selected": model.selectedCards().map(\.shot.url.path),
-                "queue": run.queue,
-                "focused": model.cards.first { $0.id == model.focused }?.shot.url.path as Any,
-                "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.url.path as Any,
+                "selected": model.selectedCards().map(\.shot.key.path),
+                "queue": run.queue.map(\.path),
+                "focused": model.cards.first { $0.id == model.focused }?.shot.key.path as Any,
+                "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.key.path as Any,
                 "key": panel.isKeyWindow,
                 "scroll": Int(model.scroll), "viewport": Int(model.viewport), "safeBottom": Int(area.safeBottom),
                 "widthScale": model.widthScale,
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h),
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
             ] as [String: Any],
-            "transition": ["phase": "\(run.phase)", "annotating": annotating?.shot.url.path as Any, "isActive": run.isActive],
+            "transition": ["phase": "\(run.phase)", "annotating": annotating?.shot.key.path as Any, "isActive": run.isActive],
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
                        "visibleFrame": StateReport.topLeft(s.visibleFrame, primaryHeight: h), "scale": s.backingScaleFactor, "pinned": pinnedScreen != nil],
             "backdrop": backdrop.stateJSON,
@@ -360,7 +365,7 @@ final class ThumbnailController: NSObject {
     func show(_ shot: Screenshot) {
         guard let card = makeCard(shot) else { return }
         // A new shot never closes an open annotator: the reducer answers `join` and the card joins the panel.
-        send(.newShot(shot.url.path))
+        send(.newShot(shot.key))
         if visible { insert(card) } else { present(cards: [card], stack: false) }
         // An agent's card is something to read, not the echo of a capture the person just made.
         leaveCorner(after: ui.thumbnailSeconds * (card.agent == nil ? 1 : 2))
@@ -444,10 +449,10 @@ final class ThumbnailController: NSObject {
 
     private func startAnnotating(_ shots: [Screenshot], from origin: NSRect?) {
         guard let first = shots.first else { return }
-        captureOrigin = origin.map { (first.url.path, $0) }
+        captureOrigin = origin.map { (first.key, $0) }
         // A file that cannot be read never reaches the run, so an image already open stays open.
         guard openableCard(for: first) != nil else { captureOrigin = nil; return }
-        send(.annotate(shots.map(\.url.path)))
+        send(.annotate(shots.map(\.key)))
     }
 
     /// The card `shot` opens from, made now if the panel does not have it. Nil when its header does
@@ -499,7 +504,7 @@ final class ThumbnailController: NSObject {
 
     /// A press, drag or release on a flying card. See `FlightPress`.
     private func flightPressed(_ id: UUID?, _ event: FlightPress.Event) {
-        let key: String?
+        let key: ScreenshotKey?
         let now: [FlightPress.Event]
         if case .pressed = event.phase {
             key = id.flatMap(keyFlyingIn)
@@ -513,12 +518,12 @@ final class ThumbnailController: NSObject {
     }
 
     /// The image the flight `id` is carrying into the editor, nil for a flight going anywhere else.
-    private func keyFlyingIn(_ id: UUID) -> String? {
+    private func keyFlyingIn(_ id: UUID) -> ScreenshotKey? {
         sessionCard?.id == id ? keyInEditor : nil
     }
 
     /// The image on its way into the editor or in it, nil while none is or while it parks.
-    private var keyInEditor: String? {
+    private var keyInEditor: ScreenshotKey? {
         switch run.phase {
         case .flyingOut(let opening), .annotating(let opening): return opening.key
         case .idle, .parking: return nil
@@ -527,27 +532,27 @@ final class ThumbnailController: NSObject {
 
     /// The screenshot at `key` has this drawing now, or none: its card draws it at once, and so does
     /// the card in the annotator, which a lone thumbnail keeps out of the column.
-    func setDrawing(_ drawing: Drawing?, for key: String) { setDrawings([key: drawing]) }
+    func setDrawing(_ drawing: Drawing?, for key: ScreenshotKey) { setDrawings([key: drawing]) }
 
     /// Each key's drawing, or none, reaching the column in one change of `cards`.
-    private func setDrawings(_ drawings: [String: Drawing?]) {
+    private func setDrawings(_ drawings: [ScreenshotKey: Drawing?]) {
         var cards = model.cards, changed = false
         for index in cards.indices {
-            guard let drawing = drawings[cards[index].shot.url.path] else { continue }
+            guard let drawing = drawings[cards[index].shot.key] else { continue }
             let marks = marks(drawing, on: cards[index])
             if marks !== cards[index].marks { cards[index].marks = marks; changed = true }
         }
         if changed { model.cards = cards }
-        guard let card = sessionCard, let drawing = drawings[card.shot.url.path] else { return }
+        guard let card = sessionCard, let drawing = drawings[card.shot.key] else { return }
         sessionCard?.marks = model.cards.first { $0.id == card.id }.map(\.marks) ?? marks(drawing, on: card)
     }
 
     /// Reads the drawings of the cards made since the last read, together.
     private func readDrawings() {
-        let urls = drawingReads
+        let keys = drawingReads
         drawingReads = []
-        guard let drawings, !urls.isEmpty else { return }
-        drawings.load(urls, style: ui.textStyle) { [weak self] loaded in self?.setDrawings(loaded) }
+        guard let drawings, !keys.isEmpty else { return }
+        drawings.load(keys, style: ui.textStyle) { [weak self] loaded in self?.setDrawings(loaded) }
     }
 
     /// `card`'s marks for `drawing`: the ones it has, shown anew, while they are on the same image.
@@ -570,8 +575,7 @@ final class ThumbnailController: NSObject {
     /// Drops cards whose files no longer exist.
     func remove(_ shots: [Screenshot]) {
         let urls = Set(shots.map(\.url))
-        let paths = Set(urls.map(\.path))
-        send(.remove(paths.sorted()))
+        send(.remove(shots.map(\.key).sorted()))
         for card in model.cards where urls.contains(card.shot.url) { flights.end(id: card.id) }
         endSweep()
         // When no card would be left, they slide out with the panel rather than vanish, and the
@@ -582,6 +586,28 @@ final class ThumbnailController: NSObject {
         // The focused card is where keys act; when its file goes, the newest takes the focus.
         if let focused = model.focused, !model.cards.contains(where: { $0.id == focused }) { model.focused = model.cards.first?.id }
         relayout()
+    }
+
+    /// Files renamed inside the folder. Each card keeps its id, its place, its selection and its focus,
+    /// and takes the new file; the run, the notices and the flight state follow it.
+    func rename(_ pairs: [(from: ScreenshotKey, to: ScreenshotKey)]) {
+        for (old, new) in pairs where old != new {
+            guard !model.cards.contains(where: { $0.shot.key == new }) else {
+                remove([Screenshot(key: old)])
+                continue
+            }
+            let shot = Screenshot(key: new)
+            model.cards = model.cards.map { $0.shot.key == old ? $0.with(shot: shot) : $0 }
+            if sessionCard?.shot.key == old { sessionCard = sessionCard?.with(shot: shot) }
+            model.notices.rename(from: old, to: new)
+            if captureOrigin?.key == old { captureOrigin?.key = new }
+            if let image = flightImages.removeValue(forKey: old) { flightImages[new] = image }
+            flightOrder = flightOrder.map { $0 == old ? new : $0 }
+            drawingReads = drawingReads.map { $0 == old ? new : $0 }
+            flightPress.rename(from: old, to: new)
+            send(.renamed(from: old, to: new))
+            if let opening = run.opening, opening.key == new { onAnnotatorRenamed?(shot, opening) }
+        }
     }
 
     /// Re-applies layout tweaks to whatever is on screen. Called when settings.ui changes.
@@ -615,10 +641,10 @@ final class ThumbnailController: NSObject {
     /// column by then, so `insert` ignores it; with `annotateOnCapture` on, the same report carries
     /// it into the annotator from the slot the stitch just filled.
     @discardableResult
-    func stitched(_ pieces: [Screenshot], into url: URL) -> Bool {
+    func stitched(_ pieces: [Screenshot], into key: ScreenshotKey) -> Bool {
         guard visible, model.isStack, !run.isActive, pieces.count > 1 else { return false }
-        let cards = pieces.compactMap { shot in model.cards.first { $0.shot.url == shot.url } }
-        guard cards.count == pieces.count, let result = makeStitchedCard(url), let stitched = result.image else { return false }
+        let cards = pieces.compactMap { shot in model.cards.first { $0.shot.key == shot.key } }
+        guard cards.count == pieces.count, let result = makeStitchedCard(key), let stitched = result.image else { return false }
         // Where each card is now, while the selection bar is still part of the column, with its marks
         // made before the card lets its own go.
         let flying = cards.map { card in
@@ -649,17 +675,18 @@ final class ThumbnailController: NSObject {
             // gone meanwhile, so a stitch never finishes in silence.
             self.showCopied([result.shot])
         }
-        Log.write("[stack] stitched cards=\(cards.count) into=\(url.lastPathComponent)")
+        Log.write("[stack] stitched cards=\(cards.count) into=\(key.name)")
         return true
     }
 
     /// The stitched image decodes here and not on the background queue `makeCard` uses: the card is
     /// the destination of a flight that starts in the same run loop turn, so it cannot arrive later.
-    private func makeStitchedCard(_ url: URL) -> Card? {
+    private func makeStitchedCard(_ key: ScreenshotKey) -> Card? {
+        let url = key.url
         guard let pointSize = Thumbnailer.pointSize(of: url) else { return nil }
         let size = layout.cardSize(for: pointSize)
         guard let image = Thumbnailer.image(at: url, maxPixel: thumbnailPixels(size: size, pointSize: pointSize), space: screenSpace) else { return nil }
-        return Card(id: UUID(), shot: Screenshot(url: url), image: image, pointSize: pointSize, size: size,
+        return Card(id: UUID(), shot: Screenshot(key: key), image: image, pointSize: pointSize, size: size,
                     agent: Agent.of(url), duration: Thumbnailer.duration(of: url))
     }
 
@@ -705,13 +732,13 @@ final class ThumbnailController: NSObject {
     /// The person sees `shot`'s card, or will when it lands: it is on screen, or in the annotator,
     /// whose card comes home wearing whatever was posted meanwhile.
     private func isSeen(_ shot: Screenshot) -> Bool {
-        (visible && card(for: shot) != nil) || run.key == shot.url.path
+        (visible && card(for: shot) != nil) || run.key == shot.key
     }
 
     /// Puts the notice on `shot`'s card, brings the card up when nobody would see it otherwise, and
     /// takes the notice down after its hold. The notice's hold sets the corner's time.
     private func post(_ event: CardNotices.Event, on shot: Screenshot) {
-        let file = shot.url.path, seen = isSeen(shot)
+        let file = shot.key, seen = isSeen(shot)
         guard let posted = model.notices.post(event, on: file, seen: seen, noticeHold: ui.markSeconds + ui.expandDuration) else { return }
         if !seen { show(shot) }
         guard let hold = posted.hold else { return }
@@ -782,7 +809,7 @@ final class ThumbnailController: NSObject {
     private func handle(_ event: AnnotationRun.Event) {
         // Asked before anything moves: a file the queue opens gets its card made here, and one
         // that has none is passed over.
-        let effects = run.reduce(event) { key in openableCard(for: Screenshot(url: URL(fileURLWithPath: key))) != nil }
+        let effects = run.reduce(event) { key in openableCard(for: Screenshot(key: key)) != nil }
         Log.write("[transition] \(event) -> \(run) effects=\(effects.map(\.description).joined(separator: " "))")
         // The stack's width is set before this batch's flights are aimed, so a swap's returning
         // card and the card leaving are aimed at one column, and so are a queue's finished card and
@@ -806,15 +833,15 @@ final class ThumbnailController: NSObject {
     /// starts when Draw is pressed on it. Recordings never reach the annotator.
     private func selectionChanged(added: [UUID], removed: [UUID]) {
         guard run.isActive else { return }
-        func paths(_ ids: [UUID]) -> [String] {
-            ids.compactMap { id in model.cards.first { $0.id == id } }.filter { $0.shot.kind == .image }.map(\.shot.url.path)
+        func keys(_ ids: [UUID]) -> [ScreenshotKey] {
+            ids.compactMap { id in model.cards.first { $0.id == id } }.filter { $0.shot.kind == .image }.map(\.shot.key)
         }
-        send(.selectionChanged(added: paths(added), removed: paths(removed)))
+        send(.selectionChanged(added: keys(added), removed: keys(removed)))
     }
 
     /// The card a `prepare` in this batch sends to the annotator, if the stack has it.
     private func preparedCard(in effects: [AnnotationRun.Effect]) -> Card? {
-        for case .prepare(let opening) in effects { return model.cards.first { $0.shot.url.path == opening.key } }
+        for case .prepare(let opening) in effects { return model.cards.first { $0.shot.key == opening.key } }
         return nil
     }
 
@@ -830,7 +857,7 @@ final class ThumbnailController: NSObject {
         switch effect {
         case .prepare(let opening):
             let key = opening.key
-            guard let card = model.cards.first(where: { $0.shot.url.path == key }) else { return }
+            guard let card = model.cards.first(where: { $0.shot.key == key }) else { return }
             sessionCard = card
             leaveTimer?.invalidate()
             // The selection stays: the card comes back to its slot, and a queued run needs the rest
@@ -851,7 +878,7 @@ final class ThumbnailController: NSObject {
             // drawn on one screen, so a capture on another one starts at its card. A window's
             // shadow may run past the screen's edge, where the flight is cut off as the shadow was.
             var lookFrom = TransitionLayer.Look.card(ui)
-            if let origin = captureOrigin, origin.path == key {
+            if let origin = captureOrigin, origin.key == key {
                 captureOrigin = nil
                 if screen.frame.contains(CGPoint(x: origin.rect.midX, y: origin.rect.midY)) {
                     from = origin.rect
@@ -887,7 +914,7 @@ final class ThumbnailController: NSObject {
             parkedMarks = annotatorMarks()
             onAnnotatorAbandon?()
         case .returnCard(let opening, let copied):
-            guard let card = sessionCard, card.shot.url.path == opening.key else { return }
+            guard let card = sessionCard, card.shot.key == opening.key else { return }
             returnCard(currentCard(card), copied: copied)
         case .hideAnnotator:
             // While the stack slides out, the image is flying to its slot's offscreen position
@@ -898,9 +925,9 @@ final class ThumbnailController: NSObject {
         case .join:
             break   // `show(_:)` inserts the card; the run only confirms the annotator stays open.
         case .next(let key, let place, let total):
-            Log.write("[annotate] next \((key as NSString).lastPathComponent) \(place) of \(total)")
+            Log.write("[annotate] next \(key.name) \(place) of \(total)")
         case .queued(let key, let place, let total):
-            Log.write("[annotate] queued \((key as NSString).lastPathComponent) \(place) of \(total)")
+            Log.write("[annotate] queued \(key.name) \(place) of \(total)")
         case .endRun(let restoreFocus):
             // Only now: between two files of a list the dim stays up and the focus stays here.
             sessionCard = nil
@@ -959,7 +986,7 @@ final class ThumbnailController: NSObject {
     }
 
     /// A notice is up on `card`. Each one set the corner's time when it went up.
-    private func showsNotice(_ card: Card) -> Bool { model.notices.notice(on: card.shot.url.path) != nil }
+    private func showsNotice(_ card: Card) -> Bool { model.notices.notice(on: card.shot.key) != nil }
 
     /// The image flies from the editor into the corner and on off the screen's edge: the offscreen
     /// slot a lone thumbnail slides in from, which is also where `annotate` flies a card from when
@@ -1017,7 +1044,7 @@ final class ThumbnailController: NSObject {
     /// The flight from `card` to the annotator at `frame` carries the drawing the editor has just
     /// opened, which is what it hands over to; the card's own until the editor has one.
     private func outFlightMarks(for card: Card, to frame: NSRect) -> MarkLayers? {
-        let editor = annotatorMarks().flatMap { $0.drawing?.key == card.shot.url.path ? $0 : nil }
+        let editor = annotatorMarks().flatMap { $0.drawing?.key == card.shot.key.path ? $0 : nil }
         guard let drawing = editor?.drawing ?? card.marks?.drawing else { return nil }
         let scale = max(annotatorTextScale(frame, drawing.pixels), cardTextScale(card.size, drawing.pixels))
         return flightMarks(drawing, scale: scale, adopting: [flights.marks(of: card.id), card.marks, editor])
@@ -1026,8 +1053,8 @@ final class ThumbnailController: NSObject {
     /// The flight from the annotator back to `card` carries the drawing the editor parked, a flight
     /// turned around in mid-air included; the flight's own, or the card's, when the editor had none.
     private func homeFlightMarks(for card: Card) -> MarkLayers? {
-        let key = card.shot.url.path
-        let editor = [parkedMarks, annotatorMarks()].compactMap { $0 }.first { $0.drawing?.key == key }
+        let key = card.shot.key
+        let editor = [parkedMarks, annotatorMarks()].compactMap { $0 }.first { $0.drawing?.key == key.path }
         parkedMarks = nil
         let flying = flights.marks(of: card.id)
         guard let drawing = editor?.drawing ?? flying?.drawing ?? card.marks?.drawing else { return nil }
@@ -1038,7 +1065,7 @@ final class ThumbnailController: NSObject {
     /// The editor takes over from the flight into it: a text whose bitmap the editor has not drawn yet
     /// shows the flight's until it has, so no text goes missing when the flight lifts.
     private func takeFlightTexts(_ card: Card) {
-        guard let flying = flights.marks(of: card.id), let editor = annotatorMarks(), editor.drawing?.key == card.shot.url.path else { return }
+        guard let flying = flights.marks(of: card.id), let editor = annotatorMarks(), editor.drawing?.key == card.shot.key.path else { return }
         editor.adopt(from: flying)
     }
 
@@ -1100,8 +1127,8 @@ final class ThumbnailController: NSObject {
     /// The best image for the flight: a larger decode if hovering fetched one, else the thumbnail,
     /// upgraded as soon as a larger decode arrives.
     private func flightImage(for card: Card) -> NSImage {
-        let path = card.shot.url.path
-        if let image = flightImages[path] { return image }
+        let key = card.shot.key
+        if let image = flightImages[key] { return image }
         // The editor's decode is this one. A lone thumbnail's flight home needs it: the stack hid
         // when the annotator opened, which emptied `flightImages`, and the card's own picture is
         // too small to stand in for the editor's first frame.
@@ -1116,13 +1143,13 @@ final class ThumbnailController: NSObject {
         // Only an image flies into the editor; a recording's decode at this size is wasted, and one
         // that is not downloaded would be downloaded whole.
         guard let id, let card = model.cards.first(where: { $0.id == id }), card.shot.kind == .image else { return }
-        let path = card.shot.url.path
-        guard flightImages[path] == nil else { return }
+        let key = card.shot.key
+        guard flightImages[key] == nil else { return }
         Thumbnailer.load(at: card.shot.url, maxPixel: Thumbnailer.screenPixels(on: screen), space: screenSpace) { [weak self] image in
             // `visible`: a decode that lands after the stack hid must not refill the cache it cleared.
             guard let self, let image, self.visible else { return }
-            self.flightImages[path] = image
-            self.flightOrder.append(path)
+            self.flightImages[key] = image
+            self.flightOrder.append(key)
             if self.flightOrder.count > 4 { self.flightImages[self.flightOrder.removeFirst()] = nil }
             self.flights.setImage(id: id, image)
         }
@@ -1393,9 +1420,9 @@ final class ThumbnailController: NSObject {
             }
         }
         // Read off the main thread; the card is in the column by the time its drawing arrives.
-        if let drawings, drawings.keys.contains(shot.url.path) {
+        if let drawings, drawings.keys.contains(shot.key) {
             if drawingReads.isEmpty { DispatchQueue.main.async { [weak self] in self?.readDrawings() } }
-            drawingReads.append(shot.url)
+            drawingReads.append(shot.key)
         }
         return card
     }
@@ -1606,7 +1633,7 @@ final class ThumbnailController: NSObject {
         leaveTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let delivering = self.model.notices.awaitsAnswer(on: self.model.cards.map(\.shot.url.path))
+                let delivering = self.model.notices.awaitsAnswer(on: self.model.cards.map(\.shot.key))
                 if self.model.hoveredCard != nil || self.run.isActive || delivering { self.leaveCorner(after: 1.5); return }
                 self.dismiss()
             }

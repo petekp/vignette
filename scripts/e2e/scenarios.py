@@ -937,6 +937,42 @@ def agent_marks_editable(app):
     close_editor(app)
 
 
+def rename_keeps_drawing(app):
+    """A file renamed inside the watch folder keeps its card and its drawing under the new name,
+    and the rename is neither a removal nor a new capture."""
+    start(app)
+    copy, _ = push(app, [{'type': 'rectangle', 'x': 0.1, 'y': 0.1, 'w': 0.3, 'h': 0.3}])
+
+    def named(s, name):
+        return next((c for c in s['stack']['cards'] if os.path.basename(c['file']) == name), None)
+
+    s = app.wait_state(lambda s: (c := named(s, os.path.basename(copy))) is not None and c['drawing'],
+                       'a card with the drawing')
+    count = len(s['stack']['cards'])
+    drawings = len(s['drawings'])
+    current = copy
+    for label, name in [('renamed', 'Renamed checkout.png'), ('case-only renamed', 'RENAMED CHECKOUT.png')]:
+        offset = app.log_size()
+        target = os.path.join(app.watch, name)
+        os.rename(current, target)
+        old_name = os.path.basename(current)
+        app.wait_log('[watcher] renamed', offset)
+        s = app.wait_state(lambda s: (c := named(s, name)) is not None and c['drawing']
+                           and (old_name == name or named(s, old_name) is None),
+                           f'the card with its drawing under the {label} name')
+        if len(s['stack']['cards']) != count or len(s['drawings']) != drawings:
+            raise Failed(f'{label}: {count} cards and {drawings} drawings became '
+                         f'{len(s["stack"]["cards"])} and {len(s["drawings"])}')
+        time.sleep(1.0)
+        log = app.log_since(offset)
+        if '[watcher] new' in log or '[watcher] removed' in log:
+            raise Failed(f'{label}: the watcher reported a capture or a removal')
+        app.report.step(f'{label}: the card keeps its drawing', detail=name)
+        current = target
+    app.command('dismiss')
+
+
 ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, send_target_codex, copy_types, stitch,
        instant_draw, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_message,
-       send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select, capture_origin]
+       send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select, capture_origin,
+       rename_keeps_drawing]

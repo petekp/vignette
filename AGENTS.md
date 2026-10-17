@@ -139,8 +139,9 @@ The steps below have the details.
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
    folder, and `tweaks` and `install-skill?root=` are refused, unless settings.json has
-   `"debug": true`. A `file=` inside the folder is taken by the folder's own spelling
-   (`Commands.inWatchFolder`), so `/tmp/x.png` and `/private/tmp/x.png` reach one drawing.
+   `"debug": true`. A `file=` inside the folder becomes a `ScreenshotKey` through
+   `ScreenshotKey(resolving:in:)`, which resolves links on both sides and answers the folder's own
+   spelling, so `/tmp/x.png` and `/private/tmp/x.png` reach one drawing.
    `add` is the exception, and it takes two paths the folder rule does not cover.
    `add?file=` copies an image in from anywhere and the watcher then reports it like a capture,
    minus the copy and annotate toggles (`&annotate` opens the editor; `FolderWrites.add`). `&agent=<name>` says which
@@ -328,7 +329,22 @@ screenshot location for such a launch is written with the same variable:
   ten seconds (`[watcher] error never-stable`); the next folder event or stack open picks it up.
   Wake from sleep rescans the folder. The watcher keeps an index of the folder (name and
   modification date, from one bulk listing) so opening the stack and finding the newest screenshot
-  never list the folder on the main thread. Every stack open asks for a rescan, which is how the
+  never list the folder on the main thread. A screenshot is identified by its `ScreenshotKey`: its
+  path as the watch folder spells it. The watcher, a stitch and an agent's push make keys with
+  `ScreenshotKey(folder:name:)`, and the watcher reports keys, never URLs. A path from outside
+  gets its key from the resolving initializer.
+  `ScreenshotKey(asGiven:)` reads back a key that was stored, and names a file outside the folder
+  for a debug-mode command. Every store that keeps something about
+  a screenshot takes a key, and the drawing's file name is the SHA-256 of the key's path
+  (`docs/screenshot-key-2026-10-17.md`, `docs/adr/0019-a-screenshot-is-its-watch-folder-key.md`).
+  The same listing asks for each file's inode and size. A name that left the index and a name that
+  entered it, with one inode, size and modification date between them, are one file renamed
+  (`ScreenshotWatcher.renames`, `onRenamed`): its card, drawing, selection, queued place, notices
+  and open editor move to the new key (`FolderWrites.renamed`, `ThumbnailController.rename`,
+  `Drawings.rename`) and nothing reports it as a removal or a capture. A pairing that is not one to
+  one, a name with an undelivered arrival, or a folder that went missing falls back to a removal
+  and an arrival. A rename seen only by a listing older than the app's last write waits for a
+  newer listing, as a removal does. Every stack open asks for a rescan, which is how the
   index catches a file changed in place. The first listing runs on the watcher's queue and launch
   waits for it half a second: macOS holds the first read of a folder it protects (the Desktop,
   Documents, Downloads) until the user answers its prompt, and done on the main thread that read
@@ -927,8 +943,8 @@ screenshot location for such a launch is written with the same variable:
   flight, restyled, and flattened on a card.
 - Drawings are owned by the app, and every write goes through `Drawings` (`Drawings.swift`, with
   `DrawingStore` for the files): one JSON file per screenshot under
-  `~/Library/Application Support/<bundle id>/drawings/`, named by a hash of the file path the app
-  uses everywhere (`shot.url.path`). The editor hands its drawing over 0.3 s after each change,
+  `~/Library/Application Support/<bundle id>/drawings/`, named by a hash of the screenshot's
+  `ScreenshotKey` path (`key.path`). The editor hands its drawing over 0.3 s after each change,
   never while a button is held (`[drawing] saved`), and once more when it parks (`parked`). Until
   then the open drawing is ahead of its file, so whatever needs a screenshot's drawing as it is now
   (Copy Drawing, Stitch, a drag) asks `Drawings.current(of:)`, which answers the open drawing over
@@ -1268,7 +1284,11 @@ screenshot location for such a launch is written with the same variable:
   the editor, so it shows there: the button reads "Not sent" and a popover on it gives the reason,
   both until a click elsewhere or Send again. A reply that was accepted and could not be made a card
   has no card to report on, so the card it answers takes a `replyFailed` notice, "Reply not shown"
-  (`ScreenshotRequests.Callbacks.replyFailed`). A published reply is its own card and nothing else
+  (`ScreenshotRequests.Callbacks.replyFailed`). The card is found by the request record's
+  `sourceKey`, the source's full path as the folder spelled it when the send was stored; a record
+  from before that holds only the name, and its key is built in the current folder. A rename
+  after the send does not update the record, so a failure then finds no card and says nothing.
+  A published reply is its own card and nothing else
   says it arrived. `docs/send-confirmation-2026-09-26.md` has the frames.
 - The agent plugin (`agent-plugin/`) and the skill it carries (`skills/vignette/SKILL.md`) ship in
   the bundle as folder resources (project.yml), and `AgentPlugin.swift` installs them.

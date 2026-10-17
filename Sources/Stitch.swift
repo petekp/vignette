@@ -122,7 +122,7 @@ enum Stitch {
     /// can read, which is what drops it from the composition. A recording has no header to read, so
     /// its first frame is decoded for its size.
     private static func pixelSize(of url: URL) -> CGSize? {
-        if Screenshot(url: url).kind == .recording {
+        if Screenshot.Kind(of: url) == .recording {
             return Thumbnailer.posterFrame(url, maxPixel: 0).map { CGSize(width: $0.width, height: $0.height) }
         }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -135,7 +135,7 @@ enum Stitch {
 
     /// The image, or a recording's first frame, which is what its card shows.
     private static func decode(_ url: URL) -> CGImage? {
-        if Screenshot(url: url).kind == .recording { return Thumbnailer.posterFrame(url, maxPixel: 0) }
+        if Screenshot.Kind(of: url) == .recording { return Thumbnailer.posterFrame(url, maxPixel: 0) }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }

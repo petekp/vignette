@@ -157,11 +157,6 @@ final class CommandsTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: escapeLink, withDestinationURL: elsewhere)
         XCTAssertEqual(Commands.policyError(for: escapeLink.appendingPathComponent("x.png"), watchFolder: real, debug: false), .outsideWatchFolder,
                        "a link inside the folder that points out is still outside")
-
-        // One file by two spellings is one file by the folder's, so it reaches one drawing.
-        let url = URL(string: "vignette://annotate?file=\(link.path)/sub/x.png&file=\(elsewhere.path)/y.png")!
-        XCTAssertEqual(Commands.parse(url, watchFolder: real).files.map(\.path),
-                       [real.appendingPathComponent("sub/x.png").path, elsewhere.appendingPathComponent("y.png").path])
     }
 
     // MARK: readability
@@ -190,8 +185,8 @@ final class CommandsTests: XCTestCase {
     /// A recording in the selection turns off everything that only works on images, rather than
     /// running it on the part it can take, and Return opens a recording where it draws on an image.
     func testActionsRunOnlyOnKindsTheyTake() {
-        let image = Screenshot(url: URL(fileURLWithPath: "/tmp/Screenshot 1.png"))
-        let recording = Screenshot(url: URL(fileURLWithPath: "/tmp/Screenshot 2.MOV"))
+        let image = Screenshot(key: "/tmp/Screenshot 1.png")
+        let recording = Screenshot(key: "/tmp/Screenshot 2.MOV")
         let returnKey: (ShotAction.Key) -> Bool = { $0.character == "\r" && $0.modifiers.isEmpty }
         func ran(_ shots: [Screenshot]) -> String? {
             if case .run(let action) = Config.action(for: returnKey, on: shots) { return action.id }

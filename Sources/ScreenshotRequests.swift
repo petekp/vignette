@@ -81,6 +81,9 @@ final class ScreenshotRequests {
         /// The screenshot the drawing was made on, for the log and the picker. Not a path: the
         /// original stays the person's and may be moved or deleted without touching this request.
         let source: String
+        /// The source's path as the watch folder spelled it when the request was made. A record from
+        /// before this field has only `source`, which a current folder completes.
+        var sourceKey: String? = nil
         var status: Status
         /// Why the client did not take the request, for a listing after a restart. Empty when it
         /// did: an accepted submission says only what the address already says.
@@ -253,7 +256,7 @@ final class ScreenshotRequests {
         let record = Record(id: id, created: Date(), destinationID: destination.id,
                             destinationName: destination.name, address: destination.address,
                             addressGuard: destination.address.guardTier, source: source.lastPathComponent,
-                            status: .prepared, detail: "")
+                            sourceKey: source.path, status: .prepared, detail: "")
         let ticket = ReplyProtocol.Ticket(requestID: id, secret: ReplyProtocol.newSecret(),
                                           requestDirectory: directory.path, app: Bundle.main.bundlePath)
         do {
@@ -514,7 +517,7 @@ final class ScreenshotRequests {
         // 3. The marks, in a drawing the person edits like their own. An image-only reply needs none.
         guard !reply.marks.isEmpty else { return commit(reply, at: destination, done: done) }
         let agent = requests[reply.requestID]?.address.client.rawValue
-        callbacks.installDrawing(Screenshot(url: destination), reply.marks, agent) { [weak self] failure in
+        callbacks.installDrawing(shot(at: destination), reply.marks, agent) { [weak self] failure in
             guard let self else { return }
             // Clearing can remove the reserved file while installation is pending. The request
             // remains cancelled even when that installation later reports a failure.
@@ -542,8 +545,14 @@ final class ScreenshotRequests {
         publishedAt[reply.id] = ProcessInfo.processInfo.systemUptime
         if let client = requests[reply.requestID]?.address.client { Agent.record(client.rawValue, on: url) }
         Log.write("[reply] published \(reply.fileName) marks=\(reply.marks.count)")
-        callbacks.present(Screenshot(url: url))
+        callbacks.present(shot(at: url))
         done()
+    }
+
+    /// The reply's file as the watch folder spells it. A reply reserved before the folder changed
+    /// keeps the location it was reserved at, as it was stored.
+    private func shot(at destination: URL) -> Screenshot {
+        Screenshot(key: ScreenshotKey(resolving: destination, in: callbacks.watchFolder()) ?? ScreenshotKey(asGiven: destination))
     }
 
     /// Whether the import may go on. The record may have moved since it started: its marks are
