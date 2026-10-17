@@ -166,7 +166,7 @@ final class LiveInk {
                 }),
             ]
         } else {
-            if isInking { stopInking() }
+            if isInking { stopInking(because: "live ink turned off") }
             stopWatchingForWindowPicker()
             endConversation()
             chord = nil
@@ -233,8 +233,7 @@ final class LiveInk {
         closeNote()
         stopListening()
         guard isInking else { return }
-        Log.write("[live-ink] standing aside: the stack or the annotator is up")
-        stopInking()
+        stopInking(because: "the stack or the annotator is up")
     }
 
     /// ⌘⇧ went down, so a capture may be starting. macOS's window picker, Space during ⌘⇧4 or ⌘⇧5's
@@ -1529,7 +1528,7 @@ final class LiveInk {
         Log.write("[live-ink] inking")
     }
 
-    private func stopInking() {
+    private func stopInking(because reason: String) {
         hover(at: nil)
         isInking = false
         releaseWatch?.invalidate()
@@ -1540,7 +1539,7 @@ final class LiveInk {
         inking.forEach { $0.overlay.setInking(false) }
         inking = []
         closeEmpty(fade: 0)
-        Log.write("[live-ink] stopped")
+        Log.write("[live-ink] stopped: \(reason)")
     }
 
     private func strokeMoved(_ points: [CGPoint]) {
@@ -1564,7 +1563,7 @@ final class LiveInk {
 
     /// The chord was let go: inking stops, and ink drawn while it was held gets the note.
     private func finishInking() {
-        stopInking()
+        stopInking(because: "the chord was let go")
         if drewWhileInking || listening != nil, !newInk.isEmpty { openNote() }
         drewWhileInking = false
         // What is said goes into the note; with no note there is nowhere for it to go.
@@ -1747,15 +1746,17 @@ final class LiveInk {
     /// Inking stops, since its surfaces are on the Space just left.
     private func spaceChanged() {
         guard isInking else { return }
-        Log.write("[live-ink] stopped: the Space changed")
-        stopInking()
+        stopInking(because: "the Space changed")
     }
 
     /// Each surface covers its screen again; one whose screen is gone closes with its marks.
     private func screensChanged() {
-        if isInking { stopInking() }
         let screens = Dictionary(NSScreen.screens.compactMap { screen in Self.display(of: screen).map { ($0, screen) } },
                                  uniquingKeysWith: { first, _ in first })
+        // The Dock changing size posts this too, and leaves every screen where it was: inking goes on.
+        if isInking, inking.contains(where: { screens[$0.overlay.display]?.frame != $0.overlay.frame }) {
+            stopInking(because: "the screens changed")
+        }
         var dropped = Set<Mark.ID>()
         for surface in surfaces {
             if let screen = screens[surface.overlay.display] {
