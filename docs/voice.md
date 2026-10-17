@@ -100,7 +100,8 @@ The menu bar menu names the switch as the General tab does.
 | The General tab, under the switch while Screen Recording is missing (`liveInkScreenRecordingReason`) | Needs Screen Recording permission. Lets Vignette see the window under your ink when you ask about it. macOS may ask you to reopen Vignette after you allow it. |
 | The menu's first item while Screen Recording is missing | Allow Screen Recording for Live Ink… |
 | The menu bar intro's popover, while Screen Recording is missing | Live ink needs Screen Recording. Click the icon to allow it. |
-| The note's placeholder (`LiveNotePopover.placeholder`) | Ask about this |
+| The note's placeholder, with Claude as its target (`LiveNotePopover.askPlaceholder`) | Ask about this |
+| The note's placeholder, with a session as its target (`LiveNotePopover.sendPlaceholder`) | Send to session |
 | The note's placeholder while it listens (`LiveNotePopover.listeningPlaceholder`) | Listening… |
 | The note's Return hint, ↩, and its tooltip | Return asks |
 | The last of a reply's buttons (`LiveAnswerActions.replyTitle`) | Reply |

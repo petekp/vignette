@@ -54,12 +54,15 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private var sent = false
     /// The target's menu is up. It takes the keys while it is, and `popUp` returns when it closes.
     private var menuOpen = false
+    /// Listening to the person, which the empty note says.
+    private var listening = false
     /// Whether Vignette was the active app before the note took the keys, so closing gives them back
     /// only to another app.
     private let wasActive: Bool
     private var watching: [NSObjectProtocol] = []
 
-    static let placeholder = "Ask about this"
+    static let askPlaceholder = "Ask about this"
+    static let sendPlaceholder = "Send to session"
     static let listeningPlaceholder = "Listening…"
 
     /// The body at the height it is placed for, three lines of words, so it can grow without covering
@@ -188,6 +191,13 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
             content.session.show(logo: Agent.logo(for: destination.client.rawValue), title: destination.project)
             content.session.toolTip = "The session answers here when it's done."
         }
+        showPlaceholder()
+    }
+
+    /// What the empty note says: that it is listening, else what Return does with its target.
+    private func showPlaceholder() {
+        content.field.placeholderString = listening ? Self.listeningPlaceholder
+            : target == .responder ? Self.askPlaceholder : Self.sendPlaceholder
     }
 
     /// The list of targets, under the target, or beside the note when the screen has no room below it,
@@ -282,7 +292,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// Says in the empty note that it is listening, or that it is waiting for typing.
     func setListening(_ listening: Bool) {
-        content.field.placeholderString = listening ? Self.listeningPlaceholder : Self.placeholder
+        self.listening = listening
+        showPlaceholder()
     }
 
     /// Asks as Return does.
@@ -432,7 +443,6 @@ private final class NoteContent: NSView {
         field.focusRingType = .none
         field.font = Self.font
         field.textColor = .labelColor
-        field.placeholderString = LiveNotePopover.placeholder
         field.cell?.wraps = true
         field.cell?.isScrollable = false
         field.cell?.usesSingleLineMode = false
