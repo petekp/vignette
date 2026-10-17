@@ -291,10 +291,13 @@ screenshot location for such a launch is written with the same variable:
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
 - With `annotateOnCapture` on, a capture flies into the editor from the rect it was taken from
-  (`CaptureOrigin.swift`). macOS usually writes the rect into the file's metadata
-  (`kMDItemScreenCaptureGlobalRect`), but on one Mac it stopped for weeks at a time, and Vignette
-  does not read it yet (`docs/capture-origin-spike-2026-10-03.md`). Its capture overlay keeps
-  its drag from every other app's event monitors. The button's state still reads, so ⌘ and ⇧ held
+  (`CaptureOrigin.swift`). macOS records the rect and kind in the file's metadata
+  (`kMDItemScreenCaptureGlobalRect`, `kMDItemScreenCaptureType`), set before the file takes its
+  final name, and Vignette takes it from there first (`CaptureRect.recorded`). It is used only when
+  the file was created in the last 10 s and the rect fits its pixels, since a copy by Finder,
+  `copyItem` or `ditto` keeps the metadata and its creation date (`cp` gives a new date). On one Mac macOS stopped writing it for weeks
+  (`docs/capture-origin-spike-2026-10-03.md`), so the poll below stays as the fallback. The capture
+  overlay keeps its drag from every other app's event monitors. The button's state still reads, so ⌘ and ⇧ held
   together, seen by a `flagsChanged` monitor, start a 30 Hz poll of `NSEvent.pressedMouseButtons`
   and the pointer for 15 s. None of this needs a permission. `CaptureRect.locate` is the pure part.
   It tries a drag released within 3 s whose size is near the file's, then the topmost window under

@@ -132,7 +132,10 @@ update was installed at either boundary, and the second gap began before Vignett
 Screen recordings (`.mov`) never carry them, and neither do Vignette's `-annotated.png` files or
 agent pushes.
 
-So the metadata is exact whenever it is present, and it can be missing for weeks. It can give a
-capture's origin first, with `CaptureRect.locate` as the fallback, and it covers captures the poll
-cannot see: ⌘⇧3, ⌘⇧5's toolbar and `screencapture` itself. Its absence cannot mark a file as not
-a capture.
+So the metadata is exact whenever it is present, and it can be missing for weeks.
+`CaptureOrigin` takes a capture's origin from it first (`CaptureRect.recorded`, logged as
+`from=metadata`), with `CaptureRect.locate` as the fallback (`from=poll`). That covers captures the
+poll cannot see: ⌘⇧3, ⌘⇧5's toolbar and `screencapture` itself. A copy made by Finder, `copyItem`
+or `ditto` keeps the metadata and its creation date, so the metadata counts only for a file
+created in the last 10 s whose pixels fit the rect. `cp` keeps the metadata with a new creation
+date, so a `cp` of an old capture still flies from its old rect. Its absence cannot mark a file as not a capture.

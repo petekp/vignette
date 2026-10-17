@@ -1217,7 +1217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // A capture flies into the editor from where it was taken, when Vignette saw where.
         var origin: NSRect?
         if case .read(let header) = Thumbnailer.lookUp(shot.url), let pixels = header.pixels {
-            origin = captureOrigin?.rect(of: shot.url.lastPathComponent, pixels: pixels)
+            origin = captureOrigin?.rect(of: shot.url, pixels: pixels)
         }
         self.annotate([shot], from: origin)
     }

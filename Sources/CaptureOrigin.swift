@@ -65,16 +65,43 @@ enum CaptureRect {
         return nil
     }
 
+    /// What macOS records on a capture's file: its rect in global top-left points and its kind.
+    struct Recorded: Equatable {
+        var rect: CGRect
+        var kind: String
+    }
+
+    /// A file copied by Finder, `copyItem` or `ditto` keeps the metadata and its creation date, so
+    /// an old capture copied or pushed into the folder is told apart by its age. `cp` keeps the
+    /// metadata with a new creation date, so a `cp` of an old capture still flies from where it was
+    /// taken. Generous, because Apple's thumbnail, when it is on, holds a capture back about 5.6 s.
+    static let recordedLifetime: TimeInterval = 10
+
+    /// The rect macOS recorded, in Cocoa points, or nil when the file is too old for it to be this
+    /// capture's or the rect does not fit the file's pixels at its display's scale.
+    static func recorded(_ recorded: Recorded, pixels: CGSize, age: TimeInterval, displays: [Display],
+                         primaryHeight: CGFloat) -> (rect: CGRect, kind: Kind)? {
+        guard age >= 0, age <= recordedLifetime, let kind = Kind(rawValue: recorded.kind) else { return nil }
+        let r = recorded.rect
+        let rect = CGRect(x: r.minX, y: primaryHeight - r.maxY, width: r.width, height: r.height)
+        guard let display = displays.first(where: { contains($0.frame, CGPoint(x: rect.midX, y: rect.midY)) }),
+              abs(rect.width - pixels.width / display.scale) <= 1,
+              abs(rect.height - pixels.height / display.scale) <= 1 else { return nil }
+        return (rect, kind)
+    }
+
     /// `NSMouseInRect` without the flipped argument: the left and bottom edges are inside.
     private static func contains(_ rect: CGRect, _ point: CGPoint) -> Bool {
         point.x >= rect.minX && point.x < rect.maxX && point.y > rect.minY && point.y <= rect.maxY
     }
 }
 
-/// Watches for a capture being taken, so the flight into the editor can start where it was.
-/// macOS's capture overlay keeps its drag from every other app's event monitors, but not the
-/// button's state, so ⌘⇧ held together starts a short poll of the button and the pointer.
-/// None of it needs a permission: a `flagsChanged` monitor works without Accessibility.
+/// Finds where a capture was taken, so the flight into the editor can start there. macOS records
+/// the rect in the file's metadata, set before the file takes its final name, but on one Mac it
+/// stopped writing it for weeks. So a short poll runs as well: macOS's capture overlay keeps its drag
+/// from every other app's event monitors, but not the button's state, so ⌘⇧ held together starts a
+/// poll of the button and the pointer. None of it needs a permission: a `flagsChanged` monitor
+/// works without Accessibility. `docs/capture-origin-spike-2026-10-03.md` has the measurements.
 @MainActor
 final class CaptureOrigin {
     private var monitors: [Any] = []
@@ -129,17 +156,50 @@ final class CaptureOrigin {
 
     /// The rect of a capture of `pixels` that has just arrived, or nil, which flies it from the
     /// corner. A drag is used once.
-    func rect(of name: String, pixels: CGSize) -> CGRect? {
+    func rect(of url: URL, pixels: CGSize) -> CGRect? {
+        let name = url.lastPathComponent
         let cursor = NSEvent.mouseLocation
         let displays = NSScreen.screens.map { CaptureRect.Display(frame: $0.frame, scale: $0.backingScaleFactor) }
-        guard let found = CaptureRect.locate(pixels: pixels, arrivedAt: Date(), drag: drag, cursor: cursor,
-                                             window: windowFrame(under: cursor), displays: displays) else {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let source: String
+        let found: (rect: CGRect, kind: CaptureRect.Kind)
+        if let recorded = Self.recorded(at: url), let created = Self.creationDate(of: url),
+           let match = CaptureRect.recorded(recorded, pixels: pixels, age: Date().timeIntervalSince(created),
+                                            displays: displays, primaryHeight: primaryHeight) {
+            (source, found) = ("metadata", match)
+        } else if let match = CaptureRect.locate(pixels: pixels, arrivedAt: Date(), drag: drag, cursor: cursor,
+                                                 window: windowFrame(under: cursor), displays: displays) {
+            (source, found) = ("poll", match)
+        } else {
             Log.write("[origin] none \(name) \(Int(pixels.width))x\(Int(pixels.height))px")
             return nil
         }
         if found.kind == .selection { drag = nil }
-        Log.write("[origin] \(found.kind.rawValue) \(name) \(StateReport.topLeft(found.rect, primaryHeight: StateReport.primaryHeight))")
+        Log.write("[origin] \(found.kind.rawValue) \(name) \(StateReport.topLeft(found.rect, primaryHeight: StateReport.primaryHeight)) from=\(source)")
         return found.rect
+    }
+
+    /// The rect and kind macOS recorded on the file, from its `com.apple.metadata` extended
+    /// attributes, each a binary property list. Reading them does not download an iCloud placeholder.
+    private static func recorded(at url: URL) -> CaptureRect.Recorded? {
+        guard let numbers = attribute("kMDItemScreenCaptureGlobalRect", of: url) as? [NSNumber], numbers.count == 4,
+              let kind = attribute("kMDItemScreenCaptureType", of: url) as? String else { return nil }
+        let v = numbers.map { CGFloat($0.doubleValue) }
+        return CaptureRect.Recorded(rect: CGRect(x: v[0], y: v[1], width: v[2], height: v[3]), kind: kind)
+    }
+
+    private static func attribute(_ key: String, of url: URL) -> Any? {
+        let name = "com.apple.metadata:" + key
+        let size = getxattr(url.path, name, nil, 0, 0, XATTR_NOFOLLOW)
+        guard size > 0 else { return nil }
+        var data = Data(count: size)
+        let read = data.withUnsafeMutableBytes { getxattr(url.path, name, $0.baseAddress, size, 0, XATTR_NOFOLLOW) }
+        guard read == size else { return nil }
+        return try? PropertyListSerialization.propertyList(from: data, format: nil)
+    }
+
+    private static func creationDate(of url: URL) -> Date? {
+        try? url.resourceValues(forKeys: [.creationDateKey]).creationDate
     }
 
     /// The frame of the topmost ordinary window under `point`, which is the one a window capture

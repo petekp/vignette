@@ -782,42 +782,60 @@ def corner_select(app):
 @needs_input
 def capture_origin(app):
     """With Instant Draw on, a selection taken with macOS's capture overlay flies into the editor
-    from the rect it was taken from. ⌘⇧ starts the poll that sees the drag, since the overlay
-    keeps the drag itself from every other app."""
+    from the rect it was taken from: the rect macOS records on the file, or, when it records none,
+    the poll that ⌘⇧ starts, since the overlay keeps the drag itself from every other app. The
+    second capture has its metadata taken off before it reaches the folder, so the poll finds it."""
     app.write_settings(annotateOnCapture=True)
     start(app)
+
+    def select(path, x1, y1, x2, y2):
+        app.input('chord', 55, 56)
+        capture = subprocess.Popen(['screencapture', '-i', '-x', path])
+        try:
+            # Nothing outside says when the overlay is up: it is in no window list and leaves the
+            # system cursor as it was. A drag it misses selects text in the front app, and the file
+            # never comes.
+            time.sleep(0.8)
+            if capture.poll() is not None:
+                raise Failed('screencapture -i ended before the drag')
+            app.input('glidedrag', x1, y1, x2, y2, 0.5)
+            capture.wait(timeout=10)
+        finally:
+            if capture.poll() is None:
+                capture.kill()
+        # The point under the release is inside the capture, so it is one point wider and taller.
+        return f'[{x1}, {y1}, {x2 - x1 + 1}, {y2 - y1 + 1}]'
+
+    def opened_from(name, expected, offset, source=None):
+        found = app.wait_log('[origin] selection', offset, also=name)
+        if expected not in found:
+            raise Failed(f'the capture was found at {found.split(name)[-1].strip()}, not {expected}')
+        if source and f'from={source}' not in found:
+            raise Failed(f'the capture was found by {found.split(" from=")[-1]}, not the {source}')
+        app.report.step(f'the selection was found {found[found.index(" from="):].strip()}', detail=expected)
+        line = app.wait_log('[annotate] from capture', offset, also=name)
+        if expected not in line:
+            raise Failed(f'the flight started at {line}, not {expected}')
+        app.wait_log('[annotate] takes events', offset)
+        s = app.state()
+        if not (s['annotator'].get('current') or '').endswith(name):
+            raise Failed(f"the editor has {s['annotator'].get('current')}, not {name}")
+        app.report.step('the editor opened from the captured rect')
+        close_editor(app)
+
     name = 'Screenshot origin.png'
-    x1, y1, x2, y2 = 200, 150, 720, 410
     offset = app.log_size()
-    app.input('chord', 55, 56)
-    capture = subprocess.Popen(['screencapture', '-i', '-x', os.path.join(app.watch, name)])
-    try:
-        # Nothing outside says when the overlay is up: it is in no window list and leaves the
-        # system cursor as it was. A drag it misses selects text in the front app, and the file
-        # never comes.
-        time.sleep(0.8)
-        if capture.poll() is not None:
-            raise Failed('screencapture -i ended before the drag')
-        app.input('glidedrag', x1, y1, x2, y2, 0.5)
-        capture.wait(timeout=10)
-    finally:
-        if capture.poll() is None:
-            capture.kill()
-    # The point under the release is inside the capture, so it is one point wider and taller.
-    expected = f'[{x1}, {y1}, {x2 - x1 + 1}, {y2 - y1 + 1}]'
-    found = app.wait_log('[origin] selection', offset, also=name)
-    if expected not in found:
-        raise Failed(f'the capture was found at {found.split(name)[-1].strip()}, not {expected}')
-    app.report.step('the poll found the selection', detail=expected)
-    line = app.wait_log('[annotate] from capture', offset, also=name)
-    if expected not in line:
-        raise Failed(f'the flight started at {line}, not {expected}')
-    app.wait_log('[annotate] takes events', offset)
-    s = app.state()
-    if not (s['annotator'].get('current') or '').endswith(name):
-        raise Failed(f"the editor has {s['annotator'].get('current')}, not {name}")
-    app.report.step('the editor opened from the captured rect')
-    close_editor(app)
+    expected = select(os.path.join(app.watch, name), 200, 150, 720, 410)
+    opened_from(name, expected, offset)
+
+    name = 'Screenshot origin poll.png'
+    held = os.path.join(app.home, 'held')
+    os.makedirs(held, exist_ok=True)
+    offset = app.log_size()
+    expected = select(os.path.join(held, name), 260, 200, 640, 420)
+    subprocess.run(['xattr', '-c', os.path.join(held, name)], check=True)
+    os.rename(os.path.join(held, name), os.path.join(app.watch, name))
+    opened_from(name, expected, offset, source='poll')
 
 
 @needs_input

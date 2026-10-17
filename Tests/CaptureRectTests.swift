@@ -76,6 +76,29 @@ final class CaptureRectTests: XCTestCase {
                      "the monitor's size, taken while the pointer is on the laptop")
     }
 
+    private func recorded(_ rect: CGRect, _ kind: String, pixels: CGSize, age: TimeInterval = 0.2)
+        -> (rect: CGRect, kind: CaptureRect.Kind)? {
+        CaptureRect.recorded(CaptureRect.Recorded(rect: rect, kind: kind), pixels: pixels, age: age,
+                             displays: [laptop, monitor], primaryHeight: laptop.frame.height)
+    }
+
+    func testTheRectMacOSRecordedIsTurnedIntoCocoaPoints() {
+        let found = recorded(CGRect(x: 219, y: 91, width: 533, height: 813), "selection", pixels: CGSize(width: 1066, height: 1626))
+        XCTAssertEqual(found?.kind, .selection)
+        XCTAssertEqual(found?.rect, CGRect(x: 219, y: 78, width: 533, height: 813))
+        let onMonitor = recorded(CGRect(x: 1600, y: 100, width: 301, height: 201), "window", pixels: CGSize(width: 301, height: 201))
+        XCTAssertEqual(onMonitor?.kind, .window)
+        XCTAssertEqual(onMonitor?.rect, CGRect(x: 1600, y: 681, width: 301, height: 201))
+    }
+
+    func testARecordedRectIsNotThisCapturesWhenTheFileIsOldOrAnotherSize() {
+        let rect = CGRect(x: 219, y: 91, width: 533, height: 813)
+        let pixels = CGSize(width: 1066, height: 1626)
+        XCTAssertNil(recorded(rect, "selection", pixels: pixels, age: 60), "an old capture copied into the folder")
+        XCTAssertNil(recorded(rect, "selection", pixels: CGSize(width: 533, height: 813)), "pixels at another scale")
+        XCTAssertNil(recorded(rect, "touchbar", pixels: pixels), "a kind the flight does not know")
+    }
+
     func testASelectionOnTheMonitorIsInItsPoints() {
         let press = CGPoint(x: 1600, y: 900), release = CGPoint(x: 1900, y: 700)
         let found = locate(CGSize(width: 301, height: 201), drag: drag(press, release), cursor: release)
