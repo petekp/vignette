@@ -655,6 +655,11 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(ReplyContent.row(answerer: "checkout", notice: reason).string, "checkout  ·  \(reason)")
         XCTAssertEqual(ReplyContent.row(answerer: "Claude", notice: "Claude couldn't answer.").string, "Claude couldn't answer.",
                        "a reason that names the answerer goes on from its name")
+        XCTAssertEqual(ReplyContent.row(answerer: "Claude", notice: "Claude's usage limit is reached for now.").string,
+                       "Claude's usage limit is reached for now.")
+        let signedOut = "Claude Code isn't signed in. You can sign in by running claude in Terminal."
+        XCTAssertEqual(ReplyContent.row(answerer: "Claude", notice: signedOut).string, "Claude  ·  \(signedOut)",
+                       "another name that starts with the answerer's is not the answerer")
     }
 
     func testAReplyIsNeverNarrowerThanItsButtons() {

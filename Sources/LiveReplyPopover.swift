@@ -119,15 +119,23 @@ enum ReplyContent {
     static func name(agent: String?, answerer: String?) -> String { answerer ?? NoteBadge.label(for: agent) }
 
     /// The row's words: who answers, as the note's target named them, then Vignette's `notice`, which wraps.
-    /// A notice is written to stand alone on the ink, so one that opens with the answerer's name
-    /// ("Claude couldn't answer.") goes on from the name already in the row instead of repeating it.
+    /// A notice is written to stand alone on the ink, so one whose subject is the answerer ("Claude
+    /// couldn't answer.", "Claude's usage limit…") goes on from the name already in the row instead of
+    /// repeating it. "Claude Code isn't signed in." names something else and follows a dot.
     static func row(answerer: String, notice: String?) -> NSAttributedString {
         let row = NSMutableAttributedString(string: answerer, attributes: [.font: NoteLayout.labelFont, .foregroundColor: NSColor.secondaryLabelColor])
         if let notice = shown(notice) {
-            let rest = notice.hasPrefix(answerer + " ") || notice.hasPrefix(answerer + "'") ? String(notice.dropFirst(answerer.count)) : "  ·  \(notice)"
-            row.append(NSAttributedString(string: rest, attributes: [.font: noticeFont, .foregroundColor: NSColor.secondaryLabelColor]))
+            let predicate = subjectIs(answerer, of: notice) ? String(notice.dropFirst(answerer.count)) : nil
+            row.append(NSAttributedString(string: predicate ?? "  ·  \(notice)", attributes: [.font: noticeFont, .foregroundColor: NSColor.secondaryLabelColor]))
         }
         return row
+    }
+
+    /// Whether `sentence` opens with `name` as its subject: the name, then "'s" or a word in lower case.
+    private static func subjectIs(_ name: String, of sentence: String) -> Bool {
+        guard sentence.hasPrefix(name) else { return false }
+        let rest = sentence.dropFirst(name.count)
+        return rest.hasPrefix("'s ") || (rest.first == " " && rest.dropFirst().first?.isLowercase == true)
     }
 
     static func words(_ text: String) -> NSAttributedString {
@@ -239,6 +247,9 @@ final class ReplyView: NSView {
     private final class Drawn: NSView {
         var text: NSAttributedString? { didSet { needsDisplay = true } }
         override var isFlipped: Bool { true }
+        /// Blended with the glass as the question's label is, or over a dark window the answer drew
+        /// lighter than the greyed question above it.
+        override var allowsVibrancy: Bool { true }
         override func draw(_ dirtyRect: NSRect) { text?.draw(with: bounds, options: ReplyContent.measuring) }
     }
 }

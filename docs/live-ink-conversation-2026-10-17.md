@@ -24,12 +24,12 @@ Each was mocked in real `NSPopover`s, in light and dark mode, in the test VM
 | Flow | While asking | Answered | Verdict |
 | --- | --- | --- | --- |
 | Thread | The note as typed, its target settled into a plain row | The answer under the row; the question greys | Picked |
-| Fold | As Thread | The question folds into a one-line header, "Claude · "question"" | The question jumps and shrinks at the moment the person reads the answer |
+| Fold | As Thread | The question folds into a one-line header: Claude · "question" | The question jumps and shrinks at the moment the person reads the answer |
 | Capsule | The question alone | The answer beside the logo, under the question | Loses who answers while asking, and the row the note had disappears |
 | Status | "Asking Claude…" with a spinner, in place of the question | Header and answer | The person's words vanish while they wait, which is what the change was meant to stop |
 
-Thread is the only flow in which nothing the person has already seen moves or changes size. The
-question keeps its frame from the note's field (`NoteLayout.fieldFrame`) and the row keeps the
+Thread is the only flow in which nothing the person has already seen moves or changes size at the
+handover or when the answer comes. The question keeps its frame from the note's field (`NoteLayout.fieldFrame`) and the row keeps the
 target's frame, so the first frame of the conversation matches the last frame of the note.
 
 ## Waiting states tried
@@ -49,15 +49,15 @@ target's frame, so the first frame of the conversation matches the last frame of
 
 The rim light ties the popover to the ink. It goes round once every two beats of the band on the ink
 (`thinkingPeriod`), counted from the same start (`thinkingEpoch`), and leaves from under the arrow.
-So the light seems to come out of the ink and run round the question, and two popovers lit at once
-show it in the same place. That is what lets the note hand over to the conversation with no visible
+So the light leaves the arrow as the band on the ink starts a stroke, and two popovers lit at once
+show it at the same point. That is what lets the note hand over to the conversation with no visible
 change. It is white on a dark popover and the ink's light colour on a light one, where white does
 not show.
 
 ## The handover, measured
 
-A screen recording at 60 frames a second in the VM, comparing each frame to the settled
-conversation, after the fixes below:
+A screen recording at 60 frames a second in the VM, each frame compared with the settled
+conversation, shows:
 
 - No shift. The note's host window is whole points and the popover hangs from the exact spot, so
   the conversation lands on the same pixels. A host at fractional points shifted by 1 pt.
@@ -69,9 +69,17 @@ conversation, after the fixes below:
 A session takes the note in about 40 ms, before the 0.18 s handover finishes. The note then leaves
 with the ink, on the conversation's timing. Before that fix, the note vanished in one frame.
 
+## Contrast
+
+The conversation keeps the note's translucency and has no backing. Over a dark window in light mode
+the glass turns mid-grey. Measured there, the answer is 7.4:1 and the greyed question 6.1:1; in dark
+mode the answer is 12.8:1. The answer's words take the glass's vibrancy as the question's label does
+(`Drawn.allowsVibrancy`). Without it the answer measured 4.8:1 and drew lighter than the greyed
+question.
+
 ## Checked in the VM
 
-- Light mode and dark mode
+- Light mode and dark mode, over a light window and a dark one
 - A follow-up through an action button
 - A failure, said in the row
 - A five-line question

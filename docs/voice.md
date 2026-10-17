@@ -116,7 +116,8 @@ The menu bar menu names the switch as the General tab does.
 #### In the conversation's row, or on the ink
 
 Vignette's own words about an ask. With the conversation up, they go in its row after the name, and
-a reason that opens with the name goes on from it: **Claude** couldn't answer. You can ask again.
+a reason whose subject is the answerer goes on from the name: **Claude** couldn't answer. You can ask
+again.
 Without one, they are a note beside the ink it was about, in the person's colour.
 
 | When | Words |

@@ -181,9 +181,9 @@ The names in brackets are `// MARK:` sections.
   0 in the commit that shows the conversation, because two glass popovers over each other darken for
   the frame they share. On the screen the person's words stay in a popover and never turn into a
   drawn note; a card still draws them as a note tag. For a session the conversation leaves with the
-  ink, as a card (below). A session that takes the note before the handover is done, often within
-  40 ms, ends it: the note itself leaves with the ink, on the conversation's timing
-  (`LiveMarksLayer.popoverLeave`).
+  ink, as a card (below). A session can take the note before the handover is done (about 40 ms in
+  the VM). The handover then stops, and the note itself leaves with the ink, on the conversation's
+  timing (`LiveMarksLayer.popoverLeave`).
 - Vignette picks the side the note hangs on, where a hand writes one (`LiveAnswerLayout.noteHang`):
   from an arrow's tail on the side away from its head, or off a loop's or a box's side, right first.
   The popover is a window of its own, so it may hang past the window's edge onto the rest of the
@@ -331,7 +331,9 @@ The names in brackets are `// MARK:` sections.
   do not move when the note hands over or when the answer comes. The question greys once the answer
   has words. A follow-up puts its words in as the question and empties the answer. The conversation
   is the note's width, 300 pt, or as wide as its buttons. It has no backing: it keeps the note's
-  translucency. `Mark.quote` keeps the question and `Mark.answerer` the row's name, the session's
+  translucency. Its words take the glass's vibrancy, as the question's label does, so over a dark
+  window they stay darker than the greyed question (`docs/live-ink-conversation-2026-10-17.md` has
+  the contrast). `Mark.quote` keeps the question and `Mark.answerer` the row's name, the session's
   project for a session; neither is written to a file. Beside its ink, as on any side edge, AppKit
   keeps the body centred on its arrow, so a conversation that grows downwards also rises. A whole
   answer with no reply up yet hangs the reply from its first pointing mark, off the middle of a
@@ -421,8 +423,9 @@ The names in brackets are `// MARK:` sections.
   focus (`LiveWindows.translated`). `[state] liveInk.focus` names the stop shown and whether it
   zooms, and `[live-ink] focus` lines log each stop and why the focus let go.
 - Vignette's own words about an ask (a failure and why) go in the conversation's row, after the
-  name (`Mark.notice`, `LiveAsks.Effect.notice`), and wrap there. A reason that opens with the
-  name, such as "Claude couldn't answer", goes on from the name in the row instead of repeating it.
+  name (`Mark.notice`, `LiveAsks.Effect.notice`), and wrap there. A reason whose subject is the
+  answerer, such as "Claude couldn't answer", goes on from the name in the row instead of repeating
+  it. "Claude Code isn't signed in" names something else and follows a dot.
   An ask with no conversation says it as a note beside the ink in the person's colour without a
   badge, not an agent mark, and not ink: the next ask is not about it.
 - A session picked in the note's target gets the picture through `ScreenshotRequests.send`, as Send
