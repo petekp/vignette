@@ -113,9 +113,11 @@ The menu bar menu names the switch as the General tab does.
 | The note's target, and its tooltip | Claude ⌄, "Claude answers on the screen." / *project* ⌄, "The session answers here when it's done." |
 | The target's menu | Claude, on the screen; then a "Send to a session" heading and the sessions, each by project with its name under it |
 
-#### On the ink, in the person's colour
+#### In the conversation's row, or on the ink
 
-Vignette's own words about an ask, beside the ink it was about.
+Vignette's own words about an ask. With the conversation up, they go in its row after the name, and
+a reason that opens with the name goes on from it: **Claude** couldn't answer. You can ask again.
+Without one, they are a note beside the ink it was about, in the person's colour.
 
 | When | Words |
 | --- | --- |

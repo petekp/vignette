@@ -15,7 +15,7 @@ The names in brackets are `// MARK:` sections.
 | What a stroke becomes, and erasing | `InkStroke.swift`, `LiveInk.swift` (Strokes) |
 | How the person's ink looks | `LiveInkHand.swift` |
 | How an agent's shapes look | `LiveInkLight.swift` |
-| The note: opening, placing, sending | `LiveInk.swift` (Asking), `LiveNotePopover.swift`, `LiveAnswerLayout.noteHang` |
+| The note: opening, placing, sending, handing over to the conversation | `LiveInk.swift` (Asking), `LiveNotePopover.swift`, `LiveAnswerLayout.noteHang`, `WindowRemoval.swift` |
 | The ask: its phase, which late callbacks it drops, the answer put back after a failure, and each mark's role, which erasing takes away | `LiveAsks.swift`, `LiveInk.swift` (Asking, Answering) |
 | A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking), `LiveNoteCards.swift`, `LiveNoteCardWait.swift`, `LiveNoteCardGroups.swift` |
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
@@ -23,7 +23,8 @@ The names in brackets are `// MARK:` sections.
 | Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
 | Claude on the screen, the `claude` process | `LiveResponder.swift` |
 | The answer: reading it, drawing it, steps | `LiveAnswer.swift`, `LiveInk.swift` (Answering) |
-| The reply's popover: its header, its words, what it is laid over | `LiveReplyPopover.swift`, `LiveInkOverlay.swift` (`LiveMarksLayer.showPopover`) |
+| The reply's popover, the conversation: its question, its row, its words, what it is laid over | `LiveReplyPopover.swift`, `LiveInkOverlay.swift` (`LiveMarksLayer.showPopover`) |
+| The thinking light round a popover's rim | `LiveRimLight.swift` |
 | Where the person's note, the reply, labels and pointing marks go | `LiveAnswerLayout.swift` (Pointing, Notes) |
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
@@ -149,11 +150,13 @@ The names in brackets are `// MARK:` sections.
   (`LiveMarksLayer.think`): a 40 pt band of light runs along each stroke every 1.15 s, and a sheen
   crosses the note a third of a beat later. Every band counts from one start, so marks that began
   waiting at different moments move together. The light fades in and out over 0.2 s. With motion
-  off the ink brightens and holds. While a follow-up waits, after the person answers the reply with
-  an action or Reply, the reply carries it too (`ReplyView.think`): its words dim to 45%, and a band at full
-  strength crosses them on the note's beat. The band is the words' own opacity rather than a light
-  colour, so it shows on a light popover and a dark one. With motion off the words dim to 60% and
-  hold.
+  off the ink brightens and holds. A popover waiting on an answer, the sent note and then its
+  conversation, carries the light round its rim (`RimLight`): a soft light that leaves from under the
+  arrow and goes round clockwise once every two beats, seen through a thin ring at the body's edge
+  and a fainter, wider one for its glow. It is white on a dark popover and the ink's light colour
+  (`ui.inkGelLight`) on a light one, where white would not show. It keeps time with the band on the
+  ink, so the note and the conversation that takes its place show the light at the same point.
+  With motion off the whole rim glows at 35% and holds.
 - `vignette://live-ink-clear` erases every mark, and `live-ink-stroke?points=x,y;x,y` (debug) takes
   a stroke as if by hand, whether the stack is up or not, so a script can test without posting
   input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`,
@@ -170,9 +173,17 @@ The names in brackets are `// MARK:` sections.
   while the note is open adds to that note's ink. Ink an earlier note kept stays. A click elsewhere
   closes the note and keeps the ink. ⌘⌫ is the text field's delete-the-line key, and the note handles its command
   (`deleteToBeginningOfLine:`) as it does Esc's (`cancelOperation:`). Its target starts on the one picked last, else the
-  responder, and lists the sessions Send lists after it. For the responder the words stay beside the
-  ink as the person's own note: the popover fades and the drawn note takes its place, starting where
-  its words were (`settle`). For a session the note leaves with the ink, as a card (below).
+  responder, and lists the sessions Send lists after it. Return settles the note into the look of
+  the conversation over 0.18 s (`NoteContent.settle`): the target's button loses its background and
+  chevron, its label greys, the ↩ fades and the rim light starts. The conversation, the reply's
+  popover, then comes up over it at the same size with the same pixels, and the note goes three
+  display refreshes later (`LiveNotePopover.handOver`, `WindowRemoval`). The note's alpha drops to
+  0 in the commit that shows the conversation, because two glass popovers over each other darken for
+  the frame they share. On the screen the person's words stay in a popover and never turn into a
+  drawn note; a card still draws them as a note tag. For a session the conversation leaves with the
+  ink, as a card (below). A session that takes the note before the handover is done, often within
+  40 ms, ends it: the note itself leaves with the ink, on the conversation's timing
+  (`LiveMarksLayer.popoverLeave`).
 - Vignette picks the side the note hangs on, where a hand writes one (`LiveAnswerLayout.noteHang`):
   from an arrow's tail on the side away from its head, or off a loop's or a box's side, right first.
   The popover is a window of its own, so it may hang past the window's edge onto the rest of the
@@ -313,16 +324,21 @@ The names in brackets are `// MARK:` sections.
   the menu's first item open its pane. On macOS 15 the first capture also raised macOS's "bypass the
   system private window picker" alert.
 - The answer streams in: `say` shows as the reply as its words arrive (`LiveAnswer.partialSay`).
-  The reply is a popover from the overlay it is drawn on (`ReplyPopover`): the agent's logo and
-  name and the person's question in quotes on one line, then the reply's words, which wrap at
-  `ui.liveInkTextWidth`. The window's background at 75% backs them (`ReplyView.backing`), since the
-  glass alone turns dark over a dark window and left dark text at 2 to 3:1; the quote is black or
-  white at 70% by appearance (`ReplyContent.quoteColor`). The person's note goes as the reply comes, and `Mark.quote` keeps its words
-  for the header; it is never written to a file. A whole answer hangs the reply from its first
-  pointing mark, off the middle of a circle's or a box's side or from an arrow's tail, so the words
-  lead along the mark to what it points at. That mark's label is placed with the reply, so neither
-  covers the other. An answer that points at nothing, an answer in steps, and a reply that streams
-  in hang it from the person's ink, and a streamed reply stays where it hangs as it grows
+  The reply is a popover from the overlay it is drawn on (`ReplyPopover`), and for an ask with words
+  it is the conversation the note became: the person's question where the note's field had it, then
+  a row with the agent's logo and the name where the note's target had them, then the reply's words
+  under the row. `ReplyContent.layout` and `NoteLayout` share every size, so the question and the row
+  do not move when the note hands over or when the answer comes. The question greys once the answer
+  has words. A follow-up puts its words in as the question and empties the answer. The conversation
+  is the note's width, 300 pt, or as wide as its buttons. It has no backing: it keeps the note's
+  translucency. `Mark.quote` keeps the question and `Mark.answerer` the row's name, the session's
+  project for a session; neither is written to a file. Beside its ink, as on any side edge, AppKit
+  keeps the body centred on its arrow, so a conversation that grows downwards also rises. A whole
+  answer with no reply up yet hangs the reply from its first pointing mark, off the middle of a
+  circle's or a box's side or from an arrow's tail, so the words lead along the mark to what it
+  points at. That mark's label is placed with the reply, so neither covers the other. An answer that
+  points at nothing, an answer in steps, and a reply that streams in hang it from the person's ink.
+  A reply already up, a conversation or a streamed reply, stays where it hangs as it grows
   (`LiveAnswerLayout.grown`). It is tried below, above, right and left of what it hangs from, and
   may hang past the window onto the visible screen (`Scene.screen`). The reply is still a text
   `Mark`, with where it hangs in `Mark.popover`, so it follows its window, a tap erases it, and
@@ -404,9 +420,11 @@ The names in brackets are `// MARK:` sections.
   never written to a file. A mark pinned to a window moves into the window's coordinates with its
   focus (`LiveWindows.translated`). `[state] liveInk.focus` names the stop shown and whether it
   zooms, and `[live-ink] focus` lines log each stop and why the focus let go.
-- Vignette's own words about an ask (a failure and why) are a note beside the ink in the person's
-  colour without a badge, not an agent mark, and are not ink: the next ask is not about them. The
-  exception is a follow-up, whose failure is said in its answer's header.
+- Vignette's own words about an ask (a failure and why) go in the conversation's row, after the
+  name (`Mark.notice`, `LiveAsks.Effect.notice`), and wrap there. A reason that opens with the
+  name, such as "Claude couldn't answer", goes on from the name in the row instead of repeating it.
+  An ask with no conversation says it as a note beside the ink in the person's colour without a
+  badge, not an agent mark, and not ink: the next ask is not about it.
 - A session picked in the note's target gets the picture through `ScreenshotRequests.send`, as Send
   sends a drawing, with the words and where the ink is in the line. The client's answer goes to the
   note's card, as a send's does.

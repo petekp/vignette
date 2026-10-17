@@ -53,63 +53,85 @@ struct PopoverPlace: Equatable {
     }
 }
 
-/// What a reply's popover shows: the agent's logo and name and the question in quotes on one line,
-/// then the reply's words. Measured here without a view, so the layout knows the body's size, and
-/// drawn by `ReplyView` from the same measures.
+/// What a reply's popover shows, as a conversation that carries on in the note the person typed in:
+/// their question where they typed it, then who answers, in the row where the note's target was, then
+/// the answer's words. The note hands over to it unseen, so the two share `NoteLayout`. Measured here
+/// without a view, so the layout knows the body's size, and drawn by `ReplyView` from the same measures.
 enum ReplyContent {
-    static let insets = NSEdgeInsets(top: 12, left: 14, bottom: 13, right: 14)
-    /// Between the header and the words, and between the header's logo, name and question, in points.
-    static let spacing: CGFloat = 5
-    static let logoSize: CGFloat = 12
+    static let insets = NSEdgeInsets(top: NoteLayout.top, left: NoteLayout.inset, bottom: 13, right: NoteLayout.inset)
     /// How far a popover's body stands off what its arrow points at, in points.
     static let arrowLength: CGFloat = 12
+    /// The row's top with no question above it, so its name sits where a header would.
+    static let rowTopAlone: CGFloat = 2
+    /// The answer's words start this far up into the row's bottom, under the name.
+    static let wordsIntoRow: CGFloat = 6
+    /// The name's place in the row: inside the note's target button, which is centred in the row.
+    static var nameInset: CGFloat { NoteLayout.logoSize + NoteLayout.gap }
+    static var buttonTop: CGFloat { (NoteLayout.row - NoteLayout.buttonHeight) / 2 }
 
-    static var nameFont: NSFont { .systemFont(ofSize: 11, weight: .semibold) }
-    static var quoteFont: NSFont { .systemFont(ofSize: 11) }
-    static var wordsFont: NSFont { .systemFont(ofSize: NSFont.systemFontSize) }
-
+    static var wordsFont: NSFont { NoteLayout.font }
+    static var noticeFont: NSFont { .systemFont(ofSize: 12) }
     static let measuring: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
 
-    static func name(_ agent: String?) -> NSAttributedString {
-        NSAttributedString(string: NoteBadge.label(for: agent), attributes: [.font: nameFont, .foregroundColor: NSColor.labelColor])
+    /// Where each part goes in a body `size` big, in its own coordinates with y growing downwards.
+    struct Layout: Equatable {
+        var size: CGSize
+        var question: CGRect?
+        var rowTop: CGFloat
+        var rowHeight: CGFloat
+        var words: CGRect?
     }
 
-    /// Lighter than the words, and darker than macOS's secondary label, which read at 2 to 3:1 on the
-    /// reply's backing over a dark window. Made per appearance: `labelColor.withAlphaComponent` stayed
-    /// black in the dark appearance.
-    static let quoteColor = NSColor(name: nil) { appearance in
-        NSColor(white: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 1 : 0, alpha: 0.7)
-    }
-
-    static func quote(_ words: String?) -> NSAttributedString? {
-        guard let words = words?.trimmingCharacters(in: .whitespacesAndNewlines), !words.isEmpty else { return nil }
-        return NSAttributedString(string: "·  \u{201C}\(words)\u{201D}", attributes: [.font: quoteFont, .foregroundColor: quoteColor])
-    }
-
-    /// The header after the logo: the agent's name, then the question, cut at the end to one line. A
-    /// `notice`, Vignette's word on the reply, takes the question's place and wraps, so all of it shows.
-    static func header(agent: String?, quote words: String?, notice: String? = nil) -> NSAttributedString {
-        let header = NSMutableAttributedString(attributedString: name(agent))
-        let notice = notice?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let aside = notice.flatMap { $0.isEmpty ? nil : NSAttributedString(string: "·  \($0)", attributes: [.font: quoteFont, .foregroundColor: quoteColor]) }
-            ?? quote(words)
-        if let aside {
-            header.append(NSAttributedString(string: " ", attributes: [.font: quoteFont]))
-            header.append(aside)
+    static func layout(_ text: String, quote: String?, notice: String?, answerer: String, foot: CGSize) -> Layout {
+        let width = max(NoteLayout.width, ceil(foot.width) + insets.left + insets.right)
+        let inner = width - insets.left - insets.right
+        var question: CGRect?
+        var rowTop = rowTopAlone
+        if let quote = shown(quote) {
+            let frame = NoteLayout.fieldFrame(height: NoteLayout.wordsHeight(quote))
+            question = frame
+            rowTop = frame.maxY + NoteLayout.belowWords
         }
-        let line = NSMutableParagraphStyle()
-        line.lineBreakMode = notice?.isEmpty == false ? .byWordWrapping : .byTruncatingTail
-        header.addAttribute(.paragraphStyle, value: line, range: NSRange(location: 0, length: header.length))
-        return header
+        var rowHeight = NoteLayout.row
+        if shown(notice) != nil {
+            let line = row(answerer: answerer, notice: notice)
+                .boundingRect(with: CGSize(width: inner - nameInset, height: .greatestFiniteMagnitude), options: measuring)
+            rowHeight = max(rowHeight, ceil(line.height) + buttonTop * 2 + 6)
+        }
+        var bottom = rowTop + rowHeight
+        var words: CGRect?
+        if !text.isEmpty {
+            let measured = wordsSize(text, wrap: inner)
+            let frame = CGRect(x: insets.left, y: bottom - wordsIntoRow, width: inner, height: measured.height)
+            words = frame
+            bottom = frame.maxY + insets.bottom
+        }
+        return Layout(size: CGSize(width: width, height: ceil(bottom + foot.height)), question: question, rowTop: rowTop,
+                      rowHeight: rowHeight, words: words)
+    }
+
+    /// The body's size, as `layout` lays it out.
+    static func size(_ text: String, agent: String?, answerer: String? = nil, quote: String?, notice: String? = nil, foot: CGSize) -> CGSize {
+        layout(text, quote: quote, notice: notice, answerer: name(agent: agent, answerer: answerer), foot: foot).size
+    }
+
+    /// Who the row says answers.
+    static func name(agent: String?, answerer: String?) -> String { answerer ?? NoteBadge.label(for: agent) }
+
+    /// The row's words: who answers, as the note's target named them, then Vignette's `notice`, which wraps.
+    /// A notice is written to stand alone on the ink, so one that opens with the answerer's name
+    /// ("Claude couldn't answer.") goes on from the name already in the row instead of repeating it.
+    static func row(answerer: String, notice: String?) -> NSAttributedString {
+        let row = NSMutableAttributedString(string: answerer, attributes: [.font: NoteLayout.labelFont, .foregroundColor: NSColor.secondaryLabelColor])
+        if let notice = shown(notice) {
+            let rest = notice.hasPrefix(answerer + " ") || notice.hasPrefix(answerer + "'") ? String(notice.dropFirst(answerer.count)) : "  ·  \(notice)"
+            row.append(NSAttributedString(string: rest, attributes: [.font: noticeFont, .foregroundColor: NSColor.secondaryLabelColor]))
+        }
+        return row
     }
 
     static func words(_ text: String) -> NSAttributedString {
         NSAttributedString(string: text, attributes: [.font: wordsFont, .foregroundColor: NSColor.labelColor])
-    }
-
-    /// The header's height: one line of its font.
-    static var headerHeight: CGFloat {
-        ceil(max(logoSize, name(nil).boundingRect(with: CGSize(width: 1000, height: 1000), options: measuring).height))
     }
 
     /// The size the words take wrapped at `wrap` points.
@@ -118,170 +140,106 @@ enum ReplyContent {
         return CGSize(width: ceil(size.width), height: ceil(size.height))
     }
 
-    /// The header's width before any of the question is cut.
-    static func headerWidth(agent: String?, quote words: String?, notice: String? = nil) -> CGFloat {
-        let one = CGSize(width: 10_000, height: 100)
-        let logo = agent.map { _ in logoSize + spacing } ?? 0
-        return logo + ceil(header(agent: agent, quote: words, notice: notice).boundingRect(with: one, options: measuring).width)
-    }
-
-    /// The header's height in a body `inner` points wide inside its insets: one line, or as many as
-    /// a notice wraps to.
-    static func headerHeight(agent: String?, quote words: String?, notice: String?, inner: CGFloat) -> CGFloat {
-        guard notice?.isEmpty == false else { return headerHeight }
-        let logo = agent.map { _ in logoSize + spacing } ?? 0
-        let room = CGSize(width: inner - logo, height: .greatestFiniteMagnitude)
-        return max(headerHeight, ceil(header(agent: agent, quote: words, notice: notice).boundingRect(with: room, options: measuring).height))
-    }
-
-    /// The body's size for `text` wrapped at `wrap` points, with `foot` kept at its foot.
-    static func size(_ text: String, agent: String?, quote: String?, notice: String? = nil, wrap: CGFloat, foot: CGSize) -> CGSize {
-        let words = wordsSize(text, wrap: wrap)
-        let inner = max(min(wrap, max(words.width, headerWidth(agent: agent, quote: quote, notice: notice))), foot.width)
-        let width = ceil(insets.left + inner + insets.right)
-        // Measured at the width the view lays it out in, so it wraps to the same lines.
-        let header = headerHeight(agent: agent, quote: quote, notice: notice, inner: width - insets.left - insets.right)
-        let height = insets.top + header + spacing + words.height + insets.bottom + foot.height
-        return CGSize(width: width, height: ceil(height))
+    private static func shown(_ words: String?) -> String? {
+        guard let words = words?.trimmingCharacters(in: .whitespacesAndNewlines), !words.isEmpty else { return nil }
+        return words
     }
 }
 
-/// The popover's content: the header and the words, laid out by `ReplyContent`'s measures. The words
-/// cross-fade when they change.
+/// The popover's content, laid out by `ReplyContent`: the question in a field set up as the note's,
+/// the row with the answerer's logo and name, and the answer's words, which cross-fade when they
+/// change. The question greys once there are words under it, so the answer leads. While the agent
+/// works, the thinking light runs round its rim.
 @MainActor
 final class ReplyView: NSView {
+    private let question = NSTextField()
     private let logo = NSImageView()
-    private let header = Drawn()
+    private let name = NSTextField(labelWithString: "")
     private let words = Drawn()
+    let light = RimLight()
 
     override var isFlipped: Bool { true }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        NoteLayout.configure(question)
+        question.isEditable = false
+        question.isSelectable = false
+        question.wantsLayer = true
+        question.maximumNumberOfLines = NoteLayout.mostLines
+        question.cell?.truncatesLastVisibleLine = true
         logo.imageScaling = .scaleProportionallyUpOrDown
-        logo.contentTintColor = .secondaryLabelColor
-        for view in [logo, header, words] as [NSView] { addSubview(view) }
+        name.font = NoteLayout.labelFont
+        name.textColor = .secondaryLabelColor
+        name.wantsLayer = true
+        for view in [question, logo, name, words] as [NSView] { addSubview(view) }
         wantsLayer = true
-        updateBacking()
         words.wantsLayer = true
         words.layerContentsRedrawPolicy = .onSetNeedsDisplay
+        layer?.addSublayer(light)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// How solid the window's background is behind the header and words. The glass alone takes the
-    /// colour of what is under it, and over a dark window it turned dark under dark text: 2 to 3:1,
-    /// where 75% keeps 7:1 and a little of the glass (docs/live-ink-look-2026-10-07.md, step 10).
-    private static let backing: CGFloat = 0.75
-
-    private func updateBacking() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(Self.backing).cgColor
-        }
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateBacking()
-    }
-
-    /// Shows `text` from `agent`, under the question's `quote` or Vignette's `notice`, wrapped at `wrap`,
-    /// in a body of `size`. With `fade`, the words cross-fade from the last ones over that many seconds.
-    func show(_ text: String, agent: String?, quote: String?, notice: String?, wrap: CGFloat, size: CGSize, fade: CFTimeInterval) {
+    /// Shows `text` from `agent`, named `answerer`, under the person's `quote`, with Vignette's
+    /// `notice` in the row, in a body laid out as `layout`. With `fade`, what changed cross-fades over
+    /// that many seconds.
+    func show(_ text: String, agent: String?, answerer: String, quote: String?, notice: String?, layout: ReplyContent.Layout,
+              fade: CFTimeInterval) {
         let insets = ReplyContent.insets
-        let inner = size.width - insets.left - insets.right
-        let line = ReplyContent.headerHeight(agent: agent, quote: quote, notice: notice, inner: inner)
+        question.isHidden = layout.question == nil
+        if let frame = layout.question {
+            if question.stringValue != quote ?? "" { question.stringValue = quote ?? "" }
+            question.frame = frame
+        }
+        let questionColor: NSColor = text.isEmpty ? .labelColor : .secondaryLabelColor
+        if question.textColor != questionColor {
+            if fade > 0 { question.layer?.add(Self.crossFade(fade), forKey: "colour") }
+            question.textColor = questionColor
+        }
+        let button = layout.rowTop + ReplyContent.buttonTop
         logo.image = agent.flatMap { Agent.logo(for: $0) }
-        logo.isHidden = logo.image == nil
-        logo.frame = CGRect(x: insets.left, y: insets.top + (ReplyContent.headerHeight - ReplyContent.logoSize) / 2,
-                            width: ReplyContent.logoSize, height: ReplyContent.logoSize)
-        let headerX = insets.left + (logo.isHidden ? 0 : ReplyContent.logoSize + ReplyContent.spacing)
-        self.header.frame = CGRect(x: headerX, y: insets.top, width: insets.left + inner - headerX, height: line)
-        self.header.text = ReplyContent.header(agent: agent, quote: quote, notice: notice)
-        self.header.options = [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine]
-        let measured = ReplyContent.wordsSize(text, wrap: wrap)
-        let changed = words.text?.string != text
-        if changed, fade > 0, words.text != nil {
-            let transition = CATransition()
-            transition.type = .fade
-            transition.duration = fade
-            words.layer?.add(transition, forKey: "words")
+        logo.frame = CGRect(x: insets.left, y: button + (NoteLayout.buttonHeight - NoteLayout.logoSize) / 2, width: NoteLayout.logoSize, height: NoteLayout.logoSize)
+        let x = insets.left + ReplyContent.nameInset
+        let row = ReplyContent.row(answerer: answerer, notice: notice)
+        if name.attributedStringValue != row {
+            if fade > 0, !name.stringValue.isEmpty { name.layer?.add(Self.crossFade(fade), forKey: "row") }
+            name.attributedStringValue = row
         }
-        // A body widened for its buttons still wraps the words where they were measured.
-        words.frame = CGRect(x: insets.left, y: insets.top + line + ReplyContent.spacing, width: min(inner, wrap), height: measured.height)
-        words.text = ReplyContent.words(text)
-        if let light = words.layer?.mask {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            light.frame = words.bounds
-            CATransaction.commit()
-        }
-    }
-
-    /// The thinking light on the words: they dim, and a band of full strength crosses them on the beat
-    /// of the light on the marks, a third of a beat behind the band on the ink, as a note's sheen is.
-    /// The band is the words' own opacity, so it reads on a light popover and a dark one. With motion
-    /// off they dim and hold. It fades in and out as the light on the marks does.
-    func think(_ on: Bool) {
-        guard on != thinking, let layer = words.layer else { return }
-        thinking = on
-        let fade = LiveMarksLayer.thinkingFade * Settings.shared.motionScale
-        let still = Settings.shared.motionScale == 0
-        let whole = [CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1)]
-        let dim = CGColor(gray: 0, alpha: still ? Self.stillDim : Self.dim)
-        let lit = [dim, still ? dim : CGColor(gray: 0, alpha: 1), dim]
-        let light = layer.mask as? CAGradientLayer ?? CAGradientLayer()
-        if on {
-            light.frame = words.bounds
-            light.startPoint = CGPoint(x: 0, y: 0.3)
-            light.endPoint = CGPoint(x: 1, y: 0.7)
-            light.colors = lit
-            light.locations = [-0.3, -0.15, 0]
-            layer.mask = light
-            if !still {
-                let sweep = CABasicAnimation(keyPath: "locations")
-                sweep.fromValue = [-0.3, -0.15, 0]
-                sweep.toValue = [1, 1.15, 1.3]
-                sweep.duration = LiveMarksLayer.thinkingPeriod
-                sweep.repeatCount = .infinity
-                sweep.beginTime = light.convertTime(LiveMarksLayer.thinkingEpoch, from: nil)
-                sweep.timeOffset = LiveMarksLayer.thinkingPeriod * 0.65
-                light.add(sweep, forKey: "think")
-            }
-            guard fade > 0 else { return }
-            let dimming = CABasicAnimation(keyPath: "colors")
-            dimming.fromValue = whole
-            dimming.duration = fade
-            light.add(dimming, forKey: "fade")
+        if notice == nil || notice?.isEmpty == true {
+            // As the note's target names it, so the one hands over to the other unseen.
+            name.maximumNumberOfLines = 1
+            name.lineBreakMode = .byTruncatingMiddle
+            let line = ceil(name.intrinsicContentSize.height)
+            name.frame = CGRect(x: x, y: button + (NoteLayout.buttonHeight - line) / 2, width: NoteLayout.labelWidth(answerer), height: line)
         } else {
-            guard layer.mask === light else { return }
-            let from = light.presentation()?.colors ?? light.colors
-            light.colors = whole
-            guard fade > 0 else { layer.mask = nil; return }
-            CATransaction.begin()
-            CATransaction.setCompletionBlock { [weak self] in
-                guard self?.thinking == false, layer.mask === light else { return }
-                layer.mask = nil
-            }
-            let brightening = CABasicAnimation(keyPath: "colors")
-            brightening.fromValue = from
-            brightening.duration = fade
-            light.add(brightening, forKey: "fade")
-            CATransaction.commit()
+            name.maximumNumberOfLines = 0
+            name.lineBreakMode = .byWordWrapping
+            let width = layout.size.width - insets.right - x
+            let height = ceil(row.boundingRect(with: CGSize(width: width - 4, height: .greatestFiniteMagnitude), options: ReplyContent.measuring).height)
+            name.frame = CGRect(x: x, y: button + 3, width: width, height: height)
         }
+        let changed = words.text?.string != text
+        if changed, fade > 0, words.text != nil, !(words.text?.string.isEmpty ?? true) {
+            words.layer?.add(Self.crossFade(fade), forKey: "words")
+        }
+        words.isHidden = layout.words == nil
+        words.frame = layout.words ?? .zero
+        words.text = ReplyContent.words(text)
     }
 
-    private var thinking = false
-    /// How far the words dim around the band, and with motion off.
-    private static let dim: CGFloat = 0.45
-    private static let stillDim: CGFloat = 0.6
+    private static func crossFade(_ duration: CFTimeInterval) -> CATransition {
+        let fade = CATransition()
+        fade.type = .fade
+        fade.duration = duration
+        return fade
+    }
 
     /// Draws an attributed string in its bounds, as `ReplyContent` measured it.
     private final class Drawn: NSView {
         var text: NSAttributedString? { didSet { needsDisplay = true } }
-        var options: NSString.DrawingOptions = ReplyContent.measuring
         override var isFlipped: Bool { true }
-        override func draw(_ dirtyRect: NSRect) { text?.draw(with: bounds, options: options) }
+        override func draw(_ dirtyRect: NSRect) { text?.draw(with: bounds, options: ReplyContent.measuring) }
     }
 }
 
@@ -300,7 +258,7 @@ final class ReplyPopover {
     private let view = ReplyView(frame: .zero)
     private weak var host: NSView?
     private let sharing: NSWindow.SharingType
-    private var shown: (text: String, quote: String?, notice: String?, agent: String?, wrap: CGFloat, foot: CGSize)?
+    private var shown: (text: String, quote: String?, notice: String?, agent: String?, answerer: String, foot: CGSize)?
     /// The edge it hangs from now, and the mark.
     private var edge: PopoverPlace.Edge?
     private var anchor: Mark.ID?
@@ -342,13 +300,14 @@ final class ReplyPopover {
     /// Shows `mark`'s words hung from `rect`, in the host view's coordinates, on `place`'s edge, or
     /// moves it there and updates its words. `appearing` lets AppKit animate it in.
     func show(_ mark: Mark, place: PopoverPlace, at rect: CGRect, appearing: Bool) {
-        // A reply always wraps where the layout measured it.
-        guard case .text(let text) = mark.geometry, let wrap = text.wrap, let host, !closing else { return }
+        guard case .text(let text) = mark.geometry, let host, !closing else { return }
         let motion = Settings.shared.motionScale
-        let size = ReplyContent.size(text.text, agent: mark.agentName, quote: mark.quote, notice: mark.notice, wrap: wrap, foot: place.foot)
-        let next = (text: text.text, quote: mark.quote, notice: mark.notice, agent: mark.agentName, wrap: wrap, foot: place.foot)
+        let answerer = ReplyContent.name(agent: mark.agentName, answerer: mark.answerer)
+        let layout = ReplyContent.layout(text.text, quote: mark.quote, notice: mark.notice, answerer: answerer, foot: place.foot)
+        let size = layout.size
+        let next = (text: text.text, quote: mark.quote, notice: mark.notice, agent: mark.agentName, answerer: answerer, foot: place.foot)
         if shown.map({ $0 != next }) ?? true {
-            view.show(text.text, agent: mark.agentName, quote: mark.quote, notice: mark.notice, wrap: wrap, size: size,
+            view.show(text.text, agent: mark.agentName, answerer: answerer, quote: mark.quote, notice: mark.notice, layout: layout,
                       fade: shown == nil ? 0 : Self.wordsFade * motion)
             shown = next
         }
@@ -366,6 +325,7 @@ final class ReplyPopover {
                 popover.positioningRect = rect
             }
             anchor = place.anchor
+            placeLight()
             return
         }
         guard host.window?.isVisible == true else { return }
@@ -375,13 +335,15 @@ final class ReplyPopover {
         popover.show(relativeTo: rect, of: host, preferredEdge: Self.edge(place.edge, flipped: host.isFlipped))
         edge = place.edge
         anchor = place.anchor
+        placeLight()
         if let window {
             window.ignoresMouseEvents = true
             window.sharingType = sharing
             window.alphaValue = alpha
             watching = [NSWindow.didMoveNotification, NSWindow.didResizeNotification].map { name in
-                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { _ in
+                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                     NotificationCenter.default.post(name: .liveReplyChanged, object: nil)
+                    MainActor.assumeIsolated { self?.placeLight() }
                 }
             }
             // Run as the window becomes key, so its glass never draws as key.
@@ -431,8 +393,25 @@ final class ReplyPopover {
         slidingTo = nil
     }
 
-    /// Whether the reply carries the thinking light, as the marks it answers do while the session works.
-    func think(_ on: Bool) { view.think(on) }
+    /// Whether the reply carries the thinking light, as the marks it answers do while the agent works.
+    func think(_ on: Bool) {
+        placeLight()
+        // One that comes up lit takes over from the note, whose light was already on.
+        view.light.think(on, fades: popover.isShown)
+    }
+
+    /// Lays the thinking light round the body as it is now, starting under the arrow.
+    private func placeLight() {
+        guard let window, let edge, let host, let hostWindow = host.window else { return }
+        let body = Self.topLeft(window.convertToScreen(view.convert(view.bounds, to: nil)))
+        let at = Self.topLeft(hostWindow.convertToScreen(host.convert(popover.positioningRect, to: nil)))
+        let dark = view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        view.light.place(view.bounds, start: RimLight.start(of: body, hungFrom: at, edge: edge), dark: dark)
+    }
+
+    private static func topLeft(_ rect: CGRect) -> CGRect {
+        CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: rect.width, height: rect.height)
+    }
 
     /// Fades the popover to `target` over `duration`, as its mark fades.
     func fade(to target: CGFloat, duration: CFTimeInterval) {

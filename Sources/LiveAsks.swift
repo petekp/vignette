@@ -86,10 +86,10 @@ struct LiveAsks: Equatable {
 
     func isFinishing(_ id: Mark.ID) -> Bool { records[id]?.finishing != nil }
 
-    /// The marks that pulse: what the ask under way is about.
+    /// The marks that pulse: what the ask under way is about, and the reply it will answer in.
     var pulsing: Set<Mark.ID> {
-        guard let ask else { return [] }
-        return [.looking, .asking].contains(ask.phase) ? ask.about : []
+        guard let ask, [.looking, .asking].contains(ask.phase) else { return [] }
+        return ask.about.union(ask.say.map { [$0.id] } ?? [])
     }
 
     var isUnderWay: Bool { ask?.phase == .looking || ask?.phase == .asking }
@@ -202,8 +202,7 @@ struct LiveAsks: Equatable {
         /// ⌘⌫ in the note.
         case noteDiscarded
         /// The marks were taken off the screen: erased, picked, a step or a focus stop done, the
-        /// question its reply took the place of, the marks of a display unplugged, or anything else
-        /// that leaves. Each loses its roles and its finish. The ask, and the marks it is about, stay
+        /// marks of a display unplugged, or anything else that leaves. Each loses its roles and its finish. The ask, and the marks it is about, stay
         /// as they are.
         case removed(Set<Mark.ID>)
         /// The marks went with their window. They keep the note's ink and their finish.
@@ -218,8 +217,9 @@ struct LiveAsks: Equatable {
 
         // What LiveInk drew for the current ask, in the turn its packet, reply or answer was taken.
 
-        /// The person's words stay beside the ink as a note of theirs.
-        case noted(Mark.ID)
+        /// The note the person asked in became the conversation: the reply, with no words yet, under
+        /// their question, which carries the thinking light and takes the answer's words.
+        case conversed(Mark)
         case streamed(Mark)
         /// The answer was drawn: its reply, and of its other marks those `shown` now.
         case answered(reply: Mark?, actions: [LiveAnswer.Action], findings: [[Mark.ID]], shown: Set<Mark.ID>)
@@ -264,8 +264,10 @@ struct LiveAsks: Equatable {
         /// The answer is back as it was before its button was picked. Draw `reply` again, saying
         /// `reason` in its header, and send `replyRedrawn`.
         case restore(reply: Mark.ID, reason: String)
-        /// Say `reason` in a note beside the ink.
+        /// Say `reason` in a reply hung from the ink.
         case say(String)
+        /// Say `reason` in `reply`'s row, in place of its words, and send `replyRedrawn`.
+        case notice(reply: Mark.ID, reason: String)
         /// Take these marks off the screen.
         case remove(Set<Mark.ID>)
         /// Let go of the steps, the focus and the answer's buttons, then take these marks off. The ask
@@ -308,12 +310,12 @@ struct LiveAsks: Equatable {
             case .failed(let reason, let shown):
                 return fail(saying: reason, shown: shown)
             case .sentToSession(let ink):
-                return finish(current.about.union(ink), .dismissed)
+                return finish(current.about.union(ink).union(current.say.map { [$0.id] } ?? []), .dismissed)
             }
 
-        case .noted(let note):
-            add(.asked, to: [note])
-            ask?.about.insert(note)
+        case .conversed(let reply):
+            ask?.say = reply
+            add(.answer, to: [reply.id])
         case .pictureSent(let fresh, _):
             ask?.picture = fresh
         case .streamed(let reply):
@@ -377,12 +379,15 @@ struct LiveAsks: Equatable {
         return [.removeAnswer(gone)]
     }
 
-    /// The answer a button was picked under comes back, or else the ask fails, saying why in place of
-    /// the answer.
+    /// The answer a button was picked under comes back, or else the ask fails, saying why in the
+    /// conversation's row when it is on the screen, and else in a reply of its own.
     private mutating func fail(saying reason: String, shown: Set<Mark.ID>) -> [Effect] {
         if let restored = restore(saying: reason, shown: shown) { return [restored] }
         ask?.phase = .failed
         ask?.reason = reason
+        if let reply = ask?.say?.id, shown.contains(reply) {
+            return removeAnswer(keeping: reply) + [.notice(reply: reply, reason: reason)]
+        }
         return removeAnswer(keeping: nil) + [.say(reason)]
     }
 

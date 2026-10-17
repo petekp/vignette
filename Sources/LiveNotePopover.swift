@@ -49,8 +49,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private var place: PopoverPlace
     private var sessions: [AgentDestination] = []
     private var closing = false
+    /// Waiting to look as the conversation does before handing over to it, which `fadeAway` can stop.
+    private var handingOver = false
     private var revealed = false
-    /// Sent: the words stay, the keys are let go, and only `settle` or its time limit closes it.
+    /// Sent: the words stay, the keys are let go, and only the handover or `fadeAway` closes it.
     private var sent = false
     /// The target's menu is up. It takes the keys while it is, and `popUp` returns when it closes.
     private var menuOpen = false
@@ -67,7 +69,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// The body at the height it is placed for, three lines of words, so it can grow without covering
     /// what it was placed clear of.
-    static var placementSize: CGSize { NoteContent.size(lines: 3) }
+    static var placementSize: CGSize { NoteLayout.size(lines: 3) }
 
     /// Opens hung from `place`, in global top-left points, out of sight until `reveal`, but with the
     /// keys, so what the person types meanwhile is in it when it shows.
@@ -89,7 +91,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.layOut()
         popover.contentSize = content.frame.size
         host.orderFrontRegardless()
-        popover.show(relativeTo: host.anchor.bounds, of: host.anchor, preferredEdge: Self.edge(place.edge))
+        popover.show(relativeTo: host.spot, of: host.anchor, preferredEdge: Self.edge(place.edge))
         guard let window = content.window else { return }
         window.alphaValue = 0
         window.makeKey()
@@ -143,9 +145,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         // AppKit keeps the edge it was shown on, so another edge means showing it again. That keeps the
         // keys and the caret.
         if edge {
-            popover.show(relativeTo: host.anchor.bounds, of: host.anchor, preferredEdge: Self.edge(place.edge))
+            popover.show(relativeTo: host.spot, of: host.anchor, preferredEdge: Self.edge(place.edge))
         } else {
-            popover.positioningRect = host.anchor.bounds
+            popover.positioningRect = host.spot
         }
     }
 
@@ -305,42 +307,88 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         onAsk?(words, target)
     }
 
-    /// Sent: the words stay and the target dims while it waits for `settle`, and the keys go back to
-    /// the app the person was in. It closes itself after a few seconds.
+    /// Sent: the words stay, the target settles into the name the conversation's row shows, the key
+    /// that asks fades, and the thinking light runs round the rim while the ask is handed on. The keys
+    /// go back to the app the person was in. Only `handOver` or `fadeAway` closes it.
     private func showSent() {
         sent = true
         content.field.isEditable = false
         content.field.isSelectable = false
         letGoOfKeys()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.fadeOut * Settings.shared.motionScale
-            content.session.animator().alphaValue = 0.4
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.settle(into: nil) }
+        content.settle(duration: Self.settleDuration * Settings.shared.motionScale)
+        placeLight()
+        content.light.think(true)
+        settledAt = CACurrentMediaTime() + Self.settleDuration * Settings.shared.motionScale
     }
 
-    /// Fades out over the note drawn at `tag`, in global top-left points, which takes its place; nil
-    /// fades it where it is.
-    func settle(into tag: CGRect?) {
-        guard !closing else { return }
+    /// When the target has settled, so the note looks as the conversation that takes its place does.
+    private var settledAt: CFTimeInterval = 0
+
+    /// Where it hangs now, with its body where AppKit put it, in global top-left points.
+    var shownPlace: PopoverPlace? {
+        guard let body = globalFrame else { return nil }
+        var shown = place
+        shown.body = body
+        return shown
+    }
+
+    /// Hands over to the conversation that takes its place: `ready` runs once the note looks as the
+    /// conversation will, and shows it there; the note goes a few display refreshes later, once the
+    /// conversation is on the screen, with no fade, since the two look the same.
+    func handOver(when ready: @escaping () -> Void) {
+        guard !closing else { return ready() }
         closing = true
+        handingOver = true
         stopWatching()
-        let popover = popover, host = host
-        guard let window = content.window, Settings.shared.motionScale > 0 else {
-            popover.close()
-            host.orderOut(nil)
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.fadeOut * Settings.shared.motionScale
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            window.animator().alphaValue = 0
-        } completionHandler: {
-            MainActor.assumeIsolated {
+        let wait = max(settledAt - CACurrentMediaTime(), 0)
+        // Held until it is gone, whoever lets go of it meanwhile.
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [self] in
+            guard handingOver else { return }
+            handingOver = false
+            ready()
+            // In the commit that shows the conversation, since the two glasses over each other darken
+            // the note for the frame they share. The window goes once the display has shown that.
+            content.window?.alphaValue = 0
+            removal.start(on: content.window?.screen) { [self] in
                 popover.close()
                 host.orderOut(nil)
             }
         }
+    }
+
+    /// Fades out where it is, with nothing to take its place, after `delay` and over `duration`, or
+    /// over its own short fade. A handover still waiting for the note to settle is called off.
+    func fadeAway(after delay: CFTimeInterval = 0, over duration: CFTimeInterval? = nil) {
+        guard !closing || handingOver else { return }
+        closing = true
+        handingOver = false
+        stopWatching()
+        let popover = popover, host = host
+        let duration = duration ?? Self.fadeOut * Settings.shared.motionScale
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [content] in
+            guard let window = content.window, duration > 0 else {
+                popover.close()
+                host.orderOut(nil)
+                return
+            }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = duration
+                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                window.animator().alphaValue = 0
+            } completionHandler: {
+                MainActor.assumeIsolated {
+                    popover.close()
+                    host.orderOut(nil)
+                }
+            }
+        }
+    }
+
+    /// Lays the thinking light round the body, starting under the arrow.
+    private func placeLight() {
+        guard let body = globalFrame else { return }
+        let dark = content.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        content.light.place(content.bounds, start: RimLight.start(of: body, hungFrom: place.at, edge: place.edge), dark: dark)
     }
 
     /// Gives the keys back to the app the person was in, now rather than when the window goes.
@@ -381,15 +429,22 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     private static let fadeIn: TimeInterval = 0.18
     private static let fadeOut: TimeInterval = 0.16
+    /// How long the target takes to settle into a name once sent, at full motion.
+    private static let settleDuration: TimeInterval = 0.18
+    private let removal = WindowRemoval()
     /// Between the target and its list, and between the list and the screen's edge, in points.
     private static let menuGap: CGFloat = 4
 
-    /// The clear window a note's popover hangs from.
+    /// The clear window a note's popover hangs from, a little bigger than the rect it hangs from and
+    /// on whole points, with that rect, `spot`, inside it: a window's frame is rounded, and a popover
+    /// hung from a window one point wide sat a point off the conversation hung from the same rect.
     private final class Host: NSPanel {
         let anchor = NSView()
+        private(set) var spot: CGRect = .zero
 
         init(at rect: CGRect) {
             super.init(contentRect: Self.frame(rect), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            spot = Self.spot(rect, in: frame)
             isOpaque = false
             backgroundColor = .clear
             ignoresMouseEvents = true
@@ -403,11 +458,88 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         override var canBecomeKey: Bool { false }
         override var canBecomeMain: Bool { false }
 
-        func move(to rect: CGRect) { setFrame(Self.frame(rect), display: false) }
-
-        private static func frame(_ rect: CGRect) -> CGRect {
-            CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: max(rect.width, 1), height: max(rect.height, 1))
+        func move(to rect: CGRect) {
+            setFrame(Self.frame(rect), display: false)
+            spot = Self.spot(rect, in: frame)
         }
+
+        /// `rect`, in global top-left points, in AppKit's screen coordinates.
+        private static func flipped(_ rect: CGRect) -> CGRect {
+            CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: rect.width, height: rect.height)
+        }
+
+        private static func frame(_ rect: CGRect) -> CGRect { flipped(rect).insetBy(dx: -4, dy: -4).integral }
+
+        /// `rect` in the coordinates of a window whose frame is `frame`.
+        private static func spot(_ rect: CGRect, in frame: CGRect) -> CGRect {
+            flipped(rect).offsetBy(dx: -frame.minX, dy: -frame.minY)
+        }
+    }
+}
+
+/// What the note and the conversation that takes its place share, so the one hands over to the
+/// other without a seam: the width, the words' font and place, and the row under them.
+enum NoteLayout {
+    static let width: CGFloat = 300
+    static let inset: CGFloat = 12
+    static let top: CGFloat = 11
+    static let belowWords: CGFloat = 4
+    static let row: CGFloat = 34
+    static let mostLines = 5
+    /// Where an `NSTextField` without a border starts its words, past its frame's left edge: its text
+    /// container's line fragment padding.
+    static let fieldTextInset: CGFloat = 2
+    static var font: NSFont { .systemFont(ofSize: NSFont.systemFontSize) }
+    static var lineHeight: CGFloat { ceil(font.ascender - font.descender + font.leading) }
+    /// How wide the words wrap.
+    static var wordsWidth: CGFloat { width - inset * 2 }
+    static var fieldWidth: CGFloat { wordsWidth + fieldTextInset * 2 }
+
+    /// The note's body with `lines` lines of words.
+    static func size(lines: Int) -> CGSize {
+        CGSize(width: width, height: top + CGFloat(lines) * lineHeight + belowWords + row)
+    }
+
+    /// The height of `text`'s lines wrapped as the field wraps them, from one line to `mostLines`.
+    static func wordsHeight(_ text: String) -> CGFloat {
+        let measured = NSAttributedString(string: text, attributes: [.font: font])
+            .boundingRect(with: CGSize(width: wordsWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading])
+        return min(max(ceil(measured.height), lineHeight), lineHeight * CGFloat(mostLines))
+    }
+
+    /// The field's frame for words `height` high, in a flipped view.
+    static func fieldFrame(height: CGFloat) -> CGRect {
+        CGRect(x: inset - fieldTextInset, y: top, width: fieldWidth, height: height)
+    }
+
+    /// Sets `field` up to show the person's words as the note does.
+    @MainActor
+    static func configure(_ field: NSTextField) {
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = font
+        field.textColor = .labelColor
+        field.cell?.wraps = true
+        field.cell?.isScrollable = false
+        field.cell?.usesSingleLineMode = false
+        field.lineBreakMode = .byWordWrapping
+    }
+
+    /// The row's target: its logo, `logoSize` square, `inset` from the left, then its name, `gap`
+    /// after it, in `labelFont`.
+    static let logoSize: CGFloat = 14
+    static let gap: CGFloat = 5
+    static var labelFont: NSFont { .systemFont(ofSize: 12, weight: .medium) }
+    /// The target button's height, centred in the row.
+    static let buttonHeight: CGFloat = 22
+    /// The widest a target's name is shown; past it the name is cut in the middle.
+    private static let longestLabel: CGFloat = 180
+
+    /// The width a label of `title` takes in the row, cut at `longestLabel`. A label's cell draws its
+    /// words a couple of points in from each side.
+    static func labelWidth(_ title: String) -> CGFloat {
+        min(ceil((title as NSString).size(withAttributes: [.font: labelFont]).width) + 4, longestLabel)
     }
 }
 
@@ -417,62 +549,45 @@ private final class NoteContent: NSView {
     let field = NSTextField()
     let session = SessionButton()
     private let key = NSTextField(labelWithString: "↩")
-
-    static let width: CGFloat = 300
-    private static let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-    private static let inset: CGFloat = 12
-    private static let top: CGFloat = 11
-    private static let belowWords: CGFloat = 4
-    private static let row: CGFloat = 34
-    private static let mostLines = 5
-    /// Where an `NSTextField` without a border starts its words, past its frame's left edge.
-    private static let fieldTextInset: CGFloat = 2
-    private static var lineHeight: CGFloat { ceil(font.ascender - font.descender + font.leading) }
-
-    /// The body with `lines` lines of words.
-    static func size(lines: Int) -> CGSize {
-        CGSize(width: width, height: top + CGFloat(lines) * lineHeight + belowWords + row)
-    }
+    let light = RimLight()
 
     override var isFlipped: Bool { true }
 
     init() {
-        super.init(frame: CGRect(origin: .zero, size: Self.size(lines: 1)))
-        field.isBordered = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        field.font = Self.font
-        field.textColor = .labelColor
-        field.cell?.wraps = true
-        field.cell?.isScrollable = false
-        field.cell?.usesSingleLineMode = false
-        field.lineBreakMode = .byWordWrapping
-        key.font = .systemFont(ofSize: 12, weight: .medium)
+        super.init(frame: CGRect(origin: .zero, size: NoteLayout.size(lines: 1)))
+        NoteLayout.configure(field)
+        key.font = NoteLayout.labelFont
         key.textColor = .secondaryLabelColor
         key.toolTip = "Return asks"
         for view in [field, session, key] { addSubview(view) }
+        wantsLayer = true
+        layer?.addSublayer(light)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
     /// The words' own rect, without the field's inset.
-    var wordsFrame: CGRect { field.frame.insetBy(dx: Self.fieldTextInset, dy: 0) }
+    var wordsFrame: CGRect { field.frame.insetBy(dx: NoteLayout.fieldTextInset, dy: 0) }
 
     /// Sizes the field to its words, from one line to `mostLines`, and itself round them.
     func layOut() {
-        let fieldWidth = Self.width - Self.inset * 2 + Self.fieldTextInset * 2
-        // While the field is being edited its cell still holds the words from before, so a copy of it
-        // holding the editor's words measures them.
-        let measuring = field.cell?.copy() as? NSTextFieldCell
-        measuring?.stringValue = field.currentEditor()?.string ?? field.stringValue
-        let measured = measuring?.cellSize(forBounds: CGRect(x: 0, y: 0, width: fieldWidth, height: .greatestFiniteMagnitude)).height ?? 0
-        let wordsHeight = min(max(ceil(measured), Self.lineHeight), Self.lineHeight * CGFloat(Self.mostLines))
-        field.frame = CGRect(x: Self.inset - Self.fieldTextInset, y: Self.top, width: fieldWidth, height: wordsHeight)
-        let rowY = Self.top + wordsHeight + Self.belowWords
-        session.setFrameOrigin(CGPoint(x: Self.inset - 6, y: rowY + (Self.row - SessionButton.height) / 2))
+        let words = NoteLayout.wordsHeight(field.currentEditor()?.string ?? field.stringValue)
+        field.frame = NoteLayout.fieldFrame(height: words)
+        let rowY = NoteLayout.top + words + NoteLayout.belowWords
+        session.setFrameOrigin(CGPoint(x: NoteLayout.inset - SessionButton.pad, y: rowY + (NoteLayout.row - SessionButton.height) / 2))
         key.sizeToFit()
-        key.setFrameOrigin(CGPoint(x: Self.width - Self.inset - key.frame.width, y: rowY + (Self.row - key.frame.height) / 2))
-        setFrameSize(CGSize(width: Self.width, height: rowY + Self.row))
+        key.setFrameOrigin(CGPoint(x: NoteLayout.width - NoteLayout.inset - key.frame.width, y: rowY + (NoteLayout.row - key.frame.height) / 2))
+        setFrameSize(CGSize(width: NoteLayout.width, height: rowY + NoteLayout.row))
+    }
+
+    /// Sent: the target settles into the row the conversation shows, a name rather than a button, and
+    /// the key that asks fades, over `duration`.
+    func settle(duration: CFTimeInterval) {
+        session.settle(duration: duration)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            key.animator().alphaValue = 0
+        }
     }
 }
 
@@ -485,14 +600,11 @@ private final class SessionButton: NSView {
     private let label = NSTextField(labelWithString: "")
     private let chevron = NSImageView()
 
-    static let height: CGFloat = 22
-    private static let font = NSFont.systemFont(ofSize: 12, weight: .medium)
-    private static let logoSize: CGFloat = 14
-    private static let pad: CGFloat = 6
-    private static let gap: CGFloat = 5
+    static let height = NoteLayout.buttonHeight
+    /// How far the logo sits inside the button's edge, in points.
+    static let pad: CGFloat = 6
     private static let chevronWidth: CGFloat = 8
-    /// The widest a project's name is shown; past it the name is cut in the middle.
-    private static let longestLabel: CGFloat = 180
+    private var settled = false
 
     init() {
         super.init(frame: CGRect(x: 0, y: 0, width: 60, height: Self.height))
@@ -500,7 +612,7 @@ private final class SessionButton: NSView {
         layer?.cornerRadius = 6
         layer?.cornerCurve = .continuous
         logo.imageScaling = .scaleProportionallyUpOrDown
-        label.font = Self.font
+        label.font = NoteLayout.labelFont
         label.textColor = .labelColor
         label.lineBreakMode = .byTruncatingMiddle
         label.maximumNumberOfLines = 1
@@ -515,27 +627,53 @@ private final class SessionButton: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.07).cgColor
+        layer?.backgroundColor = settled ? nil : NSColor.labelColor.withAlphaComponent(0.07).cgColor
     }
 
     /// Shows `title` after `image`, and fits itself round them.
     func show(logo image: NSImage?, title: String) {
         logo.image = image
         label.stringValue = title
-        // A label's cell draws its words a couple of points in from each side.
-        let words = min(ceil((title as NSString).size(withAttributes: [.font: Self.font]).width) + 4, Self.longestLabel)
+        let words = NoteLayout.labelWidth(title)
         var x = Self.pad
-        logo.frame = CGRect(x: x, y: (Self.height - Self.logoSize) / 2, width: Self.logoSize, height: Self.logoSize)
-        x += Self.logoSize + Self.gap
+        logo.frame = CGRect(x: x, y: (Self.height - NoteLayout.logoSize) / 2, width: NoteLayout.logoSize, height: NoteLayout.logoSize)
+        x += NoteLayout.logoSize + NoteLayout.gap
         let lineHeight = ceil(label.intrinsicContentSize.height)
         label.frame = CGRect(x: x, y: (Self.height - lineHeight) / 2, width: words, height: lineHeight)
-        x += words + Self.gap
+        x += words + NoteLayout.gap
         chevron.frame = CGRect(x: x, y: 0, width: Self.chevronWidth, height: Self.height)
         setFrameSize(CGSize(width: x + Self.chevronWidth + Self.pad, height: Self.height))
     }
 
+    /// Sent: it settles into a name, as the conversation's row shows it, over `duration`. Its
+    /// background and chevron fade and its name greys; it takes no more clicks.
+    func settle(duration: CFTimeInterval) {
+        guard !settled else { return }
+        settled = true
+        let background = layer?.backgroundColor
+        layer?.backgroundColor = nil
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            chevron.animator().alphaValue = 0
+        }
+        guard duration > 0 else { label.textColor = .secondaryLabelColor; return }
+        if let background {
+            let fade = CABasicAnimation(keyPath: "backgroundColor")
+            fade.fromValue = background
+            fade.toValue = CGColor(gray: 0, alpha: 0)
+            fade.duration = duration
+            layer?.add(fade, forKey: "settle")
+        }
+        label.wantsLayer = true
+        let fade = CATransition()
+        fade.type = .fade
+        fade.duration = duration
+        label.layer?.add(fade, forKey: "settle")
+        label.textColor = .secondaryLabelColor
+    }
+
     /// A press anywhere on it is its own, not its label's or its logo's.
-    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+    override func hitTest(_ point: NSPoint) -> NSView? { !settled && frame.contains(point) ? self : nil }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 

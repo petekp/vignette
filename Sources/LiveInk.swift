@@ -68,8 +68,13 @@ final class LiveInk {
     private var strokeBegan: Date?
     /// When each of the person's strokes was drawn, so a spoken note can say which "this" is which.
     private var strokeTimes: [Mark.ID: (began: Date, ended: Date)] = [:]
-    /// The note sent to a session, still on screen until the drawn note takes its place.
+    /// The note asked in, on screen until the conversation has taken its place, or until it fades
+    /// with nothing to take it.
     private var handing: LiveNotePopover?
+    /// The conversation that takes the note's place, once the note has settled into its look.
+    private var handingTo: Mark.ID?
+    /// Who the ask under way goes to: the agent, and how the conversation's row names it.
+    private var answerer: (agent: String, name: String?) = (LiveAnswerLayout.agentName, nil)
     /// The note's target picked last, which the next note starts on.
     private var lastTarget: LiveNotePopover.Target = .responder
     /// The target the open note started on, for `SendContext`.
@@ -551,7 +556,8 @@ final class LiveInk {
             self.lastTarget = target
             self.handing = panel
             let session: AgentDestination? = if case .session(let destination) = target { destination } else { nil }
-            if case .failure = self.ask(words, sendingTo: session, from: panel?.tagFrame) { self.letGoOfNote(into: nil) }
+            let note = panel.flatMap { panel in panel.shownPlace.map { (place: $0, tag: panel.tagFrame) } }
+            if case .failure = self.ask(words, sendingTo: session, from: note) { self.letGoOfNote() }
         }
         prepare(beside: mark, panel: panel)
         listSessions? { [weak panel] candidates in panel?.setSessions(candidates) }
@@ -587,26 +593,49 @@ final class LiveInk {
         Log.write("[live-ink] note discarded marks=\(before - marks.count)")
     }
 
-    /// Fades the sent note into the drawn one at `tag`, or where it is.
-    private func letGoOfNote(into tag: CGRect?) {
-        handing?.settle(into: tag)
+    /// The sent note fades where it is, with nothing to take its place.
+    /// Fades the note asked in, even partway through handing over. With `how`, the ask finished before
+    /// the conversation came up, and the note leaves as the conversation would have.
+    private func letGoOfNote(as how: LiveMarksLayer.Finish? = nil) {
+        let leave = how.map(LiveMarksLayer.popoverLeave)
+        handing?.fadeAway(after: leave?.after ?? 0, over: leave?.fade)
         handing = nil
+        handingTo = nil
     }
 
     /// For a callback the asks dropped. With an ask current, the note handed over is that ask's, so it
     /// stays.
     private func letGoOfNoteOfEndedAsk() {
-        if asks.ask == nil { letGoOfNote(into: nil) }
+        if asks.ask == nil { letGoOfNote() }
     }
+
+    /// The sent note hands over to `reply`, the conversation, which comes up in its place once the
+    /// note looks as it does, and the note goes behind it.
+    private func handOver(to reply: Mark) {
+        guard let note = handing else { return }
+        handingTo = reply.id
+        note.handOver { [weak self] in
+            guard let self, handingTo == reply.id else { return }
+            handing = nil
+            handingTo = nil
+            // The ask may have drawn it already, or redrawn it saying why it failed.
+            guard let shown = asks.ask?.say, shown.id == reply.id, !marks.contains(where: { $0.id == reply.id }) else { return }
+            put([shown], window: nil)
+        }
+    }
+
+    /// The marks on the screen, and the conversation about to take the note's place.
+    private var shownIDs: Set<Mark.ID> { Set(marks.map(\.id)).union(handingTo.map { [$0] } ?? []) }
 
     /// Asks the responder about the new ink, with `words` as its note, or about the ink asked about
     /// last when there is none new, as a follow-up. With `session`, sends the picture and the words to
-    /// that working session instead, as a card (`share`). `following` is the reply the
-    /// person answered with `picked`: it stays, quoting their words in place of a note, with the
-    /// answer's marks, which carry the thinking light until the next answer replaces them. Answers
-    /// whether an ask started, and why not.
+    /// that working session instead, as a card (`share`). `note` is where the note asked in hangs and
+    /// where its words are: the conversation takes its place, and a card draws the words there.
+    /// `following` is the reply the person answered with `picked`: it stays, with their words as its
+    /// question, and it and the answer's marks carry the thinking light until the next answer replaces
+    /// them. Answers whether an ask started, and why not.
     @discardableResult
-    func ask(_ words: String, sendingTo session: AgentDestination? = nil, from spot: CGRect? = nil,
+    func ask(_ words: String, sendingTo session: AgentDestination? = nil, from note: (place: PopoverPlace, tag: CGRect?)? = nil,
              following reply: Mark? = nil, picked: LiveAnswerActions.Pick? = nil) -> Result<Void, LiveResponder.Failure> {
         closeNote()
         // The words as they were said, unless the person changed them in the note.
@@ -629,7 +658,16 @@ final class LiveInk {
             point = centre
             for case .removeAnswer(let gone) in effects { removeAnswer(gone) }
         }
-        if let reply { put([reply], window: windows.window(of: reply.id)) }
+        answerer = (session?.client.rawValue ?? LiveAnswerLayout.agentName, session?.project)
+        if let reply {
+            put([reply], window: windows.window(of: reply.id))
+        } else if let note, !trimmed.isEmpty {
+            let conversation = LiveAnswerLayout.conversation(trimmed, agent: answerer.agent, answerer: answerer.name, at: note.place,
+                                                             sizes: answerSizes)
+            _ = asks.reduce(.conversed(conversation))
+            handOver(to: conversation)
+        }
+        let spot = note?.tag
         showMarks()
         let started = Date()
         let ui = Settings.shared.data.ui
@@ -655,8 +693,7 @@ final class LiveInk {
                 if let session {
                     self?.share(packet, words: words, spoken: said, with: session, from: spot, for: id)
                 } else {
-                    self?.send(packet, words: words, spoken: said, about: about, new: Set(fresh.map(\.id)), started: started, from: spot,
-                               for: id)
+                    self?.send(packet, words: words, spoken: said, about: about, new: Set(fresh.map(\.id)), started: started, for: id)
                 }
             } catch let failure as LivePacket.Failure {
                 Log.write("[live-ink] error packet \(failure.detail)")
@@ -669,15 +706,9 @@ final class LiveInk {
     }
 
     private func send(_ packet: LivePacket, words: String, spoken: (words: [SpokenWord], began: Date)?, about: [Mark],
-                      new: Set<Mark.ID>, started: Date, from spot: CGRect?, for id: LiveAsks.Ask.ID) {
+                      new: Set<Mark.ID>, started: Date, for id: LiveAsks.Ask.ID) {
         guard asks.reduce(.arrived(.packetCame(toSession: false), for: id)).contains(.send) else { return letGoOfNoteOfEndedAsk() }
         let note = numberedNote(spoken, packet: packet) ?? words
-        // The words stay beside the ink as the person's note, which the reply hangs under, unless
-        // the reply is up already, quoting them.
-        let question = asks.ask?.say == nil ? promptNote(words, about: Set(about.map(\.id)), packet: packet, at: spot) : nil
-        if let question { _ = asks.reduce(.noted(question.id)) }
-        letGoOfNote(into: question.flatMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) })
-        if question != nil { showMarks() }
         let person = ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
         let asked = about.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
         let near = packet.lines(near: asked)
@@ -699,11 +730,11 @@ final class LiveInk {
                 content.append(["type": "text", "text": packet.message(note: note, ink: person, new: new, freshPicture: !same)])
                 return content
             },
-            onSay: { [weak self] say in self?.showSay(say, near: asked, question: question, packet: packet, for: id) },
+            onSay: { [weak self] say in self?.showSay(say, near: asked, packet: packet, for: id) },
             onAnswer: { [weak self] result in
                 switch result {
                 case .success(let answer):
-                    self?.answered(answer, packet: packet, sent: self?.lastPicture?.lines ?? [], near: asked, question: question, for: id)
+                    self?.answered(answer, packet: packet, sent: self?.lastPicture?.lines ?? [], near: asked, for: id)
                 case .failure(let failure): self?.failed(failure, for: id)
                 }
             }))
@@ -718,7 +749,7 @@ final class LiveInk {
         var shared: Set<Mark.ID>?
         for case .share(let about) in asks.reduce(.arrived(.packetCame(toSession: true), for: id)) { shared = about }
         guard let about = shared else { return letGoOfNoteOfEndedAsk() }
-        guard let sendNote else { return letGoOfNote(into: nil) }
+        guard let sendNote else { return letGoOfNote() }
         let numbered = numberedNote(spoken, packet: packet)
         var place = [packet.app, packet.title.map { "\"\($0)\"" }, packet.location].compactMap { $0 }.joined(separator: ", ")
         if place.isEmpty { place = "the screen" }
@@ -743,7 +774,8 @@ final class LiveInk {
                 Log.write("[live-ink] sent to a session request=\(request) marks=\(card.marks.count)")
                 let effects = self.asks.reduce(.arrived(.sentToSession(ink: Set(person.map(\.id))), for: id))
                 guard !effects.isEmpty else { return self.letGoOfNoteOfEndedAsk() }
-                self.letGoOfNote(into: nil)
+                let leaving = effects.lazy.compactMap { if case .finish(_, let how) = $0 { how } else { nil } }.first
+                self.letGoOfNote(as: leaving)
                 for case .finish(let ids, let how) in effects { self.finish(ids, how) }
             case .failure(let refusal):
                 self.failed(LiveResponder.Failure(reason: "Not sent. " + refusal.reason, detail: "send refused"), for: id)
@@ -765,17 +797,6 @@ final class LiveInk {
         guard !strokes.isEmpty else { return nil }
         Log.write("[speech] numbered strokes=\(strokes.count)")
         return SpokenNote.marked(spoken.words, strokes: strokes)
-    }
-
-    /// The person's words, kept beside their ink in their colour as their own note, so the ink says
-    /// what was asked while the responder answers. Its tag takes the note panel's, `spot`, with no
-    /// animation, since the panel fades into it; without one it keeps off the window's text, as an
-    /// answer's note does, and springs in. Nil for an ask with no words.
-    private func promptNote(_ words: String, about: Set<Mark.ID>, packet: LivePacket, at spot: CGRect?) -> Mark? {
-        guard let note = noteMark(words, about: about, packet: packet, at: spot) else { return nil }
-        if spot == nil { drawingOn.insert(note.id) }
-        put([note], window: packet.windowID)
-        return note
     }
 
     /// The person's words as a note beside the ink `about`, at the note panel's tag, `spot`, or clear
@@ -935,7 +956,7 @@ final class LiveInk {
 
     /// Shows the answer's buttons in the room kept at its reply's foot, or moves them there.
     private func showActions() {
-        guard let reply = shownReply, let note = reply.globalFrame, let ask = asks.ask, ask.phase == .answered || ask.picked != nil
+        guard let reply = shownReply, let note = reply.globalFrame, let ask = asks.ask, ask.phase == .answered
         else { return hideActions() }
         let insets = ReplyContent.insets
         let corner = CGPoint(x: note.minX + insets.left, y: note.maxY - insets.bottom - LiveAnswerActions.height)
@@ -971,55 +992,56 @@ final class LiveInk {
     }
 
     /// The person answered the reply, with one of its actions or with words typed after Reply: the
-    /// words go to the responder as a follow-up ask about the same ink. The reply stays where it is,
-    /// quoting them, and it and the ink carry the thinking light until the next answer takes its place.
+    /// words go to the responder as a follow-up ask about the same ink. The conversation stays where it
+    /// is, with their words as its question and no answer yet, as a first ask's does, and it and the
+    /// ink carry the thinking light until the next answer fills it.
     private func respond(_ words: String, by pick: LiveAnswerActions.Pick) {
         Log.write("[live-ink] \(pick == .reply ? "reply typed" : "action picked") words=\(words.count)")
         hideDismissButton()
         point(at: nil)
         guard let said = asks.ask?.say, shownSay != nil else { return }
-        actionsPanel?.pick(pick)
+        hideActions()
         // A new ask starts from the reply where it is now. Refused, it puts the answer back.
         guard var reply = marks.first(where: { $0.id == said.id }) else { return }
         reply.quote = words
         reply.notice = nil
+        reply = LiveAnswerLayout.grown(reply, to: "", sizes: answerSizes)
         ask(words, following: reply, picked: pick)
     }
 
     // MARK: Answering
 
-    /// Vignette's own note beside the ink asked about, in the person's colour, replacing the last.
-    private func say(_ words: String) {
+    /// Vignette says why an ask with no conversation failed: in a reply hung from the ink asked about,
+    /// named for who the ask went to, replacing the last.
+    private func say(_ reason: String) {
         guard let about = asks.ask?.about else { return }
         let near = shownMarks.filter { about.contains($0.id) }.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
         guard !near.isNull else { showMarks(); return }
         let screen = activeSurfaces().map(\.overlay.globalFrame).first { $0.intersects(near) } ?? near
-        let scene = LiveAnswerLayout.Scene(room: screen.insetBy(dx: 8, dy: 8), ink: ink, text: [])
-        // Clear of the person's own note too, which an ask leaves beside the ink.
-        let obstacles = scene.ink.compactMap { $0.shapeExtent ?? LiveAnswerLayout.noteBox($0, sizes: answerSizes) }
-        let note = LiveAnswerLayout.note(words.trimmingCharacters(in: .whitespaces), near: near, scene: scene,
-                                         obstacles: obstacles, sizes: answerSizes, byPerson: true)
-        _ = asks.reduce(.answerShown([note.id]))
-        drawingOn.insert(note.id)
-        put([note], window: nil)
+        let scene = LiveAnswerLayout.Scene(room: screen.insetBy(dx: 8, dy: 8), ink: ink, text: [], screen: Self.visibleScreen(around: near))
+        var reply = LiveAnswerLayout.reply("", quote: nil, from: near, scene: scene, sizes: answerSizes)
+        reply.agentName = answerer.agent
+        reply.answerer = answerer.name
+        reply = noticed(reply, reason)
+        _ = asks.reduce(.answerShown([reply.id]))
+        drawingOn.insert(reply.id)
+        put([reply], window: nil)
     }
 
     private static func image(_ png: Data) -> [String: Any] {
         ["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": png.base64EncodedString()]]
     }
 
-    /// `question` is the person's note an answer replies to, which goes as the reply comes, so the
-    /// answer need not keep clear of it.
-    private func scene(for packet: LivePacket, leaving question: Mark? = nil) -> LiveAnswerLayout.Scene {
-        scene(frame: packet.frame, page: packet.page, text: packet.lines.map { packet.global($0.box) }, leaving: question)
+    private func scene(for packet: LivePacket) -> LiveAnswerLayout.Scene {
+        scene(frame: packet.frame, page: packet.page, text: packet.lines.map { packet.global($0.box) })
     }
 
     /// The window at `frame` with its text at `text`, both in global top-left points.
-    private func scene(frame: CGRect, page: CGRect?, text: [CGRect], leaving question: Mark? = nil) -> LiveAnswerLayout.Scene {
+    private func scene(frame: CGRect, page: CGRect?, text: [CGRect]) -> LiveAnswerLayout.Scene {
         let screen = activeSurfaces().map(\.overlay.globalFrame).first { $0.intersects(frame) } ?? frame
         // A browser's page, not its tabs and toolbar: notes on those read as being about the browser.
         let room = (page ?? frame).intersection(screen).insetBy(dx: 8, dy: 8)
-        let ink = self.ink.filter { $0.id != question?.id }
+        let ink = self.ink
         let notes = ink.filter { $0.kind == .text }.compactMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) }
         return LiveAnswerLayout.Scene(room: room.isNull ? frame : room, ink: ink, text: text, notes: notes,
                                       screen: Self.visibleScreen(around: frame))
@@ -1034,48 +1056,35 @@ final class LiveInk {
         return CGRect(x: visible.minX, y: StateReport.primaryHeight - visible.maxY, width: visible.width, height: visible.height)
     }
 
-    private func words(of note: Mark?) -> String? {
-        if case .text(let text) = note?.geometry { text.text } else { nil }
-    }
-
-    /// The person's note goes as the reply that quotes it comes, in its place.
-    private func replace(question: Mark?) {
-        guard let question, marks.contains(where: { $0.id == question.id }) else { return }
-        Log.write("[live-ink] question replaced by its reply")
-        remove([question.id])
-        showMarks()
-    }
-
-    /// The reply so far, as a popover hung from the ink, quoting the question. It keeps where it hangs,
-    /// so it grows rather than jumping as words arrive.
-    private func showSay(_ say: String, near asked: CGRect, question: Mark?, packet: LivePacket, for id: LiveAsks.Ask.ID) {
+    /// The reply so far, in the conversation where the person asked, or with no question, as a popover
+    /// hung from the ink. It keeps where it hangs, so it grows rather than jumping as words arrive.
+    private func showSay(_ say: String, near asked: CGRect, packet: LivePacket, for id: LiveAsks.Ask.ID) {
         let effects = asks.reduce(.arrived(.replyCame, for: id))
         guard effects.contains(.showReply) else { return }
         for case .removeAnswer(let gone) in effects { removeAnswer(gone) }
-        let scene = scene(for: packet, leaving: question)
         let note: Mark
         if let shown = asks.ask?.say {
             note = LiveAnswerLayout.grown(shown, to: say, sizes: answerSizes)
         } else {
-            note = LiveAnswerLayout.reply(say, quote: words(of: question), from: asked, scene: scene, sizes: answerSizes)
+            note = LiveAnswerLayout.reply(say, quote: nil, from: asked, scene: scene(for: packet), sizes: answerSizes)
             drawingOn.insert(note.id)
         }
         _ = asks.reduce(.streamed(note))
-        put([note], window: packet.windowID)
-        replace(question: question)
+        // Until the note hands over, the conversation takes its words there.
+        if handingTo != note.id { put([note], window: packet.windowID) }
     }
 
     /// `sent` is the ids of the text lines the answer was given, the only ones it may name. Answers
     /// the indexes of the marks it did not draw, or nil when nothing was drawn.
     @discardableResult
-    private func answered(_ answer: LiveAnswer, packet: LivePacket, sent: Set<String>, near asked: CGRect, question: Mark?,
+    private func answered(_ answer: LiveAnswer, packet: LivePacket, sent: Set<String>, near asked: CGRect,
                           for id: LiveAsks.Ask.ID) -> [Int]? {
         let effects = asks.reduce(.arrived(.answerCame, for: id))
         guard effects.contains(.drawAnswer) else { return nil }
         for case .removeAnswer(let gone) in effects { removeAnswer(gone) }
         let targets = answer.marks.map { $0.target(in: packet.lines, sent: sent).map(packet.global) }
         let layout = LiveAnswerLayout.placed(for: answer, targets: targets, asked: asked,
-                                             quote: words(of: question), scene: scene(for: packet, leaving: question), sizes: answerSizes, streamed: asks.ask?.say,
+                                             scene: scene(for: packet), sizes: answerSizes, streamed: asks.ask?.say,
                                              below: LiveAnswerActions.room(for: answer.actions), focusable: packet.windowID != nil)
         let placed = layout.marks.map { mark in
             var mark = mark
@@ -1101,7 +1110,6 @@ final class LiveInk {
                   + "labels=\(layout.findings.filter { $0.count > 1 }.count)/\(labels)\(answer.steps ? " steps" : "")"
                   + (focus.isEmpty ? "" : " focus=\(focus.count)"))
         let groups = Self.steps(in: Array(placed.dropFirst()))
-        defer { replace(question: question) }
         guard answer.steps, groups.count > 1 else {
             put(shown, window: packet.windowID)
             pullFocus(focus, window: packet.windowID, say: answer.say, replies: layout.tour)
@@ -1363,11 +1371,11 @@ final class LiveInk {
         }
     }
 
-    /// The note says why beside the ink, in the person's colour, since Vignette says it, not the agent.
+    /// Vignette says why in the conversation's row, or in a reply hung from the ink.
     private func failed(_ failure: LiveResponder.Failure, for id: LiveAsks.Ask.ID) {
-        let effects = asks.reduce(.arrived(.failed(reason: failure.reason, shown: Set(marks.map(\.id))), for: id))
+        let effects = asks.reduce(.arrived(.failed(reason: failure.reason, shown: shownIDs), for: id))
         guard !effects.isEmpty else { return letGoOfNoteOfEndedAsk() }
-        letGoOfNote(into: nil)
+        if handingTo == nil { letGoOfNote() }
         failed(failure, as: effects)
     }
 
@@ -1380,16 +1388,16 @@ final class LiveInk {
             case .removeAnswer(let gone): removeAnswer(gone)
             case .restore(let reply, let reason): restoreAnswer(reply, saying: reason)
             case .say(let reason): say(reason)
+            case .notice(let reply, let reason): notice(reason, in: reply)
             default: break
             }
         }
     }
 
-    /// The answer a button was picked under is back as it was (`LiveAsks.Effect.restore`): its buttons
-    /// come back, typed words wait in Reply again, and its reply's header says why in place of their words.
+    /// The answer a button was picked under is back as it was (`LiveAsks.Effect.restore`): its words
+    /// and buttons come back, typed words wait in Reply again, and its row says why.
     private func restoreAnswer(_ replyID: Mark.ID, saying reason: String) {
-        guard var reply = marks.first(where: { $0.id == replyID }) else { return }
-        reply.quote = nil
+        guard var reply = asks.ask?.say, reply.id == replyID else { return }
         reply = noticed(reply, reason)
         _ = asks.reduce(.replyRedrawn(reply))
         Log.write("[live-ink] follow-up failed; its answer stays draft=\(asks.ask?.draft.count ?? 0)")
@@ -1398,7 +1406,18 @@ final class LiveInk {
         showMarks()
     }
 
-    /// `reply` with `notice` in its header in place of its quote, grown to fit it.
+    /// The ask failed with its conversation up (`LiveAsks.Effect.notice`): the reply's row says why,
+    /// in place of any words that had come.
+    private func notice(_ reason: String, in replyID: Mark.ID) {
+        guard var reply = asks.ask?.say, reply.id == replyID else { return }
+        reply.notice = reason
+        reply = LiveAnswerLayout.grown(reply, to: "", sizes: answerSizes)
+        _ = asks.reduce(.replyRedrawn(reply))
+        Log.write("[live-ink] ask failed; its conversation says why")
+        if handingTo != replyID { put([reply], window: windows.window(of: replyID)) }
+    }
+
+    /// `reply` with `notice` in its row, grown to fit it.
     private func noticed(_ reply: Mark, _ notice: String) -> Mark {
         guard case .text(let text) = reply.geometry else { return reply }
         var reply = reply
@@ -1471,7 +1490,7 @@ final class LiveInk {
         stopListening()
         spoken = nil
         strokeTimes = [:]
-        letGoOfNote(into: nil)
+        letGoOfNote()
         // Stopped while the ask is still current, so the ask takes its failure.
         responder.stop()
         letGoOfFocus(because: "cleared")

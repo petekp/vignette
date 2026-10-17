@@ -172,15 +172,47 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertEqual(reduce(&a, .arrived(.packetCame(toSession: false), for: next)), [.send], "the next ask sends its own")
     }
 
-    func testThePersonsQuestionIsPartOfTheAskAndIsNotNewInk() {
+    func testTheConversationIsTheReplyFromTheAskAndCarriesTheLightUntilAnswered() {
         var a = A()
-        let mark = ink(), question = text("What is this?")
+        let mark = ink()
+        var conversation = text("", agent: true)
+        conversation.quote = "What is this?"
         let id = begin(&a, on: [mark])
+        _ = reduce(&a, .conversed(conversation))
+        XCTAssertEqual(a.ask?.say, conversation, "the reply's words come into the conversation")
+        XCTAssertTrue(a.isAnswer(conversation.id), "the next ask takes it off")
+        XCTAssertEqual(a.pulsing, [mark.id, conversation.id], "it carries the light with the ink while the packet is made")
+        XCTAssertEqual(a.newInk(among: [mark, conversation]), [], "and is not ink")
         _ = reduce(&a, .arrived(.packetCame(toSession: false), for: id))
-        _ = reduce(&a, .noted(question.id))
-        XCTAssertEqual(a.ask?.about, [mark.id, question.id])
-        XCTAssertEqual(a.pulsing, [mark.id, question.id], "the question pulses with the ink while the ask is under way")
-        XCTAssertEqual(a.newInk(among: [mark, question]), [], "the next ask is not about the person's own question")
+        XCTAssertEqual(a.pulsing, [mark.id, conversation.id], "and while the responder works")
+        XCTAssertEqual(reduce(&a, .arrived(.replyCame, for: id)), [.removeAnswer([]), .showReply], "the reply keeps it")
+        answered(&a, conversation, shown: [conversation.id], for: id)
+        XCTAssertEqual(a.pulsing, [], "the light goes once answered")
+    }
+
+    func testAFailureSaysWhyInTheConversationAndKeepsIt() {
+        var a = A()
+        let mark = ink()
+        let conversation = text("", agent: true)
+        let id = begin(&a, on: [mark])
+        _ = reduce(&a, .conversed(conversation))
+        _ = reduce(&a, .arrived(.packetCame(toSession: false), for: id))
+        XCTAssertEqual(reduce(&a, .arrived(.failed(reason: "Claude stopped.", shown: [mark.id, conversation.id]), for: id)),
+                       [.removeAnswer([]), .notice(reply: conversation.id, reason: "Claude stopped.")])
+        XCTAssertEqual(a.ask?.phase, .failed)
+        XCTAssertEqual(a.answerMarks, [conversation.id], "it stays as the answer, saying why")
+        XCTAssertEqual(a.pulsing, [], "with its light off")
+        XCTAssertEqual(reduce(&a, .dismissed), [.finish([mark.id, conversation.id], .dismissed)], "the × takes it with the ink")
+    }
+
+    func testANoteSentToASessionLeavesWithItsConversation() {
+        var a = A()
+        let mark = ink()
+        let conversation = text("", agent: true)
+        let id = begin(&a, on: [mark])
+        _ = reduce(&a, .conversed(conversation))
+        XCTAssertEqual(reduce(&a, .arrived(.packetCame(toSession: true), for: id)), [.share(about: [mark.id])])
+        XCTAssertEqual(reduce(&a, .arrived(.sentToSession(ink: [mark.id]), for: id)), [.finish([mark.id, conversation.id], .dismissed)])
     }
 
     func testTheReplyStreamsOnlyWhileAskingAndAnAnswerIsTakenWhileThereIsAnAsk() {
@@ -348,7 +380,7 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertEqual(gone.ask?.phase, .failed)
     }
 
-    func testOnceTheReplyOfAnAskFromAPickedButtonStartsTheEarlierAnswerGoesAndAFailureIsANote() {
+    func testOnceTheReplyOfAnAskFromAPickedButtonStartsTheEarlierAnswerGoesAndAFailureSaysWhyInTheReply() {
         var a = A()
         let mark = ink(), reply = text("It's a button.", agent: true), loop = shape()
         answer(&a, on: [mark], reply: reply, shapes: [loop])
@@ -358,7 +390,8 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertEqual(a.answerMarks, [reply.id], "the loop is no longer the answer's once the reply starts")
         _ = reduce(&a, .streamed(reply))
         XCTAssertEqual(reduce(&a, .arrived(.failed(reason: "Claude stopped.", shown: [mark.id, reply.id]), for: follow)),
-                       [.removeAnswer([reply.id]), .say("Claude stopped.")], "nothing is put back once the earlier answer was replaced")
+                       [.removeAnswer([]), .notice(reply: reply.id, reason: "Claude stopped.")],
+                       "nothing is put back once the earlier answer was replaced, and the reply says why")
     }
 
     func testANewAskTakesTheWholeAnswerOffAndAnAskFromAPickedButtonKeepsItsReply() {
@@ -675,6 +708,14 @@ final class LiveAsksTests: XCTestCase {
                     case .restore(let reply, let said):
                         XCTAssertEqual(effects.count, 1, fail("an answer put back is all a failure answers"))
                         checkRestore(reply, saying: said, reason)
+                    case .notice(let reply, let said):
+                        XCTAssertEqual(reply, before.ask?.say?.id, fail("a failure says why in the conversation"))
+                        XCTAssertEqual(effects.first, .removeAnswer(before.answerMarks.subtracting([reply])), fail("which alone stays of the answer"))
+                        XCTAssertEqual(effects.count, 2, fail("and says why"))
+                        XCTAssertEqual(after.answerMarks, [reply], fail("it is the answer"))
+                        XCTAssertEqual(said, reason, fail("saying why"))
+                        XCTAssertEqual(after.ask?.phase, .failed, fail("a taken failure fails the ask"))
+                        XCTAssertEqual(after.ask?.reason, reason, fail("and keeps why"))
                     case .say(let said):
                         XCTAssertEqual(effects.first, .removeAnswer(before.answerMarks), fail("a failure's note takes the answer's place"))
                         XCTAssertEqual(effects.count, 2, fail("and says why"))
@@ -761,11 +802,15 @@ final class LiveAsksTests: XCTestCase {
                     checkFailure(reason)
                     if reason == LiveAsksEnvironment.couldNotSee, id != before.ask?.id { staleCapture += 1 }
                 case .arrived(.sentToSession(let ink), _) where !effects.isEmpty:
-                    let ids = (before.ask?.about ?? []).union(ink)
-                    XCTAssertEqual(effects, [.finish(ids, .dismissed)], fail("a session's card takes the ink"))
+                    let ids = (before.ask?.about ?? []).union(ink).union(before.ask?.say.map { [$0.id] } ?? [])
+                    XCTAssertEqual(effects, [.finish(ids, .dismissed)], fail("a session's card takes the ink and the conversation"))
                     checkFinishes()
                 case .streamed:
                     XCTAssertEqual(after.ask?.phase, before.ask?.phase, fail("streaming never changes the phase"))
+                case .conversed(let reply):
+                    XCTAssertEqual(after.ask?.say, reply, fail("the conversation is the reply"))
+                    XCTAssertTrue(after.isAnswer(reply.id), fail("and the answer's"))
+                    XCTAssertTrue(after.pulsing.contains(reply.id), fail("and carries the light"))
                 case .answered:
                     XCTAssertEqual(after.ask?.phase, .answered, fail("a drawn answer answers the ask"))
                     if let id = after.ask?.id { answeredAsks.insert(id) }
@@ -883,7 +928,6 @@ private final class LiveAsksEnvironment {
     private var owed: [(due: Int, owed: Owed)] = []
     private var step = 0
     private var names: [Mark.ID: String] = [:]
-    private var questions: [LiveAsks.Ask.ID: Mark.ID] = [:]
     private var focusShown: [Mark]?
     private let observe: (LiveAsksEnvironment, Sent) -> Void
 
@@ -1055,7 +1099,14 @@ private final class LiveAsksEnvironment {
             return false
         }
         for case .removeAnswer(let gone) in effects { removeAnswer(gone) }
-        if let reply { put([reply]) }
+        if let reply {
+            put([reply])
+        } else if chance(2) {
+            var conversation = note("", agent: true)
+            conversation.quote = "What is this?"
+            _ = send(.conversed(conversation))
+            put([conversation])
+        }
         // A capture that fails can take a while, and `ask`'s task then fails the ask it began, whatever
         // has happened since.
         if chance(10) { owe(.captureFailed(id), in: 2...12) } else { owe(.packet(id, toSession: reply == nil && chance(5))) }
@@ -1069,12 +1120,6 @@ private final class LiveAsksEnvironment {
             owe(.sent(id, ink: ink, refused: chance(4)))
         }
         guard effects.contains(.send) else { return }
-        if asks.ask?.say == nil, chance(2) {
-            let question = note("What is this?", agent: false)
-            put([question])
-            questions[id] = question.id
-            _ = send(.noted(question.id))
-        }
         if chance(2) { _ = send(.pictureSent(fresh: chance(2), for: id)) } else { owe(.picture(id), in: 1...2) }
         // The responder can shut down as it is asked, which fails the ask in the same turn.
         if chance(8) { return failed("The responder ended.", for: id) }
@@ -1116,7 +1161,6 @@ private final class LiveAsksEnvironment {
         }
         _ = send(.streamed(reply))
         put([reply])
-        replace(question: questions[id])
     }
 
     private func answered(for id: LiveAsks.Ask.ID) {
@@ -1140,12 +1184,6 @@ private final class LiveAsksEnvironment {
                 for (n, stop) in held.enumerated() { owe(.focus([stop]), in: (n + 1)...(n + 1)) }
             }
         }
-        replace(question: questions[id])
-    }
-
-    private func replace(question: Mark.ID?) {
-        guard let question, screen.contains(where: { $0.id == question }) else { return }
-        remove([question])
     }
 
     private func nextFocus(_ stop: [Mark]) {
@@ -1185,14 +1223,21 @@ private final class LiveAsksEnvironment {
             case .removeAnswer(let gone): removeAnswer(gone)
             case .restore(let reply, let reason): restoreAnswer(reply, saying: reason)
             case .say(let reason): say(reason)
+            case .notice(let reply, let reason): notice(reason, in: reply)
             default: break
             }
         }
     }
 
+    private func notice(_ reason: String, in replyID: Mark.ID) {
+        guard var reply = asks.ask?.say, reply.id == replyID else { return }
+        reply.notice = reason
+        _ = send(.replyRedrawn(reply))
+        put([reply])
+    }
+
     private func restoreAnswer(_ replyID: Mark.ID, saying reason: String) {
-        guard var reply = screen.first(where: { $0.id == replyID }) else { return }
-        reply.quote = nil
+        guard var reply = asks.ask?.say, reply.id == replyID else { return }
         reply.notice = reason
         _ = send(.replyRedrawn(reply))
         hideActions()
@@ -1268,7 +1313,7 @@ private final class LiveAsksEnvironment {
         case .removed(let ids): "removed \(list(ids))"
         case .windowGone(let ids): "windowGone \(list(ids))"
         case .arrived(let arrival, let id): "\(describe(arrival)) #\(id)"
-        case .noted(let mark): "noted \(name(mark))"
+        case .conversed(let mark): "conversed \(name(mark.id))"
         case .pictureSent(let fresh, let id): "pictureSent \(fresh) #\(id)"
         case .streamed(let mark): "streamed \(name(mark.id))"
         case .answered(let reply, _, _, let shown): "answered \(name(reply?.id)) shown=\(list(shown))"
@@ -1299,6 +1344,7 @@ private final class LiveAsksEnvironment {
         case .drawAnswer: "drawAnswer"
         case .restore(let reply, _): "restore \(name(reply))"
         case .say: "say"
+        case .notice(let reply, _): "notice \(name(reply))"
         case .remove(let ids): "remove \(list(ids))"
         case .removeAnswer(let gone): "removeAnswer \(list(gone))"
         case .finish(let ids, let how): "finish \(list(ids)) \(how)"

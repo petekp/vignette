@@ -631,32 +631,50 @@ final class LiveInkTests: XCTestCase {
         XCTAssertNil(stepped[0].popover?.anchor, "steps come and go, so the reply hangs from the ink")
     }
 
-    func testAReplysHeaderQuotesTheQuestionOnOneLine() {
+    func testTheConversationLooksAsTheNoteItTakesThePlaceOf() {
         let words = "what else should we fix on mobile before we ship this to everyone on the trip?"
-        let reply = LiveAnswerLayout.reply("Two more things.", quote: words, from: CGRect(x: 500, y: 300, width: 260, height: 30),
-                                           scene: LiveAnswerLayout.Scene(room: room, ink: [], text: []), sizes: sizes)
-        XCTAssertEqual(reply.quote, words)
-        let quoted = ReplyContent.size("Two more things.", agent: reply.agentName, quote: words, wrap: sizes.textWidth, foot: .zero)
-        let plain = ReplyContent.size("Two more things.", agent: reply.agentName, quote: nil, wrap: sizes.textWidth, foot: .zero)
-        XCTAssertEqual(quoted.height, plain.height, "the question is cut to the header's one line")
-        XCTAssertLessThanOrEqual(quoted.width, ReplyContent.insets.left + sizes.textWidth + ReplyContent.insets.right + 1, "and to the reply's width")
+        let asking = ReplyContent.layout("", quote: words, notice: nil, answerer: "Claude", foot: .zero)
+        let lines = Int((NoteLayout.wordsHeight(words) / NoteLayout.lineHeight).rounded())
+        XCTAssertEqual(asking.size, NoteLayout.size(lines: lines), "as big as the note with the same words")
+        XCTAssertEqual(asking.question, NoteLayout.fieldFrame(height: NoteLayout.wordsHeight(words)), "the words where the note's field had them")
+
+        let answered = ReplyContent.layout("Two more things.", quote: words, notice: nil, answerer: "Claude", foot: .zero)
+        XCTAssertEqual(answered.size.width, asking.size.width, "the answer keeps the width")
+        XCTAssertEqual(answered.question, asking.question, "and the question where it was")
+        XCTAssertEqual(answered.rowTop, asking.rowTop, "and the row")
+        XCTAssertGreaterThan(answered.words?.minY ?? 0, asking.rowTop, "the words come under the row")
     }
 
     func testAReplysNoticeWrapsSoAllOfItShows() {
         let reason = "Not sent. Claude Code closed that session, so Vignette has nowhere to send your reply."
-        let plain = ReplyContent.size("Two more things.", agent: LiveAnswerLayout.agentName, quote: nil, wrap: sizes.textWidth, foot: .zero)
-        let noticed = ReplyContent.size("Two more things.", agent: LiveAnswerLayout.agentName, quote: "why?", notice: reason,
-                                        wrap: sizes.textWidth, foot: .zero)
-        XCTAssertGreaterThan(noticed.height, plain.height, "the reason wraps under the name instead of being cut")
-        XCTAssertLessThanOrEqual(noticed.width, ReplyContent.insets.left + sizes.textWidth + ReplyContent.insets.right + 1, "within the reply's width")
+        let plain = ReplyContent.size("", agent: LiveAnswerLayout.agentName, quote: "why?", foot: .zero)
+        let noticed = ReplyContent.size("", agent: LiveAnswerLayout.agentName, quote: "why?", notice: reason, foot: .zero)
+        XCTAssertGreaterThan(noticed.height, plain.height, "the reason wraps in the row instead of being cut")
+        XCTAssertEqual(noticed.width, NoteLayout.width, "within the conversation's width")
+
+        XCTAssertEqual(ReplyContent.row(answerer: "checkout", notice: reason).string, "checkout  ·  \(reason)")
+        XCTAssertEqual(ReplyContent.row(answerer: "Claude", notice: "Claude couldn't answer.").string, "Claude couldn't answer.",
+                       "a reason that names the answerer goes on from its name")
     }
 
     func testAReplyIsNeverNarrowerThanItsButtons() {
-        let plain = ReplyContent.size("Done.", agent: LiveAnswerLayout.agentName, quote: nil, wrap: sizes.textWidth, foot: .zero)
-        let row = CGSize(width: sizes.textWidth + 60, height: 36)
-        let footed = ReplyContent.size("Done.", agent: LiveAnswerLayout.agentName, quote: nil, wrap: sizes.textWidth, foot: row)
+        let plain = ReplyContent.size("Done.", agent: LiveAnswerLayout.agentName, quote: nil, foot: .zero)
+        let row = CGSize(width: NoteLayout.width + 60, height: 36)
+        let footed = ReplyContent.size("Done.", agent: LiveAnswerLayout.agentName, quote: nil, foot: row)
         XCTAssertEqual(footed.width, ReplyContent.insets.left + row.width + ReplyContent.insets.right, accuracy: 1, "as wide as its row of buttons")
         XCTAssertEqual(footed.height, plain.height + row.height, accuracy: 1, "with the row's room under its words")
+    }
+
+    func testTheRimLightStartsUnderTheArrowAndGoesRoundClockwise() {
+        let body = CGRect(x: 100, y: 200, width: 300, height: 80)
+        let at = CGRect(x: 180, y: 185, width: 1, height: 1)
+        let start = RimLight.start(of: body, hungFrom: at, edge: .below)
+        XCTAssertEqual(start, CGPoint(x: 80.5, y: 0), "on the top edge, under the arrow")
+        let path = RimLight.rim(CGRect(origin: .zero, size: body.size), radius: 10, from: start)
+        XCTAssertEqual(path.currentPoint, start, "a whole lap ends where it began")
+        XCTAssertEqual(path.boundingBox.minY, 0, accuracy: 0.001, "round the body's edge")
+        XCTAssertEqual(path.boundingBox.width, body.width, accuracy: 0.001)
+        XCTAssertEqual(path.boundingBox.height, body.height, accuracy: 0.001)
     }
 
     func testAnArrowGrowsLongerWhenItsLabelHasNoRoomAtAShortOnesTail() {

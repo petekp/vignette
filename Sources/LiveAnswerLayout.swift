@@ -50,6 +50,8 @@ enum LiveAnswerLayout {
     static func placed(for answer: LiveAnswer, targets: [CGRect?], asked: CGRect, quote: String? = nil, scene: Scene,
                        sizes: Sizes, streamed: Mark? = nil, below: CGSize = .zero, focusable: Bool = true)
         -> (marks: [Mark], findings: [[Mark.ID]], tour: [Mark.ID: PopoverPlace]) {
+        // A reply that streamed in shows the person's question above its words wherever it hangs.
+        let quote = quote ?? streamed?.quote
         // No note of the answer covers what the answer points at. `marks` is what nothing may cover:
         // the person's marks and notes, the targets, and what the answer has drawn so far.
         let pointed = targets.compactMap { $0?.insetBy(dx: -4, dy: -4) }
@@ -474,11 +476,12 @@ enum LiveAnswerLayout {
     private static func hung(_ text: String, quote: String?, from mark: Mark?, spots: [(at: CGRect, edge: PopoverPlace.Edge)],
                              scene: Scene, marks: [CGRect], text lines: [CGRect], sizes: Sizes, below: CGSize,
                              beside: (CGRect) -> (note: Mark?, cost: CGFloat) = { _ in (nil, 0) }) -> (reply: Mark, label: Mark?) {
-        let size = ReplyContent.size(text, agent: agentName, quote: quote, wrap: sizes.textWidth, foot: below)
+        let size = ReplyContent.size(text, agent: agentName, quote: quote, foot: below)
         let around = marks + (mark.map { strokes(of: $0, pad: 4) } ?? [])
         let best = hang(size, from: mark?.id, spots: spots, scene: scene, marks: around, text: lines, foot: below,
                         beside: beside)
-        var reply = Mark(geometry: .text(Mark.Text(origin: best.place?.body.origin ?? .zero, text: text, wrap: sizes.textWidth, size: sizes.textSize)),
+        var reply = Mark(geometry: .text(Mark.Text(origin: best.place?.body.origin ?? .zero, text: text, wrap: replyWrap(size),
+                                                   size: sizes.textSize)),
                          agent: true, agentName: agentName)
         reply.quote = quote
         reply.popover = best.place
@@ -525,14 +528,31 @@ enum LiveAnswerLayout {
         guard case .text(var words) = reply.geometry, var place = reply.popover else { return reply }
         words.text = text
         place.foot = foot
-        let size = ReplyContent.size(text, agent: reply.agentName, quote: reply.quote, notice: reply.notice, wrap: words.wrap ?? sizes.textWidth, foot: foot)
+        let size = ReplyContent.size(text, agent: reply.agentName, answerer: reply.answerer, quote: reply.quote, notice: reply.notice, foot: foot)
         place.body = PopoverPlace.body(size, hungFrom: place.at, edge: place.edge, on: place.screen)
         words.origin = place.body.origin
+        words.wrap = replyWrap(size)
         var grown = reply
         grown.geometry = .text(words)
         grown.popover = place
         return grown
     }
+
+    /// The conversation that takes the place of the person's note once they ask: the agent's reply,
+    /// as yet with no words, under `question`, hung where the note hung, `place`, with its body where
+    /// the note's was. `agent` names who answers, and `answerer` how the row names them when that is
+    /// not the agent's name.
+    static func conversation(_ question: String, agent: String, answerer: String? = nil, at place: PopoverPlace, sizes: Sizes) -> Mark {
+        var reply = Mark(geometry: .text(Mark.Text(origin: place.body.origin, text: "", wrap: NoteLayout.wordsWidth, size: sizes.textSize)),
+                         agent: true, agentName: agent)
+        reply.quote = question
+        reply.answerer = answerer
+        reply.popover = place
+        return grown(reply, to: "", sizes: sizes)
+    }
+
+    /// Where a reply's words wrap in a body `size` wide.
+    private static func replyWrap(_ size: CGSize) -> CGFloat { size.width - ReplyContent.insets.left - ReplyContent.insets.right }
 
     /// A note of `text` in the agent's style, placed beside `near`, with `below` points of room
     /// kept under it.

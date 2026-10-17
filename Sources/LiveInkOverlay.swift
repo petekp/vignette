@@ -616,7 +616,8 @@ final class LiveMarksLayer: CALayer {
         let now = record.previewed.convertTime(CACurrentMediaTime(), from: nil)
         // A reply's popover stays while the marks it answered turn green, and leaves with them.
         if let popover = record.mark.flatMap({ popovers[$0.id] }) {
-            return popover.close(after: how == .done ? Self.doneHold * motion : 0, fade: motion > 0 ? Self.doneAway * motion : Self.doneFade)
+            let leave = Self.popoverLeave(how)
+            return popover.close(after: leave.after, fade: leave.fade)
         }
         // A focus has nothing to turn green.
         guard motion > 0, let mark = record.mark, record.focus == nil else {
@@ -791,6 +792,12 @@ final class LiveMarksLayer: CALayer {
     static let doneHold: CFTimeInterval = 0.9
     static let doneAway: CFTimeInterval = 0.45
     static let doneFade: CFTimeInterval = 0.3
+
+    /// When a popover finishing `how` starts to leave, and how long it takes to fade.
+    static func popoverLeave(_ how: Finish) -> (after: CFTimeInterval, fade: CFTimeInterval) {
+        let motion = Settings.shared.motionScale
+        return (how == .done ? doneHold * motion : 0, motion > 0 ? doneAway * motion : doneFade)
+    }
     /// How long an agent's light takes to settle once it has drawn itself on, at full motion.
     static let lightSettle: CFTimeInterval = 0.9
     /// The done state's green, macOS's system green in light mode, and the check's diameter in pt.

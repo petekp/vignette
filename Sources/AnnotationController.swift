@@ -46,7 +46,7 @@ final class AnnotationController {
     /// Asks the window server, from `show` until it answers, whether a press on the frame reaches this window.
     private var eventProbe: Timer?
     /// Takes the frame and then the window down behind the flight home (`hideWindows`).
-    private let removal = Removal()
+    private let removal = WindowRemoval()
     /// Counts `open`s, so a decode or a send's rendering only lands on the open that asked
     /// for it: the same file can be closed and opened again while the first is still on its way.
     private var openGeneration = 0
@@ -666,49 +666,5 @@ final class AnnotationWindow: NSWindow {
         guard event.keyCode == 53 else { return super.keyDown(with: event) }
         Log.write("[annotate] esc reached the window firstResponder=\(firstResponder.map { String(describing: type(of: $0)) } ?? "none")")
         onCloseRequest?()
-    }
-}
-
-/// Takes the annotator's frame off screen behind the flight home. `hide` runs on the next turn of
-/// the main queue, the one `TransitionLayer.fly` starts the flight moving in, so the two land in
-/// one commit. `remove` runs a few display refreshes later, once the display has shown that commit.
-@MainActor
-private final class Removal: NSObject {
-    /// The first refresh can come before the commit, and the render server draws a commit on the
-    /// refresh after it arrives.
-    private static let refreshes = 3
-    private var generation = 0
-    private var link: CADisplayLink?
-    private var left = 0
-    private var remove: (() -> Void)?
-
-    func start(on screen: NSScreen?, hide: @escaping () -> Void, remove: @escaping () -> Void) {
-        cancel()
-        let started = generation
-        DispatchQueue.main.async { [weak self] in
-            guard let self, generation == started else { return }
-            hide()
-            guard let screen = screen ?? NSScreen.main else { remove(); return }
-            self.remove = remove
-            left = Self.refreshes
-            let link = screen.displayLink(target: self, selector: #selector(refreshed))
-            link.add(to: .main, forMode: .common)
-            self.link = link
-        }
-    }
-
-    func cancel() {
-        generation += 1
-        link?.invalidate()
-        link = nil
-        remove = nil
-    }
-
-    @objc private func refreshed(_ link: CADisplayLink) {
-        left -= 1
-        guard left <= 0 else { return }
-        let remove = remove
-        cancel()
-        remove?()
     }
 }

@@ -62,12 +62,15 @@ struct Mark: Equatable, Identifiable {
     /// An agent's note that names another of its marks, as a live answer's labels do. It is drawn
     /// without the badge, since the answer's reply names the agent once. Never written to a file.
     var isLabel = false
-    /// For an agent's reply to a person's note, the note's words, which the reply's popover quotes in
-    /// its header. Never written to a file.
+    /// For an agent's reply to a person's note, the note's words, which the reply's popover shows
+    /// above the reply, where the person typed them. Never written to a file.
     var quote: String?
-    /// For a live answer's reply, Vignette's word on it, which its header shows in the quote's place:
-    /// why the person's follow-up to it failed. Never written to a file.
+    /// For a live answer's reply, Vignette's word on it, which its row shows after who answers: why
+    /// the ask failed. Never written to a file.
     var notice: String?
+    /// For a live answer's reply, the name its row gives who answers, when it is not the agent's: the
+    /// session's project, for a note sent to a session. Never written to a file.
+    var answerer: String?
     /// For a live answer's reply, where it hangs as a popover; a text without it is a note. Never
     /// written to a file.
     var popover: PopoverPlace?
