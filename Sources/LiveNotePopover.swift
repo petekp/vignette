@@ -453,7 +453,11 @@ private final class NoteContent: NSView {
     /// Sizes the field to its words, from one line to `mostLines`, and itself round them.
     func layOut() {
         let fieldWidth = Self.width - Self.inset * 2 + Self.fieldTextInset * 2
-        let measured = field.cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: fieldWidth, height: .greatestFiniteMagnitude)).height ?? 0
+        // While the field is being edited its cell still holds the words from before, so a copy of it
+        // holding the editor's words measures them.
+        let measuring = field.cell?.copy() as? NSTextFieldCell
+        measuring?.stringValue = field.currentEditor()?.string ?? field.stringValue
+        let measured = measuring?.cellSize(forBounds: CGRect(x: 0, y: 0, width: fieldWidth, height: .greatestFiniteMagnitude)).height ?? 0
         let wordsHeight = min(max(ceil(measured), Self.lineHeight), Self.lineHeight * CGFloat(Self.mostLines))
         field.frame = CGRect(x: Self.inset - Self.fieldTextInset, y: Self.top, width: fieldWidth, height: wordsHeight)
         let ruleY = Self.top + wordsHeight + Self.belowWords
@@ -524,7 +528,13 @@ private final class SessionButton: NSView {
         setFrameSize(CGSize(width: x + Self.chevronWidth + Self.pad, height: Self.height))
     }
 
+    /// A press anywhere on it is its own, not its label's or its logo's.
+    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    override func mouseDown(with event: NSEvent) { onClick?() }
+    /// The list opens a turn after the press: opened inside it, the menu closed at once (measured).
+    override func mouseDown(with event: NSEvent) {
+        DispatchQueue.main.async { [weak self] in self?.onClick?() }
+    }
 }
