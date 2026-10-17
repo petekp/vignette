@@ -15,7 +15,7 @@ The names in brackets are `// MARK:` sections.
 | What a stroke becomes, and erasing | `InkStroke.swift`, `LiveInk.swift` (Strokes) |
 | How the person's ink looks | `LiveInkHand.swift` |
 | How an agent's shapes look | `LiveInkLight.swift` |
-| The note: opening, placing, sending | `LiveInk.swift` (Asking), `LiveNotePanel.swift` |
+| The note: opening, placing, sending | `LiveInk.swift` (Asking), `LiveNotePopover.swift`, `LiveAnswerLayout.noteHang` |
 | The ask: its phase, which late callbacks it drops, the answer put back after a failure, and each mark's role, which erasing takes away | `LiveAsks.swift`, `LiveInk.swift` (Asking, Answering) |
 | A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking), `LiveNoteCards.swift`, `LiveNoteCardWait.swift`, `LiveNoteCardGroups.swift` |
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
@@ -159,23 +159,34 @@ The names in brackets are `// MARK:` sections.
   input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`,
   the surfaces with their frames, whether each is on the active Space and how many marks it has, and
   every mark once with its frame.
-- Letting go of the chord after drawing opens `LiveNotePanel` beside the new ink, a non-activating
-  panel that takes the keys as the stack's does. It is drawn as the note it becomes, and its target
-  is a chip under it. Return asks about the ink drawn since the last ask, or, with none, about the
+- Letting go of the chord after drawing opens `LiveNotePopover`, a macOS popover hung from the new
+  ink. It follows the system's appearance. Its window is a non-activating panel, so its field takes
+  the keys while the app the person was in stays in front. Closing it gives the keys back at once
+  (`letGoOfKeys`), because AppKit counts Vignette as active while the field has them. Under the words
+  is its target: the agent's logo and the project, on a button that opens the list of targets, as
+  Down does. Return asks about the ink drawn since the last ask, or, with none, about the
   ink asked about last. Esc or ⌘⌫ cancels the note: it closes, and the ink drawn for it goes
   (`LiveAsks.noteInk`). That ink is the ink since the chord went down with no note open, so a press
   while the note is open adds to that note's ink. Ink an earlier note kept stays. A click elsewhere
   closes the note and keeps the ink. ⌘⌫ is the text field's delete-the-line key, and the note handles its command
   (`deleteToBeginningOfLine:`) as it does Esc's (`cancelOperation:`). Its target starts on the one picked last, else the
   responder, and lists the sessions Send lists after it. For the responder the words stay beside the
-  ink as the person's own note: the chip fades and the panel hands over to the drawn note without the
-  words moving (`settle`). For a session the note leaves with the ink, as a card (below). The note
-  opens against its ink, where a hand writes one
-  (`LiveAnswerLayout.noteSpot`): touching an arrow's tail on the side away from its head, or beside a
-  loop's edge. It may cover the window's text there, and never moves elsewhere, since a note away from
-  its ink reads as being about something else. Left of the ink it grows to the left. Placing it needs
-  the window's frame and text, which `LivePacket.Glance` gives in about 20 ms after the capture:
-  Vision's fast level, for where the lines are, not what they say.
+  ink as the person's own note: the popover fades and the drawn note takes its place, starting where
+  its words were (`settle`). For a session the note leaves with the ink, as a card (below).
+- Vignette picks the side the note hangs on, where a hand writes one (`LiveAnswerLayout.noteHang`):
+  from an arrow's tail on the side away from its head, or off a loop's or a box's side, right first.
+  The popover is a window of its own, so it may hang past the window's edge onto the rest of the
+  visible screen. It keeps clear of the person's ink and notes, and may cover the window's text
+  beside the ink, because a note away from its ink reads as being about something else. AppKit
+  flips a popover whose side has no room, without knowing where the ink is, so Vignette chooses the
+  side before the popover shows. Below or above its anchor, AppKit also slides the body sideways to
+  keep the popover's window inside the visible frame. The window reaches 13 pt past the body
+  (measured on macOS 15). `PopoverPlace.body` slides it the same way, so the layout knows where the
+  body lands. The note opens out of sight, placed from the ink alone. It moves once
+  `LivePacket.Glance` gives the window's frame and text, about 20 ms after the capture (Vision's fast
+  level, for where the lines are, not what they say), and shows after 0.8 s without it. The list of
+  targets opens under the target, or beside the note when the screen has no room below, so it never
+  covers the words. Beside the note it can cover some of the ink while it is open.
 - With `liveInkSpeech` on, live ink listens while the person draws
   (`docs/live-ink-speech-input-2026-10-06.md`). Listening starts when the pointer field shows, so the chord on
   its way to a shortcut never turns the microphone on, and a press of the chord while it listens goes

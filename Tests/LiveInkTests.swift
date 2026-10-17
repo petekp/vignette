@@ -380,13 +380,33 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(box?.midY ?? 0, ink.midY, accuracy: 1)
     }
 
-    func testThePersonsNoteTouchesAnArrowsTailOnTheSideAwayFromItsHead() {
+    func testThePersonsNoteTouchesAnArrowsTailOnTheSideAwayFromItsHead() throws {
         let arrow = Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 900, y: 500), end: CGPoint(x: 1100, y: 600))))
         let scene = LiveAnswerLayout.Scene(room: room, ink: [arrow], text: [])
-        let spot = LiveAnswerLayout.noteSpot(CGSize(width: 320, height: 30), under: 25, for: arrow, scene: scene)
-        XCTAssertTrue(spot.growsLeft, "it keeps its right edge at the tail")
-        XCTAssertEqual(spot.rect.maxX, 894, accuracy: 0.5)
-        XCTAssertEqual(spot.rect.maxY, 494, accuracy: 0.5, "up and to the left, the way the arrow came from")
+        let place = try XCTUnwrap(LiveAnswerLayout.noteHang(CGSize(width: 300, height: 100), for: arrow, scene: scene))
+        XCTAssertEqual(place.edge, .left, "on the side the arrow came from")
+        XCTAssertEqual(place.body.maxX, 887.5, accuracy: 0.5)
+        XCTAssertEqual(place.body.midY, 500, accuracy: 0.5)
+    }
+
+    func testAPopoverSlidesAlongItsEdgeAsAppKitSlidesItOntoTheScreen() {
+        let screen = CGRect(x: 0, y: 25, width: 1024, height: 719)
+        let tail = CGRect(x: 999.5, y: 329.5, width: 1, height: 1)
+        let below = PopoverPlace.body(CGSize(width: 300, height: 100), hungFrom: tail, edge: .below, on: screen)
+        XCTAssertEqual(below.minX, 711, accuracy: 0.5)
+        let low = CGRect(x: 499.5, y: 739.5, width: 1, height: 1)
+        let right = PopoverPlace.body(CGSize(width: 300, height: 100), hungFrom: low, edge: .right, on: screen)
+        XCTAssertEqual(right.maxY, 731, accuracy: 0.5)
+    }
+
+    func testThePersonsNoteHangsOutsideASmallWindow() throws {
+        let window = CGRect(x: 600, y: 400, width: 300, height: 150)
+        let ink = Mark(geometry: .ellipse(CGRect(x: 700, y: 450, width: 100, height: 50)))
+        let scene = LiveAnswerLayout.Scene(room: window, ink: [ink], text: [], screen: room)
+        let place = try XCTUnwrap(LiveAnswerLayout.noteHang(CGSize(width: 300, height: 100), for: ink, scene: scene))
+        XCTAssertEqual(place.edge, .right)
+        XCTAssertGreaterThan(place.body.maxX, window.maxX, "past the window's edge")
+        XCTAssertTrue(room.contains(place.body), "on the screen")
     }
 
     func testANoteMovesOffTextAndStaysInTheRoom() {

@@ -17,6 +17,13 @@ struct PopoverPlace: Equatable {
     /// Room kept at the foot of its body for the answer's buttons, in points: as wide as their row,
     /// which the body is never narrower than, and as tall.
     var foot: CGSize
+    /// The visible screen it hangs on, in global top-left points, which AppKit keeps its window
+    /// inside. Nil leaves the body centred on its arrow.
+    var screen: CGRect? = nil
+
+    /// How far a popover's window reaches past its body on every side, holding the arrow and the
+    /// shadow (measured on macOS 15).
+    static let windowMargin: CGFloat = 13
 
     func offsetBy(dx: CGFloat, dy: CGFloat) -> PopoverPlace {
         var moved = self
@@ -25,8 +32,9 @@ struct PopoverPlace: Equatable {
         return moved
     }
 
-    /// A body of `size` hung from `at` on `edge`, centred on it, as AppKit centres a popover on its arrow.
-    static func body(_ size: CGSize, hungFrom at: CGRect, edge: Edge) -> CGRect {
+    /// A body of `size` hung from `at` on `edge`, centred on it, as AppKit centres a popover on its
+    /// arrow, then slid along that edge, as AppKit slides it, until its window is on `screen`.
+    static func body(_ size: CGSize, hungFrom at: CGRect, edge: Edge, on screen: CGRect?) -> CGRect {
         let gap = ReplyContent.arrowLength
         let origin: CGPoint
         switch edge {
@@ -35,7 +43,13 @@ struct PopoverPlace: Equatable {
         case .right: origin = CGPoint(x: at.maxX + gap, y: at.midY - size.height / 2)
         case .left: origin = CGPoint(x: at.minX - gap - size.width, y: at.midY - size.height / 2)
         }
-        return CGRect(origin: origin, size: size)
+        var body = CGRect(origin: origin, size: size)
+        guard let room = screen?.insetBy(dx: windowMargin, dy: windowMargin) else { return body }
+        switch edge {
+        case .below, .above: body.origin.x = min(max(body.minX, room.minX), room.maxX - size.width)
+        case .right, .left: body.origin.y = min(max(body.minY, room.minY), room.maxY - size.height)
+        }
+        return body
     }
 }
 

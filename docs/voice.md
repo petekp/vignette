@@ -100,15 +100,16 @@ The menu bar menu names the switch as the General tab does.
 | The General tab, under the switch while Screen Recording is missing (`liveInkScreenRecordingReason`) | Needs Screen Recording permission. Lets Vignette see the window under your ink when you ask about it. macOS may ask you to reopen Vignette after you allow it. |
 | The menu's first item while Screen Recording is missing | Allow Screen Recording for Live Ink… |
 | The menu bar intro's popover, while Screen Recording is missing | Live ink needs Screen Recording. Click the icon to allow it. |
-| The note's placeholder (`LiveNotePanel.placeholder`) | Ask about this |
-| The note's placeholder while it listens (`LiveNotePanel.listeningPlaceholder`) | Listening… |
+| The note's placeholder (`LiveNotePopover.placeholder`) | Ask about this |
+| The note's placeholder while it listens (`LiveNotePopover.listeningPlaceholder`) | Listening… |
+| The note's Return hint, ↩, and its tooltip | Return asks |
 | The last of a reply's buttons (`LiveAnswerActions.replyTitle`) | Reply |
 | The field Reply opens, empty | Reply to *agent* |
 | The button beside that field (`LiveAnswerActions.cancelTitle`) | Cancel |
 | The General tab, under the speech switch while a permission is missing (`liveInkSpeechReason`) | Needs microphone and speech recognition permission. Lets Vignette hear what you say while you draw. The words are made on this Mac. |
 | macOS's microphone prompt (`NSMicrophoneUsageDescription`) | Vignette hears what you say while you draw, and turns it into words on this Mac. |
 | macOS's speech recognition prompt (`NSSpeechRecognitionUsageDescription`) | Vignette turns what you say while you draw into words, on this Mac. |
-| The note's target, and its tooltip | to Claude ▾, "Claude answers on the screen." / to *project* ▾, "The session's reply comes back as a card." |
+| The note's target, and its tooltip | Claude ⌄, "Claude answers on the screen." / *project* ⌄, "The session answers here when it's done." |
 | The target's menu | Claude, on the screen; then a "Send to a session" heading and the sessions, each by project with its name under it |
 
 #### On the ink, in the person's colour

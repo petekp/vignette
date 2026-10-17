@@ -55,7 +55,7 @@ final class LiveInk {
     private var prepared: (ink: Set<Mark.ID>, packet: Task<LivePacket, Error>, glance: Task<LivePacket.Glance?, Never>)?
     /// A mark was drawn since the chord went down, so letting it go opens the note.
     private var drewWhileInking = false
-    private var note: LiveNotePanel?
+    private var note: LiveNotePopover?
     /// Listening to the person while they draw, with speech on. It can span several presses of the
     /// chord, so "this" and "that" drawn in two strokes are one note.
     private var listening: LiveListening?
@@ -69,11 +69,11 @@ final class LiveInk {
     /// When each of the person's strokes was drawn, so a spoken note can say which "this" is which.
     private var strokeTimes: [Mark.ID: (began: Date, ended: Date)] = [:]
     /// The note sent to a session, still on screen until the drawn note takes its place.
-    private var handing: LiveNotePanel?
+    private var handing: LiveNotePopover?
     /// The note's target picked last, which the next note starts on.
-    private var lastTarget: LiveNotePanel.Target = .responder
+    private var lastTarget: LiveNotePopover.Target = .responder
     /// The target the open note started on, for `SendContext`.
-    private var noteOffered: LiveNotePanel.Target?
+    private var noteOffered: LiveNotePopover.Target?
     /// The asks since the screen was last cleared, and each mark's part in them.
     private var asks = LiveAsks()
     /// An answer's steps still to show, each a mark and its label, and the window they go on. One is
@@ -344,7 +344,7 @@ final class LiveInk {
             "focus": focusRun.map { run -> Any in
                 ["stop": run.index + 1, "stops": run.stops.count, "zoom": run.stops.indices.contains(run.index) && run.stops[run.index].first?.focus?.zoom == true]
             } ?? NSNull(),
-            "note": note.map { panel -> Any in StateReport.topLeft(panel.frame, primaryHeight: StateReport.primaryHeight) } ?? NSNull(),
+            "note": note?.globalFrame.map { [$0.minX, $0.minY, $0.width, $0.height].map { Int($0.rounded()) } } ?? NSNull(),
             "actions": actionsPanel.map { panel -> Any in
                 panel.buttons.map { ["title": $0.title, "frame": [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height].map { Int($0.rounded()) },
                                      "enabled": $0.enabled, "picked": $0.picked] }
@@ -539,10 +539,11 @@ final class LiveInk {
     }
 
     private func openNote() {
-        guard let mark = newInk.last(where: { $0.shapeExtent != nil }), let newest = mark.shapeExtent else { return }
+        guard let mark = newInk.last(where: { $0.shapeExtent != nil }), let newest = mark.shapeExtent,
+              let first = LiveAnswerLayout.noteHang(LiveNotePopover.placementSize, for: mark, scene: scene(frame: newest, page: nil, text: []))
+        else { return }
         closeNote()
-        let ui = Settings.shared.data.ui
-        let panel = LiveNotePanel(beside: newest, textSize: answerSizes.textSize, style: ui.textStyle, markStyle: ui.markStyle, target: lastTarget)
+        let panel = LiveNotePopover(at: first, target: lastTarget)
         noteOffered = lastTarget
         panel.onAsk = { [weak self, weak panel] words, target in
             guard let self else { return }
@@ -848,26 +849,23 @@ final class LiveInk {
     /// and text from a glance at the window: the one started as the stroke ended, which also serves
     /// the ask when the ink is the same, or a new one. Without an answer in `revealLimit`, the note
     /// shows where it opened.
-    private func prepare(beside newest: Mark, panel: LiveNotePanel) {
+    private func prepare(beside newest: Mark, panel: LiveNotePopover) {
         let person = ink
         let extent = newest.shapeExtent ?? .zero
         if prepared?.ink != Set(person.map(\.id)) { prefetch(at: CGPoint(x: extent.midX, y: extent.midY)) }
         if let glance = prepared?.glance { place(panel, beside: newest, from: glance) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealLimit) { [weak panel] in panel?.reveal(at: nil) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealLimit) { [weak panel] in panel?.reveal() }
     }
 
-    private func place(_ panel: LiveNotePanel, beside newest: Mark, from glance: Task<LivePacket.Glance?, Never>) {
+    private func place(_ panel: LiveNotePopover, beside newest: Mark, from glance: Task<LivePacket.Glance?, Never>) {
         Task { @MainActor [weak self, weak panel] in
             guard let glance = await glance.value, let self, let panel, self.note === panel else {
-                panel?.reveal(at: nil)
+                panel?.reveal()
                 return
             }
             let scene = self.scene(frame: glance.frame, page: glance.page, text: glance.text)
-            let pill = panel.pillFrame
-            // Room for the words still to come, so typing does not grow it over the ink; the chip under it.
-            let size = CGSize(width: max(pill.width, LiveNotePanel.roomyWidth), height: pill.height)
-            let spot = LiveAnswerLayout.noteSpot(size, under: panel.globalFrame.height - pill.height, for: newest, scene: scene)
-            panel.reveal(at: spot.rect, growsLeft: spot.growsLeft)
+            if let place = LiveAnswerLayout.noteHang(LiveNotePopover.placementSize, for: newest, scene: scene) { panel.move(to: place) }
+            panel.reveal()
         }
     }
 
@@ -1025,7 +1023,7 @@ final class LiveInk {
         let ink = self.ink.filter { $0.id != question?.id }
         let notes = ink.filter { $0.kind == .text }.compactMap { LiveAnswerLayout.noteBox($0, sizes: answerSizes) }
         return LiveAnswerLayout.Scene(room: room.isNull ? frame : room, ink: ink, text: text, notes: notes,
-                                      screen: Self.visibleScreen(around: frame)?.insetBy(dx: 8, dy: 8))
+                                      screen: Self.visibleScreen(around: frame))
     }
 
     /// The visible part of the screen `frame` is on, without the menu bar and the Dock, in global
