@@ -252,7 +252,7 @@ The names in brackets are `// MARK:` sections.
   said gets `[n]` after the word said as stroke `n` was drawn (`SpokenNote.marked`, from
   `strokeTimes`), for the agent only; the note on screen keeps the person's words.
 - A note sent to a session leaves the window as a card (`docs/live-ink-note-cards-2026-10-08.md`,
-  ADR 0022). Send gets one line that names the app, the window and its URL, with the picture the
+  ADR 0023). Send gets one line that names the app, the window and its URL, with the picture the
   responder would get: the window with the ink drawn in and its strokes numbered. The card is the
   window without the ink, written to the watch folder as `Live ink note <date> at <time>.png`
   (`LiveNoteCards.send`), with the person's ink and words as its drawing

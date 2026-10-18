@@ -13,11 +13,11 @@ a send from the editor does, and its Reply goes back to the session. The respond
 a few seconds while the person is still looking at the window, so the window is still the right
 place for it.
 
-This supersedes ADR 0021, which drew a session's answer on the window.
+This supersedes ADR 0022, which drew a session's answer on the window.
 
 ## Considered options
 
-- Answers on the window, as ADR 0021 chose. The window is often gone or changed by the time a
+- Answers on the window, as ADR 0022 chose. The window is often gone or changed by the time a
   session answers.
 - Keeping the ink on the window while the session takes the note at once, and making a card only
   when the note is queued. Two behaviours for one action, and a turn that starts at once can still
@@ -25,4 +25,4 @@ This supersedes ADR 0021, which drew a session's answer on the window.
 - A note card that is not a file. The stack shows files from the screenshots folder, so a card
   without one is a larger change, and the note could not be copied, dragged or sent again.
 
-Source: docs/live-ink-note-cards-2026-10-08.md. Supersedes: 0021.
+Source: docs/live-ink-note-cards-2026-10-08.md. Supersedes: 0022.

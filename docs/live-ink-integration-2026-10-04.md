@@ -54,7 +54,7 @@ Pete confirmed 2, 3, 4, 6 and 7 on 2026-10-04.
    toolbar (26).
 6. **A session's answer is drawn on the window.** Ink sent to a working session is answered on the
    window the ink is on, beside the ink, as the responder's answers are, even when it arrives minutes
-   later (ADR 0021). An answer that cannot be drawn there becomes a card.
+   later (ADR 0022). An answer that cannot be drawn there becomes a card.
 7. **The responder answers by default.** The note panel's target starts on the responder, and lists
    the working sessions after it, for an ask that needs a session's project, such as "fix this".
    Reason: the measurements above. The cost is that the responder knows only what it is sent: not
@@ -289,7 +289,7 @@ Codex app nothing), and Vision reads the same text from any app.
 
 - The note panel's other targets are today's Send. The picture with the ink is the image, and the
   note, the app, the window and the URL go in the message, on one line.
-- The session answers with `scripts/reply --answer` (decision 6, ADR 0021). Its marks name words,
+- The session answers with `scripts/reply --answer` (decision 6, ADR 0022). Its marks name words,
   since it has no line ids, and Vignette looks for them in a fresh capture of the window.
 
 ### Settings, menu, commands and state
@@ -357,5 +357,5 @@ Each step is usable on its own and verified before the next.
 - **The responder knows only the screen.** An ask about the person's own code is better sent to a
   session, and the panel has to make that choice easy.
 - **Decisions hard to reverse.** Asking for Screen Recording and running a model for the person are
-  `docs/adr/0019-live-ink-asks-for-screen-recording.md` and
-  `docs/adr/0020-live-ink-is-answered-by-a-dedicated-responder.md`.
+  `docs/adr/0020-live-ink-asks-for-screen-recording.md` and
+  `docs/adr/0021-live-ink-is-answered-by-a-dedicated-responder.md`.

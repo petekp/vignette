@@ -47,7 +47,7 @@ It builds on the trailer's pipeline (`docs/trailer-pipeline-2026-09-26.md`):
 ## Decisions
 
 1. **Claude's answer is drawn on the window.** Its reply hangs on the person's note, and its marks
-   point at the words they name, found in a fresh capture of the window. ADR 0021 and
+   point at the words they name, found in a fresh capture of the window. ADR 0022 and
    `scripts/reply --answer`.
 2. **The stage copy runs the take.** Vignette Demo, with its own bundle id, so the target menu
    shows only the stage's Claude Code. Pete grants it Screen Recording and Accessibility once.

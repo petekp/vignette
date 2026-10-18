@@ -153,7 +153,7 @@ them by hand, and one already skips a step. The simpler path is a private helper
 would make the order hard to skip, but the order would still be untestable, because the helper
 would live where no test reaches. The module also lets tests cover the watcher reporting before
 the marks join, a removal deferred against an older listing, and a refused note taking back its
-file. It conflicts with neither ADR 0011 nor ADR 0022.
+file. It conflicts with neither ADR 0011 nor ADR 0023.
 
 ## 3. A note card's wait
 

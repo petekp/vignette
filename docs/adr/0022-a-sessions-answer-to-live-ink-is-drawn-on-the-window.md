@@ -1,6 +1,6 @@
 # A session's answer to live ink is drawn on the window
 
-Superseded by ADR 0022: a session's result now comes back as a card.
+Superseded by ADR 0023: a session's result now comes back as a card.
 
 Live ink sent to a working session, such as "move these under the title", is answered on the window
 the ink is on. The session's words appear beside the ink, and its marks point at what it changed.
@@ -9,7 +9,7 @@ The person drew on that window and is looking at it, so an answer there needs no
 The session names what its marks point at by words, and Vignette finds them in a fresh capture of
 the window when the reply arrives. Positions in the picture the session was sent would be wrong
 whenever its change moved things, which is most changes. The responder's answers already find their
-marks by text lines (ADR 0020), so a session's answer is the same `LiveAnswer` and is drawn by the
+marks by text lines (ADR 0021), so a session's answer is the same `LiveAnswer` and is drawn by the
 same code.
 
 The answer travels in the reply's bundle, which raised `ReplyProtocol.version` to 2. A reply from a

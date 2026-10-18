@@ -12,7 +12,7 @@ Terms used here:
 - **Turn:** one run of a session's work. The plugin's hooks write when it starts and ends into the
   session's inbox, for Claude Code only.
 - **Responder:** the built-in Claude that answers a note on the window in a few seconds
-  (`LiveResponder`, ADR 0020).
+  (`LiveResponder`, ADR 0021).
 
 ## Why
 
@@ -129,7 +129,7 @@ Several `--answer`s sent during the turn still each make a card from a fresh cap
 
 - **Session answers drawn on the window.** `LiveInk.result` makes the result card instead. The
   reply's stage is `shown` then, as it was for an answer drawn on the window, since the card is an
-  ordinary file and the reply has none of its own. ADR 0022 supersedes ADR 0021.
+  ordinary file and the reply has none of its own. ADR 0023 supersedes ADR 0022.
 - **The thinking light while a session works,** and Vignette's notes beside the ink about a send.
   The note card says these now.
 - **The before-and-after playback on the window:** `replay`, `BeforeLayer` and `Mark.before`. The
@@ -154,7 +154,7 @@ ink's handover by the log: VNC frames come 7 s apart, too far apart to show a si
 2. The turn's end: a result card, or Done on the note card.
 3. A session's `--answer` becomes a result card from a fresh capture.
 4. Remove what goes away.
-5. The skill, the plugin version, `docs/live-ink.md`, `docs/voice.md`, and ADR 0022.
+5. The skill, the plugin version, `docs/live-ink.md`, `docs/voice.md`, and ADR 0023.
 6. The card flies from the window into the corner, as the ink leaves.
 
 ## Checks
