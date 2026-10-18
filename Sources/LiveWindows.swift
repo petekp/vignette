@@ -1156,6 +1156,10 @@ final class WindowOverlay: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
+    /// The marks are laid out from the frame `place` asks for, so the overlay takes it as asked. AppKit
+    /// would move a frame that reaches above the menu bar down below it, and the marks with it.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+
     /// Covers `extent`, in global top-left points, with the marks' coordinates starting at the
     /// window's top-left, `window`.
     func place(over window: CGRect, extent: CGRect) {
