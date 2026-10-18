@@ -77,12 +77,6 @@ final class LiveInk {
     private var handingTo: Mark.ID?
     /// Who the ask under way goes to: the agent, and how the conversation's row names it.
     private var answerer: (agent: String, name: String?) = (LiveAnswerLayout.agentName, nil)
-    /// The ask under way goes to a session, not to the responder.
-    private var askGoesToSession = false
-    /// The session ask's send is stored: it is in its grace or gone, and Esc no longer stops it.
-    private var sessionSendStored = false { didSet { syncEscape() } }
-    /// The asks to a session that Esc stopped, whose send is withdrawn if it is stored after all.
-    private var withdrawn = Set<LiveAsks.Ask.ID>()
     /// Esc, held while `LiveEscape` has a step for it.
     private var escapeKey: HotKey?
     /// Looks again for the screen to be free, while the stack or the annotator holds it and a step waits.
@@ -197,7 +191,6 @@ final class LiveInk {
             surfaces = []
             windows.removeAll()
         }
-        syncEscape()
         Log.write("[live-ink] \(on ? "on" : "off")")
     }
 
@@ -670,7 +663,7 @@ final class LiveInk {
         let id: LiveAsks.Ask.ID
         let about: [Mark]
         let point: CGPoint
-        switch asks.begin(among: shownMarks, following: following, shift: windows.shift(of:)) {
+        switch asks.begin(among: shownMarks, following: following, toSession: session != nil, shift: windows.shift(of:)) {
         case .refused(let refusal, let effects):
             for case .restore(let reply, let reason) in effects { restoreAnswer(reply, saying: reason) }
             return .failure(LiveResponder.Failure(reason: refusal.rawValue, detail: refusal.detail))
@@ -681,8 +674,6 @@ final class LiveInk {
             for case .removeAnswer(let gone) in effects { removeAnswer(gone) }
         }
         answerer = (session?.client.rawValue ?? LiveAnswerLayout.agentName, session?.project)
-        askGoesToSession = session != nil
-        sessionSendStored = false
         if let reply {
             put([reply], window: windows.window(of: reply.id))
         } else if let note, !trimmed.isEmpty {
@@ -731,7 +722,7 @@ final class LiveInk {
 
     private func send(_ packet: LivePacket, words: String, spoken: (words: [SpokenWord], began: Date)?, about: [Mark],
                       new: Set<Mark.ID>, started: Date, for id: LiveAsks.Ask.ID) {
-        guard asks.reduce(.arrived(.packetCame(toSession: false), for: id)).contains(.send) else { return letGoOfNoteOfEndedAsk() }
+        guard asks.reduce(.arrived(.packetCame, for: id)).contains(.send) else { return letGoOfNoteOfEndedAsk() }
         let note = numberedNote(spoken, packet: packet) ?? words
         let person = ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
         let asked = about.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
@@ -771,11 +762,8 @@ final class LiveInk {
     private func share(_ packet: LivePacket, words: String, spoken: (words: [SpokenWord], began: Date)?, with session: AgentDestination,
                        from spot: CGRect?, for id: LiveAsks.Ask.ID) {
         var shared: Set<Mark.ID>?
-        for case .share(let about) in asks.reduce(.arrived(.packetCame(toSession: true), for: id)) { shared = about }
-        guard let about = shared else {
-            withdrawn.remove(id)
-            return letGoOfNoteOfEndedAsk()
-        }
+        for case .share(let about) in asks.reduce(.arrived(.packetCame, for: id)) { shared = about }
+        guard let about = shared else { return letGoOfNoteOfEndedAsk() }
         guard let sendNote else { return letGoOfNote() }
         let numbered = numberedNote(spoken, packet: packet)
         var place = [packet.app, packet.title.map { "\"\($0)\"" }, packet.location].compactMap { $0 }.joined(separator: ", ")
@@ -796,19 +784,15 @@ final class LiveInk {
                             window: packet.windowID, ink: inkBox, before: LiveNoteCards.before(packet, ink: inkBox))
         sendNote(card, session, message) { [weak self] result in
             guard let self else { return }
-            let stopped = self.withdrawn.remove(id) != nil
             switch result {
             case .success(let request):
-                self.sessionSendStored = true
                 Log.write("[live-ink] sent to a session request=\(request) marks=\(card.marks.count)")
                 let effects = self.asks.reduce(.arrived(.sentToSession(ink: Set(person.map(\.id))), for: id))
-                guard !effects.isEmpty else {
-                    if stopped {
-                        Log.write("[live-ink] note withdrawn request=\(request)")
-                        DispatchQueue.main.async { self.unsendNote?(request) }
-                    }
-                    return self.letGoOfNoteOfEndedAsk()
+                if effects == [.withdraw] {
+                    Log.write("[live-ink] note withdrawn request=\(request)")
+                    DispatchQueue.main.async { self.unsendNote?(request) }
                 }
+                guard !effects.isEmpty, effects != [.withdraw] else { return self.letGoOfNoteOfEndedAsk() }
                 let leaving = effects.lazy.compactMap { if case .finish(_, let how) = $0 { how } else { nil } }.first
                 self.letGoOfNote(as: leaving)
                 for case .finish(let ids, let how) in effects { self.finish(ids, how) }
@@ -1094,8 +1078,7 @@ final class LiveInk {
     private static func visibleScreen(around frame: CGRect) -> CGRect? {
         let centre = CGPoint(x: frame.midX, y: StateReport.primaryHeight - frame.midY)
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(centre) }) ?? NSScreen.main else { return nil }
-        let visible = screen.visibleFrame
-        return CGRect(x: visible.minX, y: StateReport.primaryHeight - visible.maxY, width: visible.width, height: visible.height)
+        return StateReport.flipped(screen.visibleFrame)
     }
 
     /// The reply so far, in the conversation where the person asked, or with no question, as a popover
@@ -1546,16 +1529,16 @@ final class LiveInk {
     // MARK: Esc
 
     private var escapeSnapshot: LiveEscape.Snapshot {
-        let sessionSendIsNotStored = asks.ask?.phase == .looking && !sessionSendStored && Settings.shared.data.ui.sendGraceSeconds > 0
+        let staying = shownMarks.filter { !asks.isFinishing($0.id) }
         return LiveEscape.Snapshot(
             isOn: isOn,
             screenIsFree: mayInk(),
             noteOpen: note != nil,
             replyFieldOpen: actionsPanel?.isTyping == true,
-            askCanBeCancelled: asks.isUnderWay && (!askGoesToSession || sessionSendIsNotStored),
+            askCanBeCancelled: asks.canBeCancelled(sendsWait: Settings.shared.data.ui.sendGraceSeconds > 0),
             tourRunning: focusRun != nil || stepClicks != nil,
-            answerShown: !asks.isUnderWay && shownMarks.contains { asks.isAnswer($0.id) && !asks.isFinishing($0.id) },
-            marksShown: shownMarks.contains { !asks.isFinishing($0.id) })
+            answerShown: !asks.isUnderWay && staying.contains { asks.isAnswer($0.id) },
+            marksShown: !staying.isEmpty)
     }
 
     /// Holds Esc exactly while `LiveEscape` has a step for it, so with nothing to back out of it is the
@@ -1616,7 +1599,7 @@ final class LiveInk {
     /// answer back, and the ink can be asked about again. A session's note is withdrawn if its send is
     /// stored before the answer to this comes.
     private func cancelAsk() {
-        if askGoesToSession, let id = asks.ask?.id { withdrawn.insert(id) } else { responder.cancel() }
+        if asks.ask?.toSession != true { responder.cancel() }
         let effects = asks.reduce(.cancelled(shown: shownIDs))
         letGoOfNote()
         for effect in effects {

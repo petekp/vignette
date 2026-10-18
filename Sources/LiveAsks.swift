@@ -21,6 +21,10 @@ struct LiveAsks: Equatable {
         var about: Set<Mark.ID>
         /// The marks of `about` that were new ink when the ask began, which stopping the ask makes new again.
         var fresh: Set<Mark.ID> = []
+        /// It goes to a session as a note, not to the responder.
+        var toSession = false
+        /// The session's send of the note is stored: it waits out its grace or has gone.
+        var sent = false
         var reason: String?
         var picture = false
         /// The reply as it streams in, and once it is whole. An ask from one of an answer's buttons
@@ -74,6 +78,8 @@ struct LiveAsks: Equatable {
     /// Only marks with a role or leaving have one.
     private var records: [Mark.ID: Record] = [:]
     private var lastID: Ask.ID = 0
+    /// The asks to a session that Esc stopped before their send was stored.
+    private var withdrawn = Set<Ask.ID>()
 
     // MARK: Reads
 
@@ -95,6 +101,13 @@ struct LiveAsks: Equatable {
     }
 
     var isUnderWay: Bool { ask?.phase == .looking || ask?.phase == .asking }
+
+    /// Esc can stop the ask under way. One to a session only before its send is stored, and only when
+    /// `sendsWait`, since what stops it is taking the send back in its grace.
+    func canBeCancelled(sendsWait: Bool) -> Bool {
+        guard let ask, isUnderWay else { return false }
+        return !ask.toSession || (!ask.sent && sendsWait)
+    }
 
     /// Not while the ask from one of the answer's buttons is under way, unless its send was queued or
     /// not confirmed, when its answer may be a long time coming.
@@ -157,7 +170,7 @@ struct LiveAsks: Equatable {
     /// looking for its packet. `following` is the reply whose button the person picked: the ask is
     /// about that answer's marks too. `shift` says how far a mark's content has moved, and must only
     /// read.
-    mutating func begin(among shown: [Mark], following: Following?, shift: (Mark.ID) -> CGVector?) -> Begun {
+    mutating func begin(among shown: [Mark], following: Following?, toSession: Bool = false, shift: (Mark.ID) -> CGVector?) -> Begun {
         let about = about(among: shown)
         guard let shape = about.last?.shapeExtent else { return refuse(.noInk, following: following) }
         if isUnderWay { return refuse(.busy, following: following) }
@@ -172,7 +185,8 @@ struct LiveAsks: Equatable {
         add(.asked, to: ids)
         lastID += 1
         let leader = Self.leader(of: about)
-        var new = Ask(id: lastID, phase: .looking, about: ids, fresh: fresh, leader: leader, leaderShift: leader.flatMap(shift))
+        var new = Ask(id: lastID, phase: .looking, about: ids, fresh: fresh, toSession: toSession, leader: leader,
+                      leaderShift: leader.flatMap(shift))
         if let following {
             new.say = following.reply
             new.picked = following.pick
@@ -236,7 +250,8 @@ struct LiveAsks: Equatable {
         /// The answer's ×. It finishes the answer's marks and the marks the ask is about, erased or not.
         case dismissed
         /// Esc with an ask under way: it stops, and the person's ink is as it was before it began. A
-        /// reply to put back must be among `shown`. Nothing is said, since the person stopped it.
+        /// reply to put back must be among `shown`. Nothing is said, since the person stopped it. A
+        /// session's note stored after this is withdrawn.
         case cancelled(shown: Set<Mark.ID>)
         /// Esc with an answer up and no ask under way: the answer's marks leave, and the person's ink stays.
         case answerClosed
@@ -248,8 +263,8 @@ struct LiveAsks: Equatable {
 
     /// What comes back for an ask.
     enum Arrival: Equatable {
-        /// The packet was captured, for the responder or for a session. Taken only while looking.
-        case packetCame(toSession: Bool)
+        /// The packet was captured. Taken only while looking.
+        case packetCame
         /// The responder's reply streamed in further. Taken only while asking.
         case replyCame
         case answerCame
@@ -278,6 +293,8 @@ struct LiveAsks: Equatable {
         case notice(reply: Mark.ID, reason: String)
         /// Take these marks off the screen.
         case remove(Set<Mark.ID>)
+        /// The note of an ask Esc stopped was stored after all: take the send back.
+        case withdraw
         /// Let go of the steps, the focus and the answer's buttons, then take these marks off. The ask
         /// has already taken their part as the answer's. May be empty.
         case removeAnswer(Set<Mark.ID>)
@@ -303,11 +320,15 @@ struct LiveAsks: Equatable {
 
         // What comes back for any ask but the current one, or after a clear or a finish, changes nothing.
         case .arrived(let arrival, let id):
+            if withdrawn.remove(id) != nil {
+                if case .sentToSession = arrival { return [.withdraw] }
+                break
+            }
             guard let current = ask, current.id == id else { break }
             switch arrival {
-            case .packetCame(let toSession):
+            case .packetCame:
                 guard current.phase == .looking else { break }
-                if toSession { return [.share(about: current.about)] }
+                if current.toSession { return [.share(about: current.about)] }
                 ask?.phase = .asking
                 return [.send]
             case .replyCame:
@@ -318,6 +339,7 @@ struct LiveAsks: Equatable {
             case .failed(let reason, let shown):
                 return fail(saying: reason, shown: shown)
             case .sentToSession(let ink):
+                ask?.sent = true
                 return finish(current.about.union(ink).union(current.say.map { [$0.id] } ?? []), .dismissed)
             }
 
@@ -351,6 +373,7 @@ struct LiveAsks: Equatable {
             return ids.isEmpty ? [] : finish(ids, .dismissed)
         case .cancelled(let shown):
             guard let current = ask, isUnderWay else { break }
+            if current.toSession { withdrawn.insert(current.id) }
             take(.asked, from: current.fresh)
             if let restored = restore(saying: nil, shown: shown) { return [restored] }
             ask = nil

@@ -39,7 +39,7 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
     private let field = NSTextField()
     private let cancelButton = ActionButton(title: LiveAnswerActions.cancelTitle)
     /// The field is up in the row's place, and the panel has the keys.
-    private var typing = false
+    private(set) var isTyping = false
     /// The reply's width inside its padding, which the field spans.
     private var width: CGFloat
 
@@ -137,15 +137,14 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
         }
     }
 
-    override var canBecomeKey: Bool { typing }
+    override var canBecomeKey: Bool { isTyping }
     override var canBecomeMain: Bool { false }
 
     private var buttonViews: [ActionButton] { row.arrangedSubviews.compactMap { $0 as? ActionButton } }
 
     /// The buttons, in global top-left points.
     var globalFrame: CGRect {
-        CGRect(x: frame.minX, y: StateReport.primaryHeight - frame.maxY, width: frame.width, height: frame.height)
-            .insetBy(dx: Self.margin, dy: Self.margin)
+        StateReport.flipped(frame).insetBy(dx: Self.margin, dy: Self.margin)
     }
 
     /// Each button's words, its frame as drawn, in global top-left points, and whether it was picked,
@@ -153,28 +152,24 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
     var buttons: [(title: String, frame: CGRect, enabled: Bool, picked: Bool)] {
         buttonViews.map { button in
             let rect = convertToScreen(button.convert(button.alignmentRect(forFrame: button.bounds), to: nil))
-            return (button.title, CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: rect.width, height: rect.height),
-                    button.isEnabled, button.image != nil)
+            return (button.title, StateReport.flipped(rect), button.isEnabled, button.image != nil)
         }
     }
 
-    var isTyping: Bool { typing }
-
     /// The field, in global top-left points, while it is up, for `[state]`.
     var fieldFrame: CGRect? {
-        guard typing else { return nil }
+        guard isTyping else { return nil }
         return global(field.bounds, in: field)
     }
 
     /// Cancel, as drawn, in global top-left points, while the field is up, for `[state]`.
     var cancelFrame: CGRect? {
-        guard typing else { return nil }
+        guard isTyping else { return nil }
         return global(cancelButton.alignmentRect(forFrame: cancelButton.bounds), in: cancelButton)
     }
 
     private func global(_ rect: CGRect, in view: NSView) -> CGRect {
-        let rect = convertToScreen(view.convert(rect, to: nil))
-        return CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: rect.width, height: rect.height)
+        StateReport.flipped(convertToScreen(view.convert(rect, to: nil)))
     }
 
     /// Puts the first button's top-left corner at `corner`, in global top-left points, as the
@@ -183,7 +178,7 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
     func place(at corner: CGPoint, width: CGFloat) {
         if width != self.width {
             self.width = width
-            if typing { fit() }
+            if isTyping { fit() }
         }
         var origin = CGPoint(x: corner.x - Self.margin, y: StateReport.primaryHeight - corner.y - frame.height + Self.margin)
         let point = CGPoint(x: origin.x, y: origin.y + frame.height / 2)
@@ -200,7 +195,7 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
     /// Cancel, which sits where the row's last button does.
     private func fit() {
         let size = row.fittingSize
-        let width = typing ? max(size.width, self.width + Self.margin * 2) : size.width
+        let width = isTyping ? max(size.width, self.width + Self.margin * 2) : size.width
         row.frame = CGRect(origin: .zero, size: size)
         fieldRow.frame = CGRect(x: 0, y: 0, width: width, height: size.height)
         let cancel = cancelButton.intrinsicContentSize
@@ -248,8 +243,8 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
     /// Reply's click: the field takes the row's place, with the keys and with what was typed before,
     /// the caret after it.
     @objc private func openField() {
-        guard !typing, !hiding else { return }
-        typing = true
+        guard !isTyping, !hiding else { return }
+        isTyping = true
         fit()
         show(field: true)
         makeKey()
@@ -265,8 +260,8 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
     /// The buttons come back, the keys go back to the app the person was in, and the field's words
     /// are reported as the draft.
     func closeField() {
-        guard typing else { return }
-        typing = false
+        guard isTyping else { return }
+        isTyping = false
         makeFirstResponder(nil)
         letGoOfKeys()
         show(field: false)
@@ -289,7 +284,7 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
             row.animator().alphaValue = shown ? 0 : 1
             fieldRow.animator().alphaValue = shown ? 1 : 0
         } completionHandler: {
-            MainActor.assumeIsolated { if !self.typing { self.fieldRow.isHidden = true } }
+            MainActor.assumeIsolated { if !self.isTyping { self.fieldRow.isHidden = true } }
         }
     }
 
@@ -317,8 +312,8 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
         guard !hiding else { return }
         hiding = true
         NotificationCenter.default.removeObserver(self)
-        if typing {
-            typing = false
+        if isTyping {
+            isTyping = false
             letGoOfKeys()
             onDraft?(field.stringValue)
         }

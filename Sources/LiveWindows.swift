@@ -1001,7 +1001,7 @@ final class LiveWindows {
             Log.write("[live-ink] window=\(id) closed marks=\(window.pins.count)")
         }
         if !gone.isEmpty { onGone?(gone) }
-        let shown = Set(marks.filter(\.shown).map(\.mark.id))
+        let shown = Set(windows.values.filter(\.onScreen).flatMap { $0.pins.filter { $0.phase == .shown }.map(\.mark.id) })
         if shown != lastShown {
             lastShown = shown
             onShownChanged?()

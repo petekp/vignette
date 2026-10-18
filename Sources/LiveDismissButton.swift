@@ -79,8 +79,7 @@ final class LiveDismissButton: NSPanel {
 
     /// The disc, in global top-left points.
     var globalFrame: CGRect {
-        CGRect(x: frame.minX, y: StateReport.primaryHeight - frame.maxY, width: frame.width, height: frame.height)
-            .insetBy(dx: Self.margin, dy: Self.margin)
+        StateReport.flipped(frame).insetBy(dx: Self.margin, dy: Self.margin)
     }
 
     /// Centres the disc on `corner`, in global top-left points, as the note moves with its window.

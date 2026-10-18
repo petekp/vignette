@@ -306,8 +306,7 @@ final class ReplyPopover {
     /// The body, in global top-left points, or nil while it is not up or faded out.
     var globalFrame: CGRect? {
         guard popover.isShown, !closing, alpha > 0.5, let window else { return nil }
-        let frame = window.convertToScreen(view.convert(view.bounds, to: nil))
-        return CGRect(x: frame.minX, y: StateReport.primaryHeight - frame.maxY, width: frame.width, height: frame.height)
+        return StateReport.flipped(window.convertToScreen(view.convert(view.bounds, to: nil)))
     }
 
     /// Lays `panel` over the popover as a child of its window, so the panel takes the popover's

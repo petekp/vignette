@@ -318,18 +318,21 @@ final class LiveResponder {
         askTimer = Timer.scheduledTimer(withTimeInterval: limit, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if self.interrupting {
-                    Log.write("[live-ink] responder error interrupt unanswered after \(Int(limit))s")
-                    let asked = self.waiting
-                    self.waiting = []
-                    self.shutDown(Failure(reason: "Claude stopped before it answered. You can ask again.", detail: "stopped"), state: .stopped)
-                    for ask in asked { self.ask(ask) }
-                    return
-                }
+                if self.interrupting { return self.interruptUnanswered(after: limit) }
                 Log.write("[live-ink] responder error timeout after \(Int(limit))s")
                 self.shutDown(Failure(reason: "Claude took too long to answer. You can ask again.", detail: "timeout"), state: .stopped)
             }
         }
+    }
+
+    /// The interrupted turn's `result` never came: the process stops, and the asks made since start a
+    /// new one.
+    private func interruptUnanswered(after limit: TimeInterval) {
+        Log.write("[live-ink] responder error interrupt unanswered after \(Int(limit))s")
+        let asked = waiting
+        waiting = []
+        stop()
+        for ask in asked { self.ask(ask) }
     }
 
     private func received(_ line: Data, from source: Process) {
