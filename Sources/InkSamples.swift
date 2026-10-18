@@ -52,7 +52,7 @@ final class InkSamples: ObservableObject {
         for sample in ink {
             if let raw = sample.raw, let hand = InkHand(raw: raw, mark: sample.mark, feel: Settings.shared.data.ui.inkHandFeel) {
                 sample.layer.show(sample.mark, hand: hand, markStyle: markStyle)
-                sample.layer.ease(from: hand.drawn(for: sample.mark), duration: motion.inkSettle)
+                sample.layer.ease(from: hand.drawn(for: sample.mark))
             } else {
                 sample.layer.drawOn(after: delay, duration: motion.liveInkDrawOn)
                 delay += motion.liveInkDrawOn * 0.6

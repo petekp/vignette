@@ -375,7 +375,10 @@ struct UITweaks: Codable, Equatable {
     var inkHandStartWidth = 0.38     // its width where the pen lands, a share of the full width
     var inkHandEndTaper = 26.0       // points a loop narrows over where the pen lifts
     var inkHandEndWidth = 0.3
-    var inkSettle = 0.3              // seconds a drawn loop or arrow takes to ease onto its shape
+    var inkLength = 1800.0           // points of line the pen keeps; past it, the line's start recedes
+    var inkSettle = 0.3              // seconds of the spring a drawn loop or arrow settles onto its shape on
+    var inkSettleBounce = 0.25       // 0 to 0.9: how far it swings past its shape before it is still
+    var inkSettleStagger = 0.08      // seconds after the line's end lets go that its start does
     // An agent's marks on the live screen, drawn as light (`LightMarkLayer`)
     var lightGlow = 3.0              // the tight glow's reach, in points, over a dark window
     var lightGlowWide = 9.0          // the wide glow's
@@ -412,7 +415,7 @@ struct UITweaks: Codable, Equatable {
         u.liveInkFieldFade *= scale; u.liveInkDrawOn *= scale
         u.liveInkFieldFollow *= scale
         u.liveInkHideFade *= scale; u.liveInkShowFade *= scale
-        u.inkSettle *= scale; u.lightGlintFade *= scale
+        u.inkSettle *= scale; u.inkSettleStagger *= scale; u.lightGlintFade *= scale
         // The lamp's breath and drift are motion, so they go with it.
         u.liveInkLampBreath *= scale; u.liveInkLampDrift *= scale
         u.backdropFadeIn *= scale; u.backdropFadeOut *= scale; u.dimFade *= scale

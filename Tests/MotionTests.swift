@@ -19,7 +19,7 @@ final class MotionTests: XCTestCase {
         // Motion without a motion word in the name: how far a flight bows and swells, a live ink mark
         // drawing itself on and settling onto its shape, how long the pointer field takes to catch up
         // with the pointer, and the lamp's breath and drift.
-        let motion: Set<String> = ["flightArc", "flightDepth", "liveInkDrawOn", "inkSettle", "liveInkFieldFollow",
+        let motion: Set<String> = ["flightArc", "flightDepth", "liveInkDrawOn", "inkSettle", "inkSettleStagger", "liveInkFieldFollow",
                                    "liveInkLampBreath", "liveInkLampDrift"]
         // A motion word without motion: a press's wait before a drag, a share of the funnel's travel, and how
         // long the live ink chord is held before the pointer field shows.

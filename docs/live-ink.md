@@ -129,10 +129,15 @@ The names in brackets are `// MARK:` sections.
 - The person's marks are ink (`InkMarkLayer`), and so is the stroke being drawn, on every screen it
   crosses. Ink is a filled outline whose width follows the hand: wider where it slowed, read from
   the spacing of the pointer's events before smoothing (`InkHand.stroke`). It tapers where the pen
-  landed and, on a loop, where it lifted. Its edge is darker than its middle, it casts a soft
-  shadow, and while it is wet a lighter streak trails the pen. On release the stroke eases onto the
-  shape it became over `LiveMarksLayer.inkEase`, each point keeping its width, so the ellipse or
-  arrow still looks drawn by hand. `LiveInk.hands` keeps each mark's `InkHand`, its widths and
+  landed and, on a loop, where it lifted. Past `ui.inkLength` the start recedes as the pen goes on,
+  tapering where it now starts, and the mark is made from what is still drawn (`InkHand.trailing`).
+  The pen's layer then draws only that part of its settled line and shrinks to it. Its edge is
+  darker than its middle, it casts a soft shadow, and while it is wet a lighter streak trails the pen. On release the stroke settles onto the
+  shape it became on a spring (`InkSettle`), each point keeping its width, so the ellipse or arrow
+  still looks drawn by hand. `ui.inkSettle` is the spring's length and `ui.inkSettleBounce` how far
+  it swings past the shape. The line's end lets go first, and its start `ui.inkSettleStagger` later.
+  A shape that changes while the line settles, as a tweak can change it, adds its own offset, so the
+  line carries on from where it is. `LiveInk.hands` keeps each mark's `InkHand`, its widths and
   where each point sits on the shape, for as long as the mark is on the screen. A mark no hand drew,
   such as an answer's mark the person picked, gets an even hand that starts at its upper left
   (`InkHand.even`) and draws itself on.

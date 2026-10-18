@@ -380,7 +380,7 @@ final class LiveMarksLayer: CALayer {
                 ink.show(mark, hand: hand, markStyle: markStyle)
                 if record.ink == nil { record.previewed.addSublayer(ink); record.ink = ink }
                 if drawingOn.contains(mark.id), let hand {
-                    ink.ease(from: hand.drawn(for: mark), duration: Settings.shared.motionUI.inkSettle)
+                    ink.ease(from: hand.drawn(for: mark))
                 } else if drawingOn.contains(mark.id) {
                     ink.drawOn(after: delay, duration: motion.liveInkDrawOn)
                     delay += motion.liveInkDrawOn * 0.6

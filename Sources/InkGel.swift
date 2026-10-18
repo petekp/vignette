@@ -141,15 +141,24 @@ enum InkGel {
         /// The line's round ends: a square round each end, lit as its segment's capsule. `length` is
         /// the line's.
         func ends(of stroke: InkHand.Stroke, length: CGFloat) -> [Float] {
+            start(of: stroke, length: 0) + end(of: stroke, length: length)
+        }
+
+        /// The round start, where the line is `length` along.
+        func start(of stroke: InkHand.Stroke, length: CGFloat) -> [Float] {
+            var out: [Float] = []
+            guard let last = stroke.points.indices.last else { return out }
+            square(&out, round: stroke.points[0], half: extent(stroke, 0), (0, min(1, last), length), stroke)
+            return out
+        }
+
+        /// The round end. `length` is the line's.
+        func end(of stroke: InkHand.Stroke, length: CGFloat) -> [Float] {
             var out: [Float] = []
             let points = stroke.points
-            guard let last = points.indices.last else { return out }
-            let start = (0, min(1, last), CGFloat(0))
-            square(&out, round: points[0], half: extent(stroke, 0), start, stroke)
-            if last > 0 {
-                let end = (last - 1, last, length - hypot(points[last].x - points[last - 1].x, points[last].y - points[last - 1].y))
-                square(&out, round: points[last], half: extent(stroke, last), end, stroke)
-            }
+            guard let last = points.indices.last, last > 0 else { return out }
+            let end = (last - 1, last, length - hypot(points[last].x - points[last - 1].x, points[last].y - points[last - 1].y))
+            square(&out, round: points[last], half: extent(stroke, last), end, stroke)
             return out
         }
 
@@ -313,6 +322,9 @@ final class SettledLine {
     private(set) var segments = 0
     private(set) var length: CGFloat = 0
     private(set) var vertices = GrowingBuffer()
+    /// Each segment's first vertex, and the length along the line at its start.
+    private(set) var starts: [Int] = []
+    private(set) var alongs: [CGFloat] = []
 
     init(builder: InkGel.Builder) {
         self.builder = builder
@@ -323,10 +335,14 @@ final class SettledLine {
     func extend(_ stroke: InkHand.Stroke, settled: Int, device: MTLDevice) {
         let fixed = min(settled, stroke.points.count) - 2
         guard fixed > segments else { return }
-        let laid = builder.segments(stroke, segments..<fixed, startLength: length)
-        vertices.append(laid.vertices, device: device)
+        for index in segments..<fixed {
+            starts.append(vertices.vertexCount)
+            alongs.append(length)
+            let laid = builder.segments(stroke, index..<index + 1, startLength: length)
+            vertices.append(laid.vertices, device: device)
+            length = laid.endLength
+        }
         segments = fixed
-        length = laid.endLength
     }
 
     /// Vertices in a shared buffer that only grows: a bigger one takes a copy of what is there.

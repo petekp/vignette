@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import SwiftUI
 
 /// How the person's hand drew a mark: the stroke's width at each of its points, wider where the hand
 /// slowed, and where each point sits on the shape the stroke became. The mark keeps both, so an
@@ -285,7 +286,7 @@ struct InkHand: Equatable {
         }
     }
 
-    private static func startTaper(at length: CGFloat, feel: Feel) -> CGFloat {
+    static func startTaper(at length: CGFloat, feel: Feel) -> CGFloat {
         feel.startWidth + (1 - feel.startWidth) * ease(length / max(feel.startTaper, .ulpOfOne))
     }
 
@@ -331,10 +332,140 @@ struct InkHand: Equatable {
         atan2((point.y - frame.midY) / max(frame.height / 2, .ulpOfOne), (point.x - frame.midX) / max(frame.width / 2, .ulpOfOne))
     }
 
+    /// The end of `raw` that is `length` long along its path, the first point placed exactly there,
+    /// or all of it when it is shorter.
+    static func trailing(_ raw: [CGPoint], length: CGFloat) -> [CGPoint] {
+        var run: CGFloat = 0
+        for index in raw.indices.reversed().dropFirst() {
+            let a = raw[index], b = raw[index + 1]
+            let step = hypot(b.x - a.x, b.y - a.y)
+            if run + step >= length {
+                let t = step > 0 ? (length - run) / step : 0
+                guard t > 0 else { return Array(raw[(index + 1)...]) }
+                return [CGPoint(x: b.x + (a.x - b.x) * t, y: b.y + (a.y - b.y) * t)] + raw[(index + 1)...]
+            }
+            run += step
+        }
+        return raw
+    }
+
+    /// The first point of `points` still within `length` of its end along the path.
+    static func trailingStart(of points: [CGPoint], length: CGFloat) -> Int {
+        var run: CGFloat = 0
+        for index in points.indices.reversed().dropFirst() {
+            run += hypot(points[index + 1].x - points[index].x, points[index + 1].y - points[index].y)
+            if run > length { return index + 1 }
+        }
+        return 0
+    }
+
     /// How far apart a stroke's points are, in points.
     static let spacing: CGFloat = 2
     /// The radius of a rectangle's corners in ink, in points.
     private static let rectangleCorner: CGFloat = 4
+}
+
+/// A line settling onto its shape: how far each point and width still is from the shape, spent by a
+/// spring. Each change adds its own offset over the shape as it is now, so a new shape while the line
+/// is still moving carries on from where the line is, at the speed it has. When the pen lifts, the
+/// line's end lets go first and its start `stagger` later, so the settling runs back along the line
+/// from where the hand left it.
+@MainActor
+struct InkSettle {
+    /// One change still settling: each point's offset from its place on the shape and each width's
+    /// from its width, when it began, how long after that each point lets go, when it is still, and
+    /// whether it is the hand's own, the one an arrow's head grows with.
+    private struct Offset {
+        var points: [CGVector]
+        var widths: [CGFloat]
+        var start: CFTimeInterval
+        var delays: [CFTimeInterval]
+        var still: CFTimeInterval
+        var fromHand: Bool
+    }
+
+    private var offsets: [Offset] = []
+    private let spring: Spring
+    private let duration: Double
+    private let bounce: Double
+    /// The line's width in points, which its widths are multiples of.
+    private let width: CGFloat
+    /// How far past its shape a point swings, as a share of the way it came.
+    private let overshoot: CGFloat
+
+    /// `drawn` settling onto `shape` from `now`, both with the same number of points.
+    init(from drawn: InkHand.Stroke, onto shape: InkHand.Stroke, width: CGFloat, at now: CFTimeInterval,
+         duration: Double, bounce: Double, stagger: Double) {
+        spring = Spring(duration: duration, bounce: bounce)
+        self.duration = duration
+        self.bounce = bounce
+        self.width = width
+        let damping = spring.dampingRatio
+        overshoot = damping < 1 ? CGFloat(exp(-damping * .pi / (1 - damping * damping).squareRoot())) : 0
+        let last = max(drawn.points.count - 1, 1)
+        add(from: drawn, onto: shape, at: now, delays: drawn.points.indices.map { stagger * Double(last - $0) / Double(last) }, fromHand: true)
+    }
+
+    /// The shape changed from `old` to `new` at `now`: the line goes on from where it is.
+    mutating func reshape(from old: InkHand.Stroke, to new: InkHand.Stroke, at now: CFTimeInterval) {
+        guard old.points.count == new.points.count else { return }
+        add(from: old, onto: new, at: now, delays: Array(repeating: 0, count: new.points.count), fromHand: false)
+    }
+
+    private mutating func add(from: InkHand.Stroke, onto shape: InkHand.Stroke, at now: CFTimeInterval, delays: [CFTimeInterval], fromHand: Bool) {
+        let points = zip(from.points, shape.points).map { CGVector(dx: $0.x - $1.x, dy: $0.y - $1.y) }
+        let widths = zip(from.widths, shape.widths).map { $0 - $1 }
+        let farthest = max(points.map { hypot($0.dx, $0.dy) }.max() ?? 0, (widths.map(abs).max() ?? 0) * width)
+        let still = now + (delays.max() ?? 0) + Anim.settle(duration, bounce: bounce, distance: farthest, within: 0.25)
+        offsets.append(Offset(points: points, widths: widths, start: now, delays: delays, still: still, fromHand: fromHand))
+    }
+
+    /// `shape` with what is still to settle at `now` added to it.
+    func stroke(on shape: InkHand.Stroke, at now: CFTimeInterval) -> InkHand.Stroke {
+        var stroke = shape
+        for offset in offsets where offset.points.count == stroke.points.count {
+            for index in stroke.points.indices {
+                let left = remaining(offset, index, at: now)
+                stroke.points[index].x += offset.points[index].dx * left
+                stroke.points[index].y += offset.points[index].dy * left
+                stroke.widths[index] = max(stroke.widths[index] + offset.widths[index] * left, 0)
+            }
+        }
+        return stroke
+    }
+
+    /// How grown an arrow's head is at `now`: it comes in as the line's end reaches its place.
+    func headGrown(at now: CFTimeInterval) -> CGFloat {
+        guard let hand = offsets.first(where: \.fromHand), !hand.points.isEmpty else { return 1 }
+        let reached = min(max(1 - remaining(hand, hand.points.count - 1, at: now), 0), 1)
+        return reached * reached
+    }
+
+    /// The share of `offset` still left at point `index` at `now`, below 0 while it swings past.
+    private func remaining(_ offset: Offset, _ index: Int, at now: CFTimeInterval) -> CGFloat {
+        let time = now - offset.start - offset.delays[index]
+        guard time > 0 else { return 1 }
+        return 1 - CGFloat(spring.value(target: 1.0, time: time))
+    }
+
+    /// Lets go of what has settled by `now`, and answers whether anything still moves.
+    mutating func moves(at now: CFTimeInterval) -> Bool {
+        offsets.removeAll { now >= $0.still }
+        return !offsets.isEmpty
+    }
+
+    /// The farthest the line can be from `shape` either way while it settles: two points for each of
+    /// its points, the corners of the box it stays in.
+    func reach(over shape: InkHand.Stroke) -> InkHand.Stroke {
+        var low = shape.points, high = shape.points
+        for offset in offsets where offset.points.count == shape.points.count {
+            for (index, vector) in offset.points.enumerated() {
+                low[index].x += min(vector.dx, -vector.dx * overshoot); high[index].x += max(vector.dx, -vector.dx * overshoot)
+                low[index].y += min(vector.dy, -vector.dy * overshoot); high[index].y += max(vector.dy, -vector.dy * overshoot)
+            }
+        }
+        return InkHand.Stroke(points: low + high, widths: shape.widths + shape.widths)
+    }
 }
 
 /// The person's ink: a rod of opal gel whose width follows the hand, drawn by `InkGel` into a Metal
@@ -346,18 +477,20 @@ final class InkMarkLayer: CALayer {
     /// What is drawn: the mark, the hand it was given, the hand it is drawn with, which is an even one
     /// when it was given none, and the style its line is laid out in.
     private var shown: (mark: Mark, given: InkHand?, hand: InkHand, markStyle: MarkStyle, inkStyle: MarkStyle)?
-    /// The stroke being drawn, while this is the pen, and how many of its points no later event moves.
-    private var pen: (stroke: InkHand.Stroke, settled: Int, markStyle: MarkStyle)?
+    /// The stroke being drawn, while this is the pen, how many of its points no later event moves, and
+    /// its first point still shown: past `ui.inkLength` the line's start recedes as the pen goes on.
+    private var pen: (stroke: InkHand.Stroke, settled: Int, kept: Int, markStyle: MarkStyle)?
     /// The pen's settled start, laid out once.
     private var settledLine: SettledLine?
-    /// The shape as it settles: the line and head drawn now, and while easing, the line it eases from.
+    /// The shape: the line and head it is drawn with once it is still.
     private var shape: InkGel.Shape?
-    private var easing: (from: InkHand.Stroke, start: CFTimeInterval, duration: CFTimeInterval)?
+    /// How far the line still is from `shape` while it settles onto it.
+    private var settle: InkSettle?
     /// The done state's colour, in place of the gel's own.
     private var override: CGColor?
     /// The vertices for `shape` as it is, kept while it holds still: the buffers the field pass draws,
     /// with their vertex counts, and the place in points their vertices are laid out from.
-    private var built: (draws: [(MTLBuffer, Int)], origin: CGPoint)?
+    private var built: (draws: [Draw], origin: CGPoint)?
     /// The field pass's targets, the drawable's size.
     private var targets: (field: MTLTexture, depth: MTLTexture)?
     /// Something changed since the last drawing: draw at the next tick, whatever the clock's rate.
@@ -410,28 +543,45 @@ final class InkMarkLayer: CALayer {
 
     /// Draws `mark` as `hand` drew it, or evenly with no hand, unless it is drawn already as it is.
     func show(_ mark: Mark, hand: InkHand?, markStyle: MarkStyle) {
+        if let shown, shown.mark == mark, shown.given == hand, shown.inkStyle == Self.inkStyle(markStyle) { return }
+        layOut(mark, hand: hand, markStyle: markStyle)
+    }
+
+    /// Lays `mark` out as `hand` drew it. A line still settling from that same hand goes on from where
+    /// it is onto the new shape.
+    private func layOut(_ mark: Mark, hand: InkHand?, markStyle: MarkStyle) {
         let inkStyle = Self.inkStyle(markStyle)
-        if let shown, shown.mark == mark, shown.given == hand, shown.inkStyle == inkStyle { return }
         guard let drawing = hand ?? InkHand.even(for: mark, markStyle: inkStyle, feel: Settings.shared.data.ui.inkHandFeel) else { return }
+        let settling = settle != nil && shown?.given == hand ? shape?.stroke : nil
         shown = (mark, hand, drawing, markStyle, inkStyle)
         pen = nil
         settledLine = nil
-        easing = nil
         lay(InkHand.Stroke(points: drawing.points(of: mark, markStyle: inkStyle), widths: drawing.widths),
             head: InkGel.corners(of: mark.shape(pointScale: 1, markStyle: inkStyle)?.filled), width: inkStyle.strokeWidth, growOnly: false)
+        guard let settling, let shape, var settle, settling.points.count == shape.stroke.points.count else {
+            settle = nil
+            return
+        }
+        settle.reshape(from: settling, to: shape.stroke, at: CACurrentMediaTime())
+        self.settle = settle
+        fit(covering: [settle.reach(over: shape.stroke)], growOnly: false)
     }
 
     /// The stroke being drawn, its end at the pen, its first `settled` points where no later event
     /// moves them. It draws at once, in the pointer's own event.
     func showPen(_ stroke: InkHand.Stroke, settled: Int, markStyle: MarkStyle) {
         shown = nil
-        easing = nil
+        settle = nil
         // A new stroke starts the layer afresh; one under way only grows it.
         let growing = stroke.points.count > 3 && pen.map { $0.stroke.points.first == stroke.points.first && settled >= $0.settled } ?? false
         if !growing { settledLine = nil }
         let covered = growing ? max(0, (pen?.settled ?? 0) - 8) : 0
-        pen = (stroke, settled, markStyle)
-        lay(stroke, head: [], width: Self.inkStyle(markStyle).strokeWidth, growOnly: growing, from: covered)
+        let kept = InkHand.trailingStart(of: stroke.points, length: Settings.shared.data.ui.inkLength)
+        // A longer line, from the tweaks, brings back points the layer may have shrunk away from.
+        let returning = growing && (pen?.kept ?? 0) > kept
+        pen = (stroke, settled, kept, markStyle)
+        lay(stroke, head: [], width: Self.inkStyle(markStyle).strokeWidth, growOnly: growing, from: returning ? kept : covered)
+        if kept > 0 { shrink(around: Array(stroke.points[kept...])) }
         if isVisible, let frame = encode(at: CACurrentMediaTime(), time: InkClock.shared.time) {
             frame.commands.commit()
             frame.commands.waitUntilScheduled()
@@ -447,13 +597,16 @@ final class InkMarkLayer: CALayer {
         return twin
     }
 
-    /// Eases from where the hand drew it onto its shape over `duration`, keeping the hand's widths,
-    /// its head coming in as it arrives.
-    func ease(from drawn: InkHand.Stroke, duration: CFTimeInterval) {
-        guard let shape, duration > 0, drawn.points.count == shape.stroke.points.count else { return }
-        easing = (drawn, CACurrentMediaTime(), duration)
-        // The layer covers both ends of the ease, so it is not resized while it runs.
-        fit(covering: [shape.stroke, drawn], growOnly: false)
+    /// Settles from where the hand drew it onto its shape on a spring, keeping the hand's widths, its
+    /// head coming in as its end arrives.
+    func ease(from drawn: InkHand.Stroke) {
+        let ui = Settings.shared.motionUI
+        guard let shape, ui.inkSettle > 0, drawn.points.count == shape.stroke.points.count else { return }
+        let settle = InkSettle(from: drawn, onto: shape.stroke, width: shape.width, at: CACurrentMediaTime(),
+                               duration: ui.inkSettle, bounce: ui.inkSettleBounce, stagger: ui.inkSettleStagger)
+        self.settle = settle
+        // The layer covers everywhere the line goes while it settles, so it is not resized while it runs.
+        fit(covering: [settle.reach(over: shape.stroke)], growOnly: false)
         built = nil
         needsGel = true
         InkClock.shared.wake()
@@ -516,8 +669,7 @@ final class InkMarkLayer: CALayer {
     /// The tweaks changed: lay the line out again in case its width changed, and draw it.
     func settingsChanged() {
         if let shown {
-            self.shown = nil
-            show(shown.mark, hand: shown.given, markStyle: shown.markStyle)
+            layOut(shown.mark, hand: shown.given, markStyle: shown.markStyle)
         } else if let pen {
             settledLine = nil
             showPen(pen.stroke, settled: pen.settled, markStyle: pen.markStyle)
@@ -570,6 +722,26 @@ final class InkMarkLayer: CALayer {
         CATransaction.commit()
     }
 
+    /// Shrinks the pen's layer to `points` once their box is at most half its area, so a line whose
+    /// start recedes does not keep the area it once covered, and a pen sweeping back and forth does
+    /// not resize it at every turn.
+    private func shrink(around points: [CGPoint]) {
+        guard let first = points.first else { return }
+        let margin = widest + Self.reach + 4
+        let box = points.reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+            .insetBy(dx: -margin, dy: -margin)
+        let step = Self.growStep
+        let stepped = CGRect(x: (box.minX / step).rounded(.down) * step, y: (box.minY / step).rounded(.down) * step,
+                             width: ((box.maxX / step).rounded(.up) - (box.minX / step).rounded(.down)) * step,
+                             height: ((box.maxY / step).rounded(.up) - (box.minY / step).rounded(.down)) * step)
+        guard stepped.width * stepped.height <= gel.frame.width * gel.frame.height / 2 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gel.frame = stepped
+        gel.drawableSize = CGSize(width: stepped.width * contentsScale, height: stepped.height * contentsScale)
+        CATransaction.commit()
+    }
+
     /// The backdrop was read again: the line chooses its colour again at its next drawing.
     func backdropChanged() {
         needsGel = true
@@ -578,10 +750,13 @@ final class InkMarkLayer: CALayer {
     /// Whether it eases at `now`, and so must draw every frame.
     func isEasing(at now: CFTimeInterval) -> Bool {
         if let deepness, now - deepness.start < Self.colourEase { return true }
-        guard let easing else { return false }
-        if now - easing.start < easing.duration { return true }
+        guard var settle else { return false }
+        if settle.moves(at: now) {
+            self.settle = settle
+            return true
+        }
         // One more drawing, exactly on its shape.
-        self.easing = nil
+        self.settle = nil
         built = nil
         needsGel = true
         return false
@@ -604,13 +779,9 @@ final class InkMarkLayer: CALayer {
         guard let metal = InkGel.metal, var shape, gel.bounds.width > 0, gel.bounds.height > 0 else { return nil }
         needsGel = false
         var headGrown: CGFloat = 1
-        if let easing {
-            let t = Self.curve(min(max((now - easing.start) / easing.duration, 0), 1))
-            let to = shape.stroke
-            shape.stroke = InkHand.Stroke(points: zip(easing.from.points, to.points).map { a, b in
-                CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
-            }, widths: zip(easing.from.widths, to.widths).map { $0 + ($1 - $0) * t })
-            headGrown = t * t
+        if let settle {
+            shape.stroke = settle.stroke(on: shape.stroke, at: now)
+            headGrown = settle.headGrown(at: now)
             built = nil
         }
         let ui = Settings.shared.data.ui
@@ -646,9 +817,9 @@ final class InkMarkLayer: CALayer {
         field.setDepthStencilState(metal.nearest)
         field.setVertexBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
         field.setFragmentBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
-        for (buffer, count) in built.draws where count > 0 {
-            field.setVertexBuffer(buffer, offset: 0, index: 0)
-            field.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: count)
+        for draw in built.draws where draw.count > 0 {
+            field.setVertexBuffer(draw.buffer, offset: 0, index: 0)
+            field.drawPrimitives(type: .triangle, vertexStart: draw.start, vertexCount: draw.count)
         }
         field.endEncoding()
 
@@ -662,9 +833,9 @@ final class InkMarkLayer: CALayer {
         light.setFragmentTexture(targets.field, index: 0)
         light.setVertexBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
         light.setFragmentBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
-        for (buffer, count) in built.draws where count > 0 {
-            light.setVertexBuffer(buffer, offset: 0, index: 0)
-            light.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: count)
+        for draw in built.draws where draw.count > 0 {
+            light.setVertexBuffer(draw.buffer, offset: 0, index: 0)
+            light.drawPrimitives(type: .triangle, vertexStart: draw.start, vertexCount: draw.count)
         }
         light.endEncoding()
         return (commands, drawable)
@@ -672,12 +843,12 @@ final class InkMarkLayer: CALayer {
 
     /// The vertices of `shape`. The pen's settled start is laid out once, from this layer's own origin,
     /// and only its end is laid out again; anything else is laid out whole from the gel's corner.
-    private func build(_ shape: InkGel.Shape, device: MTLDevice) -> (draws: [(MTLBuffer, Int)], origin: CGPoint)? {
-        func buffer(_ floats: [Float]) -> (MTLBuffer, Int)? {
+    private func build(_ shape: InkGel.Shape, device: MTLDevice) -> (draws: [Draw], origin: CGPoint)? {
+        func buffer(_ floats: [Float]) -> Draw? {
             guard !floats.isEmpty, let buffer = device.makeBuffer(bytes: floats, length: floats.count * MemoryLayout<Float>.stride) else { return nil }
-            return (buffer, floats.count / 10)
+            return Draw(buffer: buffer, start: 0, count: floats.count / 10)
         }
-        guard let pen, easing == nil else {
+        guard let pen, settle == nil else {
             let whole = InkGel.Builder(width: shape.width, origin: gel.frame.origin, scale: contentsScale, reach: Self.reach).vertices(shape)
             return ([buffer(whole)].compactMap { $0 }, gel.frame.origin)
         }
@@ -688,8 +859,41 @@ final class InkMarkLayer: CALayer {
         guard let line = settledLine else { return nil }
         line.extend(shape.stroke, settled: pen.settled, device: device)
         let end = builder.segments(shape.stroke, line.segments..<max(shape.stroke.points.count - 1, line.segments), startLength: line.length)
-        let fresh = buffer(builder.ends(of: shape.stroke, length: end.endLength) + end.vertices)
-        return ([line.vertices.buffer.map { ($0, line.vertices.vertexCount) }, fresh].compactMap { $0 }, .zero)
+        guard pen.kept > 0, pen.kept < line.segments else {
+            let fresh = buffer(builder.ends(of: shape.stroke, length: end.endLength) + end.vertices)
+            return ([line.vertices.buffer.map { Draw(buffer: $0, start: 0, count: line.vertices.vertexCount) }, fresh].compactMap { $0 }, .zero)
+        }
+        // The line now starts at `kept` and tapers from there: the points within the taper of it are
+        // laid out again, narrowed, and the settled line is drawn from the first point past it.
+        let feel = Settings.shared.data.ui.inkHandFeel
+        let points = shape.stroke.points
+        var reused = pen.kept, run: CGFloat = 0
+        while reused < line.segments, run < feel.startTaper {
+            run += hypot(points[reused + 1].x - points[reused].x, points[reused + 1].y - points[reused].y)
+            reused += 1
+        }
+        // Two points past the last segment laid out again, which its mitres reach.
+        let through = min(reused + 2, points.count)
+        var start = InkHand.Stroke(points: Array(points[pen.kept..<through]), widths: Array(shape.stroke.widths[pen.kept..<through]))
+        var along: CGFloat = 0
+        for index in start.points.indices {
+            if index > 0 { along += hypot(start.points[index].x - start.points[index - 1].x, start.points[index].y - start.points[index - 1].y) }
+            start.widths[index] *= InkHand.startTaper(at: along, feel: feel)
+        }
+        let tapered = builder.segments(start, 0..<(reused - pen.kept), startLength: line.alongs[pen.kept])
+        let fresh = buffer(builder.start(of: start, length: line.alongs[pen.kept]) + tapered.vertices
+                           + builder.end(of: shape.stroke, length: end.endLength) + end.vertices)
+        let settledDraw = reused < line.segments ? line.vertices.buffer.map {
+            Draw(buffer: $0, start: line.starts[reused], count: line.vertices.vertexCount - line.starts[reused])
+        } : nil
+        return ([settledDraw, fresh].compactMap { $0 }, .zero)
+    }
+
+    /// Vertices the field pass draws: `count` of them from `start` in `buffer`.
+    private struct Draw {
+        let buffer: MTLBuffer
+        let start: Int
+        let count: Int
     }
 
     /// `rect`, in this layer's points, in global top-left points. A mark is drawn in its window's
@@ -762,7 +966,7 @@ final class InkMarkLayer: CALayer {
     /// The pen's layer grows in steps of this many points.
     private static let growStep: CGFloat = 64
 
-    /// The ease's curve, `CAMediaTimingFunction(controlPoints: 0.3, 0, 0.2, 1)`, at time fraction `x`.
+    /// The colour's ease, `CAMediaTimingFunction(controlPoints: 0.3, 0, 0.2, 1)`, at time fraction `x`.
     private static func curve(_ x: CGFloat) -> CGFloat {
         var lo: CGFloat = 0, hi: CGFloat = 1, t = x
         for _ in 0..<24 {

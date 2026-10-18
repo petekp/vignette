@@ -1572,7 +1572,7 @@ final class LiveInk {
 
     private func strokeEnded(_ points: [CGPoint], on surface: Surface) {
         let before = newInk.count
-        take(points, on: surface, among: inking)
+        take(InkHand.trailing(points, length: Settings.shared.data.ui.inkLength), on: surface, among: inking)
         strokeBegan = nil
         if newInk.count > before, let extent = newInk.last?.shapeExtent { prefetch(at: CGPoint(x: extent.midX, y: extent.midY)) }
         // The mark the preview was on has gone, or a stroke was drawn; the next move shows it again.
