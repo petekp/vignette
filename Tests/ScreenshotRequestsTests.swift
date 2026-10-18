@@ -12,6 +12,7 @@ final class ScreenshotRequestsTests: XCTestCase {
     private var presented: [URL] = []
     /// The requests whose reply could not be made a card.
     private var replyFailures: [String] = []
+    private var replyFailureSources: [ScreenshotKey] = []
     /// Set to hold the answer: the completion lands here instead of being called, which is what a
     /// real installation does before its completion reaches the request owner.
     private var heldAdd: ((Drawings.Failure?) -> Void)?
@@ -32,7 +33,10 @@ final class ScreenshotRequestsTests: XCTestCase {
             },
             present: { [unowned self] shot in self.presented.append(shot.url) },
             watchFolder: { [unowned self] in self.folder },
-            replyFailed: { [unowned self] record, _ in self.replyFailures.append(record.id) })
+            replyFailed: { [unowned self] record, _ in
+                self.replyFailures.append(record.id)
+                self.replyFailureSources.append(self.requests.sourceKey(of: record))
+            })
     }
 
     override func tearDownWithError() throws {
@@ -334,6 +338,38 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(replyFailures, [record.id], "the card that was sent says so instead")
         XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["error"] as? String, "draft-store-failed",
                        "the code receipts have always carried for a drawing that could not be stored")
+    }
+
+    func testAReplyThatFailsAfterItsScreenshotWasRenamedNamesTheNewName() throws {
+        addFails = true
+        let record = try makeRequest()
+        let renamed = folder.appendingPathComponent("Renamed.png")
+        requests.renamed([(from: folder.appendingPathComponent("Screenshot.png").screenshotKey, to: renamed.screenshotKey)])
+        try requests.receiveReply(envelope: stageReply(record))
+        XCTAssertEqual(replyFailureSources, [renamed.screenshotKey])
+    }
+
+    func testARenamedReplyKeepsItsOriginAndIsNotTakenForDeleted() throws {
+        let record = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(record))
+        let file = folder.appendingPathComponent(ReplyProtocol.replyFileName(try replyID(in: record)))
+        let renamed = folder.appendingPathComponent("Checkout fix.png")
+        try FileManager.default.moveItem(at: file, to: renamed)
+        requests.renamed([(from: file.screenshotKey, to: renamed.screenshotKey)])
+        XCTAssertEqual(requests.origin(of: renamed)?.address, .claudeSession("session-1"))
+        XCTAssertNil(requests.origin(of: file))
+        XCTAssertTrue(requests.isVisible(renamed))
+        requests.reconcile(try inventory(in: folder))
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["deleted"] as? Bool, false)
+
+        let reopened = ScreenshotRequests(root: root)
+        reopened.callbacks = requests.callbacks
+        reopened.load()
+        XCTAssertEqual(reopened.origin(of: renamed)?.address, .claudeSession("session-1"))
+
+        try FileManager.default.removeItem(at: renamed)
+        requests.fileRemoved(renamed)
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["deleted"] as? Bool, true)
     }
 
     func testAnUnknownManagedNameIsHiddenRatherThanTreatedAsACapture() {

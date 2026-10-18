@@ -157,6 +157,21 @@ final class FolderWritesTests: XCTestCase {
         XCTAssertEqual(events, [.present(file, false)])
     }
 
+    func testARenameToANameEveryListingHidesLeavesAsARemoval() throws {
+        writes.callbacks.isVisible = { $0.lastPathComponent != "hidden.png" }
+        let from = folder.appendingPathComponent("a.png"), to = folder.appendingPathComponent("hidden.png")
+        writes.renamed([(from: from.screenshotKey, to: to.screenshotKey)], in: try inventory(observedAt: 20))
+        XCTAssertEqual(events, [.removeCards([from]), .removeDrawings([from.screenshotKey], 20), .removeReply(from)])
+    }
+
+    func testACaptureNamedLikeAPushInASubfolderIsStillACapture() throws {
+        let sub = folder.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        holdsJoin = true
+        writes.add(request(file: try source("inside.png", in: sub), marks: marks))
+        XCTAssertFalse(writes.arrived(folder.appendingPathComponent("inside.png").screenshotKey))
+    }
+
     /// Catches a stale listing removing the card of a file an agent has just pushed: an add records
     /// the write time, so a listing observed before it waits for a newer one.
     func testAnAddHoldsBackRemovalsFromAnOlderListing() throws {

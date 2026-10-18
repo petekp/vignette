@@ -98,7 +98,36 @@ final class ScreenshotWatcher: @unchecked Sendable {
         var generation = 0
         var pending: [String: Arrival] = [:]
         var scans = 0
-        var renames: [(scan: Int, from: String, to: String)] = []   // paired, not yet delivered
+        var held = HeldRenames()
+    }
+
+    /// Renames a scan paired, held until a delivery that covers that scan takes them. A delivery
+    /// that finds the directory changed under it delivers nothing, and the next one takes them.
+    struct HeldRenames {
+        private var held: [(scan: Int, from: String, to: String)] = []
+
+        /// Holds the pairs from scan `scan`, except those whose old name has an arrival not yet
+        /// delivered: the app never heard of that name, so it leaves as a removal and the new name
+        /// arrives. Answers the pairs it held.
+        @discardableResult
+        mutating func hold(_ pairs: [(from: String, to: String)], scan: Int,
+                           undelivered: Set<String>) -> [(from: String, to: String)] {
+            let kept = pairs.filter { !undelivered.contains($0.from) }
+            held += kept.map { (scan: scan, from: $0.from, to: $0.to) }
+            return kept
+        }
+
+        /// The renames held for scans up to `scan`, and the candidates that left `present` for
+        /// `current` other than by one of those renames.
+        mutating func deliver(through scan: Int, present: Set<String>,
+                              current: Set<String>) -> (renames: [(from: String, to: String)], removed: [String]) {
+            let renames = held.filter { $0.scan <= scan }.map { (from: $0.from, to: $0.to) }
+            held.removeAll { $0.scan <= scan }
+            let renamedFrom = Set(renames.map(\.from))
+            let removed = ScreenshotWatcher.diff(known: present, current: current).removed
+                .filter { ScreenshotWatcher.isCandidate($0) && !renamedFrom.contains($0) }
+            return (renames, removed)
+        }
     }
     private let state = OSAllocatedUnfairLock(initialState: State())
 
@@ -232,7 +261,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
             directoryID = nil
             generation += 1
             // A rename paired in the directory that was replaced is not one in this directory.
-            state.withLock { $0.watching = false; $0.generation = generation; $0.renames = [] }
+            state.withLock { $0.watching = false; $0.generation = generation; $0.held = HeldRenames() }
         }
         if source == nil { start() }
         let listing = Self.read(folder)
@@ -269,10 +298,10 @@ final class ScreenshotWatcher: @unchecked Sendable {
             }
             var renames: [(from: String, to: String)] = []
             if s.missingSince == nil {
-                renames = Self.renames(removed: Set(s.files.keys).subtracting(current.keys),
-                                       added: Set(current.keys).subtracting(s.files.keys),
-                                       before: s.identities, after: identities)
-                    .filter { !undelivered.contains($0.from) }
+                renames = s.held.hold(Self.renames(removed: Set(s.files.keys).subtracting(current.keys),
+                                                   added: Set(current.keys).subtracting(s.files.keys),
+                                                   before: s.identities, after: identities),
+                                      scan: scanNumber, undelivered: undelivered)
             }
             var known = Set(s.files.keys)
             if let since = s.missingSince {
@@ -284,7 +313,6 @@ final class ScreenshotWatcher: @unchecked Sendable {
             let added = Self.diff(known: known, current: Set(current.keys)).added.filter { !renamedTo.contains($0) }
             s.files = current
             s.identities = identities
-            s.renames += renames.map { (scan: scanNumber, from: $0.from, to: $0.to) }
             return (added.map { name in
                 let arrival = Arrival(generation: generation)
                 s.pending[name] = arrival
@@ -299,15 +327,9 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 self.rescan(reason: "directory changed before delivery")
                 return
             }
-            let (renames, removed) = self.state.withLock { s -> ([(from: String, to: String)], [String]) in
-                let owed = s.renames.filter { $0.scan <= scanNumber }
-                s.renames.removeAll { $0.scan <= scanNumber }
-                let renames = owed.map { (from: $0.from, to: $0.to) }
-                let renamedFrom = Set(renames.map(\.from))
-                let removed = Self.diff(known: s.present, current: inventory.names).removed
-                    .filter { Self.isCandidate($0) && !renamedFrom.contains($0) }
-                s.present = inventory.names
-                return (renames, removed)
+            let (renames, removed) = self.state.withLock { s in
+                defer { s.present = inventory.names }
+                return s.held.deliver(through: scanNumber, present: s.present, current: inventory.names)
             }
             if !renames.isEmpty {
                 self.onRenamed(renames.map {

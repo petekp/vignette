@@ -341,7 +341,11 @@ screenshot location for such a launch is written with the same variable:
   entered it, with one inode, size and modification date between them, are one file renamed
   (`ScreenshotWatcher.renames`, `onRenamed`): its card, drawing, selection, queued place, notices
   and open editor move to the new key (`FolderWrites.renamed`, `ThumbnailController.rename`,
-  `Drawings.rename`) and nothing reports it as a removal or a capture. A pairing that is not one to
+  `Drawings.rename`), and so do the request and reply records that name it
+  (`ScreenshotRequests.renamed`). Nothing reports it as a removal or a capture. A file renamed to a
+  name every listing hides, an agent reply's with no record, leaves as a removal. The watcher
+  holds the renames a scan pairs until a delivery that covers that scan takes them
+  (`ScreenshotWatcher.HeldRenames`). A pairing that is not one to
   one, a name with an undelivered arrival, or a folder that went missing falls back to a removal
   and an arrival. A rename seen only by a listing older than the app's last write waits for a
   newer listing, as a removal does. Every stack open asks for a rescan, which is how the
@@ -1155,7 +1159,9 @@ screenshot location for such a launch is written with the same variable:
   answers `missing-file`, and `add` refuses a source with that name outright, since the copy would
   have no record and so could never be shown. Reservation persists the actual destination URL
   before copying. Visibility and origin use that location; a later screenshots-folder change does
-  not move an existing reply. Startup loads the records before the watcher starts, then waits for
+  not move an existing reply. A published reply the person renames inside the folder keeps its
+  record, which records the new location as `renamedTo`, so its card keeps Reply. Cleanup never
+  reads `renamedTo`: it removes only unpublished outputs, at their reserved name. Startup loads the records before the watcher starts, then waits for
   successful current-folder inventory before recovery. Deletion needs confirmed absence in the
   reply's own folder. Locationless published records are retained conservatively.
   `Drawings.installReply` writes one complete drawing before publication. Recovery reuses a valid
@@ -1286,8 +1292,8 @@ screenshot location for such a launch is written with the same variable:
   has no card to report on, so the card it answers takes a `replyFailed` notice, "Reply not shown"
   (`ScreenshotRequests.Callbacks.replyFailed`). The card is found by the request record's
   `sourceKey`, the source's full path as the folder spelled it when the send was stored; a record
-  from before that holds only the name, and its key is built in the current folder. A rename
-  after the send does not update the record, so a failure then finds no card and says nothing.
+  from before that holds only the name, and its key is built in the current folder
+  (`ScreenshotRequests.sourceKey(of:)`). A rename after the send moves `sourceKey` with it.
   A published reply is its own card and nothing else
   says it arrived. `docs/send-confirmation-2026-09-26.md` has the frames.
 - The agent plugin (`agent-plugin/`) and the skill it carries (`skills/vignette/SKILL.md`) ship in

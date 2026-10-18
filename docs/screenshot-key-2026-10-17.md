@@ -64,7 +64,9 @@ neither a removal nor an arrival. A pair counts only when the match is one to on
   replaces the case-alias tolerance in `Inventory.confirmsAbsence`.
 
 The request record stores the source's full key. Records written before keep their basename and
-are read the old way.
+are read the old way. A rename moves a request's source key, and a published reply's record
+follows its file through `renamedTo`, so the reply's card keeps Reply. A file renamed to a name
+every listing hides, an agent reply's with no record, is treated as a removal.
 
 ## What this does not cover
 

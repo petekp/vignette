@@ -115,6 +115,10 @@ final class ScreenshotRequests {
         let marks: [AgentMark]
         var stage: Stage
         var destination: URL?
+        /// Where the person renamed the published file to, inside the watch folder. Nil while it
+        /// keeps its reserved name. Only a published reply has one, and a published file is never
+        /// deleted, so this is never a place cleanup removes a file from.
+        var renamedTo: URL?
         var needsOutputCleanup: Bool?
         /// The person deleted the published file. Publication still happened and is not undone.
         var deleted = false
@@ -141,6 +145,9 @@ final class ScreenshotRequests {
                   destination.lastPathComponent == fileName else { return nil }
             return destination.standardizedFileURL
         }
+
+        /// Where the published file is now.
+        var publishedURL: URL? { renamedTo?.standardizedFileURL ?? outputURL }
 
         var publication: ReplyProtocol.Receipt.Publication {
             if deleted { return .removed }
@@ -193,7 +200,7 @@ final class ScreenshotRequests {
     func isVisible(_ url: URL) -> Bool {
         guard let id = ReplyProtocol.replyID(fromFileName: url.lastPathComponent) else { return true }
         guard let reply = replies[id], reply.stage == .published else { return false }
-        return reply.destination == nil || reply.outputURL == url.standardizedFileURL
+        return reply.destination == nil || reply.publishedURL == url.standardizedFileURL
     }
 
     /// Whether a new file in the watch folder is an ordinary capture. A managed reply never is: it
@@ -206,8 +213,10 @@ final class ScreenshotRequests {
     /// The person deleted a published reply. Publication happened; the recovery copy is not used
     /// to put the file back.
     func fileRemoved(_ url: URL) {
-        guard let id = ReplyProtocol.replyID(fromFileName: url.lastPathComponent), var reply = replies[id],
-              reply.stage == .published, reply.outputURL == url.standardizedFileURL, !reply.deleted else { return }
+        let url = url.standardizedFileURL
+        guard var reply = replies.values.first(where: { $0.stage == .published && !$0.deleted && $0.publishedURL == url })
+        else { return }
+        let id = reply.id
         reply.deleted = true
         replies[id] = reply
         try? write(reply)
@@ -218,7 +227,7 @@ final class ScreenshotRequests {
         publicationReady = true
         for record in requests.values where record.status == .cleared { cleanup(record.id, inventory: inventory) }
         for (id, reply) in replies where reply.stage == .published && !reply.deleted {
-            guard publishedAt[id, default: 0] <= inventory.observedAt, let url = reply.outputURL,
+            guard publishedAt[id, default: 0] <= inventory.observedAt, let url = reply.publishedURL,
                   inventory.confirmsAbsence(of: url) else { continue }
             fileRemoved(url)
         }
@@ -228,10 +237,38 @@ final class ScreenshotRequests {
 
     /// The destination a reply's card came from, so Reply goes back to the same conversation.
     func origin(of url: URL) -> AgentDestination? {
-        guard let id = ReplyProtocol.replyID(fromFileName: url.lastPathComponent),
-              let reply = replies[id], reply.destination == nil || reply.outputURL == url.standardizedFileURL,
+        let url = url.standardizedFileURL
+        let named = ReplyProtocol.replyID(fromFileName: url.lastPathComponent).flatMap { replies[$0] }
+            .flatMap { $0.destination == nil || $0.publishedURL == url ? $0 : nil }
+        guard let reply = named ?? replies.values.first(where: { $0.stage == .published && $0.publishedURL == url }),
               let request = requests[reply.requestID] else { return nil }
         return AgentDestination(id: request.destinationID, name: request.destinationName, address: request.address)
+    }
+
+    /// The screenshot a request was sent from. A record from before `sourceKey` keeps only its
+    /// name, and a send is made from the watch folder.
+    func sourceKey(of record: Record) -> ScreenshotKey {
+        record.sourceKey.map { ScreenshotKey(asGiven: $0) } ?? ScreenshotKey(folder: callbacks.watchFolder(), name: record.source)
+    }
+
+    /// Files renamed inside the watch folder. A published reply's record follows its file, so its
+    /// card keeps Reply. A request follows the screenshot it was sent from, so a reply that fails
+    /// still finds that card.
+    func renamed(_ renames: [FolderWrites.Rename]) {
+        for rename in renames {
+            let from = rename.from.url.standardizedFileURL, to = rename.to.url.standardizedFileURL
+            for var reply in replies.values where reply.stage == .published && !reply.deleted && reply.publishedURL == from {
+                reply.renamedTo = to == reply.outputURL ? nil : rename.to.url
+                replies[reply.id] = reply
+                do { try write(reply) } catch { Log.write("[reply] error rename-not-recorded \(reply.id): \(error)") }
+                Log.write("[reply] renamed \(reply.fileName) to \(rename.to.name)")
+            }
+            for var record in requests.values where record.status != .cleared && sourceKey(of: record) == rename.from {
+                record.sourceKey = rename.to.path
+                requests[record.id] = record
+                do { try write(record) } catch { Log.write("[requests] error rename-not-recorded \(record.id): \(error)") }
+            }
+        }
     }
 
     // MARK: Sending
@@ -627,7 +664,7 @@ final class ScreenshotRequests {
             guard !own.contains(where: { $0.needsOutputCleanup == true }) else { continue }
             guard !own.contains(where: { reply in
                 guard reply.stage == .published else { return false }
-                guard let inventory, let url = reply.outputURL,
+                guard let inventory, let url = reply.publishedURL,
                       publishedAt[reply.id, default: 0] <= inventory.observedAt else { return true }
                 return !inventory.confirmsAbsence(of: url)
             })

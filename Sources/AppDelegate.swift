@@ -446,6 +446,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 guard let self else { return }
                 for rename in renames { self.drawings.rename(from: rename.from, to: rename.to, style: self.settings.data.ui.textStyle) }
             },
+            renameRequests: { [weak self] in self?.requests.renamed($0) },
+            isVisible: { [weak self] in self?.requests.isVisible($0) ?? true },
             sweepDrawings: { [weak self] in self?.drawings.sweep($0) },
             reconcileRequests: { [weak self] in self?.requests.reconcile($0) },
             rescan: { [weak self] in self?.watcher?.rescan(reason: $0) })
@@ -1121,10 +1123,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 thumbnail.delivered(shot, request: record.id, state, reason: outcome.reason)
             },
             replyFailed: { [weak self] record, reason in
-                // A record from before `sourceKey` keeps only the sent screenshot's name; a send is made from the watch folder.
                 guard let self else { return }
-                let key = record.sourceKey.map { ScreenshotKey(asGiven: $0) } ?? ScreenshotKey(folder: watchFolder, name: record.source)
-                let shot = Screenshot(key: key)
+                let shot = Screenshot(key: requests.sourceKey(of: record))
                 guard FileManager.default.fileExists(atPath: shot.url.path) else { return }
                 thumbnail.replyFailed(shot, request: record.id, client: record.address.client, reason: reason)
             })
