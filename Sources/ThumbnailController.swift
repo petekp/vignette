@@ -149,6 +149,7 @@ final class ThumbnailController: NSObject {
             if !visible { flightImages.removeAll(); flightOrder.removeAll() }
             // A presentation asks the Dock afresh: one that did not answer last time may answer now.
             else { dockReadsLeft = Self.dockReadAttempts }
+            noteScreen()
         }
     }
     private var dismissGeneration = 0
@@ -382,6 +383,17 @@ final class ThumbnailController: NSObject {
     var holdsScreen: Bool { stackShowing || run.isActive }
     /// The stack or the annotator is coming up, so `holdsScreen` turns true: live ink stops drawing.
     var onTakesScreen: (() -> Void)?
+    /// The stack and the annotator are both gone, so `holdsScreen` turned false.
+    var onGivesBackScreen: (() -> Void)?
+    private var heldScreen = false
+
+    /// Called after each change to what `holdsScreen` reads: `visible`, `model.isStack`, and every
+    /// event the run handles.
+    private func noteScreen() {
+        let holds = holdsScreen
+        defer { heldScreen = holds }
+        if heldScreen, !holds { onGivesBackScreen?() }
+    }
 
     /// The card with the keyboard focus ring, while the stack is up.
     var focusedShot: Screenshot? { model.cards.first { $0.id == model.focused }?.shot }
@@ -841,6 +853,7 @@ final class ThumbnailController: NSObject {
             flightPress.ended(key)
         }
         model.annotating = run.isActive
+        noteScreen()
     }
 
     /// While an image is in the annotator, a card selected in the stack is queued to be annotated
@@ -1197,6 +1210,7 @@ final class ThumbnailController: NSObject {
         onTakesScreen?()
         leaveTimer?.invalidate()
         model.isStack = true
+        noteScreen()
         outsideClick.start { [weak self] in self?.dismiss() }
         backdrop.show(on: screen, below: panel)
         takeKeys(focus: model.hoveredCard)

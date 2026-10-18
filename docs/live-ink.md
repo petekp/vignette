@@ -99,10 +99,10 @@ The names in brackets are `// MARK:` sections.
   `LiveEscape.next` has a step, and lets it go at once when it has none, so Esc is the frontmost
   app's again. Esc that reached a terminal would interrupt the agent running there. Live ink never holds it
   while the stack or the annotator holds the screen, since they use Esc, or while live ink is off.
-  Nothing tells live ink when the stack or the annotator closes, so while a step waits on that it looks
-  again every 0.25 s. Whether to hold the key is decided again after every change to what the snapshot
-  reads: the properties that hold it (`didSet`), every `showMarks`, and the marks pinned to windows
-  showing or hiding (`LiveWindows.onShownChanged`). The note's and Reply's `cancelOperation:` call the same `LiveInk.escape`, and a
+  Whether to hold the key is decided again after every change to what the snapshot reads: the
+  properties that hold it (`didSet`), every `showMarks`, the marks pinned to windows showing or hiding
+  (`LiveWindows.onShownChanged`), and the stack and the annotator giving the screen back
+  (`ThumbnailController.onGivesBackScreen`). The note's and Reply's `cancelOperation:` call the same `LiveInk.escape`, and a
   second call within 50 ms is ignored, so one press runs one step. Each press logs `[live-ink] esc
   <step>`. `[state] liveInk.escape` is the next step or null, and `escapeHeld` says whether the key is
   held. Several `HotKey`s can exist at once: each hears every hotkey's events and takes only its own id.

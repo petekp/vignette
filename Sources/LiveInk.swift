@@ -79,8 +79,6 @@ final class LiveInk {
     private var answerer: (agent: String, name: String?) = (LiveAnswerLayout.agentName, nil)
     /// Esc, held while `LiveEscape` has a step for it.
     private var escapeKey: HotKey?
-    /// Looks again for the screen to be free, while the stack or the annotator holds it and a step waits.
-    private var screenWatch: Timer?
     private var lastEscape: TimeInterval = 0
     /// The note's target picked last, which the next note starts on.
     private var lastTarget: LiveNotePopover.Target = .responder
@@ -1543,12 +1541,9 @@ final class LiveInk {
 
     /// Holds Esc exactly while `LiveEscape` has a step for it, so with nothing to back out of it is the
     /// frontmost app's. Called after each change to what the snapshot reads: the properties that hold
-    /// it, and every `showMarks`.
+    /// it, every `showMarks`, and the screen given back.
     private func syncEscape() {
-        screenWatch?.invalidate()
-        screenWatch = nil
-        let snapshot = escapeSnapshot
-        if LiveEscape.next(snapshot) != nil {
+        if LiveEscape.next(escapeSnapshot) != nil {
             // Once the key's handler has returned, since letting go of the key inside it unregisters it.
             if escapeKey == nil {
                 escapeKey = HotKey(keyCode: LiveEscape.keyCode, modifiers: 0, action: {
@@ -1558,14 +1553,11 @@ final class LiveInk {
             return
         }
         escapeKey = nil
-        var withScreen = snapshot
-        withScreen.screenIsFree = true
-        // Nothing tells live ink the stack or the annotator is gone, so it looks again.
-        if !snapshot.screenIsFree, LiveEscape.next(withScreen) != nil {
-            screenWatch = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { [weak self] _ in
-                MainActor.assumeIsolated { self?.syncEscape() }
-            }
-        }
+    }
+
+    /// The stack and the annotator are gone, so a step they held back can have Esc again.
+    func screenGivenBack() {
+        syncEscape()
     }
 
     /// Esc: the first step that applies, one per press. The hotkey, the note and the Reply field all

@@ -112,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }
         thumbnail.onAnnotatorPress = { [weak self] event, key in self?.annotator.take(event, for: key) }
         thumbnail.onTakesScreen = { [weak self] in self?.liveInk.standAside() }
+        thumbnail.onGivesBackScreen = { [weak self] in self?.liveInk.screenGivenBack() }
         liveInk.listSessions = { [weak self] answer in self?.sessions.list(answer) }
         liveInk.sendNote = { [weak self] note, destination, message, done in
             guard let self else { return done(.failure(ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason))) }
