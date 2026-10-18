@@ -120,6 +120,11 @@ final class LiveWindows {
         /// Its opacity while it shows: faint while the answer points elsewhere (`light`), so it comes
         /// back faint after its content moves.
         var strength: Float = 1
+        /// Kept on its window, following its content, but drawn at no opacity and not counted as shown
+        /// (`setAside`).
+        var aside = false
+        var shows: Bool { phase == .shown && !aside }
+        var opacity: Float { aside ? 0 : strength }
         /// For an element's anchor, the pixels round the mark, which decide where it shows: Chromium
         /// moves an element's position late, and only to the nearest run of text.
         var patch: LivePatch?
@@ -268,7 +273,7 @@ final class LiveWindows {
         windows.values.flatMap { window in
             window.pins.map { pin in
                 let offset = CGVector(dx: window.frame.minX + pin.shift.dx, dy: window.frame.minY + pin.shift.dy)
-                return (Self.translated(pin.mark, by: offset), pin.phase == .shown && window.onScreen, window.id)
+                return (Self.translated(pin.mark, by: offset), pin.shows && window.onScreen, window.id)
             }
         }
     }
@@ -285,7 +290,20 @@ final class LiveWindows {
     }
 
     func isShown(_ id: Mark.ID) -> Bool {
-        windows.values.contains { window in window.onScreen && window.pins.contains { $0.mark.id == id && $0.phase == .shown } }
+        windows.values.contains { window in window.onScreen && window.pins.contains { $0.mark.id == id && $0.shows } }
+    }
+
+    /// Hides these marks where they are, or shows them again. Set aside, a mark still follows its
+    /// content, so it comes back where that content is.
+    func setAside(_ ids: Set<Mark.ID>, _ aside: Bool) {
+        for window in windows.values {
+            for index in window.pins.indices where ids.contains(window.pins[index].mark.id) {
+                window.pins[index].aside = aside
+                guard window.pins[index].phase == .shown else { continue }
+                window.overlay.marks.fade(window.pins[index].mark.id, to: window.pins[index].opacity,
+                                          duration: aside ? Settings.shared.motionUI.liveInkHideFade : Settings.shared.motionUI.liveInkShowFade)
+            }
+        }
     }
 
     func preview(_ preview: LiveMarksLayer.Preview?) {
@@ -459,7 +477,7 @@ final class LiveWindows {
                 let strength: Float = lit.contains(window.pins[index].mark.id) ? 1 : Self.unlitOpacity
                 window.pins[index].strength = strength
                 guard window.pins[index].phase == .shown else { continue }
-                window.overlay.marks.fade(window.pins[index].mark.id, to: strength, duration: 0.18 * Settings.shared.motionScale)
+                window.overlay.marks.fade(window.pins[index].mark.id, to: window.pins[index].opacity, duration: 0.18 * Settings.shared.motionScale)
             }
         }
     }
@@ -510,7 +528,7 @@ final class LiveWindows {
         window.pins[index].windowSize = window.frame.size
         window.overlay.marks.move(window.pins[index].mark.id, by: shift)
         window.overlay.marks.clip(window.pins[index].mark.id, to: pin.clipped ? pin.reading?.clip : nil)
-        window.overlay.marks.fade(window.pins[index].mark.id, to: pin.strength, duration: Settings.shared.motionUI.liveInkShowFade)
+        window.overlay.marks.fade(window.pins[index].mark.id, to: pin.opacity, duration: Settings.shared.motionUI.liveInkShowFade)
         syncFollowers(of: window.pins[index].mark.id, in: window)
         fitOverlay(window)
     }
@@ -1001,7 +1019,7 @@ final class LiveWindows {
             Log.write("[live-ink] window=\(id) closed marks=\(window.pins.count)")
         }
         if !gone.isEmpty { onGone?(gone) }
-        let shown = Set(windows.values.filter(\.onScreen).flatMap { $0.pins.filter { $0.phase == .shown }.map(\.mark.id) })
+        let shown = Set(windows.values.filter(\.onScreen).flatMap { $0.pins.filter(\.shows).map(\.mark.id) })
         if shown != lastShown {
             lastShown = shown
             onShownChanged?()

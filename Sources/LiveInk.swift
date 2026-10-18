@@ -147,6 +147,8 @@ final class LiveInk {
     /// was lost.
     private var shownMarks: [Mark] { windows.marks.filter(\.shown).map(\.mark) + screenMarks }
 
+    /// Set-aside marks that were on no window (`setAside`), which come back from here.
+    private var asideOnScreen: [Mark] = []
     private var screenMarks: [Mark] {
         var seen = Set<Mark.ID>()
         return surfaces.flatMap(\.marks).filter { seen.insert($0.id).inserted }
@@ -184,6 +186,7 @@ final class LiveInk {
             for (center, observer) in observers { center.removeObserver(observer) }
             observers = []
             surfaces.forEach { $0.marks = [] }
+            asideOnScreen = []
             showMarks()
             surfaces.forEach { $0.overlay.close(after: LiveMarksLayer.removalFade) }
             surfaces = []
@@ -230,6 +233,7 @@ final class LiveInk {
     func clear() -> Int {
         let count = marks.count
         for surface in surfaces { surface.marks = [] }
+        asideOnScreen = []
         windows.removeAll()
         endConversation()
         showMarks()
@@ -507,6 +511,7 @@ final class LiveInk {
     /// Takes marks off every surface and window, without a word to the asks.
     private func takeOff(_ ids: Set<Mark.ID>) {
         for surface in surfaces { surface.marks.removeAll { ids.contains($0.id) } }
+        asideOnScreen.removeAll { ids.contains($0.id) }
         windows.remove(ids)
     }
 
@@ -663,6 +668,7 @@ final class LiveInk {
         let point: CGPoint
         switch asks.begin(among: shownMarks, following: following, toSession: session != nil, shift: windows.shift(of:)) {
         case .refused(let refusal, let effects):
+            for case .bringBack(let ids) in effects { bringBack(ids) }
             for case .restore(let reply, let reason) in effects { restoreAnswer(reply, saying: reason) }
             return .failure(LiveResponder.Failure(reason: refusal.rawValue, detail: refusal.detail))
         case .began(let began, let asked, let centre, let effects):
@@ -1085,6 +1091,7 @@ final class LiveInk {
         let effects = asks.reduce(.arrived(.replyCame, for: id))
         guard effects.contains(.showReply) else { return }
         for case .removeAnswer(let gone) in effects { removeAnswer(gone) }
+        for case .setAside(let ids) in effects { setAside(ids) }
         let note: Mark
         if let shown = asks.ask?.say {
             note = LiveAnswerLayout.grown(shown, to: say, sizes: answerSizes)
@@ -1409,6 +1416,7 @@ final class LiveInk {
         for effect in effects {
             switch effect {
             case .removeAnswer(let gone): removeAnswer(gone)
+            case .bringBack(let ids): bringBack(ids)
             case .restore(let reply, let reason): restoreAnswer(reply, saying: reason)
             case .say(let reason): say(reason)
             case .notice(let reply, let reason): notice(reason, in: reply)
@@ -1489,12 +1497,17 @@ final class LiveInk {
                 windows.pin(mark, to: target, anchor: anchor)
                 continue
             }
-            let centre = mark.shapeExtent ?? LiveAnswerLayout.noteBox(mark, sizes: answerSizes) ?? .zero
-            let home = active.first { $0.overlay.globalFrame.contains(CGPoint(x: centre.midX, y: centre.midY)) } ?? active.first
-            if let home { add(mark, on: home, among: active, markStyle: markStyle) }
+            addToScreen(mark, among: active, markStyle: markStyle)
         }
         showMarks()
         closeEmpty(fade: LiveMarksLayer.removalFade)
+    }
+
+    /// Adds a mark on no window to the surface under its centre, and to the others it draws on.
+    private func addToScreen(_ mark: Mark, among active: [Surface], markStyle: MarkStyle) {
+        let centre = mark.shapeExtent ?? LiveAnswerLayout.noteBox(mark, sizes: answerSizes) ?? .zero
+        let home = active.first { $0.overlay.globalFrame.contains(CGPoint(x: centre.midX, y: centre.midY)) } ?? active.first
+        if let home { add(mark, on: home, among: active, markStyle: markStyle) }
     }
 
     /// Takes the last answer's marks, or the last failure's note, off the screen
@@ -1506,6 +1519,31 @@ final class LiveInk {
         letGoOfFocus(because: "replaced")
         hideActions()
         if !gone.isEmpty { remove(gone) }
+    }
+
+    /// Hides the answer a picked button's ask follows, while that ask's reply streams
+    /// (`LiveAsks.Effect.setAside`), once the steps, the focus and the buttons are let go. A mark on a
+    /// window stays on it and follows its content, and one on no window is kept here.
+    private func setAside(_ ids: Set<Mark.ID>) {
+        stopSteps()
+        letGoOfFocus(because: "replaced")
+        hideActions()
+        guard !ids.isEmpty else { return }
+        asideOnScreen += screenMarks.filter { ids.contains($0.id) }
+        for surface in surfaces { surface.marks.removeAll { ids.contains($0.id) } }
+        windows.setAside(ids, true)
+        showMarks()
+    }
+
+    /// Shows set-aside marks again, where their content is now (`LiveAsks.Effect.bringBack`).
+    private func bringBack(_ ids: Set<Mark.ID>) {
+        windows.setAside(ids, false)
+        let back = asideOnScreen.filter { ids.contains($0.id) }
+        asideOnScreen.removeAll { ids.contains($0.id) }
+        let active = activeSurfaces()
+        let markStyle = Settings.shared.data.ui.markStyle
+        for mark in back { addToScreen(mark, among: active, markStyle: markStyle) }
+        showMarks()
     }
 
     /// Ends the responder's conversation and forgets what was asked, as clearing the screen does.
@@ -1597,6 +1635,7 @@ final class LiveInk {
         for effect in effects {
             switch effect {
             case .removeAnswer(let gone): removeAnswer(gone)
+            case .bringBack(let ids): bringBack(ids)
             case .restore(let reply, let reason): restoreAnswer(reply, saying: reason)
             default: break
             }

@@ -84,7 +84,8 @@ The names in brackets are `// MARK:` sections.
      which keeps its draft.
   2. Stop the ask under way (`LiveInk.cancelAsk`). The sent note and any reply leave, and the ink is
      as it was before the ask (`LiveAsks.Event.cancelled`): ink that was new when the ask began is
-     new again. A follow-up from a button puts the earlier answer back as it was, with no failure sentence. Nothing
+     new again. A follow-up from a button puts the earlier answer back as it was, with no failure sentence, even
+     once its reply has started to stream. Nothing
      says the ask failed, since the person stopped it. An ask to the responder interrupts its turn
      (`LiveResponder.cancel`). An ask to a session is a step only until its send is stored, and only
      with a send grace: if the send is stored after all, it is withdrawn with Don't send
@@ -401,11 +402,14 @@ The names in brackets are `// MARK:` sections.
   every button is disabled, the one used gains a checkmark (`LiveAnswerActions.pick`), and the reply
   quotes the person's words and carries the thinking light with the answer's marks. The responder
   takes them as a follow-up ask. The next answer takes the reply's place where it hangs, with
-  buttons of its own, and the earlier answer stays until it is drawn. A follow-up that fails leaves the answer as it was
-  (`LiveAsks.Effect.restore`, `LiveInk.restoreAnswer`): the buttons come back, typed words wait in Reply again, and the
-  reply's header gives the reason where it quoted them (`Mark.notice`), wrapped so all of it shows.
-  Once the next answer has started to come in, it has replaced the earlier one, so a failure after
-  that is a note beside the ink, as for any ask. Closing the field lets go of the keys with
+  buttons of its own. While the next reply streams, the earlier answer's other marks are set aside
+  (`LiveAsks.Effect.setAside`, `LiveWindows.setAside`): they are hidden where they are, and a mark on a
+  window keeps following its content. They go once the next answer is drawn, and the × finishes them
+  with the rest. A follow-up that fails or is stopped before then puts the answer back as it was
+  (`LiveAsks.Effect.bringBack` and `restore`, `LiveInk.restoreAnswer`): the set-aside marks show again,
+  the buttons come back, typed words wait in Reply again, and the reply's header gives the reason
+  where it quoted them (`Mark.notice`), wrapped so all of it shows. A failure after the next answer
+  is drawn is a note beside the ink, as for any ask. Closing the field lets go of the keys with
   `NSApp.deactivate()`: the app the person was in never stopped being the active one, so activating
   it does nothing. A popover's window can be key, and macOS makes the reply's key when a panel that
   held Vignette's keys closes, even after Vignette let go; the keys would stay with Vignette and the
