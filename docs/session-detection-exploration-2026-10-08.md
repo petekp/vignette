@@ -452,8 +452,8 @@ names did not.** This is one case.
 
 ## Where this stands
 
-The spikes point to one shape. The order below is what the evidence supports so far. It is not yet
-the plan.
+The spikes point to one shape. The order below is what the evidence supported before the shadow
+log was scored. "The plan" at the end of this note scores each step against Pete's sends.
 
 1. **Exact facts decide alone.** Each one names a session with nothing left to guess:
    - **A card that names its session:** a Reply card, or an agent's push.
@@ -490,6 +490,7 @@ the plan.
    - The 2 hours was chosen by trying 5, 30, 60 and 120 minutes on those same 47 sends.
    - On the first send after a break it gains just one: 17 against 16.
    - The note already starts on the target picked last, so this is new only for Send.
+   - Scored on 113 sends, all of its gain came from sends that started on a Codex thread ("The plan").
 5. **Otherwise the target shows its guess, or says it isn't sure.** The guess may be herdr's focus
    or the session used last. Every model passed question 8's made-up cases, which shows a model can
    do this, not that it will on real windows.
@@ -647,3 +648,89 @@ rule, but they show where the captures are:
 - **The log keeps model inputs:** the window's title, its page's URL and each session's name, in
   the same file, which never leaves the Mac. Lines from before then have none of them.
 
+## The plan (2026-10-18)
+
+One change beat the target Send offers now, and it is narrow:
+
+- **The rule.** When Send would start on a Codex thread, and the person's last send in the past
+  2 hours went to a Claude Code session that is still listed, Send starts on that session.
+- **Everything else stays.** No other step in "Where this stands" beat the current offer. Live
+  ink's notes keep theirs.
+- **It waits for a second scoring.** Pete chose on 2026-10-18 to score the log again on 2026-11-01
+  before any code changes. When the rule is wrong, the drawing goes to the wrong project unless the
+  person reads the target before pressing Send.
+
+### How it was scored
+
+- **The decisions.** The shadow log from 2026-10-08 to 2026-10-18: 113 sends from the editor and
+  48 notes. The 6 sends from a Reply card were left out, since a Reply's target is exact.
+- **Right.** A rule is right when its answer is where the drawing went.
+- **The last pick.** The target of the send before. In the step 4 row below it also counts notes.
+  In the plan's rule it counts sends only.
+- **A check.** A second script, written separately from the raw log, reproduced every number
+  within 1.
+
+| Rule | Sends right | Notes right |
+|---|---|---|
+| The offer Send and live ink make now | 78 of 113 | 45 of 48 |
+| 1. Exact facts | fired only on Reply cards | never fired |
+| 2. The window's folder names one session | never fired | never fired |
+| 3. herdr's shown session decides | 9 of 12 | 0 of 9 |
+| 3. The Codex app's shown thread decides | 7 of 26 | 0 of 11 |
+| 3. The top author decides | 52 of 97 | 20 of 38 |
+| 4. The last pick within 2 hours, else the offer | 92 of 113 | 42 of 48 |
+| The plan's rule, else the offer | 94 of 113 | 45 of 48 |
+
+What each step showed:
+
+- **Exact facts.** No capture in the ten days had a dev server, a port or an app being built. That
+  half of step 1 is unscored.
+- **The folder.** The log's `folder` is the page's or the document's folder, not a project's. In
+  44 of the 55 sends that had one, no session worked at or above it. Where one did, 4 or 5 did.
+- **A window that shows an agent.** As a decision it was wrong more often than right. herdr's pane
+  was the exception on sends. When herdr's session and the top author differed, Pete sent to
+  herdr's 8 times in 10.
+- **Authors.** As a decision the top author was right about half the time. As a ranking, its top 5
+  held the target for 85 of the 92 sends that went to a Claude Code session. A strict test was
+  wrong 0 times in 22: a top score of at least 2 and at least twice the second. It applied to 1
+  send in 5. The search takes 2.1 s at the median, and the bar settles in about 60 ms, so the
+  search cannot set where Send starts.
+- **The last pick.** On sends, all of its gain comes from the sends whose offer was a Codex thread.
+  On notes it broke 4 that the offer had right, and fixed 1.
+
+| Send's offer | Sends | Offer right | Last pick fired | It fixed | It broke |
+|---|---|---|---|---|---|
+| A Codex thread | 30 | 7 | 24 | 19 | 3 |
+| A Claude Code session | 83 | 71 | 72 | 7 | 7 |
+
+### Why the rule is narrow, and how sure it is
+
+- **When it applies.** Send starts on a Codex thread when the Codex app was in front before
+  Vignette (`FocusReturn.previousApp`): the thread the app shows, or else the Codex thread used last.
+  It also does when the session used last was a Codex thread. 26 of the 30 such sends were captures
+  of the Codex app's own window.
+- **What happened in those sends.** 23 of the 30 went to a Claude Code session, all to the same
+  one. That session was building a tool that draws inside other agents' windows. This is step 3's
+  counterexample again: the window showed one agent, and the drawing was about a tool shown in it.
+- **It is fitted to one stretch of work.** 28 of the 30 Codex offers came between 2026-10-10 and
+  2026-10-13. From 2026-10-14 on there were 2 in 17 sends, and the rule and the offer were each
+  right 15 times.
+- **What it costs.** The 3 sends it broke went to a Codex thread a minute after a send to a Claude
+  Code session. Under the rule, each would have gone to the Claude Code session unless Pete had
+  changed the target.
+- **What would confirm it.** Keep the shadow log on and score it again on 2026-11-01. The rule holds
+  if, after a send to Claude Code, drawings from the Codex app keep going to Claude Code.
+
+### What else follows
+
+- **Live ink's notes do not change.** Their offer is right 45 times in 48, and every rule tried
+  lowers that.
+- **The folder and the dev server leave the plan.** The log keeps recording them until the next
+  scoring.
+- **Authors may later order the target's menu,** once the search is fast enough to finish before
+  the bar is up. How often the menu holds the target today was not measured.
+- **A model can now be tested on real windows** (question 8), because the log keeps titles and
+  URLs from 2026-10-18. Nothing leaves the Mac for a model until Pete decides.
+- **The limits of the data.** It is one person on one Mac over ten days, and most of the misses
+  fall in three of them. 25 sends from 2026-10-08 to 2026-10-10 have no target in `Vignette.log`
+  and no line in the shadow log, so they are not counted.
