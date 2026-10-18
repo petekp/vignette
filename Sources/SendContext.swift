@@ -5,9 +5,10 @@ import Darwin
 /// A few days' record of what Vignette could see at each capture and each send, to score ways of
 /// choosing the session a drawing goes to against where it went
 /// (docs/session-detection-exploration-2026-10-08.md, "The shadow log"). It keeps session ids,
-/// folders, bundle ids, port numbers, scores, counts, codes and times, and a digest of the
-/// screenshot's file name to join a capture to its send; never a window's title, a page's URL, a
-/// file's name or the text in a picture, since an agent's push is named for what it shows.
+/// names and folders, bundle ids, window titles, page URLs, port numbers, scores, counts, codes and
+/// times, and a digest of the screenshot's file name to join a capture to its send; never a file's
+/// name or the text in a picture, since an agent's push is named for what it shows. The file stays
+/// on the Mac.
 /// Temporary: it is removed before live ink reaches main.
 enum SendContext {
     private static let queue = DispatchQueue(label: "send-context", qos: .utility)
@@ -309,9 +310,11 @@ enum SendContext {
             }
         }
         out["page"] = page
+        if let location { out["url"] = location }
         let element = axWindow(pid: window.pid, frame: window.frame)
         if out["folder"] == nil, kind == "finder", let element, let folder = finderFolder(element) { out["folder"] = folder }
         if let title = element.flatMap({ attribute($0, kAXTitleAttribute) as? String }), !title.isEmpty {
+            out["title"] = title
             let named = sessions.filter { !$0.name.isEmpty && title.contains($0.name) }.map(\.id)
             let foldered = sessions.filter { session in
                 let last = (session.folder as NSString).lastPathComponent
@@ -320,7 +323,7 @@ enum SendContext {
             if !named.isEmpty { out["titleNames"] = named }
             if !foldered.isEmpty { out["titleFolders"] = foldered }
             // How often a title gives a reader anything to go on: its own words counted, and each
-            // session sharing some with it, by how many. Never the words themselves.
+            // session sharing some with it, by how many.
             let titleWords = words(title)
             out["titleWords"] = titleWords.count
             var overlap: [String: Int] = [:]
@@ -389,7 +392,7 @@ enum SendContext {
         let lastUsed: Date?
 
         var record: [String: Any] {
-            var out: [String: Any] = ["id": id, "folder": folder]
+            var out: [String: Any] = ["id": id, "name": name, "folder": folder]
             if let focus { out["focus"] = focus }
             if let lastUsed { out["idle"] = Int(Date().timeIntervalSince(lastUsed)) }
             return out

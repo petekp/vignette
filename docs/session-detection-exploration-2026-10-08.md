@@ -520,12 +520,12 @@ and is removed before live ink reaches main.
     missing number means the app quit while the line waited for its search, the file reached 20 MB,
     or the line could not be serialised.
   - At most two lines wait for a search. A third is written at once with `authorsWhyNot: busy`.
-- **What it keeps:** session ids, folders, bundle ids, port numbers, scores, counts, codes, and a
-  digest of the screenshot's file name, which joins a capture to its send. Never a window's title, a
-  page's URL or a file's name: an agent names the image it pushes for what it shows.
-  Titles are only compared, in memory, with each session's name and folder. The text in a picture
-  is read on the Mac, used in memory, and never kept. No model inputs are kept unless Pete chooses
-  that (question 8).
+- **What it keeps:** session ids, names and folders, bundle ids, port numbers, scores, counts,
+  codes, and a digest of the screenshot's file name, which joins a capture to its send. Since
+  2026-10-18 it also keeps the captured window's `title` and its page's `url`, so a model can be
+  tested on real windows (question 8). The file never leaves the Mac. It never keeps a file's name,
+  since an agent names the image it pushes for what it shows, or the text in a picture, which is
+  read on the Mac and used in memory.
 - **`capture`, at each new screenshot** (the watcher's report, whatever "draw on capture" says):
   - `capture`: `window` when its size is one window's, with or without Apple's shadow; `display`
     when it is a display's; otherwise `selection`, of the window under the pointer.
@@ -542,7 +542,9 @@ and is removed before live ink reaches main.
     for each session, how many of them its name and folder's last part share. Words under three
     letters, a plural's "s" and common words such as app names are left out first. These are
     counts only. They show how often a title gives anything to match on.
-  - `sessions`: each live Claude Code session's id, folder, herdr `focus` and seconds `idle`.
+  - `title`: the captured window's title, and `url`: its page's or document's address, when they
+    could be read.
+  - `sessions`: each live Claude Code session's id, `name`, folder, herdr `focus` and seconds `idle`.
   - `readMs`: how long the window's reads took.
   - `shown`: the agent session the captured window shows, as `{client, id, how}`. It is written only
     when every link holds.
@@ -640,7 +642,8 @@ rule, but they show where the captures are:
 - **Chromium's accessibility tree:** asked of Electron apps only, when needed.
 - **Whether anything may leave the Mac for a model:** decide later. No model is called meanwhile.
 
-**Still Pete's to decide:**
+**Decided by Pete (2026-10-18):**
 
-- **Whether the log also keeps model inputs,** titles and URLs, in a file that never leaves the Mac.
-  Without them, a model can be tested only on made-up cases.
+- **The log keeps model inputs:** the window's title, its page's URL and each session's name, in
+  the same file, which never leaves the Mac. Lines from before then have none of them.
+
