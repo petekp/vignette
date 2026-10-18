@@ -21,12 +21,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         /// A working session, through Send. Its answer is drawn beside the ink when it comes.
         case session(AgentDestination)
 
-        var label: String {
-            switch self {
-            case .responder: "Claude"
-            case .session(let destination): destination.project
-            }
-        }
     }
 
     /// The words typed, trimmed, and the target, when the person presses Return.
@@ -91,7 +85,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.layOut()
         popover.contentSize = content.frame.size
         host.orderFrontRegardless()
-        popover.show(relativeTo: host.spot, of: host.anchor, preferredEdge: Self.edge(place.edge))
+        popover.show(relativeTo: host.spot, of: host.anchor, preferredEdge: place.edge.rectEdge())
         guard let window = content.window else { return }
         window.alphaValue = 0
         window.makeKey()
@@ -127,13 +121,13 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The body, in global top-left points, or nil while it is not up.
     var globalFrame: CGRect? {
         guard popover.isShown, let window = content.window else { return nil }
-        return Self.topLeft(window.convertToScreen(content.convert(content.bounds, to: nil)))
+        return StateReport.flipped(window.convertToScreen(content.convert(content.bounds, to: nil)))
     }
 
     /// The words, in global top-left points: where the drawn note's tag goes once they are asked.
     var tagFrame: CGRect? {
         guard let window = content.window else { return nil }
-        return Self.topLeft(window.convertToScreen(content.convert(content.wordsFrame, to: nil)))
+        return StateReport.flipped(window.convertToScreen(content.convert(content.wordsFrame, to: nil)))
     }
 
     /// Hangs it from `place` instead, before it shows; the note does not move once it has.
@@ -145,7 +139,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         // AppKit keeps the edge it was shown on, so another edge means showing it again. That keeps the
         // keys and the caret.
         if edge {
-            popover.show(relativeTo: host.spot, of: host.anchor, preferredEdge: Self.edge(place.edge))
+            popover.show(relativeTo: host.spot, of: host.anchor, preferredEdge: place.edge.rectEdge())
         } else {
             popover.positioningRect = host.spot
         }
@@ -161,19 +155,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
             window.animator().alphaValue = 1
         }
         Log.write("[live-ink] note shown edge=\(place.edge)")
-    }
-
-    private static func edge(_ edge: PopoverPlace.Edge) -> NSRectEdge {
-        switch edge {
-        case .below: .minY
-        case .above: .maxY
-        case .right: .maxX
-        case .left: .minX
-        }
-    }
-
-    private static func topLeft(_ rect: CGRect) -> CGRect {
-        CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: rect.width, height: rect.height)
     }
 
     /// Grows or shrinks to fit the words.
@@ -463,16 +444,11 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
             spot = Self.spot(rect, in: frame)
         }
 
-        /// `rect`, in global top-left points, in AppKit's screen coordinates.
-        private static func flipped(_ rect: CGRect) -> CGRect {
-            CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: rect.width, height: rect.height)
-        }
-
-        private static func frame(_ rect: CGRect) -> CGRect { flipped(rect).insetBy(dx: -4, dy: -4).integral }
+        private static func frame(_ rect: CGRect) -> CGRect { StateReport.flipped(rect).insetBy(dx: -4, dy: -4).integral }
 
         /// `rect` in the coordinates of a window whose frame is `frame`.
         private static func spot(_ rect: CGRect, in frame: CGRect) -> CGRect {
-            flipped(rect).offsetBy(dx: -frame.minX, dy: -frame.minY)
+            StateReport.flipped(rect).offsetBy(dx: -frame.minX, dy: -frame.minY)
         }
     }
 }

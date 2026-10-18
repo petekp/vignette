@@ -456,13 +456,13 @@ enum LiveAnswerLayout {
     /// A popover's arrow stands this far off the edge of what it hangs from, in pt, clear of its stroke.
     static let standOff: CGFloat = 3
 
-    /// The middle of each side of `frame`, where a popover's arrow points, `standOff` outside it, in
-    /// the order a popover is tried: under, over, right, left.
+    /// Each side of `frame`, in the order a popover is tried: under, over, right, left. The popover
+    /// hangs from the whole of `frame`, `standOff` outside it, with its arrow at the middle of that
+    /// side. AppKit moves a popover with no room on its side to another side of the rect it hangs
+    /// from, so hung from all of `frame` it never lands inside what was circled.
     private static func sides(of frame: CGRect) -> [(at: CGRect, edge: PopoverPlace.Edge)] {
-        let off = standOff
-        func point(_ x: CGFloat, _ y: CGFloat) -> CGRect { CGRect(x: x - 0.5, y: y - 0.5, width: 1, height: 1) }
-        return [(point(frame.midX, frame.maxY + off), .below), (point(frame.midX, frame.minY - off), .above),
-                (point(frame.maxX + off, frame.midY), .right), (point(frame.minX - off, frame.midY), .left)]
+        let at = frame.insetBy(dx: -standOff, dy: -standOff)
+        return [(at, .below), (at, .above), (at, .right), (at, .left)]
     }
 
     /// The reply's popover at the first of `spots` whose body covers nothing and stays on the screen.

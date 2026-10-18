@@ -19,6 +19,11 @@ struct StateReport {
 
     static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
 
+    /// `rect` between global top-left points and AppKit's screen coordinates, either way.
+    static func flipped(_ rect: CGRect) -> CGRect {
+        CGRect(x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
+    }
+
     /// One line, or a line that says why it could not be rendered; never nil, so the caller always logs.
     func rendered() -> String {
         guard JSONSerialization.isValidJSONObject(sections),

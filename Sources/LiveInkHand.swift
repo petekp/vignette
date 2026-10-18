@@ -581,7 +581,7 @@ final class InkMarkLayer: CALayer {
         let returning = growing && (pen?.kept ?? 0) > kept
         pen = (stroke, settled, kept, markStyle)
         lay(stroke, head: [], width: Self.inkStyle(markStyle).strokeWidth, growOnly: growing, from: returning ? kept : covered)
-        if kept > 0 { shrink(around: Array(stroke.points[kept...])) }
+        if kept > 0 { shrink(around: stroke.points[kept...]) }
         if isVisible, let frame = encode(at: CACurrentMediaTime(), time: InkClock.shared.time) {
             frame.commands.commit()
             frame.commands.waitUntilScheduled()
@@ -700,45 +700,45 @@ final class InkMarkLayer: CALayer {
     /// Sizes the Metal layer to cover `strokes`, their heads and the glow. The pen's layer only grows,
     /// in steps, so its drawables are not made again at every pointer event.
     private func fit(covering strokes: [InkHand.Stroke], growOnly: Bool) {
-        let points = strokes.flatMap(\.points) + (shape?.head ?? [])
-        guard let first = points.first else { return }
-        var box = points.reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
-        let margin = widest + Self.reach + 4
-        box = box.insetBy(dx: -margin, dy: -margin)
+        guard let box = reach(around: strokes.flatMap(\.points) + (shape?.head ?? [])) else { return }
         if growOnly {
             if gel.frame.contains(box) { return }
-            box = box.union(gel.frame.isEmpty ? box : gel.frame)
-            let step = Self.growStep
-            box = CGRect(x: (box.minX / step).rounded(.down) * step, y: (box.minY / step).rounded(.down) * step,
-                         width: ((box.maxX / step).rounded(.up) - (box.minX / step).rounded(.down)) * step,
-                         height: ((box.maxY / step).rounded(.up) - (box.minY / step).rounded(.down)) * step)
+            resize(to: Self.stepped(box.union(gel.frame.isEmpty ? box : gel.frame)))
         } else {
-            box = box.integral
+            resize(to: box.integral)
         }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        gel.frame = box
-        gel.drawableSize = CGSize(width: box.width * contentsScale, height: box.height * contentsScale)
-        CATransaction.commit()
     }
 
     /// Shrinks the pen's layer to `points` once their box is at most half its area, so a line whose
     /// start recedes does not keep the area it once covered, and a pen sweeping back and forth does
     /// not resize it at every turn.
-    private func shrink(around points: [CGPoint]) {
-        guard let first = points.first else { return }
+    private func shrink(around points: ArraySlice<CGPoint>) {
+        guard let box = reach(around: points).map(Self.stepped),
+              box.width * box.height <= gel.frame.width * gel.frame.height / 2 else { return }
+        resize(to: box)
+    }
+
+    /// The box round `points` with the line's width and glow.
+    private func reach<Points: Collection<CGPoint>>(around points: Points) -> CGRect? {
+        guard let first = points.first else { return nil }
         let margin = widest + Self.reach + 4
-        let box = points.reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+        return points.reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
             .insetBy(dx: -margin, dy: -margin)
-        let step = Self.growStep
-        let stepped = CGRect(x: (box.minX / step).rounded(.down) * step, y: (box.minY / step).rounded(.down) * step,
-                             width: ((box.maxX / step).rounded(.up) - (box.minX / step).rounded(.down)) * step,
-                             height: ((box.maxY / step).rounded(.up) - (box.minY / step).rounded(.down)) * step)
-        guard stepped.width * stepped.height <= gel.frame.width * gel.frame.height / 2 else { return }
+    }
+
+    /// `box` grown out to whole steps of `growStep`.
+    private static func stepped(_ box: CGRect) -> CGRect {
+        let step = growStep
+        let minX = (box.minX / step).rounded(.down) * step, minY = (box.minY / step).rounded(.down) * step
+        return CGRect(x: minX, y: minY, width: (box.maxX / step).rounded(.up) * step - minX,
+                      height: (box.maxY / step).rounded(.up) * step - minY)
+    }
+
+    private func resize(to box: CGRect) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        gel.frame = stepped
-        gel.drawableSize = CGSize(width: stepped.width * contentsScale, height: stepped.height * contentsScale)
+        gel.frame = box
+        gel.drawableSize = CGSize(width: box.width * contentsScale, height: box.height * contentsScale)
         CATransaction.commit()
     }
 
@@ -750,11 +750,8 @@ final class InkMarkLayer: CALayer {
     /// Whether it eases at `now`, and so must draw every frame.
     func isEasing(at now: CFTimeInterval) -> Bool {
         if let deepness, now - deepness.start < Self.colourEase { return true }
-        guard var settle else { return false }
-        if settle.moves(at: now) {
-            self.settle = settle
-            return true
-        }
+        guard settle != nil else { return false }
+        if settle?.moves(at: now) == true { return true }
         // One more drawing, exactly on its shape.
         self.settle = nil
         built = nil

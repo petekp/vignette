@@ -7,6 +7,16 @@ import AppKit
 struct PopoverPlace: Equatable {
     enum Edge: CaseIterable {
         case below, above, right, left
+
+        /// AppKit's edge in a view's coordinates: a flipped view's bottom is its max y.
+        func rectEdge(flipped: Bool = false) -> NSRectEdge {
+            switch self {
+            case .below: flipped ? .maxY : .minY
+            case .above: flipped ? .minY : .maxY
+            case .right: .maxX
+            case .left: .minX
+            }
+        }
     }
 
     /// The mark it hangs from, which it follows on its window, or nil for the person's ink.
@@ -329,7 +339,7 @@ final class ReplyPopover {
             if place.edge != edge {
                 stopSliding()
                 edge = place.edge
-                popover.show(relativeTo: rect, of: host, preferredEdge: Self.edge(place.edge, flipped: host.isFlipped))
+                popover.show(relativeTo: rect, of: host, preferredEdge: place.edge.rectEdge(flipped: host.isFlipped))
             } else if motion > 0, place.anchor != anchor || slidingTo != nil {
                 slide(to: rect, duration: Self.slideDuration * motion)
             } else if popover.positioningRect != rect {
@@ -343,7 +353,7 @@ final class ReplyPopover {
         popover.animates = appearing && motion > 0
         popover.contentSize = size
         view.frame = CGRect(origin: .zero, size: size)
-        popover.show(relativeTo: rect, of: host, preferredEdge: Self.edge(place.edge, flipped: host.isFlipped))
+        popover.show(relativeTo: rect, of: host, preferredEdge: place.edge.rectEdge(flipped: host.isFlipped))
         edge = place.edge
         anchor = place.anchor
         placeLight()
@@ -414,14 +424,10 @@ final class ReplyPopover {
     /// Lays the thinking light round the body as it is now, starting under the arrow.
     private func placeLight() {
         guard let window, let edge, let host, let hostWindow = host.window else { return }
-        let body = Self.topLeft(window.convertToScreen(view.convert(view.bounds, to: nil)))
-        let at = Self.topLeft(hostWindow.convertToScreen(host.convert(popover.positioningRect, to: nil)))
+        let body = StateReport.flipped(window.convertToScreen(view.convert(view.bounds, to: nil)))
+        let at = StateReport.flipped(hostWindow.convertToScreen(host.convert(popover.positioningRect, to: nil)))
         let dark = view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         view.light.place(view.bounds, start: RimLight.start(of: body, hungFrom: at, edge: edge), dark: dark)
-    }
-
-    private static func topLeft(_ rect: CGRect) -> CGRect {
-        CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: rect.width, height: rect.height)
     }
 
     /// Fades the popover to `target` over `duration`, as its mark fades.
@@ -459,16 +465,6 @@ final class ReplyPopover {
                     popover.close()
                 }
             })
-        }
-    }
-
-    /// AppKit's edge in the host's coordinates: a flipped host's bottom is its max y.
-    private static func edge(_ edge: PopoverPlace.Edge, flipped: Bool) -> NSRectEdge {
-        switch edge {
-        case .below: flipped ? .maxY : .minY
-        case .above: flipped ? .minY : .maxY
-        case .right: .maxX
-        case .left: .minX
         }
     }
 
