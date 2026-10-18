@@ -19,6 +19,8 @@ struct LiveAsks: Equatable {
         var phase: Phase
         /// The person's marks it is about, which pulse while it is under way.
         var about: Set<Mark.ID>
+        /// The marks of `about` that were new ink when the ask began, which stopping the ask makes new again.
+        var fresh: Set<Mark.ID> = []
         var reason: String?
         var picture = false
         /// The reply as it streams in, and once it is whole. An ask from one of an answer's buttons
@@ -166,10 +168,11 @@ struct LiveAsks: Equatable {
             effects = removeAnswer(keeping: nil)
         }
         let ids = Set(about.map(\.id))
+        let fresh = ids.filter { !isAsked($0) }
         add(.asked, to: ids)
         lastID += 1
         let leader = Self.leader(of: about)
-        var new = Ask(id: lastID, phase: .looking, about: ids, leader: leader, leaderShift: leader.flatMap(shift))
+        var new = Ask(id: lastID, phase: .looking, about: ids, fresh: fresh, leader: leader, leaderShift: leader.flatMap(shift))
         if let following {
             new.say = following.reply
             new.picked = following.pick
@@ -232,6 +235,11 @@ struct LiveAsks: Equatable {
         case answerShown(Set<Mark.ID>)
         /// The answer's ×. It finishes the answer's marks and the marks the ask is about, erased or not.
         case dismissed
+        /// Esc with an ask under way: it stops, and the person's ink is as it was before it began. A
+        /// reply to put back must be among `shown`. Nothing is said, since the person stopped it.
+        case cancelled(shown: Set<Mark.ID>)
+        /// Esc with an answer up and no ask under way: the answer's marks leave, and the person's ink stays.
+        case answerClosed
         /// The time for marks to leave is up. It ends the ask when the ask was about only these marks.
         case finished(Set<Mark.ID>)
         /// The screen was cleared, or live ink turned off.
@@ -262,8 +270,8 @@ struct LiveAsks: Equatable {
         /// Lay out the answer and draw it, then send `answered`.
         case drawAnswer
         /// The answer is back as it was before its button was picked. Draw `reply` again, saying
-        /// `reason` in its header, and send `replyRedrawn`.
-        case restore(reply: Mark.ID, reason: String)
+        /// `reason` in its header when there is one, and send `replyRedrawn`.
+        case restore(reply: Mark.ID, reason: String?)
         /// Say `reason` in a reply hung from the ink.
         case say(String)
         /// Say `reason` in `reply`'s row, in place of its words, and send `replyRedrawn`.
@@ -341,6 +349,18 @@ struct LiveAsks: Equatable {
         case .dismissed:
             let ids = answerMarks.union(ask?.about ?? [])
             return ids.isEmpty ? [] : finish(ids, .dismissed)
+        case .cancelled(let shown):
+            guard let current = ask, isUnderWay else { break }
+            take(.asked, from: current.fresh)
+            if let restored = restore(saying: nil, shown: shown) { return [restored] }
+            ask = nil
+            return removeAnswer(keeping: nil)
+        case .answerClosed:
+            let ids = answerMarks
+            guard !isUnderWay, !ids.isEmpty else { break }
+            ask = nil
+            buttonPick = nil
+            return finish(ids, .dismissed)
         case .finished(let ids):
             // A clear, or an earlier timer for the same marks, has ended it already. Marks erased while
             // leaving have lost their finish, but the ask about them still ends.
@@ -393,7 +413,7 @@ struct LiveAsks: Equatable {
 
     /// The answer a button was picked under, while the ask that followed still hangs from its reply
     /// and that reply is among `shown`, comes back with its buttons, and typed words wait in Reply.
-    private mutating func restore(saying reason: String, shown: Set<Mark.ID>) -> Effect? {
+    private mutating func restore(saying reason: String?, shown: Set<Mark.ID>) -> Effect? {
         guard let buttonPick, let reply = buttonPick.answer.say?.id, ask?.say?.id == reply, shown.contains(reply) else { return nil }
         var answer = buttonPick.answer
         answer.reason = reason

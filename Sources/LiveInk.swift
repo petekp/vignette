@@ -15,7 +15,7 @@ final class LiveInk {
     private var surfaces: [Surface] = []
     /// The surfaces taking presses: the active Space's when the chord went down.
     private var inking: [Surface] = []
-    private var chord: ModifierChord?
+    private var chord: ModifierChord? { didSet { syncEscape() } }
     private var observers: [(NotificationCenter, Any)] = []
     /// Runs out the pointer field's delay after the chord goes down.
     private var fieldTimer: Timer?
@@ -43,19 +43,21 @@ final class LiveInk {
     /// main thread with the request's id, or why it was refused.
     var sendNote: ((NoteCard, AgentDestination, String,
                     @escaping (Result<String, ScreenshotRequests.Refusal>) -> Void) -> Void)?
+    /// Withdraws a note sent to a session that is still in its grace (Don't send), by its request id.
+    var unsendNote: ((String) -> Void)?
     /// The × that dismisses the answer, shown while the pointer is over its note.
     private var dismissButton: LiveDismissButton?
     /// The answer's actions, under its reply while it is on the screen.
-    private var actionsPanel: LiveAnswerActions?
+    private var actionsPanel: LiveAnswerActions? { didSet { syncEscape() } }
     private var pointerWatch: [Any] = []
     private var replyWatch: NSObjectProtocol?
-    private var focusRun: FocusRun?
+    private var focusRun: FocusRun? { didSet { syncEscape() } }
     /// The packet for the ink the note is open on, captured when it opened, so its text can move
     /// the note clear of the window's text and the ask need not capture again.
     private var prepared: (ink: Set<Mark.ID>, packet: Task<LivePacket, Error>, glance: Task<LivePacket.Glance?, Never>)?
     /// A mark was drawn since the chord went down, so letting it go opens the note.
     private var drewWhileInking = false
-    private var note: LiveNotePopover?
+    private var note: LiveNotePopover? { didSet { syncEscape() } }
     /// Listening to the person while they draw, with speech on. It can span several presses of the
     /// chord, so "this" and "that" drawn in two strokes are one note.
     private var listening: LiveListening?
@@ -75,12 +77,23 @@ final class LiveInk {
     private var handingTo: Mark.ID?
     /// Who the ask under way goes to: the agent, and how the conversation's row names it.
     private var answerer: (agent: String, name: String?) = (LiveAnswerLayout.agentName, nil)
+    /// The ask under way goes to a session, not to the responder.
+    private var askGoesToSession = false
+    /// The session ask's send is stored: it is in its grace or gone, and Esc no longer stops it.
+    private var sessionSendStored = false { didSet { syncEscape() } }
+    /// The asks to a session that Esc stopped, whose send is withdrawn if it is stored after all.
+    private var withdrawn = Set<LiveAsks.Ask.ID>()
+    /// Esc, held while `LiveEscape` has a step for it.
+    private var escapeKey: HotKey?
+    /// Looks again for the screen to be free, while the stack or the annotator holds it and a step waits.
+    private var screenWatch: Timer?
+    private var lastEscape: TimeInterval = 0
     /// The note's target picked last, which the next note starts on.
     private var lastTarget: LiveNotePopover.Target = .responder
     /// The target the open note started on, for `SendContext`.
     private var noteOffered: LiveNotePopover.Target?
     /// The asks since the screen was last cleared, and each mark's part in them.
-    private var asks = LiveAsks()
+    private var asks = LiveAsks() { didSet { syncEscape() } }
     /// An answer's steps still to show, each a mark and its label, and the window they go on. One is
     /// on the screen, and a click on it shows the next, while `stepClicks` listens.
     private var steps: [[Mark]] = []
@@ -88,7 +101,7 @@ final class LiveInk {
     /// What each step's mark points at, and where the mark was then, so a click on the thing counts
     /// as well as one on the mark, wherever its window has moved it since.
     private var stepTargets: [Mark.ID: (target: CGRect, at: CGPoint)] = [:]
-    private var stepClicks: Any?
+    private var stepClicks: Any? { didSet { syncEscape() } }
     /// The picture the responder's conversation has, and the ids of the text lines sent with it, so a
     /// follow-up about the same window, showing the same text, sends no picture and only the lines
     /// near its ink not sent yet.
@@ -150,6 +163,7 @@ final class LiveInk {
     init(mayInk: @escaping () -> Bool) {
         self.mayInk = mayInk
         windows.onGone = { [weak self] ids in self?.forget(ids) }
+        windows.onShownChanged = { [weak self] in self?.syncEscape() }
         windows.drawnExtent = { [weak self] mark in self.flatMap { Self.drawnExtent(of: mark, sizes: $0.answerSizes) } }
     }
 
@@ -183,6 +197,7 @@ final class LiveInk {
             surfaces = []
             windows.removeAll()
         }
+        syncEscape()
         Log.write("[live-ink] \(on ? "on" : "off")")
     }
 
@@ -237,6 +252,10 @@ final class LiveInk {
     func standAside() {
         closeNote()
         stopListening()
+        // They use Esc. The screen is theirs by the next turn, when `syncEscape` finds it so, and gives
+        // Esc back to live ink once they are gone.
+        escapeKey = nil
+        DispatchQueue.main.async { [weak self] in self?.syncEscape() }
         guard isInking else { return }
         stopInking(because: "the stack or the annotator is up")
     }
@@ -358,6 +377,8 @@ final class LiveInk {
             "dismiss": dismissButton.map { button -> Any in StateReport.topLeft(button.frame, primaryHeight: StateReport.primaryHeight) } ?? NSNull(),
             "noteTarget": note.map { panel -> Any in panel.target == .responder ? "responder" : "session" } ?? NSNull(),
             "responder": responder.stateJSON,
+            "escape": LiveEscape.next(escapeSnapshot)?.rawValue ?? NSNull(),
+            "escapeHeld": escapeKey != nil,
             "ask": asks.ask.map { ask -> Any in
                 var json: [String: Any] = ["phase": ask.phase.rawValue, "about": ask.about.count, "picture": ask.picture]
                 if let reason = ask.reason { json["reason"] = reason }
@@ -567,6 +588,7 @@ final class LiveInk {
             Log.write("[live-ink] note closed")
         }
         panel.onDiscard = { [weak self] in self?.discardNote() }
+        panel.onEscape = { [weak self] in self?.escape() }
         panel.onTyped = { [weak self] in self?.typedInNote() }
         if let listening {
             panel.setListening(true)
@@ -659,6 +681,8 @@ final class LiveInk {
             for case .removeAnswer(let gone) in effects { removeAnswer(gone) }
         }
         answerer = (session?.client.rawValue ?? LiveAnswerLayout.agentName, session?.project)
+        askGoesToSession = session != nil
+        sessionSendStored = false
         if let reply {
             put([reply], window: windows.window(of: reply.id))
         } else if let note, !trimmed.isEmpty {
@@ -748,7 +772,10 @@ final class LiveInk {
                        from spot: CGRect?, for id: LiveAsks.Ask.ID) {
         var shared: Set<Mark.ID>?
         for case .share(let about) in asks.reduce(.arrived(.packetCame(toSession: true), for: id)) { shared = about }
-        guard let about = shared else { return letGoOfNoteOfEndedAsk() }
+        guard let about = shared else {
+            withdrawn.remove(id)
+            return letGoOfNoteOfEndedAsk()
+        }
         guard let sendNote else { return letGoOfNote() }
         let numbered = numberedNote(spoken, packet: packet)
         var place = [packet.app, packet.title.map { "\"\($0)\"" }, packet.location].compactMap { $0 }.joined(separator: ", ")
@@ -769,11 +796,19 @@ final class LiveInk {
                             window: packet.windowID, ink: inkBox, before: LiveNoteCards.before(packet, ink: inkBox))
         sendNote(card, session, message) { [weak self] result in
             guard let self else { return }
+            let stopped = self.withdrawn.remove(id) != nil
             switch result {
             case .success(let request):
+                self.sessionSendStored = true
                 Log.write("[live-ink] sent to a session request=\(request) marks=\(card.marks.count)")
                 let effects = self.asks.reduce(.arrived(.sentToSession(ink: Set(person.map(\.id))), for: id))
-                guard !effects.isEmpty else { return self.letGoOfNoteOfEndedAsk() }
+                guard !effects.isEmpty else {
+                    if stopped {
+                        Log.write("[live-ink] note withdrawn request=\(request)")
+                        DispatchQueue.main.async { self.unsendNote?(request) }
+                    }
+                    return self.letGoOfNoteOfEndedAsk()
+                }
                 let leaving = effects.lazy.compactMap { if case .finish(_, let how) = $0 { how } else { nil } }.first
                 self.letGoOfNote(as: leaving)
                 for case .finish(let ids, let how) in effects { self.finish(ids, how) }
@@ -836,11 +871,16 @@ final class LiveInk {
     }
 
     /// Takes the answer off the screen with the ink it was about, and the person's note.
-    func dismissAnswer() {
+    func dismissAnswer() { endAnswer(by: .dismissed) }
+
+    /// Takes the answer off the screen and leaves the person's ink.
+    private func closeAnswer() { endAnswer(by: .answerClosed) }
+
+    private func endAnswer(by event: LiveAsks.Event) {
         hideDismissButton()
         stopSteps()
         letGoOfFocus(because: "dismissed")
-        for case .finish(let ids, let how) in asks.reduce(.dismissed) { finish(ids, how) }
+        for case .finish(let ids, let how) in asks.reduce(event) { finish(ids, how) }
     }
 
     /// How long a new note waits out of sight for the window's text before it shows where it opened.
@@ -972,6 +1012,8 @@ final class LiveInk {
         let replyID = ask.say?.id
         panel.onDraft = { [weak self] words in _ = self?.asks.reduce(.drafted(words, reply: replyID)) }
         panel.onPoint = { [weak self] action in self?.point(at: action) }
+        panel.onEscape = { [weak self] in self?.escape() }
+        panel.onTyping = { [weak self] in self?.syncEscape() }
         actionsPanel = panel
     }
 
@@ -1395,12 +1437,13 @@ final class LiveInk {
     }
 
     /// The answer a button was picked under is back as it was (`LiveAsks.Effect.restore`): its words
-    /// and buttons come back, typed words wait in Reply again, and its row says why.
-    private func restoreAnswer(_ replyID: Mark.ID, saying reason: String) {
+    /// and buttons come back, typed words wait in Reply again, and its row says why, unless the person
+    /// stopped the ask.
+    private func restoreAnswer(_ replyID: Mark.ID, saying reason: String?) {
         guard var reply = asks.ask?.say, reply.id == replyID else { return }
-        reply = noticed(reply, reason)
+        if let reason { reply = noticed(reply, reason) }
         _ = asks.reduce(.replyRedrawn(reply))
-        Log.write("[live-ink] follow-up failed; its answer stays draft=\(asks.ask?.draft.count ?? 0)")
+        Log.write("[live-ink] follow-up \(reason == nil ? "stopped" : "failed"); its answer stays draft=\(asks.ask?.draft.count ?? 0)")
         hideActions()
         put([reply], window: windows.window(of: reply.id))
         showMarks()
@@ -1498,6 +1541,92 @@ final class LiveInk {
         _ = asks.reduce(.cleared)
         prepared = nil
         lastPicture = nil
+    }
+
+    // MARK: Esc
+
+    private var escapeSnapshot: LiveEscape.Snapshot {
+        let sessionSendIsNotStored = asks.ask?.phase == .looking && !sessionSendStored && Settings.shared.data.ui.sendGraceSeconds > 0
+        return LiveEscape.Snapshot(
+            isOn: isOn,
+            screenIsFree: mayInk(),
+            noteOpen: note != nil,
+            replyFieldOpen: actionsPanel?.isTyping == true,
+            askCanBeCancelled: asks.isUnderWay && (!askGoesToSession || sessionSendIsNotStored),
+            tourRunning: focusRun != nil || stepClicks != nil,
+            answerShown: !asks.isUnderWay && shownMarks.contains { asks.isAnswer($0.id) && !asks.isFinishing($0.id) },
+            marksShown: shownMarks.contains { !asks.isFinishing($0.id) })
+    }
+
+    /// Holds Esc exactly while `LiveEscape` has a step for it, so with nothing to back out of it is the
+    /// frontmost app's. Called after each change to what the snapshot reads: the properties that hold
+    /// it, and every `showMarks`.
+    private func syncEscape() {
+        screenWatch?.invalidate()
+        screenWatch = nil
+        let snapshot = escapeSnapshot
+        if LiveEscape.next(snapshot) != nil {
+            // Once the key's handler has returned, since letting go of the key inside it unregisters it.
+            if escapeKey == nil {
+                escapeKey = HotKey(keyCode: LiveEscape.keyCode, modifiers: 0, action: {
+                    DispatchQueue.main.async { [weak self] in self?.escape() }
+                })
+            }
+            return
+        }
+        escapeKey = nil
+        var withScreen = snapshot
+        withScreen.screenIsFree = true
+        // Nothing tells live ink the stack or the annotator is gone, so it looks again.
+        if !snapshot.screenIsFree, LiveEscape.next(withScreen) != nil {
+            screenWatch = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.syncEscape() }
+            }
+        }
+    }
+
+    /// Esc: the first step that applies, one per press. The hotkey, the note and the Reply field all
+    /// come here, so a press that reaches two of them runs one step.
+    func escape() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastEscape > 0.05 else { return }
+        guard let step = LiveEscape.next(escapeSnapshot) else { return syncEscape() }
+        lastEscape = now
+        Log.write("[live-ink] esc \(step.rawValue)")
+        switch step {
+        case .closeNote:
+            closeNote()
+            stopListening()
+        case .closeReplyField:
+            actionsPanel?.closeField()
+        case .cancelAsk:
+            cancelAsk()
+        case .endTour:
+            stopSteps()
+            letGoOfFocus(because: "escape")
+        case .closeAnswer:
+            closeAnswer()
+        case .clearInk:
+            clear()
+        }
+        syncEscape()
+    }
+
+    /// Stops the ask under way: the sent note and any reply leave, the follow-up from a button puts its
+    /// answer back, and the ink can be asked about again. A session's note is withdrawn if its send is
+    /// stored before the answer to this comes.
+    private func cancelAsk() {
+        if askGoesToSession, let id = asks.ask?.id { withdrawn.insert(id) } else { responder.cancel() }
+        let effects = asks.reduce(.cancelled(shown: shownIDs))
+        letGoOfNote()
+        for effect in effects {
+            switch effect {
+            case .removeAnswer(let gone): removeAnswer(gone)
+            case .restore(let reply, let reason): restoreAnswer(reply, saying: reason)
+            default: break
+            }
+        }
+        showMarks()
     }
 
     // MARK: Inking
@@ -1760,6 +1889,7 @@ final class LiveInk {
         } else {
             stopWatchingPointer()
         }
+        syncEscape()
     }
 
     /// Inking stops, since its surfaces are on the Space just left.

@@ -21,7 +21,8 @@ The names in brackets are `// MARK:` sections.
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
 | What an ask sends | `LivePacket.swift` |
 | Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
-| Claude on the screen, the `claude` process | `LiveResponder.swift` |
+| Claude on the screen, the `claude` process, stopping one turn | `LiveResponder.swift` |
+| Esc: which step is next, the hotkey that holds it | `LiveEscape.swift`, `LiveInk.swift` (Esc), `HotKey.swift` |
 | The answer: reading it, drawing it, steps | `LiveAnswer.swift`, `LiveInk.swift` (Answering) |
 | The reply's popover, the conversation: its question, its row, its words, what it is laid over | `LiveReplyPopover.swift`, `LiveInkOverlay.swift` (`LiveMarksLayer.showPopover`) |
 | The thinking light round a popover's rim | `LiveRimLight.swift` |
@@ -77,6 +78,34 @@ The names in brackets are `// MARK:` sections.
   so do menus, the Dock and other apps' floating windows. It passes every press then
   (`ignoresMouseEvents`). While the chord is held it is inking: it rises to `.screenSaver` with the
   flag off and takes every press, over clear pixels too, as the matte rule in `AGENTS.md` says.
+- Esc backs out of live ink one step per press, the first of these that applies (`LiveEscape.next`,
+  a pure function of a snapshot of what is up; `Tests/LiveInkTests.swift`):
+  1. Close the open note: listening stops and the ink drawn for it stays. Or close Reply's field,
+     which keeps its draft.
+  2. Stop the ask under way (`LiveInk.cancelAsk`). The sent note and any reply leave, and the ink is
+     as it was before the ask (`LiveAsks.Event.cancelled`): ink that was new when the ask began is
+     new again. A follow-up from a button puts the earlier answer back as it was, with no failure sentence. Nothing
+     says the ask failed, since the person stopped it. An ask to the responder interrupts its turn
+     (`LiveResponder.cancel`). An ask to a session is a step only until its send is stored, and only
+     with a send grace: if the send is stored after all, it is withdrawn with Don't send
+     (`LiveNoteCards.unsend`). Once it is stored the ink has left with it, and Don't send on the card
+     is the way back.
+  3. End the tour: the focus run, and the steps still to show.
+  4. Close the answer: its reply, buttons and the agent's marks leave (`LiveAsks.Event.answerClosed`).
+     The person's ink stays, unlike the ×, which takes the ink it answered too.
+  5. Clear what is left, as `clear()` does, which also ends the conversation.
+
+  `LiveInk` holds Esc as a Carbon hotkey on plain Esc (`HotKey`, no permission needed) only while
+  `LiveEscape.next` has a step, and lets it go at once when it has none, so Esc is the frontmost
+  app's again. Esc that reached a terminal would interrupt the agent running there. Live ink never holds it
+  while the stack or the annotator holds the screen, since they use Esc, or while live ink is off.
+  Nothing tells live ink when the stack or the annotator closes, so while a step waits on that it looks
+  again every 0.25 s. Whether to hold the key is decided again after every change to what the snapshot
+  reads: the properties that hold it (`didSet`), every `showMarks`, and the marks pinned to windows
+  showing or hiding (`LiveWindows.onShownChanged`). The note's and Reply's `cancelOperation:` call the same `LiveInk.escape`, and a
+  second call within 50 ms is ignored, so one press runs one step. Each press logs `[live-ink] esc
+  <step>`. `[state] liveInk.escape` is the next step or null, and `escapeHeld` says whether the key is
+  held. Several `HotKey`s can exist at once: each hears every hotkey's events and takes only its own id.
 - Inking never covers the stack or the annotator. The chord does nothing while
   `ThumbnailController.holdsScreen`, and either coming up while it is held ends the inking
   (`onTakesScreen`). A chord let go mid-stroke keeps the overlays raised until the button is up,
@@ -173,11 +202,11 @@ The names in brackets are `// MARK:` sections.
   (`letGoOfKeys`), because AppKit counts Vignette as active while the field has them. Under the words
   is its target: the agent's logo and the project, on a button that opens the list of targets, as
   Down does. Return asks about the ink drawn since the last ask, or, with none, about the
-  ink asked about last. Esc or ⌘⌫ cancels the note: it closes, and the ink drawn for it goes
+  ink asked about last. ⌘⌫ cancels the note: it closes, and the ink drawn for it goes
   (`LiveAsks.noteInk`). That ink is the ink since the chord went down with no note open, so a press
-  while the note is open adds to that note's ink. Ink an earlier note kept stays. A click elsewhere
-  closes the note and keeps the ink. ⌘⌫ is the text field's delete-the-line key, and the note handles its command
-  (`deleteToBeginningOfLine:`) as it does Esc's (`cancelOperation:`). Its target starts on the one picked last, else the
+  while the note is open adds to that note's ink. Ink an earlier note kept stays. Esc and a click
+  elsewhere close the note and keep the ink (the Esc rule below). ⌘⌫ is the text field's
+  delete-the-line key, and the note handles its command (`deleteToBeginningOfLine:`). Its target starts on the one picked last, else the
   responder, and lists the sessions Send lists after it. Return settles the note into the look of
   the conversation over 0.18 s (`NoteContent.settle`): the target's button loses its background and
   chevron, its label greys, the ↩ fades and the rim light starts. The conversation, the reply's
@@ -301,7 +330,12 @@ The names in brackets are `// MARK:` sections.
   why. It runs on Claude's 5-minute prompt cache (`CLAUDE_CODE_PROMPT_CACHE_TTL=5m`) and stops 4.5
   minutes after its last request, since an ask after the cache ends would write the whole
   conversation again. It also stops when the ink is cleared or live ink is turned off, and starts a
-  new conversation after 12 asks. In a test launch it runs only the `claude` that
+  new conversation after 12 asks. Esc stops one turn and keeps the conversation: `cancel()` writes a
+  `control_request` with `subtype` `interrupt`, which ends the turn within milliseconds and keeps the
+  process (measured on Claude Code 2.1.302). The turn then ends with a `result` that has `is_error` true
+  and `subtype` `error_during_execution`, which is not an answer or a failure. Its deltas and its result
+  are dropped, nothing new is sent until the result arrives, and the process stops if it takes more than
+  3 s. A waiting ask is dropped unsent, and the warm-up is never interrupted. In a test launch it runs only the `claude` that
   `VIGNETTE_CLAUDE` names, since any other runs on the person's account;
   `scripts/e2e/fake_claude.py` stands in for it. In `[live-ink] answered … marks=<n> thrownOut=<n>`,
   `thrownOut` counts the marks the responder gave that point at nothing, such as a box in pixels
@@ -359,7 +393,7 @@ The names in brackets are `// MARK:` sections.
   accent colour. The reply is never narrower than the row, or than the field with Cancel (`ReplyContent.size`'s
   `foot`, from `LiveAnswerActions.room`). Reply
   gives the row's place to a field and Cancel in the same panel, which takes the keys only while the
-  field is up, as the note does. Return sends what was typed; Cancel, Esc, Return with nothing typed
+  field is up, as the note does. Return sends what was typed; Cancel, Esc (the Esc rule below), Return with nothing typed
   or a click elsewhere puts the buttons back. The field keeps its words when it closes, and the next
   Reply opens with them; a send clears them. The words belong to the answer (`LiveAsks.Ask.draft`),
   not the panel, since the panel goes whenever the reply is out of sight, as when its window is
@@ -439,7 +473,8 @@ The names in brackets are `// MARK:` sections.
 - `live-ink-ask?message=` (debug) asks as Return does, and `&session=<id>` sends to that session.
   `[state] liveInk` adds `new` (ink not yet asked about), `note`, `actions` (each button's words,
   frame, and whether it is enabled and picked), `replyField` and `replyCancel` (the field's and Cancel's frames while they are up),
-  `responder` and `ask` (phase, whether it sent a picture, the reply's length), and each mark's
+  `responder` and `ask` (phase, whether it sent a picture, the reply's length), `escape` and
+  `escapeHeld`, and each mark's
   `id` and `agent`. A script that polls asks for `state?section=liveInk`: the whole report runs to tens of KB, and twice a second it rotated the 5 MB log twice in one take; `app.screenRecording`
   says whether captures are allowed. A test launch with `VIGNETTE_SHARE_LIVE_INK` set lets captures
   see the overlays, so a script can look at what was drawn; the overlay rests under floating

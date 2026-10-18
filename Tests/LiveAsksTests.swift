@@ -662,6 +662,102 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertEqual(a.ask?.picture, true, "today, the picture of a cleared ask is recorded on the next")
     }
 
+    // MARK: Esc
+
+    func testStoppingAFirstAskTakesItsReplyAndLeavesTheInkNewAgain() {
+        var a = A()
+        let mark = ink(), conversation = text("Is this a button?")
+        let id = begin(&a, on: [mark])
+        _ = reduce(&a, .conversed(conversation))
+        XCTAssertTrue(a.newInk(among: [mark]).isEmpty)
+        XCTAssertEqual(reduce(&a, .cancelled(shown: [mark.id, conversation.id])), [.removeAnswer([conversation.id])])
+        XCTAssertNil(a.ask)
+        XCTAssertFalse(a.isUnderWay)
+        XCTAssertEqual(a.newInk(among: [mark]).map(\.id), [mark.id], "the ink is askable as new again")
+        XCTAssertFalse(a.isAnswer(conversation.id))
+        XCTAssertEqual(reduce(&a, .arrived(.answerCame, for: id)), [], "the answer that comes late is dropped")
+        XCTAssertEqual(reduce(&a, .arrived(.failed(reason: "Claude stopped.", shown: [mark.id]), for: id)), [], "and so is a failure")
+        _ = begin(&a, on: [mark])
+        XCTAssertTrue(a.isUnderWay, "a new ask can begin at once")
+    }
+
+    func testStoppingAnAskAboutInkAskedBeforeLeavesThatInkAsked() {
+        var a = A()
+        let mark = ink(), reply = text("It's a button.", agent: true)
+        answer(&a, on: [mark], reply: reply)
+        _ = reduce(&a, .answerClosed)
+        _ = reduce(&a, .finished([reply.id]))
+        let id = begin(&a, on: [mark])
+        XCTAssertEqual(reduce(&a, .arrived(.packetCame(toSession: false), for: id)), [.send])
+        _ = reduce(&a, .cancelled(shown: [mark.id]))
+        XCTAssertTrue(a.newInk(among: [mark]).isEmpty, "ink that was asked about before stays asked about")
+        XCTAssertEqual(a.about(among: [mark]).map(\.id), [mark.id])
+    }
+
+    func testStoppingAFollowUpPutsTheAnswerBackWithNoSentence() {
+        var a = A()
+        let mark = ink(), reply = text("It's a button.", agent: true), loop = shape()
+        answer(&a, on: [mark], reply: reply, shapes: [loop])
+        let earlier = a.ask!
+        var quoting = reply
+        quoting.quote = "and this?"
+        let follow = begin(&a, on: [mark, quoting, loop], following: quoting, picked: .reply, words: "and this?")
+        _ = reduce(&a, .arrived(.packetCame(toSession: false), for: follow))
+        XCTAssertEqual(reduce(&a, .cancelled(shown: [mark.id, reply.id, loop.id])), [.restore(reply: reply.id, reason: nil)])
+        var expected = earlier
+        expected.draft = "and this?"
+        XCTAssertEqual(a.ask, expected, "the earlier answer is back as it was, with the typed words waiting in Reply")
+        XCTAssertNil(a.ask?.reason)
+        XCTAssertTrue(a.isAnswer(reply.id) && a.isAnswer(loop.id))
+        XCTAssertEqual(reduce(&a, .arrived(.answerCame, for: follow)), [], "the stopped ask takes nothing more")
+    }
+
+    func testStoppingAFollowUpThatStartedToReplyTakesTheReply() {
+        var a = A()
+        let mark = ink(), reply = text("It's a button.", agent: true), loop = shape()
+        answer(&a, on: [mark], reply: reply, shapes: [loop])
+        let follow = begin(&a, on: [mark, reply, loop], following: reply, picked: .reply)
+        _ = reduce(&a, .arrived(.packetCame(toSession: false), for: follow))
+        XCTAssertTrue(streamed(&a, reply, for: follow))
+        XCTAssertEqual(reduce(&a, .cancelled(shown: [mark.id, reply.id])), [.removeAnswer([reply.id])])
+        XCTAssertNil(a.ask)
+        XCTAssertTrue(a.answerMarks.isEmpty)
+    }
+
+    func testStoppingAnAskDoesNothingWithNoneUnderWay() {
+        var a = A()
+        XCTAssertEqual(reduce(&a, .cancelled(shown: [])), [])
+        let mark = ink(), reply = text("It's a button.", agent: true)
+        answer(&a, on: [mark], reply: reply)
+        let before = a
+        XCTAssertEqual(reduce(&a, .cancelled(shown: [mark.id, reply.id])), [])
+        XCTAssertEqual(a, before, "an answered ask is not stopped")
+    }
+
+    func testClosingTheAnswerFinishesItsMarksAndKeepsTheInk() {
+        var a = A()
+        let mark = ink(), reply = text("It's a button.", agent: true), loop = shape()
+        answer(&a, on: [mark], reply: reply, shapes: [loop])
+        XCTAssertEqual(reduce(&a, .answerClosed), [.finish([reply.id, loop.id], .dismissed)])
+        XCTAssertNil(a.ask)
+        XCTAssertEqual(Set(a.finishing.keys), [reply.id, loop.id], "only the answer is leaving")
+        XCTAssertEqual(reduce(&a, .finished([reply.id, loop.id])), [.remove([reply.id, loop.id])])
+        XCTAssertEqual(a.ink(among: [mark]).map(\.id), [mark.id])
+        XCTAssertTrue(a.answerMarks.isEmpty)
+        XCTAssertEqual(reduce(&a, .answerClosed), [], "with no answer left there is nothing to close")
+    }
+
+    func testClosingTheAnswerWaitsForAnAskUnderWay() {
+        var a = A()
+        let mark = ink(), reply = text("It's a button.", agent: true)
+        answer(&a, on: [mark], reply: reply)
+        begin(&a, on: [mark, reply], following: reply, picked: .reply)
+        let before = a
+        XCTAssertEqual(reduce(&a, .answerClosed), [])
+        XCTAssertEqual(a, before)
+        XCTAssertTrue(a.isUnderWay)
+    }
+
     // MARK: Random sequences
 
     /// Plays random sequences through `LiveAsksEnvironment` and checks the ask's invariants after
@@ -692,7 +788,7 @@ final class LiveAsksTests: XCTestCase {
                         XCTAssertTrue(ids.allSatisfy { after.finishing[$0] == how }, fail("finishing marks are set leaving, as the effect says"))
                     }
                 }
-                func checkRestore(_ reply: Mark.ID, saying said: String, _ reason: String) {
+                func checkRestore(_ reply: Mark.ID, saying said: String?, _ reason: String) {
                     restores += 1
                     XCTAssertEqual(said, reason, fail("the answer put back says why"))
                     XCTAssertEqual(after.ask?.say?.id, reply, fail("the answer put back hangs from its reply"))
@@ -1236,7 +1332,7 @@ private final class LiveAsksEnvironment {
         put([reply])
     }
 
-    private func restoreAnswer(_ replyID: Mark.ID, saying reason: String) {
+    private func restoreAnswer(_ replyID: Mark.ID, saying reason: String?) {
         guard var reply = asks.ask?.say, reply.id == replyID else { return }
         reply.notice = reason
         _ = send(.replyRedrawn(reply))
@@ -1321,6 +1417,8 @@ private final class LiveAsksEnvironment {
         case .replyRedrawn(let reply): "replyRedrawn \(name(reply.id))"
         case .answerShown(let ids): "answerShown \(list(ids))"
         case .dismissed: "dismissed"
+        case .cancelled: "cancelled"
+        case .answerClosed: "answerClosed"
         case .finished(let ids): "finished \(list(ids))"
         case .cleared: "cleared"
         }

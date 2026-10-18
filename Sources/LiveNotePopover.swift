@@ -27,8 +27,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     var onAsk: ((String, Target) -> Void)?
     /// A click elsewhere took the keys.
     var onClose: (() -> Void)?
-    /// Esc or ⌘⌫: the person takes back the note and the ink drawn for it.
+    /// ⌘⌫: the person takes back the note and the ink drawn for it.
     var onDiscard: (() -> Void)?
+    /// Esc, when the hotkey did not take it first: live ink decides what it does (`LiveEscape`).
+    var onEscape: (() -> Void)?
     /// The person typed in the note, which takes over from what they say.
     var onTyped: (() -> Void)?
     private(set) var target: Target
@@ -388,9 +390,11 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         case #selector(NSResponder.insertNewline(_:)):
             send()
             return true
-        // Esc, and ⌘⌫, which in a text field deletes the line: here both delete the whole note, ink and
-        // all. A click elsewhere is the way to close it and keep the ink.
-        case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.deleteToBeginningOfLine(_:)):
+        case #selector(NSResponder.cancelOperation(_:)):
+            onEscape?()
+            return true
+        // ⌘⌫ deletes the line in a text field; here it deletes the whole note, ink and all.
+        case #selector(NSResponder.deleteToBeginningOfLine(_:)):
             dismiss()
             onDiscard?()
             return true

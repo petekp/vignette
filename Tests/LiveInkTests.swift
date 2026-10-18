@@ -365,6 +365,40 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(seen, ["The", "The total", "The total is \"$197", "The total is \"$197.85\"\nnot", "The total is \"$197.85\"\nnot $194·"])
     }
 
+    // MARK: Esc
+
+    private func everything() -> LiveEscape.Snapshot {
+        LiveEscape.Snapshot(isOn: true, noteOpen: true, replyFieldOpen: true, askCanBeCancelled: true, tourRunning: true,
+                            answerShown: true, marksShown: true)
+    }
+
+    func testEscBacksOutOneStepAtATimeInOrder() {
+        var state = everything()
+        let steps: [(LiveEscape.Step, WritableKeyPath<LiveEscape.Snapshot, Bool>)] = [
+            (.closeNote, \.noteOpen), (.closeReplyField, \.replyFieldOpen), (.cancelAsk, \.askCanBeCancelled),
+            (.endTour, \.tourRunning), (.closeAnswer, \.answerShown), (.clearInk, \.marksShown),
+        ]
+        for (step, field) in steps {
+            XCTAssertEqual(LiveEscape.next(state), step)
+            state[keyPath: field] = false
+        }
+        XCTAssertNil(LiveEscape.next(state), "with nothing left, Esc is the app's again")
+    }
+
+    func testEscClearsInkAloneAndNothingElse() {
+        XCTAssertEqual(LiveEscape.next(LiveEscape.Snapshot(isOn: true, marksShown: true)), .clearInk)
+        XCTAssertNil(LiveEscape.next(LiveEscape.Snapshot(isOn: true)))
+    }
+
+    func testEscIsNeverTakenWhileTheStackHoldsTheScreenOrLiveInkIsOff() {
+        var state = everything()
+        state.screenIsFree = false
+        XCTAssertNil(LiveEscape.next(state))
+        state.screenIsFree = true
+        state.isOn = false
+        XCTAssertNil(LiveEscape.next(state))
+    }
+
     // MARK: Placing an answer
 
     private let room = CGRect(x: 8, y: 8, width: 1496, height: 966)

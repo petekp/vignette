@@ -11,6 +11,9 @@ import QuartzCore
 final class LiveWindows {
     /// Marks that went with their window when it closed.
     var onGone: ((Set<Mark.ID>) -> Void)?
+    /// Which marks show changed: a window moved, resized, went to another Space or came back.
+    var onShownChanged: (() -> Void)?
+    private var lastShown = Set<Mark.ID>()
     /// The rect a mark draws in, its stroke, edge and shadows included, in the mark's own coordinates.
     var drawnExtent: ((Mark) -> CGRect?)?
 
@@ -998,6 +1001,11 @@ final class LiveWindows {
             Log.write("[live-ink] window=\(id) closed marks=\(window.pins.count)")
         }
         if !gone.isEmpty { onGone?(gone) }
+        let shown = Set(marks.filter(\.shown).map(\.mark.id))
+        if shown != lastShown {
+            lastShown = shown
+            onShownChanged?()
+        }
         if windows.isEmpty { stop() }
     }
 

@@ -26,6 +26,10 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
     var onReply: ((String) -> Void)?
     var onDraft: ((String) -> Void)?
     var onPoint: ((LiveAnswer.Action?) -> Void)?
+    /// Esc in the field, when the hotkey did not take it first: live ink decides what it does (`LiveEscape`).
+    var onEscape: (() -> Void)?
+    /// The field opened or closed.
+    var onTyping: (() -> Void)?
 
     private var hiding = false
     private let row: NSStackView
@@ -154,6 +158,8 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
         }
     }
 
+    var isTyping: Bool { typing }
+
     /// The field, in global top-left points, while it is up, for `[state]`.
     var fieldFrame: CGRect? {
         guard typing else { return nil }
@@ -251,13 +257,14 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
         let end = (field.stringValue as NSString).length
         field.currentEditor()?.selectedRange = NSRange(location: end, length: 0)
         Log.write("[live-ink] reply field open draft=\(field.stringValue.count)")
+        onTyping?()
     }
 
     @objc private func cancel() { closeField() }
 
     /// The buttons come back, the keys go back to the app the person was in, and the field's words
     /// are reported as the draft.
-    private func closeField() {
+    func closeField() {
         guard typing else { return }
         typing = false
         makeFirstResponder(nil)
@@ -266,6 +273,7 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
         fit()
         onDraft?(field.stringValue)
         Log.write("[live-ink] reply field closed draft=\(field.stringValue.count)")
+        onTyping?()
     }
 
     /// Gives the keys back to the app the person was in, which never stopped being the active one, so
@@ -294,7 +302,7 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
             if !words.isEmpty { onReply?(words) }
             return true
         case #selector(NSResponder.cancelOperation(_:)):
-            closeField()
+            onEscape?()
             return true
         default:
             return false

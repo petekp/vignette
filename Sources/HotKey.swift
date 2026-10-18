@@ -10,6 +10,9 @@ final class HotKey {
     private let action: () -> Void
     private let hold: (() -> Void)?
     private let holdSeconds: TimeInterval
+    /// Tells this key's events from another `HotKey`'s: every handler hears every hotkey's events.
+    private let id: UInt32
+    private static var lastID: UInt32 = 0
     private var holdTimer: Timer?
     private var isDown = false
     /// `RegisterEventHotKey`'s answer. It is noErr for a combination macOS or another app already
@@ -21,6 +24,8 @@ final class HotKey {
         self.action = action
         self.hold = hold
         self.holdSeconds = holdSeconds
+        Self.lastID += 1
+        id = Self.lastID
         var specs = [
             EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
             EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
@@ -29,15 +34,19 @@ final class HotKey {
         // Carbon delivers these on the main run loop, like the rest of AppKit's event handling.
         InstallEventHandler(GetApplicationEventTarget(), { _, event, userData in
             guard let userData else { return noErr }
+            var fired = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                              MemoryLayout<EventHotKeyID>.size, nil, &fired)
             let pressed = GetEventKind(event) == UInt32(kEventHotKeyPressed)
-            MainActor.assumeIsolated {
+            return MainActor.assumeIsolated {
                 let hotKey = Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue()
+                guard fired.signature == Identity.hotKeySignature, fired.id == hotKey.id else { return OSStatus(eventNotHandledErr) }
                 if pressed { hotKey.pressed() } else { hotKey.released() }
+                return noErr
             }
-            return noErr
         }, 2, &specs, selfPtr, &handler)
-        let id = EventHotKeyID(signature: Identity.hotKeySignature, id: 1)
-        status = RegisterEventHotKey(keyCode, modifiers, id, GetApplicationEventTarget(), 0, &ref)
+        let hotKeyID = EventHotKeyID(signature: Identity.hotKeySignature, id: id)
+        status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref)
     }
 
     private func pressed() {

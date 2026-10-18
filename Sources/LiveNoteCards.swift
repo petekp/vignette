@@ -128,6 +128,13 @@ final class LiveNoteCards {
         return note.shot
     }
 
+    /// Don't send on the note card of `request`, when its ask was stopped before it was stored. Does
+    /// nothing once the line has gone.
+    func unsend(request: String) {
+        guard let note = notes[request] else { return }
+        requests.unsend(file: note.shot.url)
+    }
+
     /// `ScreenshotRequests.Callbacks.cancelled`: Don't send on a note card. The note card is Vignette's
     /// own, so it goes with its drawing; its ink left the window when the note was sent. Answers the
     /// note card, or nil when the request is not a note card's.

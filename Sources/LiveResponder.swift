@@ -60,6 +60,8 @@ final class LiveResponder {
 
     /// How long an ask may take before the process is stopped and the ask fails.
     static let askLimit: TimeInterval = 45
+    /// How long an interrupted turn may take to end before the process is stopped.
+    static let interruptLimit: TimeInterval = 3
     /// How long the process is kept after its last request. Its prompt cache lasts 5 minutes from
     /// each request (`promptCacheTTL`), and an ask after that would write the whole conversation into
     /// it again, so a new process starts instead. Half a minute short of it, so an ask that begins
@@ -82,6 +84,9 @@ final class LiveResponder {
     private let writer = DispatchQueue(label: "vignette.live-responder.write")
     private var warmingUp = false
     private var current: Ask?
+    /// The turn of an ask the person cancelled was interrupted, and its `result` has not come. Nothing
+    /// is sent until it does, and what it says is not an answer.
+    private var interrupting = false
     private var waiting: [Ask] = []
     private var partial = ""
     private var lastSay: String?
@@ -125,6 +130,20 @@ final class LiveResponder {
     /// way or waiting fails.
     func stop() {
         shutDown(Failure(reason: "Claude stopped before it answered. You can ask again.", detail: "stopped"), state: .stopped)
+    }
+
+    /// The person stopped the ask under way and those waiting: none gets an answer or a failure. A turn
+    /// already sent is interrupted, which ends it and keeps the conversation, so the next ask is sent
+    /// when the interrupted turn's `result` comes. A waiting ask was never sent, and the warm-up, which
+    /// is not an ask, runs on.
+    func cancel() {
+        waiting = []
+        guard current != nil else { return }
+        current = nil
+        interrupting = true
+        writeLine(["type": "control_request", "request_id": UUID().uuidString, "request": ["subtype": "interrupt"]])
+        armTimer(limit: Self.interruptLimit)
+        Log.write("[live-ink] responder interrupted the turn")
     }
 
     var stateJSON: [String: Any] {
@@ -271,7 +290,7 @@ final class LiveResponder {
     /// which renews the prompt cache, so the idle limit runs from it.
     private func write(content: [[String: Any]]) {
         let message: [String: Any] = ["type": "user", "message": ["role": "user", "content": content]]
-        guard let input, let data = try? JSONSerialization.data(withJSONObject: message) else { return }
+        guard input != nil else { return }
         idleTimer?.invalidate()
         idleTimer = Timer.scheduledTimer(withTimeInterval: Self.idleLimit, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -280,6 +299,11 @@ final class LiveResponder {
                 self.stop()
             }
         }
+        writeLine(message)
+    }
+
+    private func writeLine(_ message: [String: Any]) {
+        guard let input, let data = try? JSONSerialization.data(withJSONObject: message) else { return }
         writer.async {
             do {
                 try input.write(contentsOf: data + Data("\n".utf8))
@@ -289,12 +313,21 @@ final class LiveResponder {
         }
     }
 
-    private func armTimer() {
+    private func armTimer(limit: TimeInterval = LiveResponder.askLimit) {
         askTimer?.invalidate()
-        askTimer = Timer.scheduledTimer(withTimeInterval: Self.askLimit, repeats: false) { [weak self] _ in
+        askTimer = Timer.scheduledTimer(withTimeInterval: limit, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                Log.write("[live-ink] responder error timeout after \(Int(Self.askLimit))s")
-                self?.shutDown(Failure(reason: "Claude took too long to answer. You can ask again.", detail: "timeout"), state: .stopped)
+                guard let self else { return }
+                if self.interrupting {
+                    Log.write("[live-ink] responder error interrupt unanswered after \(Int(limit))s")
+                    let asked = self.waiting
+                    self.waiting = []
+                    self.shutDown(Failure(reason: "Claude stopped before it answered. You can ask again.", detail: "stopped"), state: .stopped)
+                    for ask in asked { self.ask(ask) }
+                    return
+                }
+                Log.write("[live-ink] responder error timeout after \(Int(limit))s")
+                self.shutDown(Failure(reason: "Claude took too long to answer. You can ask again.", detail: "timeout"), state: .stopped)
             }
         }
     }
@@ -346,6 +379,13 @@ final class LiveResponder {
                 return
             }
             Log.write("[live-ink] responder ready ms=\(milliseconds) cost=\(cost)")
+            state = .ready
+            sendNext()
+            return
+        }
+        if interrupting {
+            interrupting = false
+            Log.write("[live-ink] responder turn interrupted ms=\(milliseconds) cost=\(cost)")
             state = .ready
             sendNext()
             return
@@ -420,6 +460,7 @@ final class LiveResponder {
         input = nil
         writer.async { try? closing?.close() }
         warmingUp = false
+        interrupting = false
         let failed = (current.map { [$0] } ?? []) + waiting
         current = nil
         waiting = []

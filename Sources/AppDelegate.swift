@@ -117,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self else { return done(.failure(ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason))) }
             noteCards.send(note, to: destination, message: message, done: done)
         }
+        liveInk.unsendNote = { [weak self] request in self?.noteCards.unsend(request: request) }
         annotator.onTakesEvents = { [weak self] key in self?.thumbnail.annotatorTakesEvents(key) }
         annotator.onFinished = { [weak self] shot, drawing in self?.finishAnnotation(shot, drawing) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
