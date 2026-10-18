@@ -731,8 +731,11 @@ final class LiveWindows {
             guard let drawn = drawnExtent?(pin.mark) else { continue }
             extent = extent.union(drawn.offsetBy(dx: window.frame.minX + pin.shift.dx, dy: window.frame.minY + pin.shift.dy))
         }
-        // A mark far outside its window is not worth a window the size of the screen.
-        extent = extent.intersection(window.frame.insetBy(dx: -240, dy: -240))
+        // Nothing past the window's screen shows, so the overlay stops there.
+        let centre = CGPoint(x: window.frame.midX, y: window.frame.midY)
+        if let screen = NSScreen.screens.map({ StateReport.flipped($0.frame) }).first(where: { $0.contains(centre) }) {
+            extent = extent.intersection(screen.union(window.frame))
+        }
         window.overlay.place(over: window.frame, extent: extent)
     }
 
