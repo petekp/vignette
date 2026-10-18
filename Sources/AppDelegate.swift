@@ -655,9 +655,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 }
                 targets = [Screenshot(key: newest)]
             } else {
-                // A file outside the folder has no key of the folder's; only debug mode lets one past
-                // the policy check below.
-                targets = request.files.map { Screenshot(key: ScreenshotKey(resolving: $0, in: watchFolder) ?? ScreenshotKey(asGiven: $0)) }
+                // Only debug mode lets a file outside the folder past the policy check below.
+                targets = request.files.map { Screenshot(key: ScreenshotKey(naming: $0, in: watchFolder)) }
             }
             if !targets.allSatisfy({ action.kinds.contains($0.kind) }),
                let reason = action.unavailableReason(for: targets) {

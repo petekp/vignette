@@ -586,10 +586,8 @@ final class ScreenshotRequests {
         done()
     }
 
-    /// The reply's file as the watch folder spells it. A reply reserved before the folder changed
-    /// keeps the location it was reserved at, as it was stored.
     private func shot(at destination: URL) -> Screenshot {
-        Screenshot(key: ScreenshotKey(resolving: destination, in: callbacks.watchFolder()) ?? ScreenshotKey(asGiven: destination))
+        Screenshot(key: ScreenshotKey(naming: destination, in: callbacks.watchFolder()))
     }
 
     /// Whether the import may go on. The record may have moved since it started: its marks are

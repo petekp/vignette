@@ -132,7 +132,6 @@ final class Drawings {
             Log.write("[drawings] \(keys.count)")
         }
         revisions[new] = revisions.removeValue(forKey: old)
-        changedAt[old] = nil
         let drawing = open?.drawing(of: new) ?? pixels.flatMap { store.read(key: new.path, pixels: $0, style: style) }
         changed(old, nil)
         revisions[old] = nil

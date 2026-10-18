@@ -219,13 +219,12 @@ final class FolderWrites {
 
     private func rename(_ renames: [Rename], observedAt: TimeInterval) {
         // A new name every listing hides, an agent reply's with no record, leaves as a removal would.
-        let hidden = renames.filter { !callbacks.isVisible($0.to.url) }
-        if !hidden.isEmpty {
+        let visible = Dictionary(grouping: renames) { callbacks.isVisible($0.to.url) }
+        if let hidden = visible[false] {
             Log.write("[watcher] removed \(hidden.map { "\($0.from.name), renamed to \($0.to.name)" }.joined(separator: "; "))")
             left(hidden.map { Screenshot(key: $0.from) }, observedAt: observedAt)
         }
-        let renames = renames.filter { callbacks.isVisible($0.to.url) }
-        guard !renames.isEmpty else { return }
+        guard let renames = visible[true] else { return }
         Log.write("[watcher] renamed \(renames.map { "\($0.from.name) to \($0.to.name)" }.joined(separator: ", "))")
         callbacks.renameCards(renames)
         callbacks.renameDrawings(renames)
@@ -248,8 +247,9 @@ final class FolderWrites {
         // confirms absent, so a held-back removal takes only its card.
         let deferred = deferredRemovals.filter { inventory.confirmsAbsence(of: $0.url) }
         if !deferred.isEmpty { callbacks.removeCards(deferred.map(Screenshot.init(key:))) }
+        let folder = inventory.folder.standardizedFileURL
         deferredRemovals = deferredRemovals.filter {
-            $0.url.deletingLastPathComponent().standardizedFileURL != inventory.folder.standardizedFileURL
+            $0.url.deletingLastPathComponent().standardizedFileURL != folder
                 || (!inventory.names.contains($0.name) && !deferred.contains($0))
         }
     }

@@ -436,10 +436,15 @@ struct AppleOriginal: Codable, Equatable {
 /// its own screenshot defaults, and reaches nothing else of the person's: no login item, and no
 /// update feed, agent folder or agent tool the environment does not name.
 enum Launch {
-    static let isTest = isTest(in: ProcessInfo.processInfo.environment)
+    static let settingsPath = settingsPath(in: ProcessInfo.processInfo.environment)
+    static let isTest = settingsPath != nil
 
     static func isTest(in environment: [String: String]) -> Bool {
-        environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false
+        settingsPath(in: environment) != nil
+    }
+
+    private static func settingsPath(in environment: [String: String]) -> String? {
+        environment["VIGNETTE_SETTINGS"].flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 
@@ -452,7 +457,7 @@ final class Settings: ObservableObject {
     static let shared = Settings()
     nonisolated static let currentVersion = 2
     static let fileURL: URL = {
-        if let path = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"], !path.isEmpty {
+        if let path = Launch.settingsPath {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         }
         // A test process never writes the user's file, whoever launched it. The scheme in

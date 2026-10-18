@@ -166,9 +166,9 @@ struct DrawingStore: Sendable {
         guard old != new, case .stored(let stored) = contents(of: url(for: old)), stored.key == old else { return nil }
         let target = url(for: new), name = (new as NSString).lastPathComponent
         try refuseNewer(target, name: name)
+        var object = stored.object
+        object["key"] = new
         do {
-            guard var object = try DrawingJSON.object(from: Data(contentsOf: url(for: old))) as? [String: Any] else { return nil }
-            object["key"] = new
             let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try data.write(to: target, options: .atomic)
@@ -225,6 +225,8 @@ struct DrawingStore: Sendable {
         let pixels: PixelSize
         let pointScale: CGFloat
         let marks: [Any]
+        /// The whole file, as parsed.
+        let object: [String: Any]
     }
 
     private enum Contents {
@@ -262,6 +264,6 @@ struct DrawingStore: Sendable {
             return .invalid("pointScale must be a number from \(String(format: "%g", range.lowerBound)) to \(String(format: "%g", range.upperBound))")
         }
         guard let marks = object["marks"] as? [Any] else { return .invalid("marks must be a list") }
-        return .stored(Stored(key: key, pixels: PixelSize(width: width, height: height), pointScale: pointScale, marks: marks))
+        return .stored(Stored(key: key, pixels: PixelSize(width: width, height: height), pointScale: pointScale, marks: marks, object: object))
     }
 }

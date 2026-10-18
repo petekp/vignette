@@ -7,7 +7,7 @@ import Foundation
 struct ScreenshotKey: Hashable, Sendable, Comparable {
     let path: String
 
-    var url: URL { URL(fileURLWithPath: path) }
+    var url: URL { URL(fileURLWithPath: path, isDirectory: false) }
     var name: String { (path as NSString).lastPathComponent }
 
     /// The watcher's spelling of `name` listed in `folder`.
@@ -24,6 +24,12 @@ struct ScreenshotKey: Hashable, Sendable, Comparable {
         let real = Commands.realPath(file)
         guard real.hasPrefix(root) else { return nil }
         self.init(folder: folder, name: String(real.dropFirst(root.count)))
+    }
+
+    /// `file` as the folder spells it, or as given when it is outside the folder: a debug-mode
+    /// command's target, or a reply reserved before the folder changed, which keeps its location.
+    init(naming file: URL, in folder: URL) {
+        self = ScreenshotKey(resolving: file, in: folder) ?? ScreenshotKey(asGiven: file)
     }
 
     /// A key read back as it was stored (a drawing's, a request's source, a reply's reserved

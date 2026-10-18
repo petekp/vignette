@@ -151,7 +151,7 @@ enum AppLocation {
         configuration.createsNewApplicationInstance = true
         if let volume { configuration.arguments = [ejectArgument, volume.path] }
         // A launch on another settings file must not reopen on the user's own.
-        if let settings = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"] {
+        if let settings = Launch.settingsPath {
             configuration.environment = ["VIGNETTE_SETTINGS": settings]
         }
         let finished = OSAllocatedUnfairLock(initialState: false)
