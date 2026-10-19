@@ -237,6 +237,12 @@ final class AnnotatorToolbar {
         }
         panel.onTab = { [weak self] backward in self?.move(backward: backward) }
         panel.onKey = { [weak self] event in self?.keyDown(event) ?? false }
+        panel.onMenuKey = { [weak self] in
+            guard let self, case .send = model.offer, targetFrame != nil else { return false }
+            // A turn later, as Space on the target opens it, once the key's event is done.
+            DispatchQueue.main.async { [weak self] in self?.showTargetMenu() }
+            return true
+        }
         panel.onPress = { [weak self] onField in
             guard let self else { return }
             model.pressed()
@@ -568,6 +574,8 @@ final class ToolbarPanel: NSPanel {
     var onPress: ((_ onField: Bool) -> Void)?
     /// A key down, before the field sees it. True when it was taken.
     var onKey: ((NSEvent) -> Bool)?
+    /// Up on the message field's first line or Down on its last. True when it opened the target's menu.
+    var onMenuKey: (() -> Bool)?
     override var canBecomeKey: Bool { pressOnField || wantsKeys || isKeyWindow }
 
     /// Delivers a key that `onKey` held, past `onKey`.
@@ -606,7 +614,29 @@ final class ToolbarPanel: NSPanel {
             onTab?(event.modifierFlags.contains(.shift))
             return
         }
+        // Up on the field's first line or Down on its last opens the target's menu, as on a pop-up
+        // button. Within the text the arrows move the caret.
+        if event.type == .keyDown, [125, 126].contains(event.keyCode),
+           event.modifierFlags.isDisjoint(with: [.command, .control, .option, .shift]),
+           let text = firstResponder as? NSTextView, !text.hasMarkedText(),
+           text.caretIsOnLine(first: event.keyCode == 126), onMenuKey?() == true {
+            return
+        }
         super.sendEvent(event)
+    }
+}
+
+private extension NSTextView {
+    /// Whether the caret is on the text's first line as laid out, or with `first` false its last.
+    func caretIsOnLine(first: Bool) -> Bool {
+        let length = (string as NSString).length
+        guard length > 0, let layout = layoutManager else { return true }
+        let caret = selectedRange().location
+        if caret >= length, layout.extraLineFragmentTextContainer != nil { return !first }
+        let all = layout.glyphRange(forCharacterRange: NSRange(location: 0, length: length), actualCharacterRange: nil)
+        var line = NSRange()
+        layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: min(caret, length - 1)), effectiveRange: &line)
+        return first ? line.location <= all.location : NSMaxRange(line) >= NSMaxRange(all)
     }
 }
 

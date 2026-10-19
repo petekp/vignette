@@ -874,7 +874,9 @@ screenshot location for such a launch is written with the same variable:
   clicked, and `allowsToolTipsWhenApplicationIsInactive` did not change
   that. The target's menu is an `NSMenu` (`showTargetMenu`), since SwiftUI's `Menu`
   cannot be opened from a key. Space opens it a turn later: opened inside the editor's keyDown it
-  took no keys, and a press on its item closed the editor as a press outside. `docs/annotator-toolbar-2026-09-19.md` has the numbers.
+  took no keys, and a press on its item closed the editor as a press outside. In the message field,
+  Up on the first line or Down on the last opens it the same way, as on a pop-up button, and the
+  arrows then move through it (`ToolbarPanel.onMenuKey`). `docs/annotator-toolbar-2026-09-19.md` has the numbers.
 
 ### The editor and drawings
 
