@@ -1574,6 +1574,7 @@ final class LiveInk {
         return LiveEscape.Snapshot(
             isOn: isOn,
             screenIsFree: mayInk(),
+            menuOpen: note?.menuOpen == true,
             noteOpen: note != nil,
             replyFieldOpen: actionsPanel?.isTyping == true,
             askCanBeCancelled: asks.canBeCancelled(sendsWait: Settings.shared.data.ui.sendGraceSeconds > 0),

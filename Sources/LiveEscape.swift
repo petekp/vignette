@@ -28,6 +28,8 @@ enum LiveEscape {
         var isOn = false
         /// Not while the stack or the annotator holds the screen: they use Esc.
         var screenIsFree = true
+        /// The note's target menu is up. It closes on Esc, which the held key would take from it.
+        var menuOpen = false
         var noteOpen = false
         var replyFieldOpen = false
         /// An ask is under way that Esc can stop: any ask to the responder, and an ask to a session
@@ -41,7 +43,7 @@ enum LiveEscape {
     }
 
     static func next(_ state: Snapshot) -> Step? {
-        guard state.isOn, state.screenIsFree else { return nil }
+        guard state.isOn, state.screenIsFree, !state.menuOpen else { return nil }
         if state.noteOpen { return .discardNote }
         if state.replyFieldOpen { return .closeReplyField }
         if state.askCanBeCancelled { return .cancelAsk }

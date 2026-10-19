@@ -390,11 +390,14 @@ final class LiveInkTests: XCTestCase {
         XCTAssertNil(LiveEscape.next(LiveEscape.Snapshot(isOn: true)))
     }
 
-    func testEscIsNeverTakenWhileTheStackHoldsTheScreenOrLiveInkIsOff() {
+    func testEscIsNeverTakenWhileTheStackHoldsTheScreenAMenuIsUpOrLiveInkIsOff() {
         var state = everything()
         state.screenIsFree = false
         XCTAssertNil(LiveEscape.next(state))
         state.screenIsFree = true
+        state.menuOpen = true
+        XCTAssertNil(LiveEscape.next(state), "the note's menu closes on Esc")
+        state.menuOpen = false
         state.isOn = false
         XCTAssertNil(LiveEscape.next(state))
     }

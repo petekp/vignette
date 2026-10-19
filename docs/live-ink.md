@@ -168,7 +168,8 @@ The names in brackets are `// MARK:` sections.
   `LiveInk` holds Esc as a Carbon hotkey on plain Esc (`HotKey`, no permission needed) only while
   `LiveEscape.next` has a step, and lets it go at once when it has none, so Esc is the frontmost
   app's again. Esc that reached a terminal would interrupt the agent running there. Live ink never holds it
-  while the stack or the annotator holds the screen, since they use Esc, or while live ink is off.
+  while the stack or the annotator holds the screen, since they use Esc, while the note's target menu
+  is up, which closes on Esc and gives the note's field the keys back, or while live ink is off.
   Whether to hold the key is decided before each wait of the main run loop (`LiveInk.holdEscape`, a
   `CFRunLoopObserver`), so it follows every change to what the snapshot reads without each change
   having to report it. A held key takes the press before any window sees it (measured: with the note's

@@ -53,7 +53,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Sent: the words stay, the keys are let go, and only the handover or `fadeAway` closes it.
     private var sent = false
     /// The target's menu is up. It takes the keys while it is, and `popUp` returns when it closes.
-    private var menuOpen = false
+    private(set) var menuOpen = false
     /// Listening to the person, which the empty note says.
     private var listening = false
     /// Whether Vignette was the active app before the note took the keys, so closing gives them back
