@@ -79,6 +79,15 @@ be Vignette's own panel. It would then have to do what `NSMenu` does now: arrow 
 type-to-select, closing on a click outside, and VoiceOver. Open: whether that is worth giving up the
 system menu, and how it opens: growing from the target, sliding down from it, or fading in.
 
+### Live ink asks about what changes over time (raised 2026-10-18)
+
+An ask sends one capture, taken as the last stroke ends, so live ink cannot show an agent a
+glitch that has already gone, a change between two strokes, or motion. An area of investigation:
+how to capture frames (one per stroke, a replay buffer, or frames while the chord is held), how to
+send them as a stitch with the words as text, and how to crop each frame.
+`docs/live-ink-over-time-2026-10-18.md` has the scenarios and the open questions. It waits on Pete
+picking it up.
+
 ## Fixes
 
 ### Apple's original values after a crash and a deleted settings.json (raised 2026-09-30)
