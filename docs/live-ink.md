@@ -169,13 +169,16 @@ The names in brackets are `// MARK:` sections.
   `LiveEscape.next` has a step, and lets it go at once when it has none, so Esc is the frontmost
   app's again. Esc that reached a terminal would interrupt the agent running there. Live ink never holds it
   while the stack or the annotator holds the screen, since they use Esc, or while live ink is off.
-  Whether to hold the key is decided again after every change to what the snapshot reads: the
-  properties that hold it (`didSet`), every `showMarks`, the marks pinned to windows showing or hiding
-  (`LiveWindows.onShownChanged`), and the stack and the annotator giving the screen back
-  (`ThumbnailController.onGivesBackScreen`). The note's and Reply's `cancelOperation:` call the same `LiveInk.escape`, and a
-  second call within 50 ms is ignored, so one press runs one step. Each press logs `[live-ink] esc
-  <step>`. `[state] liveInk.escape` is the next step or null, and `escapeHeld` says whether the key is
-  held. Several `HotKey`s can exist at once: each hears every hotkey's events and takes only its own id.
+  Whether to hold the key is decided before each wait of the main run loop (`LiveInk.holdEscape`, a
+  `CFRunLoopObserver`), so it follows every change to what the snapshot reads without each change
+  having to report it. A held key takes the press before any window sees it (measured: with the note's
+  field key, one press reached the hotkey alone), so the note's and Reply's `cancelOperation:` reach
+  `LiveInk.escape` only when the key does not take it: a press in the moment before the key is held,
+  or a key that registered but never fires, since `RegisterEventHotKey` answers success for a key
+  another app already holds (the `HotKey` comment). Each press logs
+  `[live-ink] esc <step>`. `[state] liveInk.escape` is the next step or null, and `escapeHeld` says
+  whether the key is held. Several `HotKey`s can exist at once: one Carbon handler hears every
+  hotkey's events and hands each to its own key by id.
 - Inking never covers the stack or the annotator. The chord does nothing while
   `ThumbnailController.holdsScreen`, and either coming up while it is held ends the inking
   (`onTakesScreen`). A chord let go mid-stroke keeps the overlays raised until the button is up,

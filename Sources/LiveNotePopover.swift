@@ -21,6 +21,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         /// A working session, through Send. Its answer is drawn beside the ink when it comes.
         case session(AgentDestination)
 
+        var session: AgentDestination? {
+            if case .session(let destination) = self { return destination }
+            return nil
+        }
     }
 
     /// The words typed, trimmed, and the target, when the person presses Return.
@@ -70,7 +74,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     init(at place: PopoverPlace, target: Target) {
         self.place = place
         self.target = target
-        ownPick = if case .session(let destination) = target { .remembered(destination) } else { .remembered(nil) }
+        ownPick = .remembered(target.session)
         host = Host(at: place.at)
         wasActive = NSApp.isActive
         super.init()
@@ -202,7 +206,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
             let item = NSMenuItem(title: session.project, action: #selector(pickTarget(_:)), keyEquivalent: "")
             item.image = Agent.logo(for: session.client.rawValue).map(Self.menuSized)
             if #available(macOS 14.4, *) { item.subtitle = session.name }
-            item.state = currentSession?.id == session.id ? .on : .off
+            item.state = target.session?.id == session.id ? .on : .off
             item.target = self
             item.representedObject = session.id
             menu.addItem(item)
@@ -228,7 +232,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// The sessions the menu lists after the responder, in its order.
     private var menuSessions: [AgentDestination] {
-        sessions.isEmpty ? [] : DestinationChoice.menu(sessions, target: currentSession ?? sessions[0])
+        sessions.isEmpty ? [] : DestinationChoice.menu(sessions, target: target.session ?? sessions[0])
     }
 
     /// Tab, or Shift+Tab with `backward`: the target after this one in the menu's order, or the one
@@ -236,16 +240,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private func step(backward: Bool) {
         let order: [Target] = [.responder] + menuSessions.map { .session($0) }
         guard order.count > 1 else { return }
-        let index = order.firstIndex { candidate in
-            if case .session(let session) = candidate { return session.id == currentSession?.id }
-            return currentSession == nil
-        } ?? 0
+        // By id, since a session's other fields change as its list is read again.
+        let index = order.firstIndex { $0.session?.id == target.session?.id } ?? 0
         pick(order[(index + (backward ? order.count - 1 : 1)) % order.count])
-    }
-
-    private var currentSession: AgentDestination? {
-        if case .session(let destination) = target { return destination }
-        return nil
     }
 
     @objc private func pickTarget(_ item: NSMenuItem) {
@@ -258,7 +255,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     private func pick(_ target: Target) {
         show(target)
-        ownPick = .byHand(currentSession)
+        ownPick = .byHand(target.session)
         Log.write("[live-ink] note target \(target == .responder ? "responder" : "session")")
     }
 

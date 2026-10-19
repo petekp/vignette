@@ -206,11 +206,7 @@ struct LivePacket: @unchecked Sendable {
 
     /// The backing scale of the screen holding `point`, in global top-left points.
     private static func scale(at point: CGPoint) -> CGFloat {
-        let primaryHeight = StateReport.primaryHeight
-        return NSScreen.screens.first { screen in
-            let frame = screen.frame
-            return CGRect(x: frame.minX, y: primaryHeight - frame.maxY, width: frame.width, height: frame.height).contains(point)
-        }?.backingScaleFactor ?? 2
+        StateReport.screen(at: point)?.backingScaleFactor ?? 2
     }
 
     /// A capture of `frame`'s size at `scale` pixels a point, without the cursor or a window's shadow.

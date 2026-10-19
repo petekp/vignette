@@ -28,8 +28,6 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
     var onPoint: ((LiveAnswer.Action?) -> Void)?
     /// Esc in the field, when the hotkey did not take it first: live ink decides what it does (`LiveEscape`).
     var onEscape: (() -> Void)?
-    /// The field opened or closed.
-    var onTyping: (() -> Void)?
 
     private var hiding = false
     private let row: NSStackView
@@ -180,7 +178,7 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
             self.width = width
             if isTyping { fit() }
         }
-        var origin = CGPoint(x: corner.x - Self.margin, y: StateReport.primaryHeight - corner.y - frame.height + Self.margin)
+        var origin = StateReport.flipped(CGRect(x: corner.x - Self.margin, y: corner.y - Self.margin, width: frame.width, height: frame.height)).origin
         let point = CGPoint(x: origin.x, y: origin.y + frame.height / 2)
         if let visible = (NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main)?.visibleFrame {
             origin.x = max(visible.minX + 8 - Self.margin, min(origin.x, visible.maxX - 8 + Self.margin - frame.width))
@@ -252,7 +250,6 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
         let end = (field.stringValue as NSString).length
         field.currentEditor()?.selectedRange = NSRange(location: end, length: 0)
         Log.write("[live-ink] reply field open draft=\(field.stringValue.count)")
-        onTyping?()
     }
 
     @objc private func cancel() { closeField() }
@@ -268,7 +265,6 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
         fit()
         onDraft?(field.stringValue)
         Log.write("[live-ink] reply field closed draft=\(field.stringValue.count)")
-        onTyping?()
     }
 
     /// Gives the keys back to the app the person was in, which never stopped being the active one, so

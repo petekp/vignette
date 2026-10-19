@@ -85,7 +85,7 @@ final class LiveDismissButton: NSPanel {
     /// Centres the disc on `corner`, in global top-left points, as the note moves with its window.
     func place(at corner: CGPoint) {
         let side = Self.size + Self.margin * 2
-        let origin = CGPoint(x: corner.x - side / 2, y: StateReport.primaryHeight - corner.y - side / 2)
+        let origin = StateReport.flipped(CGRect(x: corner.x - side / 2, y: corner.y - side / 2, width: side, height: side)).origin
         guard abs(origin.x - frame.minX) > 0.25 || abs(origin.y - frame.minY) > 0.25 || frame.width != side else { return }
         setFrame(CGRect(origin: origin, size: CGSize(width: side, height: side)), display: true)
     }

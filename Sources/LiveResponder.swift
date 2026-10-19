@@ -142,7 +142,7 @@ final class LiveResponder {
         current = nil
         interrupting = true
         writeLine(["type": "control_request", "request_id": UUID().uuidString, "request": ["subtype": "interrupt"]])
-        armTimer(limit: Self.interruptLimit)
+        armTimer()
         Log.write("[live-ink] responder interrupted the turn")
     }
 
@@ -313,12 +313,14 @@ final class LiveResponder {
         }
     }
 
-    private func armTimer(limit: TimeInterval = LiveResponder.askLimit) {
+    /// Times the turn under way: the warm-up, an ask, or an interrupt waiting for its turn's `result`.
+    private func armTimer() {
+        let limit = interrupting ? Self.interruptLimit : Self.askLimit
         askTimer?.invalidate()
         askTimer = Timer.scheduledTimer(withTimeInterval: limit, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if self.interrupting { return self.interruptUnanswered(after: limit) }
+                if self.interrupting { return self.interruptUnanswered() }
                 Log.write("[live-ink] responder error timeout after \(Int(limit))s")
                 self.shutDown(Failure(reason: "Claude took too long to answer. You can ask again.", detail: "timeout"), state: .stopped)
             }
@@ -327,8 +329,8 @@ final class LiveResponder {
 
     /// The interrupted turn's `result` never came: the process stops, and the asks made since start a
     /// new one.
-    private func interruptUnanswered(after limit: TimeInterval) {
-        Log.write("[live-ink] responder error interrupt unanswered after \(Int(limit))s")
+    private func interruptUnanswered() {
+        Log.write("[live-ink] responder error interrupt unanswered after \(Int(Self.interruptLimit))s")
         let asked = waiting
         waiting = []
         stop()

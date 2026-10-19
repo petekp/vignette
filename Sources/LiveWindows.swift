@@ -11,9 +11,6 @@ import QuartzCore
 final class LiveWindows {
     /// Marks that went with their window when it closed.
     var onGone: ((Set<Mark.ID>) -> Void)?
-    /// Which marks show changed: a window moved, resized, went to another Space or came back.
-    var onShownChanged: (() -> Void)?
-    private var lastShown = Set<Mark.ID>()
     /// The rect a mark draws in, its stroke, edge and shadows included, in the mark's own coordinates.
     var drawnExtent: ((Mark) -> CGRect?)?
 
@@ -289,18 +286,21 @@ final class LiveWindows {
         windows.values.lazy.compactMap { $0.pins.first { $0.mark.id == id }?.shift }.first
     }
 
-    /// The marks that show: on a window on the screen and not set aside.
-    var shownIDs: Set<Mark.ID> {
-        Set(windows.values.filter(\.onScreen).flatMap { $0.pins.filter(\.shows).map(\.mark.id) })
+    /// Whether a mark that shows, on a window on the screen and not set aside, passes `test`.
+    func containsShown(where test: (Mark.ID) -> Bool) -> Bool {
+        windows.values.contains { window in window.onScreen && window.pins.contains { $0.shows && test($0.mark.id) } }
     }
 
-    func isShown(_ id: Mark.ID) -> Bool {
-        windows.values.contains { window in window.onScreen && window.pins.contains { $0.mark.id == id && $0.shows } }
-    }
+    func isShown(_ id: Mark.ID) -> Bool { containsShown { $0 == id } }
 
-    /// Hides these marks where they are, or shows them again. Set aside, a mark still follows its
-    /// content, so it comes back where that content is.
-    func setAside(_ ids: Set<Mark.ID>, _ aside: Bool) {
+    /// Hides these marks where they are. Set aside, a mark still follows its content, so it comes
+    /// back where that content is.
+    func setAside(_ ids: Set<Mark.ID>) { changeAside(ids, to: true) }
+
+    /// Shows set-aside marks again.
+    func bringBack(_ ids: Set<Mark.ID>) { changeAside(ids, to: false) }
+
+    private func changeAside(_ ids: Set<Mark.ID>, to aside: Bool) {
         for window in windows.values {
             for index in window.pins.indices where ids.contains(window.pins[index].mark.id) {
                 window.pins[index].aside = aside
@@ -1027,11 +1027,6 @@ final class LiveWindows {
             Log.write("[live-ink] window=\(id) closed marks=\(window.pins.count)")
         }
         if !gone.isEmpty { onGone?(gone) }
-        let shown = shownIDs
-        if shown != lastShown {
-            lastShown = shown
-            onShownChanged?()
-        }
         if windows.isEmpty { stop() }
     }
 

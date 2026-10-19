@@ -591,7 +591,8 @@ final class ToolbarPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.type == .keyDown, [36, 76].contains(event.keyCode), event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+        if event.type == .keyDown, EditorCore.Key(keyCode: event.keyCode, characters: nil) == .returnKey,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
             onCommandReturn?()
             return true
         }
@@ -607,20 +608,20 @@ final class ToolbarPanel: NSPanel {
             onPress?(pressOnField)
         }
         if event.type == .keyDown, onKey?(event) == true { return }
-        // Tab leaves the field for the next control rather than the key view loop, unless an input
-        // method is composing.
-        if event.type == .keyDown, event.keyCode == 48, event.modifierFlags.isDisjoint(with: [.command, .control, .option]),
-           (firstResponder as? NSTextView)?.hasMarkedText() != true {
-            onTab?(event.modifierFlags.contains(.shift))
-            return
-        }
-        // Up on the field's first line or Down on its last opens the target's menu, as on a pop-up
-        // button. Within the text the arrows move the caret.
-        if event.type == .keyDown, [125, 126].contains(event.keyCode),
-           event.modifierFlags.isDisjoint(with: [.command, .control, .option, .shift]),
-           let text = firstResponder as? NSTextView, !text.hasMarkedText(),
-           text.caretIsOnLine(first: event.keyCode == 126), onMenuKey?() == true {
-            return
+        let composing = (firstResponder as? NSTextView)?.hasMarkedText() == true
+        if event.type == .keyDown, !composing, event.modifierFlags.isDisjoint(with: [.command, .control, .option]) {
+            switch EditorCore.Key(keyCode: event.keyCode, characters: nil) {
+            case .tab?:
+                // The next control rather than the key view loop.
+                onTab?(event.modifierFlags.contains(.shift))
+                return
+            case let arrow? where (arrow == .up || arrow == .down) && !event.modifierFlags.contains(.shift):
+                // On the field's first line or its last, the target's menu, as on a pop-up button.
+                // Within the text the arrows move the caret.
+                if let text = firstResponder as? NSTextView, text.caretIsOnLine(first: arrow == .up), onMenuKey?() == true { return }
+            default:
+                break
+            }
         }
         super.sendEvent(event)
     }
@@ -630,13 +631,14 @@ private extension NSTextView {
     /// Whether the caret is on the text's first line as laid out, or with `first` false its last.
     func caretIsOnLine(first: Bool) -> Bool {
         let length = (string as NSString).length
-        guard length > 0, let layout = layoutManager else { return true }
+        guard length > 0, let layout = layoutManager, let container = textContainer else { return true }
         let caret = selectedRange().location
-        if caret >= length, layout.extraLineFragmentTextContainer != nil { return !first }
-        let all = layout.glyphRange(forCharacterRange: NSRange(location: 0, length: length), actualCharacterRange: nil)
-        var line = NSRange()
-        layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: min(caret, length - 1)), effectiveRange: &line)
-        return first ? line.location <= all.location : NSMaxRange(line) >= NSMaxRange(all)
+        let line = caret >= length && layout.extraLineFragmentTextContainer != nil
+            ? layout.extraLineFragmentRect
+            : layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: min(caret, length - 1)), effectiveRange: nil)
+        layout.ensureLayout(for: container)
+        let used = layout.usedRect(for: container)
+        return first ? line.minY <= used.minY : line.maxY >= used.maxY
     }
 }
 

@@ -15,7 +15,7 @@ final class LiveInk {
     private var surfaces: [Surface] = []
     /// The surfaces taking presses: the active Space's when the chord went down.
     private var inking: [Surface] = []
-    private var chord: ModifierChord? { didSet { syncEscape() } }
+    private var chord: ModifierChord?
     private var observers: [(NotificationCenter, Any)] = []
     /// Runs out the pointer field's delay after the chord goes down.
     private var fieldTimer: Timer?
@@ -48,16 +48,16 @@ final class LiveInk {
     /// The × that dismisses the answer, shown while the pointer is over its note.
     private var dismissButton: LiveDismissButton?
     /// The answer's actions, under its reply while it is on the screen.
-    private var actionsPanel: LiveAnswerActions? { didSet { syncEscape() } }
+    private var actionsPanel: LiveAnswerActions?
     private var pointerWatch: [Any] = []
     private var replyWatch: NSObjectProtocol?
-    private var focusRun: FocusRun? { didSet { syncEscape() } }
+    private var focusRun: FocusRun?
     /// The packet for the ink the note is open on, captured when it opened, so its text can move
     /// the note clear of the window's text and the ask need not capture again.
     private var prepared: (ink: Set<Mark.ID>, packet: Task<LivePacket, Error>, glance: Task<LivePacket.Glance?, Never>)?
     /// A mark was drawn since the chord went down, so letting it go opens the note.
     private var drewWhileInking = false
-    private var note: LiveNotePopover? { didSet { syncEscape() } }
+    private var note: LiveNotePopover?
     /// Listening to the person while they draw, with speech on. It can span several presses of the
     /// chord, so "this" and "that" drawn in two strokes are one note.
     private var listening: LiveListening?
@@ -81,13 +81,12 @@ final class LiveInk {
     private var answerer: (agent: String, name: String?) = (LiveAnswerLayout.agentName, nil)
     /// Esc, held while `LiveEscape` has a step for it.
     private var escapeKey: HotKey?
-    private var lastEscape: TimeInterval = 0
     /// The note's target picked last, which the next note starts on.
     private var lastTarget: LiveNotePopover.Target = .responder
     /// The target the open note started on, for `SendContext`.
     private var noteOffered: LiveNotePopover.Target?
     /// The asks since the screen was last cleared, and each mark's part in them.
-    private var asks = LiveAsks() { didSet { syncEscape() } }
+    private var asks = LiveAsks()
     /// An answer's steps still to show, each a mark and its label, and the window they go on. One is
     /// on the screen, and a click on it shows the next, while `stepClicks` listens.
     private var steps: [[Mark]] = []
@@ -95,7 +94,7 @@ final class LiveInk {
     /// What each step's mark points at, and where the mark was then, so a click on the thing counts
     /// as well as one on the mark, wherever its window has moved it since.
     private var stepTargets: [Mark.ID: (target: CGRect, at: CGPoint)] = [:]
-    private var stepClicks: Any? { didSet { syncEscape() } }
+    private var stepClicks: Any?
     /// The picture the responder's conversation has, and the ids of the text lines sent with it, so a
     /// follow-up about the same window, showing the same text, sends no picture and only the lines
     /// near its ink not sent yet.
@@ -159,8 +158,11 @@ final class LiveInk {
     init(mayInk: @escaping () -> Bool) {
         self.mayInk = mayInk
         windows.onGone = { [weak self] ids in self?.forget(ids) }
-        windows.onShownChanged = { [weak self] in self?.syncEscape() }
         windows.drawnExtent = { [weak self] mark in self.flatMap { Self.drawnExtent(of: mark, sizes: $0.answerSizes) } }
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 0) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.holdEscape() }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
     }
 
     func setOn(_ on: Bool) {
@@ -249,10 +251,6 @@ final class LiveInk {
     func standAside() {
         closeNote()
         stopListening()
-        // They use Esc. The screen is theirs by the next turn, when `syncEscape` finds it so, and gives
-        // Esc back to live ink once they are gone.
-        escapeKey = nil
-        DispatchQueue.main.async { [weak self] in self?.syncEscape() }
         guard isInking else { return }
         stopInking(because: "the stack or the annotator is up")
     }
@@ -574,7 +572,7 @@ final class LiveInk {
             self.note = nil
             self.lastTarget = target
             self.handing = panel
-            let session: AgentDestination? = if case .session(let destination) = target { destination } else { nil }
+            let session = target.session
             let note = panel.flatMap { panel in panel.shownPlace.map { (place: $0, tag: panel.tagFrame) } }
             if case .failure = self.ask(words, sendingTo: session, from: note) { self.letGoOfNote() }
         }
@@ -999,7 +997,6 @@ final class LiveInk {
         panel.onDraft = { [weak self] words in _ = self?.asks.reduce(.drafted(words, reply: replyID)) }
         panel.onPoint = { [weak self] action in self?.point(at: action) }
         panel.onEscape = { [weak self] in self?.escape() }
-        panel.onTyping = { [weak self] in self?.syncEscape() }
         actionsPanel = panel
     }
 
@@ -1078,8 +1075,7 @@ final class LiveInk {
     /// The visible part of the screen `frame` is on, without the menu bar and the Dock, in global
     /// top-left points.
     private static func visibleScreen(around frame: CGRect) -> CGRect? {
-        let centre = CGPoint(x: frame.midX, y: StateReport.primaryHeight - frame.midY)
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(centre) }) ?? NSScreen.main else { return nil }
+        guard let screen = StateReport.screen(at: CGPoint(x: frame.midX, y: frame.midY)) ?? NSScreen.main else { return nil }
         return StateReport.flipped(screen.visibleFrame)
     }
 
@@ -1534,13 +1530,13 @@ final class LiveInk {
         guard !ids.isEmpty else { return }
         asideOnScreen += screenMarks.filter { ids.contains($0.id) }
         for surface in surfaces { surface.marks.removeAll { ids.contains($0.id) } }
-        windows.setAside(ids, true)
+        windows.setAside(ids)
         showMarks()
     }
 
     /// Shows set-aside marks again, where their content is now (`LiveAsks.Effect.restore`).
     private func bringBack(_ ids: Set<Mark.ID>) {
-        windows.setAside(ids, false)
+        windows.bringBack(ids)
         let back = asideOnScreen.filter { ids.contains($0.id) }
         asideOnScreen.removeAll { ids.contains($0.id) }
         if !back.isEmpty {
@@ -1570,7 +1566,11 @@ final class LiveInk {
     // MARK: Esc
 
     private var escapeSnapshot: LiveEscape.Snapshot {
-        let staying = windows.shownIDs.union(screenMarks.map(\.id)).filter { !asks.isFinishing($0) }
+        /// Whether a mark that shows and is not leaving passes `test`.
+        func shows(_ test: (Mark.ID) -> Bool) -> Bool {
+            func staying(_ id: Mark.ID) -> Bool { !asks.isFinishing(id) && test(id) }
+            return windows.containsShown(where: staying) || surfaces.contains { $0.marks.contains { staying($0.id) } }
+        }
         return LiveEscape.Snapshot(
             isOn: isOn,
             screenIsFree: mayInk(),
@@ -1578,38 +1578,23 @@ final class LiveInk {
             replyFieldOpen: actionsPanel?.isTyping == true,
             askCanBeCancelled: asks.canBeCancelled(sendsWait: Settings.shared.data.ui.sendGraceSeconds > 0),
             tourRunning: focusRun != nil || stepClicks != nil,
-            answerShown: !asks.isUnderWay && staying.contains { asks.isAnswer($0) },
-            marksShown: !staying.isEmpty)
+            answerShown: !asks.isUnderWay && shows(asks.isAnswer),
+            marksShown: shows { _ in true })
     }
 
     /// Holds Esc exactly while `LiveEscape` has a step for it, so with nothing to back out of it is the
-    /// frontmost app's. Called after each change to what the snapshot reads: the properties that hold
-    /// it, every `showMarks`, and the screen given back.
-    private func syncEscape() {
-        if LiveEscape.next(escapeSnapshot) != nil {
-            // Once the key's handler has returned, since letting go of the key inside it unregisters it.
-            if escapeKey == nil {
-                escapeKey = HotKey(keyCode: LiveEscape.keyCode, modifiers: 0, action: {
-                    DispatchQueue.main.async { [weak self] in self?.escape() }
-                })
-            }
-            return
-        }
-        escapeKey = nil
+    /// frontmost app's. The main run loop asks before each wait, so the key follows every change to
+    /// what the snapshot reads, whatever made it.
+    private func holdEscape() {
+        let wanted = LiveEscape.next(escapeSnapshot) != nil
+        guard wanted != (escapeKey != nil) else { return }
+        escapeKey = wanted ? HotKey(keyCode: LiveEscape.keyCode, modifiers: 0, action: { [weak self] in self?.escape() }) : nil
     }
 
-    /// The stack and the annotator are gone, so a step they held back can have Esc again.
-    func screenGivenBack() {
-        syncEscape()
-    }
-
-    /// Esc: the first step that applies, one per press. The hotkey, the note and the Reply field all
-    /// come here, so a press that reaches two of them runs one step.
+    /// Esc: the first step that applies, one per press. The hotkey takes the press while it is held;
+    /// the note and the Reply field come here for a press before it is.
     func escape() {
-        let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastEscape > 0.05 else { return }
-        guard let step = LiveEscape.next(escapeSnapshot) else { return syncEscape() }
-        lastEscape = now
+        guard let step = LiveEscape.next(escapeSnapshot) else { return }
         Log.write("[live-ink] esc \(step.rawValue)")
         switch step {
         case .discardNote:
@@ -1626,7 +1611,6 @@ final class LiveInk {
         case .clearInk:
             clear()
         }
-        syncEscape()
     }
 
     /// Stops the ask under way: the sent note and any reply leave, the follow-up from a button puts its
@@ -1709,14 +1693,15 @@ final class LiveInk {
         }
         // A press that moves is drawing, not tapping.
         if let first = points.first, let last = points.last, hypot(last.x - first.x, last.y - first.y) > 4 { hover(at: nil) }
-        let markStyle = Settings.shared.data.ui.markStyle
-        let longest = longestLine(for: points)
+        let ui = Settings.shared.data.ui
+        let longest = longestLine(for: points, ui: ui)
+        let markStyle = ui.markStyle
         inking.forEach { $0.overlay.showPen(points, longest: longest, markStyle: markStyle) }
     }
 
     private func strokeEnded(_ points: [CGPoint], on surface: Surface) {
         let before = newInk.count
-        take(InkHand.trailing(points, length: longestLine(for: points)), on: surface, among: inking)
+        take(InkHand.trailing(points, length: longestLine(for: points, ui: Settings.shared.data.ui)), on: surface, among: inking)
         strokeBegan = nil
         strokeScreenDiagonal = nil
         if newInk.count > before, let extent = newInk.last?.shapeExtent { prefetch(at: CGPoint(x: extent.midX, y: extent.midY)) }
@@ -1905,7 +1890,6 @@ final class LiveInk {
         } else {
             stopWatchingPointer()
         }
-        syncEscape()
     }
 
     /// Inking stops, since its surfaces are on the Space just left.
@@ -1968,16 +1952,15 @@ final class LiveInk {
 
     /// The diagonal of the screen holding `point`, in points.
     private static func screenDiagonal(at point: CGPoint) -> CGFloat {
-        let frames = StateReport.screenFrames
-        let screen = frames.first { $0.contains(point) } ?? frames.first ?? .zero
+        guard let screen = (StateReport.screen(at: point) ?? NSScreen.screens.first)?.frame else { return 0 }
         return hypot(screen.width, screen.height)
     }
 
     /// How much line the pen keeps of a stroke: `ui.inkLengthDiagonals` diagonals of the screen it began on, so a
     /// loop can go round as much of a large screen as of a small one.
-    private func longestLine(for points: [CGPoint]) -> CGFloat {
+    private func longestLine(for points: [CGPoint], ui: UITweaks) -> CGFloat {
         let diagonal = strokeScreenDiagonal ?? points.first.map(Self.screenDiagonal(at:)) ?? 0
-        return Settings.shared.data.ui.inkLengthDiagonals * diagonal
+        return ui.inkLengthDiagonals * diagonal
     }
 
     private static func display(of screen: NSScreen) -> CGDirectDisplayID? {

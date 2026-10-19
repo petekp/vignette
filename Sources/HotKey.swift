@@ -6,13 +6,15 @@ import Foundation
 @MainActor
 final class HotKey {
     private var ref: EventHotKeyRef?
-    private var handler: EventHandlerRef?
     private let action: () -> Void
     private let hold: (() -> Void)?
     private let holdSeconds: TimeInterval
-    /// Tells this key's events from another `HotKey`'s: every handler hears every hotkey's events.
+    /// Tells this key's events from another `HotKey`'s.
     private let id: UInt32
     private static var lastID: UInt32 = 0
+    /// Every key there is, by its id, for the one handler that hears every hotkey's events.
+    private static var keys: [UInt32: WeakKey] = [:]
+    private static var handler: EventHandlerRef?
     private var holdTimer: Timer?
     private var isDown = false
     /// `RegisterEventHotKey`'s answer. It is noErr for a combination macOS or another app already
@@ -26,28 +28,34 @@ final class HotKey {
         self.holdSeconds = holdSeconds
         Self.lastID += 1
         id = Self.lastID
+        Self.installHandler()
+        Self.keys[id] = WeakKey(key: self)
+        let hotKeyID = EventHotKeyID(signature: Identity.hotKeySignature, id: id)
+        status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref)
+    }
+
+    /// The one handler for every `HotKey`, installed with the first and kept for the app's life.
+    private static func installHandler() {
+        guard handler == nil else { return }
         var specs = [
             EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
             EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
         ]
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         // Carbon delivers these on the main run loop, like the rest of AppKit's event handling.
-        InstallEventHandler(GetApplicationEventTarget(), { _, event, userData in
-            guard let userData else { return noErr }
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
             var fired = EventHotKeyID()
             GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
                               MemoryLayout<EventHotKeyID>.size, nil, &fired)
             let pressed = GetEventKind(event) == UInt32(kEventHotKeyPressed)
             return MainActor.assumeIsolated {
-                let hotKey = Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue()
-                guard fired.signature == Identity.hotKeySignature, fired.id == hotKey.id else { return OSStatus(eventNotHandledErr) }
-                if pressed { hotKey.pressed() } else { hotKey.released() }
+                guard fired.signature == Identity.hotKeySignature, let key = HotKey.keys[fired.id]?.key else { return OSStatus(eventNotHandledErr) }
+                if pressed { key.pressed() } else { key.released() }
                 return noErr
             }
-        }, 2, &specs, selfPtr, &handler)
-        let hotKeyID = EventHotKeyID(signature: Identity.hotKeySignature, id: id)
-        status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref)
+        }, 2, &specs, nil, &handler)
     }
+
+    private struct WeakKey { weak var key: HotKey? }
 
     private func pressed() {
         // A held key can deliver the press again (auto-repeat); only the first counts until the release.
@@ -66,10 +74,10 @@ final class HotKey {
         holdTimer?.invalidate()
     }
 
-    // Isolated so `ref`/`handler` (non-Sendable Carbon pointers) can be read without hopping actors.
+    // Isolated so `ref` (a non-Sendable Carbon pointer) can be read without hopping actors.
     isolated deinit {
         holdTimer?.invalidate()
         if let ref { UnregisterEventHotKey(ref) }
-        if let handler { RemoveEventHandler(handler) }
+        Self.keys[id] = nil
     }
 }
