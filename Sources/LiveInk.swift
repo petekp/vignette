@@ -599,10 +599,10 @@ final class LiveInk {
         note = nil
     }
 
-    /// ⌘⌫ in the note: the note goes, with what was said for it and the ink drawn for it. Ink an
+    /// ⌘⌫ or Esc in the note: the note goes, with what was said for it and the ink drawn for it. Ink an
     /// earlier note kept stays.
     private func discardNote() {
-        note = nil
+        closeNote()
         stopListening()
         let before = marks.count
         for case .remove(let ids) in asks.reduce(.noteDiscarded) { remove(ids) }
@@ -1609,9 +1609,8 @@ final class LiveInk {
         lastEscape = now
         Log.write("[live-ink] esc \(step.rawValue)")
         switch step {
-        case .closeNote:
-            closeNote()
-            stopListening()
+        case .discardNote:
+            discardNote()
         case .closeReplyField:
             actionsPanel?.closeField()
         case .cancelAsk:

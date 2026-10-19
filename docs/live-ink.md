@@ -149,8 +149,8 @@ The names in brackets are `// MARK:` sections.
   flag off and takes every press, over clear pixels too, as the matte rule in `AGENTS.md` says.
 - Esc backs out of live ink one step per press, the first of these that applies (`LiveEscape.next`,
   a pure function of a snapshot of what is up; `Tests/LiveInkTests.swift`):
-  1. Close the open note: listening stops and the ink drawn for it stays. Or close Reply's field,
-     which keeps its draft.
+  1. Discard the open note, as ⌘⌫ does: listening stops and the ink drawn for it goes. Ink an earlier
+     note kept stays. Or close Reply's field, which keeps its draft.
   2. Stop the ask under way (`LiveInk.cancelAsk`). The sent note and any reply leave, and the ink is
      as it was before the ask (`LiveAsks.Event.cancelled`): ink that was new when the ask began is
      new again. A follow-up from a button puts the earlier answer back as it was, with no failure sentence, even
@@ -274,10 +274,10 @@ The names in brackets are `// MARK:` sections.
   (`letGoOfKeys`), because AppKit counts Vignette as active while the field has them. Under the words
   is its target: the agent's logo and the project, on a button that opens the list of targets, as
   Down does. Return asks about the ink drawn since the last ask, or, with none, about the
-  ink asked about last. ⌘⌫ cancels the note: it closes, and the ink drawn for it goes
+  ink asked about last. ⌘⌫ and Esc cancel the note: it closes, and the ink drawn for it goes
   (`LiveAsks.noteInk`). That ink is the ink since the chord went down with no note open, so a press
-  while the note is open adds to that note's ink. Ink an earlier note kept stays. Esc and a click
-  elsewhere close the note and keep the ink (the Esc rule below). ⌘⌫ is the text field's
+  while the note is open adds to that note's ink. Ink an earlier note kept stays. A click elsewhere
+  closes the note and keeps the ink. ⌘⌫ is the text field's
   delete-the-line key, and the note handles its command (`deleteToBeginningOfLine:`). Its target starts on the one picked last, else the
   responder, and lists the sessions Send lists after it. Return settles the note into the look of
   the conversation over 0.18 s (`NoteContent.settle`): the target's button loses its background and

@@ -375,7 +375,7 @@ final class LiveInkTests: XCTestCase {
     func testEscBacksOutOneStepAtATimeInOrder() {
         var state = everything()
         let steps: [(LiveEscape.Step, WritableKeyPath<LiveEscape.Snapshot, Bool>)] = [
-            (.closeNote, \.noteOpen), (.closeReplyField, \.replyFieldOpen), (.cancelAsk, \.askCanBeCancelled),
+            (.discardNote, \.noteOpen), (.closeReplyField, \.replyFieldOpen), (.cancelAsk, \.askCanBeCancelled),
             (.endTour, \.tourRunning), (.closeAnswer, \.answerShown), (.clearInk, \.marksShown),
         ]
         for (step, field) in steps {

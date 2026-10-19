@@ -8,8 +8,9 @@ enum LiveEscape {
     static let keyCode: UInt32 = 53
 
     enum Step: String, Equatable {
-        /// The note closes and listening stops. The ink drawn for it stays.
-        case closeNote = "close-note"
+        /// The note closes, listening stops, and the ink drawn for it goes, as ⌘⌫ does. Ink an earlier
+        /// note kept stays.
+        case discardNote = "discard-note"
         /// Reply's field closes and keeps what was typed.
         case closeReplyField = "close-reply-field"
         /// The ask under way is stopped, and the ink can be asked about again.
@@ -41,7 +42,7 @@ enum LiveEscape {
 
     static func next(_ state: Snapshot) -> Step? {
         guard state.isOn, state.screenIsFree else { return nil }
-        if state.noteOpen { return .closeNote }
+        if state.noteOpen { return .discardNote }
         if state.replyFieldOpen { return .closeReplyField }
         if state.askCanBeCancelled { return .cancelAsk }
         if state.tourRunning { return .endTour }
