@@ -209,7 +209,7 @@ struct LiveAsks: Equatable {
             buttonPick = before
             return .refused(refusal, effects: [])
         }
-        return .refused(refusal, effects: restored)
+        return .refused(refusal, effects: [restored])
     }
 
     // MARK: Events
@@ -287,9 +287,10 @@ struct LiveAsks: Equatable {
         case showReply
         /// Lay out the answer and draw it, then send `answered`.
         case drawAnswer
-        /// The answer is back as it was before its button was picked. Draw `reply` again, saying
-        /// `reason` in its header when there is one, and send `replyRedrawn`.
-        case restore(reply: Mark.ID, reason: String?)
+        /// The answer is back as it was before its button was picked. Show its set-aside marks `aside`
+        /// again, then draw `reply` again, saying `reason` in its header when there is one, and send
+        /// `replyRedrawn`.
+        case restore(reply: Mark.ID, reason: String?, aside: Set<Mark.ID>)
         /// Say `reason` in a reply hung from the ink.
         case say(String)
         /// Say `reason` in `reply`'s row, in place of its words, and send `replyRedrawn`.
@@ -304,8 +305,6 @@ struct LiveAsks: Equatable {
         /// Let go of the steps, the focus and the answer's buttons, and hide these marks where they are.
         /// The ask has already taken their part as the answer's.
         case setAside(Set<Mark.ID>)
-        /// Show these set-aside marks again, before a `restore`.
-        case bringBack(Set<Mark.ID>)
         /// These marks are leaving: show them going, and send `finished` once they have.
         case finish(Set<Mark.ID>, LiveMarksLayer.Finish)
     }
@@ -385,7 +384,7 @@ struct LiveAsks: Equatable {
             guard let current = ask, isUnderWay else { break }
             if current.toSession { withdrawn.insert(current.id) }
             take(.asked, from: current.fresh)
-            if let restored = restore(saying: nil, shown: shown) { return restored }
+            if let restored = restore(saying: nil, shown: shown) { return [restored] }
             ask = nil
             return removeAnswer(keeping: nil)
         case .answerClosed:
@@ -446,7 +445,7 @@ struct LiveAsks: Equatable {
     /// The answer a button was picked under comes back, or else the ask fails, saying why in the
     /// conversation's row when it is on the screen, and else in a reply of its own.
     private mutating func fail(saying reason: String, shown: Set<Mark.ID>) -> [Effect] {
-        if let restored = restore(saying: reason, shown: shown) { return restored }
+        if let restored = restore(saying: reason, shown: shown) { return [restored] }
         ask?.phase = .failed
         ask?.reason = reason
         if let reply = ask?.say?.id, shown.contains(reply) {
@@ -457,7 +456,7 @@ struct LiveAsks: Equatable {
 
     /// The answer a button was picked under, while the ask that followed still hangs from its reply
     /// and that reply is among `shown`, comes back with its buttons, and typed words wait in Reply.
-    private mutating func restore(saying reason: String?, shown: Set<Mark.ID>) -> [Effect]? {
+    private mutating func restore(saying reason: String?, shown: Set<Mark.ID>) -> Effect? {
         guard let buttonPick, let reply = buttonPick.answer.say?.id, ask?.say?.id == reply, shown.contains(reply) else { return nil }
         var answer = buttonPick.answer
         answer.reason = reason
@@ -465,7 +464,7 @@ struct LiveAsks: Equatable {
         ask = answer
         self.buttonPick = nil
         add(.answer, to: buttonPick.aside)
-        return (buttonPick.aside.isEmpty ? [] : [.bringBack(buttonPick.aside)]) + [.restore(reply: reply, reason: reason)]
+        return .restore(reply: reply, reason: reason, aside: buttonPick.aside)
     }
 
     private mutating func finish(_ ids: Set<Mark.ID>, _ how: LiveMarksLayer.Finish) -> [Effect] {

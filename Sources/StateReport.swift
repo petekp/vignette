@@ -19,6 +19,12 @@ struct StateReport {
 
     static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
 
+    /// Every screen's frame, in global top-left points.
+    static var screenFrames: [CGRect] {
+        let height = primaryHeight
+        return NSScreen.screens.map { fromTopLeft($0.frame, primaryHeight: height) }
+    }
+
     /// `rect` between global top-left points and AppKit's screen coordinates, either way.
     static func flipped(_ rect: CGRect) -> CGRect { fromTopLeft(rect, primaryHeight: primaryHeight) }
 

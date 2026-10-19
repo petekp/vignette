@@ -343,7 +343,7 @@ final class LiveAsksTests: XCTestCase {
         _ = reduce(&a, .arrived(.packetCame, for: follow))
 
         XCTAssertEqual(reduce(&a, .arrived(.failed(reason: "Claude stopped.", shown: [mark.id, reply.id]), for: follow)),
-                       [.restore(reply: reply.id, reason: "Claude stopped.")])
+                       [.restore(reply: reply.id, reason: "Claude stopped.", aside: [])])
         var noticed = reply
         noticed.notice = "Claude stopped."
         _ = reduce(&a, .replyRedrawn(noticed))
@@ -361,7 +361,7 @@ final class LiveAsksTests: XCTestCase {
         let answered = action.ask
         XCTAssertEqual(action.begin(among: [reply], following: A.Following(reply: reply, pick: .action("Fix it"), words: "Fix it"),
                                     shift: { _ in nil }),
-                       .refused(.noInk, effects: [.restore(reply: reply.id, reason: noInk)]), "an ask refused before it began puts it back too")
+                       .refused(.noInk, effects: [.restore(reply: reply.id, reason: noInk, aside: [])]), "an ask refused before it began puts it back too")
         XCTAssertEqual(action.ask?.id, answered?.id)
         XCTAssertEqual(action.ask?.reason, noInk)
         XCTAssertEqual(action.ask?.draft, "", "an action's words are not typed words")
@@ -370,7 +370,7 @@ final class LiveAsksTests: XCTestCase {
         answer(&typed, on: [mark], reply: reply)
         XCTAssertEqual(typed.begin(among: [reply], following: A.Following(reply: reply, pick: .reply, words: "and this?"),
                                    shift: { _ in nil }),
-                       .refused(.noInk, effects: [.restore(reply: reply.id, reason: noInk)]))
+                       .refused(.noInk, effects: [.restore(reply: reply.id, reason: noInk, aside: [])]))
         XCTAssertEqual(typed.ask?.draft, "and this?", "typed words wait in Reply again")
 
         var gone = A()
@@ -393,7 +393,7 @@ final class LiveAsksTests: XCTestCase {
         _ = reduce(&a, .streamed(reply))
         var failing = a
         XCTAssertEqual(reduce(&failing, .arrived(.failed(reason: "Claude stopped.", shown: [mark.id, reply.id]), for: follow)),
-                       [.bringBack([loop.id]), .restore(reply: reply.id, reason: "Claude stopped.")],
+                       [.restore(reply: reply.id, reason: "Claude stopped.", aside: [loop.id])],
                        "a failure while the reply streams puts the earlier answer back")
         XCTAssertEqual(failing.answerMarks, [reply.id, loop.id])
         XCTAssertEqual(reduce(&a, .arrived(.answerCame, for: follow)), [.removeAnswer([loop.id]), .drawAnswer],
@@ -756,7 +756,7 @@ final class LiveAsksTests: XCTestCase {
         quoting.quote = "and this?"
         let follow = begin(&a, on: [mark, quoting, loop], following: quoting, picked: .reply, words: "and this?")
         _ = reduce(&a, .arrived(.packetCame, for: follow))
-        XCTAssertEqual(reduce(&a, .cancelled(shown: [mark.id, reply.id, loop.id])), [.restore(reply: reply.id, reason: nil)])
+        XCTAssertEqual(reduce(&a, .cancelled(shown: [mark.id, reply.id, loop.id])), [.restore(reply: reply.id, reason: nil, aside: [])])
         var expected = earlier
         expected.draft = "and this?"
         XCTAssertEqual(a.ask, expected, "the earlier answer is back as it was, with the typed words waiting in Reply")
@@ -775,7 +775,7 @@ final class LiveAsksTests: XCTestCase {
         var streaming = reply
         streaming.geometry = .text(Mark.Text(origin: .zero, text: "It's a", wrap: nil, size: 14))
         XCTAssertTrue(streamed(&a, streaming, for: follow))
-        XCTAssertEqual(reduce(&a, .cancelled(shown: [mark.id, reply.id])), [.bringBack([loop.id]), .restore(reply: reply.id, reason: nil)])
+        XCTAssertEqual(reduce(&a, .cancelled(shown: [mark.id, reply.id])), [.restore(reply: reply.id, reason: nil, aside: [loop.id])])
         var expected = earlier
         expected.draft = "and this?"
         XCTAssertEqual(a.ask, expected, "the earlier answer is back with its first words, not the ones that streamed")
@@ -868,18 +868,18 @@ final class LiveAsksTests: XCTestCase {
                     XCTAssertTrue(answeredAsks.contains(after.ask?.id ?? 0), fail("an answer that was drawn is what comes back"))
                     XCTAssertTrue(nothingToPutBack(), fail("an answer is put back once"))
                 }
-                func checkBroughtBack(_ effects: [A.Effect]) {
+                func checkBroughtBack(_ brought: Set<Mark.ID>) {
                     let aside = env.asideIDs
                     if !aside.isEmpty { broughtBack += 1 }
-                    XCTAssertEqual(effects, aside.isEmpty ? [] : [.bringBack(aside)],
-                                   fail("an answer put back is all that is answered, with everything set aside"))
+                    XCTAssertEqual(effects.count, 1, fail("an answer put back is all that is answered"))
+                    XCTAssertEqual(brought, aside, fail("with everything set aside"))
                     XCTAssertTrue(after.answerMarks.isSuperset(of: aside), fail("which is the answer's again"))
                 }
                 func checkFailure(_ reason: String) {
                     guard !effects.isEmpty else { return }
                     switch effects.last {
-                    case .restore(let reply, let said):
-                        checkBroughtBack(Array(effects.dropLast()))
+                    case .restore(let reply, let said, let brought):
+                        checkBroughtBack(brought)
                         checkRestore(reply, saying: said, reason)
                     case .notice(let reply, let said):
                         XCTAssertEqual(reply, before.ask?.say?.id, fail("a failure says why in the conversation"))
@@ -915,7 +915,7 @@ final class LiveAsksTests: XCTestCase {
                             XCTAssertEqual(refusal, .busy, fail("an ask with ink is refused only as busy"))
                             XCTAssertTrue(before.isUnderWay, fail("and only while one is under way"))
                         }
-                        if case .restore(let reply, let said)? = effects.first {
+                        if case .restore(let reply, let said, _)? = effects.first {
                             XCTAssertEqual(effects.count, 1, fail("a refusal puts back the answer and does nothing else"))
                             checkRestore(reply, saying: said, refusal.rawValue)
                         } else {
@@ -1018,10 +1018,10 @@ final class LiveAsksTests: XCTestCase {
                     if !before.isUnderWay {
                         XCTAssertEqual(effects, [], fail("Esc stops nothing with no ask under way"))
                         XCTAssertEqual(after, before, fail("and changes nothing"))
-                    } else if case .restore(_, let said)? = effects.last {
+                    } else if case .restore(_, let said, let brought)? = effects.last {
                         stopped += 1
                         XCTAssertNil(said, fail("an answer Esc puts back says nothing"))
-                        checkBroughtBack(Array(effects.dropLast()))
+                        checkBroughtBack(brought)
                         XCTAssertEqual(after.ask?.phase, .answered, fail("the answer put back is an answer"))
                     } else {
                         XCTAssertEqual(effects, [.removeAnswer(before.answerMarks.union(env.asideIDs))],
@@ -1318,8 +1318,7 @@ private final class LiveAsksEnvironment {
         }
         observe(self, Sent(step: .begun(begun, shown: given, following: reply != nil), before: before, after: asks, effects: effects))
         guard case .began(let id, _, _, _) = begun else {
-            for case .bringBack(let ids) in effects { bringBack(ids) }
-            for case .restore(let id, let reason) in effects { restoreAnswer(id, saying: reason) }
+            run(effects)
             return false
         }
         for case .removeAnswer(let gone) in effects { removeAnswer(gone) }
@@ -1439,15 +1438,16 @@ private final class LiveAsksEnvironment {
     }
 
     private func failed(_ reason: String, for id: LiveAsks.Ask.ID) {
-        failed(send(.arrived(.failed(reason: reason, shown: shown), for: id)))
+        run(send(.arrived(.failed(reason: reason, shown: shown), for: id)))
     }
 
-    private func failed(_ effects: [LiveAsks.Effect]) {
+    private func run(_ effects: [LiveAsks.Effect]) {
         for effect in effects {
             switch effect {
             case .removeAnswer(let gone): removeAnswer(gone)
-            case .bringBack(let ids): bringBack(ids)
-            case .restore(let reply, let reason): restoreAnswer(reply, saying: reason)
+            case .restore(let reply, let reason, let aside):
+                if !aside.isEmpty { bringBack(aside) }
+                restoreAnswer(reply, saying: reason)
             case .say(let reason): say(reason)
             case .notice(let reply, let reason): notice(reason, in: reply)
             default: break
@@ -1506,14 +1506,7 @@ private final class LiveAsksEnvironment {
     // MARK: Exits
 
     private func cancel() {
-        for effect in send(.cancelled(shown: shown)) {
-            switch effect {
-            case .removeAnswer(let gone): removeAnswer(gone)
-            case .bringBack(let ids): bringBack(ids)
-            case .restore(let reply, let reason): restoreAnswer(reply, saying: reason)
-            default: break
-            }
-        }
+        run(send(.cancelled(shown: shown)))
     }
 
     private func dismissAnswer() {
@@ -1594,14 +1587,13 @@ private final class LiveAsksEnvironment {
         case .share(let about): "share \(list(about))"
         case .showReply: "showReply"
         case .drawAnswer: "drawAnswer"
-        case .restore(let reply, _): "restore \(name(reply))"
+        case .restore(let reply, _, let aside): "restore \(name(reply)) aside=\(list(aside))"
         case .say: "say"
         case .notice(let reply, _): "notice \(name(reply))"
         case .remove(let ids): "remove \(list(ids))"
         case .withdraw: "withdraw"
         case .removeAnswer(let gone): "removeAnswer \(list(gone))"
         case .setAside(let ids): "setAside \(list(ids))"
-        case .bringBack(let ids): "bringBack \(list(ids))"
         case .finish(let ids, let how): "finish \(list(ids)) \(how)"
         }
     }

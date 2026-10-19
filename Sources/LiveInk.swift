@@ -66,8 +66,10 @@ final class LiveInk {
     /// The final words of the last listening, while the note holds them as they were said, and when
     /// that listening began, which their times count from.
     private var spoken: (words: [SpokenWord], began: Date)?
-    /// When the stroke under way began, and the diagonal of the screen it began on.
-    private var strokeBegan: (at: Date, screenDiagonal: CGFloat)?
+    /// When the stroke under way began.
+    private var strokeBegan: Date?
+    /// The diagonal of the screen the stroke under way began on, which sets how much line it keeps.
+    private var strokeScreenDiagonal: CGFloat?
     /// When each of the person's strokes was drawn, so a spoken note can say which "this" is which.
     private var strokeTimes: [Mark.ID: (began: Date, ended: Date)] = [:]
     /// The note asked in, on screen until the conversation has taken its place, or until it fades
@@ -429,7 +431,7 @@ final class LiveInk {
     /// ink. With the stroke's `points`, it also records the hand that drew it, and the mark eases onto
     /// its shape from them.
     private func stroked(_ mark: Mark, by points: [CGPoint]? = nil) {
-        strokeTimes[mark.id] = (strokeBegan?.at ?? Date(), Date())
+        strokeTimes[mark.id] = (strokeBegan ?? Date(), Date())
         _ = asks.reduce(.drew(mark.id))
         if let points, let hand = InkHand(raw: points, mark: mark, feel: Settings.shared.data.ui.inkHandFeel) {
             hands[mark.id] = hand
@@ -667,8 +669,7 @@ final class LiveInk {
         let point: CGPoint
         switch asks.begin(among: shownMarks, following: following, toSession: session != nil, shift: windows.shift(of:)) {
         case .refused(let refusal, let effects):
-            for case .bringBack(let ids) in effects { bringBack(ids) }
-            for case .restore(let reply, let reason) in effects { restoreAnswer(reply, saying: reason) }
+            run(effects)
             return .failure(LiveResponder.Failure(reason: refusal.rawValue, detail: refusal.detail))
         case .began(let began, let asked, let centre, let effects):
             id = began
@@ -794,8 +795,9 @@ final class LiveInk {
                 if effects == [.withdraw] {
                     Log.write("[live-ink] note withdrawn request=\(request)")
                     DispatchQueue.main.async { self.unsendNote?(request) }
+                    return self.letGoOfNoteOfEndedAsk()
                 }
-                guard !effects.isEmpty, effects != [.withdraw] else { return self.letGoOfNoteOfEndedAsk() }
+                guard !effects.isEmpty else { return self.letGoOfNoteOfEndedAsk() }
                 let leaving = effects.lazy.compactMap { if case .finish(_, let how) = $0 { how } else { nil } }.first
                 self.letGoOfNote(as: leaving)
                 for case .finish(let ids, let how) in effects { self.finish(ids, how) }
@@ -859,9 +861,6 @@ final class LiveInk {
 
     /// Takes the answer off the screen with the ink it was about, and the person's note.
     func dismissAnswer() { endAnswer(by: .dismissed) }
-
-    /// Takes the answer off the screen and leaves the person's ink.
-    private func closeAnswer() { endAnswer(by: .answerClosed) }
 
     private func endAnswer(by event: LiveAsks.Event) {
         hideDismissButton()
@@ -1046,7 +1045,7 @@ final class LiveInk {
         guard let about = asks.ask?.about else { return }
         let near = shownMarks.filter { about.contains($0.id) }.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
         guard !near.isNull else { showMarks(); return }
-        let screen = Self.screenFrames.first { $0.intersects(near) } ?? near
+        let screen = StateReport.screenFrames.first { $0.intersects(near) } ?? near
         let scene = LiveAnswerLayout.Scene(room: screen.insetBy(dx: 8, dy: 8), ink: ink, text: [], screen: Self.visibleScreen(around: near))
         var reply = LiveAnswerLayout.reply("", quote: nil, from: near, scene: scene, sizes: answerSizes)
         reply.agentName = answerer.agent
@@ -1067,7 +1066,7 @@ final class LiveInk {
 
     /// The window at `frame` with its text at `text`, both in global top-left points.
     private func scene(frame: CGRect, page: CGRect?, text: [CGRect]) -> LiveAnswerLayout.Scene {
-        let screen = Self.screenFrames.first { $0.intersects(frame) } ?? frame
+        let screen = StateReport.screenFrames.first { $0.intersects(frame) } ?? frame
         // A browser's page, not its tabs and toolbar: notes on those read as being about the browser.
         let room = (page ?? frame).intersection(screen).insetBy(dx: 8, dy: 8)
         let ink = self.ink
@@ -1408,15 +1407,20 @@ final class LiveInk {
         failed(failure, as: effects)
     }
 
-    /// Runs what the ask answered to its failure: the answer a button was picked under put back, or
-    /// the answer taken off and a note saying why.
     private func failed(_ failure: LiveResponder.Failure, as effects: [LiveAsks.Effect]) {
         Log.write("[live-ink] error ask \(failure.detail)")
+        run(effects)
+    }
+
+    /// Runs what the ask answered to its ending early: refused, failed or stopped. The answer a button
+    /// was picked under is put back, or the answer is taken off and a note says why.
+    private func run(_ effects: [LiveAsks.Effect]) {
         for effect in effects {
             switch effect {
             case .removeAnswer(let gone): removeAnswer(gone)
-            case .bringBack(let ids): bringBack(ids)
-            case .restore(let reply, let reason): restoreAnswer(reply, saying: reason)
+            case .restore(let reply, let reason, let aside):
+                if !aside.isEmpty { bringBack(aside) }
+                restoreAnswer(reply, saying: reason)
             case .say(let reason): say(reason)
             case .notice(let reply, let reason): notice(reason, in: reply)
             default: break
@@ -1534,7 +1538,7 @@ final class LiveInk {
         showMarks()
     }
 
-    /// Shows set-aside marks again, where their content is now (`LiveAsks.Effect.bringBack`).
+    /// Shows set-aside marks again, where their content is now (`LiveAsks.Effect.restore`).
     private func bringBack(_ ids: Set<Mark.ID>) {
         windows.setAside(ids, false)
         let back = asideOnScreen.filter { ids.contains($0.id) }
@@ -1566,7 +1570,7 @@ final class LiveInk {
     // MARK: Esc
 
     private var escapeSnapshot: LiveEscape.Snapshot {
-        let staying = shownMarks.filter { !asks.isFinishing($0.id) }
+        let staying = windows.shownIDs.union(screenMarks.map(\.id)).filter { !asks.isFinishing($0) }
         return LiveEscape.Snapshot(
             isOn: isOn,
             screenIsFree: mayInk(),
@@ -1574,7 +1578,7 @@ final class LiveInk {
             replyFieldOpen: actionsPanel?.isTyping == true,
             askCanBeCancelled: asks.canBeCancelled(sendsWait: Settings.shared.data.ui.sendGraceSeconds > 0),
             tourRunning: focusRun != nil || stepClicks != nil,
-            answerShown: !asks.isUnderWay && staying.contains { asks.isAnswer($0.id) },
+            answerShown: !asks.isUnderWay && staying.contains { asks.isAnswer($0) },
             marksShown: !staying.isEmpty)
     }
 
@@ -1618,7 +1622,7 @@ final class LiveInk {
             stopSteps()
             letGoOfFocus(because: "escape")
         case .closeAnswer:
-            closeAnswer()
+            endAnswer(by: .answerClosed)
         case .clearInk:
             clear()
         }
@@ -1632,14 +1636,7 @@ final class LiveInk {
         if asks.ask?.toSession != true { responder.cancel() }
         let effects = asks.reduce(.cancelled(shown: shownIDs))
         letGoOfNote()
-        for effect in effects {
-            switch effect {
-            case .removeAnswer(let gone): removeAnswer(gone)
-            case .bringBack(let ids): bringBack(ids)
-            case .restore(let reply, let reason): restoreAnswer(reply, saying: reason)
-            default: break
-            }
-        }
+        run(effects)
         showMarks()
     }
 
@@ -1706,18 +1703,22 @@ final class LiveInk {
 
     private func strokeMoved(_ points: [CGPoint]) {
         if !points.isEmpty { showFieldForChord() }
-        if let first = points.first, strokeBegan == nil { strokeBegan = (Date(), Self.screenDiagonal(at: first)) }
+        if let first = points.first, strokeBegan == nil {
+            strokeBegan = Date()
+            strokeScreenDiagonal = Self.screenDiagonal(at: first)
+        }
         // A press that moves is drawing, not tapping.
         if let first = points.first, let last = points.last, hypot(last.x - first.x, last.y - first.y) > 4 { hover(at: nil) }
         let markStyle = Settings.shared.data.ui.markStyle
-        let longest = Self.longestLine(for: points, began: strokeBegan)
+        let longest = longestLine(for: points)
         inking.forEach { $0.overlay.showPen(points, longest: longest, markStyle: markStyle) }
     }
 
     private func strokeEnded(_ points: [CGPoint], on surface: Surface) {
         let before = newInk.count
-        take(InkHand.trailing(points, length: Self.longestLine(for: points, began: strokeBegan)), on: surface, among: inking)
+        take(InkHand.trailing(points, length: longestLine(for: points)), on: surface, among: inking)
         strokeBegan = nil
+        strokeScreenDiagonal = nil
         if newInk.count > before, let extent = newInk.last?.shapeExtent { prefetch(at: CGPoint(x: extent.midX, y: extent.midY)) }
         // The mark the preview was on has gone, or a stroke was drawn; the next move shows it again.
         hover(at: nil)
@@ -1941,7 +1942,7 @@ final class LiveInk {
     /// A mark on no window that a smaller screen left with no part on any screen moves the least way
     /// back onto the screen of the first surface it is on, as macOS moves a window.
     private func bringOntoScreens() {
-        let frames = Self.screenFrames
+        let frames = StateReport.screenFrames
         var moves: [Mark.ID: CGVector] = [:]
         for surface in surfaces {
             for mark in surface.marks where moves[mark.id] == nil {
@@ -1960,25 +1961,22 @@ final class LiveInk {
     /// where it is the larger.
     private static func offset(moving rect: CGRect, into frame: CGRect) -> CGVector {
         func shift(_ min: CGFloat, _ max: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
-            if min < low || max - min > high - low { return low - min }
-            return max > high ? high - max : 0
+            Mark.shiftInside(from: min - low, to: max - low, within: high - low) ?? low - min
         }
         return CGVector(dx: shift(rect.minX, rect.maxX, frame.minX, frame.maxX), dy: shift(rect.minY, rect.maxY, frame.minY, frame.maxY))
     }
 
-    /// Every screen's frame, in global top-left points.
-    private static var screenFrames: [CGRect] { NSScreen.screens.map { StateReport.flipped($0.frame) } }
-
     /// The diagonal of the screen holding `point`, in points.
     private static func screenDiagonal(at point: CGPoint) -> CGFloat {
-        let screen = screenFrames.first { $0.contains(point) } ?? screenFrames.first ?? .zero
+        let frames = StateReport.screenFrames
+        let screen = frames.first { $0.contains(point) } ?? frames.first ?? .zero
         return hypot(screen.width, screen.height)
     }
 
     /// How much line the pen keeps of a stroke: `ui.inkLengthDiagonals` diagonals of the screen it began on, so a
     /// loop can go round as much of a large screen as of a small one.
-    private static func longestLine(for points: [CGPoint], began: (at: Date, screenDiagonal: CGFloat)?) -> CGFloat {
-        let diagonal = began?.screenDiagonal ?? points.first.map(screenDiagonal(at:)) ?? 0
+    private func longestLine(for points: [CGPoint]) -> CGFloat {
+        let diagonal = strokeScreenDiagonal ?? points.first.map(Self.screenDiagonal(at:)) ?? 0
         return Settings.shared.data.ui.inkLengthDiagonals * diagonal
     }
 

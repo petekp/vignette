@@ -289,6 +289,11 @@ final class LiveWindows {
         windows.values.lazy.compactMap { $0.pins.first { $0.mark.id == id }?.shift }.first
     }
 
+    /// The marks that show: on a window on the screen and not set aside.
+    var shownIDs: Set<Mark.ID> {
+        Set(windows.values.filter(\.onScreen).flatMap { $0.pins.filter(\.shows).map(\.mark.id) })
+    }
+
     func isShown(_ id: Mark.ID) -> Bool {
         windows.values.contains { window in window.onScreen && window.pins.contains { $0.mark.id == id && $0.shows } }
     }
@@ -733,7 +738,7 @@ final class LiveWindows {
         }
         // Nothing past the window's screen shows, so the overlay stops there.
         let centre = CGPoint(x: window.frame.midX, y: window.frame.midY)
-        if let screen = NSScreen.screens.map({ StateReport.flipped($0.frame) }).first(where: { $0.contains(centre) }) {
+        if let screen = StateReport.screenFrames.first(where: { $0.contains(centre) }) {
             extent = extent.intersection(screen.union(window.frame))
         }
         window.overlay.place(over: window.frame, extent: extent)
@@ -1022,7 +1027,7 @@ final class LiveWindows {
             Log.write("[live-ink] window=\(id) closed marks=\(window.pins.count)")
         }
         if !gone.isEmpty { onGone?(gone) }
-        let shown = Set(windows.values.filter(\.onScreen).flatMap { $0.pins.filter(\.shows).map(\.mark.id) })
+        let shown = shownIDs
         if shown != lastShown {
             lastShown = shown
             onShownChanged?()

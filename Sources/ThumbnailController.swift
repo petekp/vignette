@@ -390,9 +390,9 @@ final class ThumbnailController: NSObject {
     /// Called after each change to what `holdsScreen` reads: `visible`, `model.isStack`, and every
     /// event the run handles.
     private func noteScreen() {
-        let holds = holdsScreen
-        defer { heldScreen = holds }
-        if heldScreen, !holds { onGivesBackScreen?() }
+        let gaveBack = heldScreen && !holdsScreen
+        heldScreen = holdsScreen
+        if gaveBack { onGivesBackScreen?() }
     }
 
     /// The card with the keyboard focus ring, while the stack is up.

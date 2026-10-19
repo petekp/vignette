@@ -477,7 +477,7 @@ The names in brackets are `// MARK:` sections.
   (`LiveAsks.Effect.setAside`, `LiveWindows.setAside`): they are hidden where they are, and a mark on a
   window keeps following its content. They go once the next answer is drawn, and the × finishes them
   with the rest. A follow-up that fails or is stopped before then puts the answer back as it was
-  (`LiveAsks.Effect.bringBack` and `restore`, `LiveInk.restoreAnswer`): the set-aside marks show again,
+  (`LiveAsks.Effect.restore`, `LiveInk.restoreAnswer`): the set-aside marks show again,
   the buttons come back, typed words wait in Reply again, and the reply's header gives the reason
   where it quoted them (`Mark.notice`), wrapped so all of it shows. A failure after the next answer
   is drawn is a note beside the ink, as for any ask. Closing the field lets go of the keys with
