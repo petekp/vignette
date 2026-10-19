@@ -278,7 +278,8 @@ The names in brackets are `// MARK:` sections.
   (`LiveAsks.noteInk`). That ink is the ink since the chord went down with no note open, so a press
   while the note is open adds to that note's ink. Ink an earlier note kept stays. A click elsewhere
   closes the note and keeps the ink. ⌘⌫ deletes the typed line, as in any text field. Its target starts on the one picked last, else the
-  responder, and lists the sessions Send lists after it. Return settles the note into the look of
+  responder, and lists the sessions Send lists after it. Tab picks the next target in that list and
+  Shift+Tab the one before, round from either end, without opening it. Down opens it. Return settles the note into the look of
   the conversation over 0.18 s (`NoteContent.settle`): the target's button loses its background and
   chevron, its label greys, the ↩ fades and the rim light starts. The conversation, the reply's
   popover, then comes up over it at the same size with the same pixels, and the note goes three

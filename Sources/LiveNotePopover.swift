@@ -193,7 +193,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         responder.state = target == .responder ? .on : .off
         responder.target = self
         menu.addItem(responder)
-        let shown = sessions.isEmpty ? [] : DestinationChoice.menu(sessions, target: currentSession ?? sessions[0])
+        let shown = menuSessions
         if !shown.isEmpty {
             menu.addItem(.separator())
             menu.addItem(.sectionHeader(title: "Send to a session"))
@@ -224,6 +224,23 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         window.makeFirstResponder(content.field)
         // Making the field first responder selects its words; the caret goes back to their end.
         content.field.currentEditor()?.selectedRange = NSRange(location: (content.field.stringValue as NSString).length, length: 0)
+    }
+
+    /// The sessions the menu lists after the responder, in its order.
+    private var menuSessions: [AgentDestination] {
+        sessions.isEmpty ? [] : DestinationChoice.menu(sessions, target: currentSession ?? sessions[0])
+    }
+
+    /// Tab, or Shift+Tab with `backward`: the target after this one in the menu's order, or the one
+    /// before, round from either end.
+    private func step(backward: Bool) {
+        let order: [Target] = [.responder] + menuSessions.map { .session($0) }
+        guard order.count > 1 else { return }
+        let index = order.firstIndex { candidate in
+            if case .session(let session) = candidate { return session.id == currentSession?.id }
+            return currentSession == nil
+        } ?? 0
+        pick(order[(index + (backward ? order.count - 1 : 1)) % order.count])
     }
 
     private var currentSession: AgentDestination? {
@@ -393,6 +410,12 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
             return true
         case #selector(NSResponder.moveDown(_:)):
             showTargets()
+            return true
+        case #selector(NSResponder.insertTab(_:)):
+            step(backward: false)
+            return true
+        case #selector(NSResponder.insertBacktab(_:)):
+            step(backward: true)
             return true
         default:
             return false
