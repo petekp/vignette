@@ -377,11 +377,10 @@ final class ReplyPopover {
     /// A popover's window can be key, and macOS makes it key when a panel of Vignette's that held the
     /// keys, such as the reply field's, closes, though Vignette had let go of them: the keys would stay
     /// with Vignette, and the glass turns light. Nothing in the reply takes keys, so it lets go at
-    /// once. The app the person was in never stopped being the active one, so letting go hands the
-    /// keys back to it, and resigning redraws the glass.
+    /// once, and resigning redraws the glass.
     private static func letGoOfKeys(_ window: NSWindow) {
         Log.write("[live-ink] reply let go of the keys")
-        if NSApp.isActive { NSApp.deactivate() }
+        FocusReturn.shared.restore(reason: "live ink reply")
         window.resignKey()
     }
 

@@ -275,7 +275,15 @@ The names in brackets are `// MARK:` sections.
 - Letting go of the chord after drawing opens `LiveNotePopover`, a macOS popover hung from the new
   ink. It follows the system's appearance. Its window is a non-activating panel, so its field takes
   the keys while the app the person was in stays in front. Closing it gives the keys back at once
-  (`letGoOfKeys`), because AppKit counts Vignette as active while the field has them. Under the words
+  (`letGoOfKeys`), because AppKit counts Vignette as active while the field has them. A press with
+  Control held makes Vignette the frontmost app even on a non-activating panel (measured on macOS 15:
+  the chord's press activated it, and the same press without modifiers did not), so every press of the
+  chord does. The keys go back through `FocusReturn`, as the annotator's do: to the Vignette window
+  that was key when the chord went down (`sessionStarting`), or else to the app the person was in:
+  activated when Vignette is frontmost, and by Vignette letting go when that app still is, since
+  activating a frontmost app leaves the keys where they are.
+  The note does it when it closes, and inking that opens no note does it when the chord is let go
+  (`[focus] live ink …: returned to …`). Under the words
   is its target: the agent's logo and the project, on a button that opens the list of targets, as
   Down does. Return asks about the ink drawn since the last ask, or, with none, about the
   ink asked about last. Esc cancels the note: it closes, and the ink drawn for it goes
@@ -484,9 +492,8 @@ The names in brackets are `// MARK:` sections.
   (`LiveAsks.Effect.restore`, `LiveInk.restoreAnswer`): the set-aside marks show again,
   the buttons come back, typed words wait in Reply again, and the reply's header gives the reason
   where it quoted them (`Mark.notice`), wrapped so all of it shows. A failure after the next answer
-  is drawn is a note beside the ink, as for any ask. Closing the field lets go of the keys with
-  `NSApp.deactivate()`: the app the person was in never stopped being the active one, so activating
-  it does nothing. A popover's window can be key, and macOS makes the reply's key when a panel that
+  is drawn is a note beside the ink, as for any ask. Closing the field gives the keys back through
+  `FocusReturn`, as the note does. A popover's window can be key, and macOS makes the reply's key when a panel that
   held Vignette's keys closes, even after Vignette let go; the keys would stay with Vignette and the
   glass turn light, so the reply lets go at once (`ReplyPopover.letGoOfKeys`, `[live-ink] reply let
   go of the keys`). The marks draw themselves on when the answer is

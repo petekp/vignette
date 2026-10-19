@@ -38,8 +38,8 @@ final class FocusReturn {
         ownWindow = window
     }
 
-    /// Goes back to the Vignette window the session started in, or else activates the previous app
-    /// if Vignette is currently the active one.
+    /// Goes back to the Vignette window the session started in, or else gives the keys back to the
+    /// previous app if Vignette is currently the active one.
     func restore(reason: String) {
         if let window = ownWindow, window.isVisible {
             window.makeKeyAndOrderFront(nil)
@@ -47,7 +47,9 @@ final class FocusReturn {
             return
         }
         guard NSApp.isActive, let app = previousApp, !app.isTerminated else { return }
-        app.activate()
+        // A non-activating panel takes the keys while that app stays frontmost, and activating a
+        // frontmost app leaves the keys with Vignette; letting go hands them back.
+        if NSWorkspace.shared.frontmostApplication == app { NSApp.deactivate() } else { app.activate() }
         Log.write("[focus] \(reason): returned to \(app.localizedName ?? "?")")
     }
 }

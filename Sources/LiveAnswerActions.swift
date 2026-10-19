@@ -267,10 +267,9 @@ final class LiveAnswerActions: NSPanel, NSTextFieldDelegate {
         Log.write("[live-ink] reply field closed draft=\(field.stringValue.count)")
     }
 
-    /// Gives the keys back to the app the person was in, which never stopped being the active one, so
-    /// activating it would do nothing. A click elsewhere has let go already.
+    /// Gives the keys back to where the person was. A click elsewhere has let go already.
     private func letGoOfKeys() {
-        if NSApp.isActive { NSApp.deactivate() }
+        FocusReturn.shared.restore(reason: "live ink reply field")
     }
 
     private func show(field shown: Bool) {

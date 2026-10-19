@@ -1650,6 +1650,7 @@ final class LiveInk {
 
     private func startInking() {
         isInking = true
+        FocusReturn.shared.sessionStarting()
         letGoOfFocus(because: "ink")
         drewWhileInking = false
         // Pressed again before the button came up: the stroke now ends without ending the inking.
@@ -1718,6 +1719,8 @@ final class LiveInk {
         drewWhileInking = false
         // What is said goes into the note; with no note there is nowhere for it to go.
         if note != nil { listening?.released() } else { stopListening() }
+        // The chord's press, with Control held, made Vignette frontmost.
+        if note == nil { FocusReturn.shared.restore(reason: "live ink inking") }
     }
 
     /// The chord was let go during a stroke. The stroke keeps going to its release, and inking ends

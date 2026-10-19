@@ -11,8 +11,9 @@ import AppKit
 /// list.
 ///
 /// A popover's window is a non-activating panel, so its field takes the keys while the app the person
-/// was in stays frontmost. AppKit still counts Vignette as active while the field has them, so closing
-/// hands them back at once (`letGoOfKeys`) rather than when AppKit's fade ends.
+/// was in stays frontmost. AppKit still counts Vignette as active while the field has them, and a press
+/// with Control held, as the chord's is, makes Vignette frontmost, so closing hands them back through
+/// `FocusReturn` at once (`letGoOfKeys`) rather than when AppKit's fade ends.
 @MainActor
 final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     enum Target: Equatable {
@@ -56,9 +57,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private(set) var menuOpen = false
     /// Listening to the person, which the empty note says.
     private var listening = false
-    /// Whether Vignette was the active app before the note took the keys, so closing gives them back
-    /// only to another app.
-    private let wasActive: Bool
     private var watching: [NSObjectProtocol] = []
 
     static let askPlaceholder = "Ask about this"
@@ -76,7 +74,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         self.target = target
         ownPick = .remembered(target.session)
         host = Host(at: place.at)
-        wasActive = NSApp.isActive
         super.init()
         let controller = NSViewController()
         controller.view = content
@@ -386,9 +383,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.light.place(content.bounds, start: RimLight.start(of: body, hungFrom: place.at, edge: place.edge), dark: dark)
     }
 
-    /// Gives the keys back to the app the person was in, now rather than when the window goes.
+    /// Gives the keys back to where the person was, now rather than when the window goes.
     private func letGoOfKeys() {
-        if !wasActive, NSApp.isActive { NSApp.deactivate() }
+        FocusReturn.shared.restore(reason: "live ink note")
         if let window = content.window, window.isKeyWindow { window.resignKey() }
     }
 
