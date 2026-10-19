@@ -536,10 +536,16 @@ enum NoteLayout {
     }
 }
 
+/// The note's field, blended with the popover's glass as a label is. AppKit leaves an editable field
+/// out of vibrancy, so its placeholder drew as a flat grey that turned muddy over a light window.
+private final class VibrantField: NSTextField {
+    override var allowsVibrancy: Bool { true }
+}
+
 /// What the note's popover shows: the words, then the target and the key that asks.
 @MainActor
 private final class NoteContent: NSView {
-    let field = NSTextField()
+    let field = VibrantField()
     let session = SessionButton()
     private let key = NSTextField(labelWithString: "↩")
     let light = RimLight()
