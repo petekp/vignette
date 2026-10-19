@@ -1047,7 +1047,7 @@ final class LiveInk {
         guard let about = asks.ask?.about else { return }
         let near = shownMarks.filter { about.contains($0.id) }.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
         guard !near.isNull else { showMarks(); return }
-        let screen = activeSurfaces().map(\.overlay.globalFrame).first { $0.intersects(near) } ?? near
+        let screen = Self.screenFrames.first { $0.intersects(near) } ?? near
         let scene = LiveAnswerLayout.Scene(room: screen.insetBy(dx: 8, dy: 8), ink: ink, text: [], screen: Self.visibleScreen(around: near))
         var reply = LiveAnswerLayout.reply("", quote: nil, from: near, scene: scene, sizes: answerSizes)
         reply.agentName = answerer.agent
@@ -1068,7 +1068,7 @@ final class LiveInk {
 
     /// The window at `frame` with its text at `text`, both in global top-left points.
     private func scene(frame: CGRect, page: CGRect?, text: [CGRect]) -> LiveAnswerLayout.Scene {
-        let screen = activeSurfaces().map(\.overlay.globalFrame).first { $0.intersects(frame) } ?? frame
+        let screen = Self.screenFrames.first { $0.intersects(frame) } ?? frame
         // A browser's page, not its tabs and toolbar: notes on those read as being about the browser.
         let room = (page ?? frame).intersection(screen).insetBy(dx: 8, dy: 8)
         let ink = self.ink
@@ -1540,9 +1540,11 @@ final class LiveInk {
         windows.setAside(ids, false)
         let back = asideOnScreen.filter { ids.contains($0.id) }
         asideOnScreen.removeAll { ids.contains($0.id) }
-        let active = activeSurfaces()
-        let markStyle = Settings.shared.data.ui.markStyle
-        for mark in back { addToScreen(mark, among: active, markStyle: markStyle) }
+        if !back.isEmpty {
+            let active = activeSurfaces()
+            let markStyle = Settings.shared.data.ui.markStyle
+            for mark in back { addToScreen(mark, among: active, markStyle: markStyle) }
+        }
         showMarks()
     }
 
@@ -1932,9 +1934,41 @@ final class LiveInk {
         // A mark that reaches onto a screen still here stays, with its part in the asks.
         let gone = dropped.subtracting(marks.map(\.id))
         if !gone.isEmpty { _ = asks.reduce(.removed(gone)) }
+        bringOntoScreens()
         closeEmpty(fade: 0)
         showMarks()
     }
+
+    /// A mark on no window that a smaller screen left with no part on any screen moves the least way
+    /// back onto the screen of the first surface it is on, as macOS moves a window.
+    private func bringOntoScreens() {
+        let frames = Self.screenFrames
+        var moves: [Mark.ID: CGVector] = [:]
+        for surface in surfaces {
+            for mark in surface.marks where moves[mark.id] == nil {
+                guard let extent = Self.drawnExtent(of: mark, sizes: answerSizes), !frames.contains(where: { $0.intersects(extent) }) else { continue }
+                moves[mark.id] = Self.offset(moving: extent, into: surface.overlay.globalFrame)
+            }
+        }
+        guard !moves.isEmpty else { return }
+        for surface in surfaces {
+            surface.marks = surface.marks.map { mark in moves[mark.id].map { LiveWindows.translated(mark, by: $0) } ?? mark }
+        }
+        Log.write("[live-ink] moved \(moves.count) onto the screen")
+    }
+
+    /// The least offset that puts `rect` inside `frame`, or its top-left corner at `frame`'s on a side
+    /// where it is the larger.
+    private static func offset(moving rect: CGRect, into frame: CGRect) -> CGVector {
+        func shift(_ min: CGFloat, _ max: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
+            if min < low || max - min > high - low { return low - min }
+            return max > high ? high - max : 0
+        }
+        return CGVector(dx: shift(rect.minX, rect.maxX, frame.minX, frame.maxX), dy: shift(rect.minY, rect.maxY, frame.minY, frame.maxY))
+    }
+
+    /// Every screen's frame, in global top-left points.
+    private static var screenFrames: [CGRect] { NSScreen.screens.map { StateReport.flipped($0.frame) } }
 
     private static func display(of screen: NSScreen) -> CGDirectDisplayID? {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
