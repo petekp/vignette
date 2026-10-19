@@ -690,7 +690,7 @@ final class LiveInk {
         showMarks()
         let started = Date()
         let ui = Settings.shared.data.ui
-        Log.write("[live-ink] asking new=\(fresh.count) words=\(words.count)")
+        Log.write("[live-ink] asking new=\(fresh.count) words=\(trimmed.split(whereSeparator: \.isWhitespace).count)")
         let early = prepared.flatMap { $0.ink == Set(person.map(\.id)) ? $0.packet : nil }
         prepared = nil
         Task { @MainActor [weak self] in
