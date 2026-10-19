@@ -375,7 +375,7 @@ struct UITweaks: Codable, Equatable {
     var inkHandStartWidth = 0.38     // its width where the pen lands, a share of the full width
     var inkHandEndTaper = 26.0       // points a loop narrows over where the pen lifts
     var inkHandEndWidth = 0.3
-    var inkLength = 1800.0           // points of line the pen keeps; past it, the line's start recedes
+    var inkLengthDiagonals = 2.0     // diagonals of its screen of line the pen keeps; past it, the line's start recedes
     var inkSettle = 0.3              // seconds of the spring a drawn loop or arrow settles onto its shape on
     var inkSettleBounce = 0.25       // 0 to 0.9: how far it swings past its shape before it is still
     var inkSettleStagger = 0.08      // seconds after the line's end lets go that its start does

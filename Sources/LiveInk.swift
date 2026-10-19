@@ -66,8 +66,8 @@ final class LiveInk {
     /// The final words of the last listening, while the note holds them as they were said, and when
     /// that listening began, which their times count from.
     private var spoken: (words: [SpokenWord], began: Date)?
-    /// When the stroke under way began.
-    private var strokeBegan: Date?
+    /// When the stroke under way began, and the diagonal of the screen it began on.
+    private var strokeBegan: (at: Date, screenDiagonal: CGFloat)?
     /// When each of the person's strokes was drawn, so a spoken note can say which "this" is which.
     private var strokeTimes: [Mark.ID: (began: Date, ended: Date)] = [:]
     /// The note asked in, on screen until the conversation has taken its place, or until it fades
@@ -429,7 +429,7 @@ final class LiveInk {
     /// ink. With the stroke's `points`, it also records the hand that drew it, and the mark eases onto
     /// its shape from them.
     private func stroked(_ mark: Mark, by points: [CGPoint]? = nil) {
-        strokeTimes[mark.id] = (strokeBegan ?? Date(), Date())
+        strokeTimes[mark.id] = (strokeBegan?.at ?? Date(), Date())
         _ = asks.reduce(.drew(mark.id))
         if let points, let hand = InkHand(raw: points, mark: mark, feel: Settings.shared.data.ui.inkHandFeel) {
             hands[mark.id] = hand
@@ -1708,16 +1708,17 @@ final class LiveInk {
 
     private func strokeMoved(_ points: [CGPoint]) {
         if !points.isEmpty { showFieldForChord() }
-        if !points.isEmpty, strokeBegan == nil { strokeBegan = Date() }
+        if let first = points.first, strokeBegan == nil { strokeBegan = (Date(), Self.screenDiagonal(at: first)) }
         // A press that moves is drawing, not tapping.
         if let first = points.first, let last = points.last, hypot(last.x - first.x, last.y - first.y) > 4 { hover(at: nil) }
         let markStyle = Settings.shared.data.ui.markStyle
-        inking.forEach { $0.overlay.showPen(points, markStyle: markStyle) }
+        let longest = Self.longestLine(for: points, began: strokeBegan)
+        inking.forEach { $0.overlay.showPen(points, longest: longest, markStyle: markStyle) }
     }
 
     private func strokeEnded(_ points: [CGPoint], on surface: Surface) {
         let before = newInk.count
-        take(InkHand.trailing(points, length: Settings.shared.data.ui.inkLength), on: surface, among: inking)
+        take(InkHand.trailing(points, length: Self.longestLine(for: points, began: strokeBegan)), on: surface, among: inking)
         strokeBegan = nil
         if newInk.count > before, let extent = newInk.last?.shapeExtent { prefetch(at: CGPoint(x: extent.midX, y: extent.midY)) }
         // The mark the preview was on has gone, or a stroke was drawn; the next move shows it again.
@@ -1969,6 +1970,19 @@ final class LiveInk {
 
     /// Every screen's frame, in global top-left points.
     private static var screenFrames: [CGRect] { NSScreen.screens.map { StateReport.flipped($0.frame) } }
+
+    /// The diagonal of the screen holding `point`, in points.
+    private static func screenDiagonal(at point: CGPoint) -> CGFloat {
+        let screen = screenFrames.first { $0.contains(point) } ?? screenFrames.first ?? .zero
+        return hypot(screen.width, screen.height)
+    }
+
+    /// How much line the pen keeps of a stroke: `ui.inkLengthDiagonals` diagonals of the screen it began on, so a
+    /// loop can go round as much of a large screen as of a small one.
+    private static func longestLine(for points: [CGPoint], began: (at: Date, screenDiagonal: CGFloat)?) -> CGFloat {
+        let diagonal = began?.screenDiagonal ?? points.first.map(screenDiagonal(at:)) ?? 0
+        return Settings.shared.data.ui.inkLengthDiagonals * diagonal
+    }
 
     private static func display(of screen: NSScreen) -> CGDirectDisplayID? {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value

@@ -477,9 +477,10 @@ final class InkMarkLayer: CALayer {
     /// What is drawn: the mark, the hand it was given, the hand it is drawn with, which is an even one
     /// when it was given none, and the style its line is laid out in.
     private var shown: (mark: Mark, given: InkHand?, hand: InkHand, markStyle: MarkStyle, inkStyle: MarkStyle)?
-    /// The stroke being drawn, while this is the pen, how many of its points no later event moves, and
-    /// its first point still shown: past `ui.inkLength` the line's start recedes as the pen goes on.
-    private var pen: (stroke: InkHand.Stroke, settled: Int, kept: Int, markStyle: MarkStyle)?
+    /// The stroke being drawn, while this is the pen, how many of its points no later event moves, its
+    /// first point still shown, and how much line it keeps: past that the line's start recedes as the
+    /// pen goes on.
+    private var pen: (stroke: InkHand.Stroke, settled: Int, kept: Int, longest: CGFloat, markStyle: MarkStyle)?
     /// The pen's settled start, laid out once.
     private var settledLine: SettledLine?
     /// The shape: the line and head it is drawn with once it is still.
@@ -569,17 +570,17 @@ final class InkMarkLayer: CALayer {
 
     /// The stroke being drawn, its end at the pen, its first `settled` points where no later event
     /// moves them. It draws at once, in the pointer's own event.
-    func showPen(_ stroke: InkHand.Stroke, settled: Int, markStyle: MarkStyle) {
+    func showPen(_ stroke: InkHand.Stroke, settled: Int, longest: CGFloat, markStyle: MarkStyle) {
         shown = nil
         settle = nil
         // A new stroke starts the layer afresh; one under way only grows it.
         let growing = stroke.points.count > 3 && pen.map { $0.stroke.points.first == stroke.points.first && settled >= $0.settled } ?? false
         if !growing { settledLine = nil }
         let covered = growing ? max(0, (pen?.settled ?? 0) - 8) : 0
-        let kept = InkHand.trailingStart(of: stroke.points, length: Settings.shared.data.ui.inkLength)
+        let kept = InkHand.trailingStart(of: stroke.points, length: longest)
         // A longer line, from the tweaks, brings back points the layer may have shrunk away from.
         let returning = growing && (pen?.kept ?? 0) > kept
-        pen = (stroke, settled, kept, markStyle)
+        pen = (stroke, settled, kept, longest, markStyle)
         lay(stroke, head: [], width: Self.inkStyle(markStyle).strokeWidth, growOnly: growing, from: returning ? kept : covered)
         if kept > 0 { shrink(around: stroke.points[kept...]) }
         if isVisible, let frame = encode(at: CACurrentMediaTime(), time: InkClock.shared.time) {
@@ -672,7 +673,7 @@ final class InkMarkLayer: CALayer {
             layOut(shown.mark, hand: shown.given, markStyle: shown.markStyle)
         } else if let pen {
             settledLine = nil
-            showPen(pen.stroke, settled: pen.settled, markStyle: pen.markStyle)
+            showPen(pen.stroke, settled: pen.settled, longest: pen.longest, markStyle: pen.markStyle)
         }
         built = nil
         needsGel = true

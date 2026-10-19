@@ -108,9 +108,9 @@ final class LiveInkOverlay: NSPanel {
     }
 
     /// The stroke being drawn on any screen, in global top-left points, so one that crosses onto
-    /// this screen shows here too.
-    func showPen(_ points: [CGPoint], markStyle: MarkStyle) {
-        canvas.showPen(points, markStyle: markStyle)
+    /// this screen shows here too. Past `longest` points of line, its start recedes.
+    func showPen(_ points: [CGPoint], longest: CGFloat, markStyle: MarkStyle) {
+        canvas.showPen(points, longest: longest, markStyle: markStyle)
     }
 
     /// Readies the pointer field as the chord goes down, so its picture of the screen is there by the
@@ -200,7 +200,7 @@ final class LiveInkOverlay: NSPanel {
 
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-        func showPen(_ points: [CGPoint], markStyle: MarkStyle) {
+        func showPen(_ points: [CGPoint], longest: CGFloat, markStyle: MarkStyle) {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             defer { CATransaction.commit() }
@@ -209,7 +209,7 @@ final class LiveInkOverlay: NSPanel {
             let stroke = hand.stroke(through: points)
             pen.isHidden = stroke.points.count < 2
             guard stroke.points.count > 1 else { return }
-            pen.showPen(stroke, settled: hand.settled.points.count, markStyle: markStyle)
+            pen.showPen(stroke, settled: hand.settled.points.count, longest: longest, markStyle: markStyle)
         }
 
         override func mouseMoved(with event: NSEvent) {

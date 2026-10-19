@@ -228,8 +228,10 @@ The names in brackets are `// MARK:` sections.
 - The person's marks are ink (`InkMarkLayer`), and so is the stroke being drawn, on every screen it
   crosses. Ink is a filled outline whose width follows the hand: wider where it slowed, read from
   the spacing of the pointer's events before smoothing (`InkHand.stroke`). It tapers where the pen
-  landed and, on a loop, where it lifted. Past `ui.inkLength` the start recedes as the pen goes on,
-  tapering where it now starts, and the mark is made from what is still drawn (`InkHand.trailing`).
+  landed and, on a loop, where it lifted. The pen keeps `ui.inkLengthDiagonals` (2) diagonals of the
+  screen the stroke began on, about 3600 pt on a 1512 by 982 pt screen, so a loop can go round as much
+  of a large screen as of a small one. Past that the start recedes as the pen goes on, tapering where
+  it now starts, and the mark is made from what is still drawn (`InkHand.trailing`).
   The pen's layer then draws only that part of its settled line and shrinks to it. Its edge is
   darker than its middle, it casts a soft shadow, and while it is wet a lighter streak trails the pen. On release the stroke settles onto the
   shape it became on a spring (`InkSettle`), each point keeping its width, so the ellipse or arrow

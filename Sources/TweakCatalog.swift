@@ -302,11 +302,11 @@ enum TweakCatalog {
                 .number("inkHandStartWidth", "Start width", \.inkHandStartWidth, 0...1, step: 0.01, safe: 0...1),
                 .number("inkHandEndTaper", "End taper", \.inkHandEndTaper, 0...80, unit: "pt", safe: 0...500),
                 .number("inkHandEndWidth", "End width", \.inkHandEndWidth, 0...1, step: 0.01, safe: 0...1),
-                .number("inkLength", "Longest line", \.inkLength, 400...4000, step: 50, unit: "pt", safe: 200...100_000),
+                .number("inkLengthDiagonals", "Longest line", \.inkLengthDiagonals, 0.5...5, step: 0.1, unit: "diagonals", safe: 0.1...50),
                 .number("inkSettle", "Settle onto shape", \.inkSettle, 0...1.5, step: 0.05, unit: "s", safe: 0...10),
                 .number("inkSettleBounce", "Settle bounce", \.inkSettleBounce, 0...0.8, step: 0.01, safe: 0...0.9),
                 .number("inkSettleStagger", "Settle stagger", \.inkSettleStagger, 0...0.4, step: 0.01, unit: "s", safe: 0...2),
-            ], caption: { _ in "The line narrows over its first Start taper points to Start width of its width, and a loop over its last End taper points. Past Longest line, the line's start recedes as the pen goes on, and the loop or arrow is made from what is left. When the pen lifts, a loop or an arrow springs from where the hand drew it onto its shape. Settle onto shape is the spring's length and Settle bounce how far it swings past the shape. The line's end lets go first, and its start Settle stagger later." }),
+            ], caption: { _ in "The line narrows over its first Start taper points to Start width of its width, and a loop over its last End taper points. Longest line is measured in diagonals of the screen the line began on. Past it, the line's start recedes as the pen goes on, and the loop or arrow is made from what is left. When the pen lifts, a loop or an arrow springs from where the hand drew it onto its shape. Settle onto shape is the spring's length and Settle bounce how far it swings past the shape. The line's end lets go first, and its start Settle stagger later." }),
         ]),
         TweakSection("Answer light", inkSamples: true, [
             TweakGroup("Glow", [
