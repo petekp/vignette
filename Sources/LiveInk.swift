@@ -583,7 +583,6 @@ final class LiveInk {
             self?.stopListening()
             Log.write("[live-ink] note closed")
         }
-        panel.onDiscard = { [weak self] in self?.discardNote() }
         panel.onEscape = { [weak self] in self?.escape() }
         panel.onTyped = { [weak self] in self?.typedInNote() }
         if let listening {
@@ -599,7 +598,7 @@ final class LiveInk {
         note = nil
     }
 
-    /// ⌘⌫ or Esc in the note: the note goes, with what was said for it and the ink drawn for it. Ink an
+    /// Esc in the note: the note goes, with what was said for it and the ink drawn for it. Ink an
     /// earlier note kept stays.
     private func discardNote() {
         closeNote()

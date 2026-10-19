@@ -149,7 +149,7 @@ The names in brackets are `// MARK:` sections.
   flag off and takes every press, over clear pixels too, as the matte rule in `AGENTS.md` says.
 - Esc backs out of live ink one step per press, the first of these that applies (`LiveEscape.next`,
   a pure function of a snapshot of what is up; `Tests/LiveInkTests.swift`):
-  1. Discard the open note, as ⌘⌫ does: listening stops and the ink drawn for it goes. Ink an earlier
+  1. Discard the open note: listening stops and the ink drawn for it goes. Ink an earlier
      note kept stays. Or close Reply's field, which keeps its draft.
   2. Stop the ask under way (`LiveInk.cancelAsk`). The sent note and any reply leave, and the ink is
      as it was before the ask (`LiveAsks.Event.cancelled`): ink that was new when the ask began is
@@ -274,11 +274,10 @@ The names in brackets are `// MARK:` sections.
   (`letGoOfKeys`), because AppKit counts Vignette as active while the field has them. Under the words
   is its target: the agent's logo and the project, on a button that opens the list of targets, as
   Down does. Return asks about the ink drawn since the last ask, or, with none, about the
-  ink asked about last. ⌘⌫ and Esc cancel the note: it closes, and the ink drawn for it goes
+  ink asked about last. Esc cancels the note: it closes, and the ink drawn for it goes
   (`LiveAsks.noteInk`). That ink is the ink since the chord went down with no note open, so a press
   while the note is open adds to that note's ink. Ink an earlier note kept stays. A click elsewhere
-  closes the note and keeps the ink. ⌘⌫ is the text field's
-  delete-the-line key, and the note handles its command (`deleteToBeginningOfLine:`). Its target starts on the one picked last, else the
+  closes the note and keeps the ink. ⌘⌫ deletes the typed line, as in any text field. Its target starts on the one picked last, else the
   responder, and lists the sessions Send lists after it. Return settles the note into the look of
   the conversation over 0.18 s (`NoteContent.settle`): the target's button loses its background and
   chevron, its label greys, the ↩ fades and the rim light starts. The conversation, the reply's
@@ -309,7 +308,7 @@ The names in brackets are `// MARK:` sections.
   its way to a shortcut never turns the microphone on, and a press of the chord while it listens goes
   on with the same listening, so "this" and "that" drawn in two strokes are one note. The note opens
   on release with what was said so far and fills as the person talks. A key typed in it ends
-  listening and keeps the words; Esc, ⌘⌫, an ask, standing aside and clearing drop them. `ListeningEnd`
+  listening and keeps the words; Esc, an ask, standing aside and clearing drop them. `ListeningEnd`
   decides the end: `liveInkListenUntil` is `release` (0.3 s after the chord is let go) or `pause`
   (the input under `ui.liveInkSpeechQuiet` for `ui.liveInkSpeechPause` after release), and never
   past 60 s. With `liveInkSendWhenQuiet`, the final words are sent as Return sends them. Speech is

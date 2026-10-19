@@ -513,7 +513,7 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertEqual(a.answerMarks, [])
         XCTAssertEqual(a.finishing, [:])
         XCTAssertEqual(a.noteInk, [drawn.id])
-        XCTAssertEqual(reduce(&a, .noteDiscarded), [.remove([drawn.id])], "⌘⌫ still takes back the open note's ink")
+        XCTAssertEqual(reduce(&a, .noteDiscarded), [.remove([drawn.id])], "Esc still takes back the open note's ink")
     }
 
     func testAWindowGoingForgetsOnlyItsMarksAskedAndAnswerRoles() {
@@ -563,7 +563,7 @@ final class LiveAsksTests: XCTestCase {
         _ = reduce(&note, .drew(first.id))
         _ = reduce(&note, .drew(second.id))
         _ = reduce(&note, .removed([first.id]))
-        XCTAssertEqual(reduce(&note, .noteDiscarded), [.remove([second.id])], "⌘⌫ takes back only the note's ink still there")
+        XCTAssertEqual(reduce(&note, .noteDiscarded), [.remove([second.id])], "Esc takes back only the note's ink still there")
 
         var leaving = A()
         answer(&leaving, on: [mark], reply: reply)
@@ -1029,7 +1029,7 @@ final class LiveAsksTests: XCTestCase {
                         XCTAssertNil(after.ask, fail("and ends the ask"))
                     }
                 case .noteDiscarded:
-                    XCTAssertEqual(effects, before.noteInk.isEmpty ? [] : [.remove(before.noteInk)], fail("⌘⌫ takes back the note's ink"))
+                    XCTAssertEqual(effects, before.noteInk.isEmpty ? [] : [.remove(before.noteInk)], fail("Esc takes back the note's ink"))
                     XCTAssertEqual(after.noteInk, [], fail("and the note has no ink left"))
                 case .removed(let ids):
                     XCTAssertEqual(effects, [], fail("a mark taken off answers nothing"))

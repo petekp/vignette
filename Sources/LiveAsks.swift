@@ -61,7 +61,7 @@ struct LiveAsks: Equatable {
         let rawValue: UInt8
         /// Some ask has been about it. The person's marks without it are new, and the next ask is about them.
         static let asked = Roles(rawValue: 1 << 0)
-        /// Drawn for the note: since the chord went down with no note open. ⌘⌫ in the note takes it back.
+        /// Drawn for the note: since the chord went down with no note open. Esc in the note takes it back.
         static let noteInk = Roles(rawValue: 1 << 1)
         /// One of the last answer's marks, or a failure's note: a new ask takes them off the screen.
         static let answer = Roles(rawValue: 1 << 2)
@@ -219,7 +219,7 @@ struct LiveAsks: Equatable {
         case drew(Mark.ID)
         /// The chord went down: with no note open, the note's ink starts over.
         case inkingBegan(noteOpen: Bool)
-        /// ⌘⌫ in the note.
+        /// Esc in the note.
         case noteDiscarded
         /// The marks were taken off the screen: erased, picked, a step or a focus stop done, the
         /// marks of a display unplugged, or anything else that leaves. Each loses its roles and its finish. The ask, and the marks it is about, stay

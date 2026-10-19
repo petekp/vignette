@@ -2,7 +2,7 @@ import AppKit
 
 /// Where the person types what they ask about their live ink: a popover hung from the newest ink,
 /// opened when they let go of the chord after drawing. Return asks, with or without words; a click
-/// anywhere else closes it and keeps the ink; Esc and ⌘⌫ close it and take back the ink it was opened
+/// anywhere else closes it and keeps the ink; Esc closes it and takes back the ink it was opened
 /// for. Once asked, the person's words are drawn as their note in its place (`settle`).
 ///
 /// Under the words, the target: the one picked last, else the responder (`DestinationChoice`
@@ -27,8 +27,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     var onAsk: ((String, Target) -> Void)?
     /// A click elsewhere took the keys.
     var onClose: (() -> Void)?
-    /// ⌘⌫: the person takes back the note and the ink drawn for it.
-    var onDiscard: (() -> Void)?
     /// Esc, when the hotkey did not take it first: live ink decides what it does (`LiveEscape`).
     var onEscape: (() -> Void)?
     /// The person typed in the note, which takes over from what they say.
@@ -392,11 +390,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
             return true
         case #selector(NSResponder.cancelOperation(_:)):
             onEscape?()
-            return true
-        // ⌘⌫ deletes the line in a text field; here it deletes the whole note, ink and all.
-        case #selector(NSResponder.deleteToBeginningOfLine(_:)):
-            dismiss()
-            onDiscard?()
             return true
         case #selector(NSResponder.moveDown(_:)):
             showTargets()

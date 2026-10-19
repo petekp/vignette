@@ -8,7 +8,7 @@ enum LiveEscape {
     static let keyCode: UInt32 = 53
 
     enum Step: String, Equatable {
-        /// The note closes, listening stops, and the ink drawn for it goes, as ⌘⌫ does. Ink an earlier
+        /// The note closes, listening stops, and the ink drawn for it goes. Ink an earlier
         /// note kept stays.
         case discardNote = "discard-note"
         /// Reply's field closes and keeps what was typed.
