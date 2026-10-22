@@ -377,24 +377,34 @@ final class AnnotatorToolbar {
     }
 
     /// The target's menu, under it: the active sessions used last, the target among them with a check
-    /// (`DestinationChoice.menu`). AppKit's own menu, so Space on the focused target opens it as a
+    /// (`DestinationChoice.menu`), then a More Sessions submenu with the rest. AppKit's own menu, so Space on the focused target opens it as a
     /// click does.
     private func showTargetMenu() {
         guard case .send(let target) = model.offer, let frame = targetFrame else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.addItem(.sectionHeader(title: "Send to"))
-        for destination in DestinationChoice.menu(model.destinations, target: target) {
-            let item = NSMenuItem(title: destination.project, action: #selector(TargetMenuActions.pick(_:)), keyEquivalent: "")
-            item.target = targetMenuActions
-            item.representedObject = destination
-            item.image = AgentLogo.menuImage(for: destination.client)
-            item.state = destination.id == target.id ? .on : .off
-            if #available(macOS 14.4, *) { item.subtitle = destination.name } else { item.toolTip = destination.name }
-            menu.addItem(item)
+        let sessions = DestinationChoice.menu(model.destinations, target: target)
+        for destination in sessions.top { menu.addItem(targetItem(destination, target: target)) }
+        if !sessions.more.isEmpty {
+            let more = NSMenuItem(title: "More Sessions", action: nil, keyEquivalent: "")
+            more.submenu = NSMenu()
+            more.submenu?.autoenablesItems = false
+            for destination in sessions.more { more.submenu?.addItem(targetItem(destination, target: target)) }
+            menu.addItem(more)
         }
         let below = hosting.isFlipped ? frame.maxY + 4 : hosting.bounds.height - frame.maxY - 4
         menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting)
+    }
+
+    private func targetItem(_ destination: AgentDestination, target: AgentDestination) -> NSMenuItem {
+        let item = NSMenuItem(title: destination.project, action: #selector(TargetMenuActions.pick(_:)), keyEquivalent: "")
+        item.target = targetMenuActions
+        item.representedObject = destination
+        item.image = AgentLogo.menuImage(for: destination.client)
+        item.state = destination.id == target.id ? .on : .off
+        if #available(macOS 14.4, *) { item.subtitle = destination.name } else { item.toolTip = destination.name }
+        return item
     }
 
     /// Centers the toolbar under `frame`, `gap` points below it. A bar that is already up — one

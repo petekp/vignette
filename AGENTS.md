@@ -827,7 +827,8 @@ screenshot location for such a launch is written with the same variable:
   name in its tooltip. Its width is set rather than left to the text, so it springs with the bar. A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
   made inside it jumped instead of animating. Its menu lists the active sessions used last, five at
-  most, with the target always among them (`DestinationChoice.menu`): a Claude Code session is active while the plugin's monitor runs in it,
+  most, with the target always among them, then a More Sessions submenu with every other active
+  session (`DestinationChoice.menu`, `top` and `more`; live ink's Tab steps through `top` only): a Claude Code session is active while the plugin's monitor runs in it,
   and a Codex thread when it was used in the last day, since nothing says which threads the Codex
   app has open. The target settles once, from the first answer that names a focus (herdr's comes in
   about 60 ms, before the bar is up), or else from the whole list (`Model.answered`). After that it

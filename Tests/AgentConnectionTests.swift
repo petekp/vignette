@@ -389,11 +389,17 @@ final class AgentConnectionTests: XCTestCase {
         }
         let list = [codex("a", hoursAgo: 1), claude("b", hoursAgo: 2), codex("c", hoursAgo: 30),
                     claude("d", hoursAgo: 40), claude("e", hoursAgo: 50), claude("f", hoursAgo: 60), claude("g", hoursAgo: 70)]
-        XCTAssertEqual(DestinationChoice.menu(list, target: list[0], now: now).map(\.id), ["a", "b", "d", "e", "f"],
+        XCTAssertEqual(DestinationChoice.menu(list, target: list[0], now: now).top.map(\.id), ["a", "b", "d", "e", "f"],
                        "a Codex thread from yesterday is left out")
-        XCTAssertEqual(DestinationChoice.menu(list, target: list[6], now: now).map(\.id), ["a", "b", "d", "e", "g"])
-        XCTAssertEqual(DestinationChoice.menu(list, target: list[2], now: now).map(\.id), ["a", "b", "d", "e", "c"],
+        XCTAssertEqual(DestinationChoice.menu(list, target: list[6], now: now).top.map(\.id), ["a", "b", "d", "e", "g"])
+        XCTAssertEqual(DestinationChoice.menu(list, target: list[2], now: now).top.map(\.id), ["a", "b", "d", "e", "c"],
                        "the target is shown even when it is not active")
+        let menu = DestinationChoice.menu(list, target: list[0], now: now)
+        XCTAssertEqual(menu.more.map(\.id), ["g"], "every other active session is in the submenu, in order")
+        XCTAssertEqual(DestinationChoice.menu(list, target: list[6], now: now).more.map(\.id), ["f"],
+                       "a target pushed into the top rows leaves the displaced session in the submenu")
+        XCTAssertTrue(DestinationChoice.menu(Array(list.prefix(2)), target: list[0], now: now).more.isEmpty,
+                      "five active sessions or fewer need no submenu")
     }
 
     /// Send lists the session used last first, and one with no known time after all the others.

@@ -194,19 +194,17 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         responder.state = target == .responder ? .on : .off
         responder.target = self
         menu.addItem(responder)
-        let shown = menuSessions
-        if !shown.isEmpty {
+        let listed = sessions.isEmpty ? nil : DestinationChoice.menu(sessions, target: target.session ?? sessions[0])
+        if let listed {
             menu.addItem(.separator())
             menu.addItem(.sectionHeader(title: "Send to a session"))
-        }
-        for session in shown {
-            let item = NSMenuItem(title: session.project, action: #selector(pickTarget(_:)), keyEquivalent: "")
-            item.image = Agent.logo(for: session.client.rawValue).map(Self.menuSized)
-            if #available(macOS 14.4, *) { item.subtitle = session.name }
-            item.state = target.session?.id == session.id ? .on : .off
-            item.target = self
-            item.representedObject = session.id
-            menu.addItem(item)
+            for session in listed.top { menu.addItem(sessionItem(session)) }
+            if !listed.more.isEmpty {
+                let more = NSMenuItem(title: "More Sessions", action: nil, keyEquivalent: "")
+                more.submenu = NSMenu()
+                for session in listed.more { more.submenu?.addItem(sessionItem(session)) }
+                menu.addItem(more)
+            }
         }
         let button = window.convertToScreen(content.session.convert(content.session.bounds, to: nil))
         let visible = window.screen?.visibleFrame ?? .zero
@@ -227,9 +225,20 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.field.currentEditor()?.selectedRange = NSRange(location: (content.field.stringValue as NSString).length, length: 0)
     }
 
-    /// The sessions the menu lists after the responder, in its order.
+    private func sessionItem(_ session: AgentDestination) -> NSMenuItem {
+        let item = NSMenuItem(title: session.project, action: #selector(pickTarget(_:)), keyEquivalent: "")
+        item.image = Agent.logo(for: session.client.rawValue).map(Self.menuSized)
+        if #available(macOS 14.4, *) { item.subtitle = session.name }
+        item.state = target.session?.id == session.id ? .on : .off
+        item.target = self
+        item.representedObject = session.id
+        return item
+    }
+
+    /// The sessions Tab steps through after the responder, in the menu's order. The submenu's are
+    /// left out: Tab goes through a short list.
     private var menuSessions: [AgentDestination] {
-        sessions.isEmpty ? [] : DestinationChoice.menu(sessions, target: target.session ?? sessions[0])
+        sessions.isEmpty ? [] : DestinationChoice.menu(sessions, target: target.session ?? sessions[0]).top
     }
 
     /// Tab, or Shift+Tab with `backward`: the target after this one in the menu's order, or the one

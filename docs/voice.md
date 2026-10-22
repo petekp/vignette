@@ -112,6 +112,7 @@ The menu bar menu names the switch as the General tab does.
 | macOS's speech recognition prompt (`NSSpeechRecognitionUsageDescription`) | Vignette turns what you say while you draw into words, on this Mac. |
 | The note's target, and its tooltip | Claude ⌄, "Claude answers on the screen." / *project* ⌄, "The session answers here when it's done." |
 | The target's menu | Claude, on the screen; then a "Send to a session" heading and the sessions, each by project with its name under it |
+| The submenu of the other active sessions, in both target menus, once more than five are active | More Sessions |
 
 #### In the conversation's row, or on the ink
 
