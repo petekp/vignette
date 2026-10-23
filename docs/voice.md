@@ -38,14 +38,16 @@ anything works inside.
 
 | State | Headline | Reason |
 | --- | --- | --- |
-| Waiting to send (the line has not gone yet) | Sending to *project* | Button: Don't send |
-| Sending | Sending to *project* | |
-| Sent | Sent to *project* | |
-| Queued: no Codex engine has the thread open | Queued for *project* | Codex reads it when you open this thread. |
-| Not confirmed in time | Check *project* | Codex didn't confirm it. It may still have arrived. |
+| Waiting to send (the line has not gone yet) | Sending to *place* | Button: Don't send |
+| Sending | Sending to *place* | |
+| Sent | Sent to *place* | |
+| Queued: no Codex engine has the thread open | Queued for *place* | Codex reads it when you open this thread. |
+| Not confirmed in time | Check *place* | Codex didn't confirm it. It may still have arrived. |
 | Not sent | Not sent | One of the reasons below |
 | A reply that could not be shown | Reply not shown | You can ask *agent* to send it again. / Vignette couldn't save the reply. The log has details. |
-| A live ink note whose session finished with nothing to show as a result card | Done in *project* | |
+| A live ink note whose session finished with nothing to show as a result card | Done in *place* | |
+
+*place* is the header of the row the session was picked from: the repository's folder name, the path from home for a folder with no repository, or the agent's name for a session with no folder. It is taken when Send is pressed.
 
 Pressing Don't send says nothing. The press is the confirmation, the ring and the button go with
 it, and "Not sent" is the headline for a failure, not for a choice.
@@ -110,9 +112,13 @@ The menu bar menu names the switch as the General tab does.
 | The General tab, under the speech switch while a permission is missing (`liveInkSpeechReason`) | Needs microphone and speech recognition permission. Lets Vignette hear what you say while you draw. The words are made on this Mac. |
 | macOS's microphone prompt (`NSMicrophoneUsageDescription`) | Vignette hears what you say while you draw, and turns it into words on this Mac. |
 | macOS's speech recognition prompt (`NSSpeechRecognitionUsageDescription`) | Vignette turns what you say while you draw into words, on this Mac. |
-| The note's target, and its tooltip | Claude ⌄, "Claude answers on the screen." / *project* ⌄, "The session answers here when it's done." |
-| The target's menu | Claude, on the screen; then a "Send to a session" heading and the sessions, each by project with its name under it |
+| The note's target, and its tooltip | Claude ⌄, "Claude answers on the screen." / *title* ⌄, whose tooltip is the row's title, its second line and its repository |
+| The target's menu | Claude, on the screen; then the sessions under a heading for each repository, "Other folders" last |
 | The submenu of the other active sessions, in both target menus, once more than five are active | More Sessions |
+| A session's row in the target menus | The herdr tab's label without a leading "*repository*:", else the session's name. Under it: the worktree, the branch when it is not the default, and the session's goal from the inbox mod, or its name when that adds to the title. A folder with no repository shows its path from home. A row with no herdr tab and no goal shows the session's name, then its worktree, subfolder, branch and how long ago it was used |
+| The badge on a row | Needs you (the inbox mod has an open question for you), else Working (a turn is running) |
+| Two rows in one group with the same title | The title and, in parentheses, the first of the herdr tab, the worktree and the branch that tells them apart, else #1 and #2 by when they started |
+| The destination control in the bar | The row's title; its tooltip is the title, the second line and the repository |
 
 #### In the conversation's row, or on the ink
 

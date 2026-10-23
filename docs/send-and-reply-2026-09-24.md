@@ -46,10 +46,10 @@ focus changed the button's width and moved the whole bar. `docs/request-line-202
 message becomes.
 
 - **Copy is Done** under a label that says what it does. The code and the log still call it done.
-- **The target** is the agent's logo and the project's folder. It sits beside Send as its own
+- **The target** is the agent's logo and the row's title (`SessionMenu.row(of:among:)`). It sits beside Send as its own
   control, as Pete asked on 2026-09-24: "maybe the thread selection is separate from the note and
-  Send CTA". Its menu lists the active sessions used last, five at most, then a More Sessions submenu with the rest. Each row is
-  the logo, the project, and the title in grey under it. A check marks the target.
+  Send CTA". Its menu lists five sessions under a heading for each repository, then a More Sessions submenu with the rest
+  (`docs/session-menu-2026-10-18.md`). Each row is the logo, the title, and a second line in grey under it. A check marks the target.
 - **The default** is the first of these that exists (`AgentDestination.defaultTarget`):
   1. The thread the Codex app shows, when it was the app in front before Vignette. Vignette reads
      the title of its page through Accessibility and matches it to a thread's name. If it can't,
@@ -93,7 +93,7 @@ message becomes.
   kept list answered at 0 ms, herdr at 62 ms and the fresh Codex list at 114 ms. The editor takes
   clicks at about 200 ms. Coming from the Codex app, a kept list that doesn't hold the open thread
   waits for the fresh one, since the thread may have started since.
-- **The menu lists only active sessions,** five at most and a More Sessions submenu for the rest, and the target always, so its check is
+- **The menu lists only active sessions,** five at most, chosen by the sends of the last 4 hours and then by when the agent last worked, and a More Sessions submenu for the rest, and the target always, so its check is
   seen. A Claude Code session is active while it runs in a herdr pane. Nothing says which threads
   the Codex app has open, so a Codex thread counts when it was used in the last day. On 2026-09-25,
   2 of the 15 threads the listing returned had been, and the rest were 33 hours to 17 days old.

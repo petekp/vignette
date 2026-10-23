@@ -823,12 +823,15 @@ screenshot location for such a launch is written with the same variable:
   Otherwise, when herdr runs, it is the session in herdr's focused pane, or the one session in that
   pane's tab when the pane runs none. `DestinationChoice` applies herdr's focus to Claude Code
   sessions only (`DestinationChoice.markedByHerdr`). Else it is the session used last.
-  The target shows the agent's logo and the project, cut in the middle past 132 pt with the whole
-  name in its tooltip. Its width is set rather than left to the text, so it springs with the bar. A
+  The target shows the agent's logo and the session's title, cut in the middle past 132 pt, with
+  the title, the second line and the repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set rather than left to the text, so it springs with the bar. A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
-  made inside it jumped instead of animating. Its menu lists the active sessions used last, five at
-  most, with the target always among them, then a More Sessions submenu with every other active
-  session (`DestinationChoice.menu`, `top` and `more`; live ink's Tab steps through `top` only): a Claude Code session is active while the plugin's monitor runs in it,
+  made inside it jumped instead of animating. Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
+  sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
+  the target always among them, grouped under a header for each repository with Other folders last, then a More Sessions submenu with every other
+  active session in the same groups (live ink's Tab steps through the five only). A row's title is the herdr tab's label, else
+  the session's name; its second line is the worktree, the branch and the inbox mod's goal; a badge says Needs you or Working
+  (`InboxModStore` reads the mod's private file and may find nothing). A Claude Code session is active while the plugin's monitor runs in it,
   and a Codex thread when it was used in the last day, since nothing says which threads the Codex
   app has open. The target settles once, from the first answer that names a focus (herdr's comes in
   about 60 ms, before the bar is up), or else from the whole list (`Model.answered`). After that it
@@ -1269,7 +1272,7 @@ screenshot location for such a launch is written with the same variable:
 - A send reports on the card it was sent from. Once the request is stored the card
   carries a `SendNotice` (`ThumbnailController.showSending`), keyed by the file's path because a lone
   thumbnail's card leaves the panel while it is in the editor. It shows the destination's logo and
-  project from the moment the card lands, and `delivered` turns it to sent, queued, uncertain or
+  place (`SessionMenu.sentLabel`: the repository, the path from home, or the agent's name) from the moment the card lands, and `delivered` turns it to sent, queued, uncertain or
   failed when the client answers. Anything but sent carries a `reason`: every `SubmissionOutcome`
   but `accepted` has one, written where the client knows what happened, and `detail` stays for the
   log. A card gone from the screen by then says nothing more about a success and comes back as a

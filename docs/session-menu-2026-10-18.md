@@ -1,14 +1,17 @@
 # The agent session menu: names, repository headers and send order (2026-10-18)
 
 The agent session menu lists the destinations a drawing can go to. It appears in two places: under
-the editor toolbar's destination control (`showTargetMenu` in `AnnotatorToolbar.swift`), and under
-live ink's note (`showTargets` in `LiveNotePopover.swift`). This note proposes what each row says,
-how rows are grouped, and what order they come in. Nothing here is built yet.
+the editor toolbar's destination control, and under live ink's note. Both are built from one
+function, `SessionMenu.menu` (`Sources/SessionMenu.swift`). This note says what each row says, how
+rows are grouped and in what order. It describes what is built, and "Why the menu needs this" says
+why.
 
-**The proposal.** Each row leads with the agent session's own name. Rows sit under a header that
-names their repository. Agent sessions with no repository sit last, under "Other folders". Rows are
-ordered by when the person last sent to each session, within the last 4 hours, then by when the
-agent last worked. The menu keeps 5 rows, as now, and groups them after choosing them.
+**What is built.** A row's title is the name of the herdr tab the session runs in, else the
+session's own name. Its second line says where the session works and what it is for. A badge says
+when it needs the person or is working. Rows sit under a header that names their repository.
+Sessions with no repository sit last, under "Other folders". Rows are ordered by when the person
+last sent to each session, within the last 4 hours, then by when the agent last worked. The menu
+shows 5 rows. The rest are in a More Sessions submenu, grouped the same way.
 
 Terms used below:
 
@@ -46,45 +49,58 @@ limit, so the menu is where reliability now comes from.
 
 ```
 vignette
-  ✓ Fix ink routing            live-ink-app · Working · now
-    Session selector details   live-ink-app · 2 min ago
-    Codex sidebar parsing      Codex worktree · codex/selector · 1 hr ago
+  ✓ Row format F                 Needs you
+    Show each session by its tab label
+    menu build
+    session-menu
 inbox
-    Inbox mod port             5 min ago
+    reply esc                    Working
+    Close the ledger for September
 Other folders
-    Notes cleanup              ~/Code · 1 day ago
+    tethering
+    ~/Code · Mac Wi-Fi to iPhone tethering
 ```
 
 The names above are made up.
 
-- **Title: the session's own name.** `AgentDestination.name` takes it, so request records and log
-  lines carry the same name.
-  - Claude Code: the transcript's last `custom-title`, which the person chose, else its last
-    `ai-title`, which Claude Code writes and updates by itself. With neither, "New session".
-  - Codex: the thread's name, else its first message, as `CodexConnection.name(of:)` does now.
-- **Second line: the same parts on every row, in this order,** joined by ` · `:
+- **Title: the herdr tab's label,** without a leading "<repository>:" (any case), else the session's
+  own name. Pete already names his tabs in herdr, so the label is the name he knows a session by.
+  The label fit the destination control for 23 of 31 live sessions on 2026-10-23. The session's name
+  fit for 12. The session's own name is a Claude Code transcript's last `custom-title`, which the
+  person chose, else its last `ai-title`, which Claude Code writes. A Codex thread's name is its own
+  name, else its first message (`CodexConnection.name(of:)`). `AgentDestination.name` keeps the
+  session's own name, so request records and log lines do not change.
+- **Second line,** parts joined by " · ", each part once (the same text in another case counts as
+  the same):
   1. the worktree's folder name, when the session is in a worktree. For a worktree Codex made under
-     `~/.codex/worktrees`, "Codex worktree", since that folder's name is the repository's.
-  2. the subfolder below the checkout, such as `apps/pdk-ui`, skipping folders whose name starts
-     with a dot;
-  3. the branch, only when it is not the repository's default;
-  4. "Working" while the agent client reports a turn in progress (`SessionTurn.busy`). Only Claude
-     Code reports turns now (`reportsTurns`). An idle session shows nothing.
-  5. how long ago the session was used.
+     `~/.codex/worktrees`, "Codex worktree", since that folder's name is the repository's;
+  2. the branch, only when it is not the repository's default;
+  3. the session's goal, from the inbox mod; with no goal, the session's name when it differs from
+     the title.
 
-  In Other folders the first part is the folder as a path from home: `~/Code`, or `~` for home.
-  A part that is unknown is left out, never guessed. The parts do not depend on the other rows,
-  so a row's second line stays the same when another row comes or goes.
-- **"Waiting" is not shown.** `SessionTurn.waiting` means a drawing is still unread in the session's
-  inbox, and a bare "Waiting" would read as the agent waiting for the person.
-- **Two equal titles in one group** each get a suffix in parentheses: the herdr tab label, else the
-  worktree, else the branch, else "#1" and "#2" by when the session started. That is the creation
-  time of the inbox's `session` file for Claude Code, and the thread's `createdAt` for Codex, so a
-  number keeps its meaning.
-- **Before macOS 14.4** there is no subtitle, so the second line goes in the tooltip, in both menus.
-  Do not use an attributed title: AppKit's header says that on macOS 14 an item with one does not
-  show its subtitle.
-- **VoiceOver** reads a row as its name, repository or folder, agent client, state and age.
+  For a folder with no repository, the path from home comes first: `~/Code`, or `~` for home. The
+  goal does not change between turns, which keeps a row steady. A row has no age, since rows are
+  already in order of use.
+- **Badge.** "Needs you" when the inbox mod has an open question for the session, else "Working"
+  while the agent reports a turn in progress (`SessionTurn.busy`), else none. `SessionTurn.waiting`
+  means a drawing is still unread in the session's inbox, and is not shown, because a bare
+  "Waiting" would read as the agent waiting for the person.
+- **A row with no herdr tab and no goal** shows the session's name as its title. Its second line
+  is the worktree, subfolder, branch and how long ago the session was used. Codex threads have no
+  herdr tab or goal today, so they read this way.
+- **Equal titles in one group** take a suffix in parentheses: the first of the herdr tab, the
+  worktree and the branch that every one of them has and no two share. If none tells them apart,
+  "#1", "#2" by when the sessions started: the creation time of the inbox's `session` file for
+  Claude Code, and the thread's `createdAt` for Codex.
+- **Tooltips.** The tooltip of a row, of the destination control and of live ink's target button
+  is the title, the second line, then the repository or the path from home. Before macOS 14.4 an
+  item has no subtitle, so the tooltip is where the second line is. Do not use an attributed title:
+  AppKit's header says that on macOS 14 an item with one does not show its subtitle.
+- **The inbox mod's data.** The goal and the open questions come from the inbox mod's own file,
+  `~/.claude/plugins/store/inbox_inline-<hash>.json` (`InboxModStore`). That file is private to the
+  mod and the mod is being renamed, so one reader finds it by its name's start, reads it in the
+  listing job, and treats a missing or changed file as no goal and no badge. The first failure is
+  logged once. A test launch reads only its scratch home's copy.
 
 ## Groups
 
@@ -123,8 +139,7 @@ Code's sessions are read again at every listing, so a branch change or a `git in
 next open. Codex's last list is kept (`CodexConnection.keepsList`) and shown until the fresh list
 arrives, about 0.1 s later, so a Codex row can be one listing old in that time.
 
-**Every group has a header,** even a group of one. The row leads with the session's name, so the
-header is the only place its repository is written. The fixed headers "Send to" and "Send to a
+**Every group has a header,** even a group of one. The header is the only place a row's repository is written. The fixed headers "Send to" and "Send to a
 session" go: macOS 14's section headers are flat, so a header over headers reads as an empty group.
 In live ink's menu a separator already sets the responder apart.
 
@@ -144,23 +159,25 @@ by when the agent last worked** (`AgentDestination.lastUsed`, today's only order
    runs. A Codex thread is listed when it is among the 5 most recently used (`AppServer.listLimit`)
    and was used in the last 24 hours (`AgentDestination.isActive`). So a Codex thread sent to an
    hour ago is missing when 5 others were used since.
-2. Keep the first 5. When the destination is not among them, it takes the fifth row, as
-   `DestinationChoice.menu` does now.
+2. Keep the first 5. When the destination is not among them, it takes the fifth row.
 3. Group those 5 rows. Groups come in the order of their first row, and Other folders comes last.
-4. The grouped list feeds both the menu's items and live ink's Tab order: the responder first, then
-   the rows from top to bottom.
-5. Build the menu once per opening. A list that arrives late changes the next opening.
+4. The rest go in the More Sessions submenu. They are grouped the same way and keep their order, so
+   a row reads the same in either place.
+5. The grouped five feed both the menu's items and live ink's Tab order: the responder first, then
+   the rows from top to bottom. Tab does not step through the submenu.
+6. Build the menu once per opening. A list that arrives late changes the next opening.
 
 **The destination is not pinned to the top.** The destination control already names it, and the
 menu shows it with a checkmark where its rank puts it.
 
 **Send history.** For each session, the time its newest drawing was handed to it. Vignette has that
-in its request records, so the order is known before any agent client answers. A send cancelled in
-its grace period must not count, but a cancelled request and a request cleared later both end as
-`cleared`. So the record gains the time its line was handed over, and send history reads that
-field. `/clear` and `/resume` give a process a new session id, which starts with no history.
+in its request records (`ScreenshotRequests.sendHistory`), so the order is known before any agent
+client answers. `SessionListing` puts it on each session as `lastSent`. A send cancelled in its
+grace period must not count, but a cancelled request and a request cleared later both end as
+`cleared`. So the record has `handedOver`, the time its line was handed over, and send history
+reads that field. Older records have none. `/clear` and `/resume` give a process a new session id, which starts with no history.
 
-**Why this order.** The proposed order puts the chosen session in row 1 for 96 of 125 sends, against
+**Why this order.** This order puts the chosen session in row 1 for 96 of 125 sends, against
 78 under today's order. A replay of the person's sends from 2026-09-29 to 2026-10-18 rebuilt each
 moment from the request records and the session-context log, and asked where the chosen session
 would have been. A second replay, written separately, agreed to within 2 sends.
@@ -172,7 +189,7 @@ would have been. A second replay, written separately, agreed to within 2 sends.
 | When the person last sent, in the last 4 hours, then when the agent last worked | 96 | 112 |
 
 - **Where the destination choice was wrong** (37 of the 125 sends), the chosen session was in row 1
-  for 15 under today's order and 31 under the proposed one.
+  for 15 under today's order and 31 under this one.
 - **The window matters for new sessions.** 15 sends went to a session never sent to before. With no
   window, old sends pushed those to a median of row 5. With 4 hours, row 2. 4 hours and 24 hours
   differed by 2 sends in 125.
@@ -181,7 +198,7 @@ would have been. A second replay, written separately, agreed to within 2 sends.
   today's order. The 4-hour order was not measured. Its sessions not sent to in the window are
   still ordered by when the agent last worked, so that part can move while an agent works.
 - **Choosing before grouping matters.** Grouping every listed session and then keeping 5 put the
-  chosen session in the first 5 for 89 to 90% of sends under the proposed order, and 78 to 79%
+  chosen session in the first 5 for 89 to 90% of sends under this order, and 78 to 79%
   under today's, against 94% when 5 are chosen first. A repository with many sessions filled the
   menu.
 - **Pinning the destination to row 1 costs the most.** Where the destination choice was wrong, the
@@ -194,15 +211,16 @@ ink note starts on the session the note before it was sent to. The replay scored
 
 ## Outside the menu
 
-- **The destination control and live ink's target button** would show the agent's logo and the
-  session's name, middle-cut at their current widths (open decision 1). Their tooltip gives the
-  name and the repository, or the path from home. This replaces the toolbar's tooltip (the name and
-  the agent client) and live ink's, which is the same for every session.
-- **The sent card** would name the row's header (open decision 3): the repository, the path from
-  home in Other folders, or the agent client's name for a session with no folder. That holds for
+- **The destination control and live ink's target button** show the agent's logo and the row's
+  title, cut in the middle at their current widths. Their tooltip is the title, the second line,
+  then the repository or the path from home. Before this, the toolbar's tooltip said the name and
+  the agent client, and live ink's was the same for every session.
+- **The sent card** names the row's header: the repository, the path from home in Other folders, or
+  the agent client's name for a session with no folder (`SessionMenu.sentLabel`). That holds for
   every headline in `docs/voice.md`'s send table that names a place: "Sending to", "Sent to",
   "Queued for", "Check" and "Done in". The label is taken when Send is pressed and kept on the
-  notice, so every headline names the same thing.
+  notice, so every headline names the same thing. It is the repository's folder name; two
+  repositories with one folder name are told apart in the menu's headers only.
 - **`AgentDestination.detail` stays.** The `[send]` log lines, the `project` field of the JSON
   `annotate` answer, and matching a session again after `/clear` read it. `project` stays as the
   fallback label. Live ink's answer row (`Mark.answerer`) and the `sending to` line of the
@@ -239,35 +257,12 @@ same title.
 
 ## The data model
 
-Each agent client's listing code fills plain optional fields on `AgentDestination`. One pure
-function turns the sessions on offer into what both menus show, so adding an agent client means
-filling the fields, with no change to the menus.
-
-```swift
-struct AgentDestination {        // id, detail, address, lastUsed and focus stay
-    let name: String             // custom-title, else ai-title; Codex: name(of:)
-    var place: Place             // the repository, or the folder when there is none
-    var branch: String?          // nil on the default branch, detached, or unknown
-    var hostLabel: String?       // herdr tab label
-    var started: Date?           // numbers equal titles
-    var turn: SessionTurn?       // nil when the agent client does not report turns
-}
-
-enum Place {
-    case repository(key: String, header: String, worktree: String?, subfolder: String?)
-    case folder(fromHome: String)   // Other folders
-    case none                       // no folder
-}
-
-struct SessionRow { let title: String; let subtitle: String; let tooltip: String; let accessibility: String }
-
-enum SessionMenu {
-    /// Ranks, keeps 5 with the destination among them, and groups them. `destination` is nil
-    /// when live ink's note is on the responder; then no row is forced in.
-    static func groups(_ listed: [AgentDestination], sends: [String: Date], destination: AgentDestination?,
-                       now: Date) -> [(header: String, rows: [SessionRow])]
-}
-```
+Each agent client's listing code fills plain optional fields on `AgentDestination`: `place`
+(`Place`: a repository with its worktree and subfolder, a folder, or none), `branch`, `hostLabel`
+(the herdr tab's label), `started`, `turn`, `goal`, `needsYou`, `hasOwnName` and `lastSent`.
+`SessionPlaces` finds the place from files. `SessionMenu` turns the sessions on offer into rows and
+groups, and it is pure, so adding an agent client means filling the fields, with no change to the
+menus. `SessionMenuItems.swift` turns rows into `NSMenuItem`s for both menus.
 
 This design leaves out a layer that records where each fact came from and how fresh it is, because
 every field here has one fixed source per agent client. That layer becomes worth building when a
@@ -287,21 +282,17 @@ about (question 9 of the session-detection note).
 
 ## How to build it, and how to tell if it helps
 
-1. **Names and places.** `custom-title`; the repository and branch steps; the herdr tab label; one
-   menu builder for both menus, with the tooltip fallback; the titles and tooltips of the
-   destination control and live ink's target button; the new strings in `docs/voice.md`.
-2. **Order.** The hand-over time on request records, send history in the ranking, the cap before
-   the groups, and Tab order from the grouped list.
-3. **The sent card,** from the label kept at Send.
+The data was built first (`custom-title`, the repository and branch steps, the herdr tab label,
+`handedOver`), then the rows, the order and the sent card, which were built in one change because
+they read one builder.
 
-Before building, a throwaway script over the live inboxes and the Codex list should show no two
-equal titles in one group, and every title fitting the destination control's width. Time the
-listing job before and after.
+A throwaway script over the live inboxes on 2026-10-23 found no two equal titles in one group among
+28 sessions. 48 places resolved in 124 ms in one process, cold start included.
 
-To see whether it helps, record whether the menu was opened, how many picks were made, how long
-from the bar or note opening to the last pick, and whether the pick came from the keyboard or the
-pointer. Ids and counts only. The session-context log (`send-context.jsonl`, `SendContext.swift`)
-is removed before live ink reaches main, so fields added there measure the branch only. A
+To see whether it helps, `send-context.jsonl` (`SendContext.menu`) records a `menu` event each time
+a menu closes: the surface ("bar" or "note"), the number of picks, how long after the bar or note
+opened the last pick came, and whether it came from the keyboard. Counts and times only, no ids.
+That log is removed before live ink reaches main, so these fields measure this branch only. A
 measure that should outlast the merge needs a place of its own.
 
 The baseline: in that log on 2026-10-18, the person changed the destination choice on 35 of 122
@@ -314,23 +305,26 @@ used to go unnoticed. A rise of that kind means the rows work.
 Many wrong destination choices for Send look like the rule for when the Codex app was in front. Of
 the 37 wrong choices, 23 offered a session missing from the replayed list for a drawing sent to a
 Claude Code session. 18 of those 23 are confirmed Codex threads, and 14 offered the same thread.
-The log does not record whether the Codex app was in front, so this is likely, not proven. The
-proposed order puts the chosen session in row 1 for 22 of the 23.
+The log does not record whether the Codex app was in front, so this is likely, not proven. This order puts the chosen session in row 1 for 22 of the 23.
 
 The session-detection note proposes a narrow rule for this case ("The plan"). It is not built, and
 it waits for a second scoring on 2026-11-01. It uses send history, so if it ships, the destination
 choice uses send history too, and the replay here must be run again.
 
-## Open decisions
+## Decisions
 
-1. **Name or repository on the destination control.** Proposed: the name, since only the name or
-   the tab label tells apart sessions in one folder, and the checked row then reads the same.
-2. **The herdr tab label as the title** rather than the session's name. Proposed: no. The name
-   works for every agent client and every terminal. The label tells apart equal titles.
-3. **The session's name on the sent card.** Proposed: the header. Cards are seen more widely than
-   the menu.
-4. **State reported by the plugin itself,** such as "Waiting for you". Proposed: later. It needs a
-   plugin version change, and Codex's hooks are untested in the Codex app.
+1. **The destination control shows the row's title.** Pete chose the tab label as the title on
+   2026-10-23, so the control, the menu and the tooltip say the same thing.
+2. **The herdr tab label is the title.** It is the name Pete already uses in herdr, it fit the
+   control for 23 of 31 live sessions against 12 for the session's name, and it does not change
+   between turns. Without herdr, or for a Codex thread, the session's name is the title.
+3. **The sent card names the row's header.** Cards are seen more widely than the menu.
+4. **State reported by the plugin itself is later.** "Needs you" comes from the inbox mod, and
+   "Working" from the plugin's turn file. A state the plugin would report itself needs a plugin
+   version change, and Codex's hooks are untested in the Codex app.
+5. **The More Sessions submenu stays,** with its rows grouped under headers like the five above it.
+   Pete chose "top 5, then More Sessions" on 2026-10-22.
+6. **Sessions in a folder that only holds worktrees stay under Other folders.**
 
 ## Considered and left out
 
