@@ -1,5 +1,7 @@
 import AppKit
+import AudioToolbox
 import AVFoundation
+import CoreAudio
 import Speech
 
 /// The microphone, while speech input listens: it starts the transcriber, hands it each buffer in
@@ -36,6 +38,7 @@ final class Microphone: @unchecked Sendable {
             return error as? TranscriberFailure ?? TranscriberFailure(reason: "Vignette couldn't start listening.", detail: "\(error)")
         }
         let input = engine.inputNode
+        pointInput(at: MicrophoneChoice.current())
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else {
             transcriber.cancel()
@@ -57,6 +60,33 @@ final class Microphone: @unchecked Sendable {
         }
         running = true
         return nil
+    }
+
+    /// Points the engine's input at the device `MicrophoneChoice` picks, before its format is read. The
+    /// input node is an audio unit, and `kAudioOutputUnitProperty_CurrentDevice` is how a unit takes
+    /// a device other than the system default. Any failure leaves the default input, and says why.
+    private func pointInput(at system: (defaultInput: AudioDeviceID, devices: [MicrophoneChoice.Device])?) {
+        guard let system else {
+            Log.write("[speech] microphone default: devices unreadable")
+            return
+        }
+        let choice = MicrophoneChoice.choose(defaultInput: system.defaultInput, among: system.devices)
+        guard choice.device != system.defaultInput else {
+            Log.write("[speech] microphone rule=\(choice.rule.rawValue) device=default")
+            return
+        }
+        guard let unit = engine.inputNode.audioUnit else {
+            Log.write("[speech] microphone default: input has no audio unit")
+            return
+        }
+        var device = choice.device
+        let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                          &device, UInt32(MemoryLayout<AudioDeviceID>.size))
+        if status == noErr {
+            Log.write("[speech] microphone rule=\(choice.rule.rawValue) device=built-in")
+        } else {
+            Log.write("[speech] microphone default: could not set the device status=\(status)")
+        }
     }
 
     /// Turns the microphone off, after any start still under way, then runs `then` on the main thread.

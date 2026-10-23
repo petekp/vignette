@@ -66,6 +66,17 @@ reports the level, which the pause check reads. It runs only while listening. ma
 microphone dot in the menu bar for exactly that time, which is the honest sign that Vignette is
 listening.
 
+Each time it starts, `MicrophoneChoice` picks the input device, with no setting. Recording from
+Bluetooth headphones switches them to the hands-free profile, which stops their music and plays it
+again in low quality, so a Bluetooth default input is avoided unless it is already recording. In
+order: a default input that is not Bluetooth; a Bluetooth default that is already running for
+another app, as in a call; the Mac's built-in microphone; the Bluetooth default. The rule is a
+pure function over a description of the devices (`MicrophoneChoice.choose`), and CoreAudio's
+transport type and `kAudioDevicePropertyDeviceIsRunningSomewhere` fill it in. The engine's input
+is pointed at the device with `kAudioOutputUnitProperty_CurrentDevice` before its format is read.
+One `[speech] microphone rule=… device=…` line says which rule decided. A device that cannot be
+read or set leaves the default input, with the reason in the log.
+
 ### 3. Listening in live ink
 
 - **Listening starts** when you press ⌃⌥, if speech is on, so a word said as the first stroke begins
