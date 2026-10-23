@@ -16,7 +16,7 @@ import Speech
 final class Microphone: @unchecked Sendable {
     /// Each engine and its `running` are touched only on this queue.
     private static let queue = DispatchQueue(label: "vignette.microphone", qos: .userInitiated)
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private var running = false
 
     /// Starts the transcriber and the microphone into it, and answers on the main thread: nil once
@@ -37,12 +37,28 @@ final class Microphone: @unchecked Sendable {
         } catch {
             return error as? TranscriberFailure ?? TranscriberFailure(reason: "Vignette couldn't start listening.", detail: "\(error)")
         }
+        let (failure, pointed) = run(transcriber, report: report, choosing: true)
+        guard let failure else { return nil }
+        guard pointed else {
+            transcriber.cancel()
+            return failure
+        }
+        Log.write("[speech] microphone default: the chosen device did not start, retrying on the default input: \(failure.detail)")
+        engine = AVAudioEngine()
+        let retry = run(transcriber, report: report, choosing: false).failure
+        if retry != nil { transcriber.cancel() }
+        return retry
+    }
+
+    /// Taps the engine's input into the transcriber and starts the engine. `pointed` says the input was
+    /// pointed at a device other than the default, which a retry on a fresh engine undoes.
+    private func run(_ transcriber: Transcriber, report: @escaping @Sendable (Float) -> Void,
+                     choosing: Bool) -> (failure: TranscriberFailure?, pointed: Bool) {
         let input = engine.inputNode
-        pointInput(at: MicrophoneChoice.current())
+        let pointed = choosing && pointInput(at: MicrophoneChoice.current())
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else {
-            transcriber.cancel()
-            return TranscriberFailure(reason: "Vignette couldn't find a microphone.", detail: "input has no format")
+            return (TranscriberFailure(reason: "Vignette couldn't find a microphone.", detail: "input has no format"), pointed)
         }
         let target = transcriber.format
         let converter = AVAudioConverter(from: format, to: target)
@@ -55,38 +71,39 @@ final class Microphone: @unchecked Sendable {
             try engine.start()
         } catch {
             input.removeTap(onBus: 0)
-            transcriber.cancel()
-            return TranscriberFailure(reason: "Vignette couldn't start the microphone.", detail: "\(error)")
+            return (TranscriberFailure(reason: "Vignette couldn't start the microphone.", detail: "\(error)"), pointed)
         }
         running = true
-        return nil
+        return (nil, pointed)
     }
 
     /// Points the engine's input at the device `MicrophoneChoice` picks, before its format is read. The
     /// input node is an audio unit, and `kAudioOutputUnitProperty_CurrentDevice` is how a unit takes
-    /// a device other than the system default. Any failure leaves the default input, and says why.
-    private func pointInput(at system: (defaultInput: AudioDeviceID, devices: [MicrophoneChoice.Device])?) {
+    /// a device other than the system default. Answers whether the input now differs from the default;
+    /// any failure leaves the default input, and says why.
+    private func pointInput(at system: (defaultInput: AudioDeviceID, devices: [MicrophoneChoice.Device])?) -> Bool {
         guard let system else {
             Log.write("[speech] microphone default: devices unreadable")
-            return
+            return false
         }
         let choice = MicrophoneChoice.choose(defaultInput: system.defaultInput, among: system.devices)
         guard choice.device != system.defaultInput else {
             Log.write("[speech] microphone rule=\(choice.rule.rawValue) device=default")
-            return
+            return false
         }
         guard let unit = engine.inputNode.audioUnit else {
             Log.write("[speech] microphone default: input has no audio unit")
-            return
+            return false
         }
         var device = choice.device
         let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
                                           &device, UInt32(MemoryLayout<AudioDeviceID>.size))
-        if status == noErr {
-            Log.write("[speech] microphone rule=\(choice.rule.rawValue) device=built-in")
-        } else {
+        guard status == noErr else {
             Log.write("[speech] microphone default: could not set the device status=\(status)")
+            return false
         }
+        Log.write("[speech] microphone rule=\(choice.rule.rawValue) device=built-in")
+        return true
     }
 
     /// Turns the microphone off, after any start still under way, then runs `then` on the main thread.
