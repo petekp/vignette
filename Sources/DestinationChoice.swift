@@ -87,7 +87,7 @@ enum DestinationChoice {
     /// remembered from the note before is found again, even after `/clear`.
     private static func start(_ pick: LiveNotePick, in list: [AgentDestination]) -> AgentDestination? {
         switch pick {
-        case .byHand(let session?): return list.contains { $0.id == session.id } ? session : nil
+        case .byHand(let session?): return list.first { $0.id == session.id }
         case .remembered(let session?): return again(session, in: list)
         case .byHand(nil), .remembered(nil): return nil
         }
@@ -161,23 +161,6 @@ enum DestinationChoice {
             }
             return marked
         }
-    }
-
-    /// Send's menu in two parts: `top`, the sessions used last among the active ones, at most `count`,
-    /// with `target` always among them so its check is seen; and `more`, every other active session,
-    /// for a submenu. Both are in Send's order.
-    struct Menu: Equatable {
-        let top: [AgentDestination]
-        let more: [AgentDestination]
-    }
-
-    /// Send's menu from `list`, which is in Send's order.
-    static func menu(_ list: [AgentDestination], target: AgentDestination, count: Int = 5, now: Date = Date()) -> Menu {
-        let active = list.filter { $0.isActive(now: now) }
-        var top = Array(active.prefix(count))
-        if !top.contains(where: { $0.id == target.id }) { top = Array(top.prefix(count - 1)) + [target] }
-        let shown = Set(top.map(\.id))
-        return Menu(top: top, more: active.filter { !shown.contains($0.id) })
     }
 
     /// Send's order: the session used last first. A session with no time comes after every one

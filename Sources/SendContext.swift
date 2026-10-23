@@ -87,6 +87,23 @@ enum SendContext {
         }
     }
 
+    /// The session menu was opened on `surface` ("bar" or "note") and closed: how many picks were made
+    /// from it, how long after the bar or note opened the last one came, and whether it came from the
+    /// keyboard. Counts and times only. It measures this branch only: the log goes before live ink
+    /// reaches main.
+    @MainActor
+    static func menu(surface: String, picks: Int, msSinceOpen: Int?, byKeyboard: Bool?) {
+        let at = Date()
+        let seq = nextSeq
+        nextSeq += 1
+        queue.async {
+            var record: [String: Any] = ["event": "menu", "surface": surface, "picks": picks]
+            if let msSinceOpen { record["ms"] = msSinceOpen }
+            if let byKeyboard { record["keyboard"] = byKeyboard }
+            append(record, at: at, seq: seq)
+        }
+    }
+
     /// `request` was cancelled in its grace period, so the `send` event of the editor's send, or the
     /// `note` event of a live ink note to the session `note`, never reached a session. A note's
     /// event carries no request id, so its cancel names the session: exact only while one note to

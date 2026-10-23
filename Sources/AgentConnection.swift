@@ -85,6 +85,14 @@ struct AgentDestination: Equatable, Identifiable {
     var started: Date? = nil
     /// Where the session is in its turns. Nil when its client does not report turns.
     var turn: SessionTurn? = nil
+    /// The goal the inbox mod wrote for the session, and whether it has an open question for the person.
+    var goal: String? = nil
+    var needsYou = false
+    /// Whether `name` is the session's own (its custom or AI title) rather than a stand-in.
+    var hasOwnName = true
+    /// When a drawing was last handed to this session, from the request records. Stamped by
+    /// `SessionListing`; it orders the session menu.
+    var lastSent: Date? = nil
 
     enum Focus: String, Equatable {
         /// Its agent's own app was the app in front, showing this session (`DestinationChoice`).
@@ -361,12 +369,13 @@ struct ClaudeCodeConnection: AgentConnection {
 
     func destinations() -> [AgentDestination] {
         let folders = (try? FileManager.default.contentsOfDirectory(at: transcripts, includingPropertiesForKeys: nil)) ?? []
+        let mod = InboxModStore.read()
         let listed = liveInboxes().compactMap { inbox -> AgentDestination? in
             guard let session = inbox.session else { return nil }
             let file = inbox.transcript.map { URL(fileURLWithPath: $0) }.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
                 ?? Self.transcriptFile(session: session, folders: folders)
             let transcript = file.flatMap { Self.tail(of: $0) }.map(Self.transcript(tail:)) ?? Transcript()
-            return Self.destination(session: session, cwd: inbox.cwd, transcript: transcript, inbox: inbox)
+            return Self.destination(session: session, cwd: inbox.cwd, transcript: transcript, inbox: inbox, mod: mod[session])
         }
         return listed
     }
@@ -379,7 +388,7 @@ struct ClaudeCodeConnection: AgentConnection {
     /// transcript has no message yet, and its turn. The place comes from the inbox's folder, never
     /// the transcript's `cwd`.
     static func destination(session: String, cwd: String?, transcript: Transcript, inbox: Inbox? = nil,
-                            home: String = NSHomeDirectory()) -> AgentDestination {
+                            mod: InboxModStore.Entry? = nil, home: String = NSHomeDirectory()) -> AgentDestination {
         let folder = cwd ?? transcript.cwd ?? ""
         let project = (folder as NSString).lastPathComponent
         let found = SessionPlaces.resolve(folder: cwd, home: home)
@@ -392,7 +401,10 @@ struct ClaudeCodeConnection: AgentConnection {
             place: found.place,
             branch: found.branch,
             started: inbox?.started,
-            turn: inbox.flatMap { turn(of: $0) })
+            turn: inbox.flatMap { turn(of: $0) },
+            goal: mod?.goal,
+            needsYou: mod?.needsYou ?? false,
+            hasOwnName: transcript.title != nil)
     }
 
     /// Writes the request into the session's inbox, aside and then renamed in, so the monitor never

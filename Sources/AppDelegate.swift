@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Sending drawings to agent sessions and taking their drawings back. See ScreenshotRequests.
     private let requests = ScreenshotRequests(root: ScreenshotRequests.defaultRoot, connections: AppDelegate.connections)
     /// The agent sessions Send can go to. See SessionListing.
-    private let sessions = SessionListing(connections: AppDelegate.connections)
+    private lazy var sessions = SessionListing(connections: AppDelegate.connections, sends: { [unowned self] in requests.sendHistory() })
     private let agentPlugins = AgentPlugins()
     /// The screenshot each request Send sent from the editor this launch was made from, until its
     /// client answers. A note card's is LiveNoteCards'.

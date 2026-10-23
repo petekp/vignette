@@ -120,7 +120,11 @@ final class AnnotatorToolbar {
 
         /// A new image: nothing listed yet, and nothing picked. `carryingTarget`, when the bar is
         /// on screen for the image before, keeps that image's list and target until this one's settle.
+        /// When the bar last began on an image, for `SendContext.menu`.
+        private(set) var openedAt = CACurrentMediaTime()
+
         func begin(replyTo: AgentDestination?, carryingTarget: Bool) {
+            openedAt = CACurrentMediaTime()
             self.replyTo = replyTo
             message = ""
             focus = nil
@@ -376,35 +380,26 @@ final class AnnotatorToolbar {
         }
     }
 
-    /// The target's menu, under it: the active sessions used last, the target among them with a check
-    /// (`DestinationChoice.menu`), then a More Sessions submenu with the rest. AppKit's own menu, so Space on the focused target opens it as a
-    /// click does.
+    /// The target's menu, under it: the sessions sent to or used last, five of them, the target among
+    /// them with a check, each group under its repository (`SessionMenu`), then a More Sessions
+    /// submenu with the rest. AppKit's own menu, so Space on the focused target opens it as a click does.
     private func showTargetMenu() {
         guard case .send(let target) = model.offer, let frame = targetFrame else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
-        menu.addItem(.sectionHeader(title: "Send to"))
-        let sessions = DestinationChoice.menu(model.destinations, target: target)
-        for destination in sessions.top { menu.addItem(targetItem(destination, target: target)) }
-        if !sessions.more.isEmpty {
-            let more = NSMenuItem(title: "More Sessions", action: nil, keyEquivalent: "")
-            more.submenu = NSMenu()
-            more.submenu?.autoenablesItems = false
-            for destination in sessions.more { more.submenu?.addItem(targetItem(destination, target: target)) }
-            menu.addItem(more)
+        SessionMenu.add(SessionMenu.menu(model.destinations, destination: target), to: menu) { row in
+            let item = SessionMenu.item(for: row, selected: row.id == target.id, image: AgentLogo.menuImage(for: row.destination.client))
+            item.target = targetMenuActions
+            item.action = #selector(TargetMenuActions.pick(_:))
+            item.representedObject = row.destination
+            return item
         }
         let below = hosting.isFlipped ? frame.maxY + 4 : hosting.bounds.height - frame.maxY - 4
+        targetMenuActions.resetCount()
         menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting)
-    }
-
-    private func targetItem(_ destination: AgentDestination, target: AgentDestination) -> NSMenuItem {
-        let item = NSMenuItem(title: destination.project, action: #selector(TargetMenuActions.pick(_:)), keyEquivalent: "")
-        item.target = targetMenuActions
-        item.representedObject = destination
-        item.image = AgentLogo.menuImage(for: destination.client)
-        item.state = destination.id == target.id ? .on : .off
-        if #available(macOS 14.4, *) { item.subtitle = destination.name } else { item.toolTip = destination.name }
-        return item
+        let picks = targetMenuActions.picks
+        SendContext.menu(surface: "bar", picks: picks, msSinceOpen: picks > 0 ? Int((CACurrentMediaTime() - model.openedAt) * 1000) : nil,
+                         byKeyboard: targetMenuActions.lastByKeyboard)
     }
 
     /// Centers the toolbar under `frame`, `gap` points below it. A bar that is already up — one
@@ -1065,20 +1060,21 @@ private struct ToolbarView: View {
             .foregroundStyle(filled ? AnyShapeStyle(.white.opacity(0.75)) : AnyShapeStyle(.secondary))
     }
 
-    /// Where Send goes: the agent's logo and the session's project, apart from Send itself. It opens
+    /// Where Send goes: the agent's logo and the session's title, apart from Send itself. It opens
     /// the menu for changing it (`AnnotatorToolbar.showTargetMenu`).
     private func targetMenu(_ target: AgentDestination) -> some View {
         // The name's width is set rather than left to the text, so it springs with the bar when the
         // target changes and the controls beside it move with it. The old name leaves and the new
         // one comes in the place between, as a control does (`slot`). A long name is cut in the
         // middle, where a worktree's suffix survives; the tooltip has it whole.
-        let nameWidth = min(ButtonLabel.width(target.project, size: 13), Self.targetNameMax)
+        let row = SessionMenu.row(of: target, among: model.destinations)
+        let nameWidth = min(ButtonLabel.width(row.title, size: 13), Self.targetNameMax)
         return Button(action: onTargetMenu) {
             HStack(spacing: 6) {
                 ZStack(alignment: .leading) {
                     HStack(spacing: 6) {
                         AgentLogo(client: target.client, template: false).frame(width: 14, height: 14)
-                        Text(target.project).font(.system(size: 13, weight: .semibold))
+                        Text(row.title).font(.system(size: 13, weight: .semibold))
                             .lineLimit(1).truncationMode(.middle)
                             .frame(width: nameWidth, alignment: .leading)
                     }
@@ -1101,7 +1097,7 @@ private struct ToolbarView: View {
         .padding(Self.slop.negated)
         .fixedSize()
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onTargetFrame($0) }
-        .modifier(TipSpot(control: .target, text: "“\(target.name)” in \(target.client.label)", hover: tip))
+        .modifier(TipSpot(control: .target, text: row.tooltip, hover: tip))
     }
 
     private var entrance: Animation {
@@ -1325,7 +1321,13 @@ private struct GrowingField: Layout {
 @MainActor
 private final class TargetMenuActions: NSObject {
     var onPick: ((AgentDestination) -> Void)?
+    /// Picks since `resetCount`, and whether the last came from the keyboard, for `SendContext.menu`.
+    var picks = 0
+    var lastByKeyboard: Bool?
+    func resetCount() { picks = 0; lastByKeyboard = nil }
     @objc func pick(_ item: NSMenuItem) {
+        picks += 1
+        lastByKeyboard = NSApp.currentEvent?.type == .keyDown
         if let destination = item.representedObject as? AgentDestination { onPick?(destination) }
     }
 }

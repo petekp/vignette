@@ -59,6 +59,11 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private var listening = false
     private var watching: [NSObjectProtocol] = []
 
+    /// For `SendContext.menu`: when the note opened, and the menu picks since the menu last opened.
+    private var openedAt: CFTimeInterval
+    private var menuPicks = 0
+    private var lastPickByKeyboard: Bool?
+
     static let askPlaceholder = "Ask about this"
     static let sendPlaceholder = "Send to session"
     static let listeningPlaceholder = "Listening…"
@@ -70,6 +75,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Opens hung from `place`, in global top-left points, out of sight until `reveal`, but with the
     /// keys, so what the person types meanwhile is in it when it shows.
     init(at place: PopoverPlace, target: Target) {
+        openedAt = CACurrentMediaTime()
         self.place = place
         self.target = target
         ownPick = .remembered(target.session)
@@ -172,8 +178,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
             content.session.show(logo: Agent.logo(for: "claude"), title: "Claude")
             content.session.toolTip = "Claude answers on the screen."
         case .session(let destination):
-            content.session.show(logo: Agent.logo(for: destination.client.rawValue), title: destination.project)
-            content.session.toolTip = "The session answers here when it's done."
+            let row = SessionMenu.row(of: destination, among: sessions)
+            content.session.show(logo: Agent.logo(for: destination.client.rawValue), title: row.title)
+            content.session.toolTip = row.tooltip
         }
         showPlaceholder()
     }
@@ -194,17 +201,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         responder.state = target == .responder ? .on : .off
         responder.target = self
         menu.addItem(responder)
-        let listed = sessions.isEmpty ? nil : DestinationChoice.menu(sessions, target: target.session ?? sessions[0])
-        if let listed {
+        if !sessions.isEmpty {
             menu.addItem(.separator())
-            menu.addItem(.sectionHeader(title: "Send to a session"))
-            for session in listed.top { menu.addItem(sessionItem(session)) }
-            if !listed.more.isEmpty {
-                let more = NSMenuItem(title: "More Sessions", action: nil, keyEquivalent: "")
-                more.submenu = NSMenu()
-                for session in listed.more { more.submenu?.addItem(sessionItem(session)) }
-                menu.addItem(more)
-            }
+            SessionMenu.add(SessionMenu.menu(sessions, destination: target.session), to: menu, make: sessionItem)
         }
         let button = window.convertToScreen(content.session.convert(content.session.bounds, to: nil))
         let visible = window.screen?.visibleFrame ?? .zero
@@ -216,8 +215,12 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
                             y: max(visible.minY + Self.menuGap, button.minY) + menu.size.height)
         }
         menuOpen = true
+        menuPicks = 0
+        lastPickByKeyboard = nil
         menu.popUp(positioning: nil, at: point, in: nil)
         menuOpen = false
+        SendContext.menu(surface: "note", picks: menuPicks, msSinceOpen: menuPicks > 0 ? Int((CACurrentMediaTime() - openedAt) * 1000) : nil,
+                         byKeyboard: lastPickByKeyboard)
         guard !closing else { return }
         window.makeKey()
         window.makeFirstResponder(content.field)
@@ -225,20 +228,19 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.field.currentEditor()?.selectedRange = NSRange(location: (content.field.stringValue as NSString).length, length: 0)
     }
 
-    private func sessionItem(_ session: AgentDestination) -> NSMenuItem {
-        let item = NSMenuItem(title: session.project, action: #selector(pickTarget(_:)), keyEquivalent: "")
-        item.image = Agent.logo(for: session.client.rawValue).map(Self.menuSized)
-        if #available(macOS 14.4, *) { item.subtitle = session.name }
-        item.state = target.session?.id == session.id ? .on : .off
+    private func sessionItem(_ row: SessionMenu.Row) -> NSMenuItem {
+        let item = SessionMenu.item(for: row, selected: target.session?.id == row.id,
+                                    image: Agent.logo(for: row.destination.client.rawValue).map(Self.menuSized))
+        item.action = #selector(pickTarget(_:))
         item.target = self
-        item.representedObject = session.id
+        item.representedObject = row.destination
         return item
     }
 
     /// The sessions Tab steps through after the responder, in the menu's order. The submenu's are
     /// left out: Tab goes through a short list.
     private var menuSessions: [AgentDestination] {
-        sessions.isEmpty ? [] : DestinationChoice.menu(sessions, target: target.session ?? sessions[0]).top
+        sessions.isEmpty ? [] : SessionMenu.menu(sessions, destination: target.session).topRows.map(\.destination)
     }
 
     /// Tab, or Shift+Tab with `backward`: the target after this one in the menu's order, or the one
@@ -252,8 +254,12 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func pickTarget(_ item: NSMenuItem) {
-        if let id = item.representedObject as? String, let session = sessions.first(where: { $0.id == id }) {
-            pick(.session(session))
+        menuPicks += 1
+        lastPickByKeyboard = NSApp.currentEvent?.type == .keyDown
+        // The destination travels with the item, so a session that ended while the menu was open is
+        // still the target and the send says it ended, rather than falling back to the responder.
+        if let picked = item.representedObject as? AgentDestination {
+            pick(.session(sessions.first { $0.id == picked.id } ?? picked))
         } else {
             pick(.responder)
         }

@@ -276,13 +276,13 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(note([thread, a], .remembered(a)).pick?.id, "a", "and a later answer brings the session back")
     }
 
-    /// A session the person picked on the note stays while it is listed, and drops to the responder
-    /// when it is not. It is matched by id alone.
+    /// A session the person picked on the note stays while it is listed, as the list's own record of
+    /// it, and drops to the responder when it is not. It is matched by id alone.
     func testALiveNoteKeepsAHandPickWhileItIsListed() {
         let a = Self.claude("a"), b = Self.claude("b"), c = Self.claude("c")
         let stale = Self.claude("a", name: "Named before")
-        XCTAssertEqual(note([Self.claude("a", name: "Named since"), b], .byHand(stale)).pick, stale,
-                       "a listed hand pick is not replaced by the list's copy, so the chip does not change under the person")
+        let fresh = Self.claude("a", name: "Named since")
+        XCTAssertEqual(note([fresh, b], .byHand(stale)).pick, fresh, "a listed hand pick is the list's record, not the stored copy")
         XCTAssertEqual(note([a], .byHand(a), complete: false, fresh: false).pick?.id, "a",
                        "a kept partial list keeps a listed hand pick at once")
         XCTAssertNil(note([b, c], .byHand(a)).pick, "a hand pick gone from the list drops to the responder")
@@ -389,16 +389,16 @@ final class AgentConnectionTests: XCTestCase {
         }
         let list = [codex("a", hoursAgo: 1), claude("b", hoursAgo: 2), codex("c", hoursAgo: 30),
                     claude("d", hoursAgo: 40), claude("e", hoursAgo: 50), claude("f", hoursAgo: 60), claude("g", hoursAgo: 70)]
-        XCTAssertEqual(DestinationChoice.menu(list, target: list[0], now: now).top.map(\.id), ["a", "b", "d", "e", "f"],
+        XCTAssertEqual(SessionMenu.menu(list, destination: list[0], now: now).topRows.map(\.id), ["a", "b", "d", "e", "f"],
                        "a Codex thread from yesterday is left out")
-        XCTAssertEqual(DestinationChoice.menu(list, target: list[6], now: now).top.map(\.id), ["a", "b", "d", "e", "g"])
-        XCTAssertEqual(DestinationChoice.menu(list, target: list[2], now: now).top.map(\.id), ["a", "b", "d", "e", "c"],
+        XCTAssertEqual(SessionMenu.menu(list, destination: list[6], now: now).topRows.map(\.id), ["a", "b", "d", "e", "g"])
+        XCTAssertEqual(SessionMenu.menu(list, destination: list[2], now: now).topRows.map(\.id), ["a", "b", "d", "e", "c"],
                        "the target is shown even when it is not active")
-        let menu = DestinationChoice.menu(list, target: list[0], now: now)
-        XCTAssertEqual(menu.more.map(\.id), ["g"], "every other active session is in the submenu, in order")
-        XCTAssertEqual(DestinationChoice.menu(list, target: list[6], now: now).more.map(\.id), ["f"],
+        let menu = SessionMenu.menu(list, destination: list[0], now: now)
+        XCTAssertEqual(menu.more.flatMap(\.rows).map(\.id), ["g"], "every other active session is in the submenu, in order")
+        XCTAssertEqual(SessionMenu.menu(list, destination: list[6], now: now).more.flatMap(\.rows).map(\.id), ["f"],
                        "a target pushed into the top rows leaves the displaced session in the submenu")
-        XCTAssertTrue(DestinationChoice.menu(Array(list.prefix(2)), target: list[0], now: now).more.isEmpty,
+        XCTAssertTrue(SessionMenu.menu(Array(list.prefix(2)), destination: list[0], now: now).more.isEmpty,
                       "five active sessions or fewer need no submenu")
     }
 
@@ -629,10 +629,12 @@ final class AgentConnectionTests: XCTestCase {
     /// that never happened, leaves the order to when the agent last worked.
     func testTheMenuRanksRecentSendsFirstThenTheAgentsLastWork() {
         let now = Date()
-        let list = [session("a", used: 1, now: now), session("b", used: 2, now: now), session("c", used: 3, now: now),
+        var list = [session("a", used: 1, now: now), session("b", used: 2, now: now), session("c", used: 3, now: now),
                     session("d", used: 4, now: now)]
-        let sends = ["c": now.addingTimeInterval(-600), "d": now.addingTimeInterval(-60), "b": now.addingTimeInterval(-5 * 3600)]
-        XCTAssertEqual(SessionMenu.ranked(list, sends: sends, now: now).map(\.id), ["d", "c", "a", "b"])
+        list[2].lastSent = now.addingTimeInterval(-600)
+        list[3].lastSent = now.addingTimeInterval(-60)
+        list[1].lastSent = now.addingTimeInterval(-5 * 3600)
+        XCTAssertEqual(SessionMenu.ranked(list, now: now).map(\.id), ["d", "c", "a", "b"])
     }
 
     /// Five are kept before grouping, the destination takes the last when it is missing, and the rest
@@ -646,12 +648,12 @@ final class AgentConnectionTests: XCTestCase {
                     session("e", used: 5, place: repo("inbox"), now: now),
                     session("f", used: 6, place: repo("vignette"), now: now),
                     session("g", used: 7, place: repo("inbox"), now: now)]
-        let menu = SessionMenu.menu(list, sends: [:], destination: list[6], now: now)
+        let menu = SessionMenu.menu(list, destination: list[6], now: now)
         XCTAssertEqual(menu.top.map(\.header), ["vignette", "inbox", "Other folders"])
         XCTAssertEqual(menu.top.map { $0.rows.map(\.id) }, [["b", "d"], ["c", "g"], ["a"]],
                        "the destination took the fifth row, and the groups follow their first rows")
         XCTAssertEqual(menu.more.map { $0.rows.map(\.id) }, [["e"], ["f"]])
-        XCTAssertNil(SessionMenu.menu(list, sends: [:], destination: nil, now: now).top.flatMap(\.rows).first { $0.id == "g" },
+        XCTAssertNil(SessionMenu.menu(list, destination: nil, now: now).top.flatMap(\.rows).first { $0.id == "g" },
                      "a note on the responder forces no row in")
     }
 
@@ -663,9 +665,124 @@ final class AgentConnectionTests: XCTestCase {
                     session("b", used: 2, place: .repository(name: "bar", root: nil, worktree: nil, subfolder: nil), now: now),
                     session("c", used: 3, place: repo("bar"), now: now),
                     session("d", used: 4, place: repo("foo", at: "/Users/p/Code/foo"), now: now)]
-        let menu = SessionMenu.menu(list, sends: [:], destination: nil, now: now)
+        let menu = SessionMenu.menu(list, destination: nil, now: now)
         XCTAssertEqual(menu.top.map(\.header), ["ever/foo", "bar", "Code/foo"])
         XCTAssertEqual(menu.top[1].rows.map(\.id), ["b", "c"], "the name-only session joined the one checkout called bar")
+    }
+
+    // MARK: What a row says
+
+    private func row(_ session: AgentDestination, among others: [AgentDestination] = [], now: Date = Date()) -> SessionMenu.Row {
+        SessionMenu.row(of: session, among: [session] + others, now: now)
+    }
+
+    /// The title is the herdr tab's label without its repository prefix, else the session's name. The second
+    /// line is the worktree, the branch and the goal, each once, with the session's name when it adds to the
+    /// title, and no age.
+    func testARowLeadsWithTheTabLabelAndThenSaysWhereAndWhy() {
+        let now = Date()
+        var s = session("a", used: 1, place: .repository(name: "inbox", root: "/c/inbox", worktree: "map-port", subfolder: "Sources"), now: now)
+        s = AgentDestination(id: s.id, name: "Port the map", address: s.address, lastUsed: s.lastUsed, place: s.place, branch: "progress-tab",
+                             hostLabel: "Inbox: map port", goal: "Move the map to the plugin")
+        let withGoal = row(s, now: now)
+        XCTAssertEqual(withGoal.title, "map port", "the repository's prefix goes, whatever its case")
+        XCTAssertEqual(withGoal.subtitle, "map-port · progress-tab · Move the map to the plugin")
+        XCTAssertEqual(withGoal.tooltip, "map port\nmap-port · progress-tab · Move the map to the plugin\ninbox")
+
+        s.goal = nil
+        XCTAssertEqual(row(s, now: now).subtitle, "map-port · progress-tab · Port the map", "with no goal, its name")
+        s.hostLabel = "Port the map"
+        XCTAssertEqual(row(s, now: now).subtitle, "map-port · progress-tab", "a part that repeats the title is left out")
+
+        var folder = s
+        folder.place = .folder(fromHome: "~/Code")
+        folder.branch = nil
+        folder.goal = "Plan the week"
+        XCTAssertEqual(row(folder, now: now).subtitle, "~/Code · Plan the week")
+    }
+
+    /// With no tab and no goal, a row is the session's name over its worktree, subfolder, branch and age.
+    func testARowWithNoTabOrGoalFallsBackToTheNameAndPlace() {
+        let now = Date()
+        let s = AgentDestination(id: "t", name: "Codex thread", address: .codexThread(uuid: "t"), lastUsed: now.addingTimeInterval(-7200),
+                                 place: .repository(name: "evercars", root: nil, worktree: "Codex worktree", subfolder: "apps/ui"),
+                                 branch: "codex/selector")
+        let fallback = row(s, now: now)
+        XCTAssertEqual(fallback.title, "Codex thread")
+        XCTAssertEqual(fallback.subtitle, "Codex worktree · apps/ui · codex/selector · 2 hr ago")
+        XCTAssertNil(fallback.badge)
+    }
+
+    /// An open question for the person wins over a running turn.
+    func testTheBadgeSaysNeedsYouBeforeWorking() {
+        let now = Date()
+        var s = session("a", used: 1, now: now)
+        XCTAssertNil(row(s, now: now).badge)
+        s.turn = .waiting
+        XCTAssertNil(row(s, now: now).badge, "a drawing unread in the inbox is not the agent waiting for the person")
+        s.turn = .busy
+        XCTAssertEqual(row(s, now: now).badge, "Working")
+        s.needsYou = true
+        XCTAssertEqual(row(s, now: now).badge, "Needs you")
+    }
+
+    /// Equal titles in one group take the first of tab, worktree and branch that tells all of them apart, else
+    /// a number by start; the same title in another group takes none.
+    func testEqualTitlesInOneGroupAreToldApart() {
+        let now = Date()
+        func make(_ id: String, worktree: String?, branch: String?, started: Double, root: String = "/c/inbox") -> AgentDestination {
+            AgentDestination(id: id, name: "Fix", address: .claudeSession(id), lastUsed: now, place: .repository(name: "inbox", root: root, worktree: worktree, subfolder: nil),
+                             branch: branch, started: now.addingTimeInterval(started))
+        }
+        let byWorktree = [make("a", worktree: "one", branch: "x", started: 0), make("b", worktree: "two", branch: "x", started: 1)]
+        XCTAssertEqual(SessionMenu.menu(byWorktree, destination: nil, now: now).topRows.map(\.title), ["Fix (one)", "Fix (two)"])
+        let numbered = [make("a", worktree: nil, branch: nil, started: 5), make("b", worktree: "w", branch: nil, started: 1)]
+        XCTAssertEqual(SessionMenu.menu(numbered, destination: nil, now: now).topRows.map(\.title), ["Fix (#2)", "Fix (#1)"])
+        let apart = [make("a", worktree: nil, branch: nil, started: 0), make("b", worktree: nil, branch: nil, started: 1, root: "/c/other")]
+        XCTAssertEqual(SessionMenu.menu(apart, destination: nil, now: now).topRows.map(\.title), ["Fix", "Fix"])
+    }
+
+    func testTheSentCardNamesTheRepositoryOrTheFolderOrTheAgent() {
+        let now = Date()
+        XCTAssertEqual(SessionMenu.sentLabel(of: session("a", used: 1, place: repo("vignette"), now: now)), "vignette")
+        XCTAssertEqual(SessionMenu.sentLabel(of: session("a", used: 1, place: .folder(fromHome: "~/Code"), now: now)), "~/Code")
+        XCTAssertEqual(SessionMenu.sentLabel(of: session("a", used: 1, now: now)), "Claude Code")
+    }
+
+    // MARK: The inbox mod's store
+
+    func testTheInboxModsGoalAndOpenQuestionsAreReadBySession() throws {
+        let store: [String: Any] = [
+            "s:one": ["ledger": ["card": ["goal": " Ship it "], "items": []]],
+            "s:two": ["ledger": ["items": [["ask": "Which branch?"]]]],
+            "s:three": ["ledger": ["card": ["goal": ""], "items": [["ask": ""]]]],
+            "other": ["ledger": ["card": ["goal": "x"]]],
+        ]
+        let found = InboxModStore.entries(in: store)
+        XCTAssertEqual(found, ["one": .init(goal: "Ship it", needsYou: false), "two": .init(goal: nil, needsYou: true)])
+    }
+
+    /// The store is found by its name's start, the newest file wins, and a missing or unreadable one is no entries.
+    func testTheStoreIsFoundByPatternAndAMissingOneIsNoEntries() throws {
+        let folder = temporaryFolder()
+        XCTAssertTrue(InboxModStore.entries(in: folder).isEmpty)
+        try write(#"{"s:old":{"ledger":{"card":{"goal":"Old"}}}}"#, to: folder.appendingPathComponent("inbox_inline-aaa.json"))
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -100)],
+                                              ofItemAtPath: folder.appendingPathComponent("inbox_inline-aaa.json").path)
+        try write(#"{"s:new":{"ledger":{"card":{"goal":"New"}}}}"#, to: folder.appendingPathComponent("inbox_inline-bbb.json"))
+        try write(#"{"s:x":{"ledger":{"card":{"goal":"Other mod"}}}}"#, to: folder.appendingPathComponent("session-card_inline-ccc.json"))
+        XCTAssertEqual(InboxModStore.entries(in: folder).keys.sorted(), ["new"])
+        try write("not json", to: folder.appendingPathComponent("inbox_inline-ddd.json"))
+        XCTAssertTrue(InboxModStore.entries(in: folder).isEmpty)
+    }
+
+    /// A test launch reads the scratch home's store only.
+    func testATestLaunchNeverReadsThePersonsStore() {
+        let person = "/Users/p"
+        XCTAssertNil(InboxModStore.folder(home: person, environment: ["VIGNETTE_SETTINGS": "/tmp/s.json"], personHome: person))
+        XCTAssertEqual(InboxModStore.folder(home: "/tmp/scratch", environment: ["VIGNETTE_SETTINGS": "/tmp/s.json", "CLAUDE_CONFIG_DIR": person + "/.claude"],
+                                            personHome: person)?.path, "/tmp/scratch/.claude/plugins/store")
+        XCTAssertEqual(InboxModStore.folder(home: person, environment: [:], personHome: person)?.path, person + "/.claude/plugins/store")
     }
 
     // MARK: Codex discovery

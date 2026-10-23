@@ -10,9 +10,14 @@ final class SessionListing {
     /// Injected so a test never runs herdr.
     private let readHerdr: @Sendable () -> HerdrFocus?
 
-    init(connections: [AgentClient: any AgentConnection], readHerdr: @escaping @Sendable () -> HerdrFocus? = { HerdrFocus.read() }) {
+    /// When a drawing was last handed to each session, from the request records.
+    private let sends: @MainActor () -> [String: Date]
+
+    init(connections: [AgentClient: any AgentConnection], readHerdr: @escaping @Sendable () -> HerdrFocus? = { HerdrFocus.read() },
+         sends: @escaping @MainActor () -> [String: Date] = { [:] }) {
         self.connections = connections
         self.readHerdr = readHerdr
+        self.sends = sends
     }
 
     /// Every session that can be addressed right now, the one used last first, and herdr's focus. A
@@ -27,7 +32,12 @@ final class SessionListing {
         guard !clients.isEmpty else { return completion(DestinationChoice.Candidates(destinations: [], complete: true, fresh: true)) }
         let answers = Answers()
         func deliver() {
-            let found = answers.lists.values.flatMap { $0 }.sorted(by: DestinationChoice.newestFirst)
+            let history = sends()
+            let found = answers.lists.values.flatMap { $0 }.map { destination -> AgentDestination in
+                var sent = destination
+                sent.lastSent = history[destination.id]
+                return sent
+            }.sorted(by: DestinationChoice.newestFirst)
             completion(DestinationChoice.Candidates(destinations: found, complete: answers.lists.count == clients.count,
                                                     fresh: answers.fresh.count == clients.count, herdr: answers.herdr))
         }
