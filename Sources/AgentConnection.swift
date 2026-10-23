@@ -74,6 +74,17 @@ struct AgentDestination: Equatable, Identifiable {
     /// herdr's focus is on its pane or beside it. Set only by `DestinationChoice` on the list it
     /// answers. Nil for every other session.
     var focus: Focus? = nil
+    /// Where the session works: its repository, or else its folder. Filled by the client's listing.
+    var place: Place = .none
+    /// The checked-out branch when it is not the repository's default. Nil on the default branch,
+    /// on a detached `HEAD`, and when it could not be read.
+    var branch: String? = nil
+    /// The label of the herdr tab the session runs in, when it runs in a herdr pane.
+    var hostLabel: String? = nil
+    /// When the session started, which numbers sessions with equal names.
+    var started: Date? = nil
+    /// Where the session is in its turns. Nil when its client does not report turns.
+    var turn: SessionTurn? = nil
 
     enum Focus: String, Equatable {
         /// Its agent's own app was the app in front, showing this session (`DestinationChoice`).
@@ -279,6 +290,10 @@ struct ClaudeCodeConnection: AgentConnection {
         var past: [String] = []
         /// When the monitor last said it was running.
         var alive: Date?
+        /// When the `session` file was created and last written: when the session started in this
+        /// process, and a time to order it by when its transcript has no message yet.
+        var started: Date?
+        var written: Date?
     }
 
     /// Every inbox under `root`. Nothing is read beyond the few short files in each.
@@ -294,8 +309,10 @@ struct ClaudeCodeConnection: AgentConnection {
                 return line.isEmpty ? nil : line
             }
             let alive = (try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("alive").path))?[.modificationDate] as? Date
+            let session = try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("session").path)
             return Inbox(folder: folder, pid: pid, session: line("session"), cwd: line("cwd"), transcript: line("transcript"),
-                         past: text("past").split(whereSeparator: \.isNewline).map(String.init), alive: alive)
+                         past: text("past").split(whereSeparator: \.isNewline).map(String.init), alive: alive,
+                         started: session?[.creationDate] as? Date, written: session?[.modificationDate] as? Date)
         }
     }
 
@@ -304,8 +321,13 @@ struct ClaudeCodeConnection: AgentConnection {
     /// prompt to the end of the turn and `idle` after it.
     func turn(of destination: AgentDestination) -> SessionTurn? {
         guard case .claudeSession(let session) = destination.address,
-              let inbox = liveInboxes().first(where: { $0.session == session }),
-              let turn = try? String(contentsOf: inbox.folder.appendingPathComponent("turn"), encoding: .utf8) else { return nil }
+              let inbox = liveInboxes().first(where: { $0.session == session }) else { return nil }
+        return Self.turn(of: inbox)
+    }
+
+    /// The same, from an inbox already read.
+    static func turn(of inbox: Inbox) -> SessionTurn? {
+        guard let turn = try? String(contentsOf: inbox.folder.appendingPathComponent("turn"), encoding: .utf8) else { return nil }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: inbox.folder.path)) ?? []
         if names.contains(where: { $0.hasSuffix(".line") }) { return .waiting }
         switch turn.trimmingCharacters(in: .whitespacesAndNewlines) {
@@ -344,7 +366,7 @@ struct ClaudeCodeConnection: AgentConnection {
             let file = inbox.transcript.map { URL(fileURLWithPath: $0) }.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
                 ?? Self.transcriptFile(session: session, folders: folders)
             let transcript = file.flatMap { Self.tail(of: $0) }.map(Self.transcript(tail:)) ?? Transcript()
-            return Self.destination(session: session, cwd: inbox.cwd, transcript: transcript)
+            return Self.destination(session: session, cwd: inbox.cwd, transcript: transcript, inbox: inbox)
         }
         return listed
     }
@@ -353,14 +375,24 @@ struct ClaudeCodeConnection: AgentConnection {
     /// session with no title yet, one nobody has written to, is named by its project. The project is
     /// the folder Claude Code runs in: the transcript's `cwd` follows the session's shell, so a
     /// session that ran `cd .scratch` would read as a project called ".scratch" (observed 2026-09-24).
-    static func destination(session: String, cwd: String?, transcript: Transcript) -> AgentDestination {
-        let project = ((cwd ?? transcript.cwd ?? "") as NSString).lastPathComponent
+    /// `inbox` adds what it knows: when the session started, a time to order it by when its
+    /// transcript has no message yet, and its turn. The place comes from the inbox's folder, never
+    /// the transcript's `cwd`.
+    static func destination(session: String, cwd: String?, transcript: Transcript, inbox: Inbox? = nil,
+                            home: String = NSHomeDirectory()) -> AgentDestination {
+        let folder = cwd ?? transcript.cwd ?? ""
+        let project = (folder as NSString).lastPathComponent
+        let found = SessionPlaces.resolve(folder: cwd, home: home)
         return AgentDestination(
             id: session,
             name: transcript.title ?? (project.isEmpty ? "New session" : "New session in \(project)"),
             detail: project,
             address: .claudeSession(session),
-            lastUsed: transcript.lastUsed)
+            lastUsed: transcript.lastUsed ?? inbox?.written,
+            place: found.place,
+            branch: found.branch,
+            started: inbox?.started,
+            turn: inbox.flatMap { turn(of: $0) })
     }
 
     /// Writes the request into the session's inbox, aside and then renamed in, so the monitor never
@@ -396,7 +428,11 @@ struct ClaudeCodeConnection: AgentConnection {
     /// What a session's transcript says about it.
     struct Transcript: Equatable {
         /// The last `ai-title` entry's title. Claude Code rewrites it as the session goes on.
-        var title: String?
+        var aiTitle: String?
+        /// The last `custom-title` entry's title, which the person chose.
+        var customTitle: String?
+        /// The session's own name: the one the person chose, else Claude Code's.
+        var title: String? { customTitle ?? aiTitle }
         /// The folder the session's shell was in at its last message. Only the project when herdr
         /// does not say where the pane runs.
         var cwd: String?
@@ -434,15 +470,22 @@ struct ClaudeCodeConnection: AgentConnection {
     /// can hold what is wanted are parsed.
     static func transcript(tail: Data) -> Transcript {
         var found = Transcript()
-        let titleMark = Data(#""type":"ai-title""#.utf8)
+        let aiTitleMark = Data(#""type":"ai-title""#.utf8)
+        let customTitleMark = Data(#""type":"custom-title""#.utf8)
         let messageMarks = [Data(#""type":"user""#.utf8), Data(#""type":"assistant""#.utf8)]
         let timeMark = Data(#""timestamp":""#.utf8)
         for line in tail.split(separator: UInt8(ascii: "\n")).reversed() {
-            if found.title != nil && found.lastUsed != nil { break }
-            if found.title == nil, line.range(of: titleMark) != nil,
+            if found.customTitle != nil && found.aiTitle != nil && found.lastUsed != nil { break }
+            if found.aiTitle == nil, line.range(of: aiTitleMark) != nil,
                let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
                let title = entry["aiTitle"] as? String, !title.isEmpty {
-                found.title = title
+                found.aiTitle = title
+                continue
+            }
+            if found.customTitle == nil, line.range(of: customTitleMark) != nil,
+               let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+               let title = entry["customTitle"] as? String, !title.isEmpty {
+                found.customTitle = title
                 continue
             }
             if found.lastUsed == nil, line.range(of: timeMark) != nil,
@@ -508,19 +551,23 @@ struct CodexConnection: AgentConnection {
     private func discover(shown: String?) -> [AgentDestination] {
         guard let codex = binary() else { return [] }
         let lines = converse(codex, ["app-server"], AppServer.discoveryRequests(shown: shown))
-        let listed = AppServer.threads(in: lines).map(Self.destination)
+        let listed = AppServer.threads(in: lines).map { Self.destination($0) }
         guard let shown, let thread = AppServer.read(in: lines), thread.id == shown,
               !listed.contains(where: { $0.id == shown }) else { return listed }
         return listed + [Self.destination(thread)]
     }
 
-    private static func destination(_ thread: AppServer.Thread) -> AgentDestination {
-        AgentDestination(
+    static func destination(_ thread: AppServer.Thread, home: String = NSHomeDirectory()) -> AgentDestination {
+        let found = SessionPlaces.resolve(folder: thread.cwd, originURL: thread.originURL, home: home)
+        return AgentDestination(
             id: thread.id,
             name: name(of: thread),
             detail: (thread.cwd as NSString).lastPathComponent,
             address: .codexThread(uuid: thread.id),
-            lastUsed: thread.recencyAt)
+            lastUsed: thread.recencyAt,
+            place: found.place,
+            branch: found.branch,
+            started: thread.createdAt)
     }
 
     /// A thread's name as the Codex app shows it: its own name, or for a thread with none, its first

@@ -78,6 +78,7 @@ enum DestinationChoice {
         candidates.destinations.map { destination in
             var cleared = destination
             cleared.focus = nil
+            cleared.hostLabel = candidates.herdr?.label(ofSession: destination.id) ?? destination.hostLabel
             return cleared
         }
     }

@@ -495,6 +495,8 @@ final class ScreenshotRequestsTests: XCTestCase {
                                                       instructions: SettingsData.defaultSendInstructions)
         XCTAssertEqual(connection.lines, [expected], "the line is what a send with no grace would have written")
         XCTAssertEqual(try stored(record).status, .submitted)
+        XCTAssertNotNil(try stored(record).handedOver)
+        XCTAssertEqual(requests.sendHistory().keys.sorted(), ["s"], "a handed-over request is send history")
     }
 
     /// A send cancelled in its grace that still reached the agent, or deleted the screenshot, is the failure to catch.
@@ -508,6 +510,8 @@ final class ScreenshotRequestsTests: XCTestCase {
         clock.fire()
         await assertNothingSent(to: connection)
         XCTAssertEqual(try stored(record).status, .cleared)
+        XCTAssertNil(try stored(record).handedOver)
+        XCTAssertTrue(requests.sendHistory().isEmpty, "a send cancelled in its grace is not send history")
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("image.png").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: source.path), "the person's screenshot stays")

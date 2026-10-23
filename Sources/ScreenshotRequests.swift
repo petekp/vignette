@@ -111,6 +111,9 @@ final class ScreenshotRequests {
         /// Why the client did not take the request, for a listing after a restart. Empty when it
         /// did: an accepted submission says only what the address already says.
         var detail: String
+        /// When the request's line was handed to the client. Nil while it has not been, and for a
+        /// request cancelled in its grace period, which a clear also ends as `cleared`.
+        var handedOver: Date? = nil
 
         enum Status: String, Codable {
             /// Stored and not yet handed to the client: in its grace, or about to be.
@@ -298,6 +301,18 @@ final class ScreenshotRequests {
     /// A send refused before the client was invoked, with what the person reads about it.
     struct Refusal: Error { let reason: String }
 
+    /// For each session, when its newest request was handed to it. A request cancelled in its grace
+    /// period never was, and a request cleared afterwards still was.
+    func sendHistory() -> [String: Date] {
+        var history: [String: Date] = [:]
+        for record in requests.values {
+            guard let handedOver = record.handedOver else { continue }
+            if let known = history[record.destinationID], known >= handedOver { continue }
+            history[record.destinationID] = handedOver
+        }
+        return history
+    }
+
     /// Stores the drawing and the request, then hands it to the client. The store happens first and
     /// on the main thread: once this answers, the request exists whatever the client does next, and
     /// the annotator may close. The client gets the line `grace` seconds later, or at once when that
@@ -413,6 +428,7 @@ final class ScreenshotRequests {
         var going = record
         going.status = .uncertain
         going.detail = detail
+        going.handedOver = Date()
         requests[record.id] = going
         do { try write(going) }
         catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not store \(record.id): \(error.localizedDescription)") }

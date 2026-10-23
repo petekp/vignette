@@ -495,6 +495,179 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertTrue(CodexConnection.isLoaded(thread, codexHome: home))
     }
 
+    // MARK: Where a session works
+
+    private func makeFolder(_ path: String, in root: URL) throws -> URL {
+        let url = root.appendingPathComponent(path)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func write(_ text: String, to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: url)
+    }
+
+    private func canonical(_ url: URL) -> String {
+        (try? url.resourceValues(forKeys: [.canonicalPathKey]).canonicalPath) ?? url.path
+    }
+
+    /// A custom title is the person's and beats the one Claude Code writes, whichever came last.
+    func testACustomTitleBeatsTheAITitle() {
+        let tail = """
+        {"type":"custom-title","customTitle":"Mine","sessionId":"x"}
+        {"type":"ai-title","aiTitle":"Theirs","sessionId":"x"}
+        {"type":"user","timestamp":"2026-09-19T03:42:45.341Z","message":{}}
+        """
+        let found = ClaudeCodeConnection.transcript(tail: Data(tail.utf8))
+        XCTAssertEqual(found.title, "Mine")
+        XCTAssertEqual(found.aiTitle, "Theirs")
+    }
+
+    /// The repository comes from `.git` files alone: a main checkout, a worktree through its
+    /// `commondir`, and the branch only when it is not the default.
+    func testARepositoryWorktreeSubfolderAndBranchAreReadFromGitFiles() throws {
+        let base = temporaryFolder()
+        let home = try makeFolder("home", in: base)
+        let main = try makeFolder("home/Code/evercars", in: base)
+        try write("ref: refs/heads/main\n", to: main.appendingPathComponent(".git/HEAD"))
+        try write("ref: refs/remotes/origin/main\n", to: main.appendingPathComponent(".git/refs/remotes/origin/HEAD"))
+        _ = try makeFolder("home/Code/evercars/apps/pdk-ui/.hidden", in: base)
+
+        let inMain = SessionPlaces.resolve(folder: main.appendingPathComponent("apps/pdk-ui").path, home: home.path)
+        XCTAssertEqual(inMain.place, .repository(name: "evercars", root: canonical(main), worktree: nil, subfolder: "apps/pdk-ui"))
+        XCTAssertNil(inMain.branch, "the default branch is not shown")
+
+        let inHidden = SessionPlaces.resolve(folder: main.appendingPathComponent("apps/pdk-ui/.hidden").path, home: home.path)
+        XCTAssertEqual(inHidden.place, .repository(name: "evercars", root: canonical(main), worktree: nil, subfolder: "apps/pdk-ui"))
+
+        // A worktree: its `.git` file names its gitdir, whose `commondir` names the main repository's.
+        let worktree = try makeFolder("home/Code/worktrees/evercars/live-ink", in: base)
+        let gitdir = main.appendingPathComponent(".git/worktrees/live-ink")
+        try write("gitdir: \(gitdir.path)\n", to: worktree.appendingPathComponent(".git"))
+        try write("../..\n", to: gitdir.appendingPathComponent("commondir"))
+        try write("ref: refs/heads/live-ink\n", to: gitdir.appendingPathComponent("HEAD"))
+        let inWorktree = SessionPlaces.resolve(folder: worktree.path, home: home.path)
+        XCTAssertEqual(inWorktree.place, .repository(name: "evercars", root: canonical(main), worktree: "live-ink", subfolder: nil))
+        XCTAssertEqual(inWorktree.branch, "live-ink")
+
+        // A worktree Codex made is "Codex worktree", whatever its folder is called, and a detached HEAD has no branch.
+        // A worktree that is gone inside its repository is that worktree, not a subfolder of the checkout.
+        let goneInside = SessionPlaces.resolve(folder: main.appendingPathComponent(".claude/worktrees/agent-1").path, home: home.path)
+        XCTAssertEqual(goneInside.place, .repository(name: "evercars", root: canonical(main), worktree: "agent-1", subfolder: nil))
+
+        let codex = try makeFolder("home/.codex/worktrees/6684/evercars", in: base)
+        let codexGitdir = main.appendingPathComponent(".git/worktrees/evercars1")
+        try write("gitdir: \(codexGitdir.path)\n", to: codex.appendingPathComponent(".git"))
+        try write("../..\n", to: codexGitdir.appendingPathComponent("commondir"))
+        try write("0123456789abcdef\n", to: codexGitdir.appendingPathComponent("HEAD"))
+        let inCodex = SessionPlaces.resolve(folder: codex.path, home: home.path)
+        XCTAssertEqual(inCodex.place, .repository(name: "evercars", root: canonical(main), worktree: SessionPlaces.codexWorktree, subfolder: nil))
+        XCTAssertNil(inCodex.branch)
+    }
+
+    /// With no origin/HEAD the default is main, else master, and a session on another branch shows it.
+    func testTheDefaultBranchFallsBackToMainThenMaster() throws {
+        let base = temporaryFolder()
+        let home = try makeFolder("home", in: base)
+        let repo = try makeFolder("home/old", in: base)
+        try write("ref: refs/heads/feature\n", to: repo.appendingPathComponent(".git/HEAD"))
+        try write("0123\n", to: repo.appendingPathComponent(".git/refs/heads/master"))
+        XCTAssertEqual(SessionPlaces.resolve(folder: repo.path, home: home.path).branch, "feature")
+        try write("ref: refs/heads/master\n", to: repo.appendingPathComponent(".git/HEAD"))
+        XCTAssertNil(SessionPlaces.resolve(folder: repo.path, home: home.path).branch)
+    }
+
+    /// A folder with no repository is Other folders as a path from home, and home's own `.git` is never taken.
+    func testAFolderWithNoRepositoryIsAPathFromHome() throws {
+        let base = temporaryFolder()
+        let home = try makeFolder("home", in: base)
+        try write("ref: refs/heads/main\n", to: home.appendingPathComponent(".git/HEAD"))
+        let code = try makeFolder("home/Code", in: base)
+        XCTAssertEqual(SessionPlaces.resolve(folder: code.path, home: home.path).place, .folder(fromHome: "~/Code"))
+        XCTAssertEqual(SessionPlaces.resolve(folder: home.path, home: home.path).place, .folder(fromHome: "~"))
+        XCTAssertEqual(SessionPlaces.resolve(folder: nil, home: home.path).place, .none)
+    }
+
+    /// A folder that is gone is read from its shape, then from the remote, else it is a plain folder.
+    func testAFolderThatIsGoneIsReadFromItsShapeThenItsRemote() throws {
+        let base = temporaryFolder()
+        let home = try makeFolder("home", in: base)
+        func place(_ path: String, origin: String? = nil) -> Place {
+            SessionPlaces.resolve(folder: home.appendingPathComponent(path).path, originURL: origin, home: home.path).place
+        }
+        XCTAssertEqual(place(".codex/worktrees/6684/evercars/apps/ui"),
+                       .repository(name: "evercars", root: nil, worktree: SessionPlaces.codexWorktree, subfolder: "apps/ui"))
+        XCTAssertEqual(place("Code/worktrees/vignette/menu"), .repository(name: "vignette", root: nil, worktree: "menu", subfolder: nil))
+        XCTAssertEqual(place("Code/vignette/.worktrees/menu/Sources"), .repository(name: "vignette", root: nil, worktree: "menu", subfolder: "Sources"))
+        XCTAssertEqual(place("Code/vignette/.claude/worktrees/menu"), .repository(name: "vignette", root: nil, worktree: "menu", subfolder: nil))
+        XCTAssertEqual(place("Code/gone", origin: "git@github.com:Ever-Cars/evercars-backend.git"),
+                       .repository(name: "evercars-backend", root: nil, worktree: nil, subfolder: nil))
+        XCTAssertEqual(place("Code/gone"), .folder(fromHome: "~/Code/gone"))
+        XCTAssertEqual(SessionPlaces.remoteName("https://github.com/Ever-Cars/evercars-backend.git"), "evercars-backend")
+    }
+
+    func testHerdrTabLabelsAreReadByTabAndFoundBySession() {
+        let labels = HerdrFocus.tabLabels(in: Data(#"{"result":{"tabs":[{"tab_id":"w1:t1","label":"Fix ink"},{"tab_id":"w1:t2","label":" "}]}}"#.utf8))
+        XCTAssertEqual(labels, ["w1:t1": "Fix ink"])
+        let focus = HerdrFocus(pane: "p", tab: "w1:t1", agents: [.init(pane: "p", session: "s1", tab: "w1:t1")], tabLabels: labels)
+        XCTAssertEqual(focus.label(ofSession: "s1"), "Fix ink")
+        XCTAssertNil(focus.label(ofSession: "s2"))
+    }
+
+    // MARK: The session menu's order and groups
+
+    private func session(_ id: String, used hours: Double, place: Place = .none, now: Date) -> AgentDestination {
+        AgentDestination(id: id, name: id, address: .claudeSession(id), lastUsed: now.addingTimeInterval(-hours * 3600), place: place)
+    }
+
+    private func repo(_ name: String, at root: String? = nil) -> Place {
+        .repository(name: name, root: root ?? "/Users/p/Code/\(name)", worktree: nil, subfolder: nil)
+    }
+
+    /// Sessions sent to in the last 4 hours come first, newest send first; a send older than that, or one
+    /// that never happened, leaves the order to when the agent last worked.
+    func testTheMenuRanksRecentSendsFirstThenTheAgentsLastWork() {
+        let now = Date()
+        let list = [session("a", used: 1, now: now), session("b", used: 2, now: now), session("c", used: 3, now: now),
+                    session("d", used: 4, now: now)]
+        let sends = ["c": now.addingTimeInterval(-600), "d": now.addingTimeInterval(-60), "b": now.addingTimeInterval(-5 * 3600)]
+        XCTAssertEqual(SessionMenu.ranked(list, sends: sends, now: now).map(\.id), ["d", "c", "a", "b"])
+    }
+
+    /// Five are kept before grouping, the destination takes the last when it is missing, and the rest
+    /// are the submenu's.
+    func testTheMenuKeepsFiveThenGroupsThemWithOtherFoldersLast() {
+        let now = Date()
+        let list = [session("a", used: 1, place: .folder(fromHome: "~/Code"), now: now),
+                    session("b", used: 2, place: repo("vignette"), now: now),
+                    session("c", used: 3, place: repo("inbox"), now: now),
+                    session("d", used: 4, place: repo("vignette"), now: now),
+                    session("e", used: 5, place: repo("inbox"), now: now),
+                    session("f", used: 6, place: repo("vignette"), now: now),
+                    session("g", used: 7, place: repo("inbox"), now: now)]
+        let menu = SessionMenu.menu(list, sends: [:], destination: list[6], now: now)
+        XCTAssertEqual(menu.top.map(\.header), ["vignette", "inbox", "Other folders"])
+        XCTAssertEqual(menu.top.map { $0.rows.map(\.id) }, [["b", "d"], ["c", "g"], ["a"]],
+                       "the destination took the fifth row, and the groups follow their first rows")
+        XCTAssertEqual(menu.more.map { $0.rows.map(\.id) }, [["e"], ["f"]])
+        XCTAssertNil(SessionMenu.menu(list, sends: [:], destination: nil, now: now).top.flatMap(\.rows).first { $0.id == "g" },
+                     "a note on the responder forces no row in")
+    }
+
+    /// A repository known only by name joins the one checkout of that name; two checkouts with one name
+    /// get their parent folder in the header.
+    func testRepositoriesJoinByNameAndSameNamesAddTheirParentFolder() {
+        let now = Date()
+        let list = [session("a", used: 1, place: repo("foo", at: "/Users/p/ever/foo"), now: now),
+                    session("b", used: 2, place: .repository(name: "bar", root: nil, worktree: nil, subfolder: nil), now: now),
+                    session("c", used: 3, place: repo("bar"), now: now),
+                    session("d", used: 4, place: repo("foo", at: "/Users/p/Code/foo"), now: now)]
+        let menu = SessionMenu.menu(list, sends: [:], destination: nil, now: now)
+        XCTAssertEqual(menu.top.map(\.header), ["ever/foo", "bar", "Code/foo"])
+        XCTAssertEqual(menu.top[1].rows.map(\.id), ["b", "c"], "the name-only session joined the one checkout called bar")
+    }
+
     // MARK: Codex discovery
 
     /// Every thread the listing reports becomes a destination, named, with its own project and

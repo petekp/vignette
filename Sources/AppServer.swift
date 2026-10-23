@@ -30,6 +30,10 @@ enum AppServer {
         var recencyAt: Date? = nil
         /// The thread's first message, which names a thread that has no name.
         var preview: String? = nil
+        /// When the thread was created: the listing's `createdAt`.
+        var createdAt: Date? = nil
+        /// The remote the thread's repository was cloned from, `gitInfo.originUrl`.
+        var originURL: String? = nil
     }
 
     /// The request lines for one discovery: the handshake, the listing of the threads used last, and,
@@ -96,7 +100,9 @@ enum AppServer {
         if let parent = item["parentThreadId"] as? String, !parent.isEmpty { return nil }
         return Thread(id: id, name: item["name"] as? String, cwd: cwd,
                       recencyAt: (item["recencyAt"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) },
-                      preview: item["preview"] as? String)
+                      preview: item["preview"] as? String,
+                      createdAt: (item["createdAt"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) },
+                      originURL: (item["gitInfo"] as? [String: Any])?["originUrl"] as? String)
     }
 
     /// Writes every request, reads until each one that carries an id has been answered, and ends

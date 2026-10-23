@@ -6,6 +6,8 @@ struct HerdrFocus: Equatable, Sendable {
     let pane: String
     let tab: String
     let agents: [AgentPane]
+    /// Each tab's label, by tab id, as `herdr tab list` reports them. Empty when that call fails.
+    var tabLabels: [String: String] = [:]
 
     /// One pane running an agent, of any kind, as `herdr pane list` reports it.
     struct AgentPane: Equatable, Sendable {
@@ -32,7 +34,29 @@ struct HerdrFocus: Equatable, Sendable {
                          Subprocess.run($0, $1, timeout: $2)
                      }) -> HerdrFocus? {
         guard let herdr = binary(), let panes = run(herdr, ["pane", "list"], timeout), panes.status == 0 else { return nil }
-        return HerdrFocus(paneList: Data(panes.output.utf8))
+        var focus = HerdrFocus(paneList: Data(panes.output.utf8))
+        if focus != nil, let tabs = run(herdr, ["tab", "list"], timeout), tabs.status == 0 {
+            focus?.tabLabels = tabLabels(in: Data(tabs.output.utf8))
+        }
+        return focus
+    }
+
+    /// The labels in a `herdr tab list` answer, by tab id. A tab with no label is left out.
+    static func tabLabels(in data: Data) -> [String: String] {
+        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let tabs = ((root?["result"] as? [String: Any])?["tabs"] as? [[String: Any]]) ?? []
+        var labels: [String: String] = [:]
+        for tab in tabs {
+            guard let id = tab["tab_id"] as? String, let label = tab["label"] as? String,
+                  !label.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+            labels[id] = label
+        }
+        return labels
+    }
+
+    /// The label of the tab whose pane runs `session`, if herdr says so.
+    func label(ofSession session: String) -> String? {
+        agents.first { $0.session == session }.flatMap { tabLabels[$0.tab] }
     }
 
     /// herdr's focused pane and its tab, from a `herdr pane list` answer, which lists every pane,
