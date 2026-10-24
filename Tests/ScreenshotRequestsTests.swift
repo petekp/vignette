@@ -12,6 +12,7 @@ final class ScreenshotRequestsTests: XCTestCase {
     private var presented: [URL] = []
     /// The requests whose reply could not be made a card.
     private var replyFailures: [String] = []
+    private var replyFailureSources: [ScreenshotKey] = []
     /// Set to hold the answer: the completion lands here instead of being called, which is what a
     /// real installation does before its completion reaches the request owner.
     private var heldAdd: ((Drawings.Failure?) -> Void)?
@@ -32,7 +33,10 @@ final class ScreenshotRequestsTests: XCTestCase {
             },
             present: { [unowned self] shot in self.presented.append(shot.url) },
             watchFolder: { [unowned self] in self.folder },
-            replyFailed: { [unowned self] record, _ in self.replyFailures.append(record.id) })
+            replyFailed: { [unowned self] record, _ in
+                self.replyFailures.append(record.id)
+                self.replyFailureSources.append(self.requests.sourceKey(of: record))
+            })
     }
 
     override func tearDownWithError() throws {
@@ -121,7 +125,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         let drawings = Drawings(store: store)
         requests.callbacks.installDrawing = { [unowned self] shot, marks, agent, done in
             do {
-                try drawings.installReply(marks, from: agent, at: shot.url, style: .standard, newPointScale: 2)
+                try drawings.installReply(marks, from: agent, at: shot.key, style: .standard, newPointScale: 2)
                 self.heldAdd = done
             } catch {
                 done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
@@ -145,7 +149,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         requests.callbacks = ScreenshotRequests.Callbacks(
             installDrawing: { shot, marks, agent, done in
                 do {
-                    try reopened.installReply(marks, from: agent, at: shot.url, style: changedStyle, newPointScale: 1)
+                    try reopened.installReply(marks, from: agent, at: shot.key, style: changedStyle, newPointScale: 1)
                     done(nil)
                 } catch { done(Drawings.Failure(code: .writeFailed, description: "\(error)")) }
             },
@@ -375,6 +379,38 @@ final class ScreenshotRequestsTests: XCTestCase {
                        "the code receipts have always carried for a drawing that could not be stored")
     }
 
+    func testAReplyThatFailsAfterItsScreenshotWasRenamedNamesTheNewName() throws {
+        addFails = true
+        let record = try makeRequest()
+        let renamed = folder.appendingPathComponent("Renamed.png")
+        requests.renamed([(from: folder.appendingPathComponent("Screenshot.png").screenshotKey, to: renamed.screenshotKey)])
+        try requests.receiveReply(envelope: stageReply(record))
+        XCTAssertEqual(replyFailureSources, [renamed.screenshotKey])
+    }
+
+    func testARenamedReplyKeepsItsOriginAndIsNotTakenForDeleted() throws {
+        let record = try makeRequest()
+        try requests.receiveReply(envelope: stageReply(record))
+        let file = folder.appendingPathComponent(ReplyProtocol.replyFileName(try replyID(in: record)))
+        let renamed = folder.appendingPathComponent("Checkout fix.png")
+        try FileManager.default.moveItem(at: file, to: renamed)
+        requests.renamed([(from: file.screenshotKey, to: renamed.screenshotKey)])
+        XCTAssertEqual(requests.origin(of: renamed)?.address, .claudeSession("session-1"))
+        XCTAssertNil(requests.origin(of: file))
+        XCTAssertTrue(requests.isVisible(renamed))
+        requests.reconcile(try inventory(in: folder))
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["deleted"] as? Bool, false)
+
+        let reopened = ScreenshotRequests(root: root)
+        reopened.callbacks = requests.callbacks
+        reopened.load()
+        XCTAssertEqual(reopened.origin(of: renamed)?.address, .claudeSession("session-1"))
+
+        try FileManager.default.removeItem(at: renamed)
+        requests.fileRemoved(renamed)
+        XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["deleted"] as? Bool, true)
+    }
+
     func testAnUnknownManagedNameIsHiddenRatherThanTreatedAsACapture() {
         let stray = folder.appendingPathComponent(ReplyProtocol.replyFileName("ffffffff-0000-4000-8000-000000000001"))
         XCTAssertFalse(requests.isVisible(stray), "a corrupt or missing record fails closed")
@@ -504,7 +540,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         let events = GraceEvents()
         let (connection, clock) = holdSends(events: events)
         let (record, source) = try send("Shot.png")
-        XCTAssertEqual(requests.unsend(file: source).map(\.id), [record.id])
+        XCTAssertEqual(requests.unsend(file: source.screenshotKey).map(\.id), [record.id])
         XCTAssertEqual(events.all, ["cancelled"])
         clock.time += 3
         clock.fire()
@@ -530,7 +566,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         clock.time += 3
         clock.fire()
         await fulfillment(of: [answered], timeout: 3)
-        XCTAssertTrue(requests.unsend(file: source).isEmpty)
+        XCTAssertTrue(requests.unsend(file: source.screenshotKey).isEmpty)
         XCTAssertFalse(events.all.contains("cancelled"))
         XCTAssertEqual(try stored(record).status, .submitted)
     }
@@ -543,7 +579,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         requests.callbacks.delivered = { _, _ in answered.fulfill() }
         let (_, first) = try send("First.png")
         let (second, _) = try send("Second.png")
-        XCTAssertEqual(requests.unsend(file: first).count, 1)
+        XCTAssertEqual(requests.unsend(file: first.screenshotKey).count, 1)
         clock.time += 3
         clock.fire()
         await fulfillment(of: [answered], timeout: 3)

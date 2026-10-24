@@ -17,7 +17,7 @@ final class LiveInkOverlay: NSPanel {
     static let restingLevel = NSWindow.Level(rawValue: 1)
     /// A test launch with `VIGNETTE_SHARE_LIVE_INK` in its environment lets captures see the marks,
     /// so a test can look at what it drew.
-    static let sharedWithCaptures = Settings.isOverridden && ProcessInfo.processInfo.environment["VIGNETTE_SHARE_LIVE_INK"] != nil
+    static let sharedWithCaptures = Launch.isTest && ProcessInfo.processInfo.environment["VIGNETTE_SHARE_LIVE_INK"] != nil
 
     /// The screen it covers.
     let display: CGDirectDisplayID

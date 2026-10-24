@@ -107,6 +107,9 @@ final class ScreenshotRequests {
         /// The screenshot the drawing was made on, for the log and the picker. Not a path: the
         /// original stays the person's and may be moved or deleted without touching this request.
         let source: String
+        /// The source's path as the watch folder spelled it when the request was made. A record from
+        /// before this field has only `source`, which a current folder completes.
+        var sourceKey: String? = nil
         var status: Status
         /// Why the client did not take the request, for a listing after a restart. Empty when it
         /// did: an accepted submission says only what the address already says.
@@ -143,6 +146,10 @@ final class ScreenshotRequests {
         var answer: LiveAnswer? = nil
         var stage: Stage
         var destination: URL?
+        /// Where the person renamed the published file to, inside the watch folder. Nil while it
+        /// keeps its reserved name. Only a published reply has one, and a published file is never
+        /// deleted, so this is never a place cleanup removes a file from.
+        var renamedTo: URL?
         var needsOutputCleanup: Bool?
         /// The person deleted the published file. Publication still happened and is not undone.
         var deleted = false
@@ -188,6 +195,9 @@ final class ScreenshotRequests {
                   destination.lastPathComponent == fileName else { return nil }
             return destination.standardizedFileURL
         }
+
+        /// Where the published file is now.
+        var publishedURL: URL? { renamedTo?.standardizedFileURL ?? outputURL }
 
         var publication: ReplyProtocol.Receipt.Publication {
             if deleted { return .removed }
@@ -248,7 +258,7 @@ final class ScreenshotRequests {
     func isVisible(_ url: URL) -> Bool {
         guard let id = ReplyProtocol.replyID(fromFileName: url.lastPathComponent) else { return true }
         guard let reply = replies[id], reply.stage == .published else { return false }
-        return reply.destination == nil || reply.outputURL == url.standardizedFileURL
+        return reply.destination == nil || reply.publishedURL == url.standardizedFileURL
     }
 
     /// Whether a new file in the watch folder is an ordinary capture. A managed reply never is: it
@@ -262,9 +272,11 @@ final class ScreenshotRequests {
     /// card is a way of not sending it. A deleted published reply stays deleted: publication happened,
     /// and the recovery copy is not used to put the file back.
     func fileRemoved(_ url: URL) {
-        unsend(file: url)
-        guard let id = ReplyProtocol.replyID(fromFileName: url.lastPathComponent), var reply = replies[id],
-              reply.stage == .published, reply.outputURL == url.standardizedFileURL, !reply.deleted else { return }
+        unsend(file: ScreenshotKey(naming: url, in: callbacks.watchFolder()))
+        let url = url.standardizedFileURL
+        guard var reply = replies.values.first(where: { $0.stage == .published && !$0.deleted && $0.publishedURL == url })
+        else { return }
+        let id = reply.id
         reply.deleted = true
         replies[id] = reply
         try? write(reply)
@@ -275,7 +287,7 @@ final class ScreenshotRequests {
         publicationReady = true
         for record in requests.values where record.status == .cleared { cleanup(record.id, inventory: inventory) }
         for (id, reply) in replies where reply.stage == .published && !reply.deleted {
-            guard publishedAt[id, default: 0] <= inventory.observedAt, let url = reply.outputURL,
+            guard publishedAt[id, default: 0] <= inventory.observedAt, let url = reply.publishedURL,
                   inventory.confirmsAbsence(of: url) else { continue }
             fileRemoved(url)
         }
@@ -285,8 +297,10 @@ final class ScreenshotRequests {
 
     /// The destination a reply's card came from, so Reply goes back to the same conversation.
     func origin(of url: URL) -> AgentDestination? {
-        guard let id = ReplyProtocol.replyID(fromFileName: url.lastPathComponent),
-              let reply = replies[id], reply.destination == nil || reply.outputURL == url.standardizedFileURL,
+        let url = url.standardizedFileURL
+        let named = ReplyProtocol.replyID(fromFileName: url.lastPathComponent).flatMap { replies[$0] }
+            .flatMap { $0.destination == nil || $0.publishedURL == url ? $0 : nil }
+        guard let reply = named ?? replies.values.first(where: { $0.stage == .published && $0.publishedURL == url }),
               let request = requests[reply.requestID] else { return nil }
         return AgentDestination(id: request.destinationID, name: request.destinationName, address: request.address)
     }
@@ -294,6 +308,33 @@ final class ScreenshotRequests {
     /// The agent answered `request` with a reply Vignette kept, whether or not its card is up yet.
     func hasReply(to request: String) -> Bool {
         replies.values.contains { $0.requestID == request && $0.stage != .failed && $0.stage != .cancelled }
+    }
+
+    /// The screenshot a request was sent from. A record from before `sourceKey` keeps only its
+    /// name, and a send is made from the watch folder.
+    func sourceKey(of record: Record) -> ScreenshotKey {
+        record.sourceKey.map { ScreenshotKey(asGiven: $0) } ?? ScreenshotKey(folder: callbacks.watchFolder(), name: record.source)
+    }
+
+    /// Files renamed inside the watch folder. A published reply's record follows its file, so its
+    /// card keeps Reply. A request follows the screenshot it was sent from, so a reply that fails
+    /// still finds that card, and a send still in its grace follows it, so Don't send still reaches it.
+    func renamed(_ renames: [FolderWrites.Rename]) {
+        for rename in renames {
+            let from = rename.from.url.standardizedFileURL, to = rename.to.url.standardizedFileURL
+            for var reply in replies.values where reply.stage == .published && !reply.deleted && reply.publishedURL == from {
+                reply.renamedTo = to == reply.outputURL ? nil : rename.to.url
+                replies[reply.id] = reply
+                do { try write(reply) } catch { Log.write("[reply] error rename-not-recorded \(reply.id): \(error)") }
+                Log.write("[reply] renamed \(reply.fileName) to \(rename.to.name)")
+            }
+            for var record in requests.values where record.status != .cleared && sourceKey(of: record) == rename.from {
+                record.sourceKey = rename.to.path
+                requests[record.id] = record
+                do { try write(record) } catch { Log.write("[requests] error rename-not-recorded \(record.id): \(error)") }
+            }
+            run(sendGrace.handle(.renamed(from: rename.from, to: rename.to)))
+        }
     }
 
     // MARK: Sending
@@ -331,7 +372,7 @@ final class ScreenshotRequests {
         let record = Record(id: id, created: Date(), destinationID: destination.id,
                             destinationName: destination.name, address: destination.address,
                             addressGuard: destination.address.guardTier, source: source.lastPathComponent,
-                            status: .prepared, detail: "")
+                            sourceKey: source.path, status: .prepared, detail: "")
         let ticket = ReplyProtocol.Ticket(requestID: id, secret: ReplyProtocol.newSecret(),
                                           requestDirectory: directory.path, app: Bundle.main.bundlePath)
         do {
@@ -374,7 +415,7 @@ final class ScreenshotRequests {
         // The message travels in the line only: it is the person's words, so neither the record
         // nor the log keeps it.
         let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions)
-        run(sendGrace.handle(.sent(request: id, file: source.standardizedFileURL.path, line: line, grace: grace, at: now())))
+        run(sendGrace.handle(.sent(request: id, file: sourceKey(of: record), line: line, grace: grace, at: now())))
         return record
     }
 
@@ -475,8 +516,8 @@ final class ScreenshotRequests {
     /// the cards. Answers the requests it cancelled, and nothing when none was waiting: the line was
     /// handed over already, or there was no send.
     @discardableResult
-    func unsend(file: URL) -> [Record] {
-        let effects = sendGrace.handle(.cancelled(file: file.standardizedFileURL.path))
+    func unsend(file: ScreenshotKey) -> [Record] {
+        let effects = sendGrace.handle(.cancelled(file: file))
         let cancelled = effects.compactMap { effect -> Record? in
             if case .discard(let id) = effect { return requests[id] }
             return nil
@@ -729,7 +770,7 @@ final class ScreenshotRequests {
         let agent = requests[reply.requestID]?.address.client.rawValue
         let marks = reply.cardMarks(on: reply.answer == nil ? nil : callbacks.cardCanvas(destination, agent))
         guard !marks.isEmpty else { return commit(reply, at: destination, done: done) }
-        callbacks.installDrawing(Screenshot(url: destination), marks, agent) { [weak self] failure in
+        callbacks.installDrawing(shot(at: destination), marks, agent) { [weak self] failure in
             guard let self else { return }
             // Clearing can remove the reserved file while installation is pending. The request
             // remains cancelled even when that installation later reports a failure.
@@ -758,8 +799,12 @@ final class ScreenshotRequests {
         publishedAt[reply.id] = ProcessInfo.processInfo.systemUptime
         if let client = requests[reply.requestID]?.address.client { Agent.record(client.rawValue, on: url) }
         Log.write("[reply] published \(reply.fileName) marks=\(reply.cardMarks(on: nil).count)")
-        callbacks.present(Screenshot(url: url))
+        callbacks.present(shot(at: url))
         done()
+    }
+
+    private func shot(at destination: URL) -> Screenshot {
+        Screenshot(key: ScreenshotKey(naming: destination, in: callbacks.watchFolder()))
     }
 
     /// Whether the import may go on. The record may have moved since it started: its marks are
@@ -834,7 +879,7 @@ final class ScreenshotRequests {
             guard !own.contains(where: { $0.needsOutputCleanup == true }) else { continue }
             guard !own.contains(where: { reply in
                 guard reply.stage == .published else { return false }
-                guard let inventory, let url = reply.outputURL,
+                guard let inventory, let url = reply.publishedURL,
                       publishedAt[reply.id, default: 0] <= inventory.observedAt else { return true }
                 return !inventory.confirmsAbsence(of: url)
             })

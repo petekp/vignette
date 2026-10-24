@@ -85,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         AppLocation.ejectDiskImageIfAsked()
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppDelegate.makeMainMenu()
-        let settingsSource = Settings.isOverridden ? " (VIGNETTE_SETTINGS) screencapture=\(AppleScreencapture.domainName)" : ""
+        let settingsSource = Launch.isTest ? " (VIGNETTE_SETTINGS) screencapture=\(AppleScreencapture.domainName)" : ""
         Log.writeLaunch("[app] launched \(BuildInfo.current.description) watching \(watchFolder.path) settings \(Settings.fileURL.path)\(settingsSource)")
         if let type = AppleScreencapture.string("type"), !ScreenshotWatcher.isCandidate("screenshot.\(type)") {
             Log.write("[settings] warning Apple screencapture type=\(type) is a format the watcher ignores")
@@ -98,11 +98,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // window of ours can take the focus.
         _ = FocusReturn.shared
         thumbnail.actions = self
-        thumbnail.onAnnotatorPrepare = { [weak self] shot, frame, room in
+        thumbnail.onAnnotatorPrepare = { [weak self] shot, opening, frame, room in
             guard let self else { return }
-            self.annotator.prepare(shot, in: frame, room: room)
+            self.annotator.prepare(shot, opening: opening, in: frame, room: room)
             self.refreshDestinations(for: shot)
         }
+        thumbnail.onAnnotatorRenamed = { [weak self] shot, opening in self?.annotator.renamed(to: shot, opening: opening) }
         annotator.onFrame = { [weak self] frame in self?.thumbnail.annotatorFrameMoved(frame) }
         thumbnail.onAnnotatorShow = { [weak self] in self?.annotator.show() }
         thumbnail.onAnnotatorLanded = { [weak self] in self?.annotator.landed() }
@@ -118,13 +119,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             noteCards.send(note, to: destination, message: message, done: done)
         }
         liveInk.unsendNote = { [weak self] request in self?.noteCards.unsend(request: request) }
-        annotator.onTakesEvents = { [weak self] key in self?.thumbnail.annotatorTakesEvents(key) }
+        annotator.onTakesEvents = { [weak self] opening in self?.thumbnail.annotatorTakesEvents(opening) }
         annotator.onFinished = { [weak self] shot, drawing in self?.finishAnnotation(shot, drawing) }
         annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
-        annotator.onLoaded = { [weak self] key in self?.thumbnail.editorLoaded(key) }
-        annotator.storedDrawing = { [weak self] url, pixels in
+        annotator.onLoaded = { [weak self] opening in self?.thumbnail.editorLoaded(opening) }
+        annotator.storedDrawing = { [weak self] key, pixels in
             guard let self else { return nil }
-            return drawings.read(url, pixels: pixels, style: settings.data.ui.textStyle)
+            return drawings.read(key, pixels: pixels, style: settings.data.ui.textStyle)
         }
         annotator.onDrawing = { [weak self] drawing, reason in self?.drawings.write(drawing, reason: reason) }
         annotator.onSend = { [weak self] shot, drawing, destination, message in self?.sendDrawing(drawing, of: shot, to: destination, message: message) }
@@ -409,17 +410,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// The newest screenshot in the watch folder goes into the annotator, on screen or not. A newer
     /// recording is passed over: the hold and this menu item both promise drawing.
     @objc private func annotateLast() {
-        guard let url = newestShot(where: { $0.kind == .image }) else {
+        guard let key = newestShot(where: { $0.kind == .image }) else {
             Commands.error("annotate", .missingFile, "no screenshot in \(watchFolder.path)"); return
         }
-        annotate([Screenshot(url: url)])
+        annotate([Screenshot(key: key)])
     }
 
     /// Each piece carries its drawing as it is now into the stitch.
     func stitch(_ shots: [Screenshot]) {
         guard shots.count >= 2 else { Commands.error("stitch", .notEnoughFiles, "needs 2, got \(shots.count)"); return }
         let ui = settings.data.ui, style = ui.textStyle, markStyle = ui.markStyle, limit = ui.stitchLongSide
-        let pieces = shots.map { Stitch.Piece(url: $0.url, drawing: drawings.current(of: $0.url, style: style)) }
+        let pieces = shots.map { Stitch.Piece(url: $0.url, drawing: drawings.current(of: $0.key, style: style)) }
         DispatchQueue.global(qos: .userInitiated).async {
             let composed = Stitch.compose(pieces, style: style, markStyle: markStyle, longSideLimit: limit)
             DispatchQueue.main.async { MainActor.assumeIsolated { [weak self] in self?.finishStitch(shots, composed) } }
@@ -435,14 +436,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Commands.error("stitch", .unreadableImage, "only \(composed.pieces) of \(shots.count) images could be read"); return
         }
         let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
-        let out = watchFolder.appendingPathComponent("Stitch \(stamp.string(from: Date())).png")
+        let key = ScreenshotKey(folder: watchFolder, name: "Stitch \(stamp.string(from: Date())).png"), out = key.url
         do { try folderWrites.writeStitch(composed.png, to: out) } catch { Commands.error("stitch", .writeFailed, "\(out.path): \(error.localizedDescription)"); return }
         Clipboard.copyFiles([out])
         // readerScale is what a vision model's resize leaves of the composition; see Stitch.swift.
         Commands.ok("stitch", "\(out.path) from \(composed.pieces) images, \(Int(composed.size.width))x\(Int(composed.size.height)) columns=\(composed.columns) readerScale=\(String(format: "%.2f", composed.readerScale)) \(composed.png.count) bytes, copied")
         // The cards conjoin into the new one when the stack is showing them; otherwise the new card
         // comes up with the Copied notice.
-        if !thumbnail.stitched(shots, into: out) { thumbnail.showCopied([Screenshot(url: out)]) }
+        if !thumbnail.stitched(shots, into: key) { thumbnail.showCopied([Screenshot(key: key)]) }
     }
 
     // MARK: Drawings
@@ -456,10 +457,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             folder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
             present: { [weak self] shot, annotate in self?.present(shot, annotate: annotate) },
             showCard: { [weak self] in self?.thumbnail.show($0) },
-            joinMarks: { [weak self] marks, agent, url, done in self?.addMarks(marks, from: agent, to: url, done: done) },
+            joinMarks: { [weak self] marks, agent, key, done in self?.addMarks(marks, from: agent, to: key, done: done) },
             removeCards: { [weak self] in self?.thumbnail.remove($0) },
-            removeDrawings: { [weak self] urls, observedAt in self?.drawings.remove(urls, observedAt: observedAt) },
+            removeDrawings: { [weak self] keys, observedAt in self?.drawings.remove(keys, observedAt: observedAt) },
             removeReply: { [weak self] in self?.requests.fileRemoved($0) },
+            renameCards: { [weak self] renames in
+                guard let self else { return }
+                self.thumbnail.rename(renames)
+                for rename in renames {
+                    for (id, shot) in self.sentShots where shot.key == rename.from { self.sentShots[id] = Screenshot(key: rename.to) }
+                }
+                self.noteCards.renamed(renames)
+            },
+            renameDrawings: { [weak self] renames in
+                guard let self else { return }
+                for rename in renames { self.drawings.rename(from: rename.from, to: rename.to, style: self.settings.data.ui.textStyle) }
+            },
+            renameRequests: { [weak self] in self?.requests.renamed($0) },
+            isVisible: { [weak self] in self?.requests.isVisible($0) ?? true },
             sweepDrawings: { [weak self] in self?.drawings.sweep($0) },
             reconcileRequests: { [weak self] in self?.requests.reconcile($0) },
             rescan: { [weak self] in self?.watcher?.rescan(reason: $0) })
@@ -483,11 +498,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// `done` answers once the drawing is written, with how many marks joined it. A new drawing takes
     /// the main screen's point scale, the best guess with no annotator open. `agent` names the agent
     /// they are from.
-    private func addMarks(_ marks: [AgentMark], from agent: String?, to url: URL, done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
+    private func addMarks(_ marks: [AgentMark], from agent: String?, to key: ScreenshotKey, done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
         // A turn later, so callers can set their own state after asking.
         Task {
             do {
-                done(.success(try drawings.add(marks, from: agent, to: url, style: settings.data.ui.textStyle,
+                done(.success(try drawings.add(marks, from: agent, to: key, style: settings.data.ui.textStyle,
                                                newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)))
             } catch let failure as Drawings.Failure {
                 done(.failure(failure))
@@ -508,7 +523,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     func unsend(_ shots: [Screenshot]) {
-        let cancelled = shots.flatMap { requests.unsend(file: $0.url) }
+        let cancelled = shots.flatMap { requests.unsend(file: $0.key) }
         let what = shots.count == 1 ? shots[0].url.lastPathComponent : "\(shots.count) files"
         if cancelled.isEmpty { Commands.error("unsend", .nothingToUnsend, "\(what): no send of it is waiting") }
         else { Commands.ok("unsend", "request=\(cancelled.map(\.id).joined(separator: ",")) \(what)") }
@@ -520,7 +535,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     func copyAnnotated(_ shots: [Screenshot]) {
         let ui = settings.data.ui, style = ui.textStyle
         let renderings = shots.map { shot -> (shot: Screenshot, rendering: PendingRendering?) in
-            let drawing = drawings.current(of: shot.url, style: style)
+            let drawing = drawings.current(of: shot.key, style: style)
             guard let drawing, !drawing.marks.isEmpty else { return (shot, nil) }
             return (shot, RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .file,
                                                        style: style, markStyle: ui.markStyle))
@@ -554,7 +569,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Done: the rendering goes on the clipboard at once as a promise and the card goes home; the
     /// file is written when the rendering finishes. With nothing drawn, the original file is copied.
     private func finishAnnotation(_ shot: Screenshot, _ drawing: Drawing) {
-        copyRendering(of: drawing, shot: shot, verb: "done")
+        copyRendering(of: drawing, shot: shot, verb: "done", in: annotator.opening)
         // Quick annotate: the drawing was the point; nothing comes back.
         if settings.data.quickAnnotate { Log.write("[annotate] quick close") }
         thumbnail.annotationFinished(quick: settings.data.quickAnnotate)
@@ -562,14 +577,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// Cmd+C in the editor with nothing selected: the same clipboard Done gives, and the editor stays open.
     private func copyDrawing(_ drawing: Drawing, of shot: Screenshot) {
-        copyRendering(of: drawing, shot: shot, verb: "copied")
+        copyRendering(of: drawing, shot: shot, verb: "copied", in: annotator.opening)
     }
 
     /// The annotated file on the clipboard as a file, an image, and its path as text, so a terminal
     /// pastes the path and a chat app pastes the image. The file is promised, so nothing waits for
     /// the rendering but a paste that comes before it, and the rendering goes ahead of any that has
     /// not started. `verb` names the moment in the log line.
-    private func copyRendering(of drawing: Drawing, shot: Screenshot, verb: String) {
+    private func copyRendering(of drawing: Drawing, shot: Screenshot, verb: String, in opening: Opening?) {
         let name = shot.url.lastPathComponent
         guard !drawing.marks.isEmpty else {
             Clipboard.copyFiles([shot.url])
@@ -585,7 +600,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             if let failure = output.failure {
                 Log.write("[annotate] error \(failure.code.rawValue) \(name): \(failure)")
                 // The clipboard took its promise back; the card must not say otherwise.
-                thumbnail.showNotCopied(shot, reason: failure.reason)
+                thumbnail.showNotCopied(shot, reason: failure.reason, in: opening)
             } else if let file = output.file, let png = output.png {
                 Log.write("[annotate] \(verb) files=\(Self.renderingPaths([file])) \(png.count) bytes, copied")
             }
@@ -604,7 +619,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         var drawn = 0
         let items = cards.map { card -> NSPasteboardWriting in
             let shot = card.shot, name = shot.url.lastPathComponent
-            guard let drawing = drawings.current(of: shot.url, stored: { card.marks?.drawing }), !drawing.marks.isEmpty else {
+            guard let drawing = drawings.current(of: shot.key, stored: { card.marks?.drawing }), !drawing.marks.isEmpty else {
                 return shot.url as NSURL
             }
             drawn += 1
@@ -632,7 +647,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             Log.write("[url] \(url.absoluteString)")
-            run(Commands.parse(url, watchFolder: watchFolder))
+            run(Commands.parse(url))
         }
     }
 
@@ -714,20 +729,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case "cancel": Commands.ok("cancel", annotator.cancelForDebug() ? "" : "nothing was open")
         default:
             guard let action = Config.action(id: cmd) else { return }
-            var targets = request.files
-            if targets.isEmpty {
+            var targets: [Screenshot]
+            if request.files.isEmpty {
                 // The newest file the action can take, so `annotate` passes over a newer recording
                 // and `open` over newer screenshots.
                 guard let newest = newestShot(where: { action.kinds.contains($0.kind) }) else {
                     Commands.error(cmd, .missingFile, "no file given and none it applies to in \(watchFolder.path)"); return
                 }
-                targets = [newest]
+                targets = [Screenshot(key: newest)]
+            } else {
+                // Only debug mode lets a file outside the folder past the policy check below.
+                targets = request.files.map { Screenshot(key: ScreenshotKey(naming: $0, in: watchFolder)) }
             }
-            if !targets.allSatisfy({ action.kinds.contains(Screenshot(url: $0).kind) }),
-               let reason = action.unavailableReason(for: targets.map(Screenshot.init)) {
+            if !targets.allSatisfy({ action.kinds.contains($0.kind) }),
+               let reason = action.unavailableReason(for: targets) {
                 Commands.error(cmd, .unsupportedType, reason); return
             }
-            for file in targets {
+            for file in targets.map(\.url) {
                 if let code = Commands.policyError(for: file, watchFolder: watchFolder, debug: settings.data.debug) {
                     Commands.error(cmd, code, file.path); return
                 }
@@ -743,11 +761,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
             if cmd == "annotate" {
                 // Refused here, before any transition starts, so a dead file never opens an empty editor.
-                if let bad = targets.first(where: { !Commands.isReadableImage($0) }) { Commands.error(cmd, .unreadableImage, bad.path); return }
-            } else if let missing = targets.first(where: { !FileManager.default.fileExists(atPath: $0.path) }) {
-                Commands.error(cmd, .missingFile, missing.path); return
+                if let bad = targets.first(where: { !Commands.isReadableImage($0.url) }) { Commands.error(cmd, .unreadableImage, bad.url.path); return }
+            } else if let missing = targets.first(where: { !FileManager.default.fileExists(atPath: $0.url.path) }) {
+                Commands.error(cmd, .missingFile, missing.url.path); return
             }
-            action.run(targets.map(Screenshot.init), self)
+            action.run(targets, self)
         }
     }
 
@@ -779,7 +797,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         ] as [String: Any]
         report.sections["annotator"] = annotator.stateJSON
         report.sections["editor"] = annotator.editor.core.inspection
-        report.sections["drawings"] = drawings.keys.sorted()
+        report.sections["drawings"] = drawings.keys.sorted().map(\.path)
         report.sections["requests"] = requests.stateJSON
         var live = liveInk.stateJSON
         live["watching"] = noteCards.watching
@@ -1043,7 +1061,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func startUpdater() {
-        let updater = Updater()
+        let feed = Launch.isTest ? ProcessInfo.processInfo.environment["VIGNETTE_FEED"].flatMap { $0.isEmpty ? nil : $0 } : nil
+        if Launch.isTest, feed == nil {
+            Log.write("[update] test launch: no updater; VIGNETTE_FEED names a feed to test one")
+            return
+        }
+        let updater = Updater(feed: feed)
         updater.hasStatusItem = { [weak self] in self?.statusItem != nil }
         updater.onChange = { [weak self] in self?.showUpdateDot() }
         self.updater = updater
@@ -1189,11 +1212,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     @objc private func openLast() {
-        guard let url = newestShot() else {
+        guard let key = newestShot() else {
             Commands.error("last", .missingFile, "no screenshot in \(watchFolder.path)"); return
         }
-        thumbnail.show(Screenshot(url: url))
-        Commands.ok("last", url.lastPathComponent)
+        thumbnail.show(Screenshot(key: key))
+        Commands.ok("last", key.name)
     }
 
     // MARK: Screenshot requests: Send, replies, and which files a reply owns. See ScreenshotRequests.
@@ -1213,7 +1236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 guard let self else { return done(Drawings.Failure(code: .writeFailed, description: "the app is gone")) }
                 Task {
                     do {
-                        try self.drawings.installReply(marks, from: agent, at: shot.url, style: self.settings.data.ui.textStyle,
+                        try self.drawings.installReply(marks, from: agent, at: shot.key, style: self.settings.data.ui.textStyle,
                                                   newPointScale: Self.replyPointScale)
                         done(nil)
                     } catch let failure as Drawings.Failure {
@@ -1248,9 +1271,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 thumbnail.delivered(shot, request: record.id, state, reason: outcome.reason)
             },
             replyFailed: { [weak self] record, reason in
-                // The record keeps the sent screenshot's name; a send is made from the watch folder.
                 guard let self else { return }
-                let shot = Screenshot(url: watchFolder.appendingPathComponent(record.source))
+                let shot = Screenshot(key: requests.sourceKey(of: record))
                 guard FileManager.default.fileExists(atPath: shot.url.path) else { return }
                 thumbnail.replyFailed(shot, request: record.id, client: record.address.client, reason: reason)
             },
@@ -1271,13 +1293,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// The newest screenshots a person may act on: the folder's, less any agent reply whose import
     /// has not committed. Every listing goes through here rather than through the index directly.
-    private func recentShots(limit: Int, where fits: (Screenshot) -> Bool = { _ in true }) -> (recent: [URL], files: Int) {
-        watcher?.recent(limit: limit, include: { [weak self] url in
-            (self?.requests.isVisible(url) ?? true) && fits(Screenshot(url: url))
+    private func recentShots(limit: Int, where fits: (Screenshot) -> Bool = { _ in true }) -> (recent: [ScreenshotKey], files: Int) {
+        watcher?.recent(limit: limit, include: { [weak self] key in
+            (self?.requests.isVisible(key.url) ?? true) && fits(Screenshot(key: key))
         }) ?? (recent: [], files: 0)
     }
 
-    private func newestShot(where fits: (Screenshot) -> Bool = { _ in true }) -> URL? {
+    private func newestShot(where fits: (Screenshot) -> Bool = { _ in true }) -> ScreenshotKey? {
         recentShots(limit: 1, where: fits).recent.first
     }
 
@@ -1289,12 +1311,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// reply to a request, or a push that named its session. Reading the sessions runs
     /// subprocesses, so it answers later; the bar offers Send once it has a session to send to.
     private func refreshDestinations(for shot: Screenshot) {
-        guard let session = annotator.session else { return }
+        guard let opening = annotator.opening else { return }
         annotator.beginDestinations(replyTo: requests.origin(of: shot.url) ?? Agent.origin(of: shot.url))
         let asked = CACurrentMediaTime()
         let app = FocusReturn.shared.previousApp
         guard let client = AgentApp.client(of: app), let pid = app?.processIdentifier else {
-            return listDestinations(for: shot, session: session, asked: asked, cameFrom: nil)
+            return listDestinations(for: shot, opening: opening, asked: asked, cameFrom: nil)
         }
         // The thread the agent's app shows is read before anything is listed: Claude Code's list
         // comes first and would settle the target on the session in herdr's focus, which you were not in.
@@ -1302,20 +1324,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         DispatchQueue.global(qos: .userInitiated).async {
             let shown = AgentApp.shownThread(pid: pid, launched: launched)
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.annotator.session == session else { return }
+                guard let self, self.annotator.opening == opening else { return }
                 Log.write("[send] came from the \(client.label) app, showing \(shown ?? "no thread") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms")
-                self.listDestinations(for: shot, session: session, asked: asked, cameFrom: (client, shown))
+                self.listDestinations(for: shot, opening: opening, asked: asked, cameFrom: (client, shown))
             }
         }
     }
 
-    private func listDestinations(for shot: Screenshot, session: Int, asked: CFTimeInterval, cameFrom: (client: AgentClient, shown: String?)?) {
+    private func listDestinations(for shot: Screenshot, opening: Opening, asked: CFTimeInterval, cameFrom: (client: AgentClient, shown: String?)?) {
         let shown = cameFrom.flatMap { from in from.shown.map { (from.client, $0) } }
         sessions.list(shown: shown) { [weak self] candidates in
             guard let self else { return }
             Log.write("[send] sessions \(candidates.destinations.count)\(candidates.complete ? " complete" : "")\(candidates.fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
             // A file can reopen while its earlier destination listing is still running.
-            guard self.annotator.session == session else { return }
+            guard self.annotator.opening == opening else { return }
             self.annotator.destinationsAnswered(DestinationChoice.choose(candidates, for: .send(cameFrom: cameFrom)))
         }
     }
@@ -1326,17 +1348,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// The button shows the send from the press until the bar leaves, and says "Not sent" when it
     /// fails before the request is stored, since the drawing is still in the editor then.
     private func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination, message: String?) {
-        guard !annotator.sending, let session = annotator.session else { return }
+        guard !annotator.sending, let opening = annotator.opening else { return }
         let name = shot.url.lastPathComponent
         annotator.sending = true
         let ui = settings.data.ui
         let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .bytes, style: ui.textStyle, markStyle: ui.markStyle)
         rendering.whenDone { [weak self] output in
             guard let self else { return }
-            // A rendering that answers after the session that pressed Send has ended belongs to no
+            // A rendering that answers after the opening Send was pressed in has ended belongs to no
             // image now, even the same one opened again: it is dropped, and nothing is sent and
-            // nothing closed. The session open now has its own `sending`, which this leaves alone.
-            guard annotator.session == session else {
+            // nothing closed. The image open now has its own `sending`, which this leaves alone.
+            guard annotator.opening == opening else {
                 Log.write("[send] dropped \(name); the editor moved on"); return
             }
             guard let png = output.png, output.failure == nil else {
@@ -1379,7 +1401,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // A capture flies into the editor from where it was taken, when Vignette saw where.
         var origin: NSRect?
         if case .read(let header) = Thumbnailer.lookUp(shot.url), let pixels = header.pixels {
-            origin = captureOrigin?.rect(of: shot.url.lastPathComponent, pixels: pixels)
+            origin = captureOrigin?.rect(of: shot.url, pixels: pixels)
         }
         self.annotate([shot], from: origin)
     }
@@ -1391,7 +1413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if thumbnail.stackShowing { thumbnail.dismiss(); Commands.ok("recent", "dismissed"); return .dismissed }
         let index = recentShots(limit: settings.data.recentCount)
         watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
-        let result = thumbnail.toggleRecent(index.recent.map(Screenshot.init), detail: "files=\(index.files) ")
+        let result = thumbnail.toggleRecent(index.recent.map(Screenshot.init(key:)), detail: "files=\(index.files) ")
         switch result {
         case .shown(let count): Commands.ok("recent", "shown \(count) cards")
         case .dismissed: Commands.ok("recent", "dismissed")
@@ -1422,11 +1444,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         watcherGeneration += 1
         let generation = watcherGeneration
         Log.write("[watcher] watching \(watchFolder.path)")
-        watcher = ScreenshotWatcher(folder: watchFolder, onNew: { [weak self] url in
+        watcher = ScreenshotWatcher(folder: watchFolder, onNew: { [weak self] key in
             guard let self, self.watcherGeneration == generation else { return }
-            Log.write("[watcher] new \(url.lastPathComponent)")
-            let shot = Screenshot(url: url)
-            if self.folderWrites.arrived(url) { return }
+            Log.write("[watcher] new \(key.name)")
+            let shot = Screenshot(key: key), url = key.url
+            if self.folderWrites.arrived(key) { return }
             // An agent's reply is shown once by its own import, when every byte and its drawing are
             // stored. A watcher report for one — the copy that made it, or a later rescan — is
             // never a capture, so it neither goes to the clipboard nor opens the editor.
@@ -1438,12 +1460,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Log.write("[watcher] copied \(url.lastPathComponent)")
             }
             self.present(shot, annotate: self.settings.data.annotateOnCapture)
-        }, onRemoved: { [weak self] urls, inventory in
+        }, onRemoved: { [weak self] keys, inventory in
             guard let self, self.watcherGeneration == generation else { return }
-            self.folderWrites.removed(urls, in: inventory)
+            self.folderWrites.removed(keys, in: inventory)
         }, onInventory: { [weak self] inventory in
             guard let self, self.watcherGeneration == generation else { return }
             self.folderWrites.listed(inventory)
+        }, onRenamed: { [weak self] pairs, inventory in
+            guard let self, self.watcherGeneration == generation else { return }
+            self.folderWrites.renamed(pairs, in: inventory)
         })
         warmThumbnails()
         if wakeObserver == nil {
@@ -1459,7 +1484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// Decodes thumbnails for the recent stack ahead of time so the hotkey shows it at once.
     private func warmThumbnails() {
-        thumbnail.warm(recentShots(limit: settings.data.recentCount).recent.map(Screenshot.init))
+        thumbnail.warm(recentShots(limit: settings.data.recentCount).recent.map(Screenshot.init(key:)))
     }
 }
 

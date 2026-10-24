@@ -6,6 +6,8 @@ import Foundation
 /// requests when a file has left.
 @MainActor
 final class FolderWrites {
+    typealias Rename = (from: ScreenshotKey, to: ScreenshotKey)
+
     struct Callbacks {
         /// The watch folder, as AppDelegate reads it from the settings.
         var folder: () -> URL = { FileManager.default.temporaryDirectory }
@@ -14,12 +16,20 @@ final class FolderWrites {
         /// Shows a published reply's card. A reply never goes through `present`, which treats a file as a capture.
         var showCard: (Screenshot) -> Void = { _ in }
         /// Agents' marks joining the screenshot's drawing; answers with how many joined.
-        var joinMarks: ([AgentMark], _ agent: String?, URL, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void = { _, _, _, done in
+        var joinMarks: ([AgentMark], _ agent: String?, ScreenshotKey, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void = { _, _, _, done in
             done(.failure(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings")))
         }
         var removeCards: ([Screenshot]) -> Void = { _ in }
-        var removeDrawings: ([URL], _ observedAt: TimeInterval) -> Void = { _, _ in }
+        var removeDrawings: ([ScreenshotKey], _ observedAt: TimeInterval) -> Void = { _, _ in }
         var removeReply: (URL) -> Void = { _ in }
+        /// Files renamed inside the folder: their cards keep their place and selection and take the new file.
+        var renameCards: ([Rename]) -> Void = { _ in }
+        /// Files renamed inside the folder: their stored drawings, and the one open in the editor, follow.
+        var renameDrawings: ([Rename]) -> Void = { _ in }
+        /// Files renamed inside the folder: the request and reply records that name them follow.
+        var renameRequests: ([Rename]) -> Void = { _ in }
+        /// ScreenshotRequests.isVisible: whether every listing shows a file by that name.
+        var isVisible: (URL) -> Bool = { _ in true }
         /// Drawings.sweep: removes the drawings of files a listing confirms absent.
         var sweepDrawings: (ScreenshotWatcher.Inventory) -> Void = { _ in }
         /// ScreenshotRequests.reconcile: marks published replies a listing confirms absent as removed.
@@ -27,7 +37,7 @@ final class FolderWrites {
         var rescan: (_ reason: String) -> Void = { _ in }
     }
 
-    /// What `add` still owes a file it put in the watch folder, by file name. The watcher reports
+    /// What `add` still owes a file it put in the watch folder, by its key. The watcher reports
     /// the file like a capture; this is what makes that report skip the capture toggles.
     private struct PendingAdd {
         var annotate = false
@@ -40,11 +50,12 @@ final class FolderWrites {
     }
 
     var callbacks = Callbacks()
-    private var pendingAdds: [String: PendingAdd] = [:]
+    private var pendingAdds: [ScreenshotKey: PendingAdd] = [:]
     /// When the app last put a file in the folder. A listing observed before it may not hold that
     /// file yet, so the removals it reports wait for a newer one.
     private var writtenAt: TimeInterval = 0
-    private var deferredRemovals: Set<URL> = []
+    private var deferredRemovals: Set<ScreenshotKey> = []
+    private var deferredRenames: [Rename] = []
     /// Moves a file to the Trash; a test passes its own, so it never reaches the person's Trash.
     private let trashItem: (URL) throws -> Void
     private let now: () -> TimeInterval
@@ -86,14 +97,16 @@ final class FolderWrites {
             destination = Commands.destination(for: source, in: watchFolder) { FileManager.default.fileExists(atPath: $0.path) }
         }
         let name = destination.lastPathComponent
+        // A file already in the folder may be in a subfolder of it, which its name alone would drop.
+        let key = ScreenshotKey(resolving: destination, in: watchFolder) ?? ScreenshotKey(folder: watchFolder, name: name)
         // Already in the folder means no watcher report is coming, so the file itself waits here.
-        pendingAdds[name] = PendingAdd(annotate: request.annotate, addingMarks: !marks.isEmpty,
-                                       waiting: inFolder ? Screenshot(url: destination) : nil)
+        pendingAdds[key] = PendingAdd(annotate: request.annotate, addingMarks: !marks.isEmpty,
+                                       waiting: inFolder ? Screenshot(key: key) : nil)
         if !inFolder {
             do {
                 try FileManager.default.copyItem(at: source, to: destination)
             } catch {
-                pendingAdds[name] = nil
+                pendingAdds[key] = nil
                 Commands.error("add", .writeFailed, "\(destination.path): \(error.localizedDescription)"); return
             }
         }
@@ -106,11 +119,11 @@ final class FolderWrites {
             Log.write("[add] warning \(name): session= is not a session id; Reply on its card will ask where to send")
         }
         guard !marks.isEmpty else {
-            presentAdd(name)
+            presentAdd(key)
             Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request))")
             return
         }
-        callbacks.joinMarks(marks, request.agent, destination) { [weak self] result in
+        callbacks.joinMarks(marks, request.agent, key) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let joined):
@@ -118,17 +131,16 @@ final class FolderWrites {
             case .failure(let failure):
                 Commands.error("add", failure.code, "\(name): the image is in the folder, its marks are not: \(failure)")
             }
-            pendingAdds[name]?.addingMarks = false
-            presentAdd(name)
+            pendingAdds[key]?.addingMarks = false
+            presentAdd(key)
         }
     }
 
-    /// The watcher reported `url`. True when it is a file `add` is waiting for, so it is not a capture.
-    func arrived(_ url: URL) -> Bool {
-        let name = url.lastPathComponent
-        guard pendingAdds[name] != nil else { return false }
-        pendingAdds[name]?.waiting = Screenshot(url: url)
-        presentAdd(name)   // waits when the push's marks are still joining its drawing
+    /// The watcher reported `key`. True when it is a file `add` is waiting for, so it is not a capture.
+    func arrived(_ key: ScreenshotKey) -> Bool {
+        guard pendingAdds[key] != nil else { return false }
+        pendingAdds[key]?.waiting = Screenshot(key: key)
+        presentAdd(key)   // waits when the push's marks are still joining its drawing
         return true
     }
 
@@ -139,25 +151,26 @@ final class FolderWrites {
     }
 
     /// Writes a live ink card as `<prefix> <date> at <time>.png`, its PNG made and written off the
-    /// main thread, and answers its URL on the main thread, or nil when it could not be written. The
-    /// name is reserved from the start, so the watcher's report skips the capture switches as an
-    /// `add`'s does, and the card waits for `ready`. `from` is recorded on it as an `add`'s agent
-    /// and session are, so it wears the agent's tab and Reply on it goes back to that session.
+    /// main thread, and answers its screenshot on the main thread, or nil when it could not be
+    /// written. The name is reserved from the start, so the watcher's report skips the capture
+    /// switches as an `add`'s does, and the card waits for `ready`. `from` is recorded on it as an
+    /// `add`'s agent and session are, so it wears the agent's tab and Reply on it goes back to that session.
     func writeCard(named prefix: String, png: @escaping @Sendable () -> Data?, from destination: AgentDestination?,
-                   done: @escaping (URL?) -> Void) {
-        let url = Commands.destination(for: URL(fileURLWithPath: "\(prefix) \(Self.cardTime.string(from: Date())).png"),
-                                       in: callbacks.folder()) {
-            FileManager.default.fileExists(atPath: $0.path) || self.pendingAdds[$0.lastPathComponent] != nil
+                   done: @escaping (Screenshot?) -> Void) {
+        let folder = callbacks.folder()
+        let named = Commands.destination(for: URL(fileURLWithPath: "\(prefix) \(Self.cardTime.string(from: Date())).png"), in: folder) {
+            FileManager.default.fileExists(atPath: $0.path) || self.pendingAdds[ScreenshotKey(folder: folder, name: $0.lastPathComponent)] != nil
         }
-        let name = url.lastPathComponent
-        pendingAdds[name] = PendingAdd(annotate: false, addingMarks: true, waiting: nil)
+        let shot = Screenshot(key: ScreenshotKey(folder: folder, name: named.lastPathComponent))
+        let (key, url) = (shot.key, shot.url)
+        pendingAdds[key] = PendingAdd(annotate: false, addingMarks: true, waiting: nil)
         DispatchQueue.global(qos: .userInitiated).async {
             let written = png().map { (try? $0.write(to: url, options: .atomic)) != nil } ?? false
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard written else {
-                        self.pendingAdds[name] = nil
-                        Log.write("[live-ink] error write-failed \(name)")
+                        self.pendingAdds[key] = nil
+                        Log.write("[live-ink] error write-failed \(key.name)")
                         return done(nil)
                     }
                     self.writtenAt = self.now()
@@ -168,30 +181,29 @@ final class FolderWrites {
                         case .codexThread(let uuid): Agent.record(thread: uuid, on: url)
                         }
                     }
-                    done(url)
+                    done(shot)
                 }
             }
         }
     }
 
     /// A card from `writeCard` owes nothing more: it is shown once the watcher has reported it.
-    func ready(_ url: URL) {
-        let name = url.lastPathComponent
-        pendingAdds[name]?.addingMarks = false
-        presentAdd(name)
+    func ready(_ shot: Screenshot) {
+        pendingAdds[shot.key]?.addingMarks = false
+        presentAdd(shot.key)
     }
 
     /// Takes back a card from `writeCard` that will not be shown: its file and its drawing.
-    func takeBack(_ url: URL) {
-        pendingAdds[url.lastPathComponent] = nil
-        try? FileManager.default.removeItem(at: url)
-        callbacks.removeDrawings([url], .infinity)
+    func takeBack(_ shot: Screenshot) {
+        pendingAdds[shot.key] = nil
+        try? FileManager.default.removeItem(at: shot.url)
+        callbacks.removeDrawings([shot.key], .infinity)
     }
 
     /// A card from `writeCard` that was shown and is taken back: its file, its drawing and its card
     /// go now. `takeBack` is for a card not shown yet.
     func discard(_ shot: Screenshot) {
-        pendingAdds[shot.url.lastPathComponent] = nil
+        pendingAdds[shot.key] = nil
         try? FileManager.default.removeItem(at: shot.url)
         left([shot], observedAt: .infinity)
     }
@@ -211,9 +223,9 @@ final class FolderWrites {
 
     /// Shows the added file once nothing is owed on it: the watcher has reported it and its marks,
     /// if any, are in its stored drawing.
-    private func presentAdd(_ name: String) {
-        guard let pending = pendingAdds[name], !pending.addingMarks, let shot = pending.waiting else { return }
-        pendingAdds[name] = nil
+    private func presentAdd(_ key: ScreenshotKey) {
+        guard let pending = pendingAdds[key], !pending.addingMarks, let shot = pending.waiting else { return }
+        pendingAdds[key] = nil
         callbacks.present(shot, pending.annotate)
     }
 
@@ -241,46 +253,76 @@ final class FolderWrites {
         else { Commands.error("trash", .writeFailed, "\(failed.joined(separator: "; ")); trashed \(trashed.count) of \(shots.count)") }
     }
 
-    /// The watcher's report that `urls` left the folder, from `inventory`.
-    func removed(_ urls: [URL], in inventory: ScreenshotWatcher.Inventory) {
+    /// The watcher's report that `keys` left the folder, from `inventory`.
+    func removed(_ keys: [ScreenshotKey], in inventory: ScreenshotWatcher.Inventory) {
         guard writtenAt <= inventory.observedAt else {
-            deferredRemovals.formUnion(urls)
+            deferredRemovals.formUnion(keys)
             return
         }
-        let removed = urls.filter { inventory.confirmsAbsence(of: $0) }
-        if removed.count != urls.count {
+        let removed = keys.filter { inventory.confirmsAbsence(of: $0.url) }
+        if removed.count != keys.count {
             // The watcher already advanced its inventory. Keep suppressed removals until a
             // later listing observes their presence or confirms their absence.
-            deferredRemovals.formUnion(Set(urls).subtracting(removed))
+            deferredRemovals.formUnion(Set(keys).subtracting(removed))
             callbacks.rescan("after an unconfirmed removal")
         }
         guard !removed.isEmpty else { return }
-        Log.write("[watcher] removed \(removed.map(\.lastPathComponent).joined(separator: ", "))")
-        left(removed.map(Screenshot.init), observedAt: inventory.observedAt)
+        Log.write("[watcher] removed \(removed.map(\.name).joined(separator: ", "))")
+        left(removed.map(Screenshot.init(key:)), observedAt: inventory.observedAt)
     }
 
-    /// A listing of the folder: it settles the removals held back for one.
+    /// The watcher's report that files in `pairs` changed name, from `inventory`. A listing older than
+    /// the app's last write holds them back for a newer one, like removals. The watcher reports a
+    /// renamed file as neither a removal nor an arrival, so nothing else tells its card and drawing.
+    func renamed(_ renames: [Rename], in inventory: ScreenshotWatcher.Inventory) {
+        guard writtenAt <= inventory.observedAt else {
+            deferredRenames += renames
+            return
+        }
+        rename(renames, observedAt: inventory.observedAt)
+    }
+
+    private func rename(_ renames: [Rename], observedAt: TimeInterval) {
+        // A new name every listing hides, an agent reply's with no record, leaves as a removal would.
+        let visible = Dictionary(grouping: renames) { callbacks.isVisible($0.to.url) }
+        if let hidden = visible[false] {
+            Log.write("[watcher] removed \(hidden.map { "\($0.from.name), renamed to \($0.to.name)" }.joined(separator: "; "))")
+            left(hidden.map { Screenshot(key: $0.from) }, observedAt: observedAt)
+        }
+        guard let renames = visible[true] else { return }
+        Log.write("[watcher] renamed \(renames.map { "\($0.from.name) to \($0.to.name)" }.joined(separator: ", "))")
+        callbacks.renameCards(renames)
+        callbacks.renameDrawings(renames)
+        callbacks.renameRequests(renames)
+    }
+
+    /// A listing of the folder: it settles the renames and removals held back for one.
     func listed(_ inventory: ScreenshotWatcher.Inventory) {
         guard writtenAt <= inventory.observedAt else {
             callbacks.rescan("after an app write")
             return
         }
+        // Before the sweep, which would take the old name's drawing as the drawing of a file that is gone.
+        let renames = deferredRenames
+        deferredRenames = []
+        rename(renames, observedAt: inventory.observedAt)
         callbacks.sweepDrawings(inventory)
         callbacks.reconcileRequests(inventory)
         // The two calls above already removed the drawings and replies of the files this listing
         // confirms absent, so a held-back removal takes only its card.
-        let deferred = deferredRemovals.filter { inventory.confirmsAbsence(of: $0) }
-        if !deferred.isEmpty { callbacks.removeCards(deferred.map(Screenshot.init)) }
+        let deferred = deferredRemovals.filter { inventory.confirmsAbsence(of: $0.url) }
+        if !deferred.isEmpty { callbacks.removeCards(deferred.map(Screenshot.init(key:))) }
+        let folder = inventory.folder.standardizedFileURL
         deferredRemovals = deferredRemovals.filter {
-            $0.deletingLastPathComponent().standardizedFileURL != inventory.folder.standardizedFileURL
-                || (!inventory.names.contains($0.lastPathComponent) && !deferred.contains($0))
+            $0.url.deletingLastPathComponent().standardizedFileURL != folder
+                || (!inventory.names.contains($0.name) && !deferred.contains($0))
         }
     }
 
     /// Files gone from the folder: their cards, their drawings and any reply records go with them.
     private func left(_ shots: [Screenshot], observedAt: TimeInterval) {
         callbacks.removeCards(shots)
-        callbacks.removeDrawings(shots.map(\.url), observedAt)
+        callbacks.removeDrawings(shots.map(\.key), observedAt)
         for shot in shots { callbacks.removeReply(shot.url) }
     }
 }

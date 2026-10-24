@@ -251,9 +251,9 @@ final class DrawingsTests: XCTestCase {
         let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
         drawings.write(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]), reason: "saved")
 
-        let added = try drawings.add(pushed, from: nil, to: shot, style: .standard, newPointScale: 2)
+        let added = try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newPointScale: 2)
         XCTAssertEqual(added, 2)
-        let stored = try XCTUnwrap(drawings.read(shot, pixels: pixels, style: .standard))
+        let stored = try XCTUnwrap(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard))
         XCTAssertEqual(stored.pointScale, 1, "a stored drawing keeps its own scale")
         XCTAssertEqual(stored.marks.map(\.geometry).first, theirs.geometry, "the person's mark stays first")
         XCTAssertEqual(stored.marks.count, 3)
@@ -262,24 +262,24 @@ final class DrawingsTests: XCTestCase {
 
         // A screenshot with no drawing gets a new one at the scale it is given.
         let fresh = try redShot()
-        XCTAssertEqual(try drawings.add(pushed, from: nil, to: fresh, style: .standard, newPointScale: 2), 2)
-        let made = try XCTUnwrap(drawings.read(fresh, pixels: pixels, style: .standard))
+        XCTAssertEqual(try drawings.add(pushed, from: nil, to: fresh.screenshotKey, style: .standard, newPointScale: 2), 2)
+        let made = try XCTUnwrap(drawings.read(fresh.screenshotKey, pixels: pixels, style: .standard))
         XCTAssertEqual(made.pointScale, 2)
         XCTAssertEqual(made.marks.count, 2)
-        XCTAssertEqual(drawings.keys, [shot.path, fresh.path])
+        XCTAssertEqual(drawings.keys, [shot.screenshotKey, fresh.screenshotKey])
     }
 
     func testReplyRecoveryReusesTheCompleteStoredGeometryAndScale() throws {
         let shot = try redShot()
         let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
         let reply = pushed + [AgentMark(type: .text, x: 0.2, y: 0.2, text: "A complete reply")]
-        try drawings.installReply(reply, from: "claude", at: shot, style: .standard, newPointScale: 2)
+        try drawings.installReply(reply, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 2)
         let checkpoint = try XCTUnwrap(drawings.store.readComplete(key: shot.path, pixels: pixels, style: .standard))
         let bytes = try Data(contentsOf: drawings.store.url(for: shot.path))
         let restarted = Drawings(store: drawings.store)
         var changedUI = UITweaks()
         changedUI.agentTextSize *= 2
-        try restarted.installReply(reply, from: "claude", at: shot, style: changedUI.textStyle, newPointScale: 1)
+        try restarted.installReply(reply, from: "claude", at: shot.screenshotKey, style: changedUI.textStyle, newPointScale: 1)
         let recovered = try XCTUnwrap(restarted.store.readComplete(key: shot.path, pixels: pixels, style: .standard))
         XCTAssertEqual(recovered.pointScale, checkpoint.pointScale)
         XCTAssertEqual(recovered.marks.map(\.geometry), checkpoint.marks.map(\.geometry))
@@ -289,30 +289,81 @@ final class DrawingsTests: XCTestCase {
 
     func testReplyRecoveryRefusesPartialOrCorruptCheckpoints() throws {
         let shot = try redShot()
-        try drawings.installReply(pushed, from: "claude", at: shot, style: .standard, newPointScale: 2)
+        try drawings.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 2)
         let file = drawings.store.url(for: shot.path)
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
         var marks = try XCTUnwrap(json["marks"] as? [[String: Any]])
         json["marks"] = [marks[0]]
         try JSONSerialization.data(withJSONObject: json).write(to: file)
-        XCTAssertThrowsError(try drawings.installReply(pushed, from: "claude", at: shot, style: .standard, newPointScale: 1))
+        XCTAssertThrowsError(try drawings.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 1))
         var outside = marks
         outside[1]["x"] = 1000
         json["marks"] = outside
         try JSONSerialization.data(withJSONObject: json).write(to: file)
-        XCTAssertThrowsError(try drawings.installReply(pushed, from: "claude", at: shot, style: .standard, newPointScale: 1))
+        XCTAssertThrowsError(try drawings.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 1))
         marks[1]["x"] = "invalid"
         json["marks"] = marks
         let partial = try JSONSerialization.data(withJSONObject: json)
         try partial.write(to: file)
         let restarted = Drawings(store: drawings.store)
-        XCTAssertThrowsError(try restarted.installReply(pushed, from: "claude", at: shot, style: .standard, newPointScale: 1))
+        XCTAssertThrowsError(try restarted.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 1))
         XCTAssertEqual(try Data(contentsOf: file), partial)
         try Data("not JSON".utf8).write(to: file)
         let afterScan = Drawings(store: drawings.store)
-        XCTAssertThrowsError(try afterScan.installReply(pushed, from: "claude", at: shot, style: .standard, newPointScale: 1))
+        XCTAssertThrowsError(try afterScan.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 1))
         XCTAssertEqual(try Data(contentsOf: file.appendingPathExtension("invalid")), Data("not JSON".utf8))
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testARenamedScreenshotKeepsItsDrawingUnderTheNewKey() throws {
+        let shot = try redShot()
+        let renamed = shot.deletingLastPathComponent().appendingPathComponent("Renamed.png")
+        let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
+        let mark = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
+        drawings.write(Drawing(key: shot.path, pixels: pixels, pointScale: 2, marks: [mark]), reason: "saved")
+        try FileManager.default.moveItem(at: shot, to: renamed)
+        var changes: [(ScreenshotKey, Bool)] = []
+        drawings.onChange = { key, drawing in changes.append((key, drawing != nil)) }
+
+        drawings.rename(from: shot.screenshotKey, to: renamed.screenshotKey, style: .standard)
+
+        let moved = try XCTUnwrap(drawings.read(renamed.screenshotKey, pixels: pixels, style: .standard))
+        XCTAssertEqual(moved.key, renamed.path)
+        XCTAssertEqual(moved.marks.map(\.geometry), [mark.geometry])
+        XCTAssertEqual(moved.pointScale, 2)
+        XCTAssertNil(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: drawings.store.url(for: shot.path).path))
+        XCTAssertEqual(drawings.keys, [renamed.screenshotKey])
+        XCTAssertEqual(changes.map(\.0), [shot.screenshotKey, renamed.screenshotKey])
+        XCTAssertEqual(changes.map(\.1), [false, true])
+        XCTAssertEqual(Drawings(store: drawings.store).keys, [renamed.screenshotKey], "the file is found under its new key after a restart")
+    }
+
+    func testRenamingAScreenshotWithNoStoredDrawingChangesNothing() throws {
+        let shot = try redShot()
+        var changes = 0
+        drawings.onChange = { _, _ in changes += 1 }
+        drawings.rename(from: shot.screenshotKey, to: "/elsewhere/Renamed.png", style: .standard)
+        XCTAssertEqual(drawings.keys, [])
+        XCTAssertEqual(changes, 0)
+        XCTAssertEqual((try? FileManager.default.contentsOfDirectory(atPath: drawings.store.directory.path)) ?? [], [])
+    }
+
+    func testTheOpenDrawingFollowsARenameAndItsLaterWritesLandUnderTheNewKey() throws {
+        let shot = try redShot()
+        let renamed = shot.deletingLastPathComponent().appendingPathComponent("Renamed.png")
+        let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
+        let mark = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
+        let editor = FakeEditor(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [mark]))
+        drawings.open = editor
+        try FileManager.default.moveItem(at: shot, to: renamed)
+
+        drawings.rename(from: shot.screenshotKey, to: renamed.screenshotKey, style: .standard)
+
+        XCTAssertEqual(editor.drawing.key, renamed.path)
+        XCTAssertTrue(drawings.write(editor.drawing, reason: "saved"))
+        XCTAssertEqual(drawings.keys, [renamed.screenshotKey])
+        XCTAssertEqual(drawings.current(of: renamed.screenshotKey, style: .standard)?.marks.count, 1)
     }
 
     func testAPushToTheOpenDrawingWritesWhatTheJoinAnswersOnce() throws {
@@ -324,14 +375,14 @@ final class DrawingsTests: XCTestCase {
         var written: [Drawing?] = []
         drawings.onChange = { _, drawing in written.append(drawing) }
 
-        XCTAssertEqual(try drawings.add(pushed, from: nil, to: shot, style: .standard, newPointScale: 2), 2)
+        XCTAssertEqual(try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newPointScale: 2), 2)
         XCTAssertEqual(editor.drawing.marks.dropFirst().map(\.agent), [true, true], "the marks join the open drawing")
         XCTAssertEqual(written.map { $0?.marks.count }, [3], "one write, of the joined drawing")
-        XCTAssertEqual(drawings.read(shot, pixels: pixels, style: .standard)?.marks.count, 3)
+        XCTAssertEqual(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard)?.marks.count, 3)
 
         // The push answers from the write, not from the marks having joined.
         try FileManager.default.removeItem(at: shot)
-        XCTAssertThrowsError(try drawings.add(pushed, from: nil, to: shot, style: .standard, newPointScale: 2)) { error in
+        XCTAssertThrowsError(try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newPointScale: 2)) { error in
             XCTAssertEqual((error as? Drawings.Failure)?.code, .writeFailed)
         }
     }
@@ -344,18 +395,18 @@ final class DrawingsTests: XCTestCase {
         let stored = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
         let drawn = Mark(geometry: .rectangle(CGRect(x: 90, y: 90, width: 50, height: 40)))
         drawings.write(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [stored]), reason: "saved")
-        XCTAssertEqual(drawings.current(of: shot, style: .standard)?.marks.map(\.geometry), [stored.geometry])
-        XCTAssertNil(drawings.current(of: other, style: .standard), "a screenshot with no drawing has none")
+        XCTAssertEqual(drawings.current(of: shot.screenshotKey, style: .standard)?.marks.map(\.geometry), [stored.geometry])
+        XCTAssertNil(drawings.current(of: other.screenshotKey, style: .standard), "a screenshot with no drawing has none")
 
         let editor = FakeEditor(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [stored, drawn]))
         drawings.open = editor
-        XCTAssertEqual(drawings.current(of: shot, style: .standard)?.marks.map(\.geometry), [stored.geometry, drawn.geometry])
-        XCTAssertEqual(drawings.current(of: shot, stored: { XCTFail("the open drawing needs no stored one"); return nil })?.marks.count, 2)
-        XCTAssertNil(drawings.current(of: other, style: .standard), "another screenshot is not the open one")
+        XCTAssertEqual(drawings.current(of: shot.screenshotKey, style: .standard)?.marks.map(\.geometry), [stored.geometry, drawn.geometry])
+        XCTAssertEqual(drawings.current(of: shot.screenshotKey, stored: { XCTFail("the open drawing needs no stored one"); return nil })?.marks.count, 2)
+        XCTAssertNil(drawings.current(of: other.screenshotKey, style: .standard), "another screenshot is not the open one")
 
         editor.isOpen = false
-        XCTAssertEqual(drawings.current(of: shot, style: .standard)?.marks.map(\.geometry), [stored.geometry])
-        XCTAssertNil(drawings.current(of: shot, stored: { nil }), "the caller's copy, once nothing is open")
+        XCTAssertEqual(drawings.current(of: shot.screenshotKey, style: .standard)?.marks.map(\.geometry), [stored.geometry])
+        XCTAssertNil(drawings.current(of: shot.screenshotKey, stored: { nil }), "the caller's copy, once nothing is open")
     }
 
     /// A card reads its drawing off the main thread; a write while it reads says what the drawing is
@@ -369,19 +420,19 @@ final class DrawingsTests: XCTestCase {
         var changed: [Drawing?] = [], loaded: [Drawing?] = []
         drawings.onChange = { _, drawing in changed.append(drawing) }
 
-        drawings.load([shot], style: .standard) { loaded.append(contentsOf: $0.values) }
+        drawings.load([shot.screenshotKey], style: .standard) { loaded.append(contentsOf: $0.values) }
         drawings.write(new, reason: "saved")
         Drawings.loads.sync(flags: .barrier) {}
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         XCTAssertEqual(changed.map { $0?.marks }, [new.marks])
         XCTAssertTrue(loaded.isEmpty, "the load read the old drawing, or the new one, and either way the write already said")
 
-        drawings.load([shot], style: .standard) { loaded.append(contentsOf: $0.values) }
+        drawings.load([shot.screenshotKey], style: .standard) { loaded.append(contentsOf: $0.values) }
         Drawings.loads.sync(flags: .barrier) {}
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         XCTAssertEqual(loaded.map { $0?.marks.map(\.geometry) }, [new.marks.map(\.geometry)], "read from disk, so the ids are new")
 
-        drawings.remove([shot])
+        drawings.remove([shot.screenshotKey])
         XCTAssertEqual(changed.count, 2)
         XCTAssertNil(changed[1], "a removal says there is no drawing")
     }
@@ -399,8 +450,8 @@ final class DrawingsTests: XCTestCase {
         let launch = Drawings(store: drawings.store)
         launch.sweep(ScreenshotWatcher.Inventory(folder: folder, names: ["kept.png"], dates: [:],
                                                  observedAt: ProcessInfo.processInfo.systemUptime))
-        XCTAssertEqual(launch.keys, [kept, elsewhere])
-        XCTAssertEqual(Drawings(store: drawings.store).keys, [kept, elsewhere])
+        XCTAssertEqual(launch.keys, [ScreenshotKey(asGiven: kept), ScreenshotKey(asGiven: elsewhere)])
+        XCTAssertEqual(Drawings(store: drawings.store).keys, [ScreenshotKey(asGiven: kept), ScreenshotKey(asGiven: elsewhere)])
     }
 
     func testAQueuedInventoryCannotSweepANewerDrawingWrite() throws {
@@ -411,8 +462,8 @@ final class DrawingsTests: XCTestCase {
                               marks: [Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))])
         XCTAssertTrue(drawings.write(drawing, reason: "saved"))
         drawings.sweep(inventory)
-        XCTAssertEqual(drawings.current(of: shot, style: .standard)?.marks.map(\.geometry), drawing.marks.map(\.geometry))
-        XCTAssertEqual(Drawings(store: drawings.store).keys, [shot.path])
+        XCTAssertEqual(drawings.current(of: shot.screenshotKey, style: .standard)?.marks.map(\.geometry), drawing.marks.map(\.geometry))
+        XCTAssertEqual(Drawings(store: drawings.store).keys, [shot.screenshotKey])
     }
 
     func testSweepKeepsAnExistingFileReachedThroughACaseAlias() throws {
@@ -428,8 +479,8 @@ final class DrawingsTests: XCTestCase {
         let inventory = ScreenshotWatcher.Inventory(folder: dir, names: [actual.lastPathComponent], dates: [:],
                                                      observedAt: ProcessInfo.processInfo.systemUptime)
         drawings.sweep(inventory)
-        XCTAssertEqual(Drawings(store: drawings.store).keys, [alias.path])
-        XCTAssertEqual(drawings.current(of: alias, style: .standard)?.marks.map(\.geometry), [mark.geometry])
+        XCTAssertEqual(Drawings(store: drawings.store).keys, [alias.screenshotKey])
+        XCTAssertEqual(drawings.current(of: alias.screenshotKey, style: .standard)?.marks.map(\.geometry), [mark.geometry])
     }
 
     func testALaunchRemovesWhatTheWebEditorLeft() throws {
@@ -454,7 +505,11 @@ private final class FakeEditor: OpenDrawing {
 
     init(_ drawing: Drawing) { self.drawing = drawing }
 
-    func drawing(of key: String) -> Drawing? { isOpen && drawing.key == key ? drawing : nil }
+    func drawing(of key: ScreenshotKey) -> Drawing? { isOpen && drawing.key == key.path ? drawing : nil }
+
+    func rekey(_ old: ScreenshotKey, to new: ScreenshotKey) {
+        if drawing.key == old.path { drawing.key = new.path }
+    }
 
     func join(_ marks: [Mark]) -> Drawing? {
         guard !marks.isEmpty else { return nil }

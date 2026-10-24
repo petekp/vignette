@@ -143,8 +143,8 @@ def check_marks_drawn(app, png, rect, rgb, who):
 def launch(app):
     """A test launch comes up on its scratch files and reaches nothing of the person's.
 
-    It uses no codex and no herdr, registers no login item, answers every command it lists, and
-    answers a bad file with an error line."""
+    It uses no codex and no herdr, registers no login item, runs no updater, answers every command
+    it lists, and answers a bad file with an error line."""
     start(app)
     app.wait_log('[tools] test launch: codex=none herdr=none', 0)
     app.report.step('no codex and no herdr in a test launch')
@@ -152,6 +152,10 @@ def launch(app):
     if s['app']['launchAtLogin'] or s['app']['loginItem'] == 'enabled':
         raise Failed(f"login item: launchAtLogin={s['app']['launchAtLogin']} loginItem={s['app']['loginItem']}")
     app.report.step('no login item', detail=s['app']['loginItem'])
+    app.wait_log('[update] test launch: no updater', 0)
+    if s['app']['update'] is not None:
+        raise Failed(f"an updater runs: {s['app']['update']}")
+    app.report.step('no updater')
     offset = app.log_size()
     app.command('help')
     listed = set(re.findall(r'\[help\] ([a-z-]+):', app.log_since(offset)))
@@ -823,42 +827,60 @@ def corner_select(app):
 @needs_input
 def capture_origin(app):
     """With Instant Draw on, a selection taken with macOS's capture overlay flies into the editor
-    from the rect it was taken from. ⌘⇧ starts the poll that sees the drag, since the overlay
-    keeps the drag itself from every other app."""
+    from the rect it was taken from: the rect macOS records on the file, or, when it records none,
+    the poll that ⌘⇧ starts, since the overlay keeps the drag itself from every other app. The
+    second capture has its metadata taken off before it reaches the folder, so the poll finds it."""
     app.write_settings(annotateOnCapture=True)
     start(app)
+
+    def select(path, x1, y1, x2, y2):
+        app.input('chord', 55, 56)
+        capture = subprocess.Popen(['screencapture', '-i', '-x', path])
+        try:
+            # Nothing outside says when the overlay is up: it is in no window list and leaves the
+            # system cursor as it was. A drag it misses selects text in the front app, and the file
+            # never comes.
+            time.sleep(0.8)
+            if capture.poll() is not None:
+                raise Failed('screencapture -i ended before the drag')
+            app.input('glidedrag', x1, y1, x2, y2, 0.5)
+            capture.wait(timeout=10)
+        finally:
+            if capture.poll() is None:
+                capture.kill()
+        # The point under the release is inside the capture, so it is one point wider and taller.
+        return f'[{x1}, {y1}, {x2 - x1 + 1}, {y2 - y1 + 1}]'
+
+    def opened_from(name, expected, offset, source=None):
+        found = app.wait_log('[origin] selection', offset, also=name)
+        if expected not in found:
+            raise Failed(f'the capture was found at {found.split(name)[-1].strip()}, not {expected}')
+        if source and f'from={source}' not in found:
+            raise Failed(f'the capture was found by {found.split(" from=")[-1]}, not the {source}')
+        app.report.step(f'the selection was found {found[found.index(" from="):].strip()}', detail=expected)
+        line = app.wait_log('[annotate] from capture', offset, also=name)
+        if expected not in line:
+            raise Failed(f'the flight started at {line}, not {expected}')
+        app.wait_log('[annotate] takes events', offset)
+        s = app.state()
+        if not (s['annotator'].get('current') or '').endswith(name):
+            raise Failed(f"the editor has {s['annotator'].get('current')}, not {name}")
+        app.report.step('the editor opened from the captured rect')
+        close_editor(app)
+
     name = 'Screenshot origin.png'
-    x1, y1, x2, y2 = 200, 150, 720, 410
     offset = app.log_size()
-    app.input('chord', 55, 56)
-    capture = subprocess.Popen(['screencapture', '-i', '-x', os.path.join(app.watch, name)])
-    try:
-        # Nothing outside says when the overlay is up: it is in no window list and leaves the
-        # system cursor as it was. A drag it misses selects text in the front app, and the file
-        # never comes.
-        time.sleep(0.8)
-        if capture.poll() is not None:
-            raise Failed('screencapture -i ended before the drag')
-        app.input('glidedrag', x1, y1, x2, y2, 0.5)
-        capture.wait(timeout=10)
-    finally:
-        if capture.poll() is None:
-            capture.kill()
-    # The point under the release is inside the capture, so it is one point wider and taller.
-    expected = f'[{x1}, {y1}, {x2 - x1 + 1}, {y2 - y1 + 1}]'
-    found = app.wait_log('[origin] selection', offset, also=name)
-    if expected not in found:
-        raise Failed(f'the capture was found at {found.split(name)[-1].strip()}, not {expected}')
-    app.report.step('the poll found the selection', detail=expected)
-    line = app.wait_log('[annotate] from capture', offset, also=name)
-    if expected not in line:
-        raise Failed(f'the flight started at {line}, not {expected}')
-    app.wait_log('[annotate] takes events', offset)
-    s = app.state()
-    if not (s['annotator'].get('current') or '').endswith(name):
-        raise Failed(f"the editor has {s['annotator'].get('current')}, not {name}")
-    app.report.step('the editor opened from the captured rect')
-    close_editor(app)
+    expected = select(os.path.join(app.watch, name), 200, 150, 720, 410)
+    opened_from(name, expected, offset)
+
+    name = 'Screenshot origin poll.png'
+    held = os.path.join(app.home, 'held')
+    os.makedirs(held, exist_ok=True)
+    offset = app.log_size()
+    expected = select(os.path.join(held, name), 260, 200, 640, 420)
+    subprocess.run(['xattr', '-c', os.path.join(held, name)], check=True)
+    os.rename(os.path.join(held, name), os.path.join(app.watch, name))
+    opened_from(name, expected, offset, source='poll')
 
 
 @needs_input
@@ -956,6 +978,42 @@ def agent_marks_editable(app):
     close_editor(app)
 
 
+def rename_keeps_drawing(app):
+    """A file renamed inside the watch folder keeps its card and its drawing under the new name,
+    and the rename is neither a removal nor a new capture."""
+    start(app)
+    copy, _ = push(app, [{'type': 'rectangle', 'x': 0.1, 'y': 0.1, 'w': 0.3, 'h': 0.3}])
+
+    def named(s, name):
+        return next((c for c in s['stack']['cards'] if os.path.basename(c['file']) == name), None)
+
+    s = app.wait_state(lambda s: (c := named(s, os.path.basename(copy))) is not None and c['drawing'],
+                       'a card with the drawing')
+    count = len(s['stack']['cards'])
+    drawings = len(s['drawings'])
+    current = copy
+    for label, name in [('renamed', 'Renamed checkout.png'), ('case-only renamed', 'RENAMED CHECKOUT.png')]:
+        offset = app.log_size()
+        target = os.path.join(app.watch, name)
+        os.rename(current, target)
+        old_name = os.path.basename(current)
+        app.wait_log('[watcher] renamed', offset)
+        s = app.wait_state(lambda s: (c := named(s, name)) is not None and c['drawing']
+                           and (old_name == name or named(s, old_name) is None),
+                           f'the card with its drawing under the {label} name')
+        if len(s['stack']['cards']) != count or len(s['drawings']) != drawings:
+            raise Failed(f'{label}: {count} cards and {drawings} drawings became '
+                         f'{len(s["stack"]["cards"])} and {len(s["drawings"])}')
+        time.sleep(1.0)
+        log = app.log_since(offset)
+        if '[watcher] new' in log or '[watcher] removed' in log:
+            raise Failed(f'{label}: the watcher reported a capture or a removal')
+        app.report.step(f'{label}: the card keeps its drawing', detail=name)
+        current = target
+    app.command('dismiss')
+
+
 ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, send_target_codex, copy_types, stitch,
        instant_draw, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_message, send_grace,
-       send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select, capture_origin]
+       send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select, capture_origin,
+       rename_keeps_drawing]

@@ -10,6 +10,10 @@ settings keys say "annotate". Both name the same act.
 An image in the screenshots folder, whether macOS saved it from a capture or an agent added it.
 _Avoid_: Capture when an agent added it, shot in anything a person reads
 
+**Screenshot key**:
+A screenshot's path as the screenshots folder spells it. Every store that keeps something about a screenshot is keyed by it, and a rename inside the folder moves the key. Code only.
+_Avoid_: Path, file name
+
 **Screen recording**:
 A movie macOS saved to the screenshots folder. It appears as a card but is never drawn on.
 _Avoid_: Video
@@ -112,6 +116,11 @@ _Avoid_: Export, annotated image, flattened image
 The time from a screenshot opening in the annotator until the annotator closes with nothing after
 it. Drawing a list of screenshots is one run, which opens them in turn.
 _Avoid_: Session
+
+**Opening**:
+One screenshot's time in the annotator, from its flight out until its card comes home. The same
+screenshot closed and drawn again is a new opening. A run of a list is one opening per screenshot.
+_Avoid_: Session, generation
 
 **Queue**:
 The screenshots waiting in an annotation run, in the order they will open.

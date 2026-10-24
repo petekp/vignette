@@ -1,7 +1,7 @@
 import XCTest
 
 final class CardNoticesTests: XCTestCase {
-    private let file = "/tmp/shot.png"
+    private let file: ScreenshotKey = "/tmp/shot.png"
     private let hold: TimeInterval = 2
 
     @discardableResult

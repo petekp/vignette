@@ -5,8 +5,8 @@ import Foundation
 /// with the events (`ProcessInfo.systemUptime` in the app).
 struct SendGrace: Equatable {
     struct Wait: Equatable {
-        /// The sent screenshot's standardized path.
-        let file: String
+        /// The sent screenshot.
+        var file: ScreenshotKey
         /// The line the client gets, built at send. Only in memory: it holds the person's message.
         let line: String
         let deadline: TimeInterval
@@ -20,11 +20,13 @@ struct SendGrace: Equatable {
     private var nextSequence = 0
 
     enum Event: Equatable {
-        case sent(request: String, file: String, line: String, grace: TimeInterval, at: TimeInterval)
+        case sent(request: String, file: ScreenshotKey, line: String, grace: TimeInterval, at: TimeInterval)
         /// A timer armed by `.arm` ran.
         case due(request: String, at: TimeInterval)
         /// Don't send, on the card or by URL.
-        case cancelled(file: String)
+        case cancelled(file: ScreenshotKey)
+        /// The sent screenshot was renamed inside the watch folder.
+        case renamed(from: ScreenshotKey, to: ScreenshotKey)
         /// A clear took the request: `requests?clear=` or the admission of a fiftyfirst.
         case cleared(request: String)
         case quit
@@ -61,6 +63,9 @@ struct SendGrace: Equatable {
             let ids = ordered(on: file)
             for id in ids { waiting[id] = nil }
             return ids.map { .discard(request: $0) }
+        case .renamed(let from, let to):
+            for (id, wait) in waiting where wait.file == from { waiting[id]?.file = to }
+            return []
         case .cleared(let request):
             guard waiting.removeValue(forKey: request) != nil else { return [] }
             return [.dropped(request: request)]
@@ -76,7 +81,7 @@ struct SendGrace: Equatable {
     func wait(of request: String) -> Wait? { waiting[request] }
 
     /// The waiting requests, in send order, of `file` or of every file.
-    private func ordered(on file: String?) -> [String] {
+    private func ordered(on file: ScreenshotKey?) -> [String] {
         waiting.filter { file == nil || $0.value.file == file }.sorted { $0.value.sequence < $1.value.sequence }.map(\.key)
     }
 }

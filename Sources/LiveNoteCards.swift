@@ -20,7 +20,7 @@ final class LiveNoteCards {
     /// A note card sent to a session: the window it was on, where its ink was, in global top-left
     /// points, and how the window looked round it until the turn's end no longer needs it.
     private struct Note {
-        let shot: Screenshot
+        var shot: Screenshot
         let destination: AgentDestination
         let window: CGWindowID?
         let ink: CGRect
@@ -35,7 +35,7 @@ final class LiveNoteCards {
         let image: CGImage
         let frame: CGRect
         let pointScale: CGFloat
-        var file: URL?
+        var file: Screenshot?
     }
 
     private enum Input {
@@ -49,7 +49,7 @@ final class LiveNoteCards {
     private let requests: ScreenshotRequests
     private let cards: ThumbnailController
     private let connections: [AgentClient: any AgentConnection]
-    private let addMarks: ([AgentMark], String?, URL, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void
+    private let addMarks: ([AgentMark], String?, ScreenshotKey, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void
     private var notes: [String: Note] = [:]
     private var waits = NoteCardGroups()
     private var timer: Timer?
@@ -59,7 +59,7 @@ final class LiveNoteCards {
 
     init(folder: FolderWrites, drawings: Drawings, requests: ScreenshotRequests, cards: ThumbnailController,
          connections: [AgentClient: any AgentConnection],
-         addMarks: @escaping ([AgentMark], String?, URL, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void) {
+         addMarks: @escaping ([AgentMark], String?, ScreenshotKey, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void) {
         self.folder = folder
         self.drawings = drawings
         self.requests = requests
@@ -79,28 +79,27 @@ final class LiveNoteCards {
               done: @escaping (Result<String, ScreenshotRequests.Refusal>) -> Void) {
         let refused = ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason)
         let (capture, scale) = (note.capture, note.pointScale)
-        folder.writeCard(named: "Live ink note", png: { LivePacket.screenshotPNG(capture, pointScale: scale) }, from: nil) { [weak self] url in
-            guard let self, let url else { return done(.failure(refused)) }
+        folder.writeCard(named: "Live ink note", png: { LivePacket.screenshotPNG(capture, pointScale: scale) }, from: nil) { [weak self] shot in
+            guard let self, let shot else { return done(.failure(refused)) }
             let pixels = PixelSize(width: note.capture.width, height: note.capture.height)
             let pointScale = min(max(note.pointScale, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
             let style = Settings.shared.data.ui.textStyle
             let marks = note.marks.compactMap { $0.placed(in: pixels, pointScale: pointScale, style: style) }
-            let drawing = Drawing(key: url.path, pixels: pixels, pointScale: pointScale, marks: marks)
+            let drawing = Drawing(key: shot.key.path, pixels: pixels, pointScale: pointScale, marks: marks)
             drawings.write(drawing, reason: "built")
             let record: ScreenshotRequests.Record
             do {
-                record = try requests.send(png: note.picture, source: url, to: destination, message: message,
+                record = try requests.send(png: note.picture, source: shot.url, to: destination, message: message,
                                            instructions: Settings.shared.data.sendInstructions,
                                            grace: Settings.shared.data.ui.sendGraceSeconds)
             } catch {
-                folder.takeBack(url)
+                folder.takeBack(shot)
                 return done(.failure((error as? ScreenshotRequests.Refusal) ?? refused))
             }
-            let shot = Screenshot(url: url)
             notes[record.id] = Note(shot: shot, destination: destination, window: note.window, ink: note.ink, before: note.before)
             // The card comes ahead of the watcher's report, which then finds it there.
             cards.show(shot, drawing: drawing)
-            folder.ready(url)
+            folder.ready(shot)
             let grace = requests.grace(of: record.id)
             cards.showSending(shot, request: record.id, to: destination, grace: grace)
             done(.success(record.id))
@@ -121,6 +120,17 @@ final class LiveNoteCards {
         hold.send(.event(input, at: Date())) { self.handle($0) }
     }
 
+    /// Files renamed inside the watch folder: a note card, and a result card an answer may still be
+    /// drawn on, follow their files, as the cards do.
+    func renamed(_ renames: [FolderWrites.Rename]) {
+        for rename in renames {
+            for (id, note) in notes {
+                if note.shot.key == rename.from { notes[id]?.shot = Screenshot(key: rename.to) }
+                if note.resultCard?.file?.key == rename.from { notes[id]?.resultCard?.file = Screenshot(key: rename.to) }
+            }
+        }
+    }
+
     /// `ScreenshotRequests.Callbacks.released`: the note's grace ended and its line is going to the
     /// session. Answers the note card the send notice is on, or nil when the request is not a note card's.
     func released(_ request: String) -> Screenshot? {
@@ -133,7 +143,7 @@ final class LiveNoteCards {
     /// nothing once the line has gone.
     func unsend(request: String) {
         guard let note = notes[request] else { return }
-        requests.unsend(file: note.shot.url)
+        requests.unsend(file: note.shot.key)
     }
 
     /// `ScreenshotRequests.Callbacks.cancelled`: Don't send on a note card. The note card is Vignette's
@@ -209,14 +219,14 @@ final class LiveNoteCards {
             }
         case .makeResultCard(let ids):
             guard case .looked(_, let seen?, _) = input, let lead = notes[ids[0]] else { return }
-            addResult(seen.capture.image, pointScale: seen.capture.pointScale, marks: [], answering: ids.count, from: lead.destination) { [weak self] url in
+            addResult(seen.capture.image, pointScale: seen.capture.pointScale, marks: [], answering: ids.count, from: lead.destination) { [weak self] shot in
                 guard let self else { return }
-                guard let url else {
+                guard let shot else {
                     Log.write("[live-ink] result card not made notes=\(ids.count)")
                     return hold.send(.event(.cardFailed(ids), at: Date())) { self.handle($0) }
                 }
                 var card = seen.capture
-                card.file = url
+                card.file = shot
                 for id in ids { notes[id]?.resultCard = card }
             }
         }
@@ -374,8 +384,8 @@ final class LiveNoteCards {
                 let drawn = card.marks(for: answer, about: note.ink, style: ui.textStyle, agent: note.destination.client.rawValue)
                 Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(drawn.notDrawn.count)")
                 guard let self else { return done(nil) }
-                addResult(packet.capture, pointScale: packet.scale, marks: drawn.marks, answering: 1, from: destination) { url in
-                    done(url == nil ? nil : drawn.notDrawn)
+                addResult(packet.capture, pointScale: packet.scale, marks: drawn.marks, answering: 1, from: destination) { shot in
+                    done(shot == nil ? nil : drawn.notDrawn)
                 }
             } catch {
                 Log.write("[live-ink] no result capture for request=\(request): \(error)")
@@ -388,7 +398,7 @@ final class LiveNoteCards {
     /// mark at the words it names in the card's picture. Answers nil when there is no such card, and
     /// the reply then becomes a card on the picture the session was sent.
     private func drawOnResultCard(_ answer: LiveAnswer, for request: String, on note: Note, done: @escaping ([Int]?) -> Void) {
-        guard let made = note.resultCard, let file = made.file, FileManager.default.fileExists(atPath: file.path) else {
+        guard let made = note.resultCard, let file = made.file, FileManager.default.fileExists(atPath: file.url.path) else {
             return done(nil)
         }
         let style = Settings.shared.data.ui.textStyle
@@ -400,12 +410,12 @@ final class LiveNoteCards {
             let card = ResultCard(frame: made.frame, pixels: PixelSize(width: image.width, height: image.height),
                                   pointScale: made.pointScale, page: nil, lines: lines)
             let drawn = card.marks(for: answer, about: note.ink, style: style, agent: agent)
-            Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(drawn.notDrawn.count) on \(file.lastPathComponent)")
+            Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(drawn.notDrawn.count) on \(file.key.name)")
             guard let self else { return done(nil) }
             guard !drawn.marks.isEmpty else { return done(drawn.notDrawn) }
-            addMarks(drawn.marks, agent, file) { result in
+            addMarks(drawn.marks, agent, file.key) { result in
                 guard case .failure(let failure) = result else { return done(drawn.notDrawn) }
-                Log.write("[live-ink] error result marks \(file.lastPathComponent): \(failure)")
+                Log.write("[live-ink] error result marks \(file.key.name): \(failure)")
                 done(nil)
             }
         }
@@ -414,23 +424,23 @@ final class LiveNoteCards {
     /// A live ink note's result, as a card from the session it went to: `window`, the note's window
     /// as it was when the result came, with `marks` from the session's answer. It carries the agent
     /// and the session as a push with `add` does, so it wears the agent's tab and Reply on it goes
-    /// back to that session. `answering`, how many notes the card answers. Answers the card's file, or nil
+    /// back to that session. `answering`, how many notes the card answers. Answers the card, or nil
     /// when it was not made.
     private func addResult(_ window: CGImage, pointScale: CGFloat, marks: [AgentMark], answering: Int, from destination: AgentDestination,
-                           done: @escaping (URL?) -> Void) {
+                           done: @escaping (Screenshot?) -> Void) {
         folder.writeCard(named: "Live ink result", png: { LivePacket.screenshotPNG(window, pointScale: pointScale) },
-                         from: destination) { [weak self] url in
-            guard let self, let url else { return done(nil) }
-            let name = url.lastPathComponent
+                         from: destination) { [weak self] shot in
+            guard let self, let shot else { return done(nil) }
+            let name = shot.key.name
             let agent = destination.client.rawValue
             let show = { [weak self] in
                 guard let self else { return }
                 Log.write("[live-ink] result card \(name) agent=\(agent) marks=\(marks.count) notes=\(answering)")
-                folder.ready(url)
-                done(url)
+                folder.ready(shot)
+                done(shot)
             }
             guard !marks.isEmpty else { return show() }
-            addMarks(marks, agent, url) { result in
+            addMarks(marks, agent, shot.key) { result in
                 if case .failure(let failure) = result { Log.write("[live-ink] error result marks \(name): \(failure)") }
                 show()
             }

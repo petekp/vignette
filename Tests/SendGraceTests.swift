@@ -5,7 +5,7 @@ import XCTest
 final class SendGraceTests: XCTestCase {
     private var grace = SendGrace()
 
-    private func send(_ request: String, file: String = "/shots/a.png", line: String = "line", length: TimeInterval = 3,
+    private func send(_ request: String, file: ScreenshotKey = "/shots/a.png", line: String = "line", length: TimeInterval = 3,
                       at time: TimeInterval = 100) -> [SendGrace.Effect] {
         grace.handle(.sent(request: request, file: file, line: line, grace: length, at: time))
     }
@@ -48,6 +48,13 @@ final class SendGraceTests: XCTestCase {
         _ = send("other", file: "/shots/b.png")
         XCTAssertEqual(grace.handle(.cancelled(file: "/shots/a.png")), [.discard(request: "first"), .discard(request: "second")])
         XCTAssertNotNil(grace.wait(of: "other"))
+    }
+
+    func testARenamedSendIsCancelledByItsNewName() {
+        _ = send("r")
+        XCTAssertEqual(grace.handle(.renamed(from: "/shots/a.png", to: "/shots/b.png")), [])
+        XCTAssertEqual(grace.handle(.cancelled(file: "/shots/a.png")), [])
+        XCTAssertEqual(grace.handle(.cancelled(file: "/shots/b.png")), [.discard(request: "r")])
     }
 
     /// A setting of 0 means off: nothing may wait.

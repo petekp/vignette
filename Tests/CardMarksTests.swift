@@ -212,7 +212,7 @@ final class CardMarksTests: XCTestCase {
         let model = StackModel()
         let marks = [MarkLayers(pixels: pixels, queue: MarkLayers.cardQueue), MarkLayers(pixels: pixels, queue: MarkLayers.cardQueue)]
         model.cards = marks.enumerated().map { i, marks in
-            Card(id: UUID(), shot: Screenshot(url: URL(fileURLWithPath: "/tmp/shot \(i).png")), image: nil,
+            Card(id: UUID(), shot: Screenshot(key: URL(fileURLWithPath: "/tmp/shot \(i).png").screenshotKey), image: nil,
                  pointSize: NSSize(width: 200, height: 130), size: NSSize(width: 200, height: 130), agent: nil, marks: marks)
         }
         marks[0].show(longText(pixels), filling: CGSize(width: 200, height: 130), backingScale: 2, style: .standard, markStyle: .standard)

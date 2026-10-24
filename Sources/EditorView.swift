@@ -850,9 +850,15 @@ private final class CanvasView: NSView {
 }
 
 extension EditorView: OpenDrawing {
-    func drawing(of key: String) -> Drawing? {
-        guard core.isOpen, core.drawing.key == key else { return nil }
+    func drawing(of key: ScreenshotKey) -> Drawing? {
+        guard core.isOpen, core.drawing.key == key.path else { return nil }
         return core.drawingForHost
+    }
+
+    func rekey(_ old: ScreenshotKey, to new: ScreenshotKey) {
+        guard core.isOpen, core.drawing.key == old.path else { return }
+        screenshotName = new.url.deletingPathExtension().lastPathComponent
+        core.rekey(to: new.path)
     }
 
     /// The core hands the joined drawing over at once; that hand-over is the answer, so the caller

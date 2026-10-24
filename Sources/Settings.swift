@@ -4,14 +4,23 @@ import Combine
 @preconcurrency import CoreFoundation
 
 struct Screenshot: Sendable {
-    let url: URL
+    let key: ScreenshotKey
+    var url: URL { key.url }
+
+    init(key: ScreenshotKey) { self.key = key }
 
     /// A still image, or a screen recording from Cmd+Shift+5.
-    enum Kind: Sendable { case image, recording }
+    enum Kind: Sendable {
+        case image, recording
 
-    /// Read from the extension alone. The name says nothing: macOS names screenshots and recordings
-    /// from the same `com.apple.screencapture name` default, which is the user's to change.
-    var kind: Kind { Screenshot.recordingExtensions.contains(url.pathExtension.lowercased()) ? .recording : .image }
+        /// Read from the extension alone. The name says nothing: macOS names screenshots and
+        /// recordings from the same `com.apple.screencapture name` default, which is the user's to change.
+        init(of url: URL) {
+            self = Screenshot.recordingExtensions.contains(url.pathExtension.lowercased()) ? .recording : .image
+        }
+    }
+
+    var kind: Kind { Kind(of: url) }
 
     /// What Cmd+Shift+5 writes (docs/replacing-apple-capture-2026-09-22.md).
     static let recordingExtensions: Set<String> = ["mov"]
@@ -521,6 +530,22 @@ struct AppleOriginal: Codable, Equatable {
     }
 }
 
+/// A launch with `VIGNETTE_SETTINGS` set is a test launch. It reads and writes that settings file and
+/// its own screenshot defaults, and reaches nothing else of the person's: no login item, and no
+/// update feed, agent folder or agent tool the environment does not name.
+enum Launch {
+    static let settingsPath = settingsPath(in: ProcessInfo.processInfo.environment)
+    static let isTest = settingsPath != nil
+
+    static func isTest(in environment: [String: String]) -> Bool {
+        settingsPath(in: environment) != nil
+    }
+
+    private static func settingsPath(in environment: [String: String]) -> String? {
+        environment["VIGNETTE_SETTINGS"].flatMap { $0.isEmpty ? nil : $0 }
+    }
+}
+
 /// The settings file is the source of truth. The Settings window, the debug panel, agents, and
 /// dotfiles all edit it; the app reloads it when it changes on disk and pushes the relevant keys to
 /// Apple's defaults. `VIGNETTE_SETTINGS=<path>` in the environment points the app at another file,
@@ -529,9 +554,8 @@ struct AppleOriginal: Codable, Equatable {
 final class Settings: ObservableObject {
     static let shared = Settings()
     nonisolated static let currentVersion = 2
-    nonisolated static let isOverridden = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false
     static let fileURL: URL = {
-        if let path = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"], !path.isEmpty {
+        if let path = Launch.settingsPath {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         }
         // A test process never writes the user's file, whoever launched it. The scheme in
@@ -1010,7 +1034,7 @@ final class Settings: ObservableObject {
 /// `VIGNETTE_SETTINGS` reads and writes `<bundle id>.screencapture` instead, so a test copy never
 /// takes or moves the user's save location. macOS itself never reads that domain.
 enum AppleScreencapture {
-    static let domainName = (ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false) ? "\(Identity.bundleID).screencapture" : "com.apple.screencapture"
+    static let domainName = Launch.isTest ? "\(Identity.bundleID).screencapture" : "com.apple.screencapture"
     private static let domain = domainName as CFString
 
     static func string(_ key: String) -> String? { CFPreferencesCopyAppValue(key as CFString, domain) as? String }

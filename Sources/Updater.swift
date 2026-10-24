@@ -18,8 +18,11 @@ final class Updater: NSObject {
     var hasStatusItem: () -> Bool = { false }
 
     private var controller: SPUStandardUpdaterController!
+    /// The feed a test launch checks in place of `SUFeedURL`, so it never reaches the release feed.
+    private nonisolated let feed: String?
 
-    override init() {
+    init(feed: String?) {
+        self.feed = feed
         super.init()
         controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: self)
     }
@@ -44,6 +47,8 @@ final class Updater: NSObject {
 }
 
 extension Updater: SPUUpdaterDelegate {
+    nonisolated func feedURLString(for updater: SPUUpdater) -> String? { feed }
+
     nonisolated func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         let found = "\(item.displayVersionString) (\(item.versionString))"
         MainActor.assumeIsolated { Log.write("[update] found \(found)") }

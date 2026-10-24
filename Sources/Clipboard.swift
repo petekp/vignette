@@ -14,7 +14,7 @@ enum Clipboard {
         var items: [NSPasteboardItem] = []
         for (i, url) in urls.enumerated() {
             let item: NSPasteboardItem
-            if i == 0, Screenshot(url: url).kind == .image, let data = try? Data(contentsOf: url), let image = imageItem(data) {
+            if i == 0, Screenshot.Kind(of: url) == .image, let data = try? Data(contentsOf: url), let image = imageItem(data) {
                 item = image
             } else {
                 item = NSPasteboardItem()

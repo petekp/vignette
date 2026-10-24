@@ -100,7 +100,9 @@ Before you drive the app:
 - Delete test files from the watch folder afterwards. It is the user's real screenshot folder.
 - A test copy never touches the person's own `~/.claude` and `~/.codex`: with `VIGNETTE_SETTINGS`
   set, `AgentPlugin.roots` leaves them out and the launch logs `[plugin] test launch: left <folder>
-  alone`, and it registers no login item. To test the plugin, also launch with
+  alone`. It neither registers nor removes a login item. It runs no updater, and logs
+  `[update] test launch: no updater`, unless `VIGNETTE_FEED` names a feed. With one, it checks that
+  feed in place of the release feed. Each of these gates reads `Launch.isTest`. To test the plugin, also launch with
   `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`). It runs no codex and
   no herdr unless `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names one (`AgentTools.forSessions`), since
   any other found on the Mac reaches the person's own sessions; the launch logs
@@ -143,8 +145,9 @@ The steps below have the details.
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
    folder, and `tweaks`, `install-skill?root=` and `live-ink-stroke` are refused, unless settings.json has
-   `"debug": true`. A `file=` inside the folder is taken by the folder's own spelling
-   (`Commands.inWatchFolder`), so `/tmp/x.png` and `/private/tmp/x.png` reach one drawing.
+   `"debug": true`. A `file=` inside the folder becomes a `ScreenshotKey` through
+   `ScreenshotKey(resolving:in:)`, which resolves links on both sides and answers the folder's own
+   spelling, so `/tmp/x.png` and `/private/tmp/x.png` reach one drawing.
    `add` is the exception, and it takes two paths the folder rule does not cover.
    `add?file=` copies an image in from anywhere and the watcher then reports it like a capture,
    minus the copy and annotate toggles (`&annotate` opens the editor; `FolderWrites.add`). `&agent=<name>` says which
@@ -298,8 +301,13 @@ screenshot location for such a launch is written with the same variable:
 - Apple's Cmd+Shift+3/4/5 still capture. The app only watches the folder. Do not register
   those hotkeys.
 - With `annotateOnCapture` on, a capture flies into the editor from the rect it was taken from
-  (`CaptureOrigin.swift`). macOS records no position in the file, and its capture overlay keeps
-  its drag from every other app's event monitors. The button's state still reads, so ⌘ and ⇧ held
+  (`CaptureOrigin.swift`). macOS records the rect and kind in the file's metadata
+  (`kMDItemScreenCaptureGlobalRect`, `kMDItemScreenCaptureType`), set before the file takes its
+  final name, and Vignette takes it from there first (`CaptureRect.recorded`). It is used only when
+  the file was created in the last 10 s and the rect fits its pixels, since a copy by Finder,
+  `copyItem` or `ditto` keeps the metadata and its creation date (`cp` gives a new date). On one Mac macOS stopped writing it for weeks
+  (`docs/capture-origin-spike-2026-10-03.md`), so the poll below stays as the fallback. The capture
+  overlay keeps its drag from every other app's event monitors. The button's state still reads, so ⌘ and ⇧ held
   together, seen by a `flagsChanged` monitor, start a 30 Hz poll of `NSEvent.pressedMouseButtons`
   and the pointer for 15 s. None of this needs a permission. `CaptureRect.locate` is the pure part.
   It tries a drag released within 3 s whose size is near the file's, then the topmost window under
@@ -329,7 +337,26 @@ screenshot location for such a launch is written with the same variable:
   ten seconds (`[watcher] error never-stable`); the next folder event or stack open picks it up.
   Wake from sleep rescans the folder. The watcher keeps an index of the folder (name and
   modification date, from one bulk listing) so opening the stack and finding the newest screenshot
-  never list the folder on the main thread. Every stack open asks for a rescan, which is how the
+  never list the folder on the main thread. A screenshot is identified by its `ScreenshotKey`: its
+  path as the watch folder spells it. The watcher, a stitch and an agent's push make keys with
+  `ScreenshotKey(folder:name:)`, and the watcher reports keys, never URLs. A path from outside
+  gets its key from the resolving initializer.
+  `ScreenshotKey(asGiven:)` reads back a key that was stored, and names a file outside the folder
+  for a debug-mode command. Every store that keeps something about
+  a screenshot takes a key, and the drawing's file name is the SHA-256 of the key's path
+  (`docs/screenshot-key-2026-10-17.md`, `docs/adr/0019-a-screenshot-is-its-watch-folder-key.md`).
+  The same listing asks for each file's inode and size. A name that left the index and a name that
+  entered it, with one inode, size and modification date between them, are one file renamed
+  (`ScreenshotWatcher.renames`, `onRenamed`): its card, drawing, selection, queued place, notices
+  and open editor move to the new key (`FolderWrites.renamed`, `ThumbnailController.rename`,
+  `Drawings.rename`), and so do the request and reply records that name it
+  (`ScreenshotRequests.renamed`). Nothing reports it as a removal or a capture. A file renamed to a
+  name every listing hides, an agent reply's with no record, leaves as a removal. The watcher
+  holds the renames a scan pairs until a delivery that covers that scan takes them
+  (`ScreenshotWatcher.HeldRenames`). A pairing that is not one to
+  one, a name with an undelivered arrival, or a folder that went missing falls back to a removal
+  and an arrival. A rename seen only by a listing older than the app's last write waits for a
+  newer listing, as a removal does. Every stack open asks for a rescan, which is how the
   index catches a file changed in place. The first listing runs on the watcher's queue and launch
   waits for it half a second: macOS holds the first read of a folder it protects (the Desktop,
   Documents, Downloads) until the user answers its prompt, and done on the main thread that read
@@ -638,10 +665,10 @@ screenshot location for such a launch is written with the same variable:
   steps by what the spring still had to go. `fly` therefore answers on `arrived`, at `Anim.settle`
   (the spring within half a point of the target, with the flight put exactly on it in that turn):
   the card retakes its slot, and the annotator takes the shadow back
-  (`AnnotationController.landed`). The flight into the editor lifts at the last of three moments
-  (`ThumbnailController.liftIntoEditor`): `arrived`, which `lift(id:)` waits for itself; the
-  editor's `loaded` (`editorLoaded`, `loadedKeys`); and its window taking presses
-  (`annotatorTakesEvents`, `takingEvents`). The wait for `loaded` matters at motion 0, where the
+  (`AnnotationController.landed`). The flight into the editor lifts at the last of three moments,
+  which reach `AnnotationRun` as events for the opening and come back as `liftFlight`: `arrived`,
+  which `lift(id:)` waits for itself; the editor's `loaded`; and its window taking presses
+  (`takesPresses`). The wait for `loaded` matters at motion 0, where the
   flight can arrive before the image, and lifting it then would show an empty editor;
   `docs/native-editor-2026-09-23.md` has the timings. The wait for presses keeps the flight over the
   window until the window takes presses itself, so a press there never falls through to the app
@@ -733,13 +760,18 @@ screenshot location for such a launch is written with the same variable:
   has it cached, which it does after a hover, and with no image otherwise; `setImage` adds the image
   when the decode answers, and `[annotate] loaded <ms>ms <name>` is logged then. Opening first is
   what lets the keys work from `prepare`, and it leaves no moment in which an agent's push could
-  miss the open drawing. `openGeneration` drops a decode or a colour sample that answers after
-  another image opened.
+  miss the open drawing. A decode that answers after another opening began is dropped
+  (`AnnotationController.opening`).
 - Which image is in the annotator, where it came from, what is in flight and what opens next have
   one owner: `AnnotationRun`, a pure reducer held by `ThumbnailController`. The controller sends
   what happened (annotate a list, shown, parked, cancel, sent, finish, dismiss, remove, newShot,
-  selectionChanged, copyFailed) and runs the effects it returns (prepare, show, park, abandon,
-  returnCard, hideAnnotator, join, next, queued, endRun). The moves into and out of the annotator
+  selectionChanged, copyFailed, loaded, takesPresses, arrived) and runs the effects it returns
+  (prepare, show, park, abandon, returnCard, hideAnnotator, join, next, queued, endRun, landed,
+  handOverPresses, liftFlight). Each image the run sends to the annotator is an `Opening`: the
+  file's path and an id the run mints and never reuses, so the same file opened again is another
+  opening. Every answer names its opening, and one that names any other than the current one
+  changes nothing. The annotator holds the same value (`AnnotationController.opening`), which is
+  what Send and the session listing compare. The moves into and out of the annotator
   are decided by `AnnotatorTransition`, a pure reducer the run holds privately. Done sends
   `finish`: the card returns and takes the Copied notice (`returnCard`'s `copied`), and a lone
   thumbnail, which left the panel when the annotator opened, comes back to the corner for it. Esc
@@ -750,7 +782,8 @@ screenshot location for such a launch is written with the same variable:
   `dismiss(byHand: true)`. A `prepare` is never emitted while a
   park is in flight, which is what serializes rapid swaps; a new screenshot during a lone annotation
   joins the panel instead of closing the editor. Every event logs one
-  `[transition] <event> -> <phase> [queued=<n>] effects=…` line. The annotator never hides itself: Esc, a click
+  `[transition] <event> -> <phase> [queued=<n>] effects=…` line, where an opening prints as
+  `<file name>#<id>`. The annotator never hides itself: Esc, a click
   outside, Cmd+W and Done ask through `onClosed` and `onFinished`, and the reducer decides. `show`
   is the window coming up behind the flight. The editor parks synchronously, so an effect can answer
   inside the event that asked for it: at zoom 1 there is no fit-out, and `parked` comes back in the
@@ -928,8 +961,8 @@ screenshot location for such a launch is written with the same variable:
   flight, restyled, and flattened on a card.
 - Drawings are owned by the app, and every write goes through `Drawings` (`Drawings.swift`, with
   `DrawingStore` for the files): one JSON file per screenshot under
-  `~/Library/Application Support/<bundle id>/drawings/`, named by a hash of the file path the app
-  uses everywhere (`shot.url.path`). The editor hands its drawing over 0.3 s after each change,
+  `~/Library/Application Support/<bundle id>/drawings/`, named by a hash of the screenshot's
+  `ScreenshotKey` path (`key.path`). The editor hands its drawing over 0.3 s after each change,
   never while a button is held (`[drawing] saved`), and once more when it parks (`parked`). Until
   then the open drawing is ahead of its file, so whatever needs a screenshot's drawing as it is now
   (Copy Drawing, Stitch, a drag) asks `Drawings.current(of:)`, which answers the open drawing over
@@ -1113,10 +1146,10 @@ screenshot location for such a launch is written with the same variable:
   Sparkle compares `CFBundleVersion`, which the build phase stamps with the commit count. So each
   release needs more commits behind it than the last, which a release cut from main has. Every
   download is checked against `SUPublicEDKey`. Installs trust only images signed with the private key
-  in the Keychain account `vignette`, so a lost key leaves every install unable to update. The
-  trailer's stage copy turns the checks off. Sparkle relaunches an updated app through
-  LaunchServices, with no environment, so a test copy that must stay on scratch files sets
-  `VIGNETTE_SETTINGS` and `CFFIXED_USER_HOME` under `LSEnvironment` in its Info.plist.
+  in the Keychain account `vignette`, so a lost key leaves every install unable to update. A test
+  launch runs no updater unless `VIGNETTE_FEED` names a feed. Sparkle relaunches an updated app
+  through LaunchServices, with no environment, so a test copy that must stay on scratch files sets
+  `VIGNETTE_SETTINGS`, `CFFIXED_USER_HOME` and `VIGNETTE_FEED` under `LSEnvironment` in its Info.plist.
   `docs/updater-2026-09-27.md` has the tests.
 
 ### Agents
@@ -1140,7 +1173,9 @@ screenshot location for such a launch is written with the same variable:
   answers `missing-file`, and `add` refuses a source with that name outright, since the copy would
   have no record and so could never be shown. Reservation persists the actual destination URL
   before copying. Visibility and origin use that location; a later screenshots-folder change does
-  not move an existing reply. Startup loads the records before the watcher starts, then waits for
+  not move an existing reply. A published reply the person renames inside the folder keeps its
+  record, which records the new location as `renamedTo`, so its card keeps Reply. Cleanup never
+  reads `renamedTo`: it removes only unpublished outputs, at their reserved name. Startup loads the records before the watcher starts, then waits for
   successful current-folder inventory before recovery. Deletion needs confirmed absence in the
   reply's own folder. Locationless published records are retained conservatively.
   `Drawings.installReply` writes one complete drawing before publication. Recovery reuses a valid
@@ -1245,14 +1280,14 @@ screenshot location for such a launch is written with the same variable:
   Info.plist too (`ReplyCommand.dispatch`), so a fork's reply goes to the fork's scheme.
 - Send never reuses Done. It renders the drawing on `RenderingQueue` and closes nothing while it
   waits. The request is stored before the image leaves the editor, so a failure anywhere before then
-  leaves the drawing where the hand left it. A rendering belongs to the annotator session Send was
-  pressed in (`annotator.session`). One that answers after that session ended is dropped, even when
+  leaves the drawing where the hand left it. A rendering belongs to the opening Send was
+  pressed in (`annotator.opening`). One that answers after that opening ended is dropped, even when
   the same image is open again, and nothing is sent or closed
   (`[send] dropped <name>; the editor moved on`). `sending` stays on from the press until the bar
   has left, so the button keeps its paper plane through the exit, and `prepare` resets it, so the
   next image's toolbar never shows a send that is not its own. A list of agent sessions that
   arrives after its opening ended is dropped as well, including a close and reopen of the same
-  image. Both discovery continuations compare `annotator.session`. A rendering that fails is a
+  image. Both discovery continuations compare `annotator.opening`. A rendering that fails is a
   refusal, never a send of the bare screenshot: only a drawing with no marks sends the picture
   itself, and it goes through PNG whatever the capture's own format is. Send closes the editor
   without a Copied notice, and the queue carries on to the next card: a list of files to annotate is
@@ -1266,7 +1301,8 @@ screenshot location for such a launch is written with the same variable:
   uncertain before the line leaves, so `prepared` means the line never went. And a clear of the request, by
   `requests?clear=` or by the 50-request limit, stops its waiting send. So does a file leaving
   the watch folder, which is how deleting a card during the wait cancels its send
-  (`ScreenshotRequests.fileRemoved`). A crash during the wait loses the send, and the next launch
+  (`ScreenshotRequests.fileRemoved`). A rename inside the folder carries its waiting sends to the
+  new name, so Don't send on the renamed card still stops them. A crash during the wait loses the send, and the next launch
   clears the request it left prepared, unless that launch replaced a running copy, which may
   still be handing its lines over (`load(clearingUnsent:)`); a later launch clears it then.
 - A send reports on the card it was sent from. Once the request is stored the card
@@ -1280,7 +1316,11 @@ screenshot location for such a launch is written with the same variable:
   the editor, so it shows there: the button reads "Not sent" and a popover on it gives the reason,
   both until a click elsewhere or Send again. A reply that was accepted and could not be made a card
   has no card to report on, so the card it answers takes a `replyFailed` notice, "Reply not shown"
-  (`ScreenshotRequests.Callbacks.replyFailed`). A published reply is its own card and nothing else
+  (`ScreenshotRequests.Callbacks.replyFailed`). The card is found by the request record's
+  `sourceKey`, the source's full path as the folder spelled it when the send was stored; a record
+  from before that holds only the name, and its key is built in the current folder
+  (`ScreenshotRequests.sourceKey(of:)`). A rename after the send moves `sourceKey` with it.
+  A published reply is its own card and nothing else
   says it arrived. `docs/send-confirmation-2026-09-26.md` has the frames.
   While the line waits, the card shows `.inGrace`: a ring round the logo that empties to the
   deadline, and a Don't send button, the only part of the overlay that takes presses. The ring is

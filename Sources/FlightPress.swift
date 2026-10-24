@@ -28,15 +28,15 @@ struct FlightPress {
 
     private enum State: Equatable {
         case idle
-        case holding(key: String, events: [Event])
-        case handing(key: String)
+        case holding(key: ScreenshotKey, events: [Event])
+        case handing(key: ScreenshotKey)
         case swallowing
     }
 
     private var state = State.idle
 
     /// The image a press is held for or handed to, if any.
-    var key: String? {
+    var key: ScreenshotKey? {
         switch state {
         case .holding(let key, _), .handing(let key): return key
         case .idle, .swallowing: return nil
@@ -46,7 +46,7 @@ struct FlightPress {
     /// A press on a flight. `key` is the image that flight carries into the editor, nil for any
     /// other flight or for a press beside the picture; `ready` says the editor's window for that
     /// image can take events already. Returns what the editor takes now.
-    mutating func press(_ event: Event, into key: String?, ready: Bool) -> [Event] {
+    mutating func press(_ event: Event, into key: ScreenshotKey?, ready: Bool) -> [Event] {
         guard let key, event.picture != nil else { state = .swallowing; return [] }
         if ready { state = .handing(key: key); return [event] }
         state = .holding(key: key, events: [event])
@@ -77,15 +77,24 @@ struct FlightPress {
 
     /// The editor's window for `key` can take events: everything held goes to it, in order, and a
     /// press still down follows it there.
-    mutating func ready(_ key: String) -> [Event] {
+    mutating func ready(_ key: ScreenshotKey) -> [Event] {
         guard case .holding(key, let events) = state else { return [] }
         state = events.last?.phase == .released ? .idle : .handing(key: key)
         return events
     }
 
+    /// The image `old` was renamed to `new`: a press held for it or handed to it goes on with the new key.
+    mutating func rename(from old: ScreenshotKey, to new: ScreenshotKey) {
+        switch state {
+        case .holding(old, let events): state = .holding(key: new, events: events)
+        case .handing(old): state = .handing(key: new)
+        default: break
+        }
+    }
+
     /// The image `key` is no longer on its way into the editor, or no longer in it: what is held
     /// goes nowhere, and the rest of a press still down is swallowed.
-    mutating func ended(_ key: String) {
+    mutating func ended(_ key: ScreenshotKey) {
         switch state {
         case .holding(key, let events):
             state = events.last?.phase == .released ? .idle : .swallowing

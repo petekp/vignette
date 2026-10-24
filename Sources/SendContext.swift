@@ -21,7 +21,7 @@ enum SendContext {
     @MainActor private static var nextSeq = 0
     /// A test launch writes beside its scratch settings file, never into the person's folder.
     static let url: URL = {
-        if let path = ProcessInfo.processInfo.environment["VIGNETTE_SETTINGS"], !path.isEmpty {
+        if let path = Launch.settingsPath {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath).deletingLastPathComponent()
                 .appendingPathComponent("send-context.jsonl")
         }
@@ -54,7 +54,7 @@ enum SendContext {
         let size = CGSize(width: pixels.width / scale, height: pixels.height / scale)
         let displays = NSScreen.screens.map(\.frame.size)
         let maxPixels = NSScreen.screens.map { max($0.frame.width, $0.frame.height) * $0.backingScaleFactor }.max() ?? 0
-        let isRecording = Screenshot(url: shot).kind == .recording
+        let isRecording = Screenshot.Kind(of: shot) == .recording
         let windows = onScreenWindows()
         let name = shot.lastPathComponent
         queue.async {

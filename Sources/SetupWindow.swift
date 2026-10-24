@@ -63,7 +63,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     /// existed left the file's `done` and, from every launch, the Application Support folder. A test
     /// launch has only its scratch file to go by.
     var isUnasked: Bool {
-        if Settings.isOverridden { return settings.data.setupChoice == .unasked }
+        if Launch.isTest { return settings.data.setupChoice == .unasked }
         if UserDefaults.standard.bool(forKey: SetupWindowController.doneOnThisMacKey) { return false }
         return !(settings.data.setupChoice == .done && launchedHereBefore)
     }

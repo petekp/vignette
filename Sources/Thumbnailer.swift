@@ -98,7 +98,7 @@ enum Thumbnailer: @unchecked Sendable {
     /// Reads the header from the file, whatever is kept, and keeps it.
     private static func read(_ url: URL) -> Header? {
         let modified = modified(url)
-        let read = Screenshot(url: url).kind == .recording ? readRecording(url) : readImageHeader(of: url)
+        let read = Screenshot.Kind(of: url) == .recording ? readRecording(url) : readImageHeader(of: url)
         guard let header = read else { return nil }
         if let modified { lock.lock(); headers[url.path] = (modified, header); lock.unlock() }
         return header
@@ -181,7 +181,7 @@ enum Thumbnailer: @unchecked Sendable {
     /// For a recording, its first frame.
     static func image(at url: URL, maxPixel: Int, space: CGColorSpace?) -> NSImage? {
         if let hit = cached(at: url, maxPixel: maxPixel, space: space) { return hit }
-        let decoded = Screenshot(url: url).kind == .recording ? posterFrame(url, maxPixel: maxPixel) : thumbnail(url, maxPixel: maxPixel)
+        let decoded = Screenshot.Kind(of: url) == .recording ? posterFrame(url, maxPixel: maxPixel) : thumbnail(url, maxPixel: maxPixel)
         guard let cg = decoded.map({ converted($0, to: space) }) else { return nil }
         let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
         if let modified = modified(url) {

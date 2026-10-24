@@ -21,7 +21,7 @@ struct Drawing: Equatable {
     static let pointScales: ClosedRange<CGFloat> = 0.5...8
 
     /// The screenshot's path.
-    let key: String
+    var key: String
     let pixels: PixelSize
     /// px per pt: the scale of the display the annotator was on when the drawing's first mark was made.
     var pointScale: CGFloat
