@@ -811,6 +811,9 @@ extension LivePacket {
 
     /// How far round ink on no window an area reaches, in points.
     static let screenInkMargin: CGFloat = 64
+    /// The least width and height at which a window of the ink's own app covers it: smaller ones,
+    /// such as a sheet or a title bar's window, sit over their own window.
+    static let ownAppCoverSize: CGFloat = 200
 
     /// The picture for `asked`, oldest first, from `windows`, the app windows on the screen front to
     /// back, and `screens`, the displays' frames, all in global top-left points.
@@ -831,7 +834,10 @@ extension LivePacket {
         func isCovered(_ mark: Asked) -> Bool {
             guard let id = mark.window, let index = order[id] else { return false }
             let owner = windows[index].pid
-            return windows[..<index].contains { $0.layer == 0 && $0.pid != owner && $0.frame.intersects(mark.box) }
+            return windows[..<index].contains { window in
+                let isLarge = window.frame.width >= ownAppCoverSize && window.frame.height >= ownAppCoverSize
+                return window.layer == 0 && (window.pid != owner || isLarge) && window.frame.intersects(mark.box)
+            }
         }
         let alone = holders.compactMap { $0 }.compactMap { window -> Plan.Alone? in
             let ink = asked.filter { $0.window == window }

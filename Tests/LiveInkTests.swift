@@ -1064,7 +1064,7 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(alone, [Plan.Alone(window: terminal.id, ink: [shown.id, covered.id], covered: [covered.id], outside: [])])
     }
 
-    func testOnlyAnotherAppsOrdinaryWindowInFrontCoversInk() {
+    func testNoSheetPanelWindowOffTheInkOrWindowBehindCoversInk() {
         let box = CGRect(x: 700, y: 400, width: 80, height: 40)
         let onTerminal = asked(box, on: terminal), onBrowser = asked(CGRect(x: 1000, y: 800, width: 80, height: 40), on: browser)
         let sheet = LivePacket.Listed(id: 21, pid: terminal.pid, layer: 0, frame: box.insetBy(dx: -20, dy: -20))
@@ -1075,6 +1075,20 @@ final class LiveInkTests: XCTestCase {
         let plan = LivePacket.plan(for: [onTerminal, onBrowser], windows: [sheet, panel, elsewhere, browserBelow, terminal, behind], screens: [screen])
         guard case .area(_, _, let alone) = plan else { return XCTFail("ink on two windows is an area") }
         XCTAssertEqual(alone, [], "its own app's sheet, a floating panel, a window off the ink and one behind cover nothing")
+    }
+
+    func testAWindowOfTheInksOwnAppCoversItOnlyAtTwoHundredPointsBothWays() {
+        let box = CGRect(x: 100, y: 300, width: 80, height: 40)
+        let onTerminal = asked(box, on: terminal), onBrowser = asked(CGRect(x: 1000, y: 500, width: 80, height: 40), on: browser)
+        func covers(_ size: CGSize) -> Bool {
+            let front = LivePacket.Listed(id: 22, pid: terminal.pid, layer: 0, frame: CGRect(origin: CGPoint(x: 50, y: 250), size: size))
+            guard case .area(_, _, let alone) = LivePacket.plan(for: [onTerminal, onBrowser], windows: [front, browser, terminal],
+                                                                screens: [screen]) else { return false }
+            return alone.first?.covered == [onTerminal.id]
+        }
+        XCTAssertTrue(covers(CGSize(width: 200, height: 200)))
+        XCTAssertFalse(covers(CGSize(width: 199, height: 400)))
+        XCTAssertFalse(covers(CGSize(width: 400, height: 199)))
     }
 
     func testInkOffTheNewestInksDisplayGoesWithItsWindowAlone() {

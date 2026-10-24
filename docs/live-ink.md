@@ -465,8 +465,10 @@ The names in brackets are `// MARK:` sections.
   instead. `LivePacket.Plan` decides this, and `Tests/LiveInkTests.swift` tests it. The picture is the
   part of the newest ink's display that those windows' frames cover. It is captured as the person
   sees it, without Vignette's windows, with every stroke drawn in and numbered. A stroke is covered
-  when another app's normal window in front of its own window overlaps it. It is outside when it is
-  past that display. Each window that holds a covered or outside stroke is also sent alone, with its
+  when a normal window in front of its own window overlaps it. A window of the stroke's own app
+  covers it only when it is at least 200 by 200 pt (`LivePacket.ownAppCoverSize`), since an app's
+  sheets and title bar windows sit over its own window. A stroke is outside when it is past that
+  display. Each window that holds a covered or outside stroke is also sent alone, with its
   ink drawn in and numbered as in the screen's picture. The JSON's `alone` says which strokes each
   of those windows holds, and which of them are covered or outside. The answer's marks go on the
   screen's picture only, each pinned to the window under it (`LiveInk.put`, `eachOnItsWindow`). The
