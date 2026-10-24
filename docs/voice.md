@@ -138,7 +138,6 @@ Without one, they are a note beside the ink it was about, in the person's colour
 | Claude Code is signed out | Claude Code isn't signed in. You can sign in by running claude in Terminal. |
 | The usage limit | Claude's usage limit is reached for now. |
 | No answer in 45 s | Claude took too long to answer. You can ask again. |
-| The process ended | Claude stopped before it answered. You can ask again. |
 | The answer did not parse | Vignette couldn't draw Claude's answer. You can ask again. |
 | Anything else | Claude couldn't answer. You can ask again. |
 | The CLI started with tools | Live ink stopped Claude, which started with tools. |
