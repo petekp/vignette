@@ -101,6 +101,10 @@ final class LiveListening {
 
     func released() { end.release(at: CACurrentMediaTime()) }
 
+    /// Whether it goes on listening once the chord is let go, waiting for a pause, rather than ending
+    /// with the chord's release.
+    var listensPastRelease: Bool { end.until == .pause }
+
     func pressedAgain() { end.pressAgain() }
 
     /// Stops the microphone and answers the final words through `onFinished`.

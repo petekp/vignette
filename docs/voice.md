@@ -104,7 +104,7 @@ The menu bar menu names the switch as the General tab does.
 | The menu bar intro's popover, while Screen Recording is missing | Live ink needs Screen Recording. Click the icon to allow it. |
 | The note's placeholder, with Claude as its target (`LiveNotePopover.askPlaceholder`) | Ask about this |
 | The note's placeholder, with a session as its target (`LiveNotePopover.sendPlaceholder`) | Send to session |
-| The note's placeholder while it listens (`LiveNotePopover.listeningPlaceholder`) | Listening… |
+| The note's placeholder while it listens past the chord's release (`LiveNotePopover.listeningPlaceholder`) | Listening… |
 | The note's Return hint, ↩, and its tooltip | Return asks |
 | The last of a reply's buttons (`LiveAnswerActions.replyTitle`) | Reply |
 | The field Reply opens, empty | Reply to *agent* |

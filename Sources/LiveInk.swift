@@ -600,7 +600,7 @@ final class LiveInk {
         panel.onEscape = { [weak self] in self?.escape() }
         panel.onTyped = { [weak self] in self?.typedInNote() }
         if let listening {
-            panel.setListening(true)
+            panel.setListening(listening.listensPastRelease)
             if !typedOver, !listening.words.isEmpty { panel.hear(listening.text) }
         }
         note = panel

@@ -92,9 +92,10 @@ read or set leaves the default input, with the reason in the log.
   you said while drawing. After that it fills as you speak. Typing in the note stops listening: the
   keyboard wins.
 - **Listening ends** by the first experiment:
-  - *On release:* 0.3 s after you let go of ⌃⌥, which catches the end of the last word.
+  - *On release:* 0.3 s after you let go of ⌃⌥, which catches the end of the last word. The note
+    opens with its usual placeholder, not "Listening…", since listening is ending as it opens.
   - *On a pause:* after you let go, once the level stays under the speech threshold for
-    `ui.liveInkSpeechPause`, 1.2 s to start.
+    `ui.liveInkSpeechPause`, 1.2 s to start. The note says "Listening…" until then.
 - **Sending** follows the second experiment:
   - *When you stop talking:* the ask goes as Return would send it, to the note's target.
   - *On Return:* the words wait in the note, where you can fix a misheard word first.
