@@ -986,13 +986,21 @@ final class LiveInk {
 
     // MARK: Dismissing and actions
 
-    /// Ask `id`'s reply popover, while it is up.
-    private func shownReply(of id: LiveAsks.Ask.ID) -> ReplyPopover? {
-        guard let say = asks.ask(id)?.say, asks.answer(of: say.id) == id, !asks.isFinishing(say.id),
+    /// A reply's popover while it is up, and its body in global top-left points.
+    private typealias ShownReply = (popover: ReplyPopover, note: CGRect)
+
+    /// `ask`'s reply, while it is up.
+    private func shownReply(of ask: LiveAsks.Ask) -> ShownReply? {
+        guard let say = ask.say, asks.answer(of: say.id) == ask.id, !asks.isFinishing(say.id),
               let popover = windows.popover(of: say.id) ?? surfaces.lazy.compactMap({ $0.overlay.popover(of: say.id) }).first,
-              popover.globalFrame != nil
+              let note = popover.globalFrame
         else { return nil }
-        return popover
+        return (popover, note)
+    }
+
+    /// The replies that are up, by their asks.
+    private func shownReplies() -> [LiveAsks.Ask.ID: ShownReply] {
+        Dictionary(uniqueKeysWithValues: asks.asks.compactMap { ask in shownReply(of: ask).map { (ask.id, $0) } })
     }
 
     /// Whether some ask's reply is an answer on the screen, in sight or not.
@@ -1025,23 +1033,25 @@ final class LiveInk {
     }
 
     private func pointerMoved() {
-        showActions()
+        let replies = shownReplies()
+        showActions(replies)
         guard !isInking else { return hideDismissButton() }
         let mouse = NSEvent.mouseLocation
         let point = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
         // The newest reply on top wins where two overlap.
-        let under = asks.asks.reversed().lazy.compactMap { ask -> (id: LiveAsks.Ask.ID, reply: ReplyPopover, note: CGRect)? in
-            guard self.asks.offersDismiss(ask.id), let reply = self.shownReply(of: ask.id), let note = reply.globalFrame else { return nil }
+        let under = asks.asks.reversed().lazy.compactMap { ask -> (id: LiveAsks.Ask.ID, reply: ShownReply)? in
+            guard self.asks.offersDismiss(ask.id), let reply = replies[ask.id] else { return nil }
             let onButton = self.dismissing == ask.id && self.dismissButton?.globalFrame.insetBy(dx: -6, dy: -6).contains(point) == true
-            return note.insetBy(dx: -10, dy: -10).contains(point) || onButton ? (ask.id, reply, note) : nil
+            return reply.note.insetBy(dx: -10, dy: -10).contains(point) || onButton ? (ask.id, reply) : nil
         }.first
         guard let under else { return hideDismissButton() }
+        let note = under.reply.note
         if let dismissButton, dismissing == under.id {
-            under.reply.carry(dismissButton)
-            dismissButton.place(at: CGPoint(x: under.note.maxX, y: under.note.minY))
+            under.reply.popover.carry(dismissButton)
+            dismissButton.place(at: CGPoint(x: note.maxX, y: note.minY))
         } else {
             hideDismissButton()
-            let button = LiveDismissButton(at: CGPoint(x: under.note.maxX, y: under.note.minY), over: under.reply)
+            let button = LiveDismissButton(at: CGPoint(x: note.maxX, y: note.minY), over: under.reply.popover)
             let id = under.id
             button.onClick = { [weak self] in
                 Log.write("[live-ink] answer dismissed by its × id=\(id)")
@@ -1058,13 +1068,13 @@ final class LiveInk {
         dismissing = nil
     }
 
-    /// Shows each answer's buttons in the room kept at its reply's foot, or moves them there.
-    private func showActions() {
-        for id in actionsPanels.keys where asks.ask(id)?.phase != .answered || shownReply(of: id)?.globalFrame == nil {
-            hideActions(of: id)
-        }
+    /// Shows each answer's buttons in the room kept at its reply's foot, or moves them there, and hides
+    /// those whose reply is not among `replies`.
+    private func showActions(_ replies: [LiveAsks.Ask.ID: ShownReply]) {
+        for id in actionsPanels.keys where replies[id] == nil { hideActions(of: id) }
         for ask in asks.asks where ask.phase == .answered {
-            guard let reply = shownReply(of: ask.id), let note = reply.globalFrame else { continue }
+            guard let shown = replies[ask.id] else { continue }
+            let reply = shown.popover, note = shown.note
             let insets = ReplyContent.insets
             let corner = CGPoint(x: note.minX + insets.left, y: note.maxY - insets.bottom - LiveAnswerActions.height)
             let width = note.width - insets.left - insets.right
@@ -1110,7 +1120,7 @@ final class LiveInk {
         Log.write("[live-ink] \(pick == .reply ? "reply typed" : "action picked") words=\(words.count) id=\(id)")
         hideDismissButton()
         point(at: nil, of: id)
-        guard let said = asks.ask(id)?.say, shownReply(of: id)?.globalFrame != nil else { return }
+        guard let answered = asks.ask(id), let said = answered.say, shownReply(of: answered) != nil else { return }
         hideActions(of: id)
         // A new ask starts from the reply where it is now. Refused, it puts the answer back.
         guard var reply = marks.first(where: { $0.id == said.id }) else { return }
