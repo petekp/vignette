@@ -427,8 +427,12 @@ The names in brackets are `// MARK:` sections.
   next ask goes at once and no turn is spent on an answer nobody will see. A new reply, its marks
   and the next note keep clear of the answers already up, which `LiveInk.scene` adds to the
   person's notes as things to avoid. Only one answer's focus or steps run at a time: a newer
-  answer's take over. Clearing the ink ends every ask, those waiting too, before the responder is
-  stopped, so the failure the stop gives the ask it holds sends no waiting ask to a new process.
+  answer's take over. However an ask ends, `LiveAsks` says so first (`Effect.ended`).
+  `LiveInk.release` then lets go of what was kept for it: what it would have sent, its note, its ×,
+  its buttons, and its steps or focus. The responder holds at most one ask it has not sent: during
+  its warm-up, or until an interrupted turn ends (`LiveResponder.pending`). Clearing the ink ends
+  every ask, those waiting too, and stops the responder, which drops the ask it holds with no answer
+  and no failure.
 - An ask is answered by `LiveResponder`: one `claude -p` process in stream-json mode, run with
   `--safe-mode --tools ""`, its own system prompt, and `--json-schema` for the answer
   (`LiveAnswer.schema`, fixed text that lists `say` first, the field that streams in as the reply).

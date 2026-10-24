@@ -1774,11 +1774,8 @@ private final class LiveAsksEnvironment {
         if marksFirst { screen = [] }
         letGoOfFocus()
         run(send(.cleared))
-        // `responder.stop()`, after the clear, fails the ask it holds.
-        var held: [LiveAsks.Ask.ID] = []
-        for item in owed { if let id = item.owed.heldBy, !held.contains(id) { held.append(id) } }
+        // `responder.stop()` drops the ask it holds, with no answer and no failure.
         owed.removeAll { $0.owed.heldBy != nil }
-        for id in held { failed("Claude stopped before it answered.", for: id) }
         screen = []
         aside = [:]
     }

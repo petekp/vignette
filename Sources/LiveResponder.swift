@@ -87,7 +87,9 @@ final class LiveResponder {
     /// The turn of an ask the person cancelled was interrupted, and its `result` has not come. Nothing
     /// is sent until it does, and what it says is not an answer.
     private var interrupting = false
-    private var waiting: [Ask] = []
+    /// The ask sent while the process could not take it: during the warm-up, or until an interrupted
+    /// turn's `result`. `LiveAsks` sends one ask at a time, so there is at most one.
+    private var pending: Ask?
     private var partial = ""
     private var lastSay: String?
     private var askTimer: Timer?
@@ -115,29 +117,30 @@ final class LiveResponder {
         if process == nil { start() }
     }
 
-    /// Asks once the process is ready. An ask that arrives while another is under way waits for it.
+    /// Asks once the process is ready, one ask at a time: the next comes once this one has answered,
+    /// failed or been cancelled.
     func ask(_ ask: Ask) {
-        if answered >= Self.conversationLimit, current == nil, waiting.isEmpty {
+        if answered >= Self.conversationLimit, current == nil, pending == nil {
             Log.write("[live-ink] responder: \(answered) asks; starting a new conversation")
             stop()
         }
-        waiting.append(ask)
+        pending = ask
         prepare()
         sendNext()
     }
 
     /// Stops the process, which ends the conversation; the next ask starts a new one. An ask under
-    /// way or waiting fails.
+    /// way or pending gets no answer and no failure.
     func stop() {
-        shutDown(Failure(reason: "Claude stopped before it answered. You can ask again.", detail: "stopped"), state: .stopped)
+        shutDown(nil, state: .stopped)
     }
 
-    /// The person stopped the ask under way and those waiting: none gets an answer or a failure. A turn
+    /// The person stopped the ask under way or pending: it gets no answer and no failure. A turn
     /// already sent is interrupted, which ends it and keeps the conversation, so the next ask is sent
-    /// when the interrupted turn's `result` comes. A waiting ask was never sent, and the warm-up, which
+    /// when the interrupted turn's `result` comes. A pending ask was never sent, and the warm-up, which
     /// is not an ask, runs on.
     func cancel() {
-        waiting = []
+        pending = nil
         guard current != nil else { return }
         current = nil
         interrupting = true
@@ -147,7 +150,7 @@ final class LiveResponder {
     }
 
     var stateJSON: [String: Any] {
-        var json: [String: Any] = ["state": state.name, "conversation": conversation, "answered": answered, "waiting": waiting.count]
+        var json: [String: Any] = ["state": state.name, "conversation": conversation, "answered": answered, "waiting": pending == nil ? 0 : 1]
         if case .failed(let reason) = state { json["reason"] = reason }
         return json
     }
@@ -278,8 +281,8 @@ final class LiveResponder {
     }
 
     private func sendNext() {
-        guard state == .ready, current == nil, !waiting.isEmpty else { return }
-        let next = waiting.removeFirst()
+        guard state == .ready, current == nil, let next = pending else { return }
+        pending = nil
         current = next
         partial = ""
         lastSay = nil
@@ -299,7 +302,7 @@ final class LiveResponder {
         idleTimer?.invalidate()
         idleTimer = Timer.scheduledTimer(withTimeInterval: Self.idleLimit, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.current == nil, self.waiting.isEmpty, self.process != nil else { return }
+                guard let self, self.current == nil, self.pending == nil, self.process != nil else { return }
                 Log.write("[live-ink] responder idle; stopping it")
                 self.stop()
             }
@@ -332,14 +335,13 @@ final class LiveResponder {
         }
     }
 
-    /// The interrupted turn's `result` never came: the process stops, and the asks made since start a
+    /// The interrupted turn's `result` never came: the process stops, and the ask made since starts a
     /// new one.
     private func interruptUnanswered() {
         Log.write("[live-ink] responder error interrupt unanswered after \(Int(Self.interruptLimit))s")
-        let asked = waiting
-        waiting = []
+        let next = pending
         stop()
-        for ask in asked { self.ask(ask) }
+        if let next { ask(next) }
     }
 
     private func received(_ line: Data, from source: Process) {
@@ -458,8 +460,9 @@ final class LiveResponder {
         shutDown(Failure(reason: reason, detail: "ended \(status)"), state: .failed(reason))
     }
 
-    /// Stops the process, if it runs, and fails the ask under way and those waiting with `failure`.
-    private func shutDown(_ failure: Failure, state final: State) {
+    /// Stops the process, if it runs, and fails the ask under way or pending with `failure`, or with
+    /// none drops it.
+    private func shutDown(_ failure: Failure?, state final: State) {
         idleTimer?.invalidate()
         askTimer?.invalidate()
         if let process {
@@ -471,11 +474,12 @@ final class LiveResponder {
         writer.async { try? closing?.close() }
         warmingUp = false
         interrupting = false
-        let failed = (current.map { [$0] } ?? []) + waiting
+        let dropped = [current, pending].compactMap { $0 }
         current = nil
-        waiting = []
+        pending = nil
         state = final
-        for ask in failed { ask.onAnswer(.failure(failure)) }
+        guard let failure else { return }
+        for ask in dropped { ask.onAnswer(.failure(failure)) }
     }
 }
 

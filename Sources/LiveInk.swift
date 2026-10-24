@@ -1688,8 +1688,6 @@ final class LiveInk {
         spoken = nil
         strokeTimes = [:]
         letGoOfTour(because: "cleared")
-        // The asks end first, so the failure the responder's stop gives the ask it holds lets no
-        // waiting ask go to it.
         run(asks.reduce(.cleared))
         responder.stop()
         prepared = nil
