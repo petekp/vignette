@@ -162,6 +162,11 @@ final class LiveResponder {
     their last ask, and `n` is the number drawn beside it in the picture). Boxes and points are in \
     thousandths of the picture from its top-left corner, and a box is x, y, width and height. When \
     the JSON has `detail`, a second picture shows that box of the window at full detail. \
+    When their ink is on several windows, the picture is the part of the screen those windows cover, as \
+    they see it, and the JSON's `windows` names each with its box. Then each item of `alone` is one more \
+    picture, in order after the others: one window by itself, with its ink `ink` drawn in. On their \
+    screen the ink in its `covered` is under a window in front, and the ink in its `outside` is not in \
+    the first picture. Your marks go on the first picture only, so say in `say` what you find at that ink. \
     A message with no picture is about the picture before: the text lines sent with that picture \
     still hold, and any lines the message has add to them. \
     When they spoke their note while drawing, `[n]` in it is where they drew ink `n`, so "this [2]" \

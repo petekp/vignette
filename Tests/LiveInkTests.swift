@@ -1026,6 +1026,76 @@ final class LiveInkTests: XCTestCase {
                                  12 * 2, "the words go beside the ink")
     }
 
+    // MARK: What an ask's picture is of
+
+    private typealias Plan = LivePacket.Plan
+    private let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    private let terminal = LivePacket.Listed(id: 20, pid: 200, layer: 0, frame: CGRect(x: 0, y: 30, width: 900, height: 700))
+    private let browser = LivePacket.Listed(id: 30, pid: 300, layer: 0, frame: CGRect(x: 600, y: 200, width: 900, height: 700))
+
+    private func asked(_ box: CGRect, on window: LivePacket.Listed?) -> LivePacket.Asked {
+        LivePacket.Asked(id: UUID(), box: box, window: window?.id)
+    }
+
+    func testInkOnOneWindowIsThatWindowAloneAndInkOnNoneIsTheScreen() {
+        let first = asked(CGRect(x: 50, y: 100, width: 80, height: 40), on: terminal)
+        let second = asked(CGRect(x: 700, y: 400, width: 80, height: 40), on: terminal)
+        XCTAssertEqual(LivePacket.plan(for: [first, second], windows: [browser, terminal], screens: [screen]), .window(terminal.id),
+                       "covered or not, ink on one window is that window's picture")
+        XCTAssertEqual(LivePacket.plan(for: [asked(CGRect(x: 50, y: 900, width: 80, height: 40), on: nil)], windows: [terminal], screens: [screen]),
+                       .window(nil))
+    }
+
+    func testInkOnTwoWindowsIsTheScreenTheirFramesCover() {
+        let onTerminal = asked(CGRect(x: 50, y: 100, width: 80, height: 40), on: terminal)
+        let onBrowser = asked(CGRect(x: 1000, y: 500, width: 80, height: 40), on: browser)
+        XCTAssertEqual(LivePacket.plan(for: [onTerminal, onBrowser], windows: [browser, terminal], screens: [screen]),
+                       .area(CGRect(x: 0, y: 30, width: 1500, height: 870), windows: [browser.id, terminal.id], alone: []),
+                       "the frames' union, the windows front to back, and nothing alone when all the ink shows")
+    }
+
+    func testInkUnderAnotherAppsWindowInFrontGoesWithItsWindowAlone() {
+        let shown = asked(CGRect(x: 50, y: 100, width: 80, height: 40), on: terminal)
+        let covered = asked(CGRect(x: 700, y: 400, width: 80, height: 40), on: terminal)
+        let onBrowser = asked(CGRect(x: 1000, y: 500, width: 80, height: 40), on: browser)
+        guard case .area(_, _, let alone) = LivePacket.plan(for: [shown, onBrowser, covered], windows: [browser, terminal], screens: [screen]) else {
+            return XCTFail("ink on two windows is an area")
+        }
+        XCTAssertEqual(alone, [Plan.Alone(window: terminal.id, ink: [shown.id, covered.id], covered: [covered.id], outside: [])])
+    }
+
+    func testOnlyAnotherAppsOrdinaryWindowInFrontCoversInk() {
+        let box = CGRect(x: 700, y: 400, width: 80, height: 40)
+        let onTerminal = asked(box, on: terminal), onBrowser = asked(CGRect(x: 1000, y: 800, width: 80, height: 40), on: browser)
+        let sheet = LivePacket.Listed(id: 21, pid: terminal.pid, layer: 0, frame: box.insetBy(dx: -20, dy: -20))
+        let panel = LivePacket.Listed(id: 40, pid: 400, layer: 3, frame: box.insetBy(dx: -20, dy: -20))
+        let elsewhere = LivePacket.Listed(id: 50, pid: 500, layer: 0, frame: CGRect(x: 0, y: 800, width: 300, height: 100))
+        let behind = LivePacket.Listed(id: 60, pid: 600, layer: 0, frame: box.insetBy(dx: -20, dy: -20))
+        let browserBelow = LivePacket.Listed(id: browser.id, pid: browser.pid, layer: 0, frame: CGRect(x: 600, y: 750, width: 900, height: 200))
+        let plan = LivePacket.plan(for: [onTerminal, onBrowser], windows: [sheet, panel, elsewhere, browserBelow, terminal, behind], screens: [screen])
+        guard case .area(_, _, let alone) = plan else { return XCTFail("ink on two windows is an area") }
+        XCTAssertEqual(alone, [], "its own app's sheet, a floating panel, a window off the ink and one behind cover nothing")
+    }
+
+    func testInkOffTheNewestInksDisplayGoesWithItsWindowAlone() {
+        let right = CGRect(x: 1512, y: 0, width: 1920, height: 1080)
+        let far = LivePacket.Listed(id: 70, pid: 700, layer: 0, frame: CGRect(x: 1700, y: 100, width: 800, height: 600))
+        let onFar = asked(CGRect(x: 1800, y: 200, width: 80, height: 40), on: far)
+        let onTerminal = asked(CGRect(x: 50, y: 100, width: 80, height: 40), on: terminal)
+        XCTAssertEqual(LivePacket.plan(for: [onFar, onTerminal], windows: [terminal, far], screens: [screen, right]),
+                       .area(terminal.frame, windows: [terminal.id],
+                             alone: [Plan.Alone(window: far.id, ink: [onFar.id], covered: [], outside: [onFar.id])]),
+                       "the picture keeps to the newest ink's display")
+    }
+
+    func testInkOnNoWindowBesideAWindowsInkTakesInARoomRoundIt() {
+        let onDesktop = asked(CGRect(x: 1300, y: 850, width: 80, height: 40), on: nil)
+        let onTerminal = asked(CGRect(x: 50, y: 100, width: 80, height: 40), on: terminal)
+        let margin = LivePacket.screenInkMargin
+        XCTAssertEqual(LivePacket.plan(for: [onDesktop, onTerminal], windows: [terminal], screens: [screen]),
+                       .area(CGRect(x: 0, y: 30, width: 1380 + margin, height: 860 + margin), windows: [terminal.id], alone: []))
+    }
+
     // MARK: Whether a change landed
 
     func testTheRegionComparedIsTheInkWithAMarginInsideTheWindow() {

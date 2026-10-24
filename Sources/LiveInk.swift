@@ -55,7 +55,7 @@ final class LiveInk {
     private var focusRun: FocusRun?
     /// The packet for the ink the note is open on, captured when it opened, so its text can move
     /// the note clear of the window's text and the ask need not capture again.
-    private var prepared: (ink: Set<Mark.ID>, packet: Task<LivePacket, Error>, glance: Task<LivePacket.Glance?, Never>)?
+    private var prepared: (ink: Set<Mark.ID>, plan: LivePacket.Plan, packet: Task<LivePacket, Error>, glance: Task<LivePacket.Glance?, Never>)?
     /// A mark was drawn since the chord went down, so letting it go opens the note.
     private var drewWhileInking = false
     private var note: LiveNotePopover?
@@ -96,6 +96,8 @@ final class LiveInk {
     private var steps: [[Mark]] = []
     private var stepsAsk: LiveAsks.Ask.ID?
     private var stepsWindow: CGWindowID?
+    /// The steps answer a picture of an area, so each goes on the window under it.
+    private var stepsOnTheirWindows = false
     /// What each step's mark points at, and where the mark was then, so a click on the thing counts
     /// as well as one on the mark, wherever its window has moved it since.
     private var stepTargets: [Mark.ID: (target: CGRect, at: CGPoint)] = [:]
@@ -103,7 +105,7 @@ final class LiveInk {
     /// The picture the responder's conversation has, and the ids of the text lines sent with it, so a
     /// follow-up about the same window, showing the same text, sends no picture and only the lines
     /// near its ink not sent yet.
-    private var lastPicture: (conversation: Int, windowID: CGWindowID?, text: String, lines: Set<String>)?
+    private var lastPicture: (conversation: Int, subject: LivePacket.Subject, text: String, lines: Set<String>)?
     /// Marks that draw themselves on at the next `showMarks`.
     private var drawingOn = Set<Mark.ID>()
     /// The answer's shapes whose window was dark behind them when it was captured, which are drawn
@@ -149,9 +151,15 @@ final class LiveInk {
     /// Every mark, on every Space and window, once each, where it was last shown.
     var marks: [Mark] { screenMarks + windows.marks.map(\.mark) }
 
-    /// The marks on screen now: a mark on a window is left out while its content moves or after it
-    /// was lost.
-    private var shownMarks: [Mark] { windows.marks.filter(\.shown).map(\.mark) + screenMarks }
+    /// The marks on screen now, the person's in the order they were drawn: a mark on a window is left
+    /// out while its content moves or after it was lost.
+    private var shownMarks: [Mark] {
+        let shown = windows.marks.filter(\.shown).map(\.mark) + screenMarks
+        // The windows' marks come window by window, in no order, so ink across windows is put back in
+        // the order drawn, which numbers it and makes the newest the one an ask's answer stays beside.
+        let drawn = { (index: Int) in self.strokeTimes[shown[index].id]?.began ?? .distantFuture }
+        return shown.indices.sorted { (drawn($0), $0) < (drawn($1), $1) }.map { shown[$0] }
+    }
 
     /// Set-aside marks that were on no window (`setAside`), which come back from here.
     private var asideOnScreen: [Mark] = []
@@ -704,16 +712,19 @@ final class LiveInk {
         showMarks()
         let started = Date()
         let ui = Settings.shared.data.ui
-        Log.write("[live-ink] asking id=\(id) new=\(fresh.count) about=\(about.count) words=\(trimmed.split(whereSeparator: \.isWhitespace).count) queued=\(asks.queued.count)")
-        let early = prepared.flatMap { $0.ink == Set(person.map(\.id)) ? $0.packet : nil }
+        let plan = picturePlan(for: about)
+        Log.write("[live-ink] asking id=\(id) new=\(fresh.count) about=\(about.count) words=\(trimmed.split(whereSeparator: \.isWhitespace).count) queued=\(asks.queued.count) picture=\(Self.describe(plan))")
+        let early = prepared.flatMap { $0.ink == Set(person.map(\.id)) && $0.plan == plan ? $0.packet : nil }
         prepared = nil
+        let inkWindows = inkWindows(of: person)
         Task { @MainActor [weak self] in
             do {
                 let packet: LivePacket
                 if let early {
                     packet = try await early.value
                 } else {
-                    packet = try await LivePacket.build(at: point, ink: person, style: ui.textStyle, markStyle: ui.markStyle)
+                    packet = try await LivePacket.build(plan, at: point, ink: person, inkWindows: inkWindows, style: ui.textStyle,
+                                                        markStyle: ui.markStyle)
                 }
                 if reply == nil {
                     let offered: String? = switch self?.noteOffered {
@@ -744,22 +755,24 @@ final class LiveInk {
                       new: Set<Mark.ID>, started: Date, for id: LiveAsks.Ask.ID) {
         guard asks.ask(id)?.phase == .looking else { return letGoOfNoteOfEndedAsk(id) }
         let note = numberedNote(spoken, packet: packet) ?? words
-        let person = ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
+        let person = ink.filter { packet.holds($0) }
         let asked = about.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
         let near = packet.lines(near: asked)
-        Log.write("[live-ink] packet ms=\(Int(Date().timeIntervalSince(started) * 1000)) app=\(packet.app ?? "none") lines=\(packet.lines.count) near=\(near.count) bytes=\(packet.picture.count)\(packet.detail == nil ? "" : " detail")")
+        Log.write("[live-ink] packet ms=\(Int(Date().timeIntervalSince(started) * 1000)) app=\(packet.app ?? "none") lines=\(packet.lines.count) near=\(near.count) bytes=\(packet.picture.count)\(packet.detail == nil ? "" : " detail")"
+                  + Self.describeArea(of: packet))
         held[id] = LiveResponder.Ask(
             content: { [weak self] conversation in
                 let last = self?.lastPicture
-                let same = last.map { $0.conversation == conversation && $0.windowID == packet.windowID && $0.text == packet.textSignature } ?? false
+                let same = last.map { $0.conversation == conversation && $0.subject == packet.subject && $0.text == packet.textSignature } ?? false
                 let sent = same ? last?.lines ?? [] : []
                 let unsent = near.filter { !sent.contains($0.id) }
-                self?.lastPicture = (conversation, packet.windowID, packet.textSignature, sent.union(unsent.map(\.id)))
+                self?.lastPicture = (conversation, packet.subject, packet.textSignature, sent.union(unsent.map(\.id)))
                 _ = self?.asks.reduce(.pictureSent(fresh: !same, for: id))
                 var content: [[String: Any]] = []
                 if !same {
                     content.append(Self.image(packet.picture))
                     if let detail = packet.detail { content.append(Self.image(detail.png)) }
+                    for window in packet.alone { content.append(Self.image(window.picture)) }
                 }
                 if let lines = LivePacket.textLines(unsent) { content.append(["type": "text", "text": lines]) }
                 content.append(["type": "text", "text": packet.message(note: note, ink: person, new: new, freshPicture: !same)])
@@ -797,6 +810,11 @@ final class LiveInk {
         guard let sendNote else { return letGoOfNote(of: id) }
         let numbered = numberedNote(spoken, packet: packet)
         var place = [packet.app, packet.title.map { "\"\($0)\"" }, packet.location].compactMap { $0 }.joined(separator: ", ")
+        if !packet.windows.isEmpty {
+            place = "the screen, across " + packet.windows.map { window in
+                [window.app, window.title.flatMap { $0.isEmpty ? nil : "\"\($0)\"" }].compactMap { $0 }.joined(separator: " ")
+            }.joined(separator: " and ")
+        }
         if place.isEmpty { place = "the screen" }
         // One line: the plugin's monitor makes each line it prints a message of its own.
         var said = (numbered ?? words).components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
@@ -804,6 +822,10 @@ final class LiveInk {
         if let last = said.last, !".?!]".contains(last) { said += "." }
         var message = (said.isEmpty ? "" : said + " ") + "Drawn with Vignette's live ink on \(place)."
         if numbered != nil { message += " Each [n] in the words is where the ink numbered n in the picture was drawn as they were said." }
+        let covered = packet.alone.flatMap(\.covered).compactMap { packet.numbers[$0] }.sorted()
+        if !covered.isEmpty {
+            message += " On the screen, a window in front covers the ink numbered \(covered.map(String.init).joined(separator: ", "))."
+        }
         // The same ink the picture has, so the card holds what the session sees and what leaves the window.
         let person = ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
         let note = noteMark(words, about: about, packet: packet, at: spot)
@@ -904,18 +926,49 @@ final class LiveInk {
     /// note waits only for the glance at where the text is, which comes long before the packet.
     private func prefetch(at point: CGPoint) {
         let person = ink
+        let plan = picturePlan(for: newInk)
+        let inkWindows = inkWindows(of: person)
         let ui = Settings.shared.data.ui
         let (glances, glanced) = AsyncStream<LivePacket.Glance>.makeStream()
         let packet = Task { @MainActor in
             defer { glanced.finish() }
-            return try await LivePacket.build(at: point, ink: person, style: ui.textStyle, markStyle: ui.markStyle,
-                                              glanced: { glanced.yield($0) })
+            return try await LivePacket.build(plan, at: point, ink: person, inkWindows: inkWindows, style: ui.textStyle,
+                                              markStyle: ui.markStyle, glanced: { glanced.yield($0) })
         }
         let glance = Task { @MainActor () -> LivePacket.Glance? in
             for await glance in glances { return glance }
             return nil
         }
-        prepared = (Set(person.map(\.id)), packet, glance)
+        prepared = (Set(person.map(\.id)), plan, packet, glance)
+    }
+
+    /// What the picture of an ask about `about` is of, from the windows on the screen now.
+    private func picturePlan(for about: [Mark]) -> LivePacket.Plan {
+        let asked = about.filter { $0.kind != .text }.compactMap { mark in
+            mark.shapeExtent.map { LivePacket.Asked(id: mark.id, box: $0, window: windows.window(of: mark.id)) }
+        }
+        return LivePacket.plan(for: asked, windows: LivePacket.listedWindows(), screens: StateReport.screenFrames)
+    }
+
+    /// The window each of `marks` is on, for those on one.
+    private func inkWindows(of marks: [Mark]) -> [Mark.ID: CGWindowID] {
+        Dictionary(uniqueKeysWithValues: marks.compactMap { mark in windows.window(of: mark.id).map { (mark.id, $0) } })
+    }
+
+    private static func describe(_ plan: LivePacket.Plan) -> String {
+        switch plan {
+        case .window(let id): id.map { "window \($0)" } ?? "screen"
+        case .area(let rect, let windows, let alone):
+            "area \(Int(rect.minX)),\(Int(rect.minY)),\(Int(rect.width)),\(Int(rect.height)) windows=\(windows.map(String.init).joined(separator: ","))"
+                + " alone=\(alone.map { "\($0.window):covered=\($0.covered.count),outside=\($0.outside.count)" }.joined(separator: ";"))"
+        }
+    }
+
+    private static func describeArea(of packet: LivePacket) -> String {
+        guard case .area = packet.subject else { return "" }
+        let frame = packet.frame
+        return " area=\(Int(frame.minX)),\(Int(frame.minY)),\(Int(frame.width)),\(Int(frame.height)) windows=\(packet.windows.count)"
+            + " alone=\(packet.alone.count) aloneBytes=\(packet.alone.map { String($0.picture.count) }.joined(separator: ","))"
     }
 
     /// Shows the note against its ink, where a hand would write it, which needs the window's frame
@@ -1188,7 +1241,7 @@ final class LiveInk {
                   + (focus.isEmpty ? "" : " focus=\(focus.count)"))
         let groups = Self.steps(in: Array(placed.dropFirst()))
         guard answer.steps, groups.count > 1 else {
-            put(shown, window: packet.windowID, for: id)
+            put(shown, window: packet.windowID, eachOnItsWindow: packet.isArea, for: id)
             pullFocus(focus, window: packet.windowID, say: answer.say, replies: layout.tour, for: id)
             return notDrawn
         }
@@ -1197,13 +1250,14 @@ final class LiveInk {
         letGoOfFocus(because: "replaced")
         steps = Array(groups.dropFirst())
         stepsWindow = packet.windowID
+        stepsOnTheirWindows = packet.isArea
         stepsAsk = id
         // `placed(for:)` places one pointing mark for each target found, in order.
         let pointers = groups.compactMap(\.first)
         stepTargets = Dictionary(uniqueKeysWithValues: zip(pointers, targets.compactMap { $0 }).compactMap { mark, target in
             mark.shapeExtent.map { (mark.id, (target, $0.origin)) }
         })
-        put([placed[0]] + groups[0], window: packet.windowID, for: id)
+        put([placed[0]] + groups[0], window: packet.windowID, eachOnItsWindow: packet.isArea, for: id)
         watchStepClicks()
         return notDrawn
     }
@@ -1230,6 +1284,7 @@ final class LiveInk {
     private func stopSteps() {
         steps = []
         stepsWindow = nil
+        stepsOnTheirWindows = false
         stepsAsk = nil
         stepTargets = [:]
         if let stepClicks { NSEvent.removeMonitor(stepClicks) }
@@ -1249,7 +1304,7 @@ final class LiveInk {
         let done = shownMarks.filter { asks.answer(of: $0.id) == id && $0.kind == .text && $0.id != asks.ask(id)?.say?.id }.map(\.id) + [current.id]
         // The last step goes too once it is clicked, and the reply stays.
         let next = steps.isEmpty ? [] : steps.removeFirst()
-        let window = stepsWindow
+        let window = stepsWindow, each = stepsOnTheirWindows
         if next.isEmpty { stopSteps() }
         Log.write("[live-ink] step done; \(next.isEmpty ? 0 : steps.count + 1) to go")
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.stepPause) { [weak self] in
@@ -1259,7 +1314,7 @@ final class LiveInk {
             guard !next.isEmpty else { return }
             _ = self.asks.reduce(.answerShown(Set(next.map(\.id)), for: id))
             self.drawingOn.formUnion(next.map(\.id))
-            self.put(next, window: window, for: id)
+            self.put(next, window: window, eachOnItsWindow: each, for: id)
         }
     }
 
@@ -1534,27 +1589,40 @@ final class LiveInk {
     /// anchored to what it points at, a label follows the mark it names, and a note follows the ink.
     /// A mark that followed the ink drifted off its target when the session's edit moved the content
     /// under the ink. With no window they go on the active Space's surfaces.
-    private func put(_ placed: [Mark], window windowID: CGWindowID?, for id: LiveAsks.Ask.ID) {
+    /// With `eachOnItsWindow`, for an answer about a picture of an area of the screen, each pointing
+    /// mark goes on the window under it, a reply or a label on the window of the mark it hangs from or
+    /// names, and any other text on the leader's window.
+    private func put(_ placed: [Mark], window windowID: CGWindowID?, eachOnItsWindow: Bool = false, for id: LiveAsks.Ask.ID) {
         let ask = asks.ask(id)
         let leader = ask?.leader.flatMap { id in windows.window(of: id).map { (id: id, window: $0) } }
-        let target = (windowID ?? leader?.window).flatMap(windows.target(id:))
+        let leaderTarget = leader.flatMap { windows.target(id: $0.window) }
+        let shared = windowID.flatMap(windows.target(id:)) ?? leaderTarget
         let active = activeSurfaces()
         let markStyle = Settings.shared.data.ui.markStyle
-        var moved = CGVector.zero
-        if let leader, leader.window == target?.id, let then = ask?.leaderShift, let now = windows.shift(of: leader.id) {
-            moved = CGVector(dx: now.dx - then.dx, dy: now.dy - then.dy)
+        var leaderMoved = CGVector.zero
+        if let leader, eachOnItsWindow || leader.window == shared?.id, let then = ask?.leaderShift, let now = windows.shift(of: leader.id) {
+            leaderMoved = CGVector(dx: now.dx - then.dx, dy: now.dy - then.dy)
         }
-        let still = leader.map { windows.isShown($0.id) && moved == .zero } ?? true
+        let still = leader.map { windows.isShown($0.id) && leaderMoved == .zero } ?? true
         // A reply follows the mark it hangs from, so it is pinned after it.
         let ids = Set(placed.map(\.id))
         let hangs = { (mark: Mark) in mark.popover?.anchor.map(ids.contains) ?? false }
         // The mark a label names comes just before it.
         var labelled: Mark.ID?
+        var chosen: [Mark.ID: LiveWindows.Target] = [:]
+        func window(for mark: Mark) -> LiveWindows.Target? {
+            guard eachOnItsWindow else { return shared }
+            if let hung = mark.popover?.anchor, ids.contains(hung) { return chosen[hung] }
+            if mark.isLabel, let labelled { return chosen[labelled] }
+            if mark.kind == .text { return leaderTarget }
+            return windows.target(under: LiveWindows.anchorPoint(of: mark))
+        }
         for mark in placed.filter({ !hangs($0) }) + placed.filter(hangs) {
             // The same mark goes back on, so it keeps its part in the asks.
             takeOff([mark.id])
-            if let target {
-                let mark = LiveWindows.translated(mark, by: moved)
+            if let target = window(for: mark) {
+                chosen[mark.id] = target
+                let mark = LiveWindows.translated(mark, by: target.id == leader?.window ? leaderMoved : .zero)
                 let anchor: LiveWindows.Anchor
                 if let hung = mark.popover?.anchor, ids.contains(hung) {
                     anchor = .follows(hung)

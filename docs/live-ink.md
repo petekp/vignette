@@ -16,8 +16,9 @@ list was taken on 2026-10-18 from the docs, the code and `docs/releasing.md`.
   is in the Developer section. It needs a switch everyone sees, and a way to learn the chord, which
   today is one sentence in Settings. The error lines and docs that name `debug` as a requirement
   change with the gate.
-- **People are told what leaves the Mac.** An ask sends a picture of the window, its title and its
-  page's URL to Claude, through the person's own `claude`. It costs them about $0.01 to $0.02 at
+- **People are told what leaves the Mac.** An ask sends Claude a picture of the window, its title
+  and its page's URL, through the person's own `claude`. Ink on several windows sends a picture of
+  part of the screen. It costs them about $0.01 to $0.02 at
   Sonnet's prices (ADR 0021). Nothing in the app says either. Pete decides whether a notice is
   enough or the first ask asks first.
 - **The shadow log is gone.** `SendContext` records every capture and send, for everyone running
@@ -460,6 +461,20 @@ The names in brackets are `// MARK:` sections.
   thousandths of the picture both ways; as JSON objects the same lines cost nearly twice the tokens.
   An answer names a line by id only among those sent, and other text by its words or a box
   (`docs/live-ink-ask-cost-2026-10-06.md`).
+  Ink asked about on more than one window, or on a window and on none, gets a picture of the screen
+  instead. `LivePacket.Plan` decides this, and `Tests/LiveInkTests.swift` tests it. The picture is the
+  part of the newest ink's display that those windows' frames cover. It is captured as the person
+  sees it, without Vignette's windows, with every stroke drawn in and numbered. A stroke is covered
+  when another app's normal window in front of its own window overlaps it. It is outside when it is
+  past that display. Each window that holds a covered or outside stroke is also sent alone, with its
+  ink drawn in and numbered as in the screen's picture. The JSON's `alone` says which strokes each
+  of those windows holds, and which of them are covered or outside. The answer's marks go on the
+  screen's picture only, each pinned to the window under it (`LiveInk.put`, `eachOnItsWindow`). The
+  responder is told to say in words what it finds at a covered stroke. The text lines are Vision's
+  reading of the screen's picture, so they hold only what the person can see. No page or URL is
+  read. A note to a session gets the screen's picture, and its line says which strokes a window
+  covers. The person's ink is kept in the order it was drawn, across windows (`LiveInk.shownMarks`).
+  That order numbers the strokes and decides which is the newest.
   Ink across a line garbled what Vision read of it, and the fast level garbled code
   (`docs/live-ink-step2-spike-2026-10-04.md`). A follow-up to the same window showing the same text,
   in the same conversation, sends no picture, only the nearby lines not sent yet. Capturing needs Screen Recording, which the switch asks

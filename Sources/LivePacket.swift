@@ -61,8 +61,46 @@ struct LivePacket: @unchecked Sendable {
     /// Says whether the window's text is what it was in an earlier packet.
     var textSignature: String { lines.map(\.text).joined(separator: "\n") }
 
+    /// For a picture of an area of the screen, the windows that hold the ink asked about, front to
+    /// back; empty for a picture of one window.
+    let windows: [Shown]
+    /// For a picture of an area, each window holding ink the area does not show, alone.
+    let alone: [Alone]
+    /// What the picture is of: a follow-up sends no picture only when this is the same.
+    let subject: Subject
+
     /// The capture's pixels per point.
     var scale: CGFloat { CGFloat(capture.width) / frame.width }
+
+    /// A window in a picture of an area: its app, its title and its frame in global top-left points.
+    struct Shown {
+        let app: String?
+        let title: String?
+        let frame: CGRect
+    }
+
+    /// One window captured alone, with its ink drawn in and numbered as in the area's picture,
+    /// sized for the reader. `ink` is the ink asked about on it; on the screen, `covered` is under a
+    /// window in front and `outside` is past the area's picture.
+    struct Alone {
+        let window: CGWindowID
+        let app: String?
+        let title: String?
+        let picture: Data
+        let ink: [Mark.ID]
+        let covered: [Mark.ID]
+        let outside: [Mark.ID]
+    }
+
+    enum Subject: Equatable {
+        case window(CGWindowID?)
+        case area(CGRect, alone: [CGWindowID])
+    }
+
+    var isArea: Bool { if case .area = subject { true } else { false } }
+
+    /// Whether one of the packet's pictures shows `mark`: the main one, or that of a window alone.
+    func holds(_ mark: Mark) -> Bool { numbers[mark.id] != nil || frame.intersects(mark.shapeExtent ?? .null) }
 
     /// `marks`, in global top-left points, as a drawing of `capture` holds them: in its pixels, with
     /// sizes in points of `scale`. Each is a new mark with the same geometry and author, so what
@@ -120,14 +158,30 @@ struct LivePacket: @unchecked Sendable {
     @MainActor
     static func build(at point: CGPoint, window id: CGWindowID? = nil, ink: [Mark], style: TextStyle,
                       markStyle: MarkStyle, glanced: (@Sendable (Glance) -> Void)? = nil) async throws -> LivePacket {
+        try await build(.window(id), at: point, ink: ink, style: style, markStyle: markStyle, glanced: glanced)
+    }
+
+    /// What `plan` says to capture, read. For one window, as `build(at:window:)`. For an area, that
+    /// part of the display as the person sees it, without Vignette's windows, with each window the
+    /// plan sends alone captured after it; `inkWindows` says which window each of `ink` is on.
+    @MainActor
+    static func build(_ plan: Plan, at point: CGPoint, ink: [Mark], inkWindows: [Mark.ID: CGWindowID] = [:], style: TextStyle,
+                      markStyle: MarkStyle, glanced: (@Sendable (Glance) -> Void)? = nil) async throws -> LivePacket {
         SendContext.LiveReads.began()
         defer { SendContext.LiveReads.ended() }
         let started = Date()
         let content = try await shareableContent()
+        var id: CGWindowID?
+        var area: (rect: CGRect, windows: [CGWindowID], alone: [Plan.Alone])?
+        switch plan {
+        case .window(let window): id = window
+        case .area(let rect, let windows, let alone): area = (rect, windows, alone)
+        }
         let named = id.flatMap { id in content.windows.contains { $0.windowID == id } ? (id: id, frame: CGRect.null) : nil }
-        let target = named ?? window(under: point)
+        let target = area == nil ? named ?? window(under: point) : nil
         let filter: SCContentFilter
         let frame: CGRect
+        var source: CGRect?
         var app: String?, title: String?, pid: pid_t?
         if let target, let window = content.windows.first(where: { $0.windowID == target.id }) {
             filter = SCContentFilter(desktopIndependentWindow: window)
@@ -135,22 +189,32 @@ struct LivePacket: @unchecked Sendable {
             app = window.owningApplication?.applicationName
             title = window.title
             pid = window.owningApplication?.processID
-        } else if let display = content.displays.first(where: { $0.frame.contains(point) }) ?? content.displays.first {
+        } else if let display = area.flatMap({ area in content.displays.first { $0.frame.intersects(area.rect) } })
+                    ?? content.displays.first(where: { $0.frame.contains(point) }) ?? content.displays.first {
             let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
             filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
-            frame = display.frame
+            if let area {
+                frame = area.rect.intersection(display.frame)
+                source = frame.offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
+            } else {
+                frame = display.frame
+            }
         } else {
             throw Failure(reason: "Vignette couldn't see the screen.", detail: "no window or display")
         }
         let capture: CGImage
         do {
-            capture = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration(frame, scale: scale(at: point)))
+            capture = try await SCScreenshotManager.captureImage(contentFilter: filter,
+                                                                 configuration: configuration(frame, scale: scale(at: area == nil ? point : CGPoint(x: frame.midX, y: frame.midY)),
+                                                                                              source: source))
         } catch {
             throw captureFailed(error)
         }
         let captured = Date()
         // Each Accessibility call may wait out its 0.1 s timeout, and a web page takes many, so the
         // page is looked for while the text is read.
+        // Ink an area's picture does not show is numbered with the rest, for the pictures of its windows.
+        let outside = Set((area?.alone ?? []).flatMap(\.outside))
         let found = Task.detached(priority: .userInitiated) { () -> (page: Page?, at: Date) in
             (pid.flatMap { Self.page(pid: $0, frame: frame) }, Date())
         }
@@ -166,14 +230,49 @@ struct LivePacket: @unchecked Sendable {
                 Log.write("[live-ink] glanced ms capture=\(Int(captured.timeIntervalSince(started) * 1000)) text=\(Int(read.timeIntervalSince(started) * 1000)) page=\(Int(Date().timeIntervalSince(started) * 1000)) lines=\(text.count)")
                 glanced(Glance(frame: frame, page: page, text: text))
             }
-            return try assemble(capture, frame: frame, ink: ink, style: style, markStyle: markStyle)
+            return try assemble(capture, frame: frame, ink: ink, also: outside, style: style, markStyle: markStyle)
         }.value
         let page = await found.value
+        var alone: [Alone] = []
+        for each in area?.alone ?? [] {
+            guard let window = content.windows.first(where: { $0.windowID == each.window }) else { continue }
+            let own = ink.filter { inkWindows[$0.id] == each.window }
+            alone.append(try await picture(of: window, ink: own, numbers: assembled.numbers, plan: each, style: style, markStyle: markStyle))
+        }
+        let shown = (area?.windows ?? []).compactMap { id in
+            content.windows.first { $0.windowID == id }.map { Shown(app: $0.owningApplication?.applicationName, title: $0.title, frame: $0.frame) }
+        }
         let ms = { (date: Date) in Int(date.timeIntervalSince(started) * 1000) }
-        Log.write("[live-ink] looked ms capture=\(ms(captured)) page=\(ms(page.at)) read=\(ms(assembled.at))")
+        Log.write("[live-ink] looked ms capture=\(ms(captured)) page=\(ms(page.at)) read=\(ms(assembled.at))"
+                  + (area == nil ? "" : " alone=\(alone.count) done=\(ms(Date()))"))
+        let subject: Subject = area == nil ? .window(target?.id) : .area(frame, alone: alone.map(\.window))
         return LivePacket(frame: frame, windowID: target?.id, app: app, title: title, location: page.page?.location, page: page.page?.area,
                           lines: assembled.lines, picture: assembled.picture, numbers: assembled.numbers, detail: assembled.detail,
-                          luminance: assembled.luminance, capture: capture)
+                          luminance: assembled.luminance, capture: capture, windows: shown, alone: alone, subject: subject)
+    }
+
+    /// `window` captured alone with `ink` drawn in, each stroke numbered as `numbers` says, sized for
+    /// the reader.
+    @MainActor
+    private static func picture(of window: SCWindow, ink: [Mark], numbers: [Mark.ID: Int], plan: Plan.Alone, style: TextStyle,
+                                markStyle: MarkStyle) async throws -> Alone {
+        let frame = window.frame
+        let capture: CGImage
+        do {
+            capture = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: window),
+                                                                 configuration: configuration(frame, scale: scale(at: CGPoint(x: frame.midX, y: frame.midY))))
+        } catch {
+            throw captureFailed(error)
+        }
+        let picture = try await Task.detached(priority: .userInitiated) { () throws -> Data in
+            guard let inked = draw(ink, numbers: numbers, on: capture, frame: frame, style: style, markStyle: markStyle),
+                  let data = png(inked, scale: Stitch.readerScale(CGSize(width: inked.width, height: inked.height))) else {
+                throw Failure(reason: "Vignette couldn't draw the ink into the picture.", detail: "alone")
+            }
+            return data
+        }.value
+        return Alone(window: plan.window, app: window.owningApplication?.applicationName, title: window.title, picture: picture,
+                     ink: plan.ink, covered: plan.covered, outside: plan.outside)
     }
 
     /// The window `id` as it is now, alone, so none of Vignette's overlays are in it, with its frame in
@@ -210,8 +309,10 @@ struct LivePacket: @unchecked Sendable {
     }
 
     /// A capture of `frame`'s size at `scale` pixels a point, without the cursor or a window's shadow.
-    private static func configuration(_ frame: CGRect, scale: CGFloat) -> SCStreamConfiguration {
+    /// `source` is the part of a display to capture, in points from the display's top-left.
+    private static func configuration(_ frame: CGRect, scale: CGFloat, source: CGRect? = nil) -> SCStreamConfiguration {
         let configuration = SCStreamConfiguration()
+        if let source { configuration.sourceRect = source }
         configuration.width = max(1, Int((frame.width * scale).rounded()))
         configuration.height = max(1, Int((frame.height * scale).rounded()))
         configuration.showsCursor = false
@@ -235,10 +336,11 @@ struct LivePacket: @unchecked Sendable {
     }
 
     /// Off the main thread: reads the text, draws the ink in, and sizes the picture for the reader.
-    private static func assemble(_ capture: CGImage, frame: CGRect, ink: [Mark], style: TextStyle, markStyle: MarkStyle) throws -> Assembled {
+    private static func assemble(_ capture: CGImage, frame: CGRect, ink: [Mark], also: Set<Mark.ID>, style: TextStyle,
+                                 markStyle: MarkStyle) throws -> Assembled {
         let lines = read(capture)
         let pixels = CGSize(width: capture.width, height: capture.height)
-        let numbers = numbered(ink, in: frame)
+        let numbers = numbered(ink, in: frame, also: also)
         guard let inked = draw(ink, numbers: numbers, on: capture, frame: frame, style: style, markStyle: markStyle) else {
             throw Failure(reason: "Vignette couldn't draw the ink into the picture.", detail: "bitmap")
         }
@@ -299,12 +401,22 @@ struct LivePacket: @unchecked Sendable {
         if let app { json["app"] = app }
         if let title, !title.isEmpty { json["window"] = title }
         if let location { json["location"] = location }
+        if !windows.isEmpty {
+            json["windows"] = windows.map { window -> [String: Any] in
+                var item: [String: Any] = ["box": thousandths(of: window.frame.intersection(frame))]
+                if let app = window.app { item["app"] = app }
+                if let title = window.title, !title.isEmpty { item["window"] = title }
+                return item
+            }
+        }
         json["note"] = note
         json["ink"] = ink.compactMap { mark -> [String: Any]? in
             guard let extent = mark.shapeExtent else { return nil }
-            var item: [String: Any] = ["kind": mark.kind == .ellipse ? "circle" : mark.kind.rawValue, "box": thousandths(of: extent),
-                                       "new": new.contains(mark.id)]
+            var item: [String: Any] = ["kind": mark.kind == .ellipse ? "circle" : mark.kind.rawValue, "new": new.contains(mark.id)]
             if let number = numbers[mark.id] { item["n"] = number }
+            // Ink past the area's picture has a box only in its window's own picture.
+            guard extent.intersects(frame) else { return item }
+            item["box"] = thousandths(of: extent)
             if case .arrow(let arrow) = mark.geometry {
                 item["from"] = thousandths(of: arrow.start)
                 item["to"] = thousandths(of: arrow.end)
@@ -312,6 +424,17 @@ struct LivePacket: @unchecked Sendable {
             return item
         }
         if freshPicture, let detail { json["detail"] = Self.thousandths(detail.box) }
+        if freshPicture, !alone.isEmpty {
+            let numbered = { (ids: [Mark.ID]) in ids.compactMap { numbers[$0] }.sorted() }
+            json["alone"] = alone.map { window -> [String: Any] in
+                var item: [String: Any] = ["ink": numbered(window.ink)]
+                if let app = window.app { item["app"] = app }
+                if let title = window.title, !title.isEmpty { item["window"] = title }
+                if !window.covered.isEmpty { item["covered"] = numbered(window.covered) }
+                if !window.outside.isEmpty { item["outside"] = numbered(window.outside) }
+                return item
+            }
+        }
         let data = (try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }
@@ -427,9 +550,9 @@ struct LivePacket: @unchecked Sendable {
         }
     }
 
-    /// The person's strokes on the window, numbered from 1 in the order they were drawn.
-    static func numbered(_ ink: [Mark], in frame: CGRect) -> [Mark.ID: Int] {
-        let strokes = ink.filter { $0.shapeExtent?.intersects(frame) ?? false }
+    /// The person's strokes on the window, and those of `also`, numbered from 1 in the order they were drawn.
+    static func numbered(_ ink: [Mark], in frame: CGRect, also: Set<Mark.ID> = []) -> [Mark.ID: Int] {
+        let strokes = ink.filter { also.contains($0.id) || $0.shapeExtent?.intersects(frame) ?? false }
         return Dictionary(uniqueKeysWithValues: strokes.enumerated().map { ($1.id, $0 + 1) })
     }
 
@@ -446,7 +569,8 @@ struct LivePacket: @unchecked Sendable {
         context.scaleBy(x: scale, y: -scale)
         context.translateBy(x: -frame.minX, y: -frame.minY)
         for mark in ink { mark.draw(in: context, pointScale: 1, imageWidth: frame.maxX, style: style, markStyle: markStyle) }
-        for mark in ink {
+        // Ink numbered for another picture has its badge there.
+        for mark in ink where mark.shapeExtent?.intersects(frame) == true {
             if let number = numbers[mark.id] { drawNumber(number, beside: mark, in: context, frame: frame, markStyle: markStyle) }
         }
         return context.makeImage()
@@ -644,6 +768,96 @@ extension LivePacket {
                 }
             }
             return count > 0 ? CGFloat(sum) / CGFloat(count * 255) : nil
+        }
+    }
+}
+
+extension LivePacket {
+    /// What an ask's picture is of, decided from the ink asked about and the windows on the screen
+    /// when it is asked.
+    enum Plan: Equatable {
+        /// The ink is on one window, or with nil on none: that window alone, or the screen under the ink.
+        case window(CGWindowID?)
+        /// The ink is on several windows: the part of the screen their frames cover, on the newest
+        /// ink's display, as the person sees it. `windows` hold the ink, front to back. A window holding
+        /// ink that picture does not show, under a window in front or past it, goes alone as well.
+        case area(CGRect, windows: [CGWindowID], alone: [Alone])
+
+        struct Alone: Equatable {
+            let window: CGWindowID
+            /// The ink asked about on the window, oldest first.
+            let ink: [Mark.ID]
+            /// Of `ink`: under another app's window in front, and past the area's picture.
+            let covered: [Mark.ID]
+            let outside: [Mark.ID]
+        }
+    }
+
+    /// A mark asked about: its box in global top-left points, and the window it is on, if any.
+    struct Asked: Equatable {
+        let id: Mark.ID
+        let box: CGRect
+        let window: CGWindowID?
+    }
+
+    /// An app's window on the screen, as the window server lists it.
+    struct Listed: Equatable {
+        let id: CGWindowID
+        let pid: pid_t
+        let layer: Int
+        /// In global top-left points.
+        let frame: CGRect
+    }
+
+    /// How far round ink on no window an area reaches, in points.
+    static let screenInkMargin: CGFloat = 64
+
+    /// The picture for `asked`, oldest first, from `windows`, the app windows on the screen front to
+    /// back, and `screens`, the displays' frames, all in global top-left points.
+    static func plan(for asked: [Asked], windows: [Listed], screens: [CGRect]) -> Plan {
+        var holders: [CGWindowID?] = []
+        for mark in asked where !holders.contains(mark.window) { holders.append(mark.window) }
+        guard holders.count > 1, let newest = asked.last else { return .window(holders.first ?? nil) }
+        let order = Dictionary(windows.enumerated().map { ($1.id, $0) }, uniquingKeysWith: min)
+        let screen = screens.first { $0.contains(CGPoint(x: newest.box.midX, y: newest.box.midY)) }
+            ?? screens.first { $0.intersects(newest.box) }
+        var area = CGRect.null
+        for mark in asked {
+            let frame = mark.window.flatMap { id in order[id].map { windows[$0].frame } }
+            let part = frame ?? mark.box.insetBy(dx: -screenInkMargin, dy: -screenInkMargin)
+            area = area.union(screen.map(part.intersection) ?? part)
+        }
+        guard !area.isNull else { return .window(newest.window) }
+        func isCovered(_ mark: Asked) -> Bool {
+            guard let id = mark.window, let index = order[id] else { return false }
+            let owner = windows[index].pid
+            return windows[..<index].contains { $0.layer == 0 && $0.pid != owner && $0.frame.intersects(mark.box) }
+        }
+        let alone = holders.compactMap { $0 }.compactMap { window -> Plan.Alone? in
+            let ink = asked.filter { $0.window == window }
+            let outside = ink.filter { !$0.box.intersects(area) }
+            let covered = ink.filter { $0.box.intersects(area) && isCovered($0) }
+            guard !outside.isEmpty || !covered.isEmpty else { return nil }
+            return Plan.Alone(window: window, ink: ink.map(\.id), covered: covered.map(\.id), outside: outside.map(\.id))
+        }
+        let shown = holders.compactMap { $0 }.filter { id in order[id].map { windows[$0].frame.intersects(area) } ?? false }
+            .sorted { (order[$0] ?? .max) < (order[$1] ?? .max) }
+        return .area(area, windows: shown, alone: alone)
+    }
+
+    /// The app windows on the screen, front to back, but Vignette's and those at the Dock's level or
+    /// above, which are not what ink is drawn on.
+    @MainActor
+    static func listedWindows() -> [Listed] {
+        let own = ProcessInfo.processInfo.processIdentifier
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        return windows.compactMap { info in
+            guard let id = info[kCGWindowNumber as String] as? CGWindowID,
+                  let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != own,
+                  let layer = info[kCGWindowLayer as String] as? Int, layer < Int(CGWindowLevelForKey(.dockWindow)),
+                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let frame = WindowList.bounds(info) else { return nil }
+            return Listed(id: id, pid: pid, layer: layer, frame: frame)
         }
     }
 }
