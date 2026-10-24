@@ -125,8 +125,11 @@ final class LiveWindows {
         window.pins.removeAll { $0.mark.id == mark.id }
         window.pins.append(Pin(mark: Self.translated(mark, by: CGVector(dx: -origin.x, dy: -origin.y)),
                                hidden: window.minimisingSince != nil || window.showFrom != nil))
-        let point = Self.point(of: mark), pid = window.pid
-        window.queue.async { WindowAccessibility.requestTree(pid: pid, at: point) }
+        // A note or a reply can hang past the window's edge, where no element answers.
+        if mark.kind != .text {
+            let point = Self.point(of: mark), pid = window.pid
+            window.queue.async { WindowAccessibility.requestTree(pid: pid, at: point) }
+        }
         fitOverlay(window)
         place(window)
         start()
