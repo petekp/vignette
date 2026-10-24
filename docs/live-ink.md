@@ -7,71 +7,8 @@ have the measurements.
 
 ## Before it ships
 
-Live ink ships from main, so everything here is done on live-ink before the branch is merged. The
-list was taken on 2026-10-18 from the docs, the code and `docs/releasing.md`.
-
-**Needed for a release:**
-
-- **People can turn it on.** It runs only with `debug` on (`Settings.usesLiveInk`), and its switch
-  is in the Developer section. It needs a switch everyone sees, and a way to learn the chord, which
-  today is one sentence in Settings. The error lines and docs that name `debug` as a requirement
-  change with the gate.
-- **People are told what leaves the Mac.** An ask sends Claude a picture of the window, its title
-  and its page's URL, through the person's own `claude`. Ink on several windows sends a picture of
-  part of the screen. It costs them about $0.01 to $0.02 at
-  Sonnet's prices (ADR 0021). Nothing in the app says either. Pete decides whether a notice is
-  enough or the first ask asks first.
-- **The shadow log is gone.** `SendContext` records every capture and send, for everyone running
-  the branch. It stays until the log is scored again on 2026-11-01
-  (`docs/session-detection-exploration-2026-10-08.md`), then the file, its call sites and its
-  tests come out.
-- **The branch merges into main.** On 2026-10-18 it was 198 commits ahead and 14 behind, and a
-  merge conflicted in 9 files. It also carries work that is not live ink, such as the wait before a
-  send goes (`docs/send-grace-2026-10-10.md`) and the spinning check on a copied card
-  (`CheckCoin.swift`).
-- **It works on the setups still untried.** VMs on 2026-10-18 checked the
-  rest: on macOS 14.8 the ink, the note and the reply worked in light and dark mode. On macOS 15.7 a
-  full-screen app, Spaces, a resolution change and display sleep worked. Still untried:
-  - **Two displays.** This needs a real Mac. A window's overlay is fitted to the screen holding the
-    window's centre, so a mark that reaches onto a second display is cut at the first one's edge.
-  - **Sleep.** A VM cannot sleep, and `LiveInk` observes no wake.
-  - **The pointer field's screen stream after a display change.** The debug chord commands do
-    not start it.
-
-  Display sleep closes an open note. Two bugs those checks found are fixed: placing a note left an
-  empty full-screen overlay on every screen, and a smaller resolution could leave a mark on no window
-  off the screen.
-
-**Wanted, but nothing breaks without them:**
-
-- **Missing permissions are said when they matter.** Without Screen Recording the chord draws, and
-  the failure shows only after an ask. Without Accessibility the chord does nothing. Without the
-  microphone or the speech model, speech fails with only a log line.
-- **The responder's `claude` is checked before the first ask.** A missing, old or signed-out
-  `claude` shows only as a failed ask. Someone with only Codex has no responder.
-- **The upgrade is said in the release notes.** The reply protocol goes from 1 to 5 and the plugin
-  from 6.2.2 to 6.3.11, so a Claude Code session already open needs `/reload-plugins`. Whether a
-  real session runs the reply helper without a permission prompt has not been checked.
-- **The skill tells Codex the truth.** It says a result card follows when the turn ends, but a
-  Codex thread's turns are not watched.
-- **An e2e scenario covers it.** `scripts/e2e/scenarios.py` has none. The fake `claude`
-  (`VIGNETTE_CLAUDE`) and the debug commands are enough to write one.
-- **People can read about it:** release notes, the README, `docs/using.md` and the website.
-- **VoiceOver can read the note and the reply.** Their popovers set no accessibility labels.
-
-**Pete's to decide, then trim:**
-
-- Which pointer styles, labs and `liveInkField*` tweaks ship. Lamp is the default.
-- One behaviour for each of the two speech experiments, `liveInkListenUntil` and
-  `liveInkSendWhenQuiet`, whose switches then go.
-- Whether `live-ink-clear` needs `debug`, as the other live ink commands do.
-
-**Gaps that can follow the first release:**
-
-- Where Send and the note start, which waits for the 2026-11-01 scoring.
-- A Chromium browser's page gives the note no URL.
-- A note to a Codex thread gets no result card.
-- An answer whose mark is not found puts its words in the result card's top-left corner.
+Live ink ships from main. What has to happen first, in order, and what waits on Pete is in
+`docs/live-ink-release-plan-2026-10-24.md`.
 
 ## Where the code is
 
