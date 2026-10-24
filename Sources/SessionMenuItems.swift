@@ -76,7 +76,9 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
 
     func install() {
         let holder = FieldHolder(frame: NSRect(x: 0, y: 0, width: 260, height: 34))
-        field.frame = NSRect(x: 10, y: 5, width: 240, height: 24)
+        holder.autoresizingMask = [.width]
+        field.frame = NSRect(x: 10, y: 5, width: holder.frame.width - 20, height: 24)
+        field.autoresizingMask = [.width]
         field.placeholderString = "Search sessions"
         field.delegate = self
         field.focusRingType = .none
