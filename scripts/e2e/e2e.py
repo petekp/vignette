@@ -449,6 +449,9 @@ def run(names, with_input, build):
     if unknown:
         sys.exit(f'no scenario named {", ".join(sorted(unknown))}; see `e2e.py list`')
     build_probe()
+    if with_input:
+        # Compiling takes seconds, longer than a lone thumbnail stays, so it is done before any scenario.
+        subprocess.run([INPUT, 'build'], check=True)
     if build:
         result = subprocess.run([os.path.join(HERE, 'build.sh')], capture_output=True, text=True)
         if result.returncode != 0:
