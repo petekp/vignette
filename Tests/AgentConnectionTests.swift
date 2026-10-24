@@ -427,6 +427,17 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("101").path).filter { $0.hasSuffix(".line") }, [])
     }
 
+    func testASessionRunningInTwoProcessesIsListedOnceAndItsMenuIsBuilt() throws {
+        let root = temporaryFolder()
+        try inbox(root, pid: 101, session: session)
+        try inbox(root, pid: 102, session: session)
+        let connection = claude(inboxes: root)
+        let found = connection.destinations()
+        XCTAssertEqual(found.map(\.id), [session])
+        _ = SessionMenu.menu(found, destination: found.first)
+        XCTAssertEqual(SessionMenu.row(of: found[0], among: found).destination.id, session)
+    }
+
     /// A session in no inbox is an error, never another session's inbox. When the process that ran
     /// it has since run `/clear` or `/resume`, the card says so.
     func testASessionInNoInboxIsAnErrorAndNeverAnother() throws {

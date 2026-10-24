@@ -375,12 +375,15 @@ struct ClaudeCodeConnection: AgentConnection {
     /// The sessions of `inboxes`. `withMenuFields` adds what only the menus show: the place and
     /// branch, the turn, and the inbox mod's goal and open question. Without it, a record that only
     /// needs the name, the folder and when the session was last used reads no `.git` and no store.
+    /// One session can run in two processes at once, as when it is resumed in a second terminal; it
+    /// is listed once, from the first inbox holding it, which is the one a send writes to.
     func destinations(of inboxes: [Inbox], withMenuFields: Bool) -> [AgentDestination] {
         let folders = (try? FileManager.default.contentsOfDirectory(at: transcripts, includingPropertiesForKeys: nil)) ?? []
         let mod = withMenuFields ? modStore() : [:]
         var places: [String: SessionPlaces.Found] = [:]
+        var listed: Set<String> = []
         return inboxes.compactMap { inbox -> AgentDestination? in
-            guard let session = inbox.session else { return nil }
+            guard let session = inbox.session, listed.insert(session).inserted else { return nil }
             let file = inbox.transcript.map { URL(fileURLWithPath: $0) }.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
                 ?? Self.transcriptFile(session: session, folders: folders)
             let transcript = file.flatMap { Self.tail(of: $0) }.map(Self.transcript(tail:)) ?? Transcript()
