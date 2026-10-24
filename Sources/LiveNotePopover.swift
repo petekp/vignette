@@ -201,9 +201,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         responder.state = target == .responder ? .on : .off
         responder.target = self
         menu.addItem(responder)
+        var search: SessionMenuSearch?
         if !sessions.isEmpty {
             menu.addItem(.separator())
-            SessionMenu.add(SessionMenu.menu(sessions, destination: target.session), to: menu, make: sessionItem)
+            search = SessionMenu.add(SessionMenu.menu(sessions, destination: target.session), to: menu, make: sessionItem)
         }
         let button = window.convertToScreen(content.session.convert(content.session.bounds, to: nil))
         let visible = window.screen?.visibleFrame ?? .zero
@@ -217,7 +218,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         menuOpen = true
         menuPicks = 0
         lastPickByKeyboard = nil
-        menu.popUp(positioning: nil, at: point, in: nil)
+        withExtendedLifetime(search) { menu.popUp(positioning: nil, at: point, in: nil) }
         menuOpen = false
         SendContext.menu(surface: "note", picks: menuPicks, msSinceOpen: menuPicks > 0 ? Int((CACurrentMediaTime() - openedAt) * 1000) : nil,
                          byKeyboard: lastPickByKeyboard)

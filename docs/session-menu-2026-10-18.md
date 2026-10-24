@@ -213,6 +213,23 @@ For Send, the destination choice does not use send history, so these gains are n
 comes from the agent app in front, then herdr's focused pane, then the session used last. A live
 ink note starts on the session the note before it was sent to. The replay scored Send only.
 
+## Search
+
+Both menus open with a search field as their first row, which has the keyboard. It is an item whose
+view holds an `NSSearchField` (`SessionMenuSearch`), so the menu is still an `NSMenu`. Typing replaces
+the rows below it with the sessions that match, from every project, under their project headers, in
+the usual order (`SessionMenu.matching`). With the field empty the menu is the top 5 and the project
+submenus.
+
+- **A session matches** when every word typed is found, ignoring case and accents, in its title, its
+  second line or its project's header.
+- **Return** picks the first match. **Down** moves into the matches.
+- **Esc closes the menu**, whether the field holds text or not. `NSMenu`'s tracking takes Esc before
+  the field's editor and before a local key monitor, so Esc cannot clear the field there. The
+  field's clear button does.
+- **No match** shows one disabled row, "No session matches".
+- **Live ink's Tab order** is unchanged.
+
 ## Outside the menu
 
 - **The destination control and live ink's target button** show the agent's logo and the row's

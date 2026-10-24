@@ -50,6 +50,28 @@ enum SessionMenu {
         let projects: [Group]
         /// The rows from top to bottom, which is also live ink's Tab order after the responder.
         var topRows: [Row] { top.flatMap(\.rows) }
+        /// Every active session by project: the project groups, or the top groups when they already
+        /// hold everyone.
+        var everyone: [Group] { projects.isEmpty ? top : projects }
+    }
+
+    /// The groups of `groups` whose rows match `query`, in the same order. A row matches when every
+    /// word of the query is found, ignoring case and accents, in its title, its second line or its
+    /// group's header. A query with no words matches every row.
+    static func matching(_ query: String, in groups: [Group]) -> [Group] {
+        let words = fold(query).split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return groups }
+        return groups.compactMap { group in
+            let rows = group.rows.filter { row in
+                let text = fold([row.title, row.subtitle, group.header].joined(separator: " "))
+                return words.allSatisfy { text.contains($0) }
+            }
+            return rows.isEmpty ? nil : Group(header: group.header, key: group.key, rows: rows)
+        }
+    }
+
+    private static func fold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
     }
 
     // MARK: Order

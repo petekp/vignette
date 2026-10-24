@@ -387,16 +387,16 @@ final class AnnotatorToolbar {
         guard case .send(let target) = model.offer, let frame = targetFrame else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
-        SessionMenu.add(SessionMenu.menu(model.destinations, destination: target), to: menu) { row in
+        let search = SessionMenu.add(SessionMenu.menu(model.destinations, destination: target), to: menu) { row in
             let item = SessionMenu.item(for: row, selected: row.id == target.id, image: AgentLogo.menuImage(for: row.destination.client))
-            item.target = targetMenuActions
+            item.target = self.targetMenuActions
             item.action = #selector(TargetMenuActions.pick(_:))
             item.representedObject = row.destination
             return item
         }
         let below = hosting.isFlipped ? frame.maxY + 4 : hosting.bounds.height - frame.maxY - 4
         targetMenuActions.resetCount()
-        menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting)
+        withExtendedLifetime(search) { menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting) }
         let picks = targetMenuActions.picks
         SendContext.menu(surface: "bar", picks: picks, msSinceOpen: picks > 0 ? Int((CACurrentMediaTime() - model.openedAt) * 1000) : nil,
                          byKeyboard: targetMenuActions.lastByKeyboard)
