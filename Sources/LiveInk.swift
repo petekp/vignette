@@ -1600,6 +1600,7 @@ final class LiveInk {
         // The mark a label names comes just before it.
         var labelled: Mark.ID?
         var chosen: [Mark.ID: LiveWindows.Target] = [:]
+        var onWindows: [(mark: Mark, target: LiveWindows.Target)] = []
         func window(for mark: Mark) -> LiveWindows.Target? {
             guard eachOnItsWindow else { return shared }
             if let hung = mark.popover?.anchor, ids.contains(hung) { return chosen[hung] }
@@ -1607,17 +1608,18 @@ final class LiveInk {
             if mark.kind == .text { return leaderTarget }
             return windows.target(under: LiveWindows.point(of: mark))
         }
+        // The same marks go back on, so they keep their part in the asks.
+        takeOff(ids)
         for mark in placed.filter({ !hangs($0) }) + placed.filter(hangs) {
-            // The same mark goes back on, so it keeps its part in the asks.
-            takeOff([mark.id])
             if let target = window(for: mark) {
                 chosen[mark.id] = target
                 if mark.kind != .text { labelled = mark.id }
-                windows.pin(mark, to: target)
+                onWindows.append((mark, target))
             } else {
                 addToScreen(mark, among: active, markStyle: markStyle)
             }
         }
+        windows.pin(onWindows)
         showMarks()
         closeEmpty(fade: LiveMarksLayer.removalFade)
     }

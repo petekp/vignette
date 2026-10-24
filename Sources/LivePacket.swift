@@ -672,25 +672,26 @@ struct LivePacket: @unchecked Sendable {
         guard AXIsProcessTrusted() else { return nil }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.1)
-        guard let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] else { return nil }
+        guard let windows = WindowAccessibility.attribute(app, kAXWindowsAttribute) as? [AXUIElement] else { return nil }
         let window = windows.first { window in
-            guard let position = attribute(window, kAXPositionAttribute), let size = attribute(window, kAXSizeAttribute) else { return false }
+            guard let position = WindowAccessibility.attribute(window, kAXPositionAttribute),
+                  let size = WindowAccessibility.attribute(window, kAXSizeAttribute) else { return false }
             var origin = CGPoint.zero, extent = CGSize.zero
             AXValueGetValue(position as! AXValue, .cgPoint, &origin)
             AXValueGetValue(size as! AXValue, .cgSize, &extent)
             return abs(origin.x - frame.minX) < 2 && abs(origin.y - frame.minY) < 2 && abs(extent.width - frame.width) < 2
         }
         guard let window else { return nil }
-        let document = (attribute(window, kAXDocumentAttribute) as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let document = (WindowAccessibility.attribute(window, kAXDocumentAttribute) as? String).flatMap { $0.isEmpty ? nil : $0 }
         var queue: [(AXUIElement, Int)] = [(window, 0)], visited = 0
         while !queue.isEmpty, visited < 200 {
             let (element, depth) = queue.removeFirst()
             visited += 1
-            if attribute(element, kAXRoleAttribute) as? String == "AXWebArea" {
-                let url = (attribute(element, kAXURLAttribute) as? URL)?.absoluteString
+            if WindowAccessibility.attribute(element, kAXRoleAttribute) as? String == "AXWebArea" {
+                let url = (WindowAccessibility.attribute(element, kAXURLAttribute) as? URL)?.absoluteString
                 return Page(location: url ?? document, area: area(of: element)?.intersection(frame))
             }
-            guard depth < 8, let children = attribute(element, kAXChildrenAttribute) as? [AXUIElement] else { continue }
+            guard depth < 8, let children = WindowAccessibility.attribute(element, kAXChildrenAttribute) as? [AXUIElement] else { continue }
             queue += children.map { ($0, depth + 1) }
         }
         return document.map { Page(location: $0) }
@@ -698,16 +699,12 @@ struct LivePacket: @unchecked Sendable {
 
     /// An element's frame, in global top-left points.
     private static func area(of element: AXUIElement) -> CGRect? {
-        guard let position = attribute(element, kAXPositionAttribute), let size = attribute(element, kAXSizeAttribute) else { return nil }
+        guard let position = WindowAccessibility.attribute(element, kAXPositionAttribute),
+              let size = WindowAccessibility.attribute(element, kAXSizeAttribute) else { return nil }
         var origin = CGPoint.zero, extent = CGSize.zero
         AXValueGetValue(position as! AXValue, .cgPoint, &origin)
         AXValueGetValue(size as! AXValue, .cgSize, &extent)
         return extent.width > 0 && extent.height > 0 ? CGRect(origin: origin, size: extent) : nil
-    }
-
-    private static func attribute(_ element: AXUIElement, _ name: String) -> AnyObject? {
-        var value: AnyObject?
-        return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
     }
 }
 

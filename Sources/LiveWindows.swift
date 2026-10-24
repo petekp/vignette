@@ -132,15 +132,25 @@ final class LiveWindows {
     }
 
     /// Puts `mark`, in global top-left points, on `target`, at its offset from the window's top-left.
-    func pin(_ mark: Mark, to target: Target) {
-        let window = tracked(target)
-        let origin = window.frame.origin
-        window.pins.removeAll { $0.mark.id == mark.id }
-        let local = Self.translated(mark, by: CGVector(dx: -origin.x, dy: -origin.y))
-        window.pins.append(Pin(mark: local, extent: drawnExtent?(local), outside: !Self.fits(local, in: window.frame.size)))
-        askForTree(of: window, at: Self.point(of: mark))
-        fitOverlay(window)
-        fadeOutUndrawn(window)
+    func pin(_ mark: Mark, to target: Target) { pin([(mark, target)]) }
+
+    /// Puts each mark on its target, as `pin(_:to:)` does, fitting each window's overlay once.
+    func pin(_ marks: [(mark: Mark, target: Target)]) {
+        var pinned: [CGWindowID: Tracked] = [:]
+        for (mark, target) in marks {
+            let window = tracked(target)
+            let origin = window.frame.origin
+            window.pins.removeAll { $0.mark.id == mark.id }
+            let local = Self.translated(mark, by: CGVector(dx: -origin.x, dy: -origin.y))
+            window.pins.append(Pin(mark: local, extent: drawnExtent?(local), outside: !Self.fits(local, in: window.frame.size)))
+            askForTree(of: window, at: Self.point(of: mark))
+            pinned[window.id] = window
+        }
+        guard !pinned.isEmpty else { return }
+        for window in pinned.values {
+            fitOverlay(window)
+            fadeOutUndrawn(window)
+        }
         start()
     }
 
