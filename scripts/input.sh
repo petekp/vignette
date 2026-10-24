@@ -2,6 +2,7 @@
 # Runs scripts/input.swift. Compiles it with Sources/HotKeySpec.swift into build/input when the
 # binary is missing or older than either source. Not part of build.sh: the tool is only for
 # driving the app from a terminal, and that terminal's Accessibility trust is what lets it post.
+# `input.sh build` only compiles it.
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
 bin="$root/build/input"
@@ -13,4 +14,5 @@ if $build; then
   mkdir -p "$root/build"
   xcrun swiftc -parse-as-library -O -o "$bin" "${sources[@]}"
 fi
+[[ "$1" == build ]] && exit 0
 exec "$bin" "$@"
