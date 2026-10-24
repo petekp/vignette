@@ -9,9 +9,17 @@ enum MicrophoneChoice {
         let id: AudioDeviceID
         let hasInput: Bool
         let isBluetooth: Bool
-        /// Some process is recording from or playing to the device.
-        let runningSomewhere: Bool
+        /// Another app is recording from the device (`recordedByOtherApps`).
+        let recordingForAnotherApp: Bool
         let isBuiltIn: Bool
+    }
+
+    /// One app connected to CoreAudio, from its process object.
+    struct AudioProcess: Equatable {
+        let pid: pid_t
+        let isRunningInput: Bool
+        let inputDevices: [AudioDeviceID]
+        let outputDevices: [AudioDeviceID]
     }
 
     enum Rule: String {
@@ -36,31 +44,54 @@ enum MicrophoneChoice {
         guard let current = devices.first(where: { $0.id == defaultInput }), current.isBluetooth else {
             return Choice(device: defaultInput, rule: .defaultInput)
         }
-        if current.runningSomewhere { return Choice(device: defaultInput, rule: .alreadyRecording) }
+        if current.recordingForAnotherApp { return Choice(device: defaultInput, rule: .alreadyRecording) }
         if let builtIn = devices.first(where: { $0.hasInput && $0.isBuiltIn && !$0.isBluetooth }) {
             return Choice(device: builtIn.id, rule: .builtIn)
         }
         return Choice(device: defaultInput, rule: .bluetoothOnly)
     }
 
-    /// What the rule picks for the devices now, read from CoreAudio. Nil when the system has no
-    /// default input, or the devices cannot be listed.
-    static func current() -> Choice? {
-        guard let defaultInput: AudioDeviceID = read(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDefaultInputDevice),
-              defaultInput != kAudioObjectUnknown,
-              let ids: [AudioDeviceID] = readArray(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDevices)
-        else { return nil }
-        return choose(defaultInput: defaultInput, among: ids.map(describe))
+    /// The devices other apps are recording from: an app other than `own` that is running input
+    /// and lists the device among its input devices but not among its output devices. CoreAudio's
+    /// input list can name a device the app only plays to: on 2026-10-23 CoreSpeech, recording,
+    /// listed the MacBook's speakers, which have no input. So a headset that is one device for both,
+    /// listed both ways, never counts, and the rule takes the built-in microphone rather than risk
+    /// stopping its music.
+    static func recordedByOtherApps(_ processes: [AudioProcess], own: pid_t) -> Set<AudioDeviceID> {
+        Set(processes.filter { $0.pid != own && $0.isRunningInput }.flatMap { process in
+            process.inputDevices.filter { !process.outputDevices.contains($0) }
+        })
     }
 
-    static func describe(_ id: AudioDeviceID) -> Device {
+    /// What the rule picks for the devices now, read from CoreAudio. Nil when the system has no
+    /// default input, or the devices cannot be listed. Apps that cannot be listed count as recording
+    /// from nothing.
+    static func current() -> Choice? {
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        guard let defaultInput: AudioDeviceID = read(system, kAudioHardwarePropertyDefaultInputDevice),
+              defaultInput != kAudioObjectUnknown,
+              let ids: [AudioDeviceID] = readArray(system, kAudioHardwarePropertyDevices)
+        else { return nil }
+        let processes: [AudioObjectID] = readArray(system, kAudioHardwarePropertyProcessObjectList) ?? []
+        let recorded = recordedByOtherApps(processes.compactMap(process), own: getpid())
+        return choose(defaultInput: defaultInput, among: ids.map { describe($0, recorded: recorded) })
+    }
+
+    static func describe(_ id: AudioDeviceID, recorded: Set<AudioDeviceID>) -> Device {
         let transport: UInt32 = read(id, kAudioDevicePropertyTransportType) ?? 0
-        let running: UInt32 = read(id, kAudioDevicePropertyDeviceIsRunningSomewhere) ?? 0
         let streams: [AudioStreamID]? = readArray(id, kAudioDevicePropertyStreams, scope: kAudioObjectPropertyScopeInput)
         return Device(id: id, hasInput: !(streams ?? []).isEmpty,
                       isBluetooth: transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE,
-                      runningSomewhere: running != 0,
+                      recordingForAnotherApp: recorded.contains(id),
                       isBuiltIn: transport == kAudioDeviceTransportTypeBuiltIn)
+    }
+
+    static func process(_ id: AudioObjectID) -> AudioProcess? {
+        guard let pid: pid_t = read(id, kAudioProcessPropertyPID) else { return nil }
+        let running: UInt32 = read(id, kAudioProcessPropertyIsRunningInput) ?? 0
+        return AudioProcess(pid: pid, isRunningInput: running != 0,
+                            inputDevices: readArray(id, kAudioProcessPropertyDevices, scope: kAudioObjectPropertyScopeInput) ?? [],
+                            outputDevices: readArray(id, kAudioProcessPropertyDevices, scope: kAudioObjectPropertyScopeOutput) ?? [])
     }
 
     private static func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope) -> AudioObjectPropertyAddress {

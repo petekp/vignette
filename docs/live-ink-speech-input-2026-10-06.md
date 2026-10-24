@@ -69,10 +69,17 @@ listening.
 Each time it starts, `MicrophoneChoice` picks the input device, with no setting. Recording from
 Bluetooth headphones switches them to the hands-free profile, which stops their music and plays it
 again in low quality, so a Bluetooth default input is avoided unless it is already recording. In
-order: a default input that is not Bluetooth; a Bluetooth default that is already running for
-another app, as in a call; the Mac's built-in microphone; the Bluetooth default. The rule is a
-pure function over a description of the devices (`MicrophoneChoice.choose`), and CoreAudio's
-transport type and `kAudioDevicePropertyDeviceIsRunningSomewhere` fill it in. The engine's input
+order: a default input that is not Bluetooth; a Bluetooth default that another app is already
+recording from, as in a call; the Mac's built-in microphone; the Bluetooth default. The rule is a
+pure function over a description of the devices (`MicrophoneChoice.choose`). CoreAudio's transport
+type fills in the description, and so do its process objects, which say which other apps are
+recording (`kAudioProcessPropertyIsRunningInput`) and from which devices
+(`kAudioProcessPropertyDevices`). That device list can be wrong: on 2026-10-23 CoreSpeech,
+recording, listed the MacBook's speakers as an input. So a device counts as recorded only when an
+app lists it as an input and not also as an output (`MicrophoneChoice.recordedByOtherApps`).
+AirPods are two CoreAudio devices, one for input and one for output, so a call on them counts. A
+headset that is one device never counts, even during a call: Vignette then listens on the
+built-in microphone, which never stops the headset's music. The engine's input
 is pointed at the device with `kAudioOutputUnitProperty_CurrentDevice` before its format is read.
 One `[speech] microphone rule=… device=…` line says which rule decided. A device that cannot be
 read or set leaves the default input, with the reason in the log.
