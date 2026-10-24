@@ -197,8 +197,9 @@ struct LiveAsks: Equatable {
 
     enum Begun: Equatable {
         /// `about` is oldest first and its last mark has a shape, centred on `point`. The ask looks for
-        /// its packet at once, whatever else is under way.
-        case began(Ask.ID, about: [Mark], point: CGPoint)
+        /// its packet at once, whatever else is under way. Following a reply, `effects` ends the answer
+        /// it takes the place of.
+        case began(Ask.ID, about: [Mark], point: CGPoint, effects: [Effect])
         /// Following a reply, the answer it hangs from comes back, saying why.
         case refused(Refusal, effects: [Effect])
     }
@@ -207,6 +208,7 @@ struct LiveAsks: Equatable {
     /// looking for its packet. `following` is the reply whose button the person picked: the ask takes
     /// that answer's place, and is about its marks too.
     mutating func begin(among shown: [Mark], following: Following?, toSession: Bool = false) -> Begun {
+        let before = asks.map(\.id)
         let about = about(among: shown)
         guard let shape = about.last?.shapeExtent else { return refuse(.noInk, following: following) }
         let ids = Set(about.map(\.id))
@@ -227,7 +229,7 @@ struct LiveAsks: Equatable {
             }
         }
         asks.append(new)
-        return .began(lastID, about: about, point: CGPoint(x: shape.midX, y: shape.midY))
+        return .began(lastID, about: about, point: CGPoint(x: shape.midX, y: shape.midY), effects: ended(since: before))
     }
 
     /// Following a reply, the answer it hangs from comes back as it was, saying why the ask did not
@@ -312,6 +314,8 @@ struct LiveAsks: Equatable {
     }
 
     enum Effect: Equatable {
+        /// Ask `id` is over: let go of everything kept for it. It comes before the effects on its marks.
+        case ended(Ask.ID)
         /// Ask the responder, with ask `id`'s packet. Every ask before it to the responder has ended.
         case send(Ask.ID)
         /// Stop the responder's turn: the ask it was answering was stopped or dismissed.
@@ -345,7 +349,15 @@ struct LiveAsks: Equatable {
     }
 
     mutating func reduce(_ event: Event) -> [Effect] {
-        apply(event) + sendNext()
+        let before = asks.map(\.id)
+        let effects = apply(event) + sendNext()
+        return ended(since: before) + effects
+    }
+
+    /// An `ended` for each of the asks `before` that is no longer in the list, oldest first.
+    private func ended(since before: [Ask.ID]) -> [Effect] {
+        let now = Set(asks.map(\.id))
+        return before.filter { !now.contains($0) }.map(Effect.ended)
     }
 
     private mutating func apply(_ event: Event) -> [Effect] {

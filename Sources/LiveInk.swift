@@ -528,7 +528,7 @@ final class LiveInk {
     /// Takes marks off every surface and window, and they lose their part in the asks.
     private func remove(_ ids: Set<Mark.ID>) {
         takeOff(ids)
-        _ = asks.reduce(.removed(ids))
+        run(asks.reduce(.removed(ids)))
     }
 
     /// Takes marks off every surface and window, without a word to the asks.
@@ -540,7 +540,7 @@ final class LiveInk {
 
     /// Marks that went with their window.
     private func forget(_ ids: Set<Mark.ID>) {
-        _ = asks.reduce(.windowGone(ids))
+        run(asks.reduce(.windowGone(ids)))
         showMarks()
     }
 
@@ -626,7 +626,7 @@ final class LiveInk {
         closeNote()
         stopListening()
         let before = marks.count
-        for case .remove(let ids) in asks.reduce(.noteDiscarded) { remove(ids) }
+        run(asks.reduce(.noteDiscarded))
         showMarks()
         closeEmpty(fade: LiveMarksLayer.removalFade)
         Log.write("[live-ink] note discarded marks=\(before - marks.count)")
@@ -639,12 +639,6 @@ final class LiveInk {
         let leave = how.map(LiveMarksLayer.popoverLeave)
         handing.removeValue(forKey: id)?.fadeAway(after: leave?.after ?? 0, over: leave?.fade)
         handingTo[id] = nil
-    }
-
-    /// For a callback the asks dropped. While the ask is still under way, the note handed over is
-    /// its, so it stays.
-    private func letGoOfNoteOfEndedAsk(_ id: LiveAsks.Ask.ID) {
-        if asks.ask(id)?.isUnderWay != true { letGoOfNote(of: id) }
     }
 
     /// The note ask `id` was sent in hands over to `reply`, the conversation, which comes up in its
@@ -692,10 +686,11 @@ final class LiveInk {
         case .refused(let refusal, let effects):
             run(effects)
             return .failure(LiveResponder.Failure(reason: refusal.rawValue, detail: refusal.detail))
-        case .began(let began, let asked, let centre):
+        case .began(let began, let asked, let centre, let effects):
             id = began
             about = asked
             point = centre
+            run(effects)
         }
         let answerer = (agent: session?.client.rawValue ?? LiveAnswerLayout.agentName, name: session?.project)
         answerers[id] = answerer
@@ -753,7 +748,7 @@ final class LiveInk {
     /// and sends it once the asks before it have ended.
     private func send(_ packet: LivePacket, words: String, spoken: (words: [SpokenWord], began: Date)?, about: [Mark],
                       new: Set<Mark.ID>, started: Date, for id: LiveAsks.Ask.ID) {
-        guard asks.ask(id)?.phase == .looking else { return letGoOfNoteOfEndedAsk(id) }
+        guard asks.ask(id)?.phase == .looking else { return }
         let note = numberedNote(spoken, packet: packet) ?? words
         let person = ink.filter { packet.holds($0) }
         let asked = about.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
@@ -806,7 +801,7 @@ final class LiveInk {
                        from spot: CGRect?, for id: LiveAsks.Ask.ID) {
         var shared: Set<Mark.ID>?
         for case .share(let about) in asks.reduce(.arrived(.packetCame, for: id)) { shared = about }
-        guard let about = shared else { return letGoOfNoteOfEndedAsk(id) }
+        guard let about = shared else { return }
         guard let sendNote else { return letGoOfNote(of: id) }
         let numbered = numberedNote(spoken, packet: packet)
         var place = [packet.app, packet.title.map { "\"\($0)\"" }, packet.location].compactMap { $0 }.joined(separator: ", ")
@@ -843,12 +838,13 @@ final class LiveInk {
                 if effects == [.withdraw] {
                     Log.write("[live-ink] note withdrawn request=\(request)")
                     DispatchQueue.main.async { self.unsendNote?(request) }
-                    return self.letGoOfNoteOfEndedAsk(id)
+                    return
                 }
-                guard !effects.isEmpty else { return self.letGoOfNoteOfEndedAsk(id) }
+                guard !effects.isEmpty else { return }
+                // The note leaves as the conversation would have, before the ask's end lets it go.
                 let leaving = effects.lazy.compactMap { if case .finish(_, let how) = $0 { how } else { nil } }.first
                 self.letGoOfNote(of: id, as: leaving)
-                for case .finish(let ids, let how) in effects { self.finish(ids, how) }
+                self.run(effects)
             case .failure(let refusal):
                 self.failed(LiveResponder.Failure(reason: "Not sent. " + refusal.reason, detail: "send refused"), for: id)
             }
@@ -896,25 +892,18 @@ final class LiveInk {
         showMarks()
         DispatchQueue.main.asyncAfter(deadline: .now() + finishDuration(how)) { [weak self] in
             guard let self else { return }
-            var removed = false
-            for case .remove(let gone) in self.asks.reduce(.finished(ids)) {
-                self.remove(gone)
-                removed = true
-            }
-            guard removed else { return }
+            let effects = self.asks.reduce(.finished(ids))
+            guard !effects.isEmpty else { return }
+            self.run(effects)
             self.showMarks()
             self.closeEmpty(fade: 0)
         }
     }
 
-    /// Takes ask `id`'s answer off the screen with the ink only it was about, and the person's note.
-    private func dismissAnswer(_ id: LiveAsks.Ask.ID) { endAnswer(id, by: .dismissed(id)) }
-
-    /// Ends ask `id`'s answer, as `event` says: its tour and its buttons go, and its marks leave.
-    private func endAnswer(_ id: LiveAsks.Ask.ID, by event: LiveAsks.Event) {
+    /// Closes an answer, as `event` says: by its × (`dismissed`), with the ink only it was about, or by
+    /// Esc (`answerClosed`), the newest, with the person's ink staying. Its marks leave.
+    private func closeAnswer(by event: LiveAsks.Event) {
         hideDismissButton()
-        letGoOfTour(of: id, because: "dismissed")
-        hideActions(of: id)
         run(asks.reduce(event))
     }
 
@@ -1056,7 +1045,7 @@ final class LiveInk {
             let id = under.id
             button.onClick = { [weak self] in
                 Log.write("[live-ink] answer dismissed by its × id=\(id)")
-                self?.dismissAnswer(id)
+                self?.closeAnswer(by: .dismissed(id))
             }
             dismissButton = button
             dismissing = id
@@ -1515,18 +1504,20 @@ final class LiveInk {
     /// Vignette says why in the conversation's row, or in a reply hung from the ink.
     private func failed(_ failure: LiveResponder.Failure, for id: LiveAsks.Ask.ID) {
         let effects = asks.reduce(.arrived(.failed(reason: failure.reason, shown: shownIDs), for: id))
-        guard !effects.isEmpty else { return letGoOfNoteOfEndedAsk(id) }
+        guard !effects.isEmpty else { return }
         if handingTo[id] == nil { letGoOfNote(of: id) }
         Log.write("[live-ink] error ask id=\(id) \(failure.detail)")
         run(effects)
     }
 
     /// Runs what the asks answered, but for what the event's own caller draws or sends: the reply,
-    /// the answer, a session's note, a withdrawal. The answer a button was picked under is put back,
-    /// an answer is taken off or set aside, a note says why, and the next ask goes to the responder.
+    /// the answer, a session's note, a withdrawal. An ask that ended is let go, the answer a button was
+    /// picked under is put back, an answer is taken off or set aside, a note says why, and the next ask
+    /// goes to the responder.
     private func run(_ effects: [LiveAsks.Effect]) {
         for effect in effects {
             switch effect {
+            case .ended(let id): release(id)
             case .send(let id): sendHeld(id)
             case .interrupt: responder.cancel()
             case .removeAnswer(let id, let gone): removeAnswer(gone, of: id)
@@ -1541,14 +1532,17 @@ final class LiveInk {
             case .showReply, .drawAnswer, .share, .withdraw: break
             }
         }
-        // What an ask that ended before its turn would have sent, and the notes and names of asks
-        // that ended.
-        held = held.filter { asks.ask($0.key)?.phase == .looking || asks.ask($0.key)?.phase == .waiting }
-        let ended = Set(handing.keys).union(handingTo.keys).union(answerers.keys).filter { asks.ask($0) == nil }
-        for id in ended {
-            letGoOfNote(of: id)
-            answerers[id] = nil
-        }
+    }
+
+    /// Ask `id` is over (`LiveAsks.Effect.ended`): what it would have sent and who it went to are
+    /// forgotten, its note fades where it is, and its ×, its buttons and its steps or focus are let go.
+    private func release(_ id: LiveAsks.Ask.ID) {
+        held[id] = nil
+        answerers[id] = nil
+        letGoOfNote(of: id)
+        if dismissing == id { hideDismissButton() }
+        letGoOfTour(of: id, because: "dismissed")
+        hideActions(of: id)
     }
 
     /// The answer a button was picked under is back as it was (`LiveAsks.Effect.restore`): its words
@@ -1679,14 +1673,11 @@ final class LiveInk {
         stopListening()
         spoken = nil
         strokeTimes = [:]
-        for id in Set(handing.keys).union(handingTo.keys) { letGoOfNote(of: id) }
         letGoOfFocus(because: "cleared")
         stopSteps()
         // The asks end first, so the failure the responder's stop gives the ask it holds lets no
         // waiting ask go to it.
-        _ = asks.reduce(.cleared)
-        held = [:]
-        answerers = [:]
+        run(asks.reduce(.cleared))
         responder.stop()
         prepared = nil
         lastPicture = nil
@@ -1737,7 +1728,7 @@ final class LiveInk {
             stopSteps()
             letGoOfFocus(because: "escape")
         case .closeAnswer:
-            closeNewestAnswer()
+            closeAnswer(by: .answerClosed)
         case .clearInk:
             clear()
         }
@@ -1753,23 +1744,8 @@ final class LiveInk {
     private func cancelAsk() {
         guard let id = asks.cancellable(sendsWait: sendsWait) else { return }
         Log.write("[live-ink] stopping id=\(id)")
-        let effects = asks.reduce(.cancelled(id, shown: shownIDs))
-        letGoOfNote(of: id)
-        run(effects)
+        run(asks.reduce(.cancelled(id, shown: shownIDs)))
         showMarks()
-    }
-
-    /// Esc with no ask to stop closes the newest answer: its reply, buttons and the agent's marks
-    /// leave, and the person's ink stays.
-    private func closeNewestAnswer() {
-        hideDismissButton()
-        let before = Set(asks.asks.map(\.id))
-        let effects = asks.reduce(.answerClosed)
-        for id in before.subtracting(asks.asks.map(\.id)) {
-            letGoOfTour(of: id, because: "dismissed")
-            hideActions(of: id)
-        }
-        run(effects)
     }
 
     // MARK: Inking
@@ -2068,7 +2044,7 @@ final class LiveInk {
         }
         // A mark that reaches onto a screen still here stays, with its part in the asks.
         let gone = dropped.subtracting(marks.map(\.id))
-        if !gone.isEmpty { _ = asks.reduce(.removed(gone)) }
+        if !gone.isEmpty { run(asks.reduce(.removed(gone))) }
         bringOntoScreens()
         closeEmpty(fade: 0)
         showMarks()
