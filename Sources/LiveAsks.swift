@@ -343,6 +343,10 @@ struct LiveAsks: Equatable {
     }
 
     mutating func reduce(_ event: Event) -> [Effect] {
+        apply(event) + sendNext()
+    }
+
+    private mutating func apply(_ event: Event) -> [Effect] {
         switch event {
         case .drew(let id):
             add(.noteInk, to: [id])
@@ -376,7 +380,6 @@ struct LiveAsks: Equatable {
                 guard current.phase == .looking else { break }
                 if current.toSession { return [.share(about: current.about)] }
                 asks[at].phase = .waiting
-                return sendNext()
             case .replyCame:
                 guard current.phase == .asking else { break }
                 return setAsideEarlierAnswer(of: id) + [.showReply]
@@ -384,7 +387,7 @@ struct LiveAsks: Equatable {
                 guard current.phase == .asking else { break }
                 return clearEarlierAnswer(of: id) + [.drawAnswer]
             case .failed(let reason, let shown):
-                return fail(id, saying: reason, shown: shown) + sendNext()
+                return fail(id, saying: reason, shown: shown)
             case .sentToSession(let ink):
                 // The ink in the card's picture leaves with the note, but not ink another ask is about.
                 let others = otherAsks(than: id).reduce(into: Set<Mark.ID>()) { $0.formUnion($1.about) }
@@ -408,7 +411,6 @@ struct LiveAsks: Equatable {
             asks[at].picked = nil
             asks[at].findings = findings
             own(shown, by: id)
-            return sendNext()
 
         case .drafted(let words, let reply):
             // Only the answer the panel was made for keeps its draft: one hidden after its answer was
@@ -428,17 +430,17 @@ struct LiveAsks: Equatable {
             let ids = answerMarks(of: id).union(ask.about.subtracting(others)).union(picks[id]?.aside ?? [])
             let interrupt: [Effect] = ask.phase == .asking ? [.interrupt] : []
             end(id)
-            return interrupt + (ids.isEmpty ? [] : finish(ids, .dismissed)) + sendNext()
+            return interrupt + (ids.isEmpty ? [] : finish(ids, .dismissed))
         case .cancelled(let id, let shown):
             guard let current = ask(id), current.isUnderWay else { break }
             if current.toSession { withdrawn.insert(id) }
             take(.asked, from: current.fresh)
             let interrupt: [Effect] = current.phase == .asking ? [.interrupt] : []
-            if let restored = restore(id, saying: nil, shown: shown) { return interrupt + [restored] + sendNext() }
+            if let restored = restore(id, saying: nil, shown: shown) { return interrupt + [restored] }
             let gone = answerMarks(of: id).union(picks[id]?.aside ?? [])
             disown(gone)
             end(id)
-            return interrupt + [.removeAnswer(id, gone)] + sendNext()
+            return interrupt + [.removeAnswer(id, gone)]
         case .answerClosed:
             guard let ask = asks.last(where: { !$0.isUnderWay && answerMarks(of: $0.id).contains { !isFinishing($0) } }) else { break }
             let ids = answerMarks(of: ask.id)
