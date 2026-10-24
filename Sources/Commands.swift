@@ -23,7 +23,7 @@ enum CommandError: String, CaseIterable {
     case liveInkOff = "live-ink-off"
     /// `points=` is missing, or is not `x,y` pairs of finite numbers joined by `;`.
     case invalidPoints = "invalid-points"
-    /// `live-ink-ask` found no ink to ask about, or an ask under way. The detail says which.
+    /// `live-ink-ask` found no ink to ask about.
     case liveInkNotAsked = "live-ink-not-asked"
     /// `section=` names no section of the `[state]` report.
     case unknownSection = "unknown-section"

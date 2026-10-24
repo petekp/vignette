@@ -13,11 +13,11 @@ enum LiveEscape {
         case discardNote = "discard-note"
         /// Reply's field closes and keeps what was typed.
         case closeReplyField = "close-reply-field"
-        /// The ask under way is stopped, and the ink can be asked about again.
+        /// The newest ask under way or waiting its turn is stopped, and its ink can be asked about again.
         case cancelAsk = "cancel-ask"
         /// The focus run or the steps still to show are let go.
         case endTour = "end-tour"
-        /// The reply, its buttons and the agent's marks leave. The person's ink stays.
+        /// The newest answer's reply, its buttons and the agent's marks leave. The person's ink stays.
         case closeAnswer = "close-answer"
         /// Every mark left goes, and the conversation ends.
         case clearInk = "clear-ink"
@@ -32,11 +32,13 @@ enum LiveEscape {
         var menuOpen = false
         var noteOpen = false
         var replyFieldOpen = false
-        /// An ask is under way that Esc can stop: any ask to the responder, and an ask to a session
-        /// until its send has been stored, since only a send still in its grace can be withdrawn.
+        /// An ask is under way that Esc can stop: any ask to the responder, waiting its turn or not, and
+        /// an ask to a session until its send has been stored, since only a send still in its grace can
+        /// be withdrawn.
         var askCanBeCancelled = false
         var tourRunning = false
-        /// A reply or an agent's mark shows that is not already leaving.
+        /// A reply or an agent's mark of an answer that has come, or a failure, shows that is not
+        /// already leaving.
         var answerShown = false
         /// Some mark shows that is not already leaving.
         var marksShown = false

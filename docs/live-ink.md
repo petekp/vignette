@@ -83,7 +83,7 @@ The names in brackets are `// MARK:` sections.
 | How the person's ink looks | `LiveInkHand.swift` |
 | How an agent's shapes look | `LiveInkLight.swift` |
 | The note: opening, placing, sending, handing over to the conversation | `LiveInk.swift` (Asking), `LiveNotePopover.swift`, `LiveAnswerLayout.noteHang`, `WindowRemoval.swift` |
-| The ask: its phase, which late callbacks it drops, the answer put back after a failure, and each mark's role, which erasing takes away | `LiveAsks.swift`, `LiveInk.swift` (Asking, Answering) |
+| The asks: each one's phase, their turns at the responder, which late callbacks they drop, the answer put back after a failure, and each mark's role and the answer it belongs to, which erasing takes away | `LiveAsks.swift`, `LiveInk.swift` (Asking, Answering) |
 | A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking), `LiveNoteCards.swift`, `LiveNoteCardWait.swift`, `LiveNoteCardGroups.swift` |
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
 | What an ask sends | `LivePacket.swift` |
@@ -104,7 +104,8 @@ The names in brackets are `// MARK:` sections.
 
 - `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement, result cards and anchoring.
   `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery. It also covers a turn end that answers several notes.
-  `Tests/LiveAsksTests.swift` holds the ask's sequences: late callbacks, erasing, follow-ups, dismiss, finish and clear.
+  `Tests/LiveAsksTests.swift` holds the asks' sequences: asks waiting their turn, answers on the screen together, late
+  callbacks, erasing, follow-ups, dismiss, finish and clear, and random sequences that check the invariants.
 - A script reaches the note without a hand on the keys: `live-ink-chord-down`, then
   `live-ink-stroke` for each stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot
   press ⌃⌥, so this is the only way a VM check opens the note.
@@ -151,18 +152,20 @@ The names in brackets are `// MARK:` sections.
   a pure function of a snapshot of what is up; `Tests/LiveInkTests.swift`):
   1. Discard the open note: listening stops and the ink drawn for it goes. Ink an earlier
      note kept stays. Or close Reply's field, which keeps its draft.
-  2. Stop the ask under way (`LiveInk.cancelAsk`). The sent note and any reply leave, and the ink is
-     as it was before the ask (`LiveAsks.Event.cancelled`): ink that was new when the ask began is
-     new again. A follow-up from a button puts the earlier answer back as it was, with no failure sentence, even
+  2. Stop the newest ask under way or waiting its turn (`LiveInk.cancelAsk`, `LiveAsks.cancellable`),
+     one per press. Its sent note and any reply leave, and its ink is as it was before the ask
+     (`LiveAsks.Event.cancelled`): ink that was new when the ask began is new again. A follow-up from a button puts the earlier answer back as it was, with no failure sentence, even
      once its reply has started to stream. Nothing
-     says the ask failed, since the person stopped it. An ask to the responder interrupts its turn
-     (`LiveResponder.cancel`). An ask to a session is a step only until its send is stored, and only
+     says the ask failed, since the person stopped it. Stopping the ask the responder is answering
+     interrupts its turn (`LiveResponder.cancel`), and the next ask waiting goes; one still waiting was
+     never sent. An ask to a session is a step only until its send is stored, and only
      with a send grace: if the send is stored after all, it is withdrawn with Don't send
      (`LiveNoteCards.unsend`). Once it is stored the ink has left with it, and Don't send on the card
      is the way back.
   3. End the tour: the focus run, and the steps still to show.
-  4. Close the answer: its reply, buttons and the agent's marks leave (`LiveAsks.Event.answerClosed`).
-     The person's ink stays, unlike the ×, which takes the ink it answered too.
+  4. Close the newest answer, one per press: its reply, buttons and the agent's marks leave
+     (`LiveAsks.Event.answerClosed`). A failure's reply counts as an answer. The person's ink stays,
+     unlike the ×, which takes the ink it answered too.
   5. Clear what is left, as `clear()` does, which also ends the conversation.
 
   `LiveInk` holds Esc as a Carbon hotkey on plain Esc (`HotKey`, no permission needed) only while
@@ -256,7 +259,7 @@ The names in brackets are `// MARK:` sections.
   tap would make it the person's, so while the pointer rests on it the light gives way to the
   person's ink. The person's marks stay ink, so the material says who drew a mark as the colour
   does (`docs/live-ink-look-2026-10-07.md`).
-- While an ask waits, the ink and the note it is about carry the thinking light
+- While an ask waits, for the responder or for its turn, the ink and the note it is about carry the thinking light
   (`LiveMarksLayer.think`): a 40 pt band of light runs along each stroke every 1.15 s, and a sheen
   crosses the note a third of a beat later. Every band counts from one start, so marks that began
   waiting at different moments move together. The light fades in and out over 0.2 s. With motion
@@ -403,6 +406,19 @@ The names in brackets are `// MARK:` sections.
     moved away counts as a change there, and so does content the person scrolled.
   - **The log.** `[live-ink] landed changed=` or `[live-ink] nothing changed under the ink` gives
     the outcome.
+- Asks go to the responder one at a time, in the order sent, in the same conversation, so each
+  knows the ones before it (`LiveAsks`, `Effect.send`). Each takes its picture as it is sent, so it
+  shows what the person circled then, and waits with its ink carrying the thinking light until the
+  ask before it has answered, failed or been stopped (`[live-ink] waiting`, then `sending`). `LiveInk`
+  holds what each waiting ask will send (`LiveInk.held`). A note to a session waits for none of them.
+  Every answer stays beside its own ink until its own × or Esc closes it, and a new ask takes none
+  off. The × finishes its answer and the ink only it was about: ink another answer on the screen is
+  about stays. On the ask the responder is answering, the × also stops the responder's turn, so the
+  next ask goes at once and no turn is spent on an answer nobody will see. A new reply, its marks
+  and the next note keep clear of the answers already up, which `LiveInk.scene` adds to the
+  person's notes as things to avoid. Only one answer's focus or steps run at a time: a newer
+  answer's take over. Clearing the ink ends every ask, those waiting too, before the responder is
+  stopped, so the failure the stop gives the ask it holds sends no waiting ask to a new process.
 - An ask is answered by `LiveResponder`: one `claude -p` process in stream-json mode, run with
   `--safe-mode --tools ""`, its own system prompt, and `--json-schema` for the answer
   (`LiveAnswer.schema`, fixed text that lists `say` first, the field that streams in as the reply).
@@ -419,7 +435,7 @@ The names in brackets are `// MARK:` sections.
   process (measured on Claude Code 2.1.302). The turn then ends with a `result` that has `is_error` true
   and `subtype` `error_during_execution`, which is not an answer or a failure. Its deltas and its result
   are dropped, nothing new is sent until the result arrives, and the process stops if it takes more than
-  3 s. A waiting ask is dropped unsent, and the warm-up is never interrupted. In a test launch it runs only the `claude` that
+  3 s. The warm-up is never interrupted. In a test launch it runs only the `claude` that
   `VIGNETTE_CLAUDE` names, since any other runs on the person's account;
   `scripts/e2e/fake_claude.py` stands in for it. In `[live-ink] answered … marks=<n> thrownOut=<n>`,
   `thrownOut` counts the marks the responder gave that point at nothing, such as a box in pixels
@@ -492,7 +508,7 @@ The names in brackets are `// MARK:` sections.
   (`LiveAsks.Effect.restore`, `LiveInk.restoreAnswer`): the set-aside marks show again,
   the buttons come back, typed words wait in Reply again, and the reply's header gives the reason
   where it quoted them (`Mark.notice`), wrapped so all of it shows. A failure after the next answer
-  is drawn is a note beside the ink, as for any ask. Closing the field gives the keys back through
+  is drawn says why in the reply's row, as for any ask. Closing the field gives the keys back through
   `FocusReturn`, as the note does. A popover's window can be key, and macOS makes the reply's key when a panel that
   held Vignette's keys closes, even after Vignette let go; the keys would stay with Vignette and the
   glass turn light, so the reply lets go at once (`ReplyPopover.letGoOfKeys`, `[live-ink] reply let
@@ -514,7 +530,8 @@ The names in brackets are `// MARK:` sections.
   (`LiveWindows.holding`): following it read as the answer shifting around. An action
   may name the marks it acts on (`LiveAnswer.Action`, `{"title", "marks"}`, by index), and pointing
   at its button fades the answer's other findings (`LiveWindows.light`). They are agent `Mark`s on the same surfaces, so a tap
-  erases them (a note's tag counts) and Clear clears them, and the next ask takes them off. Notes on
+  erases them (a note's tag counts) and Clear clears them, and they stay until their answer's × or Esc
+  closes it. Notes on
   the overlay are `NoteLayer`s, a bitmap `Mark.draw` makes on the main thread, not `MarkLayers`,
   which draws a drawing on an image. The reply is the exception: its popover draws it.
 - An answer's `focus` mark pulls the person's eye to its target, as a camera racks focus
@@ -551,15 +568,18 @@ The names in brackets are `// MARK:` sections.
   name (`Mark.notice`, `LiveAsks.Effect.notice`), and wrap there. A reason whose subject is the
   answerer, such as "Claude couldn't answer", goes on from the name in the row instead of repeating
   it. "Claude Code isn't signed in" names something else and follows a dot.
-  An ask with no conversation says it as a note beside the ink in the person's colour without a
-  badge, not an agent mark, and not ink: the next ask is not about it.
+  An ask with no conversation says it in a reply of its own hung from its ink, which is that ask's
+  answer, with its own ×. It is not ink: the next ask is not about it.
 - A session picked in the note's target gets the picture through `ScreenshotRequests.send`, as Send
   sends a drawing, with the words and where the ink is in the line. The client's answer goes to the
   note's card, as a send's does.
 - `live-ink-ask?message=` (debug) asks as Return does, and `&session=<id>` sends to that session.
   `[state] liveInk` adds `new` (ink not yet asked about), `note`, `actions` (each button's words,
-  frame, and whether it is enabled and picked), `replyField` and `replyCancel` (the field's and Cancel's frames while they are up),
-  `responder` and `ask` (phase, whether it sent a picture, the reply's length), `escape` and
+  frame, and whether it is enabled and picked, for the newest answer with buttons), `replyField` and `replyCancel` (that
+  answer's field's and Cancel's frames while they are up),
+  `responder`, `asks` (each ask, oldest first: its id, phase, how many marks it is about, whether
+  it sent a picture, whether it went to a session, why it failed, and the reply's length), `ask`
+  (the newest of them), `queued` (how many asks to the responder wait for an earlier one), `escape` and
   `escapeHeld`, and each mark's
   `id` and `agent`. A script that polls asks for `state?section=liveInk`: the whole report runs to tens of KB, and twice a second it rotated the 5 MB log twice in one take; `app.screenRecording`
   says whether captures are allowed. A test launch with `VIGNETTE_SHARE_LIVE_INK` set lets captures
