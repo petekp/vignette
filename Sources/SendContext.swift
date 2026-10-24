@@ -420,11 +420,12 @@ enum SendContext {
     /// sessions with a live inbox; and herdr's answer, when it was read.
     private static func liveSessions() -> (sessions: [Session], live: Set<String>, herdr: HerdrAnswer?) {
         let claude = ClaudeCodeConnection()
+        let inboxes = claude.liveInboxes()
         var folders: [String: String] = [:]
-        for inbox in claude.liveInboxes() {
+        for inbox in inboxes {
             if let session = inbox.session, folders[session] == nil { folders[session] = inbox.cwd ?? "" }
         }
-        let listed = claude.destinations()
+        let listed = claude.destinations(of: inboxes, withMenuFields: false)
         let herdr = DestinationChoice.readsHerdr(beside: .claude, listed: listed) ? readHerdr() : nil
         let candidates = DestinationChoice.Candidates(destinations: listed, complete: true, fresh: true, herdr: herdr?.focus)
         let sessions = DestinationChoice.choose(candidates, for: .send(cameFrom: nil)).list.map {

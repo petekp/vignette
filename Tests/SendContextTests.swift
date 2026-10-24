@@ -209,7 +209,9 @@ final class SendContextTests: XCTestCase {
                        .noBinary)
         XCTAssertEqual(SendContext.readHerdr(binary: { "/x/herdr" }, run: { _, _, _ in nil }).answer.read, .failed)
         XCTAssertEqual(SendContext.readHerdr(binary: { "/x/herdr" }, run: { _, _, _ in (1, "", false) }).answer.read, .failed)
-        let read = SendContext.readHerdr(binary: { "/x/herdr" }, run: { _, _, _ in (0, String(decoding: answer, as: UTF8.self), false) })
+        let read = SendContext.readHerdr(binary: { "/x/herdr" }, run: { _, arguments, _ in
+            (0, arguments == ["pane", "list"] ? String(decoding: answer, as: UTF8.self) : #"{"result":{"tabs":[]}}"#, false)
+        })
         XCTAssertEqual(read.answer.read, .answered(answer))
         XCTAssertEqual(read.focus?.pane, "p1")
     }

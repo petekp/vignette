@@ -39,7 +39,6 @@ enum SessionMenu {
         /// the path is unknown, or `otherFolders`.
         let key: String
         let rows: [Row]
-        var isOtherFolders: Bool { key == SessionMenu.otherFolders }
     }
 
     /// The five rows the menu shows, grouped, and the project submenus below them: one group per
@@ -104,8 +103,7 @@ enum SessionMenu {
         }
         let shown = Set(top.map(\.id))
         let hasMore = active.contains { !shown.contains($0.id) }
-        var everyone = active
-        if let forced = top.last, !active.contains(where: { $0.id == forced.id }) { everyone.append(forced) }
+        let everyone = including(destination, in: active)
         let filer = Filer(everyone)
         let rows = filer.rows(now: now)
         let topGroups = groups(top, filer, rows)
@@ -116,9 +114,14 @@ enum SessionMenu {
     /// `destination`'s row among `listed`, as the destination control and live ink's target button
     /// show it.
     static func row(of destination: AgentDestination, among listed: [AgentDestination], now: Date = Date()) -> Row {
-        var everyone = ranked(listed, now: now)
-        if !everyone.contains(where: { $0.id == destination.id }) { everyone.append(destination) }
-        return Filer(everyone).rows(now: now)[destination.id] ?? Filer.row(for: destination, titleSuffix: nil, now: now, header: nil)
+        let everyone = including(destination, in: ranked(listed, now: now))
+        return Filer(everyone).rows(now: now)[destination.id]!
+    }
+
+    /// The sessions every row is worded over: the active ones, and `destination` when it is not among them.
+    private static func including(_ destination: AgentDestination?, in active: [AgentDestination]) -> [AgentDestination] {
+        guard let destination, !active.contains(where: { $0.id == destination.id }) else { return active }
+        return active + [destination]
     }
 
     /// What the sent card calls the place: the repository, the path from home for a folder, or the
@@ -157,6 +160,7 @@ enum SessionMenu {
         let sessions: [AgentDestination]
         private let roots: [String]
         private let headers: [String: String]
+        private let filings: [String: (key: String, header: String)]
 
         init(_ sessions: [AgentDestination]) {
             self.sessions = sessions
@@ -176,10 +180,15 @@ enum SessionMenu {
                 }
             }
             self.headers = headers
+            filings = Dictionary(sessions.map { ($0.id, Self.filing(of: $0, roots: rootsFound, headers: headers)) }) { first, _ in first }
         }
 
-        /// The group key and header for a session.
+        /// The group key and header for a session on offer.
         func filing(_ session: AgentDestination) -> (key: String, header: String) {
+            filings[session.id]!
+        }
+
+        private static func filing(of session: AgentDestination, roots: [String], headers: [String: String]) -> (key: String, header: String) {
             guard case .repository(let name, let root, _, _) = session.place else { return (SessionMenu.otherFolders, SessionMenu.otherFolders) }
             if let root { return (root, headers[root] ?? name) }
             // Known by name only: it joins the one checkout of that name, when there is exactly one.
@@ -191,7 +200,7 @@ enum SessionMenu {
         /// Every session's row. Sessions with equal titles in one group get a suffix.
         func rows(now: Date) -> [String: Row] {
             var byGroup: [String: [AgentDestination]] = [:]
-            for session in sessions { byGroup[filing(session).key + "\n" + Self.title(of: session).lowercased(), default: []].append(session) }
+            for session in sessions { byGroup[filing(session).key + "\n" + Self.titleParts(of: session).title.lowercased(), default: []].append(session) }
             var suffixes: [String: String] = [:]
             for members in byGroup.values where members.count > 1 {
                 for (id, suffix) in Self.suffixes(for: members) { suffixes[id] = suffix }
@@ -228,9 +237,11 @@ enum SessionMenu {
 
         // MARK: Words
 
-        /// The herdr tab's label without a leading "<repository>:", else the session's name.
-        static func title(of session: AgentDestination) -> String {
-            shortTab(of: session) ?? session.name
+        /// The herdr tab's label without a leading "<repository>:" and the title it makes, which is
+        /// that label, else the session's name.
+        static func titleParts(of session: AgentDestination) -> (tab: String?, title: String) {
+            let tab = shortTab(of: session)
+            return (tab, tab ?? session.name)
         }
 
         static func shortTab(of session: AgentDestination) -> String? {
@@ -242,9 +253,8 @@ enum SessionMenu {
             return label.isEmpty ? nil : label
         }
 
-        static func row(for session: AgentDestination, titleSuffix: String?, now: Date, header: String?) -> Row {
-            let tab = shortTab(of: session)
-            let baseTitle = tab ?? session.name
+        static func row(for session: AgentDestination, titleSuffix: String?, now: Date, header: String) -> Row {
+            let (tab, baseTitle) = titleParts(of: session)
             let title = titleSuffix.map { "\(baseTitle) (\($0))" } ?? baseTitle
             let named = session.hasOwnName && session.name.lowercased() != baseTitle.lowercased() ? session.name : nil
             let purpose = session.goal ?? named
@@ -258,7 +268,7 @@ enum SessionMenu {
             }
             let line = distinct(parts).joined(separator: " · ")
             let badge = session.needsYou ? SessionMenu.needsYou : (session.turn == .busy ? SessionMenu.working : nil)
-            let tooltip = [title, line, header ?? SessionMenu.sentLabel(of: session)].filter { !$0.isEmpty }.joined(separator: "\n")
+            let tooltip = [title, line, header].filter { !$0.isEmpty }.joined(separator: "\n")
             return Row(destination: session, title: title, subtitle: line, badge: badge, tooltip: tooltip)
         }
 

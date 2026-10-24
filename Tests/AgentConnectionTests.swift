@@ -797,11 +797,18 @@ final class AgentConnectionTests: XCTestCase {
     }
 
     /// A test launch reads the scratch home's store only.
-    func testATestLaunchNeverReadsThePersonsStore() {
-        let person = "/Users/p"
-        XCTAssertNil(InboxModStore.folder(home: person, environment: ["VIGNETTE_SETTINGS": "/tmp/s.json"], personHome: person))
-        XCTAssertEqual(InboxModStore.folder(home: "/tmp/scratch", environment: ["VIGNETTE_SETTINGS": "/tmp/s.json", "CLAUDE_CONFIG_DIR": person + "/.claude"],
-                                            personHome: person)?.path, "/tmp/scratch/.claude/plugins/store")
+    func testATestLaunchNeverReadsThePersonsStore() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let person = base.appendingPathComponent("person").path
+        let scratch = base.appendingPathComponent("scratch").path
+        for home in [person, scratch] {
+            try FileManager.default.createDirectory(atPath: home + "/.claude", withIntermediateDirectories: true)
+        }
+        let test = ["VIGNETTE_SETTINGS": "/tmp/s.json"]
+        XCTAssertNil(InboxModStore.folder(home: person, environment: test, personHome: person))
+        XCTAssertNil(InboxModStore.folder(home: scratch, environment: test.merging(["CLAUDE_CONFIG_DIR": person + "/.claude"]) { $1 }, personHome: person))
+        XCTAssertEqual(InboxModStore.folder(home: scratch, environment: test, personHome: person)?.path, scratch + "/.claude/plugins/store")
         XCTAssertEqual(InboxModStore.folder(home: person, environment: [:], personHome: person)?.path, person + "/.claude/plugins/store")
     }
 

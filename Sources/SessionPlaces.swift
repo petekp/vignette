@@ -86,8 +86,6 @@ enum SessionPlaces {
     // MARK: Reading .git
 
     private struct Checkout {
-        /// The folder that holds the `.git` the session is under.
-        let folder: URL
         /// The git folder with this checkout's own `HEAD`.
         let gitDirectory: URL
         /// The main repository's git folder, which holds the refs.
@@ -102,7 +100,7 @@ enum SessionPlaces {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: dot.path, isDirectory: &isDirectory) else { return nil }
         if isDirectory.boolValue {
-            return Checkout(folder: folder, gitDirectory: dot, commonDirectory: dot, mainFolder: folder, worktree: nil)
+            return Checkout(gitDirectory: dot, commonDirectory: dot, mainFolder: folder, worktree: nil)
         }
         // A `.git` file: `gitdir: <path>`, relative to its folder.
         guard let text = try? String(contentsOf: dot, encoding: .utf8),
@@ -111,16 +109,16 @@ enum SessionPlaces {
         guard let common = (try? String(contentsOf: gitDirectory.appendingPathComponent("commondir"), encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines), !common.isEmpty else {
             // A submodule: its own repository, whose git folder lives elsewhere.
-            return Checkout(folder: folder, gitDirectory: gitDirectory, commonDirectory: gitDirectory, mainFolder: folder, worktree: nil)
+            return Checkout(gitDirectory: gitDirectory, commonDirectory: gitDirectory, mainFolder: folder, worktree: nil)
         }
         let commonDirectory = resolve(common, from: gitDirectory)
         let mainFolder = commonDirectory.lastPathComponent == ".git"
             ? commonDirectory.deletingLastPathComponent()
             : commonDirectory.deletingLastPathComponent().appendingPathComponent(
                 commonDirectory.lastPathComponent.hasSuffix(".git") ? String(commonDirectory.lastPathComponent.dropLast(4)) : commonDirectory.lastPathComponent)
-        let codexRoot = home + "/.codex/worktrees/"
+        let codexRoot = AgentPlugin.root(of: .codex, home: URL(fileURLWithPath: home)).path + "/worktrees/"
         let worktree = folder.path.hasPrefix(codexRoot) ? codexWorktree : folder.lastPathComponent
-        return Checkout(folder: folder, gitDirectory: gitDirectory, commonDirectory: commonDirectory,
+        return Checkout(gitDirectory: gitDirectory, commonDirectory: commonDirectory,
                         mainFolder: URL(fileURLWithPath: canonical(mainFolder.path) ?? mainFolder.path), worktree: worktree)
     }
 

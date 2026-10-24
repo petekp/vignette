@@ -81,13 +81,12 @@ final class Microphone: @unchecked Sendable {
     /// input node is an audio unit, and `kAudioOutputUnitProperty_CurrentDevice` is how a unit takes
     /// a device other than the system default. Answers whether the input now differs from the default;
     /// any failure leaves the default input, and says why.
-    private func pointInput(at system: (defaultInput: AudioDeviceID, devices: [MicrophoneChoice.Device])?) -> Bool {
-        guard let system else {
+    private func pointInput(at choice: MicrophoneChoice.Choice?) -> Bool {
+        guard let choice else {
             Log.write("[speech] microphone default: devices unreadable")
             return false
         }
-        let choice = MicrophoneChoice.choose(defaultInput: system.defaultInput, among: system.devices)
-        guard choice.device != system.defaultInput else {
+        guard choice.replacesDefault else {
             Log.write("[speech] microphone rule=\(choice.rule.rawValue) device=default")
             return false
         }

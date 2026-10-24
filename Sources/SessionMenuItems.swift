@@ -4,12 +4,24 @@ import AppKit
 /// build their items here and add only their own action and what the action needs.
 extension SessionMenu {
 
-    /// One row as an item: its title, a second line, and a badge. Before macOS 14.4 an item has no
-    /// subtitle, so the tooltip, which holds the second line, is all there is.
+    /// The agent's logo at a menu icon's size, or the fallback symbol. A menu draws an item's image
+    /// at the image's own size.
     @MainActor
-    static func item(for row: Row, selected: Bool, image: NSImage?) -> NSMenuItem {
+    static func logo(for client: AgentClient) -> NSImage? {
+        guard let logo = Agent.logo(for: client.rawValue) else {
+            return NSImage(systemSymbolName: Agent.fallbackSymbol, accessibilityDescription: client.label)
+        }
+        let small = logo.copy() as? NSImage ?? logo
+        small.size = NSSize(width: 16, height: 16)
+        return small
+    }
+
+    /// One row as an item: the agent's logo, its title, a second line, and a badge. Before macOS 14.4
+    /// an item has no subtitle, so the tooltip, which holds the second line, is all there is.
+    @MainActor
+    static func item(for row: Row, selected: Bool) -> NSMenuItem {
         let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
-        item.image = image
+        item.image = logo(for: row.destination.client)
         item.state = selected ? .on : .off
         item.toolTip = row.tooltip
         if #available(macOS 14.4, *), !row.subtitle.isEmpty { item.subtitle = row.subtitle }
@@ -132,5 +144,31 @@ private final class FieldHolder: NSView {
             guard let field = self?.field else { return }
             field.window?.makeFirstResponder(field)
         }
+    }
+}
+
+/// The picks made in one opening of a session menu, which `SendContext.menu` logs when it closes.
+@MainActor
+final class MenuPickLog {
+    private let surface: String
+    private var picks = 0
+    private var lastByKeyboard: Bool?
+
+    init(surface: String) { self.surface = surface }
+
+    /// A row was picked, by hand or by the keyboard.
+    func record() {
+        picks += 1
+        lastByKeyboard = NSApp.currentEvent?.type == .keyDown
+    }
+
+    /// Runs `popUp`, which returns when the menu closes, and logs what was picked in it, with how
+    /// long after `openedAt` the last pick came.
+    func run(openedAt: CFTimeInterval, popUp: () -> Void) {
+        picks = 0
+        lastByKeyboard = nil
+        popUp()
+        SendContext.menu(surface: surface, picks: picks, msSinceOpen: picks > 0 ? Int((CACurrentMediaTime() - openedAt) * 1000) : nil,
+                         byKeyboard: lastByKeyboard)
     }
 }

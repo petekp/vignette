@@ -31,12 +31,13 @@ final class SessionListing {
         let clients = Array(connections.keys)
         guard !clients.isEmpty else { return completion(DestinationChoice.Candidates(destinations: [], complete: true, fresh: true)) }
         let answers = Answers()
+        let history = sends()
         func deliver() {
-            let history = sends()
             let found = answers.lists.values.flatMap { $0 }.map { destination -> AgentDestination in
-                var sent = destination
-                sent.lastSent = history[destination.id]
-                return sent
+                var stamped = destination
+                stamped.lastSent = history[destination.id]
+                stamped.hostLabel = answers.herdr?.label(ofSession: destination.id)
+                return stamped
             }.sorted(by: DestinationChoice.newestFirst)
             completion(DestinationChoice.Candidates(destinations: found, complete: answers.lists.count == clients.count,
                                                     fresh: answers.fresh.count == clients.count, herdr: answers.herdr))

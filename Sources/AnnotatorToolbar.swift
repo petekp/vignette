@@ -11,7 +11,7 @@ final class AnnotatorToolbar {
         @Published var shown = false     // drives the entrance and exit
         /// The agent sessions Send can go to, the one used last first, as far as the listing has
         /// answered for the image that is open.
-        @Published private(set) var destinations: [AgentDestination] = []
+        @Published private(set) var destinations: [AgentDestination] = [] { didSet { refreshTargetRow() } }
         /// Every client has answered. Until then a session missing from the list may only be late.
         @Published private(set) var listed = false
         /// The last list every client answered: this image's, or while the bar stays up for a swap,
@@ -22,7 +22,19 @@ final class AnnotatorToolbar {
         /// that said which session it was. The bar is Reply alone, so the target is never guessed at.
         @Published private(set) var replyTo: AgentDestination?
         /// Where Send goes: the default until someone picks another in the menu.
-        @Published private(set) var target: AgentDestination?
+        @Published private(set) var target: AgentDestination? { didSet { refreshTargetRow() } }
+        private var cachedTargetRow: SessionMenu.Row?
+
+        /// The target's row among the listed sessions, worded once when either changes: ranking and
+        /// wording every row to read one is too much for a view body that runs on every keystroke.
+        func targetRow(for target: AgentDestination) -> SessionMenu.Row {
+            if let cached = cachedTargetRow, cached.destination.id == target.id { return cached }
+            return SessionMenu.row(of: target, among: destinations)
+        }
+
+        private func refreshTargetRow() {
+            cachedTargetRow = target.map { SessionMenu.row(of: $0, among: destinations) }
+        }
         /// The target was picked in the menu, so no later answer changes it.
         private var picked = false
         /// The target is the image before's, kept while the bar stays up so Send does not leave it
@@ -118,11 +130,11 @@ final class AnnotatorToolbar {
             ToolbarOffer(replyTo: replyTo, destinations: whole ?? destinations, listed: whole != nil, target: target)
         }
 
-        /// A new image: nothing listed yet, and nothing picked. `carryingTarget`, when the bar is
-        /// on screen for the image before, keeps that image's list and target until this one's settle.
         /// When the bar last began on an image, for `SendContext.menu`.
         private(set) var openedAt = CACurrentMediaTime()
 
+        /// A new image: nothing listed yet, and nothing picked. `carryingTarget`, when the bar is
+        /// on screen for the image before, keeps that image's list and target until this one's settle.
         func begin(replyTo: AgentDestination?, carryingTarget: Bool) {
             openedAt = CACurrentMediaTime()
             self.replyTo = replyTo
@@ -388,18 +400,16 @@ final class AnnotatorToolbar {
         let menu = NSMenu()
         menu.autoenablesItems = false
         let search = SessionMenu.add(SessionMenu.menu(model.destinations, destination: target), to: menu) { row in
-            let item = SessionMenu.item(for: row, selected: row.id == target.id, image: AgentLogo.menuImage(for: row.destination.client))
+            let item = SessionMenu.item(for: row, selected: row.id == target.id)
             item.target = self.targetMenuActions
             item.action = #selector(TargetMenuActions.pick(_:))
             item.representedObject = row.destination
             return item
         }
         let below = hosting.isFlipped ? frame.maxY + 4 : hosting.bounds.height - frame.maxY - 4
-        targetMenuActions.resetCount()
-        withExtendedLifetime(search) { menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting) }
-        let picks = targetMenuActions.picks
-        SendContext.menu(surface: "bar", picks: picks, msSinceOpen: picks > 0 ? Int((CACurrentMediaTime() - model.openedAt) * 1000) : nil,
-                         byKeyboard: targetMenuActions.lastByKeyboard)
+        targetMenuActions.picks.run(openedAt: model.openedAt) {
+            withExtendedLifetime(search) { _ = menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting) }
+        }
     }
 
     /// Centers the toolbar under `frame`, `gap` points below it. A bar that is already up — one
@@ -1067,7 +1077,7 @@ private struct ToolbarView: View {
         // target changes and the controls beside it move with it. The old name leaves and the new
         // one comes in the place between, as a control does (`slot`). A long name is cut in the
         // middle, where a worktree's suffix survives; the tooltip has it whole.
-        let row = SessionMenu.row(of: target, among: model.destinations)
+        let row = model.targetRow(for: target)
         let nameWidth = min(ButtonLabel.width(row.title, size: 13), Self.targetNameMax)
         return Button(action: onTargetMenu) {
             HStack(spacing: 6) {
@@ -1321,13 +1331,9 @@ private struct GrowingField: Layout {
 @MainActor
 private final class TargetMenuActions: NSObject {
     var onPick: ((AgentDestination) -> Void)?
-    /// Picks since `resetCount`, and whether the last came from the keyboard, for `SendContext.menu`.
-    var picks = 0
-    var lastByKeyboard: Bool?
-    func resetCount() { picks = 0; lastByKeyboard = nil }
+    let picks = MenuPickLog(surface: "bar")
     @objc func pick(_ item: NSMenuItem) {
-        picks += 1
-        lastByKeyboard = NSApp.currentEvent?.type == .keyDown
+        picks.record()
         if let destination = item.representedObject as? AgentDestination { onPick?(destination) }
     }
 }
@@ -1345,18 +1351,5 @@ private struct AgentLogo: View {
         } else {
             Image(systemName: Agent.fallbackSymbol).resizable().aspectRatio(contentMode: .fit)
         }
-    }
-
-    /// The agent's logo at a menu icon's size, or the fallback symbol. A menu draws an item's image at
-    /// the image's own size.
-    static func menuImage(for client: AgentClient) -> NSImage? {
-        Agent.logo(for: client.rawValue).map(menuSized)
-            ?? NSImage(systemSymbolName: Agent.fallbackSymbol, accessibilityDescription: client.label)
-    }
-
-    private static func menuSized(_ logo: NSImage) -> NSImage {
-        let small = logo.copy() as? NSImage ?? logo
-        small.size = NSSize(width: 16, height: 16)
-        return small
     }
 }

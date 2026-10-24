@@ -59,10 +59,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private var listening = false
     private var watching: [NSObjectProtocol] = []
 
-    /// For `SendContext.menu`: when the note opened, and the menu picks since the menu last opened.
+    /// For `SendContext.menu`: when the note opened, and the menu's picks.
     private var openedAt: CFTimeInterval
-    private var menuPicks = 0
-    private var lastPickByKeyboard: Bool?
+    private let menuPicks = MenuPickLog(surface: "note")
 
     static let askPlaceholder = "Ask about this"
     static let sendPlaceholder = "Send to session"
@@ -197,7 +196,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         guard let window = content.window else { return }
         let menu = NSMenu()
         let responder = NSMenuItem(title: "Claude, on the screen", action: #selector(pickTarget(_:)), keyEquivalent: "")
-        responder.image = Agent.logo(for: "claude").map(Self.menuSized)
+        responder.image = SessionMenu.logo(for: .claude)
         responder.state = target == .responder ? .on : .off
         responder.target = self
         menu.addItem(responder)
@@ -216,12 +215,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
                             y: max(visible.minY + Self.menuGap, button.minY) + menu.size.height)
         }
         menuOpen = true
-        menuPicks = 0
-        lastPickByKeyboard = nil
-        withExtendedLifetime(search) { menu.popUp(positioning: nil, at: point, in: nil) }
+        menuPicks.run(openedAt: openedAt) {
+            withExtendedLifetime(search) { _ = menu.popUp(positioning: nil, at: point, in: nil) }
+        }
         menuOpen = false
-        SendContext.menu(surface: "note", picks: menuPicks, msSinceOpen: menuPicks > 0 ? Int((CACurrentMediaTime() - openedAt) * 1000) : nil,
-                         byKeyboard: lastPickByKeyboard)
         guard !closing else { return }
         window.makeKey()
         window.makeFirstResponder(content.field)
@@ -230,8 +227,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     private func sessionItem(_ row: SessionMenu.Row) -> NSMenuItem {
-        let item = SessionMenu.item(for: row, selected: target.session?.id == row.id,
-                                    image: Agent.logo(for: row.destination.client.rawValue).map(Self.menuSized))
+        let item = SessionMenu.item(for: row, selected: target.session?.id == row.id)
         item.action = #selector(pickTarget(_:))
         item.target = self
         item.representedObject = row.destination
@@ -255,8 +251,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func pickTarget(_ item: NSMenuItem) {
-        menuPicks += 1
-        lastPickByKeyboard = NSApp.currentEvent?.type == .keyDown
+        menuPicks.record()
         // The destination travels with the item, so a session that ended while the menu was open is
         // still the target and the send says it ended, rather than falling back to the responder.
         if let picked = item.representedObject as? AgentDestination {
@@ -276,12 +271,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         self.target = target
         showTarget()
         refit()
-    }
-
-    private static func menuSized(_ image: NSImage) -> NSImage {
-        let copy = image.copy() as! NSImage
-        copy.size = NSSize(width: 16, height: 16)
-        return copy
     }
 
     // MARK: Keys

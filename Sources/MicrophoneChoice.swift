@@ -28,6 +28,8 @@ enum MicrophoneChoice {
     struct Choice: Equatable {
         let device: AudioDeviceID
         let rule: Rule
+        /// Only the built-in rule picks a device other than the default input.
+        var replacesDefault: Bool { rule == .builtIn }
     }
 
     static func choose(defaultInput: AudioDeviceID, among devices: [Device]) -> Choice {
@@ -41,14 +43,14 @@ enum MicrophoneChoice {
         return Choice(device: defaultInput, rule: .bluetoothOnly)
     }
 
-    /// The default input and what the rule needs of every device, read from CoreAudio. Nil when the
-    /// system has no default input, or the devices cannot be listed.
-    static func current() -> (defaultInput: AudioDeviceID, devices: [Device])? {
+    /// What the rule picks for the devices now, read from CoreAudio. Nil when the system has no
+    /// default input, or the devices cannot be listed.
+    static func current() -> Choice? {
         guard let defaultInput: AudioDeviceID = read(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDefaultInputDevice),
               defaultInput != kAudioObjectUnknown,
               let ids: [AudioDeviceID] = readArray(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDevices)
         else { return nil }
-        return (defaultInput, ids.map(describe))
+        return choose(defaultInput: defaultInput, among: ids.map(describe))
     }
 
     static func describe(_ id: AudioDeviceID) -> Device {

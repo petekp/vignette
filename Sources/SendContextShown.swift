@@ -56,14 +56,15 @@ extension SendContext {
         AgentTools.forSessions("VIGNETTE_HERDR") { HerdrFocus.binary() }
     }
 
-    /// `HerdrFocus.read`, keeping herdr's raw answer for the `shown` rule, so herdr runs once per record.
+    /// `HerdrFocus.read` without the tab labels, which only the menus use, keeping herdr's raw pane
+    /// list for the `shown` rule, so herdr runs once per record.
     static func readHerdr(binary: () -> String? = { SendContext.herdrBinary() },
                           run: (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
                               Subprocess.run($0, $1, timeout: $2)
                           }) -> (focus: HerdrFocus?, answer: HerdrAnswer) {
         var ran = false
         var answer: Data?
-        let focus = HerdrFocus.read(binary: binary, run: { herdr, arguments, timeout in
+        let focus = HerdrFocus.read(withTabLabels: false, binary: binary, run: { herdr, arguments, timeout in
             ran = true
             let result = run(herdr, arguments, timeout)
             if let result, result.status == 0 { answer = Data(result.output.utf8) }

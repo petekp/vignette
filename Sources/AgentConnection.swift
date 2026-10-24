@@ -275,6 +275,9 @@ struct ClaudeCodeConnection: AgentConnection {
     /// Where Claude Code keeps its transcripts, one folder per project, for a session whose inbox
     /// does not name its transcript yet.
     var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
+    /// What the inbox mod knows about each session, by session id. Injected so a test never reads the
+    /// person's own store.
+    var modStore: @Sendable () -> [String: InboxModStore.Entry] = { InboxModStore.read() }
     var isRunning: @Sendable (Int32) -> Bool = { kill($0, 0) == 0 }
     var now: @Sendable () -> Date = { Date() }
 
@@ -367,17 +370,28 @@ struct ClaudeCodeConnection: AgentConnection {
         }
     }
 
-    func destinations() -> [AgentDestination] {
+    func destinations() -> [AgentDestination] { destinations(of: liveInboxes(), withMenuFields: true) }
+
+    /// The sessions of `inboxes`. `withMenuFields` adds what only the menus show: the place and
+    /// branch, the turn, and the inbox mod's goal and open question. Without it, a record that only
+    /// needs the name, the folder and when the session was last used reads no `.git` and no store.
+    func destinations(of inboxes: [Inbox], withMenuFields: Bool) -> [AgentDestination] {
         let folders = (try? FileManager.default.contentsOfDirectory(at: transcripts, includingPropertiesForKeys: nil)) ?? []
-        let mod = InboxModStore.read()
-        let listed = liveInboxes().compactMap { inbox -> AgentDestination? in
+        let mod = withMenuFields ? modStore() : [:]
+        var places: [String: SessionPlaces.Found] = [:]
+        return inboxes.compactMap { inbox -> AgentDestination? in
             guard let session = inbox.session else { return nil }
             let file = inbox.transcript.map { URL(fileURLWithPath: $0) }.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
                 ?? Self.transcriptFile(session: session, folders: folders)
             let transcript = file.flatMap { Self.tail(of: $0) }.map(Self.transcript(tail:)) ?? Transcript()
-            return Self.destination(session: session, cwd: inbox.cwd, transcript: transcript, inbox: inbox, mod: mod[session])
+            var found = SessionPlaces.Found(place: .none, branch: nil)
+            if withMenuFields {
+                let key = inbox.cwd ?? ""
+                found = places[key] ?? SessionPlaces.resolve(folder: inbox.cwd)
+                places[key] = found
+            }
+            return Self.destination(session: session, cwd: inbox.cwd, transcript: transcript, inbox: inbox, mod: mod[session], found: found)
         }
-        return listed
     }
 
     /// One session as a destination. The transcript names it and says when it was last used. A
@@ -388,10 +402,11 @@ struct ClaudeCodeConnection: AgentConnection {
     /// transcript has no message yet, and its turn. The place comes from the inbox's folder, never
     /// the transcript's `cwd`.
     static func destination(session: String, cwd: String?, transcript: Transcript, inbox: Inbox? = nil,
-                            mod: InboxModStore.Entry? = nil, home: String = NSHomeDirectory()) -> AgentDestination {
+                            mod: InboxModStore.Entry? = nil, found: SessionPlaces.Found? = nil,
+                            home: String = NSHomeDirectory()) -> AgentDestination {
         let folder = cwd ?? transcript.cwd ?? ""
         let project = (folder as NSString).lastPathComponent
-        let found = SessionPlaces.resolve(folder: cwd, home: home)
+        let found = found ?? SessionPlaces.resolve(folder: cwd, home: home)
         return AgentDestination(
             id: session,
             name: transcript.title ?? (project.isEmpty ? "New session" : "New session in \(project)"),
@@ -482,24 +497,23 @@ struct ClaudeCodeConnection: AgentConnection {
     /// can hold what is wanted are parsed.
     static func transcript(tail: Data) -> Transcript {
         var found = Transcript()
-        let aiTitleMark = Data(#""type":"ai-title""#.utf8)
-        let customTitleMark = Data(#""type":"custom-title""#.utf8)
+        let titles: [(mark: Data, key: String, field: WritableKeyPath<Transcript, String?>)] = [
+            (Data(#""type":"ai-title""#.utf8), "aiTitle", \.aiTitle),
+            (Data(#""type":"custom-title""#.utf8), "customTitle", \.customTitle),
+        ]
         let messageMarks = [Data(#""type":"user""#.utf8), Data(#""type":"assistant""#.utf8)]
         let timeMark = Data(#""timestamp":""#.utf8)
         for line in tail.split(separator: UInt8(ascii: "\n")).reversed() {
             if found.customTitle != nil && found.aiTitle != nil && found.lastUsed != nil { break }
-            if found.aiTitle == nil, line.range(of: aiTitleMark) != nil,
-               let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-               let title = entry["aiTitle"] as? String, !title.isEmpty {
-                found.aiTitle = title
-                continue
+            var titled = false
+            for title in titles where found[keyPath: title.field] == nil && line.range(of: title.mark) != nil {
+                guard let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                      let text = entry[title.key] as? String, !text.isEmpty else { continue }
+                found[keyPath: title.field] = text
+                titled = true
+                break
             }
-            if found.customTitle == nil, line.range(of: customTitleMark) != nil,
-               let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-               let title = entry["customTitle"] as? String, !title.isEmpty {
-                found.customTitle = title
-                continue
-            }
+            if titled { continue }
             if found.lastUsed == nil, line.range(of: timeMark) != nil,
                messageMarks.contains(where: { line.range(of: $0) != nil }),
                let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any],

@@ -27,15 +27,25 @@ struct HerdrFocus: Equatable, Sendable {
         paths.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    /// Runs `herdr pane list`. Nil without herdr (a test launch has none unless VIGNETTE_HERDR names
-    /// one), or when it fails or exits non-zero. It blocks, so it never runs on the main thread.
-    static func read(binary: () -> String? = { AgentTools.forSessions("VIGNETTE_HERDR") { HerdrFocus.binary() } },
+    /// Runs `herdr pane list`, and with `withTabLabels` `herdr tab list` at the same time. Nil without
+    /// herdr (a test launch has none unless VIGNETTE_HERDR names one), or when the pane list fails or
+    /// exits non-zero. It blocks, so it never runs on the main thread.
+    static func read(withTabLabels: Bool = true,
+                     binary: () -> String? = { AgentTools.forSessions("VIGNETTE_HERDR") { HerdrFocus.binary() } },
                      run: (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
                          Subprocess.run($0, $1, timeout: $2)
                      }) -> HerdrFocus? {
-        guard let herdr = binary(), let panes = run(herdr, ["pane", "list"], timeout), panes.status == 0 else { return nil }
+        guard let herdr = binary() else { return nil }
+        let calls = [["pane", "list"]] + (withTabLabels ? [["tab", "list"]] : [])
+        var answers = [(status: Int32, output: String, timedOut: Bool)?](repeating: nil, count: calls.count)
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: calls.count) { index in
+            let answer = run(herdr, calls[index], timeout)
+            lock.lock(); answers[index] = answer; lock.unlock()
+        }
+        guard let panes = answers[0], panes.status == 0 else { return nil }
         var focus = HerdrFocus(paneList: Data(panes.output.utf8))
-        if focus != nil, let tabs = run(herdr, ["tab", "list"], timeout), tabs.status == 0 {
+        if focus != nil, withTabLabels, let tabs = answers[1], tabs.status == 0 {
             focus?.tabLabels = tabLabels(in: Data(tabs.output.utf8))
         }
         return focus

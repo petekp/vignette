@@ -20,12 +20,43 @@ enum InboxModStore {
             complain("no store file under \(folder?.path ?? "a test launch's home")")
             return [:]
         }
+        let version = Version(file)
+        if let cached = cached(version) { return cached }
         guard let data = try? Data(contentsOf: file),
               let store = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             complain("cannot read \(file.lastPathComponent)")
             return [:]
         }
-        return entries(in: store)
+        let found = entries(in: store)
+        remember(found, as: version)
+        return found
+    }
+
+    /// A store file as it was last read: the store is 1.2 MB and every editor opening asks for it,
+    /// so it is parsed again only when its path, modification date or size changes.
+    private struct Version: Equatable {
+        let path: String
+        let modified: Date
+        let size: Int
+
+        init(_ file: URL) {
+            let values = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            path = file.path
+            modified = values?.contentModificationDate ?? .distantPast
+            size = values?.fileSize ?? -1
+        }
+    }
+
+    private nonisolated(unsafe) static var parsed: (version: Version, entries: [String: Entry])?
+
+    private static func cached(_ version: Version) -> [String: Entry]? {
+        lock.lock(); defer { lock.unlock() }
+        return parsed?.version == version ? parsed?.entries : nil
+    }
+
+    private static func remember(_ entries: [String: Entry], as version: Version) {
+        lock.lock(); defer { lock.unlock() }
+        parsed = (version, entries)
     }
 
     /// The entries in a parsed store: its `s:<session id>` keys.
@@ -52,15 +83,12 @@ enum InboxModStore {
         (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
     }
 
-    /// Where the store is for this launch. A test launch (`VIGNETTE_SETTINGS`) reads only a scratch
-    /// home (`CFFIXED_USER_HOME`), never the person's own.
+    /// Where the store is for this launch: under Claude Code's folder as the rest of the app finds
+    /// it, so a test launch (`VIGNETTE_SETTINGS`) never reads the person's own.
     static func folder(home: String = NSHomeDirectory(), environment: [String: String] = ProcessInfo.processInfo.environment,
                        personHome: String = AgentPlugin.personHome.path) -> URL? {
-        let isTest = environment["VIGNETTE_SETTINGS"].map { !$0.isEmpty } ?? false
-        if isTest && home == personHome { return nil }
-        let claude = isTest ? URL(fileURLWithPath: home).appendingPathComponent(".claude")
-            : AgentPlugin.root(of: .claude, home: URL(fileURLWithPath: home), environment: environment)
-        return claude.appendingPathComponent("plugins/store")
+        SendContext.claudeRoot(home: URL(fileURLWithPath: home), environment: environment, personHome: URL(fileURLWithPath: personHome))?
+            .appendingPathComponent("plugins/store")
     }
 
     /// Reads the store for this launch.
