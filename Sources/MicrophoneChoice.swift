@@ -72,24 +72,36 @@ enum MicrophoneChoice {
               defaultInput != kAudioObjectUnknown,
               let ids: [AudioDeviceID] = readArray(system, kAudioHardwarePropertyDevices)
         else { return nil }
-        let processes: [AudioObjectID] = readArray(system, kAudioHardwarePropertyProcessObjectList) ?? []
-        let recorded = recordedByOtherApps(processes.compactMap(process), own: getpid())
+        // The rule asks what other apps record from only about a Bluetooth default input.
+        var recorded: Set<AudioDeviceID> = []
+        if isBluetooth(transport(of: defaultInput)) {
+            let processes: [AudioObjectID] = readArray(system, kAudioHardwarePropertyProcessObjectList) ?? []
+            recorded = recordedByOtherApps(processes.compactMap(process), own: getpid())
+        }
         return choose(defaultInput: defaultInput, among: ids.map { describe($0, recorded: recorded) })
     }
 
     static func describe(_ id: AudioDeviceID, recorded: Set<AudioDeviceID>) -> Device {
-        let transport: UInt32 = read(id, kAudioDevicePropertyTransportType) ?? 0
+        let transport = transport(of: id)
         let streams: [AudioStreamID]? = readArray(id, kAudioDevicePropertyStreams, scope: kAudioObjectPropertyScopeInput)
-        return Device(id: id, hasInput: !(streams ?? []).isEmpty,
-                      isBluetooth: transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE,
+        return Device(id: id, hasInput: !(streams ?? []).isEmpty, isBluetooth: isBluetooth(transport),
                       recordingForAnotherApp: recorded.contains(id),
                       isBuiltIn: transport == kAudioDeviceTransportTypeBuiltIn)
     }
 
+    private static func transport(of id: AudioDeviceID) -> UInt32 { read(id, kAudioDevicePropertyTransportType) ?? 0 }
+
+    private static func isBluetooth(_ transport: UInt32) -> Bool {
+        transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
+    }
+
+    /// An app's process object. Its devices are read only while it is running input, since the rule
+    /// looks at no others.
     static func process(_ id: AudioObjectID) -> AudioProcess? {
         guard let pid: pid_t = read(id, kAudioProcessPropertyPID) else { return nil }
         let running: UInt32 = read(id, kAudioProcessPropertyIsRunningInput) ?? 0
-        return AudioProcess(pid: pid, isRunningInput: running != 0,
+        guard running != 0 else { return AudioProcess(pid: pid, isRunningInput: false, inputDevices: [], outputDevices: []) }
+        return AudioProcess(pid: pid, isRunningInput: true,
                             inputDevices: readArray(id, kAudioProcessPropertyDevices, scope: kAudioObjectPropertyScopeInput) ?? [],
                             outputDevices: readArray(id, kAudioProcessPropertyDevices, scope: kAudioObjectPropertyScopeOutput) ?? [])
     }

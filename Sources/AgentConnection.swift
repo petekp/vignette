@@ -341,10 +341,15 @@ struct ClaudeCodeConnection: AgentConnection {
     /// a folder that has gone or holds another session reads as no turn. It reads files, so it
     /// never runs on the main thread.
     func turn(of destination: AgentDestination) -> SessionTurn? {
+        listedInbox(of: destination).flatMap(Self.turn(of:))
+    }
+
+    /// The inbox `destination` was listed from, while it is live and still holds that session.
+    private func listedInbox(of destination: AgentDestination) -> Inbox? {
         guard case .claudeSession(let session) = destination.address, let pid = destination.inbox,
               let inbox = Self.inbox(at: inboxes.appendingPathComponent(String(pid))),
               inbox.session == session, isLive(inbox) else { return nil }
-        return Self.turn(of: inbox)
+        return inbox
     }
 
     /// The same, from an inbox already read.
@@ -393,7 +398,7 @@ struct ClaudeCodeConnection: AgentConnection {
     /// branch, the turn, and the inbox mod's goal and open question. Without it, a record that only
     /// needs the name, the folder and when the session was last used reads no `.git` and no store.
     /// One session can run in two processes at once, as when it is resumed in a second terminal; it
-    /// is listed once, from the first inbox holding it, which is the one a send writes to.
+    /// is listed once, from the first inbox holding it, and a send writes to that inbox.
     func destinations(of inboxes: [Inbox], withMenuFields: Bool) -> [AgentDestination] {
         let folders = (try? FileManager.default.contentsOfDirectory(at: transcripts, includingPropertiesForKeys: nil)) ?? []
         let mod = withMenuFields ? modStore() : [:]
@@ -451,10 +456,10 @@ struct ClaudeCodeConnection: AgentConnection {
             return .notSubmitted(code: .noAgent, detail: "not a Claude Code destination", reason: SubmissionOutcome.internalReason)
         }
         // The guard: the inbox has to hold this exact session now. A session in no inbox is an
-        // error; it is never redirected to another one.
-        let all = Self.inboxes(in: inboxes)
-        guard let inbox = liveInboxes().first(where: { $0.session == session }) else {
-            let cleared = all.contains { $0.past.contains(session) && isRunning($0.pid) }
+        // error; it is never redirected to another one. The inbox it was listed from comes first,
+        // since that is the one `turn(of:)` watches.
+        guard let inbox = listedInbox(of: destination) ?? liveInboxes().first(where: { $0.session == session }) else {
+            let cleared = Self.inboxes(in: inboxes).contains { $0.past.contains(session) && isRunning($0.pid) }
             return .destinationChanged(detail: "Claude Code session \(session) is in no live inbox under \(inboxes.path)",
                                        reason: cleared ? Self.cleared : Self.closed)
         }
