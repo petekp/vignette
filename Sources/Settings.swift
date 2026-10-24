@@ -332,8 +332,8 @@ struct UITweaks: Codable, Equatable {
     var liveInkLampDrift = 0.3       // 0 to 1: light drifting slowly round inside the pool
     // Live ink's answers
     var liveInkDrawOn = 0.5          // how long an answer's mark takes to draw itself on
-    var liveInkHideFade = 0.12       // a mark fading out as the content under it starts to move
-    var liveInkShowFade = 0.22       // a mark fading back in once the content is still
+    var liveInkHideFade = 0.12       // a mark fading out as its window minimises, or as it is set aside
+    var liveInkShowFade = 0.22       // a mark fading back in once its window is back
     var liveInkTextSize = 15.0       // an answer's note, in points of the screen
     var liveInkTextWidth = 320.0     // the widest an answer's note wraps at, in points
     // Live ink's speech input

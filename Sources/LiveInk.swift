@@ -152,7 +152,7 @@ final class LiveInk {
     var marks: [Mark] { screenMarks + windows.marks.map(\.mark) }
 
     /// The marks on screen now, the person's in the order they were drawn: a mark on a window is left
-    /// out while its content moves or after it was lost.
+    /// out while its window is away, minimised or set aside.
     private var shownMarks: [Mark] {
         let shown = windows.marks.filter(\.shown).map(\.mark) + screenMarks
         // The windows' marks come window by window, in no order, so ink across windows is put back in
@@ -462,9 +462,8 @@ final class LiveInk {
 
     /// Puts a mark the person drew on the window under it, or on `surface` where there is none.
     private func place(_ mark: Mark, on surface: Surface, among: [Surface], markStyle: MarkStyle) {
-        let point = LiveWindows.anchorPoint(of: mark)
-        if let target = windows.target(under: point) {
-            windows.pin(mark, to: target, anchor: .at(point))
+        if let target = windows.target(under: LiveWindows.point(of: mark)) {
+            windows.pin(mark, to: target)
         } else {
             add(mark, on: surface, among: among, markStyle: markStyle)
         }
@@ -688,7 +687,7 @@ final class LiveInk {
         let id: LiveAsks.Ask.ID
         let about: [Mark]
         let point: CGPoint
-        switch asks.begin(among: shownMarks, following: following, toSession: session != nil, shift: windows.shift(of:)) {
+        switch asks.begin(among: shownMarks, following: following, toSession: session != nil) {
         case .refused(let refusal, let effects):
             run(effects)
             return .failure(LiveResponder.Failure(reason: refusal.rawValue, detail: refusal.detail))
@@ -1010,7 +1009,7 @@ final class LiveInk {
     private var hasReply: Bool { asks.asks.contains { ask in ask.say.map { asks.answer(of: $0.id) == ask.id } ?? false } }
 
     /// Follows the pointer for as long as an answer is up, in sight or not, to show the × over the
-    /// reply it is on, and keeps each answer's actions at its reply's foot as its window scrolls.
+    /// reply it is on, and keeps each answer's actions at its reply's foot as its window moves.
     private func watchPointer() {
         guard pointerWatch.isEmpty else { return }
         // The reply's popover can move with its window, or fade, while the pointer is still.
@@ -1018,7 +1017,7 @@ final class LiveInk {
             MainActor.assumeIsolated { self?.pointerMoved() }
         }
         let moved: (NSEvent) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.pointerMoved() } }
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .scrollWheel], handler: moved) {
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: moved) {
             pointerWatch.append(global)
         }
         if let local = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved], handler: { event in moved(event); return event }) {
@@ -1584,27 +1583,17 @@ final class LiveInk {
     }
 
     /// Adds ask `id`'s answer's marks, or Vignette's own note, replacing marks of the same id. They go
-    /// on the window the ask was about, or the window the ink asked about is on, beside that ink: when its
-    /// content moved since the ask, they move with it and follow it, and otherwise each mark is
-    /// anchored to what it points at, a label follows the mark it names, and a note follows the ink.
-    /// A mark that followed the ink drifted off its target when the session's edit moved the content
-    /// under the ink. With no window they go on the active Space's surfaces.
+    /// on the window the ask was about, or the window the ink asked about is on, each at its offset
+    /// from that window's top-left. With no window they go on the active Space's surfaces.
     /// With `eachOnItsWindow`, for an answer about a picture of an area of the screen, each pointing
     /// mark goes on the window under it, a reply or a label on the window of the mark it hangs from or
     /// names, and any other text on the leader's window.
     private func put(_ placed: [Mark], window windowID: CGWindowID?, eachOnItsWindow: Bool = false, for id: LiveAsks.Ask.ID) {
-        let ask = asks.ask(id)
-        let leader = ask?.leader.flatMap { id in windows.window(of: id).map { (id: id, window: $0) } }
-        let leaderTarget = leader.flatMap { windows.target(id: $0.window) }
+        let leaderTarget = asks.ask(id)?.leader.flatMap(windows.window(of:)).flatMap(windows.target(id:))
         let shared = windowID.flatMap(windows.target(id:)) ?? leaderTarget
         let active = activeSurfaces()
         let markStyle = Settings.shared.data.ui.markStyle
-        var leaderMoved = CGVector.zero
-        if let leader, eachOnItsWindow || leader.window == shared?.id, let then = ask?.leaderShift, let now = windows.shift(of: leader.id) {
-            leaderMoved = CGVector(dx: now.dx - then.dx, dy: now.dy - then.dy)
-        }
-        let still = leader.map { windows.isShown($0.id) && leaderMoved == .zero } ?? true
-        // A reply follows the mark it hangs from, so it is pinned after it.
+        // A reply goes on the window of the mark it hangs from, so it is placed after it.
         let ids = Set(placed.map(\.id))
         let hangs = { (mark: Mark) in mark.popover?.anchor.map(ids.contains) ?? false }
         // The mark a label names comes just before it.
@@ -1615,29 +1604,18 @@ final class LiveInk {
             if let hung = mark.popover?.anchor, ids.contains(hung) { return chosen[hung] }
             if mark.isLabel, let labelled { return chosen[labelled] }
             if mark.kind == .text { return leaderTarget }
-            return windows.target(under: LiveWindows.anchorPoint(of: mark))
+            return windows.target(under: LiveWindows.point(of: mark))
         }
         for mark in placed.filter({ !hangs($0) }) + placed.filter(hangs) {
             // The same mark goes back on, so it keeps its part in the asks.
             takeOff([mark.id])
             if let target = window(for: mark) {
                 chosen[mark.id] = target
-                let mark = LiveWindows.translated(mark, by: target.id == leader?.window ? leaderMoved : .zero)
-                let anchor: LiveWindows.Anchor
-                if let hung = mark.popover?.anchor, ids.contains(hung) {
-                    anchor = .follows(hung)
-                } else if mark.isLabel, still, let labelled {
-                    anchor = .follows(labelled)
-                } else if let leader, leader.window == target.id, !still || mark.kind == .text {
-                    anchor = .follows(leader.id)
-                } else {
-                    anchor = .at(LiveWindows.anchorPoint(of: mark))
-                }
                 if mark.kind != .text { labelled = mark.id }
-                windows.pin(mark, to: target, anchor: anchor)
-                continue
+                windows.pin(mark, to: target)
+            } else {
+                addToScreen(mark, among: active, markStyle: markStyle)
             }
-            addToScreen(mark, among: active, markStyle: markStyle)
         }
         showMarks()
         closeEmpty(fade: LiveMarksLayer.removalFade)
@@ -1668,7 +1646,7 @@ final class LiveInk {
 
     /// Hides the answer a picked button's ask `id` follows, while that ask's reply streams
     /// (`LiveAsks.Effect.setAside`), once its steps, its focus and its buttons are let go. A mark on a
-    /// window stays on it and follows its content, and one on no window is kept here.
+    /// window stays on it, hidden, and one on no window is kept here.
     private func setAside(_ ids: Set<Mark.ID>, of id: LiveAsks.Ask.ID) {
         letGoOfTour(of: id, because: "replaced")
         hideActions(of: id)
@@ -1679,7 +1657,7 @@ final class LiveInk {
         showMarks()
     }
 
-    /// Shows set-aside marks again, where their content is now (`LiveAsks.Effect.restore`).
+    /// Shows set-aside marks again (`LiveAsks.Effect.restore`).
     private func bringBack(_ ids: Set<Mark.ID>) {
         windows.bringBack(ids)
         let back = asideOnScreen.filter { ids.contains($0.id) }

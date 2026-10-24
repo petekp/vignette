@@ -36,10 +36,8 @@ struct LiveAsks: Equatable {
         /// The reply as it streams in, and once it is whole. An ask from one of an answer's buttons
         /// starts with that answer's reply, which the next answer's words replace where it hangs.
         var say: Mark?
-        /// The newest mark asked about, which the answer's notes stay beside, and how far its content
-        /// had moved when the ask began.
+        /// The newest mark asked about, whose window the answer goes on.
         var leader: Mark.ID?
-        var leaderShift: CGVector?
         /// The answer's actions, shown as buttons under its reply.
         var actions: [LiveAnswer.Action] = []
         /// The button the person answered the reply with, which stays checked under it, with the
@@ -164,8 +162,7 @@ struct LiveAsks: Equatable {
         return fresh.isEmpty ? ink(among: shown).filter { isAsked($0.id) } : fresh
     }
 
-    /// The ink leads, not the person's note: the notes follow it directly, so moving its content
-    /// moves the question and the reply together.
+    /// The ink leads, not the person's note: the answer goes on the window the ink is on.
     static func leader(of about: [Mark]) -> Mark.ID? { about.last { $0.kind != .text }?.id ?? about.last?.id }
 
     private func isAsked(_ id: Mark.ID) -> Bool { records[id]?.roles.contains(.asked) == true }
@@ -206,9 +203,8 @@ struct LiveAsks: Equatable {
 
     /// Begins an ask about the new ink among `shown`, or, with none, about the ink asked about,
     /// looking for its packet. `following` is the reply whose button the person picked: the ask takes
-    /// that answer's place, and is about its marks too. `shift` says how far a mark's content has
-    /// moved, and must only read.
-    mutating func begin(among shown: [Mark], following: Following?, toSession: Bool = false, shift: (Mark.ID) -> CGVector?) -> Begun {
+    /// that answer's place, and is about its marks too.
+    mutating func begin(among shown: [Mark], following: Following?, toSession: Bool = false) -> Begun {
         let about = about(among: shown)
         guard let shape = about.last?.shapeExtent else { return refuse(.noInk, following: following) }
         let ids = Set(about.map(\.id))
@@ -216,8 +212,7 @@ struct LiveAsks: Equatable {
         add(.asked, to: ids)
         lastID += 1
         let leader = Self.leader(of: about)
-        var new = Ask(id: lastID, phase: .looking, about: ids, fresh: fresh, toSession: toSession, leader: leader,
-                      leaderShift: leader.flatMap(shift))
+        var new = Ask(id: lastID, phase: .looking, about: ids, fresh: fresh, toSession: toSession, leader: leader)
         if let following {
             new.say = following.reply
             new.picked = following.pick

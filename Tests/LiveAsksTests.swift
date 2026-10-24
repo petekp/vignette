@@ -22,8 +22,7 @@ final class LiveAsksTests: XCTestCase {
     private func begin(_ a: inout A, on shown: [Mark], following reply: Mark? = nil, picked: LiveAnswerActions.Pick? = nil,
                        words: String = "and this?", toSession: Bool = false, file: StaticString = #filePath,
                        line: UInt = #line) -> A.Ask.ID {
-        switch a.begin(among: shown, following: following(reply, picked: picked, words: words), toSession: toSession,
-                       shift: { _ in nil }) {
+        switch a.begin(among: shown, following: following(reply, picked: picked, words: words), toSession: toSession) {
         case .began(let id, _, _):
             return id
         case .refused(let refusal, _):
@@ -100,7 +99,7 @@ final class LiveAsksTests: XCTestCase {
         _ = reduce(&a, .drew(second.id))
         _ = reduce(&a, .inkingBegan(noteOpen: true))
         _ = reduce(&a, .drew(third.id))
-        guard case .began(_, let about, _) = a.begin(among: [first, second, third], following: nil, shift: { _ in nil })
+        guard case .began(_, let about, _) = a.begin(among: [first, second, third], following: nil)
         else { return XCTFail("the ask begins") }
         XCTAssertEqual(about.map(\.id), [first.id, second.id, third.id], "every hold's ink no ask has been about")
     }
@@ -172,7 +171,7 @@ final class LiveAsksTests: XCTestCase {
     func testAnAskWithNoInkIsRefused() {
         var a = A()
         let mark = ink(), note = text("What is this?")
-        XCTAssertEqual(a.begin(among: [note], following: nil, shift: { _ in nil }), .refused(.noInk, effects: []),
+        XCTAssertEqual(a.begin(among: [note], following: nil), .refused(.noInk, effects: []),
                        "a person's note alone is no ink to ask about")
         begin(&a, on: [mark])
         XCTAssertEqual(A.Refusal.noInk.rawValue, "There's no ink to ask about.")
@@ -182,14 +181,12 @@ final class LiveAsksTests: XCTestCase {
     func testAnAskBeginsAtItsNewestShapeLedByItsInk() {
         var a = A()
         let first = ink(), second = ink(100), note = text("this")
-        let shift = CGVector(dx: 0, dy: 12)
         guard case .began(let id, let about, let point) = a.begin(
-            among: [first, note, second], following: nil, shift: { $0 == second.id ? shift : nil }) else { return XCTFail("the ask begins") }
+            among: [first, note, second], following: nil) else { return XCTFail("the ask begins") }
         XCTAssertEqual(about.map(\.id), [first.id, note.id, second.id], "oldest first")
         XCTAssertEqual(point, CGPoint(x: 120, y: 15), "at the centre of the newest shape")
         XCTAssertEqual(a.newest?.id, id)
         XCTAssertEqual(a.ask(id)?.leader, second.id, "the newest ink leads, not the person's note")
-        XCTAssertEqual(a.ask(id)?.leaderShift, shift, "with how far its content had moved")
     }
 
     func testAPacketIsTakenOnlyWhileItsAskIsLookingAndMovesItToAsking() {
@@ -451,8 +448,7 @@ final class LiveAsksTests: XCTestCase {
         let noInk = A.Refusal.noInk.rawValue
         var action = A()
         let answeredID = answer(&action, on: [mark], reply: reply)
-        XCTAssertEqual(action.begin(among: [reply], following: A.Following(reply: reply, pick: .action("Fix it"), words: "Fix it"),
-                                    shift: { _ in nil }),
+        XCTAssertEqual(action.begin(among: [reply], following: A.Following(reply: reply, pick: .action("Fix it"), words: "Fix it")),
                        .refused(.noInk, effects: [.restore(reply: reply.id, reason: noInk, aside: [])]), "an ask refused before it began puts it back too")
         XCTAssertEqual(action.newest?.id, answeredID)
         XCTAssertEqual(action.newest?.reason, noInk)
@@ -460,8 +456,7 @@ final class LiveAsksTests: XCTestCase {
 
         var typed = A()
         answer(&typed, on: [mark], reply: reply)
-        XCTAssertEqual(typed.begin(among: [reply], following: A.Following(reply: reply, pick: .reply, words: "and this?"),
-                                   shift: { _ in nil }),
+        XCTAssertEqual(typed.begin(among: [reply], following: A.Following(reply: reply, pick: .reply, words: "and this?")),
                        .refused(.noInk, effects: [.restore(reply: reply.id, reason: noInk, aside: [])]))
         XCTAssertEqual(typed.newest?.draft, "and this?", "typed words wait in Reply again")
 
@@ -601,7 +596,7 @@ final class LiveAsksTests: XCTestCase {
         _ = reduce(&a, .cleared)
         XCTAssertEqual(a.asks, [], "every ask ends, those waiting their turn too")
         XCTAssertFalse(a.isUnderWay)
-        XCTAssertEqual(a.begin(among: [], following: A.Following(reply: reply, pick: .reply, words: "and this?"), shift: { _ in nil }),
+        XCTAssertEqual(a.begin(among: [], following: A.Following(reply: reply, pick: .reply, words: "and this?")),
                        .refused(.noInk, effects: []), "nothing is put back after a clear")
         XCTAssertEqual(a.newInk(among: [drawn, other]), [drawn, other], "the ink is new again")
         XCTAssertEqual(a.answerMarks, [])
@@ -1474,10 +1469,9 @@ private final class LiveAsksEnvironment {
     private func ask(following reply: Mark? = nil, picked: LiveAnswerActions.Pick = .reply) -> Bool {
         let before = asks
         let given = screen
-        let shifted = chance(2)
         let toSession = reply == nil && chance(5)
         let begun = asks.begin(among: given, following: reply.map { LiveAsks.Following(reply: $0, pick: picked, words: "and this?") },
-                               toSession: toSession, shift: { _ in shifted ? CGVector(dx: 0, dy: 12) : nil })
+                               toSession: toSession)
         let effects: [LiveAsks.Effect]
         switch begun {
         case .began(let id, let about, _):

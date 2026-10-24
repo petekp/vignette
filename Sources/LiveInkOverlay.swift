@@ -257,7 +257,7 @@ final class LiveInkOverlay: NSPanel {
 
 /// The marks of one live ink surface, a screen's or a window's. Not `MarkLayers`, which shows a
 /// drawing on an image; these marks are on no image. Each mark sits in a holder of its own, which
-/// moves it with its content and fades it while the content moves (`LiveWindows`).
+/// fades it, as its window minimises (`LiveWindows`) or its answer points elsewhere.
 @MainActor
 final class LiveMarksLayer: CALayer {
     @MainActor
@@ -490,45 +490,6 @@ final class LiveMarksLayer: CALayer {
         out.timingFunction = CAMediaTimingFunction(name: .easeIn)
         holder.opacity = 0
         holder.add(out, forKey: "fade")
-        CATransaction.commit()
-    }
-
-    /// Moves a mark by `offset` from where it was drawn, at once.
-    /// Moves a mark by `offset` from where it was drawn, at once, or over `duration` from wherever
-    /// it is on screen now, so a glide that a newer one interrupts carries on from there.
-    func move(_ id: Mark.ID, by offset: CGVector, duration: CFTimeInterval = 0) {
-        guard let holder = drawn[id]?.holder else { return }
-        let position = CGPoint(x: offset.dx, y: offset.dy)
-        guard holder.position != position else { return }
-        let from = holder.presentation()?.position ?? holder.position
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        holder.position = position
-        CATransaction.commit()
-        showPopover(of: id)
-        guard duration > 0 else { return }
-        let glide = CABasicAnimation(keyPath: "position")
-        glide.fromValue = NSValue(point: from)
-        glide.toValue = NSValue(point: position)
-        glide.duration = duration
-        glide.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        holder.add(glide, forKey: "glide")
-    }
-
-    /// Cuts a mark off outside `rect`, in the marks' coordinates, as its scroll area cuts off the
-    /// content it points at; nil shows all of it.
-    func clip(_ id: Mark.ID, to rect: CGRect?) {
-        guard let holder = drawn[id]?.holder else { return }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        if let rect {
-            let mask = holder.mask ?? CALayer()
-            mask.backgroundColor = CGColor(gray: 0, alpha: 1)
-            mask.frame = rect.offsetBy(dx: -holder.position.x, dy: -holder.position.y)
-            holder.mask = mask
-        } else {
-            holder.mask = nil
-        }
         CATransaction.commit()
     }
 

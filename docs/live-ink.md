@@ -69,7 +69,7 @@ list was taken on 2026-10-18 from the docs, the code and `docs/releasing.md`.
 **Gaps that can follow the first release:**
 
 - Where Send and the note start, which waits for the 2026-11-01 scoring.
-- A Chromium browser's marks go by pixels and its page gives no URL.
+- A Chromium browser's page gives the note no URL.
 - A note to a Codex thread gets no result card.
 - An answer whose mark is not found puts its words in the result card's top-left corner.
 
@@ -97,13 +97,13 @@ The names in brackets are `// MARK:` sections.
 | Where the person's note, the reply, labels and pointing marks go | `LiveAnswerLayout.swift` (Pointing, Notes) |
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
-| Marks following their window, holding still, hiding | `LiveWindows.swift`, `LiveAnchor.swift` (Accessibility), `LivePatch.swift` (pixels) |
+| Marks staying on their window: moving with it, covered by windows in front, fading as it minimises | `LiveWindows.swift` |
 | The pointer field (the ring round the pointer) while inking, the Pointer Lab | `PointerField.swift`, `PointerField.metal`, `ScreenFeed.swift`, `PointerLab.swift`, `LiveInk.swift` (The pointer field) |
 | Whether a session's turn changed what the ink was on | `LiveChange.swift`, `LiveNoteCards.swift` (`look(again:)`, which compares the notes on one window; `before`) |
 
 ## Checking a change
 
-- `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement, result cards and anchoring.
+- `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement and result cards.
   `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery. It also covers a turn end that answers several notes.
   `Tests/LiveAsksTests.swift` holds the asks' sequences: asks waiting their turn, answers on the screen together, late
   callbacks, erasing, follow-ups, dismiss, finish and clear, and random sequences that check the invariants.
@@ -125,16 +125,19 @@ The names in brackets are `// MARK:` sections.
 - Live ink is an option (`liveInk`) that runs only while `debug` is on too (`Settings.usesLiveInk`),
   so it stays internal until it ships. `LiveInk` owns it: the chord, and a surface per screen per
   Space, each a `LiveInkOverlay` and the marks on it. A mark drawn on a window belongs to that window
-  (`LiveWindows`): it moves with it, the windows above it cover it, it hides while the content
-  scrolls or resizes and comes back on its spot, and it goes when the window closes
-  (`docs/live-ink-step3-2026-10-05.md`). A mark drawn on no window stays at its place on the screen.
+  (`LiveWindows`) and keeps its offset from the window's top-left, whatever the window's content
+  does: a scroll or a page's own change leaves it where it is, and so does a resize. It moves with
+  the window, the windows above it cover it, it fades out as the window minimises and back once the
+  window is on the screen again, 0.2 s after it lands, and it goes when the window closes. A mark
+  drawn on no window stays at its place on the screen.
   When a smaller resolution leaves it with no part on any screen, it moves the least way back onto
   its screen, as macOS moves a window (`[live-ink] moved <n> onto the screen`).
-  Its spot comes from Accessibility, else from the window's pixels. Only an Electron app is asked
-  to build its page's tree (`AXManualAccessibility`), and only when a mark lands where it has none,
-  since it keeps the tree until it quits (`[live-ink] accessibility tree requested`). A Chromium
-  browser such as Chrome or Dia is not asked, so its marks go by their pixels and its page gives the
-  note no URL, unless it runs with `--force-renderer-accessibility`, as the demo's Chrome does.
+  The note's URL and the page an answer keeps to come from the app's Accessibility tree. Only an
+  Electron app is asked to build its page's tree (`AXManualAccessibility`,
+  `WindowAccessibility.requestTree`), and only when a mark lands where it has none, since it keeps
+  the tree until it quits (`[live-ink] accessibility tree requested`). A Chromium browser such as
+  Chrome or Dia is not asked, so its page gives the note no URL, unless it runs with
+  `--force-renderer-accessibility`, as the demo's Chrome does.
 - An overlay joins no other Space, so macOS keeps it where it was put up; it is closed, never
   ordered out, since ordered in again it would come up on the active Space. A surface exists while
   it has marks, and the active Space's while the chord is held, so an idle live ink puts no
@@ -523,8 +526,7 @@ The names in brackets are `// MARK:` sections.
   quotes the person's words and carries the thinking light with the answer's marks. The responder
   takes them as a follow-up ask. The next answer takes the reply's place where it hangs, with
   buttons of its own. While the next reply streams, the earlier answer's other marks are set aside
-  (`LiveAsks.Effect.setAside`, `LiveWindows.setAside`): they are hidden where they are, and a mark on a
-  window keeps following its content. They go once the next answer is drawn, and the × finishes them
+  (`LiveAsks.Effect.setAside`, `LiveWindows.setAside`): they are hidden where they are. They go once the next answer is drawn, and the × finishes them
   with the rest. A follow-up that fails or is stopped before then puts the answer back as it was
   (`LiveAsks.Effect.restore`, `LiveInk.restoreAnswer`): the set-aside marks show again,
   the buttons come back, typed words wait in Reply again, and the reply's header gives the reason
@@ -542,13 +544,10 @@ The names in brackets are `// MARK:` sections.
   arrow's tail, on the side away from its head, or against a circle's edge, with the arrow's side
   chosen for where its label fits. Later arrows come from the first one's side, with their tails
   level with its tail, so the labels stand in a column. Labels are `Mark.isLabel`, drawn without
-  the agent's badge, so only the reply names the agent. The reply follows the mark it hangs from or
-  the ink it was about, a pointing mark is anchored to what it points at, and a label follows its
-  mark: marks that all
-  followed the ink drifted off their targets when an edit moved the content under the ink. The person's ink counts as its strokes, not its bounding box (`LiveAnswerLayout.strokes`),
-  so a loop round a whole page leaves room inside it. While the responder answers, and while the done
-  animation plays, the marks hold still whatever the content under them does
-  (`LiveWindows.holding`): following it read as the answer shifting around. An action
+  the agent's badge, so only the reply names the agent. Each of an answer's marks keeps its offset on
+  the window it was placed on, as the person's ink does. The person's ink counts as its strokes, not
+  its bounding box (`LiveAnswerLayout.strokes`), so a loop round a whole page leaves room inside it.
+  An action
   may name the marks it acts on (`LiveAnswer.Action`, `{"title", "marks"}`, by index), and pointing
   at its button fades the answer's other findings (`LiveWindows.light`). They are agent `Mark`s on the same surfaces, so a tap
   erases them (a note's tag counts) and Clear clears them, and they stay until their answer's × or Esc
@@ -573,7 +572,7 @@ The names in brackets are `// MARK:` sections.
   stop shows, the window's other marks fade to 20% over 0.18 s (`LiveInk.lightStop`): all but the
   stop, the reply, and the person's ink centred on the stop's target or round it; ink that only
   grazes it, as a loop round the next line does, fades. `LiveWindows` keeps each mark's strength,
-  so a mark hidden by a resize or its content moving comes back faint. They come back when the
+  so a mark hidden with its minimised window comes back faint. They come back when the
   focus lets go. The focus
   lets go at once on a key, a click, a scroll, the ink chord, or the pointer moving 120 pt from
   where it was when the focus came in. A key is heard only while Vignette is trusted for

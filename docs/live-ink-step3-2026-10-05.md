@@ -1,5 +1,11 @@
 # Live ink step 3: marks that stay on their window (2026-10-05)
 
+2026-10-24: on Pete's call, marks no longer follow their window's content. A mark keeps its offset
+from its window's top-left through a scroll and a resize, and still moves with the window, fades as
+it minimises and goes when it closes (`docs/live-ink.md`). The content tracking below (`LiveAnchor`,
+`LineAnchor`, `LivePatch`, the hiding while the content moves) was removed after `89cbc3b` on
+`live-ink`, which is the last commit that has it.
+
 Status: built on `live-ink`, not yet committed. The measurements that chose the design are in
 `docs/live-ink-anchoring-spike-2026-10-04.md`; the ones of the built version are at the end.
 
