@@ -351,7 +351,11 @@ The names in brackets are `// MARK:` sections.
   (Pete, 2026-10-10). A send refused before the request is stored
   takes the file back, and the ink stays, with the reason beside it.
 - Each note's turn is read twice a second, once per session per tick (`LiveNoteCards`), from the `turn` file the
-  plugin's hooks write in the session's inbox (`ClaudeCodeConnection.turn(of:)`). Nothing on the
+  plugin's hooks write in the session's inbox (`ClaudeCodeConnection.turn(of:)`). Vignette reads
+  only the inbox the session was listed from: `AgentDestination.inbox` is the process id that
+  names its folder. It reads that inbox only while it is live and still holds that session. Any
+  other folder reads as no turn. The reads run off the main thread. A tick that comes due while
+  the last tick's reads still run is skipped, and each tick's readings reach the waits as one input. Nothing on the
   screen waits on it, so clearing the ink or drawing a new note leaves it running. The request
   waits in the inbox while another turn runs. Vignette stops waiting 3 minutes after the session
   takes the request when it sees no turn start, 30 minutes into a turn it saw start, or 30 minutes

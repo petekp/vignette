@@ -458,6 +458,24 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(clearedReason, ClaudeCodeConnection.cleared)
     }
 
+    func testASessionsTurnIsReadFromTheInboxItWasListedFromAndNeverAnother() throws {
+        let root = temporaryFolder()
+        let folder = try inbox(root, pid: 102, session: session)
+        try Data("busy\n".utf8).write(to: folder.appendingPathComponent("turn"))
+        let other = try inbox(root, pid: 101, session: "0f0f0f0f-0000-4000-8000-000000000000")
+        try Data("idle\n".utf8).write(to: other.appendingPathComponent("turn"))
+        let connection = claude(inboxes: root)
+        let listed = try XCTUnwrap(connection.destinations().first { $0.id == session })
+        XCTAssertEqual(listed.inbox, 102)
+        XCTAssertEqual(connection.turn(of: listed), .busy)
+
+        try inbox(root, pid: 102, session: "0f0f0f0f-0000-4000-8000-000000000000")
+        XCTAssertNil(connection.turn(of: listed))
+        try FileManager.default.removeItem(at: folder)
+        XCTAssertNil(connection.turn(of: listed))
+        XCTAssertNil(connection.turn(of: AgentDestination(id: session, name: "x", address: .claudeSession(session))))
+    }
+
     // MARK: Codex, by thread UUID
 
     func testTheQueueCallIsOneArgvElementPerPart() {

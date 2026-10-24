@@ -53,6 +53,7 @@ final class LiveNoteCards {
     private var notes: [String: Note] = [:]
     private var waits = NoteCardGroups()
     private var timer: Timer?
+    private var readingTurns = false
     /// An effect can answer inside the input that asked for it, as a reply's card does.
     private let hold = EventHold<Input>()
 
@@ -250,27 +251,34 @@ final class LiveNoteCards {
     }
 
     /// Reads the session's turn on each note twice a second, until none is watched. Nothing on the
-    /// screen waits on it, so clearing the ink or a new note leaves it running.
+    /// screen waits on it, so clearing the ink or a new note leaves it running. The turns are read
+    /// off the main thread, once per session; a tick due while the last one's reads still run is
+    /// skipped.
     private func tick() {
-        let now = Date()
-        var turns: [String: SessionTurn?] = [:]
-        var readings: [NoteCardGroups.Reading] = []
-        for (id, note) in notes where waits[id]?.isWatching == true {
-            let session = note.destination.id
-            let turn: SessionTurn?
-            if let read = turns[session] {
-                turn = read
-            } else {
-                turn = connections[note.destination.address.client]?.turn(of: note.destination)
-                turns[session] = .some(turn)
-            }
-            readings.append(NoteCardGroups.Reading(request: id, turn: turn, replied: requests.hasReply(to: id)))
-        }
-        // `.turn` readings come only from here, so notes ended by one reading of a session's turn arrive in one input.
-        if !readings.isEmpty { hold.send(.event(.turns(readings), at: now)) { handle($0) } }
         if !waits.isWatchingAny {
             timer?.invalidate()
             timer = nil
+            return
+        }
+        guard !readingTurns else { return }
+        let watched = notes.filter { waits[$0.key]?.isWatching == true }.map { (request: $0.key, destination: $0.value.destination) }
+        guard !watched.isEmpty else { return }
+        var sessions: [String: (destination: AgentDestination, connection: (any AgentConnection)?)] = [:]
+        for (_, destination) in watched where sessions[destination.id] == nil {
+            sessions[destination.id] = (destination, connections[destination.address.client])
+        }
+        readingTurns = true
+        Task { @MainActor [weak self] in
+            let turns = await Task.detached(priority: .utility) {
+                sessions.mapValues { $0.connection?.turn(of: $0.destination) }
+            }.value
+            guard let self else { return }
+            readingTurns = false
+            let readings = watched.map { note in
+                NoteCardGroups.Reading(request: note.request, turn: turns[note.destination.id] ?? nil, replied: self.requests.hasReply(to: note.request))
+            }
+            // `.turn` readings come only from here, so notes ended by one reading of a session's turn arrive in one input.
+            hold.send(.event(.turns(readings), at: Date())) { self.handle($0) }
         }
     }
 

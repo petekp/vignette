@@ -85,6 +85,9 @@ struct AgentDestination: Equatable, Identifiable {
     var started: Date? = nil
     /// Where the session is in its turns. Nil when its client does not report turns.
     var turn: SessionTurn? = nil
+    /// The process whose Claude Code inbox held the session when it was listed, which names the
+    /// inbox's folder. Nil for a Codex thread and for a session not listed from an inbox.
+    var inbox: Int32? = nil
     /// The goal the inbox mod wrote for the session, and whether it has an open question for the person.
     var goal: String? = nil
     var needsYou = false
@@ -172,7 +175,7 @@ enum SubmissionOutcome {
 
 /// The whole boundary a client implementation has to fill. Everything else — the fixed image, the
 /// request record, reply validation, receipts, import, and the cards — is Vignette's and is shared.
-/// Both calls block on a subprocess, so they never run on the main thread.
+/// Every call blocks on a subprocess or the disk, so none runs on the main thread.
 protocol AgentConnection: Sendable {
     var client: AgentClient { get }
     /// Whether this route's last list may stand in while a fresh one is asked for. Claude Code's may
@@ -310,29 +313,37 @@ struct ClaudeCodeConnection: AgentConnection {
     /// Every inbox under `root`. Nothing is read beyond the few short files in each.
     static func inboxes(in root: URL) -> [Inbox] {
         let folders = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
-        return folders.compactMap { folder in
-            guard let pid = Int32(folder.lastPathComponent), pid > 0 else { return nil }
-            func text(_ name: String) -> String {
-                (try? String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8)) ?? ""
-            }
-            func line(_ name: String) -> String? {
-                let line = text(name).trimmingCharacters(in: .whitespacesAndNewlines)
-                return line.isEmpty ? nil : line
-            }
-            let alive = (try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("alive").path))?[.modificationDate] as? Date
-            let session = try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("session").path)
-            return Inbox(folder: folder, pid: pid, session: line("session"), cwd: line("cwd"), transcript: line("transcript"),
-                         past: text("past").split(whereSeparator: \.isNewline).map(String.init), alive: alive,
-                         started: session?[.creationDate] as? Date, written: session?[.modificationDate] as? Date)
-        }
+        return folders.compactMap(inbox(at:))
     }
 
-    /// From the inbox: `waiting` while a request is still in it, since the monitor hands requests
-    /// over only between turns; otherwise the `turn` file the plugin's hooks write, `busy` from a
-    /// prompt to the end of the turn and `idle` after it.
+    /// The inbox in `folder`, or nil when the folder is not named by a process id. A folder that has
+    /// gone reads as an inbox with nothing in it.
+    static func inbox(at folder: URL) -> Inbox? {
+        guard let pid = Int32(folder.lastPathComponent), pid > 0 else { return nil }
+        func text(_ name: String) -> String {
+            (try? String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8)) ?? ""
+        }
+        func line(_ name: String) -> String? {
+            let line = text(name).trimmingCharacters(in: .whitespacesAndNewlines)
+            return line.isEmpty ? nil : line
+        }
+        let alive = (try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("alive").path))?[.modificationDate] as? Date
+        let session = try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("session").path)
+        return Inbox(folder: folder, pid: pid, session: line("session"), cwd: line("cwd"), transcript: line("transcript"),
+                     past: text("past").split(whereSeparator: \.isNewline).map(String.init), alive: alive,
+                     started: session?[.creationDate] as? Date, written: session?[.modificationDate] as? Date)
+    }
+
+    /// From the inbox the session was listed from: `waiting` while a request is still in it, since
+    /// the monitor hands requests over only between turns; otherwise the `turn` file the plugin's
+    /// hooks write, `busy` from a prompt to the end of the turn and `idle` after it. Only that one
+    /// folder is read, and it must still be live and hold this exact session, as `submit` checks;
+    /// a folder that has gone or holds another session reads as no turn. It reads files, so it
+    /// never runs on the main thread.
     func turn(of destination: AgentDestination) -> SessionTurn? {
-        guard case .claudeSession(let session) = destination.address,
-              let inbox = liveInboxes().first(where: { $0.session == session }) else { return nil }
+        guard case .claudeSession(let session) = destination.address, let pid = destination.inbox,
+              let inbox = Self.inbox(at: inboxes.appendingPathComponent(String(pid))),
+              inbox.session == session, isLive(inbox) else { return nil }
         return Self.turn(of: inbox)
     }
 
@@ -365,9 +376,15 @@ struct ClaudeCodeConnection: AgentConnection {
                 try? FileManager.default.removeItem(at: inbox.folder)
                 return false
             }
-            guard inbox.session.map({ UUID(uuidString: $0) != nil }) == true, let alive = inbox.alive else { return false }
-            return now().timeIntervalSince(alive) < Self.aliveWindow
+            return isLive(inbox)
         }
+    }
+
+    /// Whether a request can be written to `inbox`: its process is running, it holds a session, and
+    /// its monitor touched it within `aliveWindow`.
+    func isLive(_ inbox: Inbox) -> Bool {
+        guard isRunning(inbox.pid), inbox.session.map({ UUID(uuidString: $0) != nil }) == true, let alive = inbox.alive else { return false }
+        return now().timeIntervalSince(alive) < Self.aliveWindow
     }
 
     func destinations() -> [AgentDestination] { destinations(of: liveInboxes(), withMenuFields: true) }
@@ -420,6 +437,7 @@ struct ClaudeCodeConnection: AgentConnection {
             branch: found.branch,
             started: inbox?.started,
             turn: inbox.flatMap { turn(of: $0) },
+            inbox: inbox?.pid,
             goal: mod?.goal,
             needsYou: mod?.needsYou ?? false,
             hasOwnName: transcript.title != nil)
