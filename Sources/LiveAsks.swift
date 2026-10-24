@@ -99,7 +99,7 @@ struct LiveAsks: Equatable {
     var newest: Ask? { asks.last }
 
     /// The ask whose reply is `reply`.
-    func ask(withReply reply: Mark.ID) -> Ask? { asks.first { $0.say?.id == reply } }
+    func ask(withReply reply: Mark.ID) -> Ask? { index(withReply: reply).map { asks[$0] } }
 
     func isAnswer(_ id: Mark.ID) -> Bool { records[id]?.answer != nil }
 
@@ -173,6 +173,8 @@ struct LiveAsks: Equatable {
 
     private func index(of id: Ask.ID) -> Int? { asks.firstIndex { $0.id == id } }
 
+    private func index(withReply reply: Mark.ID) -> Int? { asks.firstIndex { $0.say?.id == reply } }
+
     // MARK: Beginning
 
     /// The reply the person answered with one of its buttons, and the words sent.
@@ -231,7 +233,7 @@ struct LiveAsks: Equatable {
     /// Following a reply, the answer it hangs from comes back as it was, saying why the ask did not
     /// begin, and the words sent wait in Reply when they were typed there.
     private mutating func refuse(_ refusal: Refusal, following: Following?) -> Begun {
-        guard let following, let at = asks.firstIndex(where: { $0.say?.id == following.reply.id }) else {
+        guard let following, let at = index(withReply: following.reply.id) else {
             return .refused(refusal, effects: [])
         }
         asks[at].reason = refusal.rawValue
@@ -390,8 +392,7 @@ struct LiveAsks: Equatable {
                 return fail(id, saying: reason, shown: shown)
             case .sentToSession(let ink):
                 // The ink in the card's picture leaves with the note, but not ink another ask is about.
-                let others = otherAsks(than: id).reduce(into: Set<Mark.ID>()) { $0.formUnion($1.about) }
-                let leaving = current.about.union(ink).subtracting(others).union(answerMarks(of: id))
+                let leaving = current.about.union(ink).subtracting(aboutOfOtherAsks(than: id)).union(answerMarks(of: id))
                 end(id)
                 return finish(leaving, .dismissed)
             }
@@ -415,19 +416,18 @@ struct LiveAsks: Equatable {
         case .drafted(let words, let reply):
             // Only the answer the panel was made for keeps its draft: one hidden after its answer was
             // replaced must not hand its words to the next.
-            guard let reply, let at = asks.firstIndex(where: { $0.say?.id == reply }) else { break }
+            guard let reply, let at = index(withReply: reply) else { break }
             asks[at].draft = words
 
         case .replyRedrawn(let reply):
-            guard let at = asks.firstIndex(where: { $0.say?.id == reply.id }) else { break }
+            guard let at = index(withReply: reply.id) else { break }
             asks[at].say = reply
         case .answerShown(let ids, let id):
             guard ask(id) != nil else { break }
             own(ids, by: id)
         case .dismissed(let id):
             guard let ask = ask(id) else { break }
-            let others = otherAsks(than: id).reduce(into: Set<Mark.ID>()) { $0.formUnion($1.about) }
-            let ids = answerMarks(of: id).union(ask.about.subtracting(others)).union(picks[id]?.aside ?? [])
+            let ids = answerMarks(of: id).union(ask.about.subtracting(aboutOfOtherAsks(than: id))).union(picks[id]?.aside ?? [])
             let interrupt: [Effect] = ask.phase == .asking ? [.interrupt] : []
             end(id)
             return interrupt + (ids.isEmpty ? [] : finish(ids, .dismissed))
@@ -437,10 +437,9 @@ struct LiveAsks: Equatable {
             take(.asked, from: current.fresh)
             let interrupt: [Effect] = current.phase == .asking ? [.interrupt] : []
             if let restored = restore(id, saying: nil, shown: shown) { return interrupt + [restored] }
-            let gone = answerMarks(of: id).union(picks[id]?.aside ?? [])
-            disown(gone)
+            let removal = removeAnswer(of: id)
             end(id)
-            return interrupt + [.removeAnswer(id, gone)]
+            return interrupt + [removal]
         case .answerClosed:
             guard let ask = asks.last(where: { !$0.isUnderWay && answerMarks(of: $0.id).contains { !isFinishing($0) } }) else { break }
             let ids = answerMarks(of: ask.id)
@@ -475,7 +474,10 @@ struct LiveAsks: Equatable {
         return [.send(asks[at].id)]
     }
 
-    private func otherAsks(than id: Ask.ID) -> [Ask] { asks.filter { $0.id != id } }
+    /// The marks the asks but `id` are about.
+    private func aboutOfOtherAsks(than id: Ask.ID) -> Set<Mark.ID> {
+        asks.reduce(into: Set()) { about, ask in if ask.id != id { about.formUnion(ask.about) } }
+    }
 
     /// The ask is over: it leaves the list, with the answer its button was picked under.
     private mutating func end(_ id: Ask.ID) {
@@ -502,12 +504,10 @@ struct LiveAsks: Equatable {
     /// Once the answer of an ask from a picked button comes, the answer it was picked under goes, all
     /// but its reply, which the new answer draws over.
     private mutating func clearEarlierAnswer(of id: Ask.ID) -> [Effect] {
-        guard let pick = picks[id] else { return [] }
+        guard picks[id] != nil else { return [] }
+        let removal = removeAnswer(of: id, keeping: ask(id)?.say?.id)
         picks[id] = nil
-        let reply = ask(id)?.say?.id
-        let gone = answerMarks(of: id).filter { $0 != reply }.union(pick.aside)
-        disown(gone)
-        return [.removeAnswer(id, gone)]
+        return [removal]
     }
 
     /// The answer a button was picked under comes back, or else the ask fails, saying why in the
@@ -517,17 +517,18 @@ struct LiveAsks: Equatable {
         guard let at = index(of: id) else { return [] }
         asks[at].phase = .failed
         asks[at].reason = reason
-        let reply = asks[at].say?.id
-        let aside = picks[id]?.aside ?? []
+        let kept = asks[at].say.flatMap { shown.contains($0.id) ? $0.id : nil }
+        let removal = removeAnswer(of: id, keeping: kept)
         picks[id] = nil
-        if let reply, shown.contains(reply) {
-            let gone = answerMarks(of: id).filter { $0 != reply }.union(aside)
-            disown(gone)
-            return [.removeAnswer(id, gone), .notice(reply: reply, reason: reason)]
-        }
-        let gone = answerMarks(of: id).union(aside)
+        return [removal, kept.map { .notice(reply: $0, reason: reason) } ?? .say(id, reason)]
+    }
+
+    /// Ask `id`'s answer leaves, all but `kept`, and with it what is set aside of the answer its button
+    /// was picked under.
+    private mutating func removeAnswer(of id: Ask.ID, keeping kept: Mark.ID? = nil) -> Effect {
+        let gone = answerMarks(of: id).filter { $0 != kept }.union(picks[id]?.aside ?? [])
         disown(gone)
-        return [.removeAnswer(id, gone), .say(id, reason)]
+        return .removeAnswer(id, gone)
     }
 
     /// The answer a button was picked under, while ask `id`, which followed it, still hangs from its
