@@ -1219,6 +1219,29 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(result.uncompared, ["c", "d"])
     }
 
+
+    func testAMarkPastAShrunkWindowsEdgeNoLongerFits() {
+        let loop = Mark(geometry: .ellipse(CGRect(x: 40, y: 260, width: 140, height: 90)))
+        XCTAssertTrue(LiveWindows.fits(loop, in: CGSize(width: 900, height: 660)))
+        XCTAssertFalse(LiveWindows.fits(loop, in: CGSize(width: 300, height: 280)))
+        XCTAssertTrue(LiveWindows.fits(loop, in: CGSize(width: 300, height: 400)), "it fits again once the window grows over it")
+    }
+
+    func testAnArrowFitsByItsHeadNotItsTail() {
+        let arrow = Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 500, y: 100), end: CGPoint(x: 150, y: 100))))
+        XCTAssertTrue(LiveWindows.fits(arrow, in: CGSize(width: 300, height: 300)))
+        let away = Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 150, y: 100), end: CGPoint(x: 500, y: 100))))
+        XCTAssertFalse(LiveWindows.fits(away, in: CGSize(width: 300, height: 300)))
+    }
+
+    func testAReplyHangingPastTheWindowStillFits() {
+        var reply = Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 700, y: 120), text: "It's this line.", wrap: nil, size: 14)), agent: true)
+        let at = CGRect(x: 250, y: 100, width: 140, height: 44)
+        reply.popover = PopoverPlace(anchor: nil, at: at, edge: .right, body: CGRect(x: 400, y: 80, width: 300, height: 120), foot: .zero)
+        XCTAssertTrue(LiveWindows.fits(reply, in: CGSize(width: 300, height: 280)))
+        let label = Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 700, y: 120), text: "Mark 1", wrap: nil, size: 14)), agent: true)
+        XCTAssertFalse(LiveWindows.fits(label, in: CGSize(width: 300, height: 280)), "a label is not a popover")
+    }
     /// A white picture of `size` points at 1 px per pt with `blocks` in `colour`, from its top-left corner.
     private static func region(blocks: [CGRect], size: CGSize = CGSize(width: 200, height: 80),
                                colour: CGColor = CGColor(gray: 0, alpha: 1)) throws -> CGImage {

@@ -69,12 +69,16 @@ final class LiveWindows {
         var mark: Mark
         /// Faded with its window as the window minimised or went away, until the window is back.
         var hidden = false
+        /// Its point is past the window's edge, after the window shrank: hidden until the window grows
+        /// over it again.
+        var outside = false
         /// Its opacity while it shows: faint while the answer points elsewhere (`light`), so it comes
-        /// back faint after its window was away.
+        /// back faint after it was hidden.
         var strength: Float = 1
         /// Kept on its window, drawn at no opacity and not counted as shown (`setAside`).
         var aside = false
-        var shows: Bool { !hidden && !aside }
+        var visible: Bool { !hidden && !outside }
+        var shows: Bool { visible && !aside }
         var opacity: Float { aside ? 0 : strength }
     }
 
@@ -123,8 +127,9 @@ final class LiveWindows {
         let window = tracked(target)
         let origin = window.frame.origin
         window.pins.removeAll { $0.mark.id == mark.id }
-        window.pins.append(Pin(mark: Self.translated(mark, by: CGVector(dx: -origin.x, dy: -origin.y)),
-                               hidden: window.minimisingSince != nil || window.showFrom != nil))
+        let local = Self.translated(mark, by: CGVector(dx: -origin.x, dy: -origin.y))
+        window.pins.append(Pin(mark: local, hidden: window.minimisingSince != nil || window.showFrom != nil,
+                               outside: !Self.fits(local, in: window.frame.size)))
         // A note or a reply can hang past the window's edge, where no element answers.
         if mark.kind != .text {
             let point = Self.point(of: mark), pid = window.pid
@@ -191,7 +196,7 @@ final class LiveWindows {
         for window in windows.values {
             for index in window.pins.indices where ids.contains(window.pins[index].mark.id) {
                 window.pins[index].aside = aside
-                guard !window.pins[index].hidden else { continue }
+                guard window.pins[index].visible else { continue }
                 window.overlay.marks.fade(window.pins[index].mark.id, to: window.pins[index].opacity,
                                           duration: aside ? Settings.shared.motionUI.liveInkHideFade : Settings.shared.motionUI.liveInkShowFade)
             }
@@ -226,14 +231,13 @@ final class LiveWindows {
     }
 
     /// Draws the marks of `all` that are not `lit` faint, as an answer's action points at its own
-    /// findings, and the rest at full strength. A mark hidden with its window takes its strength when
-    /// it shows again.
+    /// findings, and the rest at full strength. A hidden mark takes its strength when it shows again.
     func light(_ lit: Set<Mark.ID>, among all: Set<Mark.ID>) {
         for window in windows.values {
             for index in window.pins.indices where all.contains(window.pins[index].mark.id) {
                 let strength: Float = lit.contains(window.pins[index].mark.id) ? 1 : Self.unlitOpacity
                 window.pins[index].strength = strength
-                guard !window.pins[index].hidden else { continue }
+                guard window.pins[index].visible else { continue }
                 window.overlay.marks.fade(window.pins[index].mark.id, to: window.pins[index].opacity, duration: 0.18 * Settings.shared.motionScale)
             }
         }
@@ -243,12 +247,18 @@ final class LiveWindows {
 
     /// The point that says which window a mark goes on: a loop's or a box's centre, an arrow's head,
     /// a note's tag.
-    static func point(of mark: Mark) -> CGPoint {
+    nonisolated static func point(of mark: Mark) -> CGPoint {
         switch mark.geometry {
         case .rectangle(let frame), .ellipse(let frame): CGPoint(x: frame.midX, y: frame.midY)
         case .arrow(let arrow): arrow.end
         case .text(let text): text.origin
         }
+    }
+
+    /// Whether `mark`, in points from its window's top-left, has its point inside a window of `size`.
+    /// A popover, the person's note or a reply, may hang past the window's edge, so it always fits.
+    nonisolated static func fits(_ mark: Mark, in size: CGSize) -> Bool {
+        mark.popover != nil || CGRect(origin: .zero, size: size).contains(point(of: mark))
     }
 
     // MARK: Hiding with the window
@@ -266,9 +276,27 @@ final class LiveWindows {
         window.showFrom = nil
         for index in window.pins.indices where window.pins[index].hidden {
             window.pins[index].hidden = false
+            guard window.pins[index].visible else { continue }
             window.overlay.marks.fade(window.pins[index].mark.id, to: window.pins[index].opacity, duration: Settings.shared.motionUI.liveInkShowFade)
         }
         Log.write("[live-ink] window=\(window.id) marks back")
+    }
+
+    /// After a resize, hides the marks whose point the window no longer covers and shows those it
+    /// covers again.
+    private func fitMarks(_ window: Tracked) {
+        var changed = (hid: 0, back: 0)
+        for index in window.pins.indices {
+            let outside = !Self.fits(window.pins[index].mark, in: window.frame.size)
+            guard outside != window.pins[index].outside else { continue }
+            window.pins[index].outside = outside
+            if outside { changed.hid += 1 } else { changed.back += 1 }
+            guard !window.pins[index].hidden else { continue }
+            window.overlay.marks.fade(window.pins[index].mark.id, to: outside ? 0 : window.pins[index].opacity,
+                                      duration: outside ? Settings.shared.motionUI.liveInkHideFade : Settings.shared.motionUI.liveInkShowFade)
+        }
+        guard changed.hid + changed.back > 0 else { return }
+        Log.write("[live-ink] window=\(window.id) resized: marks outside=\(changed.hid) back=\(changed.back)")
     }
 
     // MARK: Windows
@@ -304,9 +332,9 @@ final class LiveWindows {
         window.overlay.place(over: window.frame, extent: extent)
     }
 
-    /// A mark first drawn while its window is away starts hidden.
+    /// A mark first drawn while its window is away, or past its edge, starts hidden.
     private func place(_ window: Tracked) {
-        for pin in window.pins where pin.hidden && window.overlay.marks.isShown(pin.mark.id) {
+        for pin in window.pins where !pin.visible && window.overlay.marks.isShown(pin.mark.id) {
             window.overlay.marks.fade(pin.mark.id, shown: false, duration: 0)
         }
     }
@@ -506,6 +534,7 @@ final class LiveWindows {
             window.frame = frame
             if resized {
                 activeUntil = max(activeUntil, now + 0.6)
+                fitMarks(window)
                 fitOverlay(window)
             } else {
                 window.overlay.move(over: frame)

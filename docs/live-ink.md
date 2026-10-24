@@ -128,8 +128,10 @@ The names in brackets are `// MARK:` sections.
   (`LiveWindows`) and keeps its offset from the window's top-left, whatever the window's content
   does: a scroll or a page's own change leaves it where it is, and so does a resize. It moves with
   the window, the windows above it cover it, it fades out as the window minimises and back once the
-  window is on the screen again, 0.2 s after it lands, and it goes when the window closes. A mark
-  drawn on no window stays at its place on the screen.
+  window is on the screen again, 0.2 s after it lands, and it goes when the window closes. When the
+  window shrinks past a mark's point (`LiveWindows.point(of:)`), the mark fades out until the window
+  grows over that point again (`LiveWindows.fits`); a reply, a popover that may hang past the edge,
+  stays (ADR 0024). A mark drawn on no window stays at its place on the screen.
   When a smaller resolution leaves it with no part on any screen, it moves the least way back onto
   its screen, as macOS moves a window (`[live-ink] moved <n> onto the screen`).
   The note's URL and the page an answer keeps to come from the app's Accessibility tree. Only an
