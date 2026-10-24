@@ -304,8 +304,7 @@ enum SendContext {
         let kind = kind(of: bundle)
         out["app"] = bundle
         out["kind"] = kind
-        if let path = app.bundleURL?.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path,
-           FileManager.default.fileExists(atPath: path) { out["electron"] = true }
+        if WindowAccessibility.isElectron(pid: window.pid) { out["electron"] = true }
         if let built = app.executableURL.flatMap({ checkout(ofExecutable: $0.path) }) { out["built"] = built }
         let started = Date()
         let location = given.map { $0.isEmpty ? nil : $0 } ?? LivePacket.page(pid: window.pid, frame: window.frame)?.location
@@ -330,7 +329,7 @@ enum SendContext {
         if let location { out["url"] = location }
         let element = axWindow(pid: window.pid, frame: window.frame)
         if out["folder"] == nil, kind == "finder", let element, let folder = finderFolder(element) { out["folder"] = folder }
-        if let title = element.flatMap({ attribute($0, kAXTitleAttribute) as? String }), !title.isEmpty {
+        if let title = element.flatMap({ WindowAccessibility.attribute($0, kAXTitleAttribute) as? String }), !title.isEmpty {
             out["title"] = title
             let named = sessions.filter { !$0.name.isEmpty && title.contains($0.name) }.map(\.id)
             let foldered = sessions.filter { session in
@@ -440,9 +439,10 @@ enum SendContext {
         guard AXIsProcessTrusted() else { return nil }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.1)
-        let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+        let windows = WindowAccessibility.attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
         return windows.first { window in
-            guard let position = attribute(window, kAXPositionAttribute), let size = attribute(window, kAXSizeAttribute) else { return false }
+            guard let position = WindowAccessibility.attribute(window, kAXPositionAttribute),
+                  let size = WindowAccessibility.attribute(window, kAXSizeAttribute) else { return false }
             var origin = CGPoint.zero, extent = CGSize.zero
             AXValueGetValue(position as! AXValue, .cgPoint, &origin)
             AXValueGetValue(size as! AXValue, .cgSize, &extent)
@@ -458,18 +458,13 @@ enum SendContext {
         while !queue.isEmpty, visited < 300 {
             let (element, depth) = queue.removeFirst()
             visited += 1
-            if let url = attribute(element, kAXURLAttribute) as? URL, url.isFileURL {
+            if let url = WindowAccessibility.attribute(element, kAXURLAttribute) as? URL, url.isFileURL {
                 parents[url.deletingLastPathComponent().path, default: 0] += 1
             }
-            guard depth < 10, let children = attribute(element, kAXChildrenAttribute) as? [AXUIElement] else { continue }
+            guard depth < 10, let children = WindowAccessibility.attribute(element, kAXChildrenAttribute) as? [AXUIElement] else { continue }
             queue += children.map { ($0, depth + 1) }
         }
         return parents.filter { $0.value >= 2 }.max { $0.value < $1.value }?.key
-    }
-
-    private static func attribute(_ element: AXUIElement, _ name: String) -> AnyObject? {
-        var value: AnyObject?
-        return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
     }
 
     // MARK: A local page's server

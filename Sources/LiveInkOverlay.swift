@@ -262,7 +262,7 @@ final class LiveInkOverlay: NSPanel {
 final class LiveMarksLayer: CALayer {
     @MainActor
     private struct Drawn {
-        /// Moved, faded and clipped with the content (`LiveWindows`).
+        /// Faded as its window minimises or shrinks past it (`LiveWindows`).
         let holder = CALayer()
         /// Inside the holder: dimmed for a tap's preview.
         let previewed = CALayer()

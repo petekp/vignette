@@ -25,6 +25,9 @@ final class LiveWindows {
     private var activeUntil: CFTimeInterval = 0
     private var lastIdleTick: CFTimeInterval = 0
     private var buttonDown = false
+    /// The apps whose page tree has been asked for, or that need none: an app keeps its tree until it
+    /// quits.
+    private var askedForTree = Set<pid_t>()
 
     /// How long a window back on the screen, from the Dock, another Space or a hidden app, is let land
     /// before its marks show. Not motion: the motion setting leaves it as it is.
@@ -49,6 +52,8 @@ final class LiveWindows {
         var liftedAt: CFTimeInterval?
         /// Faded because the person asked to minimise it.
         var minimisingSince: CFTimeInterval?
+        /// Its marks are faded: it is minimising, or back on the screen and still landing.
+        var isAway: Bool { minimisingSince != nil || showFrom != nil }
         /// Accessibility calls for this window wait on its app, one at a time.
         let queue: DispatchQueue
         var reorders = 0
@@ -67,8 +72,8 @@ final class LiveWindows {
     private struct Pin {
         /// In points from the window's top-left.
         var mark: Mark
-        /// Faded with its window as the window minimised or went away, until the window is back.
-        var hidden = false
+        /// The rect it draws in (`drawnExtent`), in the same coordinates, which the overlay covers.
+        var extent: CGRect?
         /// Its point is past the window's edge, after the window shrank: hidden until the window grows
         /// over it again.
         var outside = false
@@ -77,10 +82,14 @@ final class LiveWindows {
         var strength: Float = 1
         /// Kept on its window, drawn at no opacity and not counted as shown (`setAside`).
         var aside = false
-        var visible: Bool { !hidden && !outside }
-        var shows: Bool { visible && !aside }
         var opacity: Float { aside ? 0 : strength }
     }
+
+    /// Whether a pin is drawn: its window is not away and covers its point. Set aside, it is drawn at
+    /// no opacity.
+    private static func isDrawn(_ pin: Pin, on window: Tracked) -> Bool { !window.isAway && !pin.outside }
+
+    private static func shows(_ pin: Pin, on window: Tracked) -> Bool { isDrawn(pin, on: window) && !pin.aside }
 
     /// An app's window, from the window list.
     struct Target {
@@ -128,16 +137,30 @@ final class LiveWindows {
         let origin = window.frame.origin
         window.pins.removeAll { $0.mark.id == mark.id }
         let local = Self.translated(mark, by: CGVector(dx: -origin.x, dy: -origin.y))
-        window.pins.append(Pin(mark: local, hidden: window.minimisingSince != nil || window.showFrom != nil,
-                               outside: !Self.fits(local, in: window.frame.size)))
-        // A note or a reply can hang past the window's edge, where no element answers.
-        if mark.kind != .text {
-            let point = Self.point(of: mark), pid = window.pid
-            window.queue.async { WindowAccessibility.requestTree(pid: pid, at: point) }
-        }
+        window.pins.append(Pin(mark: local, extent: drawnExtent?(local), outside: !Self.fits(local, in: window.frame.size)))
+        askForTree(of: window, at: Self.point(of: mark))
         fitOverlay(window)
-        place(window)
+        fadeOutUndrawn(window)
         start()
+    }
+
+    /// Asks the window's app for its page tree, once while it runs.
+    private func askForTree(of window: Tracked, at point: CGPoint) {
+        let pid = window.pid
+        guard askedForTree.insert(pid).inserted else { return }
+        window.queue.async { [weak self] in
+            guard !WindowAccessibility.requestTree(pid: pid, at: point) else { return }
+            let owner = self
+            DispatchQueue.main.async { MainActor.assumeIsolated { _ = owner?.askedForTree.remove(pid) } }
+        }
+    }
+
+    /// Takes the styles' sizes again, after a tweak changed them.
+    func restyle() {
+        for window in windows.values {
+            for index in window.pins.indices { window.pins[index].extent = drawnExtent?(window.pins[index].mark) }
+            fitOverlay(window)
+        }
     }
 
     func popover(of id: Mark.ID) -> ReplyPopover? {
@@ -171,7 +194,7 @@ final class LiveWindows {
         windows.values.flatMap { window in
             window.pins.map { pin in
                 let offset = CGVector(dx: window.frame.minX, dy: window.frame.minY)
-                return (Self.translated(pin.mark, by: offset), pin.shows && window.onScreen, window.id)
+                return (Self.translated(pin.mark, by: offset), Self.shows(pin, on: window) && window.onScreen, window.id)
             }
         }
     }
@@ -183,7 +206,7 @@ final class LiveWindows {
 
     /// Whether a mark that shows, on a window on the screen and not set aside, passes `test`.
     func containsShown(where test: (Mark.ID) -> Bool) -> Bool {
-        windows.values.contains { window in window.onScreen && window.pins.contains { $0.shows && test($0.mark.id) } }
+        windows.values.contains { window in window.onScreen && window.pins.contains { Self.shows($0, on: window) && test($0.mark.id) } }
     }
 
     /// Hides these marks where they are, on their windows.
@@ -193,13 +216,10 @@ final class LiveWindows {
     func bringBack(_ ids: Set<Mark.ID>) { changeAside(ids, to: false) }
 
     private func changeAside(_ ids: Set<Mark.ID>, to aside: Bool) {
+        let duration = aside ? Settings.shared.motionUI.liveInkHideFade : Settings.shared.motionUI.liveInkShowFade
         for window in windows.values {
-            for index in window.pins.indices where ids.contains(window.pins[index].mark.id) {
-                window.pins[index].aside = aside
-                guard window.pins[index].visible else { continue }
-                window.overlay.marks.fade(window.pins[index].mark.id, to: window.pins[index].opacity,
-                                          duration: aside ? Settings.shared.motionUI.liveInkHideFade : Settings.shared.motionUI.liveInkShowFade)
-            }
+            for index in window.pins.indices where ids.contains(window.pins[index].mark.id) { window.pins[index].aside = aside }
+            fadeToOpacity(window, duration: duration) { ids.contains($0.mark.id) }
         }
     }
 
@@ -212,7 +232,7 @@ final class LiveWindows {
         for window in windows.values {
             window.overlay.marks.show(window.pins.map(\.mark), markStyle: markStyle, textStyle: textStyle,
                                       drawingOn: drawingOn, pulsing: pulsing, finishing: finishing, overDark: overDark, hands: hands)
-            place(window)
+            fadeOutUndrawn(window)
         }
     }
 
@@ -235,11 +255,9 @@ final class LiveWindows {
     func light(_ lit: Set<Mark.ID>, among all: Set<Mark.ID>) {
         for window in windows.values {
             for index in window.pins.indices where all.contains(window.pins[index].mark.id) {
-                let strength: Float = lit.contains(window.pins[index].mark.id) ? 1 : Self.unlitOpacity
-                window.pins[index].strength = strength
-                guard window.pins[index].visible else { continue }
-                window.overlay.marks.fade(window.pins[index].mark.id, to: window.pins[index].opacity, duration: 0.18 * Settings.shared.motionScale)
+                window.pins[index].strength = lit.contains(window.pins[index].mark.id) ? 1 : Self.unlitOpacity
             }
+            fadeToOpacity(window, duration: 0.18 * Settings.shared.motionScale) { all.contains($0.mark.id) }
         }
     }
 
@@ -263,40 +281,43 @@ final class LiveWindows {
 
     // MARK: Hiding with the window
 
-    private func hide(_ window: Tracked, duration: CFTimeInterval) {
-        for index in window.pins.indices where !window.pins[index].hidden {
-            window.pins[index].hidden = true
-            window.overlay.marks.fade(window.pins[index].mark.id, shown: false, duration: duration)
+    /// Fades the drawn pins of `window` that pass `test` to their opacity. A pin that is not drawn takes
+    /// its opacity when it shows again.
+    private func fadeToOpacity(_ window: Tracked, duration: CFTimeInterval, where test: (Pin) -> Bool = { _ in true }) {
+        for pin in window.pins where Self.isDrawn(pin, on: window) && test(pin) {
+            window.overlay.marks.fade(pin.mark.id, to: pin.opacity, duration: duration)
         }
     }
 
-    /// Shows the window's hidden marks again once it is on the screen, not minimising, and has landed.
+    /// Fades every mark on the window out, as the window goes away.
+    private func fadeOut(_ window: Tracked, duration: CFTimeInterval) {
+        for pin in window.pins { window.overlay.marks.fade(pin.mark.id, shown: false, duration: duration) }
+    }
+
+    /// Shows the window's marks again once it is on the screen, not minimising, and has landed.
     private func showAgain(_ window: Tracked, now: CFTimeInterval) {
         guard window.onScreen, window.minimisingSince == nil, let from = window.showFrom, now >= from else { return }
         window.showFrom = nil
-        for index in window.pins.indices where window.pins[index].hidden {
-            window.pins[index].hidden = false
-            guard window.pins[index].visible else { continue }
-            window.overlay.marks.fade(window.pins[index].mark.id, to: window.pins[index].opacity, duration: Settings.shared.motionUI.liveInkShowFade)
-        }
+        fadeToOpacity(window, duration: Settings.shared.motionUI.liveInkShowFade)
         Log.write("[live-ink] window=\(window.id) marks back")
     }
 
     /// After a resize, hides the marks whose point the window no longer covers and shows those it
     /// covers again.
     private func fitMarks(_ window: Tracked) {
-        var changed = (hid: 0, back: 0)
+        var hid = Set<Mark.ID>(), back = Set<Mark.ID>()
         for index in window.pins.indices {
             let outside = !Self.fits(window.pins[index].mark, in: window.frame.size)
             guard outside != window.pins[index].outside else { continue }
             window.pins[index].outside = outside
-            if outside { changed.hid += 1 } else { changed.back += 1 }
-            guard !window.pins[index].hidden else { continue }
-            window.overlay.marks.fade(window.pins[index].mark.id, to: outside ? 0 : window.pins[index].opacity,
-                                      duration: outside ? Settings.shared.motionUI.liveInkHideFade : Settings.shared.motionUI.liveInkShowFade)
+            if outside { hid.insert(window.pins[index].mark.id) } else { back.insert(window.pins[index].mark.id) }
         }
-        guard changed.hid + changed.back > 0 else { return }
-        Log.write("[live-ink] window=\(window.id) resized: marks outside=\(changed.hid) back=\(changed.back)")
+        guard !hid.isEmpty || !back.isEmpty else { return }
+        if !window.isAway {
+            for id in hid { window.overlay.marks.fade(id, shown: false, duration: Settings.shared.motionUI.liveInkHideFade) }
+        }
+        fadeToOpacity(window, duration: Settings.shared.motionUI.liveInkShowFade) { back.contains($0.mark.id) }
+        Log.write("[live-ink] window=\(window.id) resized: marks outside=\(hid.count) back=\(back.count)")
     }
 
     // MARK: Windows
@@ -321,7 +342,7 @@ final class LiveWindows {
     private func fitOverlay(_ window: Tracked) {
         var extent = window.frame
         for pin in window.pins {
-            guard let drawn = drawnExtent?(pin.mark) else { continue }
+            guard let drawn = pin.extent else { continue }
             extent = extent.union(drawn.offsetBy(dx: window.frame.minX, dy: window.frame.minY))
         }
         // Nothing past the window's screen shows, so the overlay stops there.
@@ -332,9 +353,10 @@ final class LiveWindows {
         window.overlay.place(over: window.frame, extent: extent)
     }
 
-    /// A mark first drawn while its window is away, or past its edge, starts hidden.
-    private func place(_ window: Tracked) {
-        for pin in window.pins where !pin.visible && window.overlay.marks.isShown(pin.mark.id) {
+    /// Fades out at once the marks drawn on the overlay that should not be: a mark first drawn while
+    /// its window is away, or past its edge, starts hidden.
+    private func fadeOutUndrawn(_ window: Tracked) {
+        for pin in window.pins where !Self.isDrawn(pin, on: window) && window.overlay.marks.isShown(pin.mark.id) {
             window.overlay.marks.fade(pin.mark.id, shown: false, duration: 0)
         }
     }
@@ -367,6 +389,10 @@ final class LiveWindows {
                 let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
                 MainActor.assumeIsolated { self?.activated(pid) }
             }),
+            (workspace, workspace.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+                guard let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier else { return }
+                MainActor.assumeIsolated { _ = self?.askedForTree.remove(pid) }
+            }),
         ]
     }
 
@@ -381,6 +407,7 @@ final class LiveWindows {
         monitors = []
         for (center, observer) in observers { center.removeObserver(observer) }
         observers = []
+        askedForTree = []
     }
 
     /// Asks the window's app to say when the window moves or changes size. The notifications arrive
@@ -416,7 +443,6 @@ final class LiveWindows {
     }
 
     private func input(_ event: NSEvent) {
-        let now = CACurrentMediaTime()
         switch event.type {
         case .leftMouseDown: buttonDown = true
         case .leftMouseUp:
@@ -424,10 +450,12 @@ final class LiveWindows {
             minimiseButtonReleased()
         case .keyDown:
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .function, .numericPad])
+            // A key without ⌘ moves no window; one that moves it through its app is heard by `watch`.
+            guard modifiers.contains(.command) else { return }
             if event.keyCode == 46, modifiers == .command { minimising(NSWorkspace.shared.frontmostApplication?.processIdentifier) }
         default: break
         }
-        activeUntil = max(activeUntil, now + 0.6)
+        activeUntil = max(activeUntil, CACurrentMediaTime() + 0.6)
     }
 
     /// The window's app is about to raise its windows over their overlays: they float until it has,
@@ -478,14 +506,15 @@ final class LiveWindows {
 
     private func fadeForMinimise(_ window: Tracked) {
         window.minimisingSince = CACurrentMediaTime()
-        hide(window, duration: Settings.shared.motionUI.liveInkHideFade)
+        fadeOut(window, duration: Settings.shared.motionUI.liveInkHideFade)
         Log.write("[live-ink] window=\(window.id) minimising")
     }
 
     @objc private func tick(_ link: CADisplayLink) {
         let now = CACurrentMediaTime()
-        // Marks waiting for their window to land are let back as soon as it has.
-        if windows.values.contains(where: { $0.showFrom != nil || $0.minimisingSince != nil }) { activeUntil = max(activeUntil, now + 0.1) }
+        // Marks waiting for their window to land are let back as soon as it has. A window off the
+        // screen is waited on at the idle rate.
+        if windows.values.contains(where: { $0.onScreen && $0.isAway }) { activeUntil = max(activeUntil, now + 0.1) }
         let active = buttonDown || now < activeUntil
         // At rest the windows are looked at ten times a second, which still catches one moved by a
         // script or another app.
@@ -521,7 +550,7 @@ final class LiveWindows {
                 window.overlay.order(.above, relativeTo: Int(window.id))
                 window.minimisingSince = nil
                 window.showFrom = now + Self.landing
-                hide(window, duration: 0)
+                fadeOut(window, duration: 0)
                 activeUntil = max(activeUntil, now + 0.6)
             } else {
                 window.overlay.orderOut(nil)
@@ -595,8 +624,7 @@ final class LiveWindows {
     }
 }
 
-/// The Accessibility calls live ink makes on a marked window's app. Each blocks on that app, so none
-/// runs on the main thread.
+/// Accessibility calls on another app. Each blocks on that app.
 enum WindowAccessibility {
     static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         var value: CFTypeRef?
@@ -616,23 +644,31 @@ enum WindowAccessibility {
         return id
     }
 
+    static func isElectron(pid: pid_t) -> Bool {
+        guard let bundle = NSRunningApplication(processIdentifier: pid)?.bundleURL else { return false }
+        return FileManager.default.fileExists(atPath: bundle.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path)
+    }
+
     /// An Electron app builds its page's tree only when asked, and keeps it until it quits, at a cost
     /// in memory and CPU. The note's URL and the page an answer keeps to come from that tree, so the
     /// app is asked when a mark lands at `point`, in global top-left points, where it has no page yet.
-    /// No other app is.
-    static func requestTree(pid: pid_t, at point: CGPoint) {
-        guard AXIsProcessTrusted(), let bundle = NSRunningApplication(processIdentifier: pid)?.bundleURL,
-              FileManager.default.fileExists(atPath: bundle.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path) else { return }
+    /// No other app is. False when it could not tell, without Accessibility, so a later mark asks again.
+    @discardableResult
+    static func requestTree(pid: pid_t, at point: CGPoint) -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        guard isElectron(pid: pid) else { return true }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.25)
         var hit: AXUIElement?
         if AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit) != .success { hit = nil }
         if let hit {
             AXUIElementSetMessagingTimeout(hit, 0.25)
-            guard !isInWebArea(hit) else { return }
+            guard !isInWebArea(hit) else { return true }
         }
         AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        Log.write("[live-ink] accessibility tree requested app=\(bundle.deletingPathExtension().lastPathComponent)")
+        let name = NSRunningApplication(processIdentifier: pid)?.bundleURL?.deletingPathExtension().lastPathComponent ?? "?"
+        Log.write("[live-ink] accessibility tree requested app=\(name)")
+        return true
     }
 
     private static func isInWebArea(_ element: AXUIElement) -> Bool {

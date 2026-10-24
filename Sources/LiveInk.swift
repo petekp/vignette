@@ -323,6 +323,7 @@ final class LiveInk {
 
     /// The marks and the pointer field drawn again in the current settings.
     func applyTweaks() {
+        windows.restyle()
         showMarks()
         holdField()
     }

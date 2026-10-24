@@ -329,7 +329,7 @@ enum TweakCatalog {
                 .number("liveInkTextWidth", "Answer text width", \.liveInkTextWidth, 120...800, step: 10, unit: "pt", safe: 40...2000),
                 .number("liveInkHideFade", "Hide fade", \.liveInkHideFade, 0...1, step: 0.01, unit: "s", safe: 0...10),
                 .number("liveInkShowFade", "Show fade", \.liveInkShowFade, 0...1, step: 0.01, unit: "s", safe: 0...10),
-            ], caption: { _ in "Marks on a window fade out while its content scrolls or the window is resized, and fade back in once it is still." }),
+            ], caption: { _ in "A window's marks fade out as it minimises or shrinks past them, and fade back in when they can show again." }),
             TweakGroup(nil, [
                 .number("liveInkSpeechPause", "Speech pause", \.liveInkSpeechPause, 0.3...4, step: 0.1, unit: "s", safe: 0.1...30),
                 .number("liveInkSpeechQuiet", "Speech quiet level", \.liveInkSpeechQuiet, 0...1, step: 0.05, safe: 0...1),
