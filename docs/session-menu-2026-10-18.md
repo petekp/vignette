@@ -11,7 +11,7 @@ session's own name. Its second line says where the session works and what it is 
 when it needs the person or is working. Rows sit under a header that names their repository.
 Sessions with no repository sit last, under "Other folders". Rows are ordered by when the person
 last sent to each session, within the last 4 hours, then by when the agent last worked. The menu
-shows 5 rows. The rest are in a More Sessions submenu, grouped the same way.
+shows 5 rows. When more sessions are active, one submenu per project follows them.
 
 Terms used below:
 
@@ -161,8 +161,12 @@ by when the agent last worked** (`AgentDestination.lastUsed`, today's only order
    hour ago is missing when 5 others were used since.
 2. Keep the first 5. When the destination is not among them, it takes the fifth row.
 3. Group those 5 rows. Groups come in the order of their first row, and Other folders comes last.
-4. The rest go in the More Sessions submenu. They are grouped the same way and keep their order, so
-   a row reads the same in either place.
+4. When any active session is not among the 5, a separator and one submenu per project follow the
+   rows. A submenu is titled with its project's header and shows the number of its sessions as a
+   badge. It lists every active session of that project, the top 5 included, in rank order, with the
+   destination's check mark, so a row reads the same in either place. The submenus come in the
+   headers' order, then any project with no row in the 5, in rank order, and Other folders last. A
+   project with one session still gets a submenu. With every active session in the 5, there are none.
 5. The grouped five feed both the menu's items and live ink's Tab order: the responder first, then
    the rows from top to bottom. Tab does not step through the submenu.
 6. Build the menu once per opening. A list that arrives late changes the next opening.
@@ -322,8 +326,9 @@ choice uses send history too, and the replay here must be run again.
 4. **State reported by the plugin itself is later.** "Needs you" comes from the inbox mod, and
    "Working" from the plugin's turn file. A state the plugin would report itself needs a plugin
    version change, and Codex's hooks are untested in the Codex app.
-5. **The More Sessions submenu stays,** with its rows grouped under headers like the five above it.
-   Pete chose "top 5, then More Sessions" on 2026-10-22.
+5. **One submenu per project follows the 5 rows.** Pete chose "top 5, then the rest in one
+   submenu" on 2026-10-22. On 2026-10-23 he asked for the rest to be sorted by project instead of
+   one list, and chose a submenu per project.
 6. **Sessions in a folder that only holds worktrees stay under Other folders.**
 
 ## Considered and left out

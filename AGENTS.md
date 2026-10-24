@@ -828,8 +828,8 @@ screenshot location for such a launch is written with the same variable:
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
   made inside it jumped instead of animating. Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
   sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
-  the target always among them, grouped under a header for each repository with Other folders last, then a More Sessions submenu with every other
-  active session in the same groups (live ink's Tab steps through the five only). A row's title is the herdr tab's label, else
+  the target always among them, grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count as a badge and every
+  active session of that project in it, the top rows too (live ink's Tab steps through the five only). A row's title is the herdr tab's label, else
   the session's name; its second line is the worktree, the branch and the inbox mod's goal; a badge says Needs you or Working
   (`InboxModStore` reads the mod's private file and may find nothing). A Claude Code session is active while the plugin's monitor runs in it,
   and a Codex thread when it was used in the last day, since nothing says which threads the Codex

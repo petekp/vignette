@@ -1,9 +1,8 @@
 import AppKit
 
-/// The session menu as AppKit items: headers over rows, then the More Sessions submenu. Both menus
+/// The session menu as AppKit items: headers over rows, then one submenu per project. Both menus
 /// build their items here and add only their own action and what the action needs.
 extension SessionMenu {
-    static let moreSessions = "More Sessions"
 
     /// One row as an item: its title, a second line, and a badge. Before macOS 14.4 an item has no
     /// subtitle, so the tooltip, which holds the second line, is all there is.
@@ -27,15 +26,21 @@ extension SessionMenu {
         }
     }
 
-    /// Adds the top groups, then the More Sessions submenu when there are rows for it.
+    /// Adds the top groups, then, after a separator, one submenu per project holding all of its
+    /// sessions, with their count as a badge.
     @MainActor
     static func add(_ sessions: Menu, to menu: NSMenu, make: (Row) -> NSMenuItem) {
         add(sessions.top, to: menu, make: make)
-        guard !sessions.more.isEmpty else { return }
-        let more = NSMenuItem(title: moreSessions, action: nil, keyEquivalent: "")
-        more.submenu = NSMenu()
-        more.submenu?.autoenablesItems = false
-        add(sessions.more, to: more.submenu!, make: make)
-        menu.addItem(more)
+        guard !sessions.projects.isEmpty else { return }
+        menu.addItem(.separator())
+        for project in sessions.projects {
+            let item = NSMenuItem(title: project.header, action: nil, keyEquivalent: "")
+            item.badge = NSMenuItemBadge(count: project.rows.count)
+            let submenu = NSMenu()
+            submenu.autoenablesItems = false
+            for row in project.rows { submenu.addItem(make(row)) }
+            item.submenu = submenu
+            menu.addItem(item)
+        }
     }
 }

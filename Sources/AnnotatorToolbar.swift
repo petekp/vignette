@@ -381,8 +381,8 @@ final class AnnotatorToolbar {
     }
 
     /// The target's menu, under it: the sessions sent to or used last, five of them, the target among
-    /// them with a check, each group under its repository (`SessionMenu`), then a More Sessions
-    /// submenu with the rest. AppKit's own menu, so Space on the focused target opens it as a click does.
+    /// them with a check, each group under its repository (`SessionMenu`), then one submenu
+    /// per project with all of its sessions. AppKit's own menu, so Space on the focused target opens it as a click does.
     private func showTargetMenu() {
         guard case .send(let target) = model.offer, let frame = targetFrame else { return }
         let menu = NSMenu()

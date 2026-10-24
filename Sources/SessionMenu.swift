@@ -6,7 +6,7 @@ import Foundation
 ///
 /// The order is the sessions the person sent to in the last `sendWindow`, newest send first, then
 /// the rest by when the agent last worked. Five are kept, with the destination among them, and then
-/// grouped under their repository. The rest go in the More Sessions submenu, grouped the same way.
+/// grouped under their repository. Below them, one submenu per repository lists all of its active sessions.
 enum SessionMenu {
     /// A send older than this no longer ranks a session ahead of the others.
     static let sendWindow: TimeInterval = 4 * 60 * 60
@@ -42,10 +42,12 @@ enum SessionMenu {
         var isOtherFolders: Bool { key == SessionMenu.otherFolders }
     }
 
-    /// The five rows the menu shows and the rows of its More Sessions submenu, each grouped.
+    /// The five rows the menu shows, grouped, and the project submenus below them: one group per
+    /// header, in the headers' order with Other folders last, holding every active session of that
+    /// project, the top rows included. Empty when the top rows already hold every active session.
     struct Menu: Equatable {
         let top: [Group]
-        let more: [Group]
+        let projects: [Group]
         /// The rows from top to bottom, which is also live ink's Tab order after the responder.
         var topRows: [Row] { top.flatMap(\.rows) }
     }
@@ -70,8 +72,8 @@ enum SessionMenu {
 
     /// The menu for `listed`. The first `count` ranked sessions are kept, and `destination` takes the
     /// last of them when it is not among them (it is nil when live ink's note is on the responder,
-    /// and then nothing is forced in). The sessions past those go to `more`. A session's row does
-    /// not depend on which part it is in.
+    /// and then nothing is forced in). `projects` files every active session by project once any is
+    /// left out of the top rows. A session's row does not depend on which part it is in.
     static func menu(_ listed: [AgentDestination], destination: AgentDestination?, count: Int = 5, now: Date = Date()) -> Menu {
         let active = ranked(listed, now: now)
         var top = Array(active.prefix(count))
@@ -79,12 +81,14 @@ enum SessionMenu {
             top = Array(top.prefix(count - 1)) + [active.first { $0.id == destination.id } ?? destination]
         }
         let shown = Set(top.map(\.id))
-        let more = active.filter { !shown.contains($0.id) }
+        let hasMore = active.contains { !shown.contains($0.id) }
         var everyone = active
         if let forced = top.last, !active.contains(where: { $0.id == forced.id }) { everyone.append(forced) }
         let filer = Filer(everyone)
         let rows = filer.rows(now: now)
-        return Menu(top: groups(top, filer, rows), more: groups(more, filer, rows))
+        let topGroups = groups(top, filer, rows)
+        let projects = hasMore ? groups(everyone, filer, rows, headersFirst: topGroups.map(\.key)) : []
+        return Menu(top: topGroups, projects: projects)
     }
 
     /// `destination`'s row among `listed`, as the destination control and live ink's target button
@@ -107,14 +111,18 @@ enum SessionMenu {
 
     // MARK: Groups
 
-    private static func groups(_ sessions: [AgentDestination], _ filer: Filer, _ rows: [String: Row]) -> [Group] {
-        var order: [String] = []
+    private static func groups(_ sessions: [AgentDestination], _ filer: Filer, _ rows: [String: Row],
+                               headersFirst: [String] = []) -> [Group] {
+        var order: [String] = headersFirst
         var headers: [String: String] = [:]
         var members: [String: [Row]] = [:]
         for session in sessions {
             let filing = filer.filing(session)
             guard let row = rows[session.id] else { continue }
-            if members[filing.key] == nil { order.append(filing.key); headers[filing.key] = filing.header }
+            if members[filing.key] == nil {
+                if !order.contains(filing.key) { order.append(filing.key) }
+                headers[filing.key] = filing.header
+            }
             members[filing.key, default: []].append(row)
         }
         let keys = order.filter { $0 != otherFolders } + order.filter { $0 == otherFolders }

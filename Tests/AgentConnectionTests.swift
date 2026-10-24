@@ -395,11 +395,10 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(SessionMenu.menu(list, destination: list[2], now: now).topRows.map(\.id), ["a", "b", "d", "e", "c"],
                        "the target is shown even when it is not active")
         let menu = SessionMenu.menu(list, destination: list[0], now: now)
-        XCTAssertEqual(menu.more.flatMap(\.rows).map(\.id), ["g"], "every other active session is in the submenu, in order")
-        XCTAssertEqual(SessionMenu.menu(list, destination: list[6], now: now).more.flatMap(\.rows).map(\.id), ["f"],
-                       "a target pushed into the top rows leaves the displaced session in the submenu")
-        XCTAssertTrue(SessionMenu.menu(Array(list.prefix(2)), destination: list[0], now: now).more.isEmpty,
-                      "five active sessions or fewer need no submenu")
+        XCTAssertEqual(menu.projects.flatMap(\.rows).map(\.id), ["a", "b", "d", "e", "f", "g"],
+                       "the project submenus hold every active session, the top rows too, in order")
+        XCTAssertTrue(SessionMenu.menu(Array(list.prefix(2)), destination: list[0], now: now).projects.isEmpty,
+                      "five active sessions or fewer need no submenus")
     }
 
     /// Send lists the session used last first, and one with no known time after all the others.
@@ -638,7 +637,7 @@ final class AgentConnectionTests: XCTestCase {
     }
 
     /// Five are kept before grouping, the destination takes the last when it is missing, and the rest
-    /// are the submenu's.
+    /// are in the project submenus, with the top rows.
     func testTheMenuKeepsFiveThenGroupsThemWithOtherFoldersLast() {
         let now = Date()
         let list = [session("a", used: 1, place: .folder(fromHome: "~/Code"), now: now),
@@ -652,7 +651,10 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(menu.top.map(\.header), ["vignette", "inbox", "Other folders"])
         XCTAssertEqual(menu.top.map { $0.rows.map(\.id) }, [["b", "d"], ["c", "g"], ["a"]],
                        "the destination took the fifth row, and the groups follow their first rows")
-        XCTAssertEqual(menu.more.map { $0.rows.map(\.id) }, [["e"], ["f"]])
+        XCTAssertEqual(menu.projects.map(\.header), ["vignette", "inbox", "Other folders"],
+                       "the submenus follow the headers, Other folders last")
+        XCTAssertEqual(menu.projects.map { $0.rows.map(\.id) }, [["b", "d", "f"], ["c", "e", "g"], ["a"]],
+                       "each holds every active session of its project, the top rows too, so a project of one has its submenu")
         XCTAssertNil(SessionMenu.menu(list, destination: nil, now: now).top.flatMap(\.rows).first { $0.id == "g" },
                      "a note on the responder forces no row in")
     }
