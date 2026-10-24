@@ -1235,8 +1235,7 @@ final class LiveInk {
             return notDrawn
         }
         // One answer's steps or focus at a time: an earlier answer's tour ends as this one's begins.
-        stopSteps()
-        letGoOfFocus(because: "replaced")
+        letGoOfTour(because: "replaced")
         steps = Array(groups.dropFirst())
         stepsWindow = packet.windowID
         stepsOnTheirWindows = packet.isArea
@@ -1348,8 +1347,7 @@ final class LiveInk {
     private func pullFocus(_ stops: [[Mark]], window: CGWindowID?, say: String, replies: [Mark.ID: PopoverPlace], for ask: LiveAsks.Ask.ID) {
         guard !stops.isEmpty else { return }
         // One answer's steps or focus at a time: an earlier answer's tour ends as this one's begins.
-        stopSteps()
-        letGoOfFocus(because: "replaced")
+        letGoOfTour(because: "replaced")
         guard let window else {
             Log.write("[live-ink] focus skipped: the answer is on no window; drawn as circles")
             return showUnfocused(stops, window: nil, for: ask)
@@ -1635,6 +1633,12 @@ final class LiveInk {
         if !gone.isEmpty { remove(gone) }
     }
 
+    /// Lets go of the steps and the focus, whichever answer's they are.
+    private func letGoOfTour(because reason: String) {
+        stopSteps()
+        letGoOfFocus(because: reason)
+    }
+
     /// Lets go of the steps or the focus when they are ask `id`'s.
     private func letGoOfTour(of id: LiveAsks.Ask.ID, because reason: String) {
         if stepsAsk == id { stopSteps() }
@@ -1673,8 +1677,7 @@ final class LiveInk {
         stopListening()
         spoken = nil
         strokeTimes = [:]
-        letGoOfFocus(because: "cleared")
-        stopSteps()
+        letGoOfTour(because: "cleared")
         // The asks end first, so the failure the responder's stop gives the ask it holds lets no
         // waiting ask go to it.
         run(asks.reduce(.cleared))
@@ -1725,8 +1728,7 @@ final class LiveInk {
         case .cancelAsk:
             cancelAsk()
         case .endTour:
-            stopSteps()
-            letGoOfFocus(because: "escape")
+            letGoOfTour(because: "escape")
         case .closeAnswer:
             closeAnswer(by: .answerClosed)
         case .clearInk:
