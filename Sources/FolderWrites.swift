@@ -21,7 +21,7 @@ final class FolderWrites {
         }
         var removeCards: ([Screenshot]) -> Void = { _ in }
         var removeDrawings: ([ScreenshotKey], _ observedAt: TimeInterval) -> Void = { _, _ in }
-        var removeReply: (URL) -> Void = { _ in }
+        var removeReply: (Screenshot) -> Void = { _ in }
         /// Files renamed inside the folder: their cards keep their place and selection and take the new file.
         var renameCards: ([Rename]) -> Void = { _ in }
         /// Files renamed inside the folder: their stored drawings, and the one open in the editor, follow.
@@ -323,6 +323,6 @@ final class FolderWrites {
     private func left(_ shots: [Screenshot], observedAt: TimeInterval) {
         callbacks.removeCards(shots)
         callbacks.removeDrawings(shots.map(\.key), observedAt)
-        for shot in shots { callbacks.removeReply(shot.url) }
+        for shot in shots { callbacks.removeReply(shot) }
     }
 }

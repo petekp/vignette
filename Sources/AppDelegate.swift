@@ -1379,7 +1379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private func submit(_ png: Data, of shot: Screenshot, to destination: AgentDestination, message: String?) {
         let record: ScreenshotRequests.Record
         do {
-            record = try requests.send(png: png, source: shot.url, to: destination, message: message,
+            record = try requests.send(png: png, source: shot.key, to: destination, message: message,
                                        instructions: settings.data.sendInstructions,
                                        grace: settings.data.ui.sendGraceSeconds)
         } catch {

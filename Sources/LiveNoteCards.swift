@@ -89,7 +89,7 @@ final class LiveNoteCards {
             drawings.write(drawing, reason: "built")
             let record: ScreenshotRequests.Record
             do {
-                record = try requests.send(png: note.picture, source: shot.url, to: destination, message: message,
+                record = try requests.send(png: note.picture, source: shot.key, to: destination, message: message,
                                            instructions: Settings.shared.data.sendInstructions,
                                            grace: Settings.shared.data.ui.sendGraceSeconds)
             } catch {

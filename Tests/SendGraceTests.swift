@@ -5,9 +5,9 @@ import XCTest
 final class SendGraceTests: XCTestCase {
     private var grace = SendGrace()
 
-    private func send(_ request: String, file: ScreenshotKey = "/shots/a.png", line: String = "line", length: TimeInterval = 3,
+    private func send(_ request: String, line: String = "line", length: TimeInterval = 3,
                       at time: TimeInterval = 100) -> [SendGrace.Effect] {
-        grace.handle(.sent(request: request, file: file, line: line, grace: length, at: time))
+        grace.handle(.sent(request: request, line: line, grace: length, at: time))
     }
 
     /// A timer that runs twice, or after the deadline was handled, must not hand the line over twice.
@@ -21,7 +21,7 @@ final class SendGraceTests: XCTestCase {
     /// A cancelled send must never go out, even when its timer still runs.
     func testACancelledSendIsDiscardedAndItsTimerDoesNothing() {
         _ = send("r")
-        XCTAssertEqual(grace.handle(.cancelled(file: "/shots/a.png")), [.discard(request: "r")])
+        XCTAssertEqual(grace.handle(.cancelled(requests: ["r"])), [.discard(request: "r")])
         XCTAssertEqual(grace.handle(.due(request: "r", at: 103)), [])
     }
 
@@ -29,32 +29,25 @@ final class SendGraceTests: XCTestCase {
     func testACancelAfterTheLineWentIsRefused() {
         _ = send("r")
         _ = grace.handle(.due(request: "r", at: 103))
-        XCTAssertEqual(grace.handle(.cancelled(file: "/shots/a.png")), [])
+        XCTAssertEqual(grace.handle(.cancelled(requests: ["r"])), [])
     }
 
-    /// Sends of different screenshots share nothing: cancelling one leaves the other to its own deadline.
-    func testSendsOfDifferentFilesAreIndependent() {
-        _ = send("a", file: "/shots/a.png", length: 3, at: 100)
-        _ = send("b", file: "/shots/b.png", length: 5, at: 101)
-        XCTAssertEqual(grace.handle(.cancelled(file: "/shots/a.png")), [.discard(request: "a")])
+    /// Cancelling one send leaves another to its own deadline.
+    func testSendsAreIndependent() {
+        _ = send("a", length: 3, at: 100)
+        _ = send("b", length: 5, at: 101)
+        XCTAssertEqual(grace.handle(.cancelled(requests: ["a"])), [.discard(request: "a")])
         XCTAssertEqual(grace.handle(.due(request: "b", at: 103)), [.arm(request: "b", after: 3)], "b waits until 106")
         XCTAssertEqual(grace.handle(.due(request: "b", at: 106)), [.submit(request: "b", line: "line", waited: 5)])
     }
 
     /// A cancel that left an earlier send of the same file waiting would let a line go out unseen.
-    func testCancellingAFileDiscardsEverySendOfItInSendOrder() {
+    func testCancellingSeveralDiscardsThemInSendOrder() {
         _ = send("first", at: 100)
         _ = send("second", at: 101)
-        _ = send("other", file: "/shots/b.png")
-        XCTAssertEqual(grace.handle(.cancelled(file: "/shots/a.png")), [.discard(request: "first"), .discard(request: "second")])
+        _ = send("other")
+        XCTAssertEqual(grace.handle(.cancelled(requests: ["second", "first"])), [.discard(request: "first"), .discard(request: "second")])
         XCTAssertNotNil(grace.wait(of: "other"))
-    }
-
-    func testARenamedSendIsCancelledByItsNewName() {
-        _ = send("r")
-        XCTAssertEqual(grace.handle(.renamed(from: "/shots/a.png", to: "/shots/b.png")), [])
-        XCTAssertEqual(grace.handle(.cancelled(file: "/shots/a.png")), [])
-        XCTAssertEqual(grace.handle(.cancelled(file: "/shots/b.png")), [.discard(request: "r")])
     }
 
     /// A setting of 0 means off: nothing may wait.
@@ -81,8 +74,8 @@ final class SendGraceTests: XCTestCase {
 
     /// Quitting must hand over every waiting line, in the order they were sent, once.
     func testQuitSubmitsEveryWaitInSendOrderOnce() {
-        _ = send("a", file: "/shots/a.png", line: "one")
-        _ = send("b", file: "/shots/b.png", line: "two")
+        _ = send("a", line: "one")
+        _ = send("b", line: "two")
         XCTAssertEqual(grace.handle(.quit), [.submit(request: "a", line: "one", waited: 3), .submit(request: "b", line: "two", waited: 3)])
         XCTAssertTrue(grace.waiting.isEmpty)
         XCTAssertEqual(grace.handle(.quit), [])

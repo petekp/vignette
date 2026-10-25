@@ -60,7 +60,7 @@ final class FolderWritesTests: XCTestCase {
             },
             removeCards: { [unowned self] shots in self.events.append(.removeCards(shots.map(\.url))) },
             removeDrawings: { [unowned self] keys, observedAt in self.events.append(.removeDrawings(keys, observedAt)) },
-            removeReply: { [unowned self] url in self.events.append(.removeReply(url)) },
+            removeReply: { [unowned self] shot in self.events.append(.removeReply(shot.url)) },
             renameCards: { [unowned self] renames in self.events.append(.renameCards(renames.map(\.from), renames.map(\.to))) },
             renameDrawings: { [unowned self] renames in self.events.append(.renameDrawings(renames.map(\.from), renames.map(\.to))) },
             sweepDrawings: { [unowned self] inventory in self.events.append(.sweepDrawings(inventory.observedAt)) },

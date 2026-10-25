@@ -5,8 +5,6 @@ import Foundation
 /// with the events (`ProcessInfo.systemUptime` in the app).
 struct SendGrace: Equatable {
     struct Wait: Equatable {
-        /// The sent screenshot.
-        var file: ScreenshotKey
         /// The line the client gets, built at send. Only in memory: it holds the person's message.
         let line: String
         let deadline: TimeInterval
@@ -20,13 +18,11 @@ struct SendGrace: Equatable {
     private var nextSequence = 0
 
     enum Event: Equatable {
-        case sent(request: String, file: ScreenshotKey, line: String, grace: TimeInterval, at: TimeInterval)
+        case sent(request: String, line: String, grace: TimeInterval, at: TimeInterval)
         /// A timer armed by `.arm` ran.
         case due(request: String, at: TimeInterval)
-        /// Don't send, on the card or by URL.
-        case cancelled(file: ScreenshotKey)
-        /// The sent screenshot was renamed inside the watch folder.
-        case renamed(from: ScreenshotKey, to: ScreenshotKey)
+        /// Don't send, on the card or by URL: the requests sent of one screenshot.
+        case cancelled(requests: [String])
         /// A clear took the request: `requests?clear=` or the admission of a fiftyfirst.
         case cleared(request: String)
         case quit
@@ -44,10 +40,10 @@ struct SendGrace: Equatable {
 
     mutating func handle(_ event: Event) -> [Effect] {
         switch event {
-        case .sent(let request, let file, let line, let grace, let at):
+        case .sent(let request, let line, let grace, let at):
             // No grace: nothing is kept, the line goes at once.
             guard grace > 0 else { return [.submit(request: request, line: line, waited: nil)] }
-            waiting[request] = Wait(file: file, line: line, deadline: at + grace, length: grace, sequence: nextSequence)
+            waiting[request] = Wait(line: line, deadline: at + grace, length: grace, sequence: nextSequence)
             nextSequence += 1
             return [.arm(request: request, after: grace)]
         case .due(let request, let at):
@@ -57,21 +53,18 @@ struct SendGrace: Equatable {
             guard at >= wait.deadline else { return [.arm(request: request, after: wait.deadline - at)] }
             waiting[request] = nil
             return [.submit(request: request, line: wait.line, waited: wait.length)]
-        case .cancelled(let file):
-            // Every send of the file still waiting, so no earlier send goes out unseen. None means
-            // the line was handed over already, which a cancel cannot take back.
-            let ids = ordered(on: file)
+        case .cancelled(let requests):
+            // Every one still waiting, so no earlier send goes out unseen. None means the line was
+            // handed over already, which a cancel cannot take back.
+            let ids = ordered(among: Set(requests))
             for id in ids { waiting[id] = nil }
             return ids.map { .discard(request: $0) }
-        case .renamed(let from, let to):
-            for (id, wait) in waiting where wait.file == from { waiting[id]?.file = to }
-            return []
         case .cleared(let request):
             guard waiting.removeValue(forKey: request) != nil else { return [] }
             return [.dropped(request: request)]
         case .quit:
             // Quitting is not a retraction: every waiting send goes now.
-            let all = ordered(on: nil)
+            let all = ordered(among: nil)
             let effects = all.compactMap { id in waiting[id].map { Effect.submit(request: id, line: $0.line, waited: $0.length) } }
             waiting = [:]
             return effects
@@ -80,8 +73,8 @@ struct SendGrace: Equatable {
 
     func wait(of request: String) -> Wait? { waiting[request] }
 
-    /// The waiting requests, in send order, of `file` or of every file.
-    private func ordered(on file: ScreenshotKey?) -> [String] {
-        waiting.filter { file == nil || $0.value.file == file }.sorted { $0.value.sequence < $1.value.sequence }.map(\.key)
+    /// The waiting requests, in send order, among `requests` or of all of them.
+    private func ordered(among requests: Set<String>?) -> [String] {
+        waiting.filter { requests?.contains($0.key) ?? true }.sorted { $0.value.sequence < $1.value.sequence }.map(\.key)
     }
 }

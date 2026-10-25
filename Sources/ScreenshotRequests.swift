@@ -271,9 +271,9 @@ final class ScreenshotRequests {
     /// A file left the watch folder. A send of it still in its grace is cancelled, since deleting the
     /// card is a way of not sending it. A deleted published reply stays deleted: publication happened,
     /// and the recovery copy is not used to put the file back.
-    func fileRemoved(_ url: URL) {
-        unsend(file: ScreenshotKey(naming: url, in: callbacks.watchFolder()))
-        let url = url.standardizedFileURL
+    func fileRemoved(_ shot: Screenshot) {
+        unsend(file: shot.key)
+        let url = shot.url.standardizedFileURL
         guard var reply = replies.values.first(where: { $0.stage == .published && !$0.deleted && $0.publishedURL == url })
         else { return }
         let id = reply.id
@@ -289,7 +289,7 @@ final class ScreenshotRequests {
         for (id, reply) in replies where reply.stage == .published && !reply.deleted {
             guard publishedAt[id, default: 0] <= inventory.observedAt, let url = reply.publishedURL,
                   inventory.confirmsAbsence(of: url) else { continue }
-            fileRemoved(url)
+            fileRemoved(shot(at: url))
         }
         prune(now: now, inventory: inventory)
         importNext()
@@ -333,7 +333,6 @@ final class ScreenshotRequests {
                 requests[record.id] = record
                 do { try write(record) } catch { Log.write("[requests] error rename-not-recorded \(record.id): \(error)") }
             }
-            run(sendGrace.handle(.renamed(from: rename.from, to: rename.to)))
         }
     }
 
@@ -360,7 +359,7 @@ final class ScreenshotRequests {
     /// is 0 (`SendGrace`); the submission then runs off the main thread and reports through `[send]`
     /// and `callbacks.delivered`. Throws a `Refusal` when no live request was admitted.
     @discardableResult
-    func send(png: Data, source: URL, to destination: AgentDestination, message: String? = nil,
+    func send(png: Data, source: ScreenshotKey, to destination: AgentDestination, message: String? = nil,
               instructions: String = SettingsData.defaultSendInstructions, grace: TimeInterval = 0) throws -> Record {
         let open = requests.values.filter { $0.status != .cleared }.sorted { $0.created < $1.created }
         guard open.count <= Self.maxLiveRequests else {
@@ -371,7 +370,7 @@ final class ScreenshotRequests {
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: id)
         let record = Record(id: id, created: Date(), destinationID: destination.id,
                             destinationName: destination.name, address: destination.address,
-                            addressGuard: destination.address.guardTier, source: source.lastPathComponent,
+                            addressGuard: destination.address.guardTier, source: source.url.lastPathComponent,
                             sourceKey: source.path, status: .prepared, detail: "")
         let ticket = ReplyProtocol.Ticket(requestID: id, secret: ReplyProtocol.newSecret(),
                                           requestDirectory: directory.path, app: Bundle.main.bundlePath)
@@ -415,7 +414,7 @@ final class ScreenshotRequests {
         // The message travels in the line only: it is the person's words, so neither the record
         // nor the log keeps it.
         let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions)
-        run(sendGrace.handle(.sent(request: id, file: sourceKey(of: record), line: line, grace: grace, at: now())))
+        run(sendGrace.handle(.sent(request: id, line: line, grace: grace, at: now())))
         return record
     }
 
@@ -517,7 +516,8 @@ final class ScreenshotRequests {
     /// handed over already, or there was no send.
     @discardableResult
     func unsend(file: ScreenshotKey) -> [Record] {
-        let effects = sendGrace.handle(.cancelled(file: file))
+        let sent = requests.values.filter { sourceKey(of: $0) == file }.map(\.id)
+        let effects = sendGrace.handle(.cancelled(requests: sent))
         let cancelled = effects.compactMap { effect -> Record? in
             if case .discard(let id) = effect { return requests[id] }
             return nil

@@ -64,7 +64,7 @@ final class ScreenshotRequestsTests: XCTestCase {
     /// A stored request with no connection behind it, so nothing is submitted anywhere.
     private func makeRequest() throws -> ScreenshotRequests.Record {
         requests.reconcile(try inventory(in: folder))
-        return try requests.send(png: png(), source: folder.appendingPathComponent("Screenshot.png"),
+        return try requests.send(png: png(), source: folder.appendingPathComponent("Screenshot.png").screenshotKey,
                                  to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
     }
 
@@ -407,7 +407,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(reopened.origin(of: renamed)?.address, .claudeSession("session-1"))
 
         try FileManager.default.removeItem(at: renamed)
-        requests.fileRemoved(renamed)
+        requests.fileRemoved(Screenshot(key: renamed.screenshotKey))
         XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["deleted"] as? Bool, true)
     }
 
@@ -481,7 +481,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         requests.reconcile(try inventory(in: folder))
         let source = folder.appendingPathComponent(file)
         try png().write(to: source)
-        let record = try requests.send(png: png(), source: source,
+        let record = try requests.send(png: png(), source: source.screenshotKey,
                                        to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")),
                                        message: message, grace: grace)
         return (record, source)
@@ -639,12 +639,22 @@ final class ScreenshotRequestsTests: XCTestCase {
         let events = GraceEvents()
         let (connection, clock) = holdSends(events: events)
         let (record, source) = try send("Shot.png")
-        requests.fileRemoved(source)
+        requests.fileRemoved(Screenshot(key: source.screenshotKey))
         XCTAssertEqual(events.all, ["cancelled"])
         clock.time += 3
         clock.fire()
         await assertNothingSent(to: connection)
         XCTAssertEqual(try stored(record).status, .cleared)
+    }
+
+    func testARenamedFileIsCancelledByItsNewName() throws {
+        let events = GraceEvents()
+        _ = holdSends(events: events)
+        let (record, source) = try send("Shot.png")
+        let renamed = folder.appendingPathComponent("Renamed.png").screenshotKey
+        requests.renamed([(from: source.screenshotKey, to: renamed)])
+        XCTAssertEqual(requests.unsend(file: source.screenshotKey).map(\.id), [])
+        XCTAssertEqual(requests.unsend(file: renamed).map(\.id), [record.id])
     }
 
     /// A quit or crash during the grace takes the line from memory: the request must not stay prepared for good.
@@ -891,10 +901,10 @@ final class ScreenshotRequestsTests: XCTestCase {
         try FileManager.default.copyItem(at: file, to: copy)
         XCTAssertFalse(requests.isVisible(copy))
         XCTAssertNil(requests.origin(of: copy))
-        requests.fileRemoved(copy)
+        requests.fileRemoved(Screenshot(key: copy.screenshotKey))
         XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["deleted"] as? Bool, false)
         try FileManager.default.removeItem(at: file)
-        requests.fileRemoved(file)
+        requests.fileRemoved(Screenshot(key: file.screenshotKey))
         XCTAssertEqual((requests.stateJSON["replies"] as? [[String: Any]])?.first?["deleted"] as? Bool, true)
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "the recovery copy never puts it back")
     }
@@ -948,7 +958,7 @@ final class ScreenshotRequestsTests: XCTestCase {
     func testAnAcceptedReplyWaitsForStartupInventory() throws {
         let waiting = ScreenshotRequests(root: root)
         waiting.callbacks = requests.callbacks
-        let record = try waiting.send(png: png(), source: folder.appendingPathComponent("Screenshot.png"),
+        let record = try waiting.send(png: png(), source: folder.appendingPathComponent("Screenshot.png").screenshotKey,
                                       to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
         try waiting.receiveReply(envelope: stageReply(record))
         let rows = try XCTUnwrap(waiting.stateJSON["replies"] as? [[String: Any]])
